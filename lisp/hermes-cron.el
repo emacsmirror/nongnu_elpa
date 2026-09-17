@@ -311,7 +311,7 @@ RUNS is the detail run list."
 
 (defun hermes-cron-show ()
   "Show details and recent run history for the cron job at point."
-  (interactive)
+  (interactive nil hermes-cron-mode)
   (let ((instance (hermes-instance-resolve))
         (id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile))
@@ -386,6 +386,10 @@ RUNS is the detail run list."
 
 (defun hermes-cron-show-run-log ()
   "Fetch the complete transcript of the cron run on the current detail line."
+  (declare (completion
+            (lambda (_command buffer)
+              (with-current-buffer buffer
+                (get-text-property (point) 'hermes-cron-run-id)))))
   (interactive)
   (let ((instance (hermes-instance-resolve))
         (id (get-text-property (point) 'hermes-cron-run-id))
@@ -447,7 +451,7 @@ CURRENT, when non-nil, retains ownership captured before confirmation."
 
 (defun hermes-cron-toggle ()
   "Pause or resume the cron job at point."
-  (interactive)
+  (interactive nil hermes-cron-mode)
   (let ((id (tabulated-list-get-id))
         (entry (tabulated-list-get-entry)))
     (unless id (user-error "No cron job on this line"))
@@ -458,7 +462,7 @@ CURRENT, when non-nil, retains ownership captured before confirmation."
 
 (defun hermes-cron-remove ()
   "Remove the cron job at point."
-  (interactive)
+  (interactive nil hermes-cron-mode)
   (let ((id (tabulated-list-get-id))
         (profile (hermes-cron--entry-profile))
         (origin (current-buffer)))
@@ -498,7 +502,7 @@ CURRENT, when non-nil, retains ownership captured before confirmation."
 
 (defun hermes-cron-edit ()
   "Edit the cron job at point."
-  (interactive)
+  (interactive nil hermes-cron-mode)
   (let ((job-id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile))
         (origin (current-buffer)))
@@ -526,7 +530,7 @@ CURRENT, when non-nil, retains ownership captured before confirmation."
 
 (defun hermes-cron-trigger ()
   "Trigger the cron job at point immediately."
-  (interactive)
+  (interactive nil hermes-cron-mode)
   (let ((id (hermes-cron--id-at-point)))
     (hermes-cron--act "trigger" id (hermes-cron--entry-profile)
                       (format "triggered %s" id))))

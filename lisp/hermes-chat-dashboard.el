@@ -724,7 +724,7 @@ Never restart, resume, or change the chat's input."
 (defun hermes-chat-work-refresh ()
   "Refresh this chat's observed work; rearm a paused source when idle.
 Repeated refresh while busy coalesces; it does not authorize a later retry."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (when-let* ((owner hermes-chat--work-owner))
     (when (and (hermes-chat--work-current-p owner)
                (not (plist-get owner :cycle)))
@@ -2226,7 +2226,7 @@ GENERATION and SESSION-ID, when non-nil, retain an interactive request's owner."
   "Select or set this Hermes chat's gateway working DIRECTORY.
 Interactively, browse directories reported by the owning Hermes instance.
 With explicit DIRECTORY, pass its gateway-native spelling to the backend."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
   (when (hermes-chat--active-turn-p)
@@ -2495,7 +2495,7 @@ event handler.  A no-op without a live dashboard session or with a manual title.
 When a live dashboard session is attached, update its server title via
 `session.title'.  A manual title is kept against automatic title refreshes and
 does not alter the project-specific buffer name."
-  (interactive (list (hermes-chat--read-session-title)))
+  (interactive (list (hermes-chat--read-session-title)) hermes-chat-mode)
   (let ((title (string-trim title)))
     (when (string-empty-p title)
       (user-error "Title must not be empty"))
@@ -2511,7 +2511,7 @@ With no PROMPT, use the input tail.  The task runs in its own session via
 `prompt.background', so it does not block the current turn; its answer returns
 later as a `background.complete' event rendered as a persistent [View Result]
 entry."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (hermes-chat--ensure-submit-allowed)
   (let ((content (string-trim (or prompt (hermes-chat-input-string))))
         (buffer (current-buffer)))

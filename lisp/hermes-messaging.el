@@ -310,7 +310,7 @@ only while the originating profile buffer still owns the operation."
 
 (defun hermes-messaging-toggle ()
   "Toggle the platform at point through the profile-scoped dashboard API."
-  (interactive)
+  (interactive nil hermes-messaging-mode)
   (hermes-messaging--require-mutation-idle)
   (let* ((platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
@@ -323,7 +323,7 @@ only while the originating profile buffer still owns the operation."
 
 (defun hermes-messaging-set-env ()
   "Set one allowed env key for the platform at point."
-  (interactive)
+  (interactive nil hermes-messaging-mode)
   (hermes-messaging--require-mutation-idle)
   (let* ((buffer (current-buffer))
          (current-p (hermes-messaging--guard))
@@ -348,7 +348,7 @@ only while the originating profile buffer still owns the operation."
 
 (defun hermes-messaging-clear-env ()
   "Clear one allowed env key for the platform at point."
-  (interactive)
+  (interactive nil hermes-messaging-mode)
   (hermes-messaging--require-mutation-idle)
   (let* ((buffer (current-buffer))
          (current-p (hermes-messaging--guard))
@@ -394,7 +394,7 @@ accepted.  Arbitrary runtime error text is never displayed."
 
 (defun hermes-messaging-test ()
   "Test the platform at point and report the backend result."
-  (interactive)
+  (interactive nil hermes-messaging-mode)
   (hermes-messaging--require-mutation-idle)
   (let ((target (current-buffer))
         (profile hermes-messaging-profile)
@@ -438,7 +438,7 @@ accepted.  Arbitrary runtime error text is never displayed."
 
 (defun hermes-messaging-view ()
   "View safe catalog details for the platform at point."
-  (interactive)
+  (interactive nil hermes-messaging-mode)
   (let* ((instance (hermes-instance-resolve))
          (platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
@@ -480,6 +480,8 @@ accepted.  Arbitrary runtime error text is never displayed."
   "p" ("Select profile" hermes-messaging-select-profile)
   "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-messaging-mode-map-popup))
+
+(put 'hermes-messaging-mode-map-popup 'command-modes '(hermes-messaging-mode))
 
 (define-derived-mode hermes-messaging-mode tabulated-list-mode "Hermes Messaging"
   "Major mode for profile-scoped Hermes messaging platforms."

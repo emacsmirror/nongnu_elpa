@@ -57,13 +57,13 @@
 
 (defun hermes-preview-cancel ()
   "Cancel this preview's pending read without stopping a shared transport."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (when hermes-preview--cleanup
     (hermes-preview--finish "Cancelled")))
 
 (defun hermes-preview-quit ()
   "Cancel this preview's pending read and quit its window."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (hermes-preview-cancel)
   (quit-window))
 
@@ -168,7 +168,7 @@ Reject unknown tags and attributes, URI values, CSS and event handlers."
 (defun hermes-preview-source ()
   "Toggle between inert presentation and retained literal source.
 Wait for a pending read to finish, or cancel it first."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (when (hermes-buffer--retired-p)
     (user-error "Preview view is retired"))
   (when hermes-preview--cleanup
@@ -216,22 +216,22 @@ Limit zoom to 10–400 percent of the initial displayed size."
 
 (defun hermes-preview-zoom-in ()
   "Enlarge the rendered image by 25 percent, up to four times its initial size."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (hermes-preview--zoom 1.25))
 
 (defun hermes-preview-zoom-out ()
   "Shrink the rendered image by 20 percent, down to a tenth of its initial size."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (hermes-preview--zoom 0.8))
 
 (defun hermes-preview-zoom-reset ()
   "Restore the image's initial preview size, including any SVG fitting."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (hermes-preview--zoom nil))
 
 (defun hermes-preview-copy-target ()
   "Copy this preview's exact remote target or source label."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (kill-new (or (plist-get hermes-preview--descriptor :path)
                 (plist-get hermes-preview--descriptor :label)))
   (message "Copied preview target"))
@@ -324,7 +324,7 @@ Limit zoom to 10–400 percent of the initial displayed size."
 
 (defun hermes-preview-retry ()
   "Retry reading the current remote target from the same chat attachment."
-  (interactive)
+  (interactive nil hermes-preview-mode)
   (unless (plist-get hermes-preview--descriptor :path)
     (user-error "Source artifact does not require a remote read"))
   (hermes-preview--read))
@@ -346,6 +346,8 @@ Limit zoom to 10–400 percent of the initial displayed size."
 		     "C-g" ("Cancel read" hermes-preview-cancel)
 		     "q" ("Quit view" hermes-preview-quit)
 		     "?" ("Help" hermes-preview-mode-map-popup))
+
+(put 'hermes-preview-mode-map-popup 'command-modes '(hermes-preview-mode))
 
 (define-key hermes-preview-mode-map (kbd "n") #'next-line)
 (define-key hermes-preview-mode-map (kbd "p") #'previous-line)

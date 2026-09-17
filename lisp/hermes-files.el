@@ -69,7 +69,7 @@
 
 (defun hermes-files-cancel ()
   "Cancel pending requests without closing the browser."
-  (interactive)
+  (interactive nil hermes-files-mode hermes-file-view-mode)
   (hermes-files--retire)
   (setq hermes-files--status "Cancelled")
   (when (and (derived-mode-p 'hermes-file-view-mode) (not hermes-files--bytes))
@@ -273,7 +273,7 @@ Optional TARGET is an already displayed inert viewer, never a local path."
 
 (defun hermes-files-refresh (&rest _)
   "Refresh the current managed directory without redisplaying it."
-  (interactive)
+  (interactive nil hermes-files-mode)
   (hermes-files--request "/api/files" hermes-files--path #'hermes-files--render))
 
 (defun hermes-files--navigate (path)
@@ -295,12 +295,12 @@ Read a literal remote token, without local filename completion or expansion."
                     (hermes-browser--request-current-mode-p
                      owner generation 'hermes-files-mode))
          (user-error "Managed directory changed during prompt"))
-       (list path))))
+       (list path))) hermes-files-mode)
   (hermes-files--navigate path))
 
 (defun hermes-files-up ()
   "Visit the parent published by the backend, if any."
-  (interactive)
+  (interactive nil hermes-files-mode)
   (unless hermes-files--parent (user-error "No parent published by server"))
   (hermes-files--navigate hermes-files--parent))
 
@@ -358,7 +358,7 @@ Retain the original bytes independently for saving, even without image support."
 
 (defun hermes-files-open ()
   "Descend into the selected directory or open an inert file preview."
-  (interactive)
+  (interactive nil hermes-files-mode)
   (let* ((row (tabulated-list-get-id))
          (path (hermes-transport--get row 'path)))
     (unless (memq row hermes-files--rows) (user-error "No current file row"))
@@ -391,7 +391,7 @@ Retain the original bytes independently for saving, even without image support."
   "Save validated viewer bytes to new local FILENAME, without overwriting.
 Refuse remote names, existing files and symlink components.  Choose a trusted
 local directory; concurrent hostile ancestor replacement is not supported."
-  (interactive)
+  (interactive nil hermes-file-view-mode)
   (unless (and (derived-mode-p 'hermes-file-view-mode) hermes-files--bytes)
     (user-error "No completed managed file read"))
   (let ((owner (current-buffer)) (bytes hermes-files--bytes))
@@ -439,6 +439,8 @@ local directory; concurrent hostile ancestor replacement is not supported."
   "<escape>" ("Dismiss menu" keymap-popup-dismiss)
   "?" ("Help" hermes-files-mode-map-popup))
 
+(put 'hermes-files-mode-map-popup 'command-modes '(hermes-files-mode))
+
 (define-derived-mode hermes-files-mode tabulated-list-mode "Hermes Files"
   "Browse remote managed files without remote mutations.
 Keep native sortable headings above the rows and server context in the mode
@@ -458,7 +460,7 @@ line.  Names and server paths retain their full quoted text in help echo."
 
 (defun hermes-files-quit ()
   "Cancel pending display work and quit this window."
-  (interactive)
+  (interactive nil hermes-files-mode hermes-file-view-mode)
   (hermes-files-cancel)
   (quit-window))
 
@@ -473,6 +475,8 @@ line.  Names and server paths retain their full quoted text in help echo."
   "C-g" ("Cancel read" hermes-files-cancel)
   "<escape>" ("Dismiss menu" keymap-popup-dismiss)
   "?" ("Help" hermes-file-view-mode-map-popup))
+
+(put 'hermes-file-view-mode-map-popup 'command-modes '(hermes-file-view-mode))
 
 (define-derived-mode hermes-file-view-mode special-mode "Hermes File"
   "Preview managed content without file modes, local variables or evaluation."

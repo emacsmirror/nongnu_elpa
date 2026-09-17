@@ -706,6 +706,7 @@ command `hermes-list-NAME'.  BODY is a plist:
   :description     popup title string or function, optional
   :doc             major-mode docstring, optional
   :command-doc     list-command docstring, optional
+  :command-modes   modes for a context-dependent list command, optional
   :on-result       function (RESULT) called in the buffer after each render,
                    for side effects only (e.g. failure notifications)
   :on-mode         function called when the generated major mode initializes
@@ -748,6 +749,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          revert-buffer ("Refresh" :stay-open t)
          describe-mode "Describe mode"
          quit-window "Quit view")
+       (put ',(intern (format "%s-popup" map)) 'command-modes '(,mode))
        ,@(and dynamic
               `((defun ,format-fn (&optional width)
                   ,(format "Return the dynamic `tabulated-list-format' for the %s browser."
@@ -810,7 +812,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
              ((error quit) (funcall on-error (error-message-string err)))))))
        (defun ,command ()
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
-         (interactive)
+         (interactive nil ,@(plist-get body :command-modes))
          (let ((instance (hermes-instance-resolve))
                (target (hermes-buffer--get ,buffer #',mode)))
            (with-current-buffer target

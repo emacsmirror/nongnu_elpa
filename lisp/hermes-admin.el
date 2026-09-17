@@ -43,7 +43,7 @@
 
 (defun hermes-admin--forget-secret ()
   "Retire this browser's one-time secret and any explicit reveal."
-  (interactive)
+  (interactive nil hermes-webhooks-mode)
   (when (buffer-live-p hermes-admin--secret-buffer)
     (with-current-buffer hermes-admin--secret-buffer
       (let ((inhibit-read-only t)) (erase-buffer))
@@ -209,12 +209,12 @@ Never display remote error bodies: they may contain credentials."
 
 (defun hermes-admin-quit ()
   "Close the administrative view and forget its one-time secret."
-  (interactive)
+  (interactive nil hermes-admin-mode)
   (quit-window t))
 
 (defun hermes-admin--revert (&rest _)
   "Refresh this administrative browser without retrying any mutation."
-  (interactive)
+  (interactive nil hermes-admin-mode)
   (when (eq hermes-admin--state 'mutating)
     (user-error "A change is pending; wait for its outcome before refreshing"))
   (let ((pairing (derived-mode-p 'hermes-pairing-mode)))
@@ -297,7 +297,7 @@ CREATED means retain only the one-time secret from the create response."
 
 (defun hermes-pairing-approve ()
   "Confirm and approve the exact pending request at point."
-  (interactive)
+  (interactive nil hermes-pairing-mode)
   (hermes-admin--require-ready)
   (pcase-let ((`(,kind ,platform ,user ,request) (tabulated-list-get-id)))
     (unless (and (eq kind 'pending) (not (string-empty-p request)))
@@ -309,7 +309,7 @@ CREATED means retain only the one-time secret from the create response."
 
 (defun hermes-pairing-revoke ()
   "Confirm and revoke the approved user's access at point."
-  (interactive)
+  (interactive nil hermes-pairing-mode)
   (hermes-admin--require-ready)
   (pcase-let ((`(,kind ,platform ,user ,_) (tabulated-list-get-id)))
     (unless (eq kind 'approved) (user-error "Select an approved user"))
@@ -319,7 +319,7 @@ CREATED means retain only the one-time secret from the create response."
 
 (defun hermes-pairing-clear-pending ()
   "Confirm and clear all pending requests across this server profile's platforms."
-  (interactive)
+  (interactive nil hermes-pairing-mode)
   (unless (derived-mode-p 'hermes-pairing-mode) (user-error "Not a pairing view"))
   (hermes-admin--change "Clear ALL pending pairing requests across ALL platforms"
                        "POST" "/api/pairing/clear-pending" nil))
@@ -329,7 +329,7 @@ CREATED means retain only the one-time secret from the create response."
 Creation replaces an existing route of the same name on the server.  This
 command refuses names in the last list and warns about concurrent replacement.
 Platform enablement is managed separately; this command never starts a gateway."
-  (interactive)
+  (interactive nil hermes-webhooks-mode)
   (unless (derived-mode-p 'hermes-webhooks-mode) (user-error "Not a webhook view"))
   (hermes-admin--require-ready)
   (let* ((owner (hermes-admin--owner))
@@ -370,7 +370,7 @@ Platform enablement is managed separately; this command never starts a gateway."
 
 (defun hermes-webhooks-toggle ()
   "Confirm and change the selected webhook's enabled state."
-  (interactive)
+  (interactive nil hermes-webhooks-mode)
   (pcase-let ((`(,name ,enabled) (hermes-webhooks--selected)))
     (hermes-admin--change
      (format "%s webhook %s" (if enabled "Disable" "Enable") name)
@@ -379,7 +379,7 @@ Platform enablement is managed separately; this command never starts a gateway."
 
 (defun hermes-webhooks-delete ()
   "Confirm and delete the selected webhook and its secret."
-  (interactive)
+  (interactive nil hermes-webhooks-mode)
   (let ((name (car (hermes-webhooks--selected))))
     (hermes-admin--change (format "Delete webhook %s and its secret" name)
                          "DELETE" (concat "/api/webhooks/" (url-hexify-string name)) nil)))
@@ -397,7 +397,7 @@ Platform enablement is managed separately; this command never starts a gateway."
   "Explicitly reveal the last created secret in a temporary, undo-free buffer.
 The buffer is destroyed on dismissal, browser teardown, or the next creation.
 It is never written to disk or inserted into a chat or message log."
-  (interactive)
+  (interactive nil hermes-webhooks-mode)
   (hermes-webhooks--require-secret)
   (let ((owner (hermes-admin--owner)))
     (when (yes-or-no-p "Reveal the one-time webhook secret on screen? ")
@@ -418,7 +418,7 @@ It is never written to disk or inserted into a chat or message log."
 (defun hermes-webhooks-copy-secret ()
   "Explicitly copy the one-time secret to the kill ring and clipboard.
 Those destinations may persist or synchronize it; only do this intentionally."
-  (interactive)
+  (interactive nil hermes-webhooks-mode)
   (hermes-webhooks--require-secret)
   (let ((owner (hermes-admin--owner)))
     (when (yes-or-no-p "Copy secret to kill ring/clipboard (may persist or sync)? ")
@@ -437,6 +437,8 @@ Those destinations may persist or synchronize it; only do this intentionally."
   "q" ("Quit" hermes-admin-quit)
   "?" ("Help" hermes-pairing-mode-map-popup))
 
+(put 'hermes-pairing-mode-map-popup 'command-modes '(hermes-pairing-mode))
+
 (keymap-popup-define hermes-webhooks-mode-map
   "Webhook administration commands."
   :parent tabulated-list-mode-map :popup-key "?" :exit-key "C-g"
@@ -452,6 +454,8 @@ Those destinations may persist or synchronize it; only do this intentionally."
   "g" ("Refresh" hermes-admin--revert)
   "q" ("Quit" hermes-admin-quit)
   "?" ("Help" hermes-webhooks-mode-map-popup))
+
+(put 'hermes-webhooks-mode-map-popup 'command-modes '(hermes-webhooks-mode))
 
 (define-derived-mode hermes-admin-mode tabulated-list-mode "Hermes Admin"
   "Parent mode for instance-owned administrative lists."

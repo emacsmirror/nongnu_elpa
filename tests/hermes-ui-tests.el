@@ -869,5 +869,270 @@
           (search-forward label)
           (should (eq (get-text-property (1- (point)) 'face) face)))))))
 
+;;; Native command completion
+
+(ert-deftest hermes-ui-command-completion-mode-contexts ()
+  "Native completion follows view modes, including derived and shared modes."
+  (require 'hermes-preview)
+  (require 'hermes-exec)
+  (require 'hermes-tool-setup)
+  (let ((cases
+         '((hermes-chat-send hermes-chat-mode)
+           (hermes-chat-set-reasoning hermes-chat-mode)
+           (hermes-chat-attach-image-file hermes-chat-mode)
+           (hermes-chat-show-todos hermes-chat-mode)
+           (hermes-chat-queue-panel-edit hermes-chat-queue-panel-mode)
+           (hermes-chat-image-recovery-restore hermes-chat-image-recovery-mode)
+           (hermes-chat-todos-next hermes-chat-todos-mode)
+           (hermes-reconnect hermes-chat-mode)
+           (hermes-dashboard-restart hermes-chat-mode)
+           (hermes-dashboard-next hermes-dashboard-mode)
+           (hermes-exec-approve hermes-exec-approval-mode)
+           (hermes-config-edit hermes-config-mode)
+           (hermes-cron-edit hermes-cron-mode)
+           (hermes-files-directory hermes-files-mode)
+           (hermes-file-save hermes-file-view-mode hermes-preview-mode)
+           (hermes-files-cancel hermes-files-mode hermes-file-view-mode hermes-preview-mode)
+           (hermes-preview-retry hermes-preview-mode)
+           (hermes-inventory-toggle hermes-inventory-mode)
+           (hermes-memory-reset hermes-memory-status-mode)
+           (hermes-kanban-switch-board hermes-kanban-boards-mode)
+           (hermes-kanban-show hermes-kanban-mode hermes-kanban-diagnostics-mode)
+           (hermes-kanban-set-status hermes-kanban-mode hermes-kanban-diagnostics-mode)
+           (hermes-kanban-comment hermes-kanban-mode hermes-kanban-task-mode hermes-kanban-diagnostics-mode)
+           (hermes-kanban-toggle-live hermes-kanban-mode)
+           (hermes-kanban-log-next-hunk hermes-kanban-log-mode hermes-work-log-mode)
+           (hermes-mcp-add hermes-mcp-mode)
+           (hermes-messaging-set-env hermes-messaging-mode)
+           (hermes-onboarding-oauth-poll hermes-onboarding-oauth-mode)
+           (hermes-onboarding-provider-account-act hermes-provider-accounts-mode)
+           (hermes-plugins-install hermes-plugins-mode)
+           (hermes-profiles-set-model hermes-profiles-mode)
+           (hermes-profiles-soul-save hermes-profiles-soul-mode)
+           (hermes-projects-create hermes-projects-mode hermes-project-detail-mode)
+           (hermes-project-sessions-open hermes-project-sessions-mode)
+           (hermes-rollback-restore hermes-rollback-mode)
+           (hermes-sessions-search hermes-sessions-mode)
+           (hermes-sessions-open hermes-sessions-mode hermes-session-detail-mode)
+           (hermes-subagents-interrupt hermes-subagents-mode)
+           (hermes-chat-work hermes-chat-mode hermes-work-mode)
+           (hermes-work-refresh hermes-work-mode)
+           (hermes-work-log-refresh hermes-work-log-mode)
+           (hermes-tool-setup-refresh hermes-tool-setup-mode)
+           (hermes-admin-quit hermes-pairing-mode hermes-webhooks-mode)
+           (hermes-webhooks-create hermes-webhooks-mode))))
+    (with-temp-buffer
+      (let ((origin (current-buffer)))
+        ;; Check the explicit BUFFER argument rather than the selected buffer.
+        (with-temp-buffer
+          (dolist (case cases)
+            (let ((command (car case)))
+              (should (commandp command))
+              (dolist (mode (append '(fundamental-mode text-mode) (cdr case)))
+                (with-current-buffer origin (setq major-mode mode))
+                (should (eq (not (null (command-completion-default-include-p command origin)))
+                            (not (null (memq mode (cdr case)))))))))))))
+  (with-temp-buffer
+    (delay-mode-hooks (hermes-chat-mode))
+    (should (command-completion-default-include-p 'hermes-chat-send (current-buffer)))
+    (let ((parent (get 'hermes-ui-test-chat-mode 'derived-mode-parent)))
+      (unwind-protect
+          (progn
+            (put 'hermes-ui-test-chat-mode 'derived-mode-parent 'hermes-chat-mode)
+            (setq major-mode 'hermes-ui-test-chat-mode)
+            (should (command-completion-default-include-p
+                     'hermes-chat-send (current-buffer))))
+        (put 'hermes-ui-test-chat-mode 'derived-mode-parent parent)))))
+
+(ert-deftest hermes-ui-command-completion-kanban-diagnostics-status ()
+  "Status changes remain discoverable and usable from real diagnostics rows."
+  (with-temp-buffer
+    (hermes-kanban-diagnostics-mode)
+    (setq hermes-kanban--slug "test-board"
+          hermes-kanban--name "Test"
+          tabulated-list-entries
+          (hermes-kanban--diagnostic-rows
+           '(((task_id . "task-17") (task_title . "Task")
+              (diagnostics . [((severity . "warning") (title . "Needs action"))])))))
+    (tabulated-list-print)
+    (goto-char (point-min))
+    (let (request rendered)
+      (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () nil))
+                ((symbol-function 'completing-read) (lambda (&rest _) "blocked"))
+                ((symbol-function 'hermes-kanban--api)
+                 (lambda (&rest args)
+                   (setq request args)
+                   (hermes--promise-resolved nil)))
+                ((symbol-function 'hermes-kanban--render-board)
+                 (lambda (&rest args) (setq rendered args))))
+        (call-interactively #'hermes-kanban-set-status))
+      (should (equal request '("PATCH" "/tasks/task-17"
+                              ((status . "blocked")) ((board . "test-board")))))
+      (should (equal rendered '("test-board" "Test"))))
+    (should (command-completion-default-include-p
+             'hermes-kanban-set-status (current-buffer)))))
+
+(ert-deftest hermes-ui-command-completion-global-entries ()
+  "Opening, acquisition and setup commands remain globally discoverable."
+  (require 'hermes-capabilities)
+  (require 'hermes-exec)
+  (require 'hermes-files)
+  (require 'hermes-tool-setup)
+  (with-temp-buffer
+    (dolist (mode '(fundamental-mode text-mode hermes-chat-mode hermes-sessions-mode))
+      (setq major-mode mode)
+      (dolist (command '(hermes hermes-close hermes-chat hermes-project-chat
+                        hermes-switch-to-chat hermes-chat-resume-session
+                        hermes-command-palette hermes-list-sessions hermes-list-profiles
+                        hermes-list-projects hermes-list-crons hermes-list-subagents
+                        hermes-list-provider-accounts hermes-list-rollbacks
+                        hermes-files hermes-config hermes-tool-setup
+                        hermes-onboarding-connect-provider hermes-onboarding-oauth-connect
+                        hermes-cron-create hermes-profiles-create
+                        hermes-kanban-create-board hermes-kanban-create-task
+                        hermes-kanban-create-triage-task hermes-kanban-diagnostics
+                        hermes-inventory-reload-skills hermes-messaging-select-profile
+                        hermes-system-status hermes-system-logs hermes-plugins-mode
+                        hermes-chat-image-recovery-mode hermes-exec-approval-mode
+                        hermes-project-detail-mode hermes-work-log-mode hermes-work-mode
+                        hermes-exec-start hermes-exec-stop hermes-exec-trust
+                        hermes-capabilities-start hermes-capabilities-stop))
+        (should (commandp command))
+        (should (command-completion-default-include-p command (current-buffer)))))))
+
+(ert-deftest hermes-ui-command-completion-generated-commands ()
+  "Generated popup launchers and scoped browsers carry native mode metadata."
+  (with-temp-buffer
+    (dolist (case '((hermes-chat-actions-map-popup hermes-chat-mode)
+                    (hermes-chat-actions-map--enter-hermes-chat-images-map hermes-chat-mode)
+                    (hermes-chat-jobs-map-popup hermes-chat-mode)
+                    (hermes-dashboard-mode-map-popup hermes-dashboard-mode)
+                    (hermes-dashboard-mode-map--enter-hermes-dash-chat-map hermes-dashboard-mode)
+                    (hermes-dash-sys-map-popup hermes-dashboard-mode)
+                    (hermes-sessions-mode-map-popup hermes-sessions-mode)
+                    (hermes-session-detail-mode-map-popup hermes-session-detail-mode)
+                    (hermes-work-mode-map-popup hermes-work-mode)
+                    (hermes-rollback--list hermes-rollback-mode)
+                    (hermes-list-project-sessions hermes-project-sessions-mode)))
+      (should (commandp (car case)))
+      (setq major-mode 'fundamental-mode)
+      (should-not (command-completion-default-include-p (car case) (current-buffer)))
+      (setq major-mode (cadr case))
+      (should (command-completion-default-include-p (car case) (current-buffer))))))
+
+(ert-deftest hermes-ui-command-completion-inert-context-predicates ()
+  "Point and view-kind predicates read only their supplied buffer's state."
+  (with-temp-buffer
+    (insert "run\n")
+    (goto-char (point-min))
+    (let ((origin (current-buffer))
+          (before (buffer-list)))
+      (with-temp-buffer
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _) (ert-fail "Completion acquired a client")))
+                  ((symbol-function 'get-buffer-create)
+                   (lambda (&rest _) (ert-fail "Completion opened a buffer")))
+                  ((symbol-function 'read-string)
+                   (lambda (&rest _) (ert-fail "Completion prompted"))))
+          (should-not (command-completion-default-include-p 'hermes-cron-show-run-log origin))
+          (with-current-buffer origin
+            (put-text-property (point-min) (1+ (point-min)) 'hermes-cron-run-id "run"))
+          (should (command-completion-default-include-p 'hermes-cron-show-run-log origin))
+          (with-current-buffer origin (forward-char))
+          (should-not (command-completion-default-include-p 'hermes-cron-show-run-log origin))
+          (dolist (command '(hermes-system-log-source hermes-system-log-level
+                            hermes-system-log-component hermes-system-log-lines
+                            hermes-system-log-auto-refresh))
+            (with-current-buffer origin
+              (setq major-mode 'hermes-system-mode hermes-system--path "/api/status"))
+            (should-not (command-completion-default-include-p command origin))
+            (with-current-buffer origin (setq hermes-system--path "/api/logs"))
+            (should (command-completion-default-include-p command origin))
+            (with-current-buffer origin (setq major-mode 'text-mode))
+            (should-not (command-completion-default-include-p command origin)))))
+      (should (equal before (buffer-list))))))
+
+(ert-deftest hermes-ui-command-completion-native-reader-policy ()
+  "The native M-x table respects origin context and the user's predicate."
+  (with-temp-buffer
+    (let ((origin (current-buffer)))
+      (dolist (policy '(nil command-completion-default-include-p))
+        (dolist (mode '(text-mode hermes-chat-mode))
+          (setq major-mode mode)
+          (let* ((read-extended-command-predicate policy)
+                 (completing-read-function
+                  (lambda (_prompt table predicate &rest _)
+                    (with-temp-buffer
+                      (setq major-mode 'special-mode)
+                      (let ((commands (all-completions "hermes-" table predicate)))
+                        (should (member "hermes-chat" commands))
+                        (should (eq (not (null (member "hermes-chat-send" commands)))
+                                    (or (null policy) (eq mode 'hermes-chat-mode))))))
+                    "hermes-chat")))
+            (should (equal (read-extended-command) "hermes-chat"))
+            (should (eq (current-buffer) origin))
+            (should (eq read-extended-command-predicate policy))))))))
+
+(ert-deftest hermes-ui-command-completion-keeps-invocation-and-readers ()
+  "Metadata leaves direct invocation, argument readers and guards unchanged."
+  (with-temp-buffer
+    (insert "draft")
+    (goto-char (point-min))
+    (should-not (command-completion-default-include-p 'hermes-chat-go-to-composer (current-buffer)))
+    (call-interactively #'hermes-chat-go-to-composer)
+    (should (= (point) (point-max)))
+    (should-error (call-interactively #'hermes-chat-send) :type 'user-error)
+    (let ((current-prefix-arg '(4))
+          (hermes-dashboard--ewoc 'ewoc)
+          received)
+      (cl-letf (((symbol-function 'ewoc-goto-next)
+                 (lambda (ewoc count) (setq received (list ewoc count)))))
+        (call-interactively #'hermes-dashboard-next))
+      (should (equal received '(ewoc 4))))
+    (let (received)
+      (cl-letf (((symbol-function 'hermes-chat--read-session-title) (lambda () "New title"))
+                ((symbol-function 'hermes-chat--apply-session-title)
+                 (lambda (title) (setq received title)))
+                ((symbol-function 'hermes-chat--push-session-title) #'ignore))
+        (call-interactively #'hermes-chat-rename))
+      (should (string-prefix-p "New title--" received)))))
+
+(ert-deftest hermes-ui-command-completion-autoload-metadata ()
+  "Explicit and generated autoloads retain contexts without loading a feature."
+  (require 'autoload)
+  (dolist (case '(("hermes-chat" autoload hermes-chat-work
+                  hermes-chat-mode hermes-work-mode)
+                 ("hermes-chat-todos" defun hermes-chat-show-todos
+                  hermes-chat-mode)
+                 ("hermes-chat" defun hermes-dashboard-reconnect
+                  hermes-chat-mode)))
+    (let ((command (nth 2 case))
+          (loaded features)
+          form)
+      (with-temp-buffer
+        (insert-file-contents
+         (concat (file-name-sans-extension (locate-library (car case))) ".el"))
+        (goto-char (point-min))
+        (while (not form)
+          (let ((candidate (read (current-buffer))))
+            (when (and (eq (car-safe candidate) (cadr case))
+                       (equal (cadr candidate)
+                              (if (eq (cadr case) 'autoload)
+                                  (list 'quote command) command)))
+              (setq form (if (eq (cadr case) 'autoload) candidate
+                           (make-autoload candidate (car case))))))))
+      (cl-letf (((symbol-function command) nil))
+        (eval form t)
+        (should (autoloadp (symbol-function command)))
+        (should (equal (command-modes command) (nthcdr 3 case)))
+        (when (eq command 'hermes-dashboard-reconnect)
+          (should (equal (command-modes 'hermes-reconnect) '(hermes-chat-mode))))
+        (with-temp-buffer
+          (should-not (command-completion-default-include-p command (current-buffer)))
+          (dolist (mode (nthcdr 3 case))
+            (setq major-mode mode)
+            (should (command-completion-default-include-p command (current-buffer))))))
+      (should (equal features loaded)))))
+
 (provide 'hermes-ui-tests)
 ;;; hermes-ui-tests.el ends here

@@ -772,7 +772,7 @@ Return non-nil when the transport request starts."
   "Insert a literal newline in the Hermes chat input tail.
 Outside the tail, move to the end of the draft first so the newline
 extends the input instead of prepending a blank line to it."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--point-in-input-p)
     (goto-char (point-max)))
   (insert "\n"))
@@ -1038,7 +1038,7 @@ Return non-nil when the transport request starts."
 
 (defun hermes-chat-queue-message (&optional message)
   "Queue MESSAGE to send after the active Hermes turn, or send now if idle."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (hermes-chat--ensure-submit-allowed)
   (if (and (null message) hermes-chat--draft-images)
       (hermes-chat--queue-image-draft)
@@ -1138,7 +1138,7 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 
 (defun hermes-chat-steer-message (&optional message)
   "Steer the active dashboard run with MESSAGE, falling back to queue."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (when (and (null message) hermes-chat--draft-images)
     (user-error "Images cannot steer a turn; use Send or Queue message"))
   (hermes-chat--ensure-submit-allowed)
@@ -1233,7 +1233,7 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 
 (defun hermes-chat-interrupt ()
   "Interrupt image preparation locally, or request interruption of the run."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (when (gethash (hermes-chat--image-session-key) hermes-chat--image-prior-submits)
     (puthash (hermes-chat--image-session-key) '(uncertain) hermes-chat--image-prior-submits))
   (when-let* ((owner (gethash (hermes-chat--image-session-key)
@@ -1260,7 +1260,7 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 
 (defun hermes-chat--interrupt-run ()
   "Request interruption of the active dashboard run."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (when hermes-chat--busy-submit-context
     (user-error "Hermes is accepting the previous message"))
   (unless hermes-chat--pending-assistant-id
@@ -1294,7 +1294,7 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
   "Interrupt the active run, then queue MESSAGE for the next turn when non-empty.
 MESSAGE defaults to the input tail.  The interrupt fires first and
 unconditionally, so an empty input still stops the run instead of erroring."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless hermes-chat--pending-assistant-id
     (user-error "No active Hermes run to interrupt"))
   (unless (hermes-chat--dashboard-session-attached-p)
@@ -1311,7 +1311,7 @@ or in an error state) and clears the live session state.  The durable
 session key is preserved, so the conversation can still be resumed.
 Local input is copied to an editable recovery buffer for manual sending;
 the current draft stays here.  Uncertain deliveries require history inspection."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (or hermes-chat--dashboard-client
               hermes-chat--process
               hermes-chat--dashboard-active-session-id)
@@ -1350,7 +1350,7 @@ the current draft stays here.  Uncertain deliveries require history inspection."
 ;;;###autoload
 (defun hermes-dashboard-reconnect ()
   "Reconnect this chat's shared dashboard socket when every owner is idle."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
     (user-error "This chat has no live dashboard client to reconnect"))
   (when (hermes-chat--dashboard-client-active-turn-p
@@ -1554,7 +1554,7 @@ Copy queued and uncertain input to editable recovery buffers; never resend it.
 The backend may automatically recover interrupted turns under its own policy.
 Blank chats remain blank.  Failed sessions remain available for manual retry.
 Remote dashboards are unsupported; use `hermes-dashboard-reconnect' instead."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let* ((client hermes-chat--dashboard-client)
          (generation (and (hermes-dashboard-transport-client-p client)
                           (hermes-dashboard-transport-client-generation client)))
@@ -1619,7 +1619,7 @@ Remote dashboards are unsupported; use `hermes-dashboard-reconnect' instead."
 This affects background/tool processes across all chats, not just this chat.
 It does not interrupt the current model turn; use `hermes-chat-interrupt'
 for that."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "Current Hermes transport does not support stopping processes"))
   (let* ((buffer (current-buffer))
@@ -1676,7 +1676,7 @@ forgets both the live and durable session ids so the next send starts fresh."
 
 (defun hermes-chat-clear ()
   "Clear this chat's transcript and start a fresh Hermes session in place."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (when (y-or-n-p "Clear this Hermes conversation and transcript? ")
     (hermes-chat--reset-transcript)
     (hermes-chat--insert-local-status "Session cleared" 'done)))
@@ -2011,7 +2011,7 @@ to answer all remaining questions in the minibuffer.  During an explicit
 interrupt, queue ordinary input until the interrupted turn settles.
 During initial resume, queue input until history loads; Send retries a failed
 history read, including with empty input when a queued message is retained."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
   (unless (hermes-chat--point-in-input-p)
@@ -2113,7 +2113,7 @@ history read, including with empty input when a queued message is retained."
 
 (defun hermes-chat-view-attachments ()
   "Display a buffer listing every link from the current chat transcript."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
   (pop-to-buffer
@@ -2268,14 +2268,14 @@ result into the transient status text shown in the transcript."
 
 (defun hermes-chat-show-usage ()
   "Show this session's token usage via `session.usage'."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (hermes-chat--show-session-panel
    #'hermes-dashboard-transport-session-usage
    #'hermes-chat--usage-content))
 
 (defun hermes-chat-show-status ()
   "Show the gateway's rendered `session.status' panel for this session."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (hermes-chat--show-session-panel
    #'hermes-dashboard-transport-session-status
    (lambda (result)
@@ -2288,7 +2288,7 @@ result into the transient status text shown in the transcript."
 Preserve existing input and move below the quote for editing.  This only
 edits the draft, even during a running turn; it never sends or queues it.
 Reject an empty region or one extending into the composer."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (and (derived-mode-p 'hermes-chat-mode)
                (markerp hermes-chat--input-marker)
                (eq (marker-buffer hermes-chat--input-marker) (current-buffer))
@@ -2316,14 +2316,14 @@ Reject an empty region or one extending into the composer."
 
 (defun hermes-chat-go-to-composer ()
   "Move to the end of the writable composer without changing its text."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (widen)
   (goto-char (point-max)))
 
 (defun hermes-chat-next-button (&optional backward)
   "Move to the next transcript button, or previous when BACKWARD is non-nil.
 Do not wrap into the composer or modify its draft."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let ((button (if backward (previous-button (point)) (next-button (point)))))
     (unless (and button (< (button-start button) hermes-chat--input-marker))
       (user-error "No further transcript button"))
@@ -2331,17 +2331,18 @@ Do not wrap into the composer or modify its draft."
 
 (defun hermes-chat-previous-button ()
   "Move to the previous transcript button without changing input."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (hermes-chat-next-button t))
 
 (defun hermes-chat-tab ()
   "Complete in the composer, or visit the next transcript button."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (if (>= (point) hermes-chat--input-marker)
       (completion-at-point)
     (hermes-chat-next-button)))
 
-(autoload 'hermes-chat-work "hermes-subagents" nil t)
+(autoload 'hermes-chat-work "hermes-subagents" nil
+  '(hermes-chat-mode hermes-work-mode))
 (autoload 'hermes-chat-workers-label "hermes-subagents")
 
 (defun hermes-chat--popup-title ()
@@ -2391,6 +2392,8 @@ Do not wrap into the composer or modify its draft."
   "V" ("Preview / recover" hermes-chat-preview-images)
   "D" ("Remove draft image" hermes-chat-remove-image))
 
+(put 'hermes-chat-images-map-popup 'command-modes '(hermes-chat-mode))
+
 (defvar-keymap hermes-chat-images-mode-line-map
   :doc "Mouse access to the owning composer's image actions."
   "<mode-line> <mouse-1>"
@@ -2419,6 +2422,8 @@ Do not wrap into the composer or modify its draft."
   "H" ("Hand off session" hermes-chat-handoff)
   "S" ("List sessions" hermes-list-sessions))
 
+(put 'hermes-chat-sess-map-popup 'command-modes '(hermes-chat-mode))
+
 (keymap-popup-define hermes-chat-model-map
   "Configure the chat model and provider."
   :description #'hermes-chat--popup-title
@@ -2433,6 +2438,8 @@ Do not wrap into the composer or modify its draft."
        :inapt-if #'hermes-chat--active-turn-p)
   "K" ("Connect provider" hermes-chat-connect-provider))
 
+(put 'hermes-chat-model-map-popup 'command-modes '(hermes-chat-mode))
+
 (keymap-popup-define hermes-chat-work-map
   "Choose the chat workspace and related buffers."
   :description #'hermes-chat--popup-title
@@ -2445,6 +2452,8 @@ Do not wrap into the composer or modify its draft."
        :inapt-if #'hermes-chat--active-turn-p)
   "b" ("Switch chat buffer" hermes-switch-to-chat))
 
+(put 'hermes-chat-work-map-popup 'command-modes '(hermes-chat-mode))
+
 (keymap-popup-define hermes-chat-jobs-map
   "Inspect queued messages, workers and their output."
   :description #'hermes-chat--popup-title
@@ -2455,6 +2464,8 @@ Do not wrap into the composer or modify its draft."
   "W" (#'hermes-chat-workers-label hermes-chat-work)
   "T" ("Live tasks" hermes-chat-show-todos)
   "o" ("Preview output" hermes-chat-preview-output))
+
+(put 'hermes-chat-jobs-map-popup 'command-modes '(hermes-chat-mode))
 
 ;; Retain the original child shortcuts without advertising them twice.
 (dolist (key '("P" "o" "T"))
@@ -2474,6 +2485,8 @@ Do not wrap into the composer or modify its draft."
   :row
   :group "Connection"
   "x" ("Reconnect socket" hermes-dashboard-reconnect))
+
+(put 'hermes-chat-info-map-popup 'command-modes '(hermes-chat-mode))
 
 (unless (keymap-lookup hermes-chat-info-map "W")
   (keymap-set hermes-chat-info-map "W" #'hermes-chat-work))
@@ -2513,9 +2526,18 @@ Do not wrap into the composer or modify its draft."
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt))
 
+(dolist (command '(hermes-chat-actions-map-popup
+                  hermes-chat-actions-map--enter-hermes-chat-images-map
+                  hermes-chat-actions-map--enter-hermes-chat-sess-map
+                  hermes-chat-actions-map--enter-hermes-chat-model-map
+                  hermes-chat-actions-map--enter-hermes-chat-work-map
+                  hermes-chat-actions-map--enter-hermes-chat-jobs-map
+                  hermes-chat-actions-map--enter-hermes-chat-info-map))
+  (put command 'command-modes '(hermes-chat-mode)))
+
 (defun hermes-chat--submenu-root-key ()
   "Refuse ancestor menu keys that cannot safely dispatch from a child."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (user-error "Go back before choosing another menu"))
 
 ;; Retain unclaimed suffix shortcuts without advertising a second menu or

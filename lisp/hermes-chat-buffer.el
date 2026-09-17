@@ -458,7 +458,7 @@ lifted into inline images."
 
 (defun hermes-chat-preview-output ()
   "Choose a generated output from this chat and open its inert preview."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let ((button (next-button (point-min))) candidates)
     (while button
       (when (button-get button 'hermes-preview-descriptor)
@@ -1199,7 +1199,7 @@ With QUIET, remove the row without publishing during teardown."
 
 (defun hermes-chat-input-history-previous ()
   "Replace the writable tail with the previous sent input."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--point-in-input-p)
     (user-error "Point is outside the Hermes input area"))
   (unless hermes-chat--input-history
@@ -1214,7 +1214,7 @@ With QUIET, remove the row without publishing during teardown."
 
 (defun hermes-chat-input-history-next ()
   "Replace the writable tail with the next sent input or saved draft."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--point-in-input-p)
     (user-error "Point is outside the Hermes input area"))
   (unless (numberp hermes-chat--input-history-index)
@@ -1560,7 +1560,7 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
 
 (defun hermes-chat-queue-panel-refresh (&rest _)
   "Render the owning chat's FIFO entries in the current side panel."
-  (interactive)
+  (interactive nil hermes-chat-queue-panel-mode)
   (let* ((owner (hermes-chat--queue-panel-owner))
          (entries (buffer-local-value 'hermes-chat--queued-messages owner))
          (anchor (hermes-chat--queue-panel-anchor (point)))
@@ -1654,7 +1654,7 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
 (defun hermes-chat-queue-panel-retry ()
   "Retry the rejected FIFO head at point when its chat is idle and attached.
 Refuse stale panels and busy or disconnected owners without clearing the pause."
-  (interactive)
+  (interactive nil hermes-chat-queue-panel-mode)
   (let ((owner (hermes-chat--queue-panel-owner))
         (panel (current-buffer))
         (attachment hermes-chat-queue-panel--attachment)
@@ -1677,7 +1677,7 @@ Refuse stale panels and busy or disconnected owners without clearing the pause."
 
 (defun hermes-chat-queue-panel-edit ()
   "Edit the queued message at point."
-  (interactive)
+  (interactive nil hermes-chat-queue-panel-mode)
   (hermes-chat--queue-edit-entry
    (hermes-chat--queue-panel-owner) (hermes-chat--queue-panel-entry-id))
   (hermes-chat-queue-panel-refresh))
@@ -1707,21 +1707,21 @@ Refuse stale panels and busy or disconnected owners without clearing the pause."
 
 (defun hermes-chat-queue-panel-move-up ()
   "Move the queued message at point one position earlier."
-  (interactive)
+  (interactive nil hermes-chat-queue-panel-mode)
   (hermes-chat--queue-panel-move-entry
    (hermes-chat--queue-panel-owner) (hermes-chat--queue-panel-entry-id) -1)
   (hermes-chat-queue-panel-refresh))
 
 (defun hermes-chat-queue-panel-move-down ()
   "Move the queued message at point one position later."
-  (interactive)
+  (interactive nil hermes-chat-queue-panel-mode)
   (hermes-chat--queue-panel-move-entry
    (hermes-chat--queue-panel-owner) (hermes-chat--queue-panel-entry-id) 1)
   (hermes-chat-queue-panel-refresh))
 
 (defun hermes-chat-queue-panel-remove ()
   "Remove the queued message at point."
-  (interactive)
+  (interactive nil hermes-chat-queue-panel-mode)
   (let ((owner (hermes-chat--queue-panel-owner))
         (id (hermes-chat--queue-panel-entry-id)))
     (hermes-chat--queue-remove-entry owner id))
@@ -1744,7 +1744,7 @@ Refuse stale panels and busy or disconnected owners without clearing the pause."
 
 (defun hermes-chat-queue-panel ()
   "Display an editable FIFO queue side panel for the current chat buffer."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))
   (let* ((owner (current-buffer))
@@ -2104,7 +2104,7 @@ Drop optional segments whole."
 
 (defun hermes-chat-session-details ()
   "Display full local session details, including fields omitted from the header."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let ((text (hermes-chat--session-details-text))
         (owner hermes-chat--work-owner)
         (refresh (plist-get hermes-chat--work-owner :refresh))

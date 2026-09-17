@@ -202,6 +202,8 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
 		       hermes-projects-refresh "Refresh"
 		       quit-window "Quit view")
 
+(put 'hermes-project-detail-mode-map-popup 'command-modes '(hermes-project-detail-mode))
+
 (define-derived-mode hermes-project-detail-mode special-mode "Hermes Project"
   "Inspect backend project metadata and folders."
   (hermes-browser--setup-status))
@@ -280,7 +282,7 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
 
 (defun hermes-projects-refresh ()
   "Refresh this profile's authoritative projects, including detail metadata."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-browser--next-request-generation)
   (let ((profile hermes-projects--profile)
         (id hermes-projects--detail-id))
@@ -309,7 +311,7 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
 
 (defun hermes-projects-view ()
   "Open the selected project's native detail buffer without changing sessions."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--view-project (hermes-projects--selected)))
 
 (defun hermes-projects--view-project (project)
@@ -347,7 +349,7 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
 
 (defun hermes-projects-choose ()
   "Choose a project by human title and open its details."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (let* ((buffer (current-buffer))
          (current (hermes-projects--context))
          (choices (hermes-projects--choices
@@ -359,7 +361,7 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
 
 (defun hermes-projects-profile ()
   "Choose an exact backend profile without consulting local directories."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (let* ((buffer (current-buffer))
          (current (hermes-projects--context))
          (profile (read-string "Backend profile: " hermes-projects--profile)))
@@ -419,7 +421,7 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-projects-create ()
   "Create named workspace metadata with an optional backend folder."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate
    "create" (lambda (_)
               (let ((name (read-string "Project name: "))
@@ -430,7 +432,7 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-projects-rename ()
   "Rename selected workspace metadata without changing directories or sessions."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate
    "update" (lambda (project)
               (let ((name (read-string "Project name: " (hermes-projects--field project 'name))))
@@ -445,32 +447,32 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-projects-add-folder ()
   "Add backend folder metadata; this does not create a directory."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "add_folder" #'hermes-projects--folder-prompt))
 
 (defun hermes-projects-remove-folder ()
   "Remove folder metadata without deleting the directory or sessions."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "remove_folder" #'hermes-projects--folder-prompt))
 
 (defun hermes-projects-set-primary ()
   "Set a primary backend folder without moving existing sessions."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "set_primary" #'hermes-projects--folder-prompt))
 
 (defun hermes-projects-archive ()
   "Archive selected workspace metadata."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "archive" (lambda (_) '(:restore :false))))
 
 (defun hermes-projects-restore ()
   "Restore selected archived workspace metadata."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "archive" (lambda (_) '(:restore t))))
 
 (defun hermes-projects-delete ()
   "Delete workspace metadata, never its directories or stored sessions."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate
    "delete" (lambda (project)
               (unless (yes-or-no-p
@@ -480,12 +482,12 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-projects-set-active ()
   "Select the active workspace; do not move or attach any session."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "set_active" (lambda (_) nil)))
 
 (defun hermes-projects-clear-active ()
   "Clear active project metadata without changing session directories."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (hermes-projects--mutate "set_active" (lambda (_) nil) t))
 
 
@@ -530,6 +532,7 @@ read back projects.list after any write outcome, without retrying the write."
    (hermes-project-sessions--records result)))
 
 (hermes-define-list-browser project-sessions
+  :command-modes (hermes-project-sessions-mode)
 			    :title "Project Sessions"
 			    :description "Project sessions · bounded subset"
 			    :buffer "*Hermes Project Sessions*"
@@ -554,7 +557,7 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-project-sessions-refresh ()
   "Refresh this project's bounded backend grouping under its exact owner."
-  (interactive)
+  (interactive nil hermes-project-sessions-mode)
   (unless hermes-project-sessions--project-id
     (user-error "Open a project's Grouped sessions action first"))
   (hermes-browser--next-request-generation)
@@ -576,7 +579,7 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-project-sessions-open ()
   "Resume the exact profile-qualified session at point."
-  (interactive)
+  (interactive nil hermes-project-sessions-mode)
   (let ((session (and hermes-project-sessions--map
                       (gethash (tabulated-list-get-id) hermes-project-sessions--map))))
     (unless session (user-error "No session selected"))
@@ -586,7 +589,7 @@ read back projects.list after any write outcome, without retrying the write."
 
 (defun hermes-projects-sessions ()
   "Show backend-grouped sessions as a bounded subset, not a complete archive."
-  (interactive)
+  (interactive nil hermes-projects-mode hermes-project-detail-mode)
   (let ((project (hermes-projects--selected))
         (profile hermes-projects--profile)
         (instance hermes-instance)

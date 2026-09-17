@@ -1258,7 +1258,7 @@ minibuffer.  With prefix argument ALL, approval responses apply to all pending
 approvals in the dashboard session.  Unaccepted clarification answers remain
 recoverable if the request expires.  PRESERVE-RESPONSE also keeps programmatic
 clarification input recoverable when the request fails."
-  (interactive (list nil nil current-prefix-arg))
+  (interactive (list nil nil current-prefix-arg) hermes-chat-mode)
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
          (context (hermes-chat--prompt-owner-context prompt-key prompt)))
@@ -1278,7 +1278,7 @@ clarification input recoverable when the request fails."
 
 (defun hermes-chat-cancel-prompt (&optional key)
   "Cancel pending prompt KEY by sending the protocol's safe empty/deny value."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
          (response (if (equal (hermes-chat--prompt-event-type prompt) "approval")

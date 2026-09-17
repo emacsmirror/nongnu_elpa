@@ -278,6 +278,12 @@ and auto-refresh controls.  With no prefix, request 100 lines."
             (propertize (truncate-string-to-width value 24 nil nil t)
                         'face 'keymap-popup-value 'help-echo value))))
 
+(defun hermes-system--log-completion-p (_command buffer)
+  "Return non-nil if BUFFER is a Hermes system log view."
+  (with-current-buffer buffer
+    (and (derived-mode-p 'hermes-system-mode)
+         (equal hermes-system--path "/api/logs"))))
+
 (defun hermes-system--read-filter (key prompt &optional choices)
   "Read query KEY using PROMPT and CHOICES without outliving the owner."
   (unless (and (derived-mode-p 'hermes-system-mode)
@@ -312,26 +318,30 @@ and auto-refresh controls.  With no prefix, request 100 lines."
 
 (defun hermes-system-log-source (source)
   "Show log SOURCE: agent, errors, or gateway."
+  (declare (completion hermes-system--log-completion-p))
   (interactive (list (hermes-system--read-filter 'file "Log source"
-                                     '("agent" "errors" "gateway"))))
+                                     '("agent" "errors" "gateway"))) hermes-system-mode)
   (hermes-system--log-option 'file source '("agent" "errors" "gateway")))
 
 (defun hermes-system-log-level (level)
   "Show log lines at minimum LEVEL, or use ALL for no level filter."
+  (declare (completion hermes-system--log-completion-p))
   (interactive (list (hermes-system--read-filter 'level "Minimum log level"
-                                     '("ALL" "DEBUG" "INFO" "WARNING" "ERROR"))))
+                                     '("ALL" "DEBUG" "INFO" "WARNING" "ERROR"))) hermes-system-mode)
   (hermes-system--log-option 'level level '("ALL" "DEBUG" "INFO" "WARNING" "ERROR")))
 
 (defun hermes-system-log-component (component)
   "Show log lines for COMPONENT, or use all for no component filter."
+  (declare (completion hermes-system--log-completion-p))
   (interactive (list (hermes-system--read-filter 'component "Log component"
-                                     '("all" "gateway" "agent" "tools" "cli" "cron"))))
+                                     '("all" "gateway" "agent" "tools" "cli" "cron"))) hermes-system-mode)
   (hermes-system--log-option 'component component
                            '("all" "gateway" "agent" "tools" "cli" "cron")))
 
 (defun hermes-system-log-lines (lines)
   "Set the requested log tail to LINES, clamped to 1..500."
-  (interactive (list (hermes-system--read-filter 'lines "Log tail lines")))
+  (declare (completion hermes-system--log-completion-p))
+  (interactive (list (hermes-system--read-filter 'lines "Log tail lines")) hermes-system-mode)
   (unless (integerp lines) (user-error "Log lines must be an integer"))
   (hermes-system--log-option 'lines (hermes-system--bounded-log-lines lines)))
 
@@ -339,7 +349,8 @@ and auto-refresh controls.  With no prefix, request 100 lines."
   "Toggle log polling, waiting five seconds after each completed request.
 Polling starts disabled and stops when the view is hidden or replaced.
 Requests never accumulate automatically while a previous poll is pending."
-  (interactive)
+  (declare (completion hermes-system--log-completion-p))
+  (interactive nil hermes-system-mode)
   (unless (equal hermes-system--path "/api/logs")
     (user-error "Not a Hermes log buffer"))
   (if hermes-system--auto-refresh
@@ -377,6 +388,8 @@ Requests never accumulate automatically while a previous poll is pending."
   "g" ("Refresh" revert-buffer :stay-open t)
   "q" ("Quit view" quit-window)
   "?" ("Help" hermes-system-mode-map-popup))
+
+(put 'hermes-system-mode-map-popup 'command-modes '(hermes-system-mode))
 
 (define-derived-mode hermes-system-mode special-mode "Hermes System"
   "Major mode for Hermes gateway status and server-profile logs.

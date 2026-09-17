@@ -243,6 +243,8 @@ a `skills' field too so older/newer dashboard shapes render the same way."
                  (lambda () hermes-inventory--mutation-in-flight))
   quit-window "Quit view")
 
+(put 'hermes-inventory-mode-map-popup 'command-modes '(hermes-inventory-mode))
+
 (define-derived-mode hermes-inventory-mode tabulated-list-mode "Hermes Inventory"
   "Major mode for Hermes inventory listings.
 \<hermes-inventory-mode-map>
@@ -377,7 +379,7 @@ client for the listing."
 
 (defun hermes-inventory-configure-toolset ()
   "Configure the toolset at point on this inventory's instance."
-  (interactive)
+  (interactive nil hermes-inventory-mode)
   (unless (eq (hermes-inventory--spec-kind hermes-inventory--spec) 'toolsets)
     (user-error "Setup is available only for toolsets"))
   (require 'hermes-tool-setup)
@@ -485,17 +487,17 @@ after a reset/restart."
 
 (defun hermes-inventory-enable ()
   "Enable the toolset or skill at point."
-  (interactive)
+  (interactive nil hermes-inventory-mode)
   (hermes-inventory--set-enabled t))
 
 (defun hermes-inventory-disable ()
   "Disable the toolset or skill at point."
-  (interactive)
+  (interactive nil hermes-inventory-mode)
   (hermes-inventory--set-enabled nil))
 
 (defun hermes-inventory-toggle ()
   "Toggle the toolset or skill at point."
-  (interactive)
+  (interactive nil hermes-inventory-mode)
   (hermes-inventory--set-enabled (not (hermes-inventory--row-enabled-p))))
 
 (defun hermes-inventory-reload-skills ()
@@ -602,6 +604,8 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
   :group "View"
   hermes-memory-status ("Refresh" :stay-open t)
   quit-window "Quit view")
+
+(put 'hermes-memory-status-mode-map-popup 'command-modes '(hermes-memory-status-mode))
 
 (define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
   "Major mode for redacted Hermes memory provider status."
@@ -818,7 +822,7 @@ secret is read."
 ;;;###autoload
 (defun hermes-memory-select-provider (&optional provider)
   "Select PROVIDER from the current memory status and refresh it."
-  (interactive)
+  (interactive nil hermes-memory-status-mode)
   (hermes-memory--require-idle)
   (let* ((buffer (current-buffer))
          (current-p (hermes-browser--dispatch-guard nil))
@@ -845,7 +849,7 @@ secret is read."
 ;;;###autoload
 (defun hermes-memory-configure-provider (&optional provider)
   "Configure one schema field for PROVIDER and refresh memory status."
-  (interactive)
+  (interactive nil hermes-memory-status-mode)
   (hermes-memory--require-idle)
   (let* ((buffer (current-buffer))
          (current-p (hermes-browser--dispatch-guard nil))
@@ -907,7 +911,7 @@ The buffer never displays memory contents or secret material."
 (defun hermes-memory-reset (target)
   "Reset built-in Hermes memory TARGET after confirmation.
 TARGET is one of all, memory, or user.  External providers are not reset."
-  (interactive (list nil))
+  (interactive (list nil) hermes-memory-status-mode)
   (hermes-memory--require-idle)
   (let* ((origin (current-buffer))
          (current-p (hermes-browser--dispatch-guard nil))

@@ -173,7 +173,7 @@ BODY and QUERY extend the request."
 
 (defun hermes-sessions-list-stored ()
   "Browse a backend profile's stored sessions, including authoritative pins."
-  (interactive)
+  (interactive nil hermes-sessions-mode)
   (let* ((buffer (current-buffer))
          (current (hermes-browser--dispatch-guard nil))
          (profile (read-string "Stored sessions backend profile: " "default")))
@@ -187,7 +187,7 @@ BODY and QUERY extend the request."
 
 (defun hermes-sessions-next-page ()
   "Append the next stored-session window, deduplicating pinned backfill."
-  (interactive)
+  (interactive nil hermes-sessions-mode)
   (unless hermes-sessions--catalogue-profile
     (user-error "Open Stored catalogue first"))
   (when (or (not (numberp hermes-sessions--catalogue-total))
@@ -339,6 +339,8 @@ client just for the listing."
   describe-mode "Describe mode"
   quit-window "Quit view")
 
+(put 'hermes-session-detail-mode-map-popup 'command-modes '(hermes-session-detail-mode))
+
 (define-derived-mode hermes-session-detail-mode special-mode "Hermes Session"
   "Major mode showing one Hermes session's history."
   :interactive nil)
@@ -374,7 +376,7 @@ client just for the listing."
   (interactive (list (read-string "Search sessions: "
                                   hermes-sessions--search-query)
                      (read-string "Profile (blank for dashboard default): "
-                                  hermes-sessions--search-profile)))
+                                  hermes-sessions--search-profile)) hermes-sessions-mode)
   (setq hermes-sessions--catalogue-profile nil
         hermes-sessions--search-query
         (hermes-transport--non-blank-string query)
@@ -384,7 +386,7 @@ client just for the listing."
 
 (defun hermes-sessions-list-all-profiles ()
   "List sessions aggregated across every Hermes profile."
-  (interactive)
+  (interactive nil hermes-sessions-mode)
   (setq hermes-sessions--catalogue-profile nil
         hermes-sessions--all-profiles t
         hermes-sessions--search-query nil)
@@ -392,7 +394,7 @@ client just for the listing."
 
 (defun hermes-sessions-toggle-archived ()
   "Toggle the browser between active and archived sessions."
-  (interactive)
+  (interactive nil hermes-sessions-mode)
   (setq hermes-sessions--catalogue-offset 0
         hermes-sessions--archived-filter
         (if (equal hermes-sessions--archived-filter "only") "exclude" "only")
@@ -514,17 +516,17 @@ Never retry a mutation after an uncertain outcome."
 
 (defun hermes-sessions-pin ()
   "Pin the selected stored session on its owning backend profile."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (hermes-sessions--pin-request t t))
 
 (defun hermes-sessions-unpin ()
   "Unpin the selected stored session on its owning backend profile."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (hermes-sessions--pin-request t :false))
 
 (defun hermes-sessions-toggle-pin ()
   "Toggle a known pin, or fetch its unknown state without changing it."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (pcase (hermes-sessions--pin-state (hermes-sessions--selected-session))
     ('pinned (hermes-sessions-unpin))
     ('unpinned (hermes-sessions-pin))
@@ -558,12 +560,12 @@ Never retry a mutation after an uncertain outcome."
 
 (defun hermes-sessions-archive ()
   "Archive the selected Hermes session."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (hermes-sessions--set-archived t))
 
 (defun hermes-sessions-unarchive ()
   "Restore the selected archived Hermes session."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (hermes-sessions--set-archived nil))
 
 (defun hermes-sessions--display-string (value)
@@ -628,7 +630,7 @@ Never retry a mutation after an uncertain outcome."
    (let* ((session (hermes-sessions--selected-session))
           (id (hermes-sessions--id session)))
      (list (read-file-name "Export session to: " nil
-                           (format "hermes-session-%s.md" id)))))
+                           (format "hermes-session-%s.md" id)))) hermes-sessions-mode hermes-session-detail-mode)
   (let* ((session (hermes-sessions--selected-session))
          (history-id (hermes-sessions--history-id session))
          (origin (current-buffer))
@@ -783,7 +785,7 @@ without attaching or changing its live session."
 
 (defun hermes-sessions-view ()
   "Show a native detail/history buffer for the selected Hermes session."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (let* ((session (hermes-sessions--selected-session))
          (history-id (hermes-sessions--history-id session))
          (resume-id (hermes-sessions--id session))
@@ -815,7 +817,7 @@ without attaching or changing its live session."
 
 (defun hermes-sessions-open ()
   "Resume the selected Hermes session in a chat buffer."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (let* ((instance (hermes-instance-resolve))
          (session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
@@ -900,7 +902,7 @@ a default-profile live session, update its durable record without attaching it."
 
 (defun hermes-sessions-rename ()
   "Rename the selected Hermes session after prompting for a title."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
          (origin (current-buffer))
@@ -950,7 +952,7 @@ a default-profile live session, update its durable record without attaching it."
 
 (defun hermes-sessions-delete ()
   "Delete the selected Hermes session after an explicit confirmation prompt."
-  (interactive)
+  (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
          (title (hermes-transport--display-field session 'title))

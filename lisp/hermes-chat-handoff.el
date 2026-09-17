@@ -285,7 +285,7 @@ falls back to free-form input when the gateway reports none."
 Without PLATFORM, prompt with the gateway's live connected platforms -- the same
 targets the dashboard offers -- rather than a fixed list.  The chat must have an
 attached, idle session; the gateway transfers it to the platform's home channel."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "This Hermes chat has no session to hand off"))
   (when (hermes-chat--active-turn-p)

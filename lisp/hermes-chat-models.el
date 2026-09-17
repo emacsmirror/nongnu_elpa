@@ -350,7 +350,7 @@ refetch it from the dashboard instead.  Before the first session, a cached pick
 is stored locally without connecting; a cold or refreshed catalog may open the
 shared dashboard socket but does not create a session.  Detached sessions
 must reconnect or resume first, except for an owned failed-create retry."
-  (interactive "P")
+  (interactive "P" hermes-chat-mode)
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before switching models"))
   (hermes-chat--require-setting-session)
@@ -417,7 +417,7 @@ it to apply the model the user originally chose."
   "Connect an API-key provider to the current Hermes chat session.
 Pick an unauthenticated provider and paste its key; the dashboard saves it
 against this session's live agent."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
     (user-error "Connect this chat (send a message) before connecting a provider"))
   (require 'hermes-onboarding)

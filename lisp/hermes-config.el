@@ -206,7 +206,7 @@ CURRENT-P, when non-nil, retains authority captured before input."
 
 (defun hermes-config-refresh (&rest _)
   "Refresh the current Hermes config buffer."
-  (interactive)
+  (interactive nil hermes-config-mode)
   (hermes-config--require-mutation-idle)
   (let ((buffer (current-buffer))
         (generation (hermes-browser--next-request-generation)))
@@ -278,7 +278,7 @@ List fields use JSON arrays, including [] for an empty list."
 
 (defun hermes-config-edit ()
   "Edit the schema field at point and save it through dashboard REST."
-  (interactive)
+  (interactive nil hermes-config-mode)
   (hermes-config--require-authoritative-state)
   (let* ((buffer (current-buffer))
          (current-p (hermes-browser--dispatch-guard nil))
@@ -306,7 +306,7 @@ List fields use JSON arrays, including [] for an empty list."
 
 (defun hermes-config-set-env ()
   "Set the environment key at point without echoing secret input."
-  (interactive)
+  (interactive nil hermes-config-mode)
   (hermes-config--require-authoritative-state)
   (let* ((buffer (current-buffer))
          (current-p (hermes-browser--dispatch-guard nil))
@@ -322,7 +322,7 @@ List fields use JSON arrays, including [] for an empty list."
 
 (defun hermes-config-delete-env ()
   "Delete the environment key at point after confirmation."
-  (interactive)
+  (interactive nil hermes-config-mode)
   (hermes-config--require-authoritative-state)
   (let ((key (get-text-property (point) 'hermes-env-key))
         (buffer (current-buffer))
@@ -337,7 +337,7 @@ List fields use JSON arrays, including [] for an empty list."
 
 (defun hermes-config-reveal-env ()
   "Reveal the environment key at point by copying it without displaying it."
-  (interactive)
+  (interactive nil hermes-config-mode)
   (hermes-config--require-authoritative-state)
   (let ((key (get-text-property (point) 'hermes-env-key))
         (buffer (current-buffer)))
@@ -384,6 +384,8 @@ List fields use JSON arrays, including [] for an empty list."
   :row
   :group "View"
   quit-window "Quit view")
+
+(put 'hermes-config-mode-map-popup 'command-modes '(hermes-config-mode))
 
 (define-derived-mode hermes-config-mode special-mode "Hermes Config"
   "Major mode for dashboard configuration and environment management."

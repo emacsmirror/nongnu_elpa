@@ -307,7 +307,7 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
 
 (defun hermes-mcp-test ()
   "Test the MCP server at point and update its status/tool count."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (hermes-mcp--idle)
   (hermes-mcp--ensure-state)
   (let ((name (hermes-mcp--name-at-point))
@@ -328,7 +328,7 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
 
 (defun hermes-mcp-toggle ()
   "Enable or disable the MCP server at point through the dashboard API."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (hermes-mcp--idle)
   (let* ((server (hermes-mcp--server-at-point))
          (name (or (hermes-transport--field server 'name)
@@ -421,7 +421,7 @@ ARGS and ENV are stdio-only.  AUTH and TOKEN configure HTTP authentication."
 (defun hermes-mcp-add ()
   "Add a configured MCP server using the remote dashboard API.
 Stdio arguments are entered individually, not interpreted by a shell."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (hermes-mcp--idle)
   (let* ((context (hermes-mcp--context))
          (name (read-string "MCP server name: "))
@@ -455,7 +455,7 @@ Stdio arguments are entered individually, not interpreted by a shell."
 
 (defun hermes-mcp-remove ()
   "Remove the server at point after explicit confirmation."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (hermes-mcp--idle)
   (let ((name (hermes-mcp--name-at-point))
         (context (hermes-mcp--context)))
@@ -504,7 +504,7 @@ dashboard's profile.  Do not infer remote scope from local profile settings."
 (defun hermes-mcp-catalog ()
   "Browse the remote catalog and confirm installation of one entry.
 Git-bootstrap installs are unavailable: their profile cannot be guaranteed."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (hermes-mcp--idle)
   (let ((context (hermes-mcp--context)))
     (hermes-mcp--request
@@ -578,7 +578,7 @@ Git-bootstrap installs are unavailable: their profile cannot be guaranteed."
 (defun hermes-mcp-cancel ()
   "Cancel owned OAuth, or stop monitoring a remote catalog installation.
 Stopping installation monitoring does not terminate the backend process."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (let ((kind (plist-get hermes-mcp--operation :kind)))
     (hermes-mcp--cleanup)
     (message (if (eq kind 'install)
@@ -597,7 +597,7 @@ OAuth state validation and token exchange belong to the remote backend."
 (defun hermes-mcp-authenticate ()
   "Authorize the HTTP MCP server at point through backend-owned OAuth.
 The browser returns to the backend callback URL, which must be reachable."
-  (interactive)
+  (interactive nil hermes-mcp-mode)
   (hermes-mcp--idle)
   (let* ((server (hermes-mcp--server-at-point))
          (name (hermes-mcp--name-at-point))
@@ -791,6 +791,8 @@ The browser returns to the backend callback URL, which must be reachable."
   :group "View"
   "g" ("Refresh" revert-buffer :stay-open t)
   "?" ("Help" hermes-mcp-mode-map-popup))
+
+(put 'hermes-mcp-mode-map-popup 'command-modes '(hermes-mcp-mode))
 
 (define-derived-mode hermes-mcp-mode tabulated-list-mode "Hermes MCP"
   "Major mode for browsing Hermes MCP servers."

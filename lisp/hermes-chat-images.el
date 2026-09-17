@@ -239,7 +239,7 @@ Errors and local interruption do not prove that staging was consumed."
 
 (defun hermes-chat-attach-image-file (file)
   "Read local image FILE bytes into the composer, without uploading."
-  (interactive "fImage file: ")
+  (interactive "fImage file: " hermes-chat-mode)
   (when (file-remote-p file) (user-error "Choose a local image file"))
   (let ((origin (current-buffer)))
     (condition-case nil
@@ -257,7 +257,7 @@ Errors and local interruption do not prove that staging was consumed."
 (defun hermes-chat-paste-image ()
   "Stage PNG bytes from the editor's clipboard, not the remote clipboard.
 Signal a user error when this graphical backend has no PNG selection."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let ((bytes (condition-case nil
                    (gui-get-selection 'CLIPBOARD 'image/png)
                  (error nil))))
@@ -272,7 +272,7 @@ Signal a user error when this graphical backend has no PNG selection."
           (completing-read "Remove image: "
                            (mapcar #'number-to-string
                                    (number-sequence 1 (length hermes-chat--draft-images)))
-                           nil t))))
+                           nil t))) hermes-chat-mode)
   (unless (and (integerp index) (> index 0) (<= index (length hermes-chat--draft-images)))
     (user-error "No such draft image"))
   (setq hermes-chat--draft-images
@@ -306,7 +306,7 @@ Signal a user error when this graphical backend has no PNG selection."
 Recovery retains bytes after acknowledgment because backend interruption can
 still discard queued input.  Use the view's restore or discard command;
 restoring never sends automatically.  Bytes are not saved across Emacs exit."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let ((buffer (hermes-chat--image-recovery)))
     (when hermes-chat--image-draft-record
       (setf (plist-get hermes-chat--image-draft-record :content)
@@ -316,7 +316,7 @@ restoring never sends automatically.  Bytes are not saved across Emacs exit."
 
 (defun hermes-chat-image-recovery-refresh ()
   "Refresh this local image recovery view."
-  (interactive)
+  (interactive nil hermes-chat-image-recovery-mode)
   (unless (hermes-buffer--owned-p 'hermes-chat-image-recovery-mode)
     (user-error "Image recovery view is retired"))
   (let ((inhibit-read-only t))
@@ -367,7 +367,7 @@ restoring never sends automatically.  Bytes are not saved across Emacs exit."
   "Restore a selected record to a chosen chat, without sending it.
 Refuse to overwrite newer text or images.  Ambiguous sends require a new
 session before retrying; the original backend may already have accepted them."
-  (interactive)
+  (interactive nil hermes-chat-image-recovery-mode)
   (let* ((source (current-buffer))
          (claim hermes-buffer--owner)
          (record (hermes-chat--image-read-record))
@@ -481,7 +481,7 @@ session before retrying; the original backend may already have accepted them."
 (defun hermes-chat-image-recovery-discard ()
   "Discard a completed recovery record after confirmation.
 Draft and pending records must be removed through their owning chat."
-  (interactive)
+  (interactive nil hermes-chat-image-recovery-mode)
   (let* ((source (current-buffer))
          (claim hermes-buffer--owner)
          (record (hermes-chat--image-read-record)))

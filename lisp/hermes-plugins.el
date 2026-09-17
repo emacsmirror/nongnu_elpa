@@ -206,7 +206,7 @@ filesystem actions must then fail closed rather than infer a root."
 
 (defun hermes-plugins-refresh (&rest _)
   "Refresh the server's agent plugin inventory asynchronously."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--request "GET" "/api/dashboard/plugins/hub"))
 
 (defun hermes-plugins--selected ()
@@ -288,29 +288,29 @@ The backend resolves filesystem links; the hub cannot prove their destination."
 
 (defun hermes-plugins-enable ()
   "Confirm and enable the agent plugin at point in server configuration."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--action "enable"))
 
 (defun hermes-plugins-disable ()
   "Confirm and disable the agent plugin at point in server configuration."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--action "disable"))
 
 (defun hermes-plugins-update ()
   "Confirm a backend-permitted Git update of the selected plugin."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--action "update" 'can_update_git))
 
 (defun hermes-plugins-remove ()
   "Confirm and remove the selected plugin when the backend permits removal."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--action "remove" 'can_remove))
 
 (defun hermes-plugins-install ()
   "Confirm installation of trusted plugin code on the owning server.
 Install without automatically enabling, forcing replacement, or bypassing
 scan refusals.  Existing enablement may persist; inspect the readback."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--idle)
   (unless hermes-plugins--snapshot
     (user-error "Refresh the plugin inventory before installing"))
@@ -328,7 +328,7 @@ scan refusals.  Existing enablement may persist; inspect the readback."
 
 (defun hermes-plugins-select-context-engine ()
   "Choose and confirm a context engine from the backend catalog."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--idle)
   (let* ((buffer (current-buffer))
          (current-p (hermes-plugins--guard))
@@ -350,7 +350,7 @@ scan refusals.  Existing enablement may persist; inspect the readback."
   "Open server schema and environment configuration in the owning instance.
 The agent hub exposes no arbitrary per-plugin configuration schema.  Only
 backend-declared settings and environment entries are editable here."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (hermes-plugins--idle)
   (hermes-config))
 
@@ -358,7 +358,7 @@ backend-declared settings and environment entries are editable here."
 
 (defun hermes-plugins-popup ()
   "Show agent plugin commands."
-  (interactive)
+  (interactive nil hermes-plugins-mode)
   (keymap-popup hermes-plugins-mode-map))
 
 (defun hermes-plugins--selection-unavailable-p ()
@@ -384,6 +384,8 @@ backend-declared settings and environment entries are editable here."
   :group ("Configuration" :inapt-if (lambda () hermes-plugins--busy))
   "c" ("Schema and environment" hermes-plugins-configure)
   "x" ("Context engine" hermes-plugins-select-context-engine))
+
+(put 'hermes-plugins-mode-map-popup 'command-modes '(hermes-plugins-mode))
 
 (define-derived-mode hermes-plugins-mode tabulated-list-mode "Hermes Plugins"
   "Browse server-profile agent plugins, not frontend extensions."

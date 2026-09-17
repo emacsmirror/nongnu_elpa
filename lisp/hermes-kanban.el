@@ -392,6 +392,8 @@ status values."
   "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-kanban-boards-mode-map-popup))
 
+(put 'hermes-kanban-boards-mode-map-popup 'command-modes '(hermes-kanban-boards-mode))
+
 (defun hermes-kanban--init-boards-header (&optional width)
   "Refresh the boards buffer `tabulated-list' header for WIDTH."
   (setq tabulated-list-format (hermes-kanban--boards-tabulated-list-format width))
@@ -463,7 +465,7 @@ With IN-PLACE non-nil, refresh the current overview without selecting it."
 
 (defun hermes-kanban-open-board ()
   "Open the board at point in the detail buffer."
-  (interactive)
+  (interactive nil hermes-kanban-boards-mode)
   (let ((id (hermes-kanban--board-at-point)))
     (hermes-kanban--render-board (car id) (cdr id))))
 
@@ -486,7 +488,7 @@ With IN-PLACE non-nil, refresh the current overview without selecting it."
 
 (defun hermes-kanban-switch-board ()
   "Make the selected board the current Hermes Kanban board."
-  (interactive)
+  (interactive nil hermes-kanban-boards-mode)
   (let* ((instance (hermes-instance-resolve))
          (board (hermes-kanban--board-at-point))
          (slug (car board)))
@@ -502,7 +504,7 @@ With IN-PLACE non-nil, refresh the current overview without selecting it."
   (interactive
    (let* ((board (hermes-kanban--board-at-point))
           (current-name (or (cdr board) (car board))))
-     (list (read-string "New board display name: " current-name))))
+     (list (read-string "New board display name: " current-name))) hermes-kanban-boards-mode)
   (let* ((instance (hermes-instance-resolve))
          (board (hermes-kanban--board-at-point))
          (slug (car board))
@@ -520,7 +522,7 @@ With IN-PLACE non-nil, refresh the current overview without selecting it."
 (defun hermes-kanban-archive-board ()
   "Archive the selected board after confirmation.
 This uses the dashboard's recoverable archive endpoint and never hard-deletes."
-  (interactive)
+  (interactive nil hermes-kanban-boards-mode)
   (let* ((instance (hermes-instance-resolve))
          (board (hermes-kanban--board-at-point))
          (slug (car board))
@@ -657,6 +659,8 @@ the board detail buffer shows the most recently created tasks at the top."
        :inapt-if #'hermes-kanban--no-task-p)
   "d" ("Diagnostics overview" hermes-kanban-diagnostics)
   "?" ("Help" hermes-kanban-mode-map-popup))
+
+(put 'hermes-kanban-mode-map-popup 'command-modes '(hermes-kanban-mode))
 
 (defun hermes-kanban--init-board-header (&optional width)
   "Refresh the board detail `tabulated-list' header for WIDTH."
@@ -1077,6 +1081,8 @@ and an absent branch or run id is omitted."
   "d" ("Diagnostics overview" hermes-kanban-diagnostics)
   "?" ("Help" hermes-kanban-task-mode-map-popup))
 
+(put 'hermes-kanban-task-mode-map-popup 'command-modes '(hermes-kanban-task-mode))
+
 (defun hermes-kanban--task-mode-setup ()
   "Set up buffer-local state for `hermes-kanban-task-mode'."
   (setq-local revert-buffer-function #'hermes-kanban--task-revert)
@@ -1173,7 +1179,7 @@ With IN-PLACE non-nil, refresh the current detail without selecting it."
 
 (defun hermes-kanban-show ()
   "Show the kanban task at point."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-diagnostics-mode)
   (hermes-kanban--open-task
    (hermes-kanban--id-at-point)
    hermes-kanban--slug
@@ -1255,6 +1261,8 @@ instead of surfacing a transport error."
   "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-kanban-log-mode-map-popup))
 
+(put 'hermes-kanban-log-mode-map-popup 'command-modes '(hermes-kanban-log-mode))
+
 (defun hermes-kanban--log-revert (&rest _)
   "Refresh the current worker-log buffer in place."
   (unless hermes-kanban-log--task-id (user-error "No task id for this log buffer"))
@@ -1301,7 +1309,7 @@ INSTANCE is inherited from the owning board or task buffer."
 
 (defun hermes-kanban-show-log ()
   "Fetch and display the worker log for the task at point or current detail."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode hermes-kanban-diagnostics-mode)
   (hermes-kanban--open-log (hermes-kanban--task-id-for-command)
                            (hermes-kanban--board-slug-for-command)))
 
@@ -1330,7 +1338,7 @@ INSTANCE is inherited from the owning board or task buffer."
 
 (defun hermes-kanban-edit ()
   "Edit the title and priority of the task at point."
-  (interactive)
+  (interactive nil hermes-kanban-mode)
   (let* ((instance (hermes-instance-resolve))
          (id (hermes-kanban--id-at-point))
          (entry (tabulated-list-get-entry))
@@ -1404,7 +1412,7 @@ Works from `hermes-kanban-task-mode' and `hermes-kanban-mode'.  Running tasks
 use the dashboard reassign endpoint with reclaim; other tasks use
 `PATCH /tasks/:id' with the assignee body.  Refreshes the buffer in place on
 success."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode)
   (let* ((id (hermes-kanban--task-id-for-command))
          (status (hermes-kanban--task-status-for-command))
          (query (hermes-kanban--query-for-board
@@ -1425,7 +1433,7 @@ success."
 
 (defun hermes-kanban-set-status ()
   "Set the status of the task at point."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-diagnostics-mode)
   (let* ((instance (hermes-instance-resolve))
          (id (hermes-kanban--id-at-point))
          (status (completing-read "Status: " hermes-kanban--statuses nil t))
@@ -1443,7 +1451,7 @@ success."
 Works from the board list and the task detail view; maps to the dashboard
 `POST /tasks/:id/comments'.  The refresh surfaces the new comment in the detail
 view."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode hermes-kanban-diagnostics-mode)
   (let ((id (hermes-kanban--task-id-for-command))
         (query (hermes-kanban--query-for-board
                 (hermes-kanban--board-slug-for-command)))
@@ -1555,7 +1563,7 @@ When TRIAGE is non-nil, create it in the triage column."
 
 (defun hermes-kanban-specify-triage-task ()
   "Flesh out the current triage task and promote it to todo."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode)
   (hermes-kanban--run-triage-action "/specify"
                                     #'hermes-kanban--specify-summary))
 
@@ -1581,13 +1589,13 @@ When TRIAGE is non-nil, create it in the triage column."
 
 (defun hermes-kanban-decompose-triage-task ()
   "Decompose the current triage task into a dependency graph."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode)
   (hermes-kanban--run-triage-action "/decompose"
                                     #'hermes-kanban--decompose-summary))
 
 (defun hermes-kanban-delete ()
   "Delete the task at point after confirmation."
-  (interactive)
+  (interactive nil hermes-kanban-mode)
   (let* ((id (copy-sequence (hermes-kanban--id-at-point)))
          (origin (current-buffer))
          (query (hermes-browser--copy-identity (hermes-kanban--board-query)))
@@ -1659,6 +1667,8 @@ summary of the top diagnostic; absent fields fall back to placeholders."
   :group "View"
   "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-kanban-diagnostics-mode-map-popup))
+
+(put 'hermes-kanban-diagnostics-mode-map-popup 'command-modes '(hermes-kanban-diagnostics-mode))
 
 (define-derived-mode hermes-kanban-diagnostics-mode tabulated-list-mode
   "Hermes Diagnostics"
@@ -1763,7 +1773,7 @@ With prefix argument DRY-RUN, report what would spawn without spawning
 anything.  Maps to the dashboard `POST /dispatch', the same quick-path
 behind the web UI's Nudge dispatcher button; without it, ready tasks wait
 for the dispatcher's next tick."
-  (interactive "P")
+  (interactive "P" hermes-kanban-mode hermes-kanban-task-mode hermes-kanban-diagnostics-mode)
   (let ((query (append (hermes-kanban--query-for-board
                         (hermes-kanban--board-slug-for-command))
                        (and dry-run '((dry_run . "true")))))
@@ -1780,7 +1790,7 @@ for the dispatcher's next tick."
 Reads an optional reason and refreshes the buffer on success.  Maps to the
 dashboard `POST /tasks/:id/reclaim'; a 409 (task no longer claimable) is
 reported as-is."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode hermes-kanban-diagnostics-mode)
   (let ((id (hermes-kanban--task-id-for-command))
         (query (hermes-kanban--query-for-board
                 (hermes-kanban--board-slug-for-command)))
@@ -1811,7 +1821,7 @@ A task with no active run is reported and left untouched."
   "Terminate the worker process backing the task at point's current run.
 Fetches the task to resolve its run id, confirms, then POSTs the terminate.
 A task with no active run is reported; a 404/409 surfaces as a message."
-  (interactive)
+  (interactive nil hermes-kanban-mode hermes-kanban-task-mode hermes-kanban-diagnostics-mode)
   (let ((instance (hermes-instance-resolve))
         (id (hermes-kanban--task-id-for-command))
         (query (hermes-kanban--query-for-board

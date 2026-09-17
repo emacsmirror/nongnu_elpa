@@ -207,7 +207,7 @@ An idle restored list is settled even if its tasks remain unfinished."
 
 (defun hermes-chat-todos-return-to-chat (&optional _button)
   "Return to the owning chat, optionally from a clicked BUTTON."
-  (interactive)
+  (interactive nil hermes-chat-todos-mode)
   (unless (and (buffer-live-p hermes-chat-todos--owner)
                (with-current-buffer hermes-chat-todos--owner
                  (derived-mode-p 'hermes-chat-mode)))
@@ -216,12 +216,12 @@ An idle restored list is settled even if its tasks remain unfinished."
 
 (defun hermes-chat-todos-next ()
   "Move to the next line of the task panel."
-  (interactive)
+  (interactive nil hermes-chat-todos-mode)
   (forward-line 1))
 
 (defun hermes-chat-todos-previous ()
   "Move to the previous line of the task panel."
-  (interactive)
+  (interactive nil hermes-chat-todos-mode)
   (forward-line -1))
 
 (defvar-keymap hermes-chat-todos-mode-map
@@ -241,7 +241,7 @@ An idle restored list is settled even if its tasks remain unfinished."
   "Show this chat's read-only live task panel without moving composer point.
 The panel updates only from structured live backend events, never by polling
 or interpreting old transcript text.  Settled lists retain unfinished tasks."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Open the task panel from a Hermes chat"))
   ;; Also support chats created before this module was loaded into Emacs.

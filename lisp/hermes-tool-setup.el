@@ -158,7 +158,7 @@ Fence success and failure against buffer, instance and profile changes."
 
 (defun hermes-tool-setup-refresh (&rest _)
   "Recheck provider readiness without invoking a model or a tool."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (hermes-tool-setup--idle)
   (setq hermes-tool-setup--config nil hermes-tool-setup--model-catalog nil)
   (hermes-tool-setup--request
@@ -217,7 +217,7 @@ Fence success and failure against buffer, instance and profile changes."
 Fetch the catalogue from the owning instance without changing its active
 profile.  Opening a new setup buffer still inspects the server default.
 Installation remains unavailable for default/current aliases."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (hermes-tool-setup--idle)
   (hermes-browser--next-request-generation)
   (let* ((owner (hermes-tool-setup--owner))
@@ -272,7 +272,7 @@ Call VERIFY, or re-read readiness, after a semantically successful write."
 
 (defun hermes-tool-setup-select-provider ()
   "Select the provider at point, optionally for a declared capability."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (let* ((provider (hermes-tool-setup--provider))
          (name (hermes-transport--get provider 'name))
          (owner (hermes-tool-setup--owner))
@@ -290,7 +290,7 @@ Call VERIFY, or re-read readiness, after a semantically successful write."
   "Save credentials declared by the provider at point.
 Use secret input for every env field.
 Blank input leaves an existing key intact."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (let* ((provider (hermes-tool-setup--provider))
          (owner (hermes-tool-setup--owner))
          (fields (hermes-transport--get provider 'env_vars))
@@ -323,7 +323,7 @@ Blank input leaves an existing key intact."
 
 (defun hermes-tool-setup-select-model ()
   "Fetch the selected provider's backend catalog and choose a model."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (let ((provider (hermes-transport--get (hermes-tool-setup--provider) 'name)))
     (hermes-tool-setup--request
      "GET" "/models"
@@ -357,7 +357,7 @@ Blank input leaves an existing key intact."
 
 (defun hermes-tool-setup-run-post-setup ()
   "Run the provider's declared install hook on the backend after confirmation."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (unless (hermes-tool-setup--install-scoped-p)
     (user-error "Install unavailable: backend requires an explicit non-default profile for exact scope"))
   (let ((key (hermes-transport--get (hermes-tool-setup--provider) 'post_setup)))
@@ -372,7 +372,7 @@ Blank input leaves an existing key intact."
   "Read server-wide post-setup status, then recheck current prerequisites.
 The backend has no per-profile job identity.  Do not attribute this status to
 this toolset or infer readiness from the last process exit code."
-  (interactive)
+  (interactive nil hermes-tool-setup-mode)
   (hermes-tool-setup--idle)
   (hermes-tool-setup--request
    "GET" "/api/actions/tools-post-setup/status"
@@ -406,6 +406,8 @@ this toolset or infer readiness from the last process exit code."
   "s" ("Post-setup status" hermes-tool-setup-post-setup-status)
   "g" ("Check readiness" hermes-tool-setup-refresh)
   "?" ("Help" hermes-tool-setup-mode-map-popup))
+
+(put 'hermes-tool-setup-mode-map-popup 'command-modes '(hermes-tool-setup-mode))
 
 (define-derived-mode hermes-tool-setup-mode tabulated-list-mode "Hermes Tool Setup"
   "Configure backend-declared providers, credentials and models.

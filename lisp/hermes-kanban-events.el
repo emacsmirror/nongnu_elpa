@@ -343,7 +343,7 @@ dropped connection, instead of permanently killing the tail."
   "Toggle the live-events tail for the current board buffer.
 When on, a dedicated WebSocket streams task events and the board refreshes in
 place; the mode line shows a live indicator."
-  (interactive)
+  (interactive nil hermes-kanban-mode)
   (unless (derived-mode-p 'hermes-kanban-mode)
     (user-error "Live updates are only available on a board buffer"))
   (if hermes-kanban--events-tail

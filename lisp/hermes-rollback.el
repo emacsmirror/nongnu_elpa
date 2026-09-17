@@ -164,7 +164,7 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
 
 (defun hermes-rollback-show-diff ()
   "Show the diff for the checkpoint at point on its original attachment."
-  (interactive)
+  (interactive nil hermes-rollback-mode)
   (let ((hash (tabulated-list-get-id))
         (snapshot (hermes-rollback--require-snapshot))
         (owner hermes-rollback--owner)
@@ -202,7 +202,7 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
 Remove the owning session's latest canonical user turn and its tail, if
 present; leave history unchanged if there is no user turn.  The selected
 checkpoint does not determine the conversation boundary."
-  (interactive)
+  (interactive nil hermes-rollback-mode)
   (let ((hash (tabulated-list-get-id))
         (snapshot (hermes-rollback--require-snapshot))
         (origin (current-buffer))
@@ -247,6 +247,7 @@ checkpoint does not determine the conversation boundary."
   :title "Hermes Rollbacks"
   :buffer "*Hermes Rollbacks*"
   :command hermes-rollback--list
+  :command-modes (hermes-rollback-mode)
   :doc "Major mode listing Hermes session checkpoints."
   :command-doc "Browse Hermes checkpoint history for the active session."
   :columns [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)]

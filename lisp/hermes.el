@@ -174,6 +174,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "d" ("Disconnect" hermes-dashboard-disconnect
        :inapt-if #'hermes-dashboard--chat-unavailable-p))
 
+(put 'hermes-dash-chat-map-popup 'command-modes '(hermes-dashboard-mode))
+
 (keymap-popup-define hermes-dash-res-map
   "Browse Hermes resources and work."
   :description #'hermes-dashboard--popup-title
@@ -189,6 +191,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
   "R" ("Rollbacks" hermes-list-rollbacks))
+
+(put 'hermes-dash-res-map-popup 'command-modes '(hermes-dashboard-mode))
 
 (keymap-popup-define hermes-dash-mgr-map
   "Configure Hermes and its access routes."
@@ -206,6 +210,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "B" ("Pairing" hermes-list-pairing)
   "W" ("Webhooks" hermes-list-webhooks))
 
+(put 'hermes-dash-mgr-map-popup 'command-modes '(hermes-dashboard-mode))
+
 (keymap-popup-define hermes-dash-sys-map
   "Inspect the Hermes gateway."
   :description #'hermes-dashboard--popup-title
@@ -214,6 +220,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :group "System"
   "G" ("Gateway status" hermes-system-status)
   "L" ("Gateway logs" hermes-system-logs))
+
+(put 'hermes-dash-sys-map-popup 'command-modes '(hermes-dashboard-mode))
 
 (keymap-popup-define hermes-dashboard-mode-map
   "Hermes Dashboard"
@@ -238,6 +246,13 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :group "View"
   "g" ("Refresh" hermes-dashboard-refresh :stay-open t)
   "?" ("Help" hermes-dashboard-popup))
+
+(dolist (command '(hermes-dashboard-mode-map-popup
+                  hermes-dashboard-mode-map--enter-hermes-dash-chat-map
+                  hermes-dashboard-mode-map--enter-hermes-dash-res-map
+                  hermes-dashboard-mode-map--enter-hermes-dash-mgr-map
+                  hermes-dashboard-mode-map--enter-hermes-dash-sys-map))
+  (put command 'command-modes '(hermes-dashboard-mode)))
 
 ;; Preserve direct shortcuts and user bindings; children own the action list.
 (dolist (map (list hermes-dash-chat-map hermes-dash-res-map
@@ -762,7 +777,7 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard-refresh ()
   "Refresh the current Hermes dashboard buffer."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (unless (derived-mode-p 'hermes-dashboard-mode)
     (user-error "Not in a Hermes dashboard buffer"))
   (hermes-dashboard--ensure-ewoc)
@@ -771,7 +786,7 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard-next (&optional arg)
   "Move to the ARGth next dashboard card."
-  (interactive "p")
+  (interactive "p" hermes-dashboard-mode)
   (unless hermes-dashboard--ewoc
     (user-error "No dashboard EWOC in this buffer"))
   (condition-case nil
@@ -780,7 +795,7 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard-previous (&optional arg)
   "Move to the ARGth previous dashboard card."
-  (interactive "p")
+  (interactive "p" hermes-dashboard-mode)
   (unless hermes-dashboard--ewoc
     (user-error "No dashboard EWOC in this buffer"))
   ;; `ewoc-goto-prev' clamps at the first element instead of signalling (unlike
@@ -792,7 +807,7 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard-open ()
   "Activate the dashboard card at point."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (let* ((node (hermes-dashboard--node-at-point))
          (data (and node (ewoc-data node))))
     (pcase (plist-get data :kind)
@@ -811,42 +826,42 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard-mouse-open (event)
   "Activate the dashboard card clicked by mouse EVENT."
-  (interactive "e")
+  (interactive "e" hermes-dashboard-mode)
   (mouse-set-point event)
   (hermes-dashboard-open))
 
 (defun hermes-dashboard-popup ()
   "Show the dashboard keymap popup."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (keymap-popup hermes-dashboard-mode-map))
 
 (defun hermes-dashboard-interrupt ()
   "Interrupt the Hermes chat selected by the dashboard card at point."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-interrupt)))
 
 (defun hermes-dashboard-steer ()
   "Steer the Hermes chat selected by the dashboard card at point."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-steer-message)))
 
 (defun hermes-dashboard-respond ()
   "Respond to a prompt in the Hermes chat selected at point."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-respond-to-prompt)))
 
 (defun hermes-dashboard-switch-model ()
   "Switch the model for the Hermes chat selected at point."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-switch-model)))
 
 (defun hermes-dashboard-disconnect ()
   "Disconnect the Hermes chat session selected by the dashboard card at point."
-  (interactive)
+  (interactive nil hermes-dashboard-mode)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-disconnect)))
 

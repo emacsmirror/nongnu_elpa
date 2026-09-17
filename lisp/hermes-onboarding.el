@@ -584,7 +584,7 @@ Return the new request context."
 
 (defun hermes-onboarding-oauth-retry ()
   "Retry starting the provider shown in this settled OAuth buffer."
-  (interactive)
+  (interactive nil hermes-onboarding-oauth-mode)
   (when (hermes-buffer--owned-p 'hermes-onboarding-oauth-mode)
     (unless (and hermes-onboarding-oauth--provider
                  (not (hermes-transport--non-empty-string
@@ -629,20 +629,20 @@ Return the new request context."
 
 (defun hermes-onboarding-provider-account-act ()
   "Connect or describe the provider account at point."
-  (interactive)
+  (interactive nil hermes-provider-accounts-mode)
   (hermes-onboarding--provider-account-act
    (hermes-onboarding--provider-account-at-point)))
 
 (defun hermes-onboarding-provider-account-copy-command ()
   "Copy the API-supplied connection command for the provider at point."
-  (interactive)
+  (interactive nil hermes-provider-accounts-mode)
   (hermes-onboarding--provider-account-copy-field
    (hermes-onboarding--provider-account-at-point)
    'cli_command "connection command"))
 
 (defun hermes-onboarding-provider-account-browse-docs ()
   "Open API-supplied documentation for the provider at point."
-  (interactive)
+  (interactive nil hermes-provider-accounts-mode)
   (let* ((provider (hermes-onboarding--provider-account-at-point))
          (url (hermes-transport--non-empty-string
                (hermes-transport--display-field provider 'docs_url))))
@@ -651,7 +651,7 @@ Return the new request context."
 
 (defun hermes-onboarding-oauth-poll ()
   "Poll the OAuth session shown in the current status buffer."
-  (interactive)
+  (interactive nil hermes-onboarding-oauth-mode)
   (when (hermes-buffer--owned-p 'hermes-onboarding-oauth-mode)
     (unless (and hermes-onboarding-oauth--provider
                  (hermes-transport--non-empty-string
@@ -671,7 +671,7 @@ Return the new request context."
 
 (defun hermes-onboarding-oauth-submit ()
   "Submit a secret code for the OAuth session in the current buffer."
-  (interactive)
+  (interactive nil hermes-onboarding-oauth-mode)
   (when (hermes-buffer--owned-p 'hermes-onboarding-oauth-mode)
     (unless (and hermes-onboarding-oauth--provider
                  (hermes-transport--non-empty-string
@@ -696,7 +696,7 @@ Return the new request context."
 
 (defun hermes-onboarding-oauth-cancel ()
   "Cancel the OAuth session shown in the current buffer."
-  (interactive)
+  (interactive nil hermes-onboarding-oauth-mode)
   (when (hermes-buffer--owned-p 'hermes-onboarding-oauth-mode)
     (unless (hermes-transport--non-empty-string
              hermes-onboarding-oauth--session-id)
@@ -713,7 +713,7 @@ Return the new request context."
 
 (defun hermes-onboarding-oauth-disconnect ()
   "Disconnect the OAuth provider shown in the current buffer."
-  (interactive)
+  (interactive nil hermes-onboarding-oauth-mode)
   (when (hermes-buffer--owned-p 'hermes-onboarding-oauth-mode)
     (unless hermes-onboarding-oauth--provider
       (user-error "No OAuth provider to disconnect"))
@@ -804,7 +804,7 @@ Return the new request context."
 
 (defun hermes-onboarding-provider-account-disconnect ()
   "Disconnect the provider account at point using API-returned policy."
-  (interactive)
+  (interactive nil hermes-provider-accounts-mode)
   (let* ((provider (hermes-onboarding--provider-account-at-point))
          (name (hermes-onboarding--provider-name provider))
          (origin (current-buffer))

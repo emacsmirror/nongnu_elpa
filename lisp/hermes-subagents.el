@@ -62,7 +62,7 @@ Each active subagent's goal is indented by its spawn depth."
 
 (defun hermes-subagents-interrupt ()
   "Interrupt the subagent at point."
-  (interactive)
+  (interactive nil hermes-subagents-mode)
   (let ((id (tabulated-list-get-id))
         (origin (current-buffer)))
     (unless id (user-error "No subagent on this line"))
@@ -213,7 +213,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 
 (defun hermes-work-scope-details ()
   "Display scope, freshness and limitations for this exact work view."
-  (interactive)
+  (interactive nil hermes-work-mode)
   (let ((text (hermes-work--scope-text hermes-work--owner))
         (buffer (hermes-buffer--get "*Hermes Work Scope*" #'help-mode)))
     (with-help-window buffer (princ text))))
@@ -271,7 +271,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 
 (defun hermes-work-refresh ()
   "Request a refresh from this list's exact owner, if still attached."
-  (interactive)
+  (interactive nil hermes-work-mode)
   (unless (and (hermes-work--view-p hermes-work--owner)
                (hermes-work--current-p hermes-work--owner))
     (user-error "Work owner detached; reopen from the attached chat"))
@@ -279,7 +279,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 
 (defun hermes-work-instance-subagents ()
   "Browse Instance subagents explicitly, outside this session's observations."
-  (interactive)
+  (interactive nil hermes-work-mode)
   (unless (hermes-work--current-p hermes-work--owner)
     (user-error "Work owner detached"))
   (let ((hermes-instance (plist-get hermes-work--owner :instance)))
@@ -287,7 +287,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 
 (defun hermes-work-details ()
   "Display inert read-only details for the observed row at point."
-  (interactive)
+  (interactive nil hermes-work-mode)
   (let* ((owner hermes-work--owner)
          (key (tabulated-list-get-id))
          (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
@@ -378,7 +378,7 @@ The endpoint returns whole files, not a tail or a paginated transcript."
 (defun hermes-work-log-refresh ()
   "Fetch this worker's remote log asynchronously, preserving point.
 Keep the last snapshot on failure.  Only one request may be pending per view."
-  (interactive)
+  (interactive nil hermes-work-log-mode)
   (let* ((buffer (current-buffer))
          (binding hermes-work-log--binding)
          (owner (plist-get binding :owner)))
@@ -457,7 +457,7 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
 (defun hermes-work-log ()
   "Open the selected worker's read-only remote log, or process details.
 Use only the exact path published in this parent's structured tool result."
-  (interactive)
+  (interactive nil hermes-work-mode)
   (let* ((owner hermes-work--owner)
          (key (tabulated-list-get-id))
          (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
@@ -486,6 +486,8 @@ Use only the exact path published in this parent's structured tool result."
   :group "View"
   hermes-work-log-refresh "Refresh"
   quit-window "Quit view")
+
+(put 'hermes-work-log-mode-map-popup 'command-modes '(hermes-work-log-mode))
 
 (define-derived-mode hermes-work-log-mode special-mode "Worker Log"
   "Read a remote worker log snapshot without visiting a local file.
@@ -518,6 +520,8 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
   hermes-work-refresh "Refresh"
   quit-window "Quit view")
 
+(put 'hermes-work-mode-map-popup 'command-modes '(hermes-work-mode))
+
 (define-derived-mode hermes-work-mode tabulated-list-mode "Observed Work"
   "Browse only one chat attachment's observed delegates and processes."
   (setq-local tabulated-list-padding 1)
@@ -529,7 +533,7 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
 ;;;###autoload
 (defun hermes-chat-work ()
   "Browse this chat's observed work without acquiring another client."
-  (interactive)
+  (interactive nil hermes-chat-mode hermes-work-mode)
   (let ((owner (hermes-work--context-owner)))
     (unless (and (hermes-work--current-p owner)
                  (or (derived-mode-p 'hermes-chat-mode) (hermes-work--view-p owner)))

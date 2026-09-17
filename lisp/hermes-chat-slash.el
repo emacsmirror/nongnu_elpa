@@ -434,7 +434,7 @@ In a fresh chat, store the choice locally and apply it after `session.create'
 but before the first prompt.  A live chat uses the owned session command path.
 Detached sessions must reconnect or resume first, except for an owned
 failed-create retry."
-  (interactive (list (hermes-chat--read-reasoning-effort)))
+  (interactive (list (hermes-chat--read-reasoning-effort)) hermes-chat-mode)
   (unless (member effort hermes-chat--reasoning-efforts)
     (user-error "Unsupported reasoning effort: %s" effort))
   (when (hermes-chat--active-turn-p)
@@ -580,7 +580,7 @@ CONFIRMED acknowledges a prior expensive-model warning."
 
 (defun hermes-chat-refresh-commands ()
   "Refresh the cached slash command catalog from the dashboard."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (setq hermes-chat--commands-cache nil)
   (hermes-chat--fetch-commands-catalog))
 
@@ -637,7 +637,7 @@ Only matches while typing the /command word in the writable input tail."
 
 (defun hermes-chat-show-commands ()
   "Fetch and display the dashboard slash command catalog."
-  (interactive)
+  (interactive nil hermes-chat-mode)
   (let ((buffer (current-buffer))
         (lifetime hermes-chat--lifecycle-generation)
         (client (hermes-chat--dashboard-control-client)))

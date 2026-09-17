@@ -771,19 +771,19 @@ request afterwards, even on quit, but never advance a replacement listener."
 
 (defun hermes-exec-approve ()
   "Approve the eval request shown in the current approval buffer."
-  (interactive)
+  (interactive nil hermes-exec-approval-mode)
   (when (hermes-exec--approval-current-p (current-buffer) hermes-exec--approval-id)
     (hermes-exec--resolve-active t)))
 
 (defun hermes-exec-deny ()
   "Decline the eval request shown in the current approval buffer."
-  (interactive)
+  (interactive nil hermes-exec-approval-mode)
   (when (hermes-exec--approval-current-p (current-buffer) hermes-exec--approval-id)
     (hermes-exec--resolve-active nil)))
 
 (defun hermes-exec-decide ()
   "Read an Emacs-native multiple-choice decision for the active eval request."
-  (interactive)
+  (interactive nil hermes-exec-approval-mode)
   (when (hermes-exec--approval-current-p (current-buffer) hermes-exec--approval-id)
     (hermes-exec--prompt-choice (current-buffer) hermes-exec--approval-id)))
 

@@ -207,7 +207,7 @@ Reject another save until settlement rather than race remote writes.")
 
 (defun hermes-profiles-edit-soul ()
   "Open the selected non-default profile's SOUL.md for editing."
-  (interactive)
+  (interactive nil hermes-profiles-mode)
   (let ((instance (hermes-instance-resolve))
         (profile (tabulated-list-get-id)))
     (unless profile (user-error "No profile on this line"))
@@ -236,7 +236,7 @@ Reject another save until settlement rather than race remote writes.")
   "Save the current profile SOUL editor through the dashboard API.
 Reject unavailable owners and overlapping saves without discarding the draft.
 Keep edits made during a save modified."
-  (interactive)
+  (interactive nil hermes-profiles-soul-mode)
   (unless (derived-mode-p 'hermes-profiles-soul-mode)
     (user-error "Not in a Hermes profile SOUL buffer"))
   (when hermes-profiles--soul-save-pending
@@ -294,7 +294,7 @@ Keep edits made during a save modified."
   (interactive
    (hermes-browser--read-owned-arguments
     (lambda () (list (read-string "Rename profile to: ")))
-    #'tabulated-list-get-id))
+    #'tabulated-list-get-id) hermes-profiles-mode)
   (let ((name (tabulated-list-get-id))
         (new-name (string-trim new-name))
         (origin (current-buffer)))
@@ -315,7 +315,7 @@ Keep edits made during a save modified."
 
 (defun hermes-profiles-delete ()
   "Delete the profile at point after confirmation."
-  (interactive)
+  (interactive nil hermes-profiles-mode)
   (let* ((name (tabulated-list-get-id))
          (origin (current-buffer)))
     (unless name (user-error "No profile on this line"))
@@ -336,7 +336,7 @@ Keep edits made during a save modified."
 
 (defun hermes-profiles-set-model ()
   "Set the model of the profile at point, persisted in its configuration."
-  (interactive)
+  (interactive nil hermes-profiles-mode)
   (let ((name (tabulated-list-get-id))
         (origin (current-buffer)))
     (unless name (user-error "No profile on this line"))

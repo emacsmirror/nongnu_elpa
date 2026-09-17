@@ -221,7 +221,7 @@ ARG is a positive repeat count, as in `diff-hunk-next'.  Only hunks that
 pass `hermes-kanban-log--valid-hunk-header-p' are visited, so incomplete
 header-shaped blocks are skipped.  Point is left unchanged when no valid
 hunk follows."
-  (interactive "p")
+  (interactive "p" hermes-kanban-log-mode hermes-work-log-mode)
   (let ((count (prefix-numeric-value arg)))
     (when (> count 0)
       (dotimes (_ count)
@@ -249,7 +249,7 @@ ARG is a positive repeat count, as in `diff-hunk-prev'.  Only hunks that
 pass `hermes-kanban-log--valid-hunk-header-p' are visited, so incomplete
 header-shaped blocks are skipped.  Point is left unchanged when no valid
 hunk precedes point."
-  (interactive "p")
+  (interactive "p" hermes-kanban-log-mode hermes-work-log-mode)
   (let ((count (prefix-numeric-value arg)))
     (when (> count 0)
       (dotimes (_ count)
