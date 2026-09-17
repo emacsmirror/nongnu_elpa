@@ -222,26 +222,6 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
         space is a soft line break, so the old output meant something to a
         recipient reading `format=flowed` that was never intended.
 
-  * `M-x vm-setup` asks what VM needs to know and writes the answers to a
-    file VM loads (emacs-vm/vm#816): your name and address, where folders are
-    to be kept, where new mail comes from, how mail is to be sent, and
-    whether VM should be the mail reader Emacs uses.  It is experimental in
-    this release: what it asks, what it writes, and the file it writes to
-    may change.
-
-    Every question is asked before anything is written, so stopping part way
-    through leaves your files as they were.  The file to write is the last
-    question, and replacing one that already exists is confirmed.  It writes
-    the whole file rather than adding to it, so it defaults to
-    `vm-preferences-file`, which VM loads after `vm-init-file` and which
-    nothing else writes.
-
-    `mail-user-agent` is the one setting it cannot finish, and the manual now
-    says so where it is documented: a file VM loads is read when VM starts,
-    so `C-x m` in a fresh Emacs has already happened by then.  That line
-    belongs in the Emacs init file, where it works because
-    `vm-autoloads.el` registers the agent.
-
   * `M-x vm-check-configuration` says what is missing from a VM setup and
     what to set for each (emacs-vm/vm#816).  It checks the settings that have
     to be right before anything works: which mail agent Emacs uses, the

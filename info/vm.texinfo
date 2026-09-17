@@ -442,15 +442,11 @@ files with other folders by setting the variable
 @chapter Starting Up
 
 @findex vm
-@findex vm-setup
 @findex vm-check-configuration
 @kbd{M-x vm} is how you begin, and on a machine whose mail is already where
 Emacs expects it that is all you need.  Otherwise VM has to be told where
-your mail is: @kbd{M-x vm-setup} asks for what it needs and writes the
-answers to a file, @kbd{M-x vm-check-configuration} says what is still
-missing, and @ref{Setting Up} builds a configuration one piece at a time.
-@code{vm-setup} is experimental: what it asks, what it writes, and the file
-it writes to may change in a later release.
+your mail is: @ref{Setting Up} builds a configuration one piece at a time,
+and @kbd{M-x vm-check-configuration} says what is still missing.
 
 The rest of this chapter is what happens when VM starts, which is worth
 knowing when something does not.
@@ -2788,31 +2784,6 @@ normally @file{~/.vm} (@pxref{Starting Up}).
 
 The same settings, in one file you can copy, are installed as
 @file{example.vm} in VM's documentation directory.
-
-@findex vm-setup
-@cindex setting up, from questions
-Or let VM ask.  @kbd{M-x vm-setup} asks for your name and address, where
-folders are to be kept, where new mail comes from, how mail is to be sent,
-and whether VM should be the mail reader Emacs uses, then writes the answers
-to a file VM loads.  It is experimental: what it asks, what it writes, and
-the file it writes to may change in a later release.
-
-@itemize
-@item
-Every question is asked before anything is written, so stopping part way
-through leaves your files as they were.
-@item
-The file to write is the last question, and replacing one that already
-exists is confirmed.
-@item
-It writes the whole file rather than adding to it, so it defaults to
-@code{vm-preferences-file}, which VM loads after @code{vm-init-file} and
-which nothing else writes.
-@end itemize
-
-The one setting it cannot finish is @code{mail-user-agent}: a file VM loads
-is read when VM starts, so @kbd{C-x m} in a fresh Emacs has already
-happened by then.  @xref{Mail agent}.
 
 @findex vm-check-configuration
 @cindex checking a configuration
