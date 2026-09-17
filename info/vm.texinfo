@@ -6199,6 +6199,16 @@ If the value of the variable @code{vm-confirm-new-folders} is
 non-@code{nil}, VM will ask for confirmation before creating a new
 folder on interactive saves.
 
+@cindex flags, on a message saved to a server
+@cindex labels, on a message saved to a server
+A message saved into an @acronym{IMAP} mailbox carries its flags with it:
+read, replied to and flagged, and its labels, which travel as @acronym{IMAP}
+keywords, as do @samp{filed}, @samp{written}, @samp{forwarded} and
+@samp{redistributed}.  It is never saved as deleted.  Whether the
+destination keeps keywords is its own to say, in its PERMANENTFLAGS, and one
+that says it keeps none is sent the flags without them: VM names what was
+left behind.
+
 
 @vindex vm-visit-when-saving
 A message is saved either by appending it to the folder file on disk, or by

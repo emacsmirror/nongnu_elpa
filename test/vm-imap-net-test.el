@@ -1367,15 +1367,15 @@ the mailbox if the server has not got one."
 
 
 (ert-deftest vm-imap-net-test-an-appended-message-keeps-its-flagged-attribute ()
-  "REGRESSION: a flagged message saved to a mailbox is flagged there.
+  "REGRESSION: a message saved to a mailbox keeps its flags and its labels.
 
 `vm-imap-net-message-flags' sent \\Answered and \\Seen and nothing else, so
-saving a message to an IMAP folder dropped the flagged attribute on the way
-(emacs-vm/vm#828).  Asserts on the flags the server was given, which is the
-thing that was wrong: the message arrived either way.
+saving a message to an IMAP folder dropped the flagged attribute and every
+label on the way (emacs-vm/vm#828).  Asserts on the flags the server was
+given, which is the thing that was wrong: the message arrived either way.
 
-The labels are a separate matter and stay dropped, since a keyword is what a
-server may refuse, and refusing costs the copy rather than the flag."
+The label travels here because the mock advertises `\\*' in its
+PERMANENTFLAGS, which is a server saying it keeps keywords of its own."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((message (car vm-message-list))
           (answer 'not-called))
@@ -1398,8 +1398,70 @@ server may refuse, and refusing costs the copy rather than the flag."
         (should (member "\\Seen" flags))
         ;; never \Deleted: a copy is not saved in order to be deleted
         (should-not (member "\\Deleted" flags))
-        ;; and no keyword, which is the half this does not fix
-        (should-not (member "urgent" flags))))))
+        ;; and the label, which the mailbox says it keeps
+        (should (member "urgent" flags))))))
+
+(ert-deftest vm-imap-net-test-a-mailbox-that-keeps-no-keywords-gets-none ()
+  "REGRESSION: the copy arrives whole where the destination refuses keywords.
+RFC 3501 has a server answer NO to an APPEND naming a flag it does not
+support, and a refused APPEND loses the copy rather than the flag.  So what
+the mailbox says it keeps is asked before anything is sent, and a keyword it
+did not name is left out (emacs-vm/vm#828).
+
+The mock without `\\*' in its PERMANENTFLAGS is what Gmail answers."
+  (let ((vm-imap-mock-permanent-flags
+         "\\Answered \\Flagged \\Deleted \\Seen \\Draft"))
+    (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+      (let ((message (car vm-message-list))
+            (answer 'not-called)
+            said)
+        (vm-set-flagged-flag message t)
+        (vm-set-unread-flag message nil)
+        (vm-add-message-labels "urgent" 1)
+        (setq said
+              (vm-imap-net-test--warnings
+                (vm-imap-net-save-messages (vm-imap-mock-spec mock) "Archive"
+                                           (list message)
+                                           (lambda (result) (setq answer result)))
+                (let ((deadline (+ (float-time) 10)))
+                  (while (and (eq answer 'not-called) (< (float-time) deadline))
+                    (accept-process-output nil 0.05)))))
+        ;; the copy went, which is the thing a refused APPEND would have cost
+        (should (equal answer 1))
+        ;; and it says what did not go with it
+        (should (seq-find (lambda (line)
+                            (and (string-match-p "urgent" line)
+                                 (string-match-p "PERMANENTFLAGS" line)))
+                          said)))
+      (let ((saved (car (vm-imap-mock-messages mock "Archive"))))
+        (should saved)
+        (let ((flags (vm-imap-mock-message-flags saved)))
+          (should (member "\\Flagged" flags))
+          (should (member "\\Seen" flags))
+          (should-not (member "urgent" flags)))))))
+
+(ert-deftest vm-imap-net-test-the-attributes-that-travel-as-keywords ()
+  "`filed', `written', `forwarded' and `redistributed' go as keywords.
+They are keywords on the sync path, so a saved copy carries what a
+synchronised message carries (emacs-vm/vm#828)."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((message (car vm-message-list))
+          (answer 'not-called))
+      (vm-set-filed-flag message t)
+      (vm-set-forwarded-flag message t)
+      (vm-imap-net-save-messages (vm-imap-mock-spec mock) "Archive"
+                                 (list message)
+                                 (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 10)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should (equal answer 1)))
+    (let ((flags (vm-imap-mock-message-flags
+                  (car (vm-imap-mock-messages mock "Archive")))))
+      (should (member "filed" flags))
+      (should (member "forwarded" flags))
+      (should-not (member "written" flags))
+      (should-not (member "redistributed" flags)))))
 
 (defun vm-imap-net-test--until (predicate seconds)
   "Wait up to SECONDS for PREDICATE, answering with what it last said."

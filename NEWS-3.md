@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **A message saved into an IMAP mailbox keeps its labels**
+    (emacs-vm/vm#828).  VM uploads the copy with `APPEND` and sent only
+    `\Answered` and `\Seen` with it, so a labelled message arrived in the
+    destination mailbox with nothing on it.  The copy now carries the system
+    flags, the labels, and `filed`, `written`, `forwarded` and
+    `redistributed`, which are the keywords the synchronising path sends.
+    Never `\Deleted`: a message is not saved into a mailbox in order to be
+    deleted from it.
+
+    What the destination will keep is asked before anything is sent, in its
+    PERMANENTFLAGS.  A server that does not take a keyword may refuse the
+    whole `APPEND`, which would lose the copy rather than the label, so a
+    keyword the mailbox does not name is left out and VM says which.
+
   * **The line suggesting `vm-check-configuration` waits to be read**
     (emacs-vm/vm#844).  It was said in the middle of the startup, where the
     folder totals and the messages a fetch prints came after it and

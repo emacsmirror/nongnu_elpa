@@ -1638,8 +1638,7 @@ May throw exceptions."
     (while mailboxes
       (setq mailbox (car (car mailboxes)))
       (setq maildrop (cdr (car mailboxes)))
-      (vm-imap-net-append-text maildrop mailbox string
-			       (vm-imap-flag-list-string flags) t)
+      (vm-imap-net-append-text maildrop mailbox string flags t)
       (setq mailboxes (cdr mailboxes)))
     ))
 
