@@ -6943,50 +6943,32 @@ Recognized specifiers are:
 @table @code
 
 @item a
-attribute indicators (always four characters wide)
-@*
-The first char is  `D', `N', `U' or `!' for deleted, new, unread
-and flagged messages respectively, and ` ' if none of the conditions apply.
-A message can be several of those at once and the column holds one
-character, so it shows the first that applies in the order given
-(@pxref{Message Attributes}).
-@*
-The second char is `F', `W' or ` ' for filed (saved) or written
-messages.
-@*
-The third char is `R', `Z' or ` ' for messages replied to,
-and forwarded messages.
-@*
-The fourth char is `E' if the message has been edited, ` ' otherwise.
+attribute indicators, always four characters wide, a space in each column
+where nothing applies:
 
+@multitable @columnfractions .12 .88
+@item first
+@tab @samp{D} deleted, @samp{N} new, @samp{U} unread, @samp{!} flagged.  A
+message can be several of those at once and the column holds one character,
+so it shows the first that applies, in that order
+(@pxref{Message Attributes}).
+@item second
+@tab @samp{F} filed (saved), @samp{W} written.
+@item third
+@tab @samp{R} replied to, @samp{Z} forwarded, @samp{B} redistributed.
+@item fourth
+@tab @samp{E} edited.
+@end multitable
 
 @item A
-longer version of attributes indicators (seven characters
-wide).@*
-@*
-The first char is  `D', `N', `U' or `!' for deleted, new, unread
-and flagged messages respectively, the first that applies, and ` ' if none
-of the conditions apply.
-@*
-The second is `R' or ` ', for message replied to.
-@*
-The third is `Z' or ` ', for messages forwarded.
-@*
-The fourth is `B' or ` ', for messages redistributed.
-@*
-The fifth is `F' or ` ', for messages filed.
-@*
-The sixth is `W' or ` ', for messages written.
-@*
-The seventh is `e' or ` ', for messages that have been edited.
-
+the same, seven characters wide, one column to each attribute rather than
+several sharing a column.  The first is @samp{a}'s first, and then, in
+lower case, @samp{r} replied to, @samp{z} forwarded, @samp{b} redistributed,
+@samp{f} filed, @samp{w} written, @samp{e} edited.
 
 @item b
-shorter version of the attribute indicators (one character wide).
-@*
-`D', `N', `U' or `!' for deleted, new, unread
-and flagged messages respectively, the first that applies, and ` ' if none
-of the conditions apply.
+@samp{a}'s first column on its own, one character wide: @samp{D}, @samp{N},
+@samp{U}, @samp{!} or a space.
 
 @item *
 message mark, `*' if the message is marked, ` ' otherwise

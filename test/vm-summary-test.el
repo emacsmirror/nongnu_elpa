@@ -362,6 +362,40 @@ Second line here.
       (let ((indicators (vm-su-attribute-indicators-long msg)))
         (should (stringp indicators))))))
 
+(defconst vm-summary-test--indicators
+  '((deleted       "D   " "D      " "D")
+    (new           "N   " "N      " "N")
+    (unread        "U   " "U      " "U")
+    (flagged       "!   " "!      " "!")
+    (replied       "  R " " r     " " ")
+    (forwarded     "  Z " "  z    " " ")
+    (redistributed "  B " "   b   " " ")
+    (filed         " F  " "    f  " " ")
+    (written       " W  " "     w " " ")
+    (edited        "   E" "      e" " "))
+  "Each attribute and the %a, %A and %b indicators it produces on its own.
+This is the table the manual\='s summary-format section prints, so a change
+here is a change the manual has to make too.")
+
+(ert-deftest vm-summary-test-each-attribute-has-its-documented-indicator ()
+  "Every attribute shows the character in the column the manual gives it.
+
+The manual had the seven-wide %A in upper case, where the code writes
+`r', `z', `b', `f' and `w' in lower, and left `B' for a redistributed
+message out of the four-wide %a altogether."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      (dolist (case vm-summary-test--indicators)
+        (dolist (flag vm-summary-test--indicators)
+          (funcall (intern (format "vm-set-%s-flag-of" (car flag)))
+                   message nil))
+        (funcall (intern (format "vm-set-%s-flag-of" (car case))) message t)
+        (should (equal (list (car case)
+                             (vm-su-attribute-indicators message)
+                             (vm-su-attribute-indicators-long message)
+                             (vm-su-attribute-indicators-short message))
+                       case))))))
+
 ;;; vm-su-labels tests
 
 (ert-deftest vm-summary-test-su-labels-none ()
