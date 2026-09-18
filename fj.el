@@ -1743,6 +1743,10 @@ Do nothing if there is no more data."
      #'fj-issue-timeline-more-link-mayb-cb
      (current-buffer))))
 
+(defface fj-load-more-button-face
+  '((t (:weight bold :underline t)))
+  "The face for displaying load more buttons.")
+
 (defun fj-issue-timeline-more-link-mayb-cb (json buf)
   "Insert Load more: link at end of BUF, if JSON is non-nil."
   (with-current-buffer buf
@@ -1753,7 +1757,7 @@ Do nothing if there is no more data."
           ;; FIXME: remove on adding more!
           (insert
            (fj-propertize-link "[Load more]"
-                               'more nil 'underline))
+                             'more nil 'fj-load-more-button-face))
           (message "Load more"))))))
 
 (defun fj-issue-get-timeline-async (repo owner issue
