@@ -78,7 +78,8 @@
   "Default directory where to clone packages."
   :type 'string)
 
-(defcustom helm-packages-clone-after-hook nil
+(defcustom helm-packages-clone-after-hook
+  #'helm-packages-find-project-after-clone
   "Hook that run after cloning a package.
 It is called with two args respectively PACKAGE as a string and DIRECTORY."
   :type 'hook)
@@ -361,6 +362,11 @@ PROVIDER can be one of \"melpa\", \"gnu\" or \"nongnu\"."
     (with-current-buffer (process-buffer proc)
       (erase-buffer)
       (insert (car (split-string string ""))))))
+
+(defun helm-packages-find-project-after-clone (package directory)
+  "Default function for `helm-packages-clone-after-hook'."
+  (helm-find-files-1
+   (file-name-as-directory (expand-file-name package directory))))
 
 ;;; Transformers
 ;;
