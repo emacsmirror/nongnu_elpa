@@ -892,12 +892,16 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
       (while
 	  (and (not saw-close-group) (not token)
 	       (string-match
-		"%\\(-\\)?\\([0-9]+\\)?\\(\\.\\(-?[0-9]+\\)\\)?\\([()pPaAbcSdfFhHiIlLmMnstTwyz*%]\\|U[A-Za-z]\\)"
+		;; r and R are here because the cond below has branches for
+		;; them: without them a "%r" was left in the summary as
+		;; literal text, which is what the docstring of
+		;; `vm-summary-format' and the manual both say it is not.
+		"%\\(-\\)?\\([0-9]+\\)?\\(\\.\\(-?[0-9]+\\)\\)?\\([()pPaAbcSdfFhHiIlLmMnrRstTwyz*%]\\|U[A-Za-z]\\)"
 		format last-match-end))
 	(setq conv-spec (aref format (match-beginning 5)))
 	(setq new-match-end (match-end 0))
 	(if (and (memq conv-spec '(?\( ?\) ?p ?P ?a ?A ?b ?c ?S ?d ?f ?F ?h ?H ?i ?I
-				   ?l ?L ?M ?m ?n ?s ?t ?T ?U ?w ?y ?z ?* ))
+				   ?l ?L ?M ?m ?n ?r ?R ?s ?t ?T ?U ?w ?y ?z ?* ))
 		 ;; for the non-tokenized path, we don't want
 		 ;; the close group spcifier processed here, we
 		 ;; want to just bail out and return, which is

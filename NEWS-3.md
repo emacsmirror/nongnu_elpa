@@ -8,6 +8,14 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`%r` and `%R` work in `vm-summary-format`** (emacs-vm/vm#846).  Both
+    have been documented, in the docstring and in the manual, as the
+    recipients of the message: the `To` and `Cc` headers together, as
+    addresses and as full names.  Both were left in the summary as the
+    literal text `%r`, the compiler's regexp having no `r` or `R` in it
+    while the branches it feeds have called `vm-su-to-cc` and
+    `vm-su-to-cc-names` all along.
+
   * **A message saved into an IMAP mailbox keeps its labels**
     (emacs-vm/vm#828).  VM uploads the copy with `APPEND` and sent only
     `\Answered` and `\Seen` with it, so a labelled message arrived in the
