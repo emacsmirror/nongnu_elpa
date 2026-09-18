@@ -528,8 +528,8 @@ to avoid errors with outdated packages no more availables."
                       :init (lambda ()
                               (helm-init-candidates-in-buffer 'global upgrades))
                       :filtered-candidate-transformer #'helm-packages-transformer-1
-                      :action '(("Upgrade package(s)"
-                                 . helm-packages-upgrade)))
+                      :action '(("Upgrade package(s)" . helm-packages-upgrade)
+                                ("Clone package" . helm-packages-clone-package)))
                     (helm-make-source "Packages to delete" 'helm-packages-class
                       :init (lambda ()
                               (helm-init-candidates-in-buffer 'global removables))
