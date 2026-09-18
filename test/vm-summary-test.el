@@ -396,6 +396,34 @@ message out of the four-wide %a altogether."
                              (vm-su-attribute-indicators-short message))
                        case))))))
 
+(ert-deftest vm-summary-test-r-and-R-are-the-recipients-including-cc ()
+  "%r and %R name the To and the Cc, where %t and %T name the To alone.
+
+Both were left in the summary as the literal text \"%r\": the regexp that
+finds a specifier had no r or R in it, while the `cond\=' it feeds has had
+branches for both calling `vm-su-to-cc\=' and `vm-su-to-cc-names\=' all along
+(emacs-vm/vm#846).  The docstring of `vm-summary-format\=' and the manual
+have documented them throughout."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      (should (equal (vm-summary-sprintf "%t" message) "recipient@example.com"))
+      (should (equal (vm-summary-sprintf "%r" message)
+                     "recipient@example.com, cc@example.com"))
+      (should (equal (vm-summary-sprintf "%R" message)
+                     "recipient@example.com, cc@example.com")))))
+
+(ert-deftest vm-summary-test-r-and-R-compile-in-the-tokenized-format-too ()
+  "The tokenized summary is where a folder\='s own lines come from.
+Both paths go through the same compiler, so a specifier that works in one
+and not the other would be a second bug, not this one."
+  (vm-test-with-folder vm-summary-test-folder
+    (let* ((message (car vm-message-list))
+           (tokens (vm-summary-sprintf "%r|%R" message t))
+           (text (mapconcat (lambda (token) (if (stringp token) token ""))
+                            (flatten-tree tokens) "")))
+      (should (string-match-p "recipient@example.com, cc@example.com|"
+                              text)))))
+
 ;;; vm-su-labels tests
 
 (ert-deftest vm-summary-test-su-labels-none ()
