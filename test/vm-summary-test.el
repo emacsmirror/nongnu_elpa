@@ -647,6 +647,45 @@ those two stayed hidden."
       (should (vm-expanded-root-p root))
       (should (= (vm-summary-test--hidden-replies) 0)))))
 
+(defun vm-summary-test--operable (count enable)
+  "Select operable messages as a summary command would, and say what happened.
+Answers (HOW-MANY . ASKED), with COUNT the command\='s prefix argument and
+ENABLE the value of `vm-enable-thread-operations\='."
+  (let ((asked nil))
+    (let ((vm-enable-thread-operations enable)
+          (vm-user-interaction-buffer vm-summary-buffer)
+          (last-command nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq asked t) t)))
+        (cons (length (vm-select-operable-messages count t "Save")) asked)))))
+
+(ert-deftest vm-summary-test-a-thread-operation-takes-the-whole-thread ()
+  "With thread operations on, a command on a collapsed root takes the thread.
+`ask' does the same and asks first, which is the difference between the two."
+  (vm-summary-test--with-thread (_folder)
+    (let ((root (car vm-message-list)))
+      (vm-collapse-thread nil root)
+      (setq vm-message-pointer vm-message-list)
+      (should (equal '(3 . nil) (vm-summary-test--operable 1 t)))
+      (should (equal '(3 . t) (vm-summary-test--operable 1 'ask)))
+      (should (equal '(1 . nil) (vm-summary-test--operable 1 nil))))))
+
+(ert-deftest vm-summary-test-a-prefix-argument-is-not-a-thread-operation ()
+  "A numeric prefix takes that many messages, and no thread and no question.
+
+The manual said a prefix argument overrides the confirmation `ask' puts in
+the way.  It does not: `vm-select-operable-messages' takes the count branch
+whenever the count is neither nil nor 1, so C-u 2 s saves two messages from
+point rather than the thread, and there is nothing to confirm because no
+thread operation is being made."
+  (vm-summary-test--with-thread (_folder)
+    (let ((root (car vm-message-list)))
+      (vm-collapse-thread nil root)
+      (setq vm-message-pointer vm-message-list)
+      (should (equal '(2 . nil) (vm-summary-test--operable 2 'ask)))
+      ;; C-u on its own is 4, and the folder holds 3 from point
+      (should (equal '(3 . nil) (vm-summary-test--operable 4 'ask))))))
+
 (ert-deftest vm-summary-test-folding-needs-both-options ()
   "Folding refuses to run unless it is enabled and the summary is threaded.
 Two separate refusals: without `vm-summary-enable-thread-folding' there is no
