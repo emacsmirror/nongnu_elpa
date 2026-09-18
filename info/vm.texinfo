@@ -7262,11 +7262,9 @@ When you have thread-folding enabled, you can execute VM operations
 such as saving and deleting messages on entire threads.  To obtain
 this functionality, set the variable
 @code{vm-enable-thread-operations} to a non-@code{nil} value in your
-vm-init-file.  Setting it to `t' enables thread operations
-unconditionally.  Setting it to the symbol `ask' allows a confirmation
-dialog before a thread operation is invoked.  You can use the
-command @code{vm-toggle-thread-operations} in a running VM session to
-enable or disable thread operations.
+@code{vm-init-file}.  @code{t} enables thread operations unconditionally,
+and @code{ask} asks before each one.  @kbd{M-x vm-toggle-thread-operations}
+turns them on and off in a running session.
 
 As an example, doing an @kbd{s} (@code{vm-save-message}) operation on
 an ordinary message saves just the single message.  However, if thread
@@ -7289,15 +7287,19 @@ attachments etc.  Replying to messages cannot be invoked as a thread
 operation.  This is to avoid accidentally sending replies to unintended
 recipients. 
 
-The thread operations can give rise to surprising behavior.  Even
-though it appears that an operation was invoked on a single message,
-it actually applies to all the messages in a thread.  So, care and
-practice are warranted before you enable thread operations
-unconditionally.  A safer option is to set
-`vm-enable-thread-operations' to `ask'.  In that case, VM asks for
-confirmation every time an operation is applicable to all the messages
-in a collapsed thread.  You can override the confirmation dialog by
-giving a prefix argument `C-u' to your operation.  
+The thread operations can give rise to surprising behavior.  Even though it
+appears that an operation was invoked on a single message, it actually
+applies to all the messages in a thread.  So, care and practice are
+warranted before you enable thread operations unconditionally.  A safer
+option is to set @code{vm-enable-thread-operations} to @code{ask}, which
+asks for confirmation every time an operation is applicable to all the
+messages in a collapsed thread.
+
+A prefix argument is not the way past that question.  A numeric prefix makes
+a command act on that many messages from the current one, which is not a
+thread operation at all: @kbd{C-u s} saves four messages rather than the
+thread, and nothing is asked because nothing is being done to a thread.
+@code{t} is what stops the asking.
 
 @node Summary Faces,, Thread Operations, Summaries
 @section Summary Faces
@@ -8302,7 +8304,7 @@ specifies parameters for mail composition frames.
 specifies parameters for message edit frames
 (e.g. created by @code{vm-edit-message-other-frame})
 @item folder
-specifies parameters for frames created by `vm' and the
+specifies parameters for frames created by @code{vm} and the
 @code{vm-visit-} commands.
 @item primary-folder
 specifies parameters for the frame created by running
