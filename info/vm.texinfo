@@ -6576,7 +6576,9 @@ You can set and unset these attributes directly by using
 minibuffer for names of the attributes and you can enter them with
 completion.  Every attribute has an ``un-'' prefixed name you can use
 to unset the attribute, excepting ``new'' and ``unread'', which are both
-negated by ``read''.  You can use a prefix argument with this command to
+negated by ``read''.  Completion offers the names BABYL uses as well:
+``recent'' for new, ``unseen'' for unread, and ``answered'' and
+``unanswered'' for replied.  You can use a prefix argument with this command to
 affect multiple messages, and you can apply this command to marked
 messages with @kbd{M N}.
 
@@ -6600,8 +6602,8 @@ Note that expunges, saves and message edits are @emph{not} undoable.
 @cindex message labels
 @dfn{Labels} are user-defined message attributes.  They can have any
 name and be assigned any meaning by you.  Labels are added with
-@kbd{l a} (@code{vm-add-message-labels} and @kbd{l e}
-(@code{vm-add-existing-message-labels}, and are removed by @kbd{l d}
+@kbd{l a} (@code{vm-add-message-labels}) and @kbd{l e}
+(@code{vm-add-existing-message-labels}), and are removed by @kbd{l d}
 (@code{vm-delete-message-labels}).  BABYL format folders use labels to
 store basic attributed like ``deleted'' and ``unread''.  When visiting a
 BABYL folder VM uses these labels also in order to be compatible with
@@ -6646,14 +6648,15 @@ written into the folder's buffer before that buffer is saved.
 @code{vm-flush-interval} says when they are written:
 
 @table @code
+@item @var{n}
+Every @var{n} seconds, @var{n} being a positive integer.
+@code{vm-flush-interval} defaults to @code{90}.
 @item t
-The default.  At every change.
+At every change.
 @item nil
 Not until the folder is saved.  Faster, but a crash then leaves the
 auto-save file with no record of the attribute changes.  It still holds the
 message edits and expunges.  @xref{Crash Recovery}.
-@item @var{n}
-Every @var{n} seconds, @var{n} being a positive integer.
 @end table
 
 @node Sorting Messages, Digests, Message Attributes, Top
