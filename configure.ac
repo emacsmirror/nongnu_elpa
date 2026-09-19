@@ -45,6 +45,38 @@ AC_DEFUN([VM_PROG_GNU_TAR],
       AC_MSG_WARN([*** Some targets will be unavailable.])
     fi ])
 
+# AC_PROG_INSTALL answers the absolute path of the install it chose, and
+# config.status rewrites a relative one for each subdirectory, so every
+# Makefile carries the path of the machine that ran configure.  VM_INSTALL is
+# the same program named so that make looks it up in PATH, where PATH resolves
+# `install' to the very file configure chose.
+#
+# The bare name has to serve GNU, macOS and BSD install alike; all three take
+# the -c this passes and the -m 644 the Makefiles add for data.  Where the two
+# disagree, configure having passed over the first install in PATH or fallen
+# back to install-sh, the answer stays a full path, made absolute here because
+# four directories use it and nothing rewrites it for them.
+AC_DEFUN([VM_INSTALL_PROG],
+  [ AC_MSG_CHECKING([whether install can be named without a path])
+    vm_install_bare=no
+    case $INSTALL in
+      /*" -c")
+        vm_install_chosen=`expr "X$INSTALL" : 'X\(.*\) -c$'`
+        if test "x`command -v install 2>/dev/null`" = "x$vm_install_chosen" ; then
+          vm_install_bare=yes
+        fi ;;
+    esac
+    AC_MSG_RESULT([$vm_install_bare])
+    if test $vm_install_bare = yes ; then
+      VM_INSTALL="install -c"
+    else
+      case $INSTALL in
+        [[\\/]]* | ?:[[\\/]]* ) VM_INSTALL=$INSTALL ;;
+        * ) VM_INSTALL=`pwd`/$INSTALL ;;
+      esac
+    fi
+    AC_SUBST([VM_INSTALL]) ])
+
 # Look for an optional program: warn and carry on when it is missing, saying
 # what will not work without it.
 AC_DEFUN([VM_PROG_OPTIONAL],
@@ -192,15 +224,18 @@ TEST
 # Common system utilities checking:
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
+VM_INSTALL_PROG
 AC_PROG_LN_S
-AC_PATH_PROG([RM], [rm], [/bin/rm])
-AC_PATH_PROG([LS], [ls], [/bin/ls])
-AC_PATH_PROG([MKDIR], [mkdir], [/bin/mkdir])
-AC_PATH_PROG([RMDIR], [rmdir], [/bin/rmdir])
+# Substituted into the Makefiles, so these must be bare names: an absolute
+# path found here is the build machine's, and a package built in one prefix
+# and run in another looks for tools that are not there.
+AC_CHECK_PROG([RM], [rm], [rm], [/bin/rm])
+AC_CHECK_PROG([MKDIR], [mkdir], [mkdir], [/bin/mkdir])
+AC_CHECK_PROG([RMDIR], [rmdir], [rmdir], [/bin/rmdir])
+# GREP is used by configure itself and reaches no Makefile.
 AC_PATH_PROG([GREP], [grep], [/bin/grep])
 
 # External programs checking:
-VM_PROG_OPTIONAL([XARGS], [xargs], [make clean/tarball will not work.])
 VM_PROG_GNU_TAR
 VM_PROG_OPTIONAL([MAKEINFO], [makeinfo], [Info files will not be built.])
 VM_PROG_OPTIONAL([INSTALL_INFO], [install-info],

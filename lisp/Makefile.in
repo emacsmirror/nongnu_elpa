@@ -82,14 +82,10 @@ INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS) $(LISP_ONLY)
 ##############################################################################
 # location of required programms
 RM   = @RM@
-LS   = @LS@
 MKDIR = @MKDIR@
 RMDIR = @RMDIR@
-XARGS = @XARGS@
-INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@
-INSTALL_SCRIPT = @INSTALL_SCRIPT@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = @VM_INSTALL@
+INSTALL_DATA = $(INSTALL) -m 644
 
 prefix = @prefix@
 srcdir = @srcdir@
@@ -148,9 +144,15 @@ vm-version-conf.el: Makefile
 vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	-$(RM) -f $@
 	echo > $@.tmp
+	@# build_dir, not the absolute build directory configure resolved and
+	@# wrote into this Makefile.  Where the two differ, a tree reached by
+	@# two paths or one moved after configure, autoload writes every entry
+	@# relative to the wrong directory and the file names the build machine.
+	@# The second `pwd' is srcdir, being after the cd, which is what the
+	@# variable is here for.
 	(build_dir="`pwd`"; cd "@srcdir@" && \
 	 $(EMACS_COMP) -l autoload \
-		-f vm-built-autoloads "@abs_builddir@/$@.tmp" "`pwd`")
+		-f vm-built-autoloads "$$build_dir/$@.tmp" "`pwd`")
 	echo "(custom-add-load 'vm 'vm-cus-load)" | tr -d '\015' >> $@.tmp
 #	Before the assignments, not after: vm-vars.el is where the four
 #	vm-configure- variables are defined, and assigning to them first is an

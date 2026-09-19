@@ -8,9 +8,8 @@ SHELL = /bin/sh
 MKDIR = @MKDIR@
 RMDIR = @RMDIR@
 RM   = @RM@
-LS   = @LS@
-INSTALL = @INSTALL@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = @VM_INSTALL@
+INSTALL_DATA = $(INSTALL) -m 644
 
 prefix = @prefix@
 srcdir = @srcdir@
