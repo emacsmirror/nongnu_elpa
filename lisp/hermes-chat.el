@@ -26,8 +26,8 @@
 ;; user-facing commands and keymaps, and the load-time population of the
 ;; sibling registries (submit pipeline, turn-event routing, native slash
 ;; commands).  The ERC/emacs-jabber-shaped buffer itself -- EWOC transcript
-;; before a writable input tail -- lives in `hermes-chat-buffer'; see the
-;; AGENTS.md module map for the full split.
+;; before a writable input tail -- lives in `hermes-chat-buffer', with
+;; formatting in `hermes-chat-format' and rendering in `hermes-chat-render'.
 
 ;;; Code:
 

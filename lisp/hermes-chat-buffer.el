@@ -24,7 +24,7 @@
 ;; Stateful EWOC rendering and editable-tail buffer helpers for the Hermes
 ;; chat UI: the EWOC spine, the writable input tail, the header line, the
 ;; shared entry/header-state primitives, and the queue/drain input flow.
-;; One area of the single logical chat module (see the AGENTS.md map); it
+;; One area of the single logical chat module assembled by `hermes-chat'; it
 ;; depends only downward (format/render) and reaches the submit pipeline in
 ;; `hermes-chat' through `hermes-chat--submit-function', never by name.
 

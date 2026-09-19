@@ -472,7 +472,7 @@ because url.el checks it case-sensitively, unlike HTTP."
 SECRETS are redacted from any user-visible error.
 Legacy: new callers must use
 `hermes-dashboard-transport--default-http-request-async'; synchronous
-network on the main thread is banned by AGENTS.md."
+network on the main thread is prohibited."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
         (url-request-extra-headers
@@ -1947,7 +1947,7 @@ spawned dashboard base URL and `X-Hermes-Session-Token'.  GET requests using
 cached auth retry once with refreshed auth.
 Legacy: new callers must use
 `hermes-dashboard-transport-api-request-async'; synchronous network on the
-main thread is banned by AGENTS.md."
+main thread is prohibited."
   (if (hermes-dashboard-transport--api-client-token client)
       (hermes-dashboard-transport--api-request-with-client
        client method path :body body :query query :headers headers
