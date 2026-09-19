@@ -4960,6 +4960,23 @@ something VM does to every text/html part."
   (let ((presented (vm-mime-test--present-html 'lynx)))
     (should (string-match-p "hello from html" presented))))
 
+(ert-deftest vm-mime-test-a-button-format-takes-a-percent-literally ()
+  "%% is one % in a button format, and an unknown specifier is text.
+
+`vm-mime-compile-format-1' is a copy of the summary compiler and had both of
+its faults (emacs-vm/vm#847): a format with nothing to substitute kept the
+doubled percents it had been given, and a specifier VM does not know was
+copied into the `format\=' control string, where it made a conversion of its
+own and the button failed to be drawn at all."
+  (let ((layout (vm-mime-test--html-layout "utf-8"))
+        (vm-mime-compiled-format-alist nil))
+    (should (equal (vm-mime-sprintf "%%" layout) "%"))
+    (should (equal (vm-mime-sprintf "100%% done" layout) "100% done"))
+    (should (equal (vm-mime-sprintf "%q" layout) "%q"))
+    (should (equal (vm-mime-sprintf "%t %q" layout) "HTML %q"))
+    ;; and the ordinary case is untouched
+    (should (equal (vm-mime-sprintf "%t" layout) "HTML"))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

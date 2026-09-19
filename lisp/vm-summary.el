@@ -25,6 +25,7 @@
 ;;; Code:
 
 (require 'vm-macro)
+(require 'vm-misc)
 (require 'vm-summary-faces)
 
 ;; Say so if this file's compiled form outlives the VM it was built
@@ -1066,28 +1067,33 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 	      ;; Why do we reencode decoded strings?  USR, 2010-05-12
 	      (setq sexp-fmt
 		    (cons (if token "" "%s")
-			  (cons (substring format
-					   last-match-end
-					   (match-beginning 0))
+			  (cons (vm-percent-quote
+				 (substring format
+					    last-match-end
+					    (match-beginning 0)))
 				sexp-fmt))))
 	  (setq sexp-fmt
 		(cons (if (eq conv-spec ?\))
 			  (prog1 "" (setq saw-close-group t))
 			"%%")
-		      (cons (substring format
-				       (or last-match-end 0)
-				       (match-beginning 0))
+		      (cons (vm-percent-quote
+			     (substring format
+					(or last-match-end 0)
+					(match-beginning 0)))
 			    sexp-fmt))))
 	  (setq last-match-end new-match-end))
       (if (and (not saw-close-group) (not token))
 	  (setq sexp-fmt
-		(cons (substring format last-match-end (length format))
+		(cons (vm-percent-quote
+		       (substring format last-match-end (length format)))
 		      sexp-fmt)
 		finished-parsing-format t))
       (setq sexp-fmt (apply 'concat (nreverse sexp-fmt)))
       (if sexp
 	  (setq sexp (cons 'format (cons sexp-fmt (nreverse sexp))))
-	(setq sexp sexp-fmt))
+	;; Nothing to substitute, so nothing calls `format' and the doubled
+	;; percents would reach the summary as themselves.
+	(setq sexp (vm-percent-unquote sexp-fmt)))
       (if tokenize
 	  (setq list (nconc list (if (equal sexp "") nil (list sexp))
 			    (and token (if splice token (list token))))

@@ -7075,7 +7075,9 @@ concatenation of the thread indentation and the subject.
 ends a group.
 @end table
 
-Use ``%%'' to get a single ``%''.
+Use ``%%'' to get a single ``%''.  A ``%'' before anything VM does not
+recognise is left as it stands, so a mistyped specifier costs you the
+specifier and not the summary.
 
 A numeric field width may be specified between the ``%'' and the
 specifier; this causes right justification of the substituted string.  A

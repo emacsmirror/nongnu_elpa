@@ -424,6 +424,36 @@ and not the other would be a second bug, not this one."
       (should (string-match-p "recipient@example.com, cc@example.com|"
                               text)))))
 
+(ert-deftest vm-summary-test-a-doubled-percent-is-a-single-percent ()
+  "%% is one % wherever it appears, which is what the docstring promises.
+
+It was one only in a format that had something else to substitute.  With
+nothing else the compiler hands back its `format\=' control string without
+calling `format\=' on it, so the doubling stayed in and a summary format of
+\"100%% done\" summarised as \"100%% done\" (emacs-vm/vm#847)."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      (should (equal (vm-summary-sprintf "%%" message) "%"))
+      (should (equal (vm-summary-sprintf "100%% done" message) "100% done"))
+      (should (equal (vm-summary-sprintf "%%s" message) "%s"))
+      ;; the case that always worked, alongside the ones that did not
+      (should (equal (vm-summary-sprintf "%s %%" message) "Test Message %")))))
+
+(ert-deftest vm-summary-test-an-unknown-specifier-is-left-as-it-stands ()
+  "A specifier VM does not know is text, and does not break the other lines.
+
+The text between the specifiers is copied into the `format\=' control string,
+so a %q beside a live specifier reached `format\=' as a conversion of its own
+and every summary line failed with \"Not enough arguments for format
+string\".  A typo in `vm-summary-format\=' should cost the reader the typo,
+not the summary."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      (should (equal (vm-summary-sprintf "%q" message) "%q"))
+      (should (equal (vm-summary-sprintf "%s %q" message) "Test Message %q"))
+      (should (equal (vm-summary-sprintf "%s %q" message t)
+                     '("Test Message %q"))))))
+
 ;;; vm-su-labels tests
 
 (ert-deftest vm-summary-test-su-labels-none ()

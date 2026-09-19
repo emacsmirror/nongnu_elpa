@@ -7432,28 +7432,33 @@ WHOLE-MESSAGE is true then nil is returned."
 					       (match-end 4)))))))
 	      (setq sexp-fmt
 		    (cons "%s"
-			  (cons (substring format
-					   last-match-end
-					   (match-beginning 0))
+			  (cons (vm-percent-quote
+				 (substring format
+					    last-match-end
+					    (match-beginning 0)))
 				sexp-fmt))))
 	  (setq sexp-fmt
 		(cons (if (eq conv-spec ?\))
 			  (prog1 "" (setq done t))
 			"%%")
-		      (cons (substring format
-				       (or last-match-end 0)
-				       (match-beginning 0))
+		      (cons (vm-percent-quote
+			     (substring format
+					(or last-match-end 0)
+					(match-beginning 0)))
 			    sexp-fmt))))
 	(setq last-match-end new-match-end))
       (unless done
 	(setq sexp-fmt
-	      (cons (substring format last-match-end (length format))
+	      (cons (vm-percent-quote
+		     (substring format last-match-end (length format)))
 		    sexp-fmt)
 	      done t))
       (setq sexp-fmt (apply 'concat (nreverse sexp-fmt)))
       (if sexp
 	  (setq sexp (cons 'format (cons sexp-fmt (nreverse sexp))))
-	(setq sexp sexp-fmt)))
+	;; Nothing to substitute, so nothing calls `format' and the doubled
+	;; percents would reach the button as themselves.
+	(setq sexp (vm-percent-unquote sexp-fmt))))
     (list last-match-end sexp)))
 
 (defun vm-mime-find-format-for-layout (layout)
