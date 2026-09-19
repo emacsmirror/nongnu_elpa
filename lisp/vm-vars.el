@@ -2407,13 +2407,20 @@ Use %% to get a single %.
 
 A numeric field width may be given between the `%' and the specifier;
 this causes right justification of the substituted string.  A negative field
-width causes left justification.
+width causes left justification.  A width beginning with `0' pads a number
+with zeros rather than spaces.
 
 The field width may be followed by a `.' and a number specifying
 the maximum allowed length of the substituted string.  If the
 string is longer than this value the right end of the string is
 truncated.  If the value is negative, the string is truncated on
-the left instead of the right."
+the left instead of the right.
+
+The maximum is applied to the padded text and counts from the left, so a
+maximum smaller than the width cuts the padding rather than the text:
+\"%-20.4s\" is the first four columns of the substitution, where \"%20.4s\"
+is four spaces.  The two are usually written with the same number, which
+makes a column of exactly that width."
   :group 'vm-mime
   :type '(repeat (cons (string :tag "MIME Type")
 		       (string :tag "Format"))))
@@ -3934,13 +3941,20 @@ Use %% to get a single %.
 
 A numeric field width may be given between the `%' and the specifier;
 this causes right justification of the substituted string.  A negative field
-width causes left justification.
+width causes left justification.  A width beginning with `0' pads a number
+with zeros rather than spaces.
 
 The field width may be followed by a `.' and a number specifying
 the maximum allowed length of the substituted string.  If the
 string is longer than this value the right end of the string is
 truncated.  If the value is negative, the string is truncated on
 the left instead of the right.
+
+The maximum is applied to the padded text and counts from the left, so a
+maximum smaller than the width cuts the padding rather than the text:
+\"%-20.4s\" is the first four columns of the substitution, where \"%20.4s\"
+is four spaces.  The two are usually written with the same number, which
+makes a column of exactly that width.
 
 The summary format need not be one line per message but it must end with
 a newline, otherwise the message pointer will not be displayed correctly
