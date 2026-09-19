@@ -315,16 +315,20 @@ messages compare equal by the first key, the second key will be
 compared and so on.  When called interactively the keys will be
 read from the minibuffer.  Valid keys are
 
-\"date\"		\"reversed-date\"
-\"activity\" 		\"reversed-activity\"
-\"author\"		\"reversed-author\"
-\"full-name\"		\"reversed-full-name\"
-\"subject\"		\"reversed-subject\"
-\"recipients\"		\"reversed-recipients\"
-\"line-count\"		\"reversed-line-count\"
-\"byte-count\"		\"reversed-byte-count\"
-\"physical-order\"	\"reversed-physical-order\"
-\"spam-score\"		\"reversed-spam-score\"
+\"date\"		the date the message was sent
+\"activity\"	the date of the newest message in its thread
+\"author\"		the address in the From header
+\"full-name\"	the name in the From header
+\"subject\"		the subject, normalized
+\"recipients\"	the To and Cc headers together
+\"addressees\"	the To header alone
+\"line-count\"	the number of lines
+\"byte-count\"	the number of bytes
+\"physical-order\"	the order the messages are stored in
+\"spam-score\"	the spam score of the headers
+
+Each has a \"reversed-\" form that sorts the other way, as in
+\"reversed-date\".
 
 Optional second arg (prefix arg interactively) means the sort
 should change the physical order of the messages in the folder.
@@ -401,6 +405,10 @@ folder in the order in which the messages arrived."
 	     (setq key-funcs (cons 'vm-sort-compare-recipients key-funcs)))
 	    ((equal key "reversed-recipients")
 	     (setq key-funcs (cons 'vm-sort-compare-recipients-r key-funcs)))
+	    ((equal key "addressees")
+	     (setq key-funcs (cons 'vm-sort-compare-addressees key-funcs)))
+	    ((equal key "reversed-addressees")
+	     (setq key-funcs (cons 'vm-sort-compare-addressees-r key-funcs)))
 	    ((equal key "byte-count")
 	     (setq key-funcs (cons 'vm-sort-compare-byte-count key-funcs)))
 	    ((equal key "reversed-byte-count")
@@ -838,9 +846,9 @@ that, if P1 and P2 are the oldest different ancestors of M1 and M2, then
             (completing-read
 	     ;; prompt
              (if (car vm-sort-compare-header-history)
-                 (format "Sort hy header (%s): "
+                 (format "Sort by header (%s): "
                          (car vm-sort-compare-header-history))
-               "Sort hy header: ")
+               "Sort by header: ")
 	     ;; collection
              (mapcar (lambda (h) (list h))
                      (vm-get-headers-of m2 (vm-get-headers-of m1)))

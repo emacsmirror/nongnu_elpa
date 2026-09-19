@@ -6681,17 +6681,24 @@ set @code{vm-move-messages-physically} non-@code{nil} before sorting.
 
 @cindex spam
 Valid sort keys are:
-@multitable @columnfractions 0.35 0.60
-@item date @tab reversed-date
-@item activity @tab reversed-activity
-@item author @tab reversed-author
-@item subject @tab reversed-subject
-@item recipients @tab reversed-recipients
-@item line-count @tab reversed-line-count
-@item byte-count @tab reversed-byte-count
-@item physical-order @tab reversed-physical-order
-@item spam-score @tab reversed-spam-score
+@multitable @columnfractions 0.25 0.70
+@item @code{date} @tab the date the message was sent
+@item @code{activity} @tab the date of the newest message in its thread
+@item @code{author} @tab the address in the @code{From} header
+@item @code{full-name} @tab the name in the @code{From} header
+@item @code{subject} @tab the subject, normalized as below
+@item @code{recipients} @tab the @code{To} and @code{Cc} headers together
+@item @code{addressees} @tab the @code{To} header alone
+@item @code{line-count} @tab the number of lines
+@item @code{byte-count} @tab the number of bytes
+@item @code{physical-order} @tab the order the messages are stored in
+@item @code{spam-score} @tab the spam score of the headers
 @end multitable
+
+@noindent
+Each has a @code{reversed-} form that sorts the other way, as
+@code{reversed-date} does, and @kbd{G} takes several keys at once: messages
+that compare equal by the first are ordered by the second, and so on.
 
 @cindex delivery date
 @vindex vm-sort-messages-by-delivery-date
