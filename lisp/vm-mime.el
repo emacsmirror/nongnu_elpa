@@ -7334,6 +7334,11 @@ WHOLE-MESSAGE is true then nil is returned."
     (let ((vm-mime-layout layout))
       (eval (cdr match)))))
 
+(defconst vm-mime-number-specifiers '(?n ?N ?T)
+  "The button specifiers whose substitution is a number.
+A width beginning with 0 fills with zeros for these and with spaces for
+everything else, as printf does.")
+
 (defun vm-mime-compile-format (format)
   (let ((return-value (vm-mime-compile-format-1 format 0)))
     (setq vm-mime-compiled-format-alist
@@ -7401,28 +7406,8 @@ WHOLE-MESSAGE is true then nil is returned."
 		    ((= conv-spec ?x)
 		     (setq sexp (cons (list 'vm-mf-external-body-content-type
 					    'vm-mime-layout) sexp))))
-	      (cond ((and (match-beginning 1) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-left-justify-string
-				'vm-left-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2))))))
-		    ((match-beginning 2)
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-right-justify-string
-				'vm-right-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2)))))))
+	      ;; The maximum first and the width after it, as printf does it
+	      ;; and as `vm-summary-compile-format-1' does (emacs-vm/vm#848).
 	      (cond ((match-beginning 3)
 		     (setcar sexp
 			     (list 'vm-truncate-string (car sexp)
@@ -7430,6 +7415,27 @@ WHOLE-MESSAGE is true then nil is returned."
 				    (substring format
 					       (match-beginning 4)
 					       (match-end 4)))))))
+	      (cond ((and (match-beginning 1) (match-beginning 2))
+		     ;; Spaces whatever the width says: a `-' beats a `0'.
+		     (setcar sexp
+			     (list 'vm-left-justify-string
+				   (car sexp)
+				   (string-to-number
+				    (substring format
+					       (match-beginning 2)
+					       (match-end 2))))))
+		    ((match-beginning 2)
+		     (setcar sexp
+			     (list
+			      (if (and (eq (aref format (match-beginning 2)) ?0)
+				       (memq conv-spec vm-mime-number-specifiers))
+				  'vm-numeric-right-justify-string
+				'vm-right-justify-string)
+			      (car sexp)
+			      (string-to-number
+			       (substring format
+					  (match-beginning 2)
+					  (match-end 2)))))))
 	      (setq sexp-fmt
 		    (cons "%s"
 			  (cons (vm-percent-quote

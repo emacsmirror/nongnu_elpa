@@ -7080,26 +7080,29 @@ recognise is left as it stands, so a mistyped specifier costs you the
 specifier and not the summary.
 
 A specifier may carry a field width and a maximum, which is what
-@samp{%-17.17F} in the default format is:
+@samp{%-17.17F} in the default format is.  Both work as they do in
+@command{printf}:
 
 @table @asis
 @item width
 A number between the @samp{%} and the specifier pads the substitution to
 that many columns on the left, so that it is right justified.  A negative
-number pads on the right instead.  A width beginning with @samp{0} pads a
-number with zeros rather than spaces.
+number pads on the right instead.  A width beginning with @samp{0} fills
+with zeros rather than spaces, for the specifiers whose substitution is a
+number: @samp{%c}, @samp{%d}, @samp{%l}, @samp{%M}, @samp{%n} and
+@samp{%y}.  A negative width fills with spaces whatever the @samp{0} says,
+zeros to the right of a number being a different number.
 @item maximum
-A @samp{.} and a number after that is the most the substitution may occupy,
-and anything longer is cut.  A negative number keeps the last columns rather
-than the first: @samp{%.-20s} is the end of a long subject.
+A @samp{.} and a number after that is the most of the substitution that is
+used, and anything longer is cut.  A negative number keeps the last columns
+rather than the first: @samp{%.-20s} is the end of a long subject.
 @end table
 
 @noindent
-The maximum is applied to the padded text and counts from the left, so a
-maximum smaller than the width cuts the padding away rather than the text.
-@samp{%-20.4s} is the first four columns of the subject, where @samp{%20.4s}
-is four spaces.  The two are usually written with the same number, as
-@samp{%-17.17F} is, which makes a column of exactly that width.
+The maximum is applied first and the width after it, so @samp{%20.4s} is
+four columns of the subject in a column twenty wide.  The two are usually
+written with the same number, as @samp{%-17.17F} is, which makes a column of
+exactly that width.
 
 @vindex vm-summary-uninteresting-senders
 @vindex vm-summary-recipient-marker
