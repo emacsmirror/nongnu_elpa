@@ -454,6 +454,27 @@ not the summary."
       (should (equal (vm-summary-sprintf "%s %q" message t)
                      '("Test Message %q"))))))
 
+(ert-deftest vm-summary-test-a-width-and-a-maximum-do-what-is-documented ()
+  "The field width pads, the maximum cuts, and the maximum is applied last.
+
+The manual explains the order because the reader cannot guess it: a maximum
+smaller than a right-justified width cuts the padding and leaves none of the
+text, where the same pair left-justified keeps the first columns.  Both are
+here so that a change to the order is a change to the manual."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      ;; subject is "Test Message", line count is 2
+      (should (equal (vm-summary-sprintf "%20s" message)
+                     "        Test Message"))
+      (should (equal (vm-summary-sprintf "%-20s" message)
+                     "Test Message        "))
+      (should (equal (vm-summary-sprintf "%.4s" message) "Test"))
+      (should (equal (vm-summary-sprintf "%.-4s" message) "sage"))
+      (should (equal (vm-summary-sprintf "%-20.4s" message) "Test"))
+      (should (equal (vm-summary-sprintf "%20.4s" message) "    "))
+      (should (equal (vm-summary-sprintf "%05l" message) "00002"))
+      (should (equal (vm-summary-sprintf "%5l" message) "    2")))))
+
 ;;; vm-su-labels tests
 
 (ert-deftest vm-summary-test-su-labels-none ()

@@ -7079,12 +7079,27 @@ Use ``%%'' to get a single ``%''.  A ``%'' before anything VM does not
 recognise is left as it stands, so a mistyped specifier costs you the
 specifier and not the summary.
 
-A numeric field width may be specified between the ``%'' and the
-specifier; this causes right justification of the substituted string.  A
-negative field width causes left justification.  The field width may be
-followed by a ``.'' and a number specifying the maximum allowed length
-of the substituted string.  If the string is longer than this value, it
-is truncated.
+A specifier may carry a field width and a maximum, which is what
+@samp{%-17.17F} in the default format is:
+
+@table @asis
+@item width
+A number between the @samp{%} and the specifier pads the substitution to
+that many columns on the left, so that it is right justified.  A negative
+number pads on the right instead.  A width beginning with @samp{0} pads a
+number with zeros rather than spaces.
+@item maximum
+A @samp{.} and a number after that is the most the substitution may occupy,
+and anything longer is cut.  A negative number keeps the last columns rather
+than the first: @samp{%.-20s} is the end of a long subject.
+@end table
+
+@noindent
+The maximum is applied to the padded text and counts from the left, so a
+maximum smaller than the width cuts the padding away rather than the text.
+@samp{%-20.4s} is the first four columns of the subject, where @samp{%20.4s}
+is four spaces.  The two are usually written with the same number, as
+@samp{%-17.17F} is, which makes a column of exactly that width.
 
 @vindex vm-summary-uninteresting-senders
 @vindex vm-summary-recipient-marker
