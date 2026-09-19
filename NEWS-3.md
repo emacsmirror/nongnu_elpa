@@ -8,6 +8,16 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`G` sorts by `reversed-addressees`** (emacs-vm/vm#850).  It offered
+    the key in completion and then refused it with "Unknown key:
+    reversed-addressees".  `addressees`, sorting by the `To` header where
+    `recipients` is `To` and `Cc` together, worked only by accident: the
+    `cond` that maps a key to its comparison has an arm for neither, and the
+    fallback arm finds a function of the same name for one of the pair and
+    not the other.  Both have arms now, and the manual's table of sort keys
+    says what each key sorts by, `full-name` and `addressees` having been
+    missing from it altogether.
+
   * **A field width and a maximum work as `printf` does**
     (emacs-vm/vm#848), in `vm-summary-format` and in
     `vm-mime-button-format-alist`.  The maximum cuts the substitution and the

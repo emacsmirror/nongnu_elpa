@@ -927,6 +927,40 @@ with the order they are stored in, so a sort by any of them is visible.")
     (vm-sort-messages "reversed-author")
     (should (equal (vm-sort-test--subjects) '("cherries" "bananas" "apples")))))
 
+(ert-deftest vm-sort-test-sorting-by-addressees ()
+  "The addressees key orders by the To header alone, and its reverse undoes it.
+`recipients\=' is the To and the Cc together; this one is the addressees, which
+is what the two keys are for."
+  (vm-sort-test--sorting
+    (vm-sort-messages "addressees")
+    ;; To: xena, yves, zoe on bananas, apples, cherries
+    (should (equal (vm-sort-test--subjects) '("bananas" "apples" "cherries")))
+    (vm-sort-messages "reversed-addressees")
+    (should (equal (vm-sort-test--subjects) '("cherries" "apples" "bananas")))))
+
+(defconst vm-sort-test--keys-that-read-something
+  '("header" "auto-folder")
+  "Keys vm-sort.el and vm-avirtual.el add to `vm-supported-sort-keys' on load.
+`header' asks which header to sort on, and `auto-folder' wants
+`vm-virtual-auto-folder-alist' and a summary to write the folder names into,
+so neither belongs in a sweep that only asks whether a key sorts.")
+
+(ert-deftest vm-sort-test-every-supported-key-sorts ()
+  "REGRESSION: every key completion offers is one that sorts.
+
+`reversed-addressees\=' was in `vm-supported-sort-keys\=' with no arm in the
+`cond\=' that maps a key to its comparison, and the fallback arm interns
+`vm-sort-compare-reversed-addressees\=', which does not exist: `G\=' completed
+to the key and then said \"Unknown key: reversed-addressees\"
+(emacs-vm/vm#850).  `addressees\=' survived on that same fallback, so half the
+pair worked.  The same fault as emacs-vm/vm#827 in the attribute names."
+  (vm-sort-test--sorting
+    (dolist (key vm-supported-sort-keys)
+      (unless (member key vm-sort-test--keys-that-read-something)
+        ;; an unknown key signals; nothing else here does
+        (vm-sort-messages key)
+        (should (= (length vm-message-list) 3))))))
+
 (ert-deftest vm-sort-test-sorting-by-full-name ()
   "The full-name key orders by the name in the From header rather than by
 the address: the two disagree often enough to be worth a key of its own."
