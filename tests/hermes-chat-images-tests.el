@@ -15,6 +15,30 @@
           (hermes-chat--image-prior-submits (make-hash-table :test #'equal)))
      (hermes-test-with-chat-buffer ,@body)))
 
+(ert-deftest hermes-images-admission-invalidation-preserves-sibling ()
+  "Uncertainty retires only its own admissions, not another chat's record."
+  (hermes-images-test-with-chat-buffer
+   (let* ((owner (current-buffer))
+          (first (hermes-chat--image-admission-start "first"))
+          (second (hermes-chat--image-admission-start "second"))
+          (key (plist-get first :session-key)))
+     (hermes-test-with-chat-buffer
+      (let ((sibling (hermes-chat--image-admission-start "sibling")))
+        (with-current-buffer owner (hermes-chat--invalidate-transport-state))
+        (let ((remaining (gethash key hermes-chat--image-prior-submits)))
+          (should (memq sibling remaining))
+          (should-not (memq first remaining))
+          (should-not (memq second remaining))
+          (should (= 1 (cl-count 'uncertain remaining))))
+        (hermes-chat--image-admission-ack sibling '((status . "steered")))
+        (should (equal (gethash key hermes-chat--image-prior-submits)
+                       '(uncertain)))
+        ;; A duplicate or stale receipt cannot release unknown remote staging.
+        (hermes-chat--image-admission-finish first)
+        (hermes-chat--image-admission-finish sibling)
+        (should (equal (gethash key hermes-chat--image-prior-submits)
+                       '(uncertain))))))))
+
 (ert-deftest hermes-images-mode-line-survives-clear ()
   "Public staging and Clear retain a visible count until explicit removal."
   (hermes-images-test-with-chat-buffer
@@ -865,7 +889,9 @@
        (funcall resolve `((status . ,status)))
        (should (equal (gethash (hermes-chat--image-session-key)
                               hermes-chat--image-prior-submits)
-                      (if (equal status "queued") '(uncertain) (list first))))))))
+                      (if (equal status "queued")
+                          (list 'uncertain first)
+                        (list first))))))))
 
 (ert-deftest hermes-images-queued-text-keeps-image-only-fence ()
   "A queued text worker must not consume B's later images before admission."
@@ -904,9 +930,12 @@
            (hermes-test-with-chat-buffer
             (setq hermes-chat--dashboard-client client
                   hermes-chat--dashboard-active-session-id "session-a")
-            ;; Unqualified queue events cannot prove consumption.  Text recovery
-            ;; remains usable even though images require a new session.
-            (should-not (hermes-chat--images-inhibit))
+            ;; Unqualified queue events cannot prove consumption.  A stale
+            ;; generation also cannot settle the retained streaming admission;
+            ;; that sibling must continue excluding other text senders.
+            (if (eq action 'stale)
+                (should (hermes-chat--images-inhibit))
+              (should-not (hermes-chat--images-inhibit)))
             (insert "B exact image text\nkeep this")
             (hermes-chat--image-stage hermes-images-test-png)
             (let ((record hermes-chat--image-draft-record))

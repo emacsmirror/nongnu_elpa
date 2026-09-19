@@ -97,7 +97,10 @@ on a failed GET come from the shared dashboard transport, which talks only to
                      (buffer-local-value
                       'hermes-browser--request-generation origin)))
            result
-         (hermes--promise-rejected hermes-kanban--superseded))))))
+         (hermes--promise-rejected
+          (if (equal method "GET")
+              hermes-kanban--superseded
+            "Kanban update superseded; check board before retrying")))))))
 
 (defun hermes-kanban--then (promise on-ok)
   "Run ON-OK on PROMISE's resolved value, reporting any rejection."

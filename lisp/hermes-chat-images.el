@@ -83,7 +83,10 @@ sessions block images with one byte-free marker, without blocking ordinary text.
       (when (memq record owners)
         (let ((remaining (delq record owners)))
           (if uncertain
-              (puthash key '(uncertain) hermes-chat--image-prior-submits)
+              (puthash key (if (memq 'uncertain remaining)
+                               remaining
+                             (cons 'uncertain remaining))
+                       hermes-chat--image-prior-submits)
             (if remaining
                 (puthash key remaining hermes-chat--image-prior-submits)
               (remhash key hermes-chat--image-prior-submits))))))))

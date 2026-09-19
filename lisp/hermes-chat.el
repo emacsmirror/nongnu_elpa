@@ -145,6 +145,19 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--queued-messages)
 (defvar hermes-chat--queued-submit-id)
 
+;; Assemble the sibling areas before any callers, including reducer helpers
+;; that reuse their pure projections.  The reducer below remains separate
+;; from effect dispatch.  Upward wiring uses callbacks, never declarations.
+(require 'hermes-chat-buffer)
+(require 'hermes-chat-draft)
+(require 'hermes-chat-prompts)
+(require 'hermes-chat-images)
+(require 'hermes-chat-todos)
+(require 'hermes-chat-dashboard)
+(require 'hermes-chat-models)
+(require 'hermes-chat-handoff)
+(require 'hermes-chat-slash)
+
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
 
@@ -475,9 +488,6 @@ and `upsert-entry'.  Other types return (STATE)."
        assistant-id 'done
        (hermes-chat--assistant-done-content assistant-id content) t))))
 
-(require 'hermes-chat-images)
-(require 'hermes-chat-todos)
-
 (defun hermes-chat--apply-turn-effect (assistant-id effect)
   "Apply one boundary EFFECT for ASSISTANT-ID.
 Header and tool effects always apply; transcript, message, and turn-lifecycle
@@ -552,20 +562,6 @@ of its own."
     (when (and (eq (plist-get event :type) 'status)
                (equal (plist-get event :status) "goal"))
       (hermes-chat--dashboard-refresh-goal))))
-
-;; These files are sibling areas of one logical chat module.  They are
-;; required here, after the reducer/effect helpers above, so the require
-;; order documents the module seam: everything below this point may call
-;; sibling functions directly, and the siblings' own upward wiring goes
-;; through the registry variables they define (never `declare-function').
-(require 'hermes-chat-buffer)
-(require 'hermes-chat-draft)
-(require 'hermes-chat-prompts)
-(require 'hermes-chat-dashboard)
-(require 'hermes-chat-models)
-(require 'hermes-chat-handoff)
-(require 'hermes-chat-slash)
-
 
 (defun hermes-chat--busy-message ()
   "Return the user-facing busy/backpressure message."

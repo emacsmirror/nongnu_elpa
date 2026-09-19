@@ -23,10 +23,10 @@
 
 ;; Session handoff for `hermes-chat': the `handoff.request' command, the
 ;; live-platform target prompt from `complete.slash', and the
-;; backoff-polled `handoff.state' watcher with its timeout fallback to
-;; `handoff.fail'.  Part of the one logical chat module (see the require
-;; note in `hermes-chat.el'); it preserves the existing `hermes-chat--*'
-;; symbols.
+;; backoff-polled `handoff.state' watcher.  Its deadline warns once, then
+;; polling continues until the backend reports completion or failure.
+;; Part of the one logical chat module (see the require note in
+;; `hermes-chat.el'); it preserves the existing `hermes-chat--*' symbols.
 
 ;;; Code:
 
@@ -51,7 +51,8 @@
   "Ceiling for the doubling delay between `handoff.state' polls.")
 
 (defconst hermes-chat--handoff-poll-deadline 120
-  "Seconds to keep polling `handoff.state' before marking the handoff failed.")
+  "Seconds before warning that a handoff is overdue.
+Polling continues at the capped backoff; only the backend settles the handoff.")
 
 (defvar-local hermes-chat--handoff-poll nil
   "Active handoff poll state with :id, :timer, :backoff, :platform, and :deadline.")
@@ -172,22 +173,31 @@
     (let* ((id (or id (plist-get hermes-chat--handoff-poll :id)))
            (deadline (plist-get hermes-chat--handoff-poll :deadline)))
       (when (hermes-chat--handoff-poll-current-p id)
-        (if (and deadline (time-less-p deadline (current-time)))
-            (hermes-chat--handoff-timeout buffer id)
-          (hermes-dashboard-transport-handoff-state
-           hermes-chat--dashboard-client
-           :session-id hermes-chat--dashboard-active-session-id
-           :resolve (lambda (result)
-                      (hermes-chat--in-buffer buffer
-                        (when (hermes-chat--handoff-poll-current-p id)
-                          (hermes-chat--handoff-handle-state buffer result))))
-           :reject (lambda (_message)
-                     (hermes-chat--in-buffer buffer
-                       (when (hermes-chat--handoff-poll-current-p id)
-                         (hermes-chat--handoff-reschedule buffer))))))))))
+        (setf (plist-get hermes-chat--handoff-poll :timer) nil)
+        (condition-case nil
+            (if (and deadline (time-less-p deadline (current-time)))
+                (hermes-chat--handoff-timeout buffer id)
+              (hermes-dashboard-transport-handoff-state
+               hermes-chat--dashboard-client
+               :session-id hermes-chat--dashboard-active-session-id
+               :resolve (lambda (result)
+                          (hermes-chat--in-buffer buffer
+                            (when (hermes-chat--handoff-poll-current-p id)
+                              (hermes-chat--handoff-handle-state buffer result))))
+               :reject (lambda (_message)
+                         (hermes-chat--in-buffer buffer
+                           (when (hermes-chat--handoff-poll-current-p id)
+                             (hermes-chat--handoff-reschedule buffer))))))
+          (error
+           ;; A synchronous transport failure is not a backend handoff failure.
+           ;; A callback may already have settled or scheduled this owner.
+           (hermes-chat--in-buffer buffer
+             (when (and (hermes-chat--handoff-poll-current-p id)
+                        (not (plist-get hermes-chat--handoff-poll :timer)))
+               (hermes-chat--handoff-reschedule buffer id)))))))))
 
 (defun hermes-chat--handoff-start-poll (platform &optional owner)
-  "Begin bounded polling for PLATFORM under optional handoff OWNER."
+  "Begin backoff polling for PLATFORM under optional handoff OWNER."
   (let ((token (or owner (gensym "hermes-handoff-"))))
     (when (or (null owner) (hermes-chat--handoff-owner-current-p token))
       (when-let* ((timer (plist-get hermes-chat--handoff-poll :timer)))

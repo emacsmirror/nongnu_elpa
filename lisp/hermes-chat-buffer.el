@@ -815,7 +815,13 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
         hermes-chat--prepared-submit-assistant-id nil
         hermes-chat--interrupted-assistant-id nil
         hermes-chat--interrupted-events nil
-        hermes-chat--interrupt-request-pending-p nil))
+        hermes-chat--interrupt-request-pending-p nil)
+  ;; Invalidation hooks still need the queue for recovery; render only after
+  ;; those hooks have run and the local FIFO has actually been cleared.
+  (condition-case err
+      (hermes-chat--queue-panel-refresh-if-live)
+    ((error quit)
+     (message "Hermes queue panel refresh failed (%s)" (car err)))))
 
 (defun hermes-chat--register-node (entry node)
   "Register ENTRY's ID for NODE and return NODE."
@@ -1513,9 +1519,11 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
 (defun hermes-chat--queue-panel-refresh-if-live ()
   "Refresh this chat's live queue side panel, when present."
   (when (buffer-live-p hermes-chat--queue-panel-buffer)
-    (with-current-buffer hermes-chat--queue-panel-buffer
-      (when (hermes-buffer--owned-p 'hermes-chat-queue-panel-mode)
-        (hermes-chat-queue-panel-refresh)))))
+    (let ((owner (current-buffer)))
+      (with-current-buffer hermes-chat--queue-panel-buffer
+        (when (and (hermes-buffer--owned-p 'hermes-chat-queue-panel-mode)
+                   (eq hermes-chat-queue-panel--owner owner))
+          (hermes-chat-queue-panel-refresh))))))
 
 (defun hermes-chat--queue-panel-owner ()
   "Return this panel's live chat owner or signal a user error."

@@ -63,5 +63,23 @@
                   (should (= (point) position)))
               (keymap-popup-dismiss))))))))
 
+(ert-deftest hermes-dependency-chat-callers-follow-complete-load-seam ()
+  "Load every chat sibling before any reducer helper or effect caller."
+  (let (forms)
+    (with-temp-buffer
+      (insert-file-contents (locate-library "hermes-chat.el"))
+      (condition-case nil
+          (while t (push (read (current-buffer)) forms))
+        (end-of-file nil)))
+    (setq forms (nreverse forms))
+    (let ((first-function (cl-position 'defun forms :key #'car)))
+      (should first-function)
+      (dolist (feature '(hermes-chat-buffer hermes-chat-draft hermes-chat-prompts
+                         hermes-chat-images hermes-chat-todos hermes-chat-dashboard
+                         hermes-chat-models hermes-chat-handoff hermes-chat-slash))
+        (let ((position (cl-position `(require ',feature) forms :test #'equal)))
+          (should position)
+          (should (< position first-function)))))))
+
 (provide 'hermes-dependency-tests)
 ;;; hermes-dependency-tests.el ends here

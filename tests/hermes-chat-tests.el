@@ -10032,6 +10032,81 @@
 
 
 
+(ert-deftest hermes-chat-queue-panel-invalidation-refreshes-current-owner ()
+  "Invalidation clears an open panel without requiring manual refresh."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--queue-content "queued literal")
+   (let ((panel (hermes-chat-queue-panel)))
+     (unwind-protect
+         (progn
+           (should (with-current-buffer panel
+                     (string-match-p "queued literal" (buffer-string))))
+           (hermes-chat--invalidate-transport-state)
+           (should-not hermes-chat--queued-messages)
+           (with-current-buffer panel
+             (should (string-match-p "No queued messages" (buffer-string)))
+             (should-not (string-match-p "queued literal" (buffer-string)))))
+       (kill-buffer panel)))))
+
+(ert-deftest hermes-chat-queue-panel-invalidation-preserves-retired-panel ()
+  "Invalidation must not repaint a panel reassociated with a notes file."
+  (dolist (detach '(nil t))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--queue-content "queued literal")
+     (let ((panel (hermes-chat-queue-panel)))
+       (unwind-protect
+           (progn
+             (with-current-buffer panel
+               (set-visited-file-name (make-temp-name "/tmp/hermes-queue-notes-"))
+               (when detach (set-visited-file-name nil))
+               (let ((inhibit-read-only t))
+                 (erase-buffer)
+                 (insert "private notes")))
+             (hermes-chat--invalidate-transport-state)
+             (should-not hermes-chat--queued-messages)
+             (should (equal (with-current-buffer panel (buffer-string))
+                            "private notes")))
+         (with-current-buffer panel (set-buffer-modified-p nil))
+         (kill-buffer panel))))))
+
+(ert-deftest hermes-chat-queue-panel-invalidation-preserves-transferred-panel ()
+  "Old-chat invalidation cannot repaint a panel claimed by another chat."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--queue-content "old queue")
+   (let ((owner (current-buffer))
+         (panel (hermes-chat-queue-panel)))
+     (unwind-protect
+         (hermes-test-with-chat-buffer
+          (hermes-chat--queue-content "successor queue")
+          (let ((successor (current-buffer)))
+            (with-current-buffer panel
+              (setq hermes-chat-queue-panel--owner successor)
+              (hermes-chat-queue-panel-refresh))
+            (let (refreshed)
+              (with-current-buffer owner
+                (cl-letf (((symbol-function 'hermes-chat-queue-panel-refresh)
+                           (lambda (&rest _) (setq refreshed t))))
+                  (hermes-chat--invalidate-transport-state)))
+              (should-not refreshed))
+            (should (with-current-buffer panel
+                      (string-match-p "successor queue" (buffer-string))))))
+       (kill-buffer panel)))))
+
+(ert-deftest hermes-chat-queue-panel-invalidation-contains-render-failure ()
+  "A panel error or quit cannot abort transport invalidation."
+  (dolist (condition '(error quit))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--queue-content "queued literal")
+     (let (attempted)
+       (cl-letf (((symbol-function 'hermes-chat--queue-panel-refresh-if-live)
+                  (lambda ()
+                    (setq attempted t)
+                    (signal condition nil))))
+         (hermes-chat--invalidate-transport-state))
+       (should attempted)
+       (should-not hermes-chat--queued-messages)
+       (should-not hermes-chat--queued-submit-id)))))
+
 (ert-deftest hermes-chat-queue-panel-renders-and-reorders-fifo ()
   "The side panel renders queue entries and can change their send order."
   (hermes-test-with-chat-buffer

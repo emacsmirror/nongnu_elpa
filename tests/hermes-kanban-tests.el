@@ -20,6 +20,79 @@
       (hermes-kanban--api "GET" "/boards")
       (should (eq seen-client 'remote-client)))))
 
+(ert-deftest hermes-kanban-superseded-mutation-requires-board-check ()
+  "Stale write receipts warn without refreshing or repeating the mutation."
+  (dolist (method '("POST" "PATCH" "DELETE" "GET"))
+    (let ((pending (hermes--promise-make))
+          (hermes-instances '(("test" . "http://example.test")))
+          (instance '("test" . "http://example.test"))
+          (calls 0) succeeded messages)
+      (with-temp-buffer
+        (setq-local hermes-instance instance)
+        (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                   (lambda (make-promise &optional on-success _on-error)
+                     (hermes--promise-then
+                      (funcall make-promise 'client) on-success)))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (&rest _)
+                     (cl-incf calls)
+                     pending))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) messages))))
+          (hermes-kanban--then
+           (hermes-kanban--api method "/tasks/task/comments")
+           (lambda (_) (setq succeeded t)))
+          (hermes-browser--next-request-generation)
+          (hermes--promise-resolve pending '((ok . t)))
+          (should (= calls 1))
+          (should-not succeeded)
+          (if (equal method "GET")
+              (should-not messages)
+            (should (= (length messages) 1))
+            (should (string-match-p
+                     "superseded; check board before retrying"
+                     (car messages)))))))))
+
+(ert-deftest hermes-kanban-comment-settles-current-or-superseded-owner ()
+  "A comment receipt refreshes only its current owner, otherwise warns."
+  (dolist (superseded '(nil t))
+    (let ((pending (hermes--promise-make))
+          (hermes-instances '(("test" . "http://example.test")))
+          requests messages refreshed)
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-instance '("test" . "http://example.test")
+              hermes-kanban-task--task-id "task"
+              hermes-kanban-task--board-slug "work")
+        (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                   (lambda (make-promise &optional on-success _on-error)
+                     (hermes--promise-then
+                      (funcall make-promise 'client) on-success)))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (method path &rest args)
+                     (push (list method path (plist-get args :body)) requests)
+                     pending))
+                  ((symbol-function 'read-string-from-buffer)
+                   (lambda (&rest _) "Comment text"))
+                  ((symbol-function 'hermes-kanban--context-refresher)
+                   (lambda () (lambda () (setq refreshed t))))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) messages))))
+          (call-interactively #'hermes-kanban-comment)
+          (when superseded (hermes-browser--next-request-generation))
+          (hermes--promise-resolve pending '((ok . t)))
+          (should (equal requests
+                         '(("POST" "/api/plugins/kanban/tasks/task/comments"
+                            ((body . "Comment text"))))))
+          (should (eq refreshed (not superseded)))
+          (should (equal messages
+                         (list (if superseded
+                                   (concat "Hermes: Kanban update superseded; "
+                                           "check board before retrying")
+                                 "Comment added to task task")))))))))
+
 (ert-deftest hermes-kanban-status-display-uses-shared-icons ()
   "Status display helpers share icons, labels, and raw status properties."
   (should (equal hermes-kanban--current-board-marker "📍"))

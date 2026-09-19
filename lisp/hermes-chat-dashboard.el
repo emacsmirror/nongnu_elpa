@@ -2089,6 +2089,9 @@ a local FIFO submission."
    (t
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
+(setq hermes-chat--prompt-control-client-function
+      #'hermes-chat--dashboard-control-client)
+
 (defun hermes-chat--apply-directory (directory)
   "Apply gateway-native DIRECTORY, adopting it locally only when usable."
   (when (and (not (find-file-name-handler directory nil))

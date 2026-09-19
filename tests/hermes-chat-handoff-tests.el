@@ -248,6 +248,57 @@
       (should-not hermes-chat--handoff-poll)
       (should-not hermes-chat--handoff-owner))))
 
+(ert-deftest hermes-chat-handoff-poll-synchronous-error-retries-quietly ()
+  "A throwing transport keeps the handoff lease and schedules one retry."
+  (with-temp-buffer
+    (hermes-test--own-handoff-poll
+     (list :id 'owner :platform "telegram" :backoff 1 :timer 'fired))
+    (let (scheduled)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (&rest _) (error "Disconnected")))
+                ((symbol-function 'run-at-time)
+                 (lambda (delay _repeat function buffer id)
+                   (push (list delay function buffer id) scheduled)
+                   'retry)))
+        (hermes-chat--handoff-poll-tick (current-buffer) 'owner)
+        (should (equal scheduled
+                       (list (list 2 #'hermes-chat--handoff-poll-tick
+                                   (current-buffer) 'owner))))
+        (should (eq hermes-chat--handoff-owner 'owner))
+        (should (eq (plist-get hermes-chat--handoff-poll :timer) 'retry))))))
+
+(ert-deftest hermes-chat-handoff-poll-error-preserves-successor ()
+  "A dispatch that replaces the watcher then throws cannot retry its successor."
+  (with-temp-buffer
+    (hermes-test--own-handoff-poll (list :id 'old :backoff 1))
+    (let (scheduled)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (&rest _)
+                   (hermes-test--own-handoff-poll
+                    (list :id 'new :backoff 1 :timer 'successor))
+                   (error "Old dispatch failed")))
+                ((symbol-function 'run-at-time)
+                 (lambda (&rest _) (setq scheduled t))))
+        (hermes-chat--handoff-poll-tick (current-buffer) 'old)
+        (should-not scheduled)
+        (should (eq hermes-chat--handoff-owner 'new))
+        (should (eq (plist-get hermes-chat--handoff-poll :timer) 'successor))))))
+
+(ert-deftest hermes-chat-handoff-poll-error-after-rejection-does-not-double-retry ()
+  "A synchronous rejection followed by a throw leaves exactly one timer."
+  (with-temp-buffer
+    (hermes-test--own-handoff-poll (list :id 'owner :backoff 1))
+    (let ((scheduled 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (_client &rest args)
+                   (funcall (plist-get args :reject) "Disconnected")
+                   (error "After rejection")))
+                ((symbol-function 'run-at-time)
+                 (lambda (&rest _) (cl-incf scheduled) 'retry)))
+        (hermes-chat--handoff-poll-tick (current-buffer) 'owner)
+        (should (= scheduled 1))
+        (should (eq (plist-get hermes-chat--handoff-poll :timer) 'retry))))))
+
 (ert-deftest hermes-chat-handoff-poll-tick-times-out-past-deadline ()
   "A poll tick past the deadline routes to the timeout path, not a poll."
   (with-temp-buffer

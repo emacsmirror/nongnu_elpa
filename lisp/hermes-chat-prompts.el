@@ -43,11 +43,9 @@
 (require 'hermes-chat-buffer)
 
 
-;; The one sanctioned upward reference among the chat siblings:
-;; `hermes-chat-dashboard' requires this file (its event path records
-;; prompt requests here), so the respond dispatcher below cannot require
-;; it back and declares this client accessor instead.
-(declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
+(defvar hermes-chat--prompt-control-client-function nil
+  "Function returning the dashboard client for an unowned prompt response.
+Installed by the dashboard session owner; called without arguments.")
 
 (defcustom hermes-chat-auto-prompt-requests t
   "Whether visible chat buffers should prompt for backend input requests.
@@ -1211,7 +1209,9 @@ For a batch, answer only the next unanswered question."
     (user-error "Hermes prompt request is no longer current"))
   (let* ((client (if owner
                      (plist-get owner :client)
-                   (hermes-chat--dashboard-control-client)))
+                   (if hermes-chat--prompt-control-client-function
+                        (funcall hermes-chat--prompt-control-client-function)
+                      (user-error "Hermes dashboard prompt controls are unavailable"))))
          (context (hermes-chat--prompt-response-context
                    client key prompt all))
          (type (hermes-chat--prompt-event-type prompt))
