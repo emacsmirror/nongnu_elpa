@@ -512,6 +512,60 @@ of which is a column twenty wide (emacs-vm/vm#848)."
           (should (equal (buffer-substring-no-properties (point-min) (point-max))
                          (cdr case))))))))
 
+(defconst vm-summary-test--with-attachments
+  (concat "From a@b.c Mon Jan  1 00:00:00 2024\n"
+          "From: a@b.c\nSubject: two parts\nMIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"b\"\n\n"
+          "--b\nContent-Type: text/plain\n\nthe text\n"
+          "--b\nContent-Type: application/pdf\n"
+          "Content-Disposition: attachment; filename=\"one.pdf\"\n\npdf\n"
+          "--b\nContent-Type: image/png\n"
+          "Content-Disposition: attachment; filename=\"two.png\"\n\npng\n"
+          "--b--\n\n"
+          "From a@b.c Mon Jan  2 00:00:00 2024\n"
+          "From: a@b.c\nSubject: plain\n\nnothing\n\n")
+  "Two messages, the first carrying two attachments and the second none.")
+
+(defmacro vm-summary-test--visiting (text &rest body)
+  "Visit a folder holding TEXT as a real folder and run BODY in its buffer.
+`vm-mime-operate-on-attachments\=', which is what counts them, wants a folder
+buffer of VM\='s own making rather than a buffer holding the text."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-summary-visit" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "folder" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil))
+           (write-region ,text nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-summary-test-the-attachment-indicator-counts-for-a-symbol ()
+  "%P is the indicator alone for a string and the indicator and count for a
+symbol, and nothing at all for a message carrying no attachment.
+
+The docstring said the count was always there, the manual did not mention
+it, and the `:type\=' offered the counting branch with ?$ in it, which is the
+integer 36: a reader who took what Customize offered summarised a message
+of two attachments as \"362\" (emacs-vm/vm#852)."
+  (vm-summary-test--visiting vm-summary-test--with-attachments
+    (let ((carrier (car vm-message-list))
+          (plain (cadr vm-message-list)))
+      (let ((vm-summary-attachment-indicator "$"))
+        (should (equal (vm-summary-sprintf "%P" carrier) "$"))
+        (should (equal (vm-summary-sprintf "%P" plain) "")))
+      (let ((vm-summary-attachment-indicator '$))
+        (should (equal (vm-summary-sprintf "%P" carrier) "$2"))
+        (should (equal (vm-summary-sprintf "%P" plain) ""))))))
+
 ;;; vm-su-labels tests
 
 (ert-deftest vm-summary-test-su-labels-none ()

@@ -3977,10 +3977,16 @@ after visiting it again."
   :type 'string)
 
 (defcustom vm-summary-attachment-indicator "$"
-  "*Indicator shown for messages containing an attachments."
+  "*Indicator shown in the summary for a message carrying attachments.
+A string is shown as it stands.  A symbol is shown followed by the number
+of attachments, so the symbol $ gives \"$2\" for a message of two.  A
+message with none shows nothing either way.
+
+The symbol is a symbol and not a character: ?$ is the integer 36, and what
+the summary would then show is \"362\"."
   :group 'vm-summary
   :type '(choice (string :tag "A string to display" "$")
-		 (symbol :tag "Number of attachments prefixed by" ?$)))
+		 (symbol :tag "Number of attachments prefixed by" $)))
 
 (defcustom vm-summary-attachment-mime-types nil
   "*List of MIME types which should be listed as attachment. 

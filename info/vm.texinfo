@@ -6981,17 +6981,22 @@ lower case, @samp{r} replied to, @samp{z} forwarded, @samp{b} redistributed,
 @samp{U}, @samp{!} or a space.
 
 @item *
-message mark, `*' if the message is marked, ` ' otherwise
+message mark, @samp{*} where the message is marked and a space where it is
+not
 
 @vindex vm-summary-postponed-indicator
 @item p
-indicator for a postponed message: @kbd{P} or the string customized by
-@code{vm-summary-postponed-indicator}
+indicator for a postponed message, @samp{P} by default and
+@code{vm-summary-postponed-indicator} otherwise, and nothing for a message
+that is not one
 
 @vindex vm-summary-attachment-indicator
 @item P
-indicator for a message with attachments: @kbd{$} or the string customized
-via @code{vm-summary-attachment-indicator}
+indicator for a message carrying attachments, and nothing for a message
+with none.  @code{vm-summary-attachment-indicator} says what it is: a
+string is shown as it stands, @samp{$} by default, and a symbol is shown
+followed by the number of attachments, so the symbol @code{$} gives
+@samp{$2} for a message of two.
 
 @item I
 thread indentation
