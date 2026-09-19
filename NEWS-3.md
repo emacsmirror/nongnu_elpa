@@ -8,6 +8,13 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`%%` is a single `%` in a summary or MIME button format**
+    (emacs-vm/vm#847).  It was in a format that had something else to
+    substitute, and was not in one that had nothing: a `vm-summary-format` of
+    `100%% done` summarised as `100%% done`.  A specifier VM does not know is
+    left as it stands now as well, where a `%q` beside a live specifier used
+    to break every line with "Not enough arguments for format string".
+
   * **`%r` and `%R` work in `vm-summary-format`** (emacs-vm/vm#846).  Both
     have been documented, in the docstring and in the manual, as the
     recipients of the message: the `To` and `Cc` headers together, as

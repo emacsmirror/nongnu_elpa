@@ -1948,5 +1948,21 @@ HOSTS is a list of machine names; nil entries are ignored."
     (when host
       (auth-source-forget+ :host host :port port :user user))))
 
+(defun vm-percent-quote (string)
+  "STRING as a `format' control string standing for itself.
+The summary and MIME button compilers copy the text between the specifiers
+into the control string they hand to `format', so a percent in that text has
+to be doubled.  Without it a format of \"%s %q\" reached `format' with a %q
+in it, and every line failed with \"Not enough arguments for format
+string\" (emacs-vm/vm#847)."
+  (replace-regexp-in-string "%" "%%" string t t))
+
+(defun vm-percent-unquote (string)
+  "STRING with each doubled percent back to a single one.
+For a format holding no specifier at all: nothing calls `format' on it, so
+the doubling has to be undone by hand or \"100%% done\" comes out as
+\"100%% done\" where the docstrings promise \"100% done\"."
+  (replace-regexp-in-string "%%" "%" string t t))
+
 (provide 'vm-misc)
 ;;; vm-misc.el ends here
