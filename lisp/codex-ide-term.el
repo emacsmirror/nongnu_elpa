@@ -135,9 +135,9 @@ installed separately.  Existing sessions keep the backend that created them."
 (defun codex-ide-term--validate-draft (text)
   "Reject unsafe or oversized draft TEXT before terminal input."
   (when (> (string-bytes (encode-coding-string text 'utf-8)) (* 1024 1024))
-    (user-error "Attachment exceeds 1 MiB of UTF-8 text"))
+    (user-error "Terminal input exceeds 1 MiB of UTF-8 text"))
   (when (string-match-p "[\0-\10\13-\37\u007f-\u009f]" text)
-    (user-error "Attachment contains terminal control characters")))
+    (user-error "Terminal input contains terminal control characters")))
 
 (defun codex-ide-term--paste-draft (process text)
   "Insert literal draft TEXT into the current terminal's captured PROCESS.

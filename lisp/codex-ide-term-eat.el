@@ -34,9 +34,10 @@
 ;;; User options
 
 (defcustom codex-ide-term-blink-cursor nil
-  "Non-nil lets the Codex TUI drive a blinking cursor.
-When nil, the cursor stays steady even though Codex requests a blinking
-one via its terminal cursor-style escape."
+  "Non-nil lets the Codex TUI drive a blinking cursor in Eat.
+When nil, the Eat cursor stays steady even though Codex requests a blinking
+one via its terminal cursor-style escape.  This option does not affect
+vterm; its own cursor settings remain unchanged."
   :type 'boolean
   :group 'codex-ide)
 

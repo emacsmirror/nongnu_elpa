@@ -938,7 +938,12 @@ Guard reentry for this target while allowing other sessions to clean up."
      (current-buffer) (get-buffer-process (current-buffer)) t)))
 
 (defun codex-ide--cleanup-before-major-mode-change ()
-  "Stop the current Codex session before replacing its major mode."
+  "Stop the current Codex session before replacing its major mode.
+Reject vterm mode changes without disturbing its process or session."
+  ;; vterm forbids mode replacement to protect its native terminal object.
+  ;; Our hook runs first, so reject before any destructive cleanup.
+  (when (derived-mode-p 'vterm-mode)
+    (user-error "You cannot change major mode in vterm buffers"))
   (when (and codex-ide--session-root codex-ide--session-id)
     (codex-ide--cleanup-on-exit
      codex-ide--session-root codex-ide--session-id
@@ -958,9 +963,7 @@ terminal backend can finish its own teardown before Codex kills BUFFER."
         (error
          (codex-ide-debug "Chained sentinel failed: %s"
                           (error-message-string err)))))
-    (when (string-match-p
-           (rx (or "finished" "exited" "killed" "terminated"))
-           event)
+    (when (memq (process-status proc) '(exit signal))
       (codex-ide--cleanup-on-exit
        directory session-id
        (or buffer (and (processp proc) (process-buffer proc))) proc))))
@@ -1021,6 +1024,9 @@ Returns a session record."
                                      (process-buffer process) process)))
       (error
        (when (buffer-live-p buffer)
+         ;; Startup may fail before setup disables process exit queries.
+         (when-let* ((process (get-buffer-process buffer)))
+           (delete-process process))
          (kill-buffer buffer))
        (signal (car err) (cdr err))))))
 
@@ -1310,22 +1316,70 @@ ring.  Reject terminal controls except TAB and LF, and drafts over 1 MiB."
     (with-current-buffer buffer
       (codex-ide-term--paste-draft process draft))))
 
+(defun codex-ide--input-owner (session)
+  "Capture and validate SESSION's exact terminal input owner."
+  (let* ((buffer (plist-get session :buffer))
+         (owner (append (list :record session
+                              :mode (and (buffer-live-p buffer)
+                                         (buffer-local-value 'major-mode buffer))
+                              :backend (and (buffer-live-p buffer)
+                                            (buffer-local-value
+                                             'codex-ide-term--backend buffer)))
+                        (copy-sequence session))))
+    (codex-ide--validate-input-owner owner)
+    owner))
+
+(defun codex-ide--validate-input-owner (owner)
+  "Reject stale terminal input OWNER and return its buffer."
+  (let ((session (plist-get owner :record))
+        (root (plist-get owner :root))
+        (id (plist-get owner :id))
+        (buffer (plist-get owner :buffer))
+        (process (plist-get owner :process)))
+    (unless (and (eq session (codex-ide--session-by-id root id))
+                 (equal root (plist-get session :root))
+                 (equal id (plist-get session :id))
+                 (eq buffer (plist-get session :buffer))
+                 (eq process (plist-get session :process))
+                 (buffer-live-p buffer)
+                 (process-live-p process)
+                 (eq process (get-buffer-process buffer))
+                 (with-current-buffer buffer
+                   (and codex-ide-mode
+                        (derived-mode-p 'eat-mode 'vterm-mode)
+                        (eq major-mode (plist-get owner :mode))
+                        (eq codex-ide-term--backend (plist-get owner :backend))
+                        (equal root codex-ide--session-root)
+                        (equal id codex-ide--session-id))))
+      (user-error "Codex session is no longer current"))
+    buffer))
+
+(defun codex-ide--submit-input (owner)
+  "Submit input only to the still-current terminal OWNER."
+  (codex-ide--validate-input-owner owner)
+  ;; Give the TUI a chance to consume the preceding input, not a readiness
+  ;; guarantee.  The event loop can retire or replace the captured owner.
+  (sit-for 0.1)
+  (with-current-buffer (codex-ide--validate-input-owner owner)
+    (codex-ide-term--send-return)))
+
 ;;;###autoload
 (defun codex-ide-send-prompt (&optional prompt)
   "Send PROMPT to the Codex terminal for the current project.
-Interactively, read PROMPT from the minibuffer."
+Interactively, read PROMPT from the minibuffer.
+Paste it literally, then submit once.  Reject terminal controls except
+TAB and LF, and prompts over 1 MiB of UTF-8 text."
   (interactive)
   (let ((working-dir (codex-ide--get-working-directory))
         (origin (current-buffer)))
     (codex-ide--record-source-buffer working-dir origin)
     (let* ((session (codex-ide--target-session working-dir))
-           (buffer (plist-get session :buffer))
+           (owner (codex-ide--input-owner session))
            (text (or prompt (read-string "Codex prompt: "))))
       (unless (string-empty-p text)
-        (with-current-buffer buffer
-          (codex-ide-term--send-string text)
-          (sit-for 0.1)
-          (codex-ide-term--send-return))
+        (with-current-buffer (codex-ide--validate-input-owner owner)
+          (codex-ide-term--paste-draft (plist-get owner :process) text))
+        (codex-ide--submit-input owner)
         (codex-ide-debug "Sent prompt: %s" text)))))
 
 ;;;###autoload
@@ -1349,11 +1403,10 @@ Interactively, read PROMPT from the minibuffer."
 Sends backslash followed by RET, which Codex interprets as a newline."
   (interactive)
   (let* ((session (codex-ide--target-session))
-         (buffer (plist-get session :buffer)))
-    (with-current-buffer buffer
-      (codex-ide-term--send-string "\\")
-      (sit-for 0.1)
-      (codex-ide-term--send-return))))
+         (owner (codex-ide--input-owner session)))
+    (with-current-buffer (codex-ide--validate-input-owner owner)
+      (codex-ide-term--send-string "\\"))
+    (codex-ide--submit-input owner)))
 
 ;;;###autoload
 (defun codex-ide-check-status ()

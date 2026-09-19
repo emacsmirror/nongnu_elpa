@@ -1326,12 +1326,16 @@ region, where the scrollback-browsing rule alone would strand it."
                  "codex-ide-recovered-commands" 2))
           (setq buffer (car pair))
           (setq process (cadr pair))
+          (with-current-buffer buffer (setq major-mode 'eat-mode))
           (codex-ide--recover-live-sessions)
           (cl-letf (((symbol-function 'codex-ide--display-buffer)
                      (lambda (display-buffer)
                        (setq displayed display-buffer)))
                     ((symbol-function 'codex-ide-context-record-source-buffer)
                      (lambda (&rest _args) nil))
+                    ((symbol-function 'codex-ide-term--paste-draft)
+                     (lambda (_process string)
+                       (setq sent (append sent (list (list string (current-buffer)))))))
                     ((symbol-function 'codex-ide-term--send-string)
                      (lambda (string)
                        (setq sent
@@ -1764,6 +1768,9 @@ region, where the scrollback-browsing rule alone would strand it."
                                   :key (lambda (session)
                                          (plist-get session :id))))
                  sent returned)
+             (with-current-buffer (plist-get target :buffer)
+               (setq major-mode 'eat-mode)
+               (codex-ide-mode 1))
              (cl-letf (((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil))
                        ((symbol-function 'completing-read)
@@ -1774,8 +1781,8 @@ region, where the scrollback-browsing rule alone would strand it."
                                                (plist-get (cdr candidate)
                                                           :id))
                                         :test #'=))))
-                       ((symbol-function 'codex-ide-term--send-string)
-                        (lambda (string)
+                       ((symbol-function 'codex-ide-term--paste-draft)
+                        (lambda (_process string)
                           (setq sent (list string (current-buffer)))))
                        ((symbol-function 'codex-ide-term--send-return)
                         (lambda ()
@@ -1805,6 +1812,9 @@ region, where the scrollback-browsing rule alone would strand it."
                                   :key (lambda (session)
                                          (plist-get session :id))))
                  sent returned escaped)
+             (with-current-buffer (plist-get target :buffer)
+               (setq major-mode 'eat-mode)
+               (codex-ide-mode 1))
              (cl-letf (((symbol-function 'completing-read)
                         (lambda (_prompt collection _predicate _require-match
                                          &rest _args)
@@ -1964,7 +1974,8 @@ region, where the scrollback-browsing rule alone would strand it."
 (ert-deftest codex-ide-make-process-sentinel-chains-original ()
   "The Codex sentinel runs the replaced sentinel before cleaning up."
   (let (chained cleaned)
-    (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+    (cl-letf (((symbol-function 'process-status) (lambda (_) 'exit))
+              ((symbol-function 'codex-ide--cleanup-on-exit)
                (lambda (&rest args)
                  (setq cleaned args))))
       (funcall (codex-ide--make-process-sentinel
@@ -1978,7 +1989,8 @@ region, where the scrollback-browsing rule alone would strand it."
 (ert-deftest codex-ide-make-process-sentinel-chains-on-non-exit-events ()
   "Non-exit events reach the chained sentinel without triggering cleanup."
   (let (chained cleaned)
-    (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+    (cl-letf (((symbol-function 'process-status) (lambda (_) 'run))
+              ((symbol-function 'codex-ide--cleanup-on-exit)
                (lambda (&rest args)
                  (setq cleaned args))))
       (funcall (codex-ide--make-process-sentinel
@@ -1992,7 +2004,8 @@ region, where the scrollback-browsing rule alone would strand it."
 (ert-deftest codex-ide-make-process-sentinel-cleans-up-when-original-errors ()
   "A failing chained sentinel cannot block Codex session cleanup."
   (let (cleaned)
-    (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+    (cl-letf (((symbol-function 'process-status) (lambda (_) 'signal))
+              ((symbol-function 'codex-ide--cleanup-on-exit)
                (lambda (&rest args)
                  (setq cleaned args))))
       (funcall (codex-ide--make-process-sentinel
@@ -2197,6 +2210,11 @@ region, where the scrollback-browsing rule alone would strand it."
                     codex-buffer "codex-ide-prompt"))
              (setq session (codex-ide--make-session
                             root 1 codex-buffer process))
+             (with-current-buffer codex-buffer
+               (setq major-mode 'eat-mode)
+               (setq-local codex-ide--session-root root)
+               (setq-local codex-ide--session-id 1)
+               (codex-ide-mode 1))
              (codex-ide-test--store-session session)
              (setq source-buffer (find-file-noselect source-file))
              (with-current-buffer source-buffer
@@ -2204,8 +2222,8 @@ region, where the scrollback-browsing rule alone would strand it."
                  (cl-letf (((symbol-function 'codex-ide-context-record-source-buffer)
                             (lambda (directory buffer)
                               (setq recorded (list directory buffer))))
-                           ((symbol-function 'codex-ide-term--send-string)
-                            (lambda (string)
+                           ((symbol-function 'codex-ide-term--paste-draft)
+                            (lambda (_process string)
                               (setq sent (list string (current-buffer)))))
                            ((symbol-function 'codex-ide-term--send-return)
                             (lambda ()
@@ -2781,7 +2799,7 @@ region, where the scrollback-browsing rule alone would strand it."
                (codex-ide--setup-session session)
                (codex-ide--setup-session session)
                (should (process-get process 'codex-ide--sentinel-installed))
-               (funcall (process-sentinel process) process "finished\n")
+               (delete-process process)
                (should (= cleanup-calls 1))))))
       (delete-directory root t))))
 
@@ -3062,6 +3080,115 @@ region, where the scrollback-browsing rule alone would strand it."
                    ((symbol-function 'process-send-string)
                     (lambda (&rest _) (ert-fail "Stale owner received input"))))
            (should-error (codex-ide-attach-source) :type 'user-error)))))))
+
+(ert-deftest codex-ide-prompt-is-one-literal-paste ()
+  "Complete prompts use validated framing followed by one submit."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1))
+      (lambda (sessions)
+        (let* ((session (car sessions))
+               (buffer (plist-get session :buffer))
+               writes)
+          (with-current-buffer buffer
+            (setq major-mode 'eat-mode)
+            (codex-ide-mode 1)
+            (cl-letf (((symbol-function 'process-send-string)
+                       (lambda (process text) (push (list process text) writes)))
+                      ((symbol-function 'codex-ide-term--send-return)
+                       (lambda () (push 'return writes)))
+                      ((symbol-function 'sit-for) (lambda (&rest _) nil)))
+              (codex-ide-send-prompt "λ\ttext\nnext")
+              (should (equal (reverse writes)
+                             (list (list (plist-get session :process)
+                                         "\e[200~λ\ttext\nnext\e[201~")
+                                   'return)))
+              (setq writes nil)
+              (should-error (codex-ide-send-prompt "unsafe\e[201~")
+                            :type 'user-error)
+              (should-not writes)))))))))
+
+(ert-deftest codex-ide-input-rejects-owner-loss-across-yields ()
+  "Minibuffer, input and pause cannot redirect submission to a successor."
+  (dolist (backend '(eat vterm))
+    (dolist (mutation '(id root mode backend record process buffer))
+      (dolist (command '(codex-ide-send-prompt codex-ide-insert-newline))
+	(dolist (boundary '(read send pause))
+	  (unless (and (eq command 'codex-ide-insert-newline) (eq boundary 'read))
+            (codex-ide-test--call-with-project
+             (lambda (root)
+               (codex-ide-test--call-with-sessions
+		`((,root 1) (,root 2))
+		(lambda (sessions)
+		  (let* ((owner (car sessions))
+			 (buffer (plist-get owner :buffer))
+			 (sibling (plist-get (cadr sessions) :buffer))
+			 (invalidate (lambda ()
+                                       (pcase mutation
+					 ('id (with-current-buffer buffer
+						(setq codex-ide--session-id 99)))
+					 ('root (with-current-buffer buffer
+						  (setq codex-ide--session-root "/changed/")))
+					 ('mode (with-current-buffer buffer
+						  (setq major-mode 'fundamental-mode)))
+					 ('backend (with-current-buffer buffer
+                                                     (setq codex-ide-term--backend 'changed)))
+					 ('record
+					  (puthash root
+						   (mapcar (lambda (s)
+                                                             (if (eq s owner)
+								 (copy-sequence s) s))
+							   (gethash root codex-ide--sessions))
+						   codex-ide--sessions))
+					 ('process
+					  (delete-process (plist-get owner :process))
+					  (setf (plist-get owner :process)
+						(codex-ide-test--make-buffer-process
+						 buffer "codex-replacement")))
+					 ('buffer (kill-buffer buffer)))
+                                       (set-buffer sibling)))
+			 writes returned)
+                    (with-current-buffer buffer
+                      (setq major-mode (if (eq backend 'eat) 'eat-mode 'vterm-mode))
+                      (setq-local codex-ide-term--backend backend)
+                      (codex-ide-mode 1)
+                      (cl-letf (((symbol-function 'read-string)
+				 (lambda (&rest _) (funcall invalidate) "hello"))
+				((symbol-function 'codex-ide-term--paste-draft)
+				 (lambda (&rest _)
+				   (push 'paste writes)
+				   (when (eq boundary 'send) (funcall invalidate))))
+				((symbol-function 'codex-ide-term--send-string)
+				 (lambda (&rest _)
+				   (push 'string writes)
+				   (when (eq boundary 'send) (funcall invalidate))))
+				((symbol-function 'sit-for)
+				 (lambda (&rest _)
+				   (when (eq boundary 'pause) (funcall invalidate))))
+				((symbol-function 'codex-ide-term--send-return)
+				 (lambda () (setq returned (current-buffer)))))
+			(should-error
+			 (if (eq command 'codex-ide-send-prompt)
+                             (funcall command (unless (eq boundary 'read) "hello"))
+			   (funcall command))
+			 :type 'user-error))
+                      (should-not returned)
+                      (when (eq boundary 'read) (should-not writes)))
+                    (should (process-live-p (plist-get (cadr sessions) :process))))))))))))))
+
+(ert-deftest codex-ide-sentinel-uses-process-status-not-event-text ()
+  "Hangup cleans up; live stop and continue events do not."
+  (dolist (status '(signal exit stop run))
+    (let (cleaned chained)
+      (cl-letf (((symbol-function 'process-status) (lambda (_) status))
+                ((symbol-function 'codex-ide--cleanup-on-exit)
+                 (lambda (&rest _) (setq cleaned t))))
+        (funcall (codex-ide--make-process-sentinel
+                  "/tmp/root" 1 (lambda (&rest _) (setq chained t)))
+                 'fake-proc "hangup\n"))
+      (should chained)
+      (should (eq cleaned (and (memq status '(signal exit)) t))))))
 
 (provide 'codex-ide-tests)
 
