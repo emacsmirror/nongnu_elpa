@@ -1,5 +1,17 @@
 #+title: emacs-codex-ide NEWS
 
+* Version 0.1.4 (unreleased)
+
+- Label and rename live sessions, and restore project session panels per tab.
+- Register custom Emacs MCP tools.
+- Review editable proposals asynchronously with Ediff, including submission
+  and retrieval over MCP.
+- Attach source to a terminal draft without submitting it.
+- Paste prompts literally and reject stale input owners across interactive
+  waits, preserving sibling sessions and backend ownership.
+- Preserve vterm sessions when a major-mode change is rejected, clean up
+  failed startup and terminal exits, and report native module load errors.
+
 * Version 0.1.3 (2026-09-04)
 
 - Validate supplied MCP argument types before invoking tools, and require
