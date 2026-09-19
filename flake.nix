@@ -122,6 +122,7 @@
             "hermes-dashboard-tests.el"
             "hermes-dependency-tests.el"
             "hermes-exec-tests.el"
+            "hermes-fence-guard-tests.el"
             "hermes-inventory-tests.el"
             "hermes-kanban-tests.el"
             "hermes-mcp-tests.el"

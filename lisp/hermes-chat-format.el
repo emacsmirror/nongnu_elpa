@@ -359,10 +359,18 @@ Return nil without moving point when no opening fence is present."
            (fence (match-string-no-properties 1))
            (language (match-string-no-properties 3))
            (body (line-beginning-position 2))
-           (closing (funcall (if (eq (aref fence 0) ?`)
-                                 #'markdown-make-gfm-fence-regex
-                               #'markdown-make-tilde-fence-regex)
-                             (length fence) "[[:blank:]]*$"))
+           ;; markdown-make-gfm-fence-regex arrived in markdown-mode 2.8;
+           ;; the declared 2.6 floor predates it, so scan with plain regexes
+           ;; when the builder is absent (pre-2.8 releases).
+           (closing (if (eq (aref fence 0) ?`)
+                        (if (fboundp 'markdown-make-gfm-fence-regex)
+                            (funcall #'markdown-make-gfm-fence-regex
+                                     (length fence) "[[:blank:]]*$")
+                          (concat "^[[:blank:]]*" fence "+[[:blank:]]*$"))
+                      (if (fboundp 'markdown-make-tilde-fence-regex)
+                          (funcall #'markdown-make-tilde-fence-regex
+                                   (length fence) "[[:blank:]]*$")
+                        (concat "^[[:blank:]]*" fence "+[[:blank:]]*$"))))
            (end (progn
                   (goto-char body)
                   (if (re-search-forward closing nil t)
