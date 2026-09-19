@@ -1214,10 +1214,10 @@ indicator string is that defined by the variable
     ""))
 
 (defun vm-su-attachment-indicator (msg)
-  "Given a MESSAGE, ruturns a string indicating whether the
-message has attachments.  The indicator string is the value of
-`vm-summary-attachment-indicator' followed by the number of
-attachments.  					USR, 2010-05-13."
+  "The summary indicator for MSG, empty where it carries no attachment.
+`vm-summary-attachment-indicator' is shown as it stands where it is a
+string, which is the default, and followed by the number of attachments
+where it is a symbol."
   (let ((attachments 0))
     (setq msg (vm-real-message-of msg))
     ;; If this calls back vm-update-summary-and-mode-line

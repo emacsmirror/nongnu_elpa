@@ -12232,7 +12232,13 @@ Default value: @code{"->"}
 @macro vmdocvmsummaryattachmentindicator
 @defopt vm-summary-attachment-indicator
 @vindex vm-summary-attachment-indicator
-Indicator shown for messages containing an attachments.
+Indicator shown in the summary for a message carrying attachments.
+A string is shown as it stands.  A symbol is shown followed by the number
+of attachments, so the symbol $ gives "$2" for a message of two.  A
+message with none shows nothing either way.
+
+The symbol is a symbol and not a character: ?$ is the integer 36, and what
+the summary would then show is "362".
 
 Default value: @code{"$"}
 @end defopt
