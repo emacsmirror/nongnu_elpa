@@ -599,6 +599,25 @@ own may belong to Emacs, or to a mode VM knows nothing about."
         (unless found (push pair wrong))))
     (should (equal nil (nreverse wrong)))))
 
+(defun vm-reference-test--shipped-default (symbol)
+  "The default VM ships for SYMBOL, read from its `defcustom\=' in vm-vars.el.
+For the options in `vm-test-overridden-defaults\=': the harness gives those a
+value of its own so that the suite runs no timers and reads nobody\='s
+signature, and the running value is then this suite\='s and not what the
+manual is describing.  Answers the symbol `unread\=' where the shipped value
+is a form rather than a constant, which nothing here can evaluate safely."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "../lisp/vm-vars.el" vm-test-dir))
+    (goto-char (point-min))
+    (if (re-search-forward (format "^(defcustom %s[ \n]"
+                                   (regexp-quote (symbol-name symbol)))
+                           nil t)
+        (let ((form (read (current-buffer))))
+          (if (or (consp form) (and (symbolp form) (not (memq form '(t nil)))))
+              'unread
+            form))
+      'unread)))
+
 (ert-deftest vm-reference-test-the-manual-states-the-defaults-that-hold ()
   "Where the manual says what an option defaults to, that is its default.
 It said `vm-highlighted-header-face' defaults to \\='bold; the default is the
@@ -637,8 +656,11 @@ again is the only place the two can disagree."
                                    "\\|\\('?[a-z][a-z0-9-]*\\)\\)")
                            limit t)
                           (or (match-string 1) (match-string 2))))
-               (actual (and said (boundp symbol)
-                            (format "%S" (default-value symbol)))))
+               (shipped (if (memq symbol vm-test-overridden-defaults)
+                            (vm-reference-test--shipped-default symbol)
+                          (and (boundp symbol) (default-value symbol))))
+               (actual (and said (boundp symbol) (not (eq shipped 'unread))
+                            (format "%S" shipped))))
           (unless (or (null actual)
                       (equal said actual)
                       ;; the manual quotes a string without its quotes, and a

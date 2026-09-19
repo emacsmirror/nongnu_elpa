@@ -191,6 +191,13 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 (setq vm-flush-interval nil
       vm-mail-check-interval nil)
 
+(defconst vm-test-overridden-defaults
+  '(vm-flush-interval vm-mail-check-interval mail-signature)
+  "The options this harness gives a value other than the one VM ships.
+A test that checks what the manual says an option defaults to has to read
+these from the source rather than from the running value, which is this
+file's doing and not VM's.")
+
 ;; No signature.  Starting a composition inserts one, and `mail-signature'
 ;; defaults to t, which means the developer's own ~/.signature -- so the tests
 ;; either read a file that is none of their business or, where there is none,
