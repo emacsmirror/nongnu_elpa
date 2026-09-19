@@ -81,7 +81,7 @@
      :open   ""))
   "Presets for tree visualization, see `elfeed-tree-style'."
   :type '(alist :key-type symbol
-                :value-type (plist :key-type keyword
+                :value-type (plist :key-type symbol
                                    :value-type string)))
 
 (defcustom elfeed-tree-style
