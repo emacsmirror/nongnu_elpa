@@ -2090,8 +2090,12 @@ a local FIFO submission."
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
 (defun hermes-chat--apply-directory (directory)
-  "Apply gateway-native DIRECTORY to this chat's gateway and local context."
-  (setq-local default-directory (file-name-as-directory directory))
+  "Apply gateway-native DIRECTORY, adopting it locally only when usable."
+  (when (and (not (find-file-name-handler directory nil))
+             (file-name-absolute-p directory)
+             (not (string-prefix-p "~" directory))
+             (file-directory-p directory))
+    (setq-local default-directory (file-name-as-directory directory)))
   (hermes-chat--record-working-directory directory)
   (hermes-chat--insert-local-status
    (format "Working directory: %s" directory)
@@ -2229,7 +2233,9 @@ GENERATION and SESSION-ID, when non-nil, retain an interactive request's owner."
 (defun hermes-chat-set-directory (&optional directory)
   "Select or set this Hermes chat's gateway working DIRECTORY.
 Interactively, browse directories reported by the owning Hermes instance.
-With explicit DIRECTORY, pass its gateway-native spelling to the backend."
+With explicit DIRECTORY, pass its gateway-native spelling to the backend.
+Update `default-directory' only for an existing absolute local directory
+without file-name handlers or home-directory abbreviation."
   (interactive nil hermes-chat-mode)
   (unless (derived-mode-p 'hermes-chat-mode)
     (user-error "Not in a Hermes chat buffer"))

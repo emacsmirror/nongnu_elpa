@@ -10,6 +10,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'ert-x)
 (require 'hermes-test-helpers)
 
 (require 'hermes-subagents)
@@ -2460,54 +2461,85 @@
          (should-not (plist-get create-args :cwd))
          (should (equal default-directory "/tmp/local-editor/")))))))
 
+(ert-deftest hermes-chat-set-directory-preserves-editor-directory ()
+  "Gateway-only paths must not replace or probe the editor directory."
+  (let* ((local-directory (make-temp-file "hermes-directory-" t))
+         (local-file (make-temp-file "hermes-directory-file-")))
+    (unwind-protect
+        (dolist (directory (list (concat local-directory "/missing")
+                                 local-file "relative/path" "~/"
+                                 "/ssh:example.org:/srv/project"))
+          (hermes-test-with-chat-buffer
+           (setq default-directory (file-name-as-directory local-directory)
+                 hermes-chat--dashboard-client (hermes-test--dashboard-client)
+                 hermes-chat--dashboard-session-ready-p t
+                 hermes-chat--dashboard-active-session-id "sid")
+           (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                      (lambda (_client _cwd &rest args)
+                        (funcall (plist-get args :resolve)
+                                 `((cwd . ,directory))))))
+             (let ((file-name-handler-alist
+                    (cons (cons (rx string-start "/ssh:example.org:")
+                                (lambda (&rest _)
+                                  (ert-fail "Gateway path invoked a file handler")))
+                          file-name-handler-alist)))
+               (hermes-chat-set-directory directory))
+             (should (equal hermes-chat--working-directory directory))
+             (should (equal default-directory
+                            (file-name-as-directory local-directory))))))
+      (delete-directory local-directory)
+      (delete-file local-file))))
+
 (ert-deftest hermes-chat-set-directory-converges-after-session-info ()
   "The current response adopts cwd after passive gateway projection."
-  (dolist (project-root '(nil "/tmp/project-a/"))
-    (let* ((client (hermes-test--dashboard-client))
-           (editor-directory (or project-root "/tmp/local-editor/"))
-           resolve request)
-      (hermes-test-with-chat-buffer
-       (setq-local hermes-chat--resolved-start-mode 'remote)
-       (setq default-directory editor-directory
-             hermes-chat--launch-project-root project-root
-             hermes-chat--title "Saved session title"
-             hermes-chat--working-directory "/srv/old"
-             hermes-chat--dashboard-client client
-             hermes-chat--dashboard-session-ready-p t
-             hermes-chat--dashboard-active-session-id "sid")
-       (hermes-chat--refresh-buffer-name)
-       (let ((initial-name (buffer-name))
-             (event-callback
-              (hermes-chat--transport-callback
-               (current-buffer) nil t hermes-chat--transport-generation)))
-         (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
-                    (lambda (_client cwd &rest args)
-                      (setq request (list cwd (plist-get args :session-id))
-                            resolve (plist-get args :resolve)))))
-           (hermes-chat-set-directory "C:/project")
-           (should (equal request '("C:/project" "sid")))
-           (should (equal (buffer-name) initial-name))
-           (funcall event-callback
-                    '(:type status :event "session.info" :status "ready"
-                            :session-id "sid" :cwd "/mnt/c/translated"))
-           (should (equal hermes-chat--working-directory
-                          "/mnt/c/translated"))
-           (should (equal default-directory editor-directory))
-           (should (string-match-p
-                    "translated" (hermes-test--header-line-string)))
-           (should (string-match-p "\\[translated\\]" (buffer-name)))
-           (funcall resolve '((cwd . "/mnt/c/translated")))
-           (should (equal default-directory "/mnt/c/translated/"))
-           (should (equal hermes-chat--working-directory
-                          "/mnt/c/translated"))
-           (should (string-match-p "\\[translated\\]" (buffer-name)))
-           (should (equal hermes-chat--launch-project-root project-root))
-           (should (equal hermes-chat--title "Saved session title"))
-           (when project-root
-             (should (equal
-                      (hermes-chat--project-buffers
-                       project-root (list (current-buffer)))
-                      (list (current-buffer)))))))))))
+  (ert-with-temp-directory directory
+    :prefix "translated"
+    (dolist (project-root '(nil "/tmp/project-a/"))
+      (let* ((client (hermes-test--dashboard-client))
+             (editor-directory (or project-root "/tmp/local-editor/"))
+             resolve request)
+        (hermes-test-with-chat-buffer
+         (setq-local hermes-chat--resolved-start-mode 'remote)
+         (setq default-directory editor-directory
+               hermes-chat--launch-project-root project-root
+               hermes-chat--title "Saved session title"
+               hermes-chat--working-directory "/srv/old"
+               hermes-chat--dashboard-client client
+               hermes-chat--dashboard-session-ready-p t
+               hermes-chat--dashboard-active-session-id "sid")
+         (hermes-chat--refresh-buffer-name)
+         (let ((initial-name (buffer-name))
+               (event-callback
+                (hermes-chat--transport-callback
+                 (current-buffer) nil t hermes-chat--transport-generation)))
+           (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                      (lambda (_client cwd &rest args)
+                        (setq request (list cwd (plist-get args :session-id))
+                              resolve (plist-get args :resolve)))))
+             (hermes-chat-set-directory "C:/project")
+             (should (equal request '("C:/project" "sid")))
+             (should (equal (buffer-name) initial-name))
+             (funcall event-callback
+                      `(:type status :event "session.info" :status "ready"
+                              :session-id "sid" :cwd ,directory))
+             (should (equal hermes-chat--working-directory
+                            directory))
+             (should (equal default-directory editor-directory))
+             (should (string-match-p
+                      "translated" (hermes-test--header-line-string)))
+             (should (string-match-p "\\[translated.*\\]" (buffer-name)))
+             (funcall resolve `((cwd . ,directory)))
+             (should (equal default-directory directory))
+             (should (equal hermes-chat--working-directory
+                            directory))
+             (should (string-match-p "\\[translated.*\\]" (buffer-name)))
+             (should (equal hermes-chat--launch-project-root project-root))
+             (should (equal hermes-chat--title "Saved session title"))
+             (when project-root
+               (should (equal
+                        (hermes-chat--project-buffers
+                         project-root (list (current-buffer)))
+                        (list (current-buffer))))))))))))
 
 (ert-deftest hermes-chat-set-directory-separates-event-response-ownership ()
   "A replacement blocks stale event or response effects at its own boundary."
@@ -2550,49 +2582,54 @@
 
 (ert-deftest hermes-chat-unknown-remote-directory-starts-with-manual-entry ()
   "A detached remote chat asks for a gateway path without listing a local path."
-  (let ((client (hermes-test--dashboard-client)) prompt-default set-cwd)
-    (hermes-test-with-chat-buffer
-     (setq-local hermes-chat--resolved-start-mode 'remote)
-     (setq default-directory "/tmp/local-editor/"
-           hermes-chat--working-directory nil
-           hermes-chat--dashboard-client client
-           hermes-chat--dashboard-session-ready-p t
-           hermes-chat--dashboard-active-session-id "sid")
-     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
-                (lambda (&rest _) (ert-fail "unknown cwd must not be listed")))
-               ((symbol-function 'read-string)
-                (lambda (_prompt initial &rest _)
-                  (setq prompt-default initial)
-                  "/srv/manual"))
-               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
-                (lambda (_client cwd &rest args)
-                  (setq set-cwd cwd)
-                  (funcall (plist-get args :resolve) `((cwd . ,cwd))))))
-       (hermes-chat-set-directory)
-       (should (equal prompt-default ""))
-       (should (equal set-cwd "/srv/manual"))
-       (should (equal default-directory "/srv/manual/"))))))
+  (ert-with-temp-directory directory
+    :prefix "translated"
+    (let ((client (hermes-test--dashboard-client)) prompt-default set-cwd)
+      (hermes-test-with-chat-buffer
+       (setq-local hermes-chat--resolved-start-mode 'remote)
+       (setq default-directory "/tmp/local-editor/"
+             hermes-chat--working-directory nil
+             hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid")
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                  (lambda (&rest _) (ert-fail "unknown cwd must not be listed")))
+                 ((symbol-function 'read-string)
+                  (lambda (_prompt initial &rest _)
+                    (setq prompt-default initial)
+                    directory))
+                 ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                  (lambda (_client cwd &rest args)
+                    (setq set-cwd cwd)
+                    (funcall (plist-get args :resolve) `((cwd . ,cwd))))))
+         (hermes-chat-set-directory)
+         (should (equal prompt-default ""))
+         (should (equal set-cwd directory))
+         (should (equal default-directory directory)))))))
 
 (ert-deftest hermes-chat-set-directory-uses-authoritative-backend-path ()
   "Changing directory applies the authoritative backend path to the chat."
-  (let ((client (hermes-test--dashboard-client))
-        request)
-    (hermes-test-with-chat-buffer
-     (setq default-directory "/tmp/local-editor/"
-           hermes-chat--working-directory "/srv/old"
-           hermes-chat--dashboard-client client
-           hermes-chat--dashboard-session-ready-p t
-           hermes-chat--dashboard-active-session-id "sid")
-     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
-                (lambda (_client cwd &rest args)
-                  (setq request (list cwd (plist-get args :session-id)))
-                  (funcall (plist-get args :resolve)
-                           '((cwd . "/mnt/c/translated"))))))
-       (hermes-chat-set-directory "C:/project")
-       (should (equal request '("C:/project" "sid")))
-       (should (equal hermes-chat--working-directory "/mnt/c/translated"))
-       (should (equal default-directory "/mnt/c/translated/"))
-       (should (string-match-p "\[translated\]" (buffer-name)))))))
+  (ert-with-temp-directory directory
+    :prefix "translated"
+    (let ((client (hermes-test--dashboard-client))
+          request)
+      (hermes-test-with-chat-buffer
+       (setq default-directory "/tmp/local-editor/"
+             hermes-chat--working-directory "/srv/old"
+             hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid")
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                  (lambda (_client cwd &rest args)
+                    (setq request (list cwd (plist-get args :session-id)))
+                    (funcall (plist-get args :resolve)
+                             `((cwd . ,directory))))))
+         (hermes-chat-set-directory "C:/project")
+         (should (equal request '("C:/project" "sid")))
+         (should (equal hermes-chat--working-directory directory))
+         (should (equal default-directory directory))
+         (should (string-match-p (rx "[translated" (* nonl) "]")
+                                 (buffer-name))))))))
 
 (ert-deftest hermes-chat-directory-parent-handles-instance-path-syntax ()
   "Parent navigation is lexical for Unix and Windows instance paths."
@@ -2655,50 +2692,51 @@
 
 (ert-deftest hermes-chat-set-directory-browses-instance-filesystem ()
   "Interactive directory selection walks `/api/fs/list' on the owning instance."
-  (let ((client (hermes-test--dashboard-client)) requests set-cwd)
-    (hermes-test-with-chat-buffer
-     (setq default-directory "/tmp/local-editor/"
-           hermes-chat--working-directory "/srv"
-           hermes-chat--dashboard-client client
-           hermes-chat--dashboard-session-ready-p t
-           hermes-chat--dashboard-active-session-id "sid")
-     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
-                (lambda (method path &rest args)
-                  (let ((directory (cdr (assq 'path (plist-get args :query)))))
-                    (push (list method path directory (plist-get args :client))
-                          requests)
-                    (hermes--promise-resolved
-                     (if (equal directory "/srv")
-                         '((entries . (((name . "project")
-                                        (path . "/srv/project")
-                                        (isDirectory . t))
-                                       ((name . "README")
-                                        (path . "/srv/README")
-                                        (isDirectory . :false)))))
-                       '((entries . ())))))))
-               ((symbol-function 'completing-read)
-                (lambda (_prompt candidates &rest _)
-                  (car (seq-find
-                        (lambda (candidate)
-                          (let ((choice (cdr candidate)))
-                            (if (= (length requests) 1)
-                                (and (eq (plist-get choice :action) 'browse)
-                                     (equal (plist-get choice :path)
-                                            "/srv/project"))
-                              (eq (plist-get choice :action) 'select))))
-                        candidates))))
-               ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
-                (lambda (_client cwd &rest args)
-                  (setq set-cwd (list cwd (plist-get args :session-id)))
-                  (funcall (plist-get args :resolve)
-                           '((cwd . "/srv/project"))))))
-       (hermes-chat-set-directory)
-       (should (equal (reverse requests)
-                      (list (list "GET" "/api/fs/list" "/srv" client)
-                            (list "GET" "/api/fs/list" "/srv/project" client))))
-       (should (equal set-cwd '("/srv/project" "sid")))
-       (should (equal hermes-chat--working-directory "/srv/project"))
-       (should (equal default-directory "/srv/project/"))))))
+  (ert-with-temp-directory local-directory
+    (let ((client (hermes-test--dashboard-client)) requests set-cwd)
+      (hermes-test-with-chat-buffer
+       (setq default-directory "/tmp/local-editor/"
+             hermes-chat--working-directory "/srv"
+             hermes-chat--dashboard-client client
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid")
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                  (lambda (method path &rest args)
+                    (let ((directory (cdr (assq 'path (plist-get args :query)))))
+                      (push (list method path directory (plist-get args :client))
+                            requests)
+                      (hermes--promise-resolved
+                       (if (equal directory "/srv")
+                           '((entries . (((name . "project")
+                                          (path . "/srv/project")
+                                          (isDirectory . t))
+                                         ((name . "README")
+                                          (path . "/srv/README")
+                                          (isDirectory . :false)))))
+                         '((entries . ())))))))
+                 ((symbol-function 'completing-read)
+                  (lambda (_prompt candidates &rest _)
+                    (car (seq-find
+                          (lambda (candidate)
+                            (let ((choice (cdr candidate)))
+                              (if (= (length requests) 1)
+                                  (and (eq (plist-get choice :action) 'browse)
+                                       (equal (plist-get choice :path)
+                                              "/srv/project"))
+                                (eq (plist-get choice :action) 'select))))
+                          candidates))))
+                 ((symbol-function 'hermes-dashboard-transport-session-cwd-set)
+                  (lambda (_client cwd &rest args)
+                    (setq set-cwd (list cwd (plist-get args :session-id)))
+                    (funcall (plist-get args :resolve)
+                             `((cwd . ,local-directory))))))
+         (hermes-chat-set-directory)
+         (should (equal (reverse requests)
+                        (list (list "GET" "/api/fs/list" "/srv" client)
+                              (list "GET" "/api/fs/list" "/srv/project" client))))
+         (should (equal set-cwd '("/srv/project" "sid")))
+         (should (equal hermes-chat--working-directory local-directory))
+         (should (equal default-directory local-directory)))))))
 
 (ert-deftest hermes-chat-directory-browser-falls-back-to-manual-path ()
   "An unavailable listing endpoint still accepts an instance-native path."
