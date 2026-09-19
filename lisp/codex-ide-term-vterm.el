@@ -42,10 +42,9 @@
 (defvar vterm-shell)
 
 (defun codex-ide-term-vterm--available-p ()
-  "Return non-nil when vterm can be loaded."
-  (condition-case nil
-      (require 'vterm nil t)
-    (error nil)))
+  "Return non-nil when vterm can be loaded.
+Missing vterm is optional; report module and shared-library load errors."
+  (require 'vterm nil t))
 
 (defun codex-ide-term-vterm--command (program args)
   "Return a shell command to run PROGRAM with ARGS unchanged."
