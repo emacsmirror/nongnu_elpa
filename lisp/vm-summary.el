@@ -777,6 +777,11 @@ Otherwise, it is a string in mime-decoded form with text-properties.
 	  (eval (cdr match))
 	(vm-decode-mime-encoded-words-in-string (eval (cdr match)))))))
 
+(defconst vm-summary-number-specifiers '(?c ?d ?l ?M ?n ?y)
+  "The summary specifiers whose substitution is a number.
+A width beginning with 0 fills with zeros for these and with spaces for
+everything else, as printf does: \"0000Monday\" is not a Monday.")
+
 (defun vm-summary-compile-format (format tokenize)
   "Compile FORMAT into an eval'able expression that generates the
 summary.  If TOKENIZE is t, the the summary generated will be a
@@ -824,6 +829,16 @@ tokenized summary TOKENS."
 		      (field-width (nth 1 blob))
 		      (precision (nth 2 blob))
 		      (end (vm-marker (point))))
+		 ;; The maximum first and the width after it, the order the
+		 ;; compiled path uses and the one printf uses.
+		 (if (integerp precision)
+		     (if (> (- end start) (vm-abs precision))
+			 (if (> precision 0)
+			     (delete-char (- precision (- end start)))
+			   (save-excursion
+			     (goto-char start)
+			     (delete-char (vm-abs (+ precision
+						     (- end start))))))))
 		 (if (integerp field-width)
 		     (if (< (- end start) (vm-abs field-width))
 			 (if (< field-width 0)
@@ -833,14 +848,6 @@ tokenized summary TOKENS."
 			     (goto-char start)
 			     (insert-char space (- field-width
 						   (- end start)))))))
-		 (if (integerp precision)
-		     (if (> (- end start) (vm-abs precision))
-			 (if (> precision 0)
-			     (delete-char (- precision (- end start)))
-			   (save-excursion
-			     (goto-char start)
-			     (delete-char (vm-abs (+ precision
-						     (- end start))))))))
 		 (setq group-list (cdr group-list))))
 	      ((eq token 'number)
 	       (if (and vm-summary-enable-thread-folding
@@ -1035,28 +1042,11 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 		     (setcar sexp
 			     (list 'vm-decode-mime-encoded-words-in-string
 				   (car sexp)))))
-	      (cond ((and (not token) (match-beginning 1) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-left-justify-string
-				'vm-left-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2))))))
-		    ((and (not token) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-right-justify-string
-				'vm-right-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2)))))))
+	      ;; The maximum first and the width after it, as printf does it:
+	      ;; the maximum says how much of the substitution is used, the
+	      ;; width how wide the column is.  The other way round a maximum
+	      ;; smaller than the width cut the padding and left none of the
+	      ;; text, "%20.4s" answering four spaces (emacs-vm/vm#848).
 	      (cond ((and (not token) (match-beginning 3))
 		     (setcar sexp
 			     (list 'vm-truncate-string (car sexp)
@@ -1064,6 +1054,29 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 				    (substring format
 					       (match-beginning 4)
 					       (match-end 4)))))))
+	      (cond ((and (not token) (match-beginning 1) (match-beginning 2))
+		     ;; Spaces whatever the width says, a `-' beating a `0'
+		     ;; as it does in printf: zeros to the right of a number
+		     ;; make a different number.
+		     (setcar sexp
+			     (list 'vm-left-justify-string
+				   (car sexp)
+				   (string-to-number
+				    (substring format
+					       (match-beginning 2)
+					       (match-end 2))))))
+		    ((and (not token) (match-beginning 2))
+		     (setcar sexp
+			     (list
+			      (if (and (eq (aref format (match-beginning 2)) ?0)
+				       (memq conv-spec vm-summary-number-specifiers))
+				  'vm-numeric-right-justify-string
+				'vm-right-justify-string)
+			      (car sexp)
+			      (string-to-number
+			       (substring format
+					  (match-beginning 2)
+					  (match-end 2)))))))
 	      ;; Why do we reencode decoded strings?  USR, 2010-05-12
 	      (setq sexp-fmt
 		    (cons (if token "" "%s")
@@ -1163,12 +1176,6 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
       (concat (make-string (- width sw) ?\ ) string))))
 
 ;; I don't think number glyphs ever have a width > 1
-(defun vm-numeric-left-justify-string (string width)
-  (let ((sw (length string)))
-    (if (>= sw width)
-	string
-      (concat string (make-string (- width sw) ?0)))))
-
 ;; I don't think number glyphs ever have a width > 1
 (defun vm-numeric-right-justify-string (string width)
   (let ((sw (length string)))

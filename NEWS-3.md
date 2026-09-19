@@ -8,6 +8,18 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **A field width and a maximum work as `printf` does**
+    (emacs-vm/vm#848), in `vm-summary-format` and in
+    `vm-mime-button-format-alist`.  The maximum cuts the substitution and the
+    width pads what is left, where before the maximum was applied to the
+    padded text: `%20.4s` answered four spaces and is now four columns of the
+    subject in a column twenty wide.  A width beginning with `0` fills with
+    zeros only where the substitution is a number, so `%010w` is `    Monday`
+    rather than `0000Monday`, and a `-` beats a `0` as it does in `printf`,
+    so `%-05l` is `2    ` rather than `20000`.  A format that writes the two
+    with the same number, as the default `%-17.17F` does, is unaffected, and
+    so is every button format VM ships.
+
   * **`%%` is a single `%` in a summary or MIME button format**
     (emacs-vm/vm#847).  It was in a format that had something else to
     substitute, and was not in one that had nothing: a `vm-summary-format` of

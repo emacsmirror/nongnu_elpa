@@ -55,16 +55,6 @@
   "Test right justifying a string longer than width (no truncation)."
   (should (equal (vm-right-justify-string "hello world" 5) "hello world")))
 
-;;; vm-numeric-left-justify-string tests
-
-(ert-deftest vm-summary-test-numeric-left-justify-shorter ()
-  "Test numeric left justify pads with zeros."
-  (should (equal (vm-numeric-left-justify-string "42" 5) "42000")))
-
-(ert-deftest vm-summary-test-numeric-left-justify-equal ()
-  "Test numeric left justify with equal length."
-  (should (equal (vm-numeric-left-justify-string "12345" 5) "12345")))
-
 ;;; vm-numeric-right-justify-string tests
 
 (ert-deftest vm-summary-test-numeric-right-justify-shorter ()
@@ -454,26 +444,73 @@ not the summary."
       (should (equal (vm-summary-sprintf "%s %q" message t)
                      '("Test Message %q"))))))
 
-(ert-deftest vm-summary-test-a-width-and-a-maximum-do-what-is-documented ()
-  "The field width pads, the maximum cuts, and the maximum is applied last.
+(ert-deftest vm-summary-test-a-width-and-a-maximum-work-as-printf-does ()
+  "The maximum cuts the substitution, the width pads what is left.
 
-The manual explains the order because the reader cannot guess it: a maximum
-smaller than a right-justified width cuts the padding and leaves none of the
-text, where the same pair left-justified keeps the first columns.  Both are
-here so that a change to the order is a change to the manual."
+That is printf\='s order, and it was the other way round: the maximum was
+applied to the padded text, so \"%20.4s\" answered four spaces and lost the
+subject altogether (emacs-vm/vm#848).  A format writing the two with the
+same number, as the default \"%-17.17F\" does, answers the same either way,
+which is why nothing noticed."
   (vm-test-with-folder vm-summary-test-folder
     (let ((message (car vm-message-list)))
-      ;; subject is "Test Message", line count is 2
+      ;; subject "Test Message", line count 2, full name "John Doe"
       (should (equal (vm-summary-sprintf "%20s" message)
                      "        Test Message"))
       (should (equal (vm-summary-sprintf "%-20s" message)
                      "Test Message        "))
       (should (equal (vm-summary-sprintf "%.4s" message) "Test"))
       (should (equal (vm-summary-sprintf "%.-4s" message) "sage"))
-      (should (equal (vm-summary-sprintf "%-20.4s" message) "Test"))
-      (should (equal (vm-summary-sprintf "%20.4s" message) "    "))
+      (should (equal (vm-summary-sprintf "%20.4s" message)
+                     "                Test"))
+      (should (equal (vm-summary-sprintf "%-20.4s" message)
+                     "Test                "))
+      (should (equal (vm-summary-sprintf "%20.-4s" message)
+                     "                sage"))
+      (should (equal (vm-summary-sprintf "%-17.17F" message)
+                     "John Doe         ")))))
+
+(ert-deftest vm-summary-test-a-zero-width-fills-a-number-and-not-a-word ()
+  "A width beginning with 0 fills with zeros where the substitution is a
+number, and with spaces everywhere else.
+
+`%010w' used to answer \"0000Monday\", and a left-justified `%-05l' answered
+\"20000\" for a line count of 2, which reads as a different number
+(emacs-vm/vm#848).  `vm-summary-number-specifiers\=' is the set that a zero
+fill means anything for."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
       (should (equal (vm-summary-sprintf "%05l" message) "00002"))
-      (should (equal (vm-summary-sprintf "%5l" message) "    2")))))
+      (should (equal (vm-summary-sprintf "%05c" message) "00059"))
+      (should (equal (vm-summary-sprintf "%05y" message) "02024"))
+      (should (equal (vm-summary-sprintf "%5l" message) "    2"))
+      ;; a `-' beats the `0'
+      (should (equal (vm-summary-sprintf "%-05l" message) "2    "))
+      ;; and a word is padded with spaces whatever the width says
+      (should (equal (vm-summary-sprintf "%010w" message) "    Monday"))
+      (should (equal (vm-summary-sprintf "%010F" message) "  John Doe")))))
+
+(ert-deftest vm-summary-test-a-group-takes-a-width-the-same-way ()
+  "A group is padded and cut like any other substitution, in both paths.
+
+The tokenized path is where a folder\='s own summary lines come from, and it
+did the padding in the buffer in the other order: \"%-20.4(%s%)\" came out as
+the whole subject there and as four columns from the compiled path, neither
+of which is a column twenty wide (emacs-vm/vm#848)."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      (should (equal (vm-summary-sprintf "%20.4(%s%)" message)
+                     "                Test"))
+      (should (equal (vm-summary-sprintf "%-20.4(%s%)" message)
+                     "Test                "))
+      (dolist (case '(("%20.4(%s%)" . "                Test")
+                      ("%-20.4(%s%)" . "Test                ")
+                      ("%.4(%s%)" . "Test")))
+        (with-temp-buffer
+          (vm-tokenized-summary-insert
+           message (vm-summary-sprintf (car case) message t))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                         (cdr case))))))))
 
 ;;; vm-su-labels tests
 

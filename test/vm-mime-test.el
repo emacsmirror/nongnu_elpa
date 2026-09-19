@@ -4977,6 +4977,26 @@ own and the button failed to be drawn at all."
     ;; and the ordinary case is untouched
     (should (equal (vm-mime-sprintf "%t" layout) "HTML"))))
 
+(ert-deftest vm-mime-test-a-button-width-works-as-printf-does ()
+  "A button format pads and cuts the way the summary does.
+
+`vm-mime-compile-format-1\=' is a copy of the summary compiler and had the
+same order of the two and the same zero fill on a word (emacs-vm/vm#848).
+Every button format VM ships writes the width and the maximum with the same
+number, so none of them moves."
+  (let ((layout (vm-mime-test--html-layout "utf-8"))
+        (vm-mime-compiled-format-alist nil))
+    (should (equal (vm-mime-sprintf "%20.4t" layout) "                HTML"))
+    (should (equal (vm-mime-sprintf "%-20.4t" layout) "HTML                "))
+    ;; a word is not zero filled, whatever the width says
+    (should (equal (vm-mime-sprintf "%010t" layout) "      HTML"))
+    (should (equal (vm-mime-sprintf "%-010t" layout) "HTML      "))
+    ;; and the numbers still are
+    (should (equal (vm-mime-sprintf "%05n" layout) "00000"))
+    (should (equal (vm-mime-sprintf "%-05n" layout) "0    "))
+    ;; what the shipped formats do, unchanged
+    (should (equal (vm-mime-sprintf "%-10.10(%t%)" layout) "HTML      "))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
