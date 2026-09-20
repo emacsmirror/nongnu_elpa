@@ -17,6 +17,10 @@ on:
 # permissions: {}
 jobs:
   test:
+    # Don't run the job if the PR is marked "WIP".
+    if: |
+      ! startsWith(forgejo.event.pull_request.title, 'WIP:')
+      && ! startsWith(forgejo.event.commit.message, 'WIP:')
     name: 'Install and Test'
     runs-on: codeberg-medium-lazy
     strategy:
