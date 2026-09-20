@@ -355,6 +355,134 @@ and needs no writable prefix."
             (append offenders (vm-build-test--bare-install-lines file))))
     (should (equal offenders nil))))
 
+(defun vm-build-test--matches (file regexp group)
+  "Return GROUP of every match of REGEXP in FILE."
+  (let (found)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (re-search-forward regexp nil t)
+        (push (match-string group) found)))
+    (nreverse found)))
+
+(defun vm-build-test--substituted-variables ()
+  "Return the names configure substitutes into the `Makefile.in' templates."
+  (let (found)
+    (dolist (file (vm-build-test--makefile-templates))
+      (setq found (append found (vm-build-test--matches
+                                 file "@\\([A-Z][A-Z0-9_]*\\)@" 1))))
+    (delete-dups found)))
+
+(defun vm-build-test--absolute-path-variables ()
+  "Return the names configure.ac looks up with `AC_PATH_PROG'.
+That macro records the absolute path found on the build machine."
+  (vm-build-test--matches
+   (expand-file-name "configure.ac" vm-build-test--root)
+   "^AC_PATH_PROG(\\[?\\([A-Z][A-Z0-9_]*\\)\\]?," 1))
+
+(ert-deftest vm-build-test-no-tool-path-is-baked-into-a-makefile ()
+  "REGRESSION: no `AC_PATH_PROG' name is substituted into a Makefile.
+`AC_PATH_PROG' answers the absolute path on the machine that ran configure,
+so lisp/Makefile came out with RM = /opt/local/libexec/gnubin/rm and the same
+for ls, mkdir and rmdir.  A packager who builds in one place and runs in
+another then calls tools that are not there.  `AC_CHECK_PROG' records the
+bare name, which make looks up in PATH at build time.
+
+A tool configure uses only for itself may still be an absolute path, GREP
+being the one, so what is forbidden is the pair: looked up by path, and
+reaching a template."
+  (let ((baked (seq-intersection (vm-build-test--absolute-path-variables)
+                                 (vm-build-test--substituted-variables))))
+    (should (equal baked nil))))
+
+(defun vm-build-test--recipe-lines (file regexp)
+  "Recipe lines of FILE matching REGEXP, each as \"path:line: text\"."
+  (let ((line 0) (found nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (not (eobp))
+        (setq line (1+ line))
+        (let ((text (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position))))
+          (when (and (string-match-p "\\`\t" text)
+                     (not (string-match-p "\\`\t[ \t]*@?#" text))
+                     (string-match-p regexp text))
+            (push (format "%s:%d: %s"
+                          (file-relative-name file vm-build-test--root)
+                          line text)
+                  found)))
+        (forward-line 1)))
+    (nreverse found)))
+
+(ert-deftest vm-build-test-no-makefile-takes-autoconfs-install ()
+  "REGRESSION: the templates name VM_INSTALL, never autoconf's INSTALL.
+config.status rewrites a relative INSTALL for each subdirectory, so a bare
+name substituted through `@INSTALL@' reached lisp/Makefile as `../install'
+and the install died with \"No such file or directory\".  VM_INSTALL is
+configure's own answer, either the bare name or a full path, and nothing
+rewrites it.
+
+INSTALL_PROGRAM and INSTALL_SCRIPT are gone with it.  VM installs no
+programs, and both were substituted into two templates and used by no
+recipe."
+  (let ((offenders nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (dolist (var '("INSTALL" "INSTALL_DATA" "INSTALL_PROGRAM" "INSTALL_SCRIPT"))
+        (when (with-temp-buffer
+                (insert-file-contents file)
+                (search-forward (concat "@" var "@") nil t))
+          (push (format "%s: @%s@" (file-relative-name file vm-build-test--root) var)
+                offenders))))
+    (should (equal offenders nil))))
+
+(ert-deftest vm-build-test-data-is-installed-one-file-at-a-time ()
+  "REGRESSION: every `$(INSTALL_DATA)' call installs one file, named `$$i'.
+install-sh takes a single source and ignores the rest without a word, so
+`$(INSTALL_DATA) ${INFO_ALL_FILES} $(infodestdir)' put vm.info in place and
+silently dropped vm.info-1 and vm.info-2: a machine with no install of its
+own got half a manual and an exit status of zero.  Every other directory
+already looped, and info/ does now.
+
+A source of `$$i' or `$$f' is the loop variable, which is one file whatever
+the list holds."
+  (let ((offenders nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (dolist (line (vm-build-test--recipe-lines file "\\$(INSTALL_DATA)"))
+        (unless (string-match-p "\\$(INSTALL_DATA)[ \t]+\"?\\$\\$[a-z]+\\b" line)
+          (push line offenders))))
+    (should (equal offenders nil))))
+
+(ert-deftest vm-build-test-no-template-bakes-the-configure-directory ()
+  "REGRESSION: no template substitutes a directory configure resolved.
+@abs_builddir@ is where configure ran, written into the Makefile, so a tree
+configured through one path and built through another writes its autoloads
+somewhere else.  On the machine this was found on the two paths differed and
+lisp/vm-autoloads.el came out with 676 lines naming
+../../../../../../../System/Volumes/... as the file to load.  `pwd' in the
+recipe is where make is, which is the directory meant."
+  (let ((offenders nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (dolist (var '("abs_builddir" "abs_srcdir" "abs_top_builddir" "abs_top_srcdir"))
+        (when (with-temp-buffer
+                (insert-file-contents file)
+                (search-forward (concat "@" var "@") nil t))
+          (push (format "%s: @%s@" (file-relative-name file vm-build-test--root) var)
+                offenders))))
+    (should (equal offenders nil))))
+
+(ert-deftest vm-build-test-the-autoloads-name-no-directory ()
+  "REGRESSION: lisp/vm-autoloads.el loads its files by bare name.
+What goes wrong shows up here rather than in the recipe: an autoload naming
+a directory names one on the machine that built it, and the file is
+installed as it stands.  Skipped where the tree has not been built."
+  (let ((file (expand-file-name "lisp/vm-autoloads.el" vm-build-test--root)))
+    (skip-unless (file-exists-p file))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (should-not (re-search-forward "^(autoload '[^ ]+ \"[^\"]*/" nil t)))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here

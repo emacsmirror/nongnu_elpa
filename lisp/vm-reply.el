@@ -1103,12 +1103,17 @@ as replied to, forwarded, etc, if appropriate."
 
 (defvar vm-fcc-filed nil
   "Whether the Fcc copies have been filed during the send now under way.
-Buffer-local, and cleared by `vm-mail-send' before each send.  It exists
-only to stop the copy being filed twice within one send:
+Buffer-local, and cleared by `vm-mail-send' at the end of each send.  It
+exists only to stop the copy being filed twice within one send:
 `vm-do-fcc-before-mime-encode' files it before the message is encoded, and
-`vm-mail-send' files it otherwise.  It must not outlive the send -- VM keeps
-the composition buffer, and a flag left set would mean a message edited and
-sent again was filed nowhere.")
+`vm-mail-send' files it otherwise.
+
+At the end and not at the start, because the encrypting commands file their
+copy as they encode, which is before the send begins: a flag cleared at the
+start threw that away and a second copy went to the folder
+(emacs-vm/vm#784).  It must not outlive the send.  VM keeps the composition
+buffer, so a flag left set would mean a message edited and sent again was
+filed nowhere.")
 (make-variable-buffer-local 'vm-fcc-filed)
 
 (defun vm-fcc-strip-headers (header-end)
