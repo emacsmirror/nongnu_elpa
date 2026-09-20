@@ -342,7 +342,8 @@ Optionally make the request SILENT."
    url
    params silent
    (lambda (status)
-     (when status ; for flakey servers
+     (if-let ((err (plist-get status :error)))
+         (message "Error fetching %s: %s" url (car err))
        (apply callback (mastodon-http--process-response) cbargs)))))
 
 (defun mastodon-http--get-json-async (url &optional params silent
@@ -354,7 +355,8 @@ Optionally make the request SILENT."
    url
    params silent
    (lambda (status)
-     (when status ;; only when we actually get sth?
+     (if-let ((err (plist-get status :error)))
+         (message "Error fetching %s: %s" url (car err))
        (apply callback (mastodon-http--process-json) cbargs)))))
 
 (defun mastodon-http--post-async (url params _headers &optional callback &rest cbargs)
