@@ -1,0 +1,4 @@
+*.el    text eol=lf diff=scheme
+*.org   text eol=lf
+*.info  text eol=lf
+*.texi  text eol=lf
