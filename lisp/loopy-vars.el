@@ -759,35 +759,6 @@ Accumulation commands can operate on the same variable, and we
   (unless (memq target loopy--known-loop-names)
     (signal 'loopy-unknown-loop-target (list target))))
 
-(defun loopy--check-position-name (pos)
-  "Error if POS is not an accepted symbol describing how to add to a sequence.
-
-Accepted places are the quoted symbols `start' or `end'.  The place
-`beginning' is assumed to have been transformed by the function
-`loopy--normalize-position-name' into `start' before calling
-`loopy--check-position-name'.
-
-For example, the `collect' command can add items at the beginning or end
-of a sequence."
-  (declare (side-effect-free nil)
-           (important-return-value nil)
-           (ftype (function (symbol) t)))
-  (unless (member pos '(start end))
-    (signal 'loopy-bad-position-command-argument (list pos))))
-
-(defun loopy--normalize-position-name (pos)
-  "Normalize POS to standard values."
-  (declare (side-effect-free nil)
-           (important-return-value nil)
-           (ftype (function (symbol) (member start end))))
-  (pcase pos
-    ((or 'beginning '(quote beginning) 'start '(quote start))
-     'start)
-    ((or 'end '(quote end))
-     'end)
-    (_
-     (signal 'loopy-bad-position-command-argument (list pos)))))
-
 (defmacro loopy--wrap-variables-around-body (&rest body)
   "Wrap variables in `loopy--variables' in `let*' bindings around BODY."
   (macroexp-let* (mapcar (lambda (x) (list x nil))

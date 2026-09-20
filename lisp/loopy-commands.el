@@ -2,6 +2,8 @@
 
 ;; Copyright (c) 2020 Earl Hyatt
 
+;; LocalWords:  PLIST
+
 ;;; Disclaimer:
 ;; This file is not part of GNU Emacs.
 ;;
@@ -130,6 +132,27 @@ LIST does not contain an even number of elements, it is invalid."
                     (and kwp (not (memq i correct)))))
           (cl-return-from loopy--only-valid-keywords-p nil))))
     (cl-evenp length)))
+
+(defmacro loopy--plist-bind-std-args (bindings plist &rest body)
+  "Wrap `loopy--plist-bind' for cleaning up standard arguments.
+
+This should only be used in the immediate definition
+of the command (where we would otherwise use `loopy--plist-bind')
+to avoid re-normalizing already normalized values.
+
+Like in `loopy--plist-bind', BINDINGS is a list of variables to bind,
+PLIST is the property list to destructure, and BODY is
+what to do with the values."
+  (declare (indent 2))
+  `(loopy--plist-bind ,bindings
+       ,plist
+     ,(pcase (plist-member bindings :at)
+        ((or `(:at (,var ,_) . ,_)
+             `(:at ,var))
+         `(setq ,var (loopy--normalize-position-name ,var)))
+        (_ nil))
+     ,@body))
+
 
 ;;;; Included parsing functions.
 ;;;;; Sub-Loops
@@ -2201,9 +2224,8 @@ you can use in the instructions:
   :keywords (test key at)
   ;; This is same as implicit behavior, so we only need to specify the explicit.
   :explicit
-  (loopy--plist-bind ( :test (test (quote #'equal)) :key key :at (pos 'end))
+  (loopy--plist-bind-std-args ( :test (test (quote #'equal)) :key key :at (pos 'end))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (if (memq var loopy--optimized-accum-vars)
         (progn
           (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2224,15 +2246,14 @@ you can use in the instructions:
                      `(unless (loopy--member-p ,var ,adjoin-value
                                                :test ,test-val :key ,key-val)
                         (cl-callf2 cons ,adjoin-value ,var)))))))
-            ((or 'end 'nil)
+            ('end
              (loopy--produce-adjoin-end-tracking var val :test test :key key))
             (_
              (signal 'loopy-bad-position-command-argument (list pos cmd))))
         (loopy--vars-final-updates (,var . nil)))))
   :implicit
-  (loopy--plist-bind ( :test (test (quote #'equal)) :key key :at (pos 'end))
+  (loopy--plist-bind-std-args ( :test (test (quote #'equal)) :key key :at (pos 'end))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (loopy--update-accum-place-count loopy--loop-name var pos)
     `((loopy--main-body
        (loopy--optimized-accum '( :cmd ,cmd :name ,name
@@ -2274,9 +2295,8 @@ you can use in the instructions:
   "Parse the `append' command as (append VAR VAL &key at)."
   :keywords (at)
   :explicit
-  (loopy--plist-bind (:at (pos 'end))
+  (loopy--plist-bind-std-args (:at (pos 'end))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (if (memq var loopy--optimized-accum-vars)
         (progn
           (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2294,9 +2314,8 @@ you can use in the instructions:
             (_ (signal 'loopy-bad-position-command-argument (list pos cmd))))
         (loopy--vars-final-updates (,var . nil)))))
   :implicit
-  (loopy--plist-bind (:at (pos 'end))
+  (loopy--plist-bind-std-args (:at (pos 'end))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (loopy--update-accum-place-count loopy--loop-name var pos)
     `((loopy--accumulation-vars (,var nil))
       (loopy--main-body
@@ -2336,9 +2355,8 @@ you can use in the instructions:
 (loopy--defaccumulation collect
   "Parse the `collect' command as (collect VAR VAL &key at)."
   :keywords (at)
-  :explicit (loopy--plist-bind ( :at (pos (quote 'end)))
+  :explicit (loopy--plist-bind-std-args ( :at (pos (quote 'end)))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (if (memq var loopy--optimized-accum-vars)
                   (progn
                     (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2350,18 +2368,17 @@ you can use in the instructions:
                 (loopy--check-accumulation-compatibility
                  loopy--loop-name var 'list cmd)
                 `((loopy--accumulation-vars (,var nil))
-                  ,@(cond
-                     ((member pos '(start beginning 'start 'beginning))
-                      `((loopy--main-body (setq ,var (cons ,val ,var)))))
-                     ((member pos '(end 'end))
-                      (loopy--produce-collect-end-tracking var val))
-                     (t
-                      (signal 'loopy-bad-position-command-argument (list pos cmd))))
+                  ,@(pcase pos
+                      ('start
+                       `((loopy--main-body (setq ,var (cons ,val ,var)))))
+                      ('end
+                       (loopy--produce-collect-end-tracking var val))
+                      (_
+                       (signal 'loopy-bad-position-command-argument (list pos cmd))))
                   (loopy--vars-final-updates (,var . ,nil)))))
 
-  :implicit (loopy--plist-bind ( :at (pos 'end))
+  :implicit (loopy--plist-bind-std-args ( :at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (loopy--update-accum-place-count loopy--loop-name var pos)
               `((loopy--main-body
                  (loopy--optimized-accum
@@ -2403,9 +2420,8 @@ This function is called by `loopy--expand-optimized-accum'."
 (loopy--defaccumulation concat
   "Parse the `concat' command as (concat VAR VAL &key at)."
   :keywords (at)
-  :explicit (loopy--plist-bind (:at (pos 'end))
+  :explicit (loopy--plist-bind-std-args (:at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (if (memq var loopy--optimized-accum-vars)
                   (progn
                     (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2421,17 +2437,16 @@ This function is called by `loopy--expand-optimized-accum'."
                 `((loopy--accumulation-vars (,var nil))
                   (loopy--main-body
                    (setq ,var
-                         ,(cond
-                           ((member pos '(start beginning 'start 'beginning))
-                            `(concat ,val ,var))
-                           ((member pos '(end 'end))
-                            `(concat ,var ,val))
-                           (t
-                            (signal 'loopy-bad-position-command-argument (list pos cmd))))))
+                         ,(pcase pos
+                            ('start
+                             `(concat ,val ,var))
+                            ('end
+                             `(concat ,var ,val))
+                            (_
+                             (signal 'loopy-bad-position-command-argument (list pos cmd))))))
                   (loopy--vars-final-updates (,var . nil)))))
-  :implicit (loopy--plist-bind (:at (pos 'end))
+  :implicit (loopy--plist-bind-std-args (:at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (loopy--update-accum-place-count loopy--loop-name var pos)
               `((loopy--accumulation-vars (,var nil))
                 (loopy--main-body
@@ -2605,9 +2620,8 @@ EXPR is the value to bind to VAR."
 (loopy--defaccumulation nconc
   "Parse the `nconc' command as (nconc VAR VAL &key at)."
   :keywords (at)
-  :explicit (loopy--plist-bind (:at (pos 'end))
+  :explicit (loopy--plist-bind-std-args (:at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (if (memq var loopy--optimized-accum-vars)
                   (progn
                     (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2619,17 +2633,16 @@ EXPR is the value to bind to VAR."
                 (loopy--check-accumulation-compatibility
                  loopy--loop-name var 'list cmd)
                 `((loopy--accumulation-vars (,var nil))
-                  ,@(cond
-                     ((member pos '(start beginning 'start 'beginning))
-                      `((loopy--main-body (setq ,var (nconc ,val ,var)))))
-                     ((member pos '(end 'end))
-                      (loopy--produce-multi-item-end-tracking var val 'destructive))
-                     (t
-                      (signal 'loopy-bad-position-command-argument (list pos cmd))))
+                  ,@(pcase pos
+                      ('start
+                       `((loopy--main-body (setq ,var (nconc ,val ,var)))))
+                      ('end
+                       (loopy--produce-multi-item-end-tracking var val 'destructive))
+                      (_
+                       (signal 'loopy-bad-position-command-argument (list pos cmd))))
                   (loopy--vars-final-updates (,var . nil)))))
-  :implicit (loopy--plist-bind (:at (pos 'end))
+  :implicit (loopy--plist-bind-std-args (:at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (loopy--update-accum-place-count loopy--loop-name var pos)
               `((loopy--accumulation-vars (,var nil))
                 (loopy--main-body (loopy--optimized-accum
@@ -2695,9 +2708,8 @@ This function is used by `loopy--expand-optimized-accum'."
   "Parse the `nunion' command as (nunion VAR VAL &key test key at)."
   :keywords (test key at)
   :explicit
-  (loopy--plist-bind (:at (pos 'end) :key key :test (test (quote #'equal)))
+  (loopy--plist-bind-std-args (:at (pos 'end) :key key :test (test (quote #'equal)))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (if (memq var loopy--optimized-accum-vars)
         (progn
           (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2709,30 +2721,29 @@ This function is used by `loopy--expand-optimized-accum'."
                                         :opt-accum-fn loopy--construct-accum-nunion)))))
       (loopy--check-accumulation-compatibility loopy--loop-name var 'list cmd)
       `((loopy--accumulation-vars (,var nil))
-        ,@(cond
-           ((member pos '(start beginning 'start 'beginning))
-            (loopy--instr-let-const* ((test-val test)
-                                      (key-val key))
-                loopy--accumulation-vars
-              `((loopy--main-body
-                 (setq ,var (nconc (cl-delete-if
-                                    ,(loopy--get-union-test-method var
-                                                                   :test test-val
-                                                                   :key key-val)
-                                    ,val)
-                                   ,var))))))
-           ((member pos '(end 'end))
-            (loopy--produce-union-end-tracking var val
-                                               :test test
-                                               :key key
-                                               :destructive t))
-           (t
-            (signal 'loopy-bad-position-command-argument (list pos cmd))))
+        ,@(pcase pos
+            ('start
+             (loopy--instr-let-const* ((test-val test)
+                                       (key-val key))
+                 loopy--accumulation-vars
+               `((loopy--main-body
+                  (setq ,var (nconc (cl-delete-if
+                                     ,(loopy--get-union-test-method var
+                                                                    :test test-val
+                                                                    :key key-val)
+                                     ,val)
+                                    ,var))))))
+            ('end
+             (loopy--produce-union-end-tracking var val
+                                                :test test
+                                                :key key
+                                                :destructive t))
+            (_
+             (signal 'loopy-bad-position-command-argument (list pos cmd))))
         (loopy--vars-final-updates (,var . nil)))))
   :implicit
-  (loopy--plist-bind (:at (pos 'end) :key key :test (test (quote #'equal)))
+  (loopy--plist-bind-std-args (:at (pos 'end) :key key :test (test (quote #'equal)))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (loopy--update-accum-place-count loopy--loop-name var pos)
     `((loopy--accumulation-vars (,var nil))
       (loopy--implicit-return ,var)
@@ -2889,9 +2900,8 @@ This function is used by `loopy--expand-optimized-accum'."
   "Parse the `union' command as (union VAR VAL &key test key at)."
   :keywords (test key at)
   :explicit
-  (loopy--plist-bind (:at (pos 'end) :key key :test (test (quote #'equal)))
+  (loopy--plist-bind-std-args (:at (pos 'end) :key key :test (test (quote #'equal)))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (if (memq var loopy--optimized-accum-vars)
         (progn
           (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2903,30 +2913,29 @@ This function is used by `loopy--expand-optimized-accum'."
                                         :opt-accum-fn loopy--construct-accum-union)))))
       (loopy--check-accumulation-compatibility loopy--loop-name var 'list cmd)
       `((loopy--accumulation-vars (,var nil))
-        ,@(cond
-           ((member pos '(start beginning 'start 'beginning))
-            (loopy--instr-let-const* ((test-val test)
-                                      (key-val key))
-                loopy--accumulation-vars
-              `((loopy--main-body
-                 (setq ,var (nconc (cl-delete-if
-                                    ,(loopy--get-union-test-method var
-                                                                   :test test-val
-                                                                   :key key-val)
-                                    (copy-sequence ,val))
-                                   ,var))))))
-           ((member pos '(end 'end))
-            (loopy--produce-union-end-tracking var val
-                                               :test test
-                                               :key key
-                                               :destructive nil))
-           (t
-            (signal 'loopy-bad-position-command-argument (list pos cmd))))
+        ,@(pcase pos
+            ('start
+             (loopy--instr-let-const* ((test-val test)
+                                       (key-val key))
+                 loopy--accumulation-vars
+               `((loopy--main-body
+                  (setq ,var (nconc (cl-delete-if
+                                     ,(loopy--get-union-test-method var
+                                                                    :test test-val
+                                                                    :key key-val)
+                                     (copy-sequence ,val))
+                                    ,var))))))
+            ('end
+             (loopy--produce-union-end-tracking var val
+                                                :test test
+                                                :key key
+                                                :destructive nil))
+            (_
+             (signal 'loopy-bad-position-command-argument (list pos cmd))))
         (loopy--vars-final-updates (,var . nil)))))
   :implicit
-  (loopy--plist-bind (:at (pos 'end) :key key :test (test (quote #'equal)))
+  (loopy--plist-bind-std-args (:at (pos 'end) :key key :test (test (quote #'equal)))
       opts
-    (setq pos (loopy--normalize-position-name pos))
     (loopy--update-accum-place-count loopy--loop-name var pos)
     `((loopy--accumulation-vars (,var nil))
       (loopy--implicit-return ,var)
@@ -2969,9 +2978,8 @@ This function is called by `loopy--expand-optimized-accum'."
 (loopy--defaccumulation vconcat
   "Parse the `vconcat' command as (vconcat VAR VAL &key at)."
   :keywords (at)
-  :explicit (loopy--plist-bind (:at (pos 'end))
+  :explicit (loopy--plist-bind-std-args (:at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (if (memq var loopy--optimized-accum-vars)
                   (progn
                     (loopy--update-accum-place-count loopy--loop-name var pos)
@@ -2986,17 +2994,16 @@ This function is called by `loopy--expand-optimized-accum'."
                 `((loopy--accumulation-vars (,var nil))
                   (loopy--main-body
                    (setq ,var
-                         ,(cond
-                           ((member pos '(start beginning 'start 'beginning))
-                            `(vconcat ,val ,var))
-                           ((member pos '(end 'end))
-                            `(vconcat ,var ,val))
-                           (t
-                            (signal 'loopy-bad-position-command-argument (list pos cmd))))))
+                         ,(pcase pos
+                            ('start
+                             `(vconcat ,val ,var))
+                            ('end
+                             `(vconcat ,var ,val))
+                            (_
+                             (signal 'loopy-bad-position-command-argument (list pos cmd))))))
                   (loopy--vars-final-updates (,var . nil)))))
-  :implicit (loopy--plist-bind (:at (pos 'end))
+  :implicit (loopy--plist-bind-std-args (:at (pos 'end))
                 opts
-              (setq pos (loopy--normalize-position-name pos))
               (loopy--update-accum-place-count loopy--loop-name var pos)
               `((loopy--accumulation-vars (,var nil))
                 (loopy--main-body

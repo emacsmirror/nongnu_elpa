@@ -4536,6 +4536,21 @@ Using `start' and `end' in either order should give the same result."
   :iter-bare ((list . listing)
               (adjoin . adjoining)))
 
+(loopy-deftest adjoin-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (adjoin x :at middle?))
+
+         ((list i '(1 2 3))
+          (adjoin accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list adjoin)
+  :iter-bare ((list . listing)
+              (adjoin . adjoining)))
+
 ;;;;; Append
 (loopy-deftest append
   :result '(1 2 3 4 5 6)
@@ -4680,6 +4695,22 @@ Using `start' and `end' in either order should give the same result."
   :loopy t
   :iter-keyword (listing append)
   :iter-bare ((append . appending)))
+
+(loopy-deftest append-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (append x :at middle?))
+
+         ((list i '(1 2 3))
+          (append accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list append)
+  :iter-bare ((list . listing)
+              (append . appending)))
+
 
 ;;;;; Collect
 (loopy-deftest collect
@@ -4859,6 +4890,21 @@ Using `start' and `end' in either order should give the same result."
   :iter-bare ((listing . listing)
               (collect . collecting)))
 
+(loopy-deftest collect-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (collect x :at middle?))
+
+         ((list i '(1 2 3))
+          (collect accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list collect)
+  :iter-bare ((list . listing)
+              (collect . collecting)))
+
 ;;;;; Concat
 (loopy-deftest concat
   :result "catdog"
@@ -5006,6 +5052,21 @@ Using `start' and `end' in either order should give the same result."
   :iter-keyword (list count)
   :iter-keyword ((list . listing)
                  (count . counting)))
+
+(loopy-deftest concat-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '((1) (2) (3)))
+          (concat x :at middle?))
+
+         ((list i '((1) (2) (3)))
+          (concat accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list concat)
+  :iter-bare ((list . listing)
+              (concat . concating)))
 
 ;;;;; Max
 (loopy-deftest max
@@ -5268,6 +5329,21 @@ Using `start' and `end' in either order should give the same result."
   :loopy t
   :iter-keyword (seq nconc)
   :iter-bare ((seq . seqing)
+              (nconc . nconcing)))
+
+(loopy-deftest nconc-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (nconc x :at middle?))
+
+         ((list i '(1 2 3))
+          (nconc accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list nconc)
+  :iter-bare ((list . listing)
               (nconc . nconcing)))
 
 ;;;;; Nunion
@@ -5553,6 +5629,21 @@ Using `start' and `end' in either order should give the same result."
   :loopy t
   :iter-keyword (array nunion)
   :iter-bare ((array . arraying)
+              (nunion . nunioning)))
+
+(loopy-deftest nunion-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (nunion x :at middle?))
+
+         ((list i '(1 2 3))
+          (nunion accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list nunion)
+  :iter-bare ((list . listing)
               (nunion . nunioning)))
 
 ;;;;; Prepend
@@ -6028,6 +6119,22 @@ This is how `cl-reduce' and `seq-reduce' work."
   :iter-bare ((list . listing)
               (union . unioning)))
 
+(loopy-deftest union-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (union x :at middle?))
+
+         ((list i '(1 2 3))
+          (union accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list union)
+  :iter-bare ((list . listing)
+              (union . unioning)))
+
+
 ;;;;; Vconcat
 (loopy-deftest vconcat
   :multi-body t
@@ -6120,6 +6227,22 @@ This is how `cl-reduce' and `seq-reduce' work."
   :iter-keyword (list vconcat)
   :iter-bare ((list . listing)
               (vconcat . vconcating)))
+
+(loopy-deftest vconcat-:at-bad-position
+  :doc "Check that the command signals the correct error with a bad position."
+  :error loopy-bad-position-command-argument
+  :macroexpand t
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (vconcat x :at middle?))
+
+         ((list i '(1 2 3))
+          (vconcat accum-var x :at middle?))]
+  :loopy t
+  :iter-keyword (list vconcat)
+  :iter-bare ((list . listing)
+              (vconcat . vconcating)))
+
 
 ;;;;; Miscellaneous
 ;;; Control Flow
