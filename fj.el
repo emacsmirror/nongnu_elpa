@@ -69,7 +69,8 @@
   ;; list of "owner/repo"
   ;; TODO: (owner . repo)
   )
-(make-obsolete-variable 'fj-extra-repos 'fj-favourite-repos "0.43")
+
+(define-obsolete-variable-alias 'fj-extra-repos 'fj-favourite-repos "0.43")
 
 (defvar-local fj-current-repo nil)
 
@@ -1718,16 +1719,16 @@ OWNER is the repo owner."
                            owner repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-get-timeline (repo owner issue &optional page limit)
-                                        ; since before
-  "Return comments timeline for ISSUE in REPO.
-OWNER is the repo owner.
-Timeline contains comments and events of any type."
-  (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
-                           owner repo issue))
-         ;; NB: limit only works if page specified:
-         (params (fedi-opt-params page limit)))
-    (fj-get endpoint params)))
+;; (defun fj-issue-get-timeline (repo owner issue &optional page limit)
+;;                                         ; since before
+;;   "Return comments timeline for ISSUE in REPO.
+;; OWNER is the repo owner.
+;; Timeline contains comments and events of any type."
+;;   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
+;;                            owner repo issue))
+;;          ;; NB: limit only works if page specified:
+;;          (params (fedi-opt-params page limit)))
+;;     (fj-get endpoint params)))
 
 (defun fj-issue-timeline-more-link-mayb ()
   "Insert a Load more: link if there is more timeline data.
@@ -1742,6 +1743,10 @@ Do nothing if there is no more data."
      #'fj-issue-timeline-more-link-mayb-cb
      (current-buffer))))
 
+(defface fj-load-more-button-face
+  '((t (:weight bold :underline t)))
+  "The face for displaying load more buttons.")
+
 (defun fj-issue-timeline-more-link-mayb-cb (json buf)
   "Insert Load more: link at end of BUF, if JSON is non-nil."
   (with-current-buffer buf
@@ -1752,7 +1757,7 @@ Do nothing if there is no more data."
           ;; FIXME: remove on adding more!
           (insert
            (fj-propertize-link "[Load more]"
-                               'more nil 'underline))
+                             'more nil 'fj-load-more-button-face))
           (message "Load more"))))))
 
 (defun fj-issue-get-timeline-async (repo owner issue
@@ -1770,7 +1775,9 @@ CB is a callback, called on JSON response as first arg, followed by CBARGS."
          ;; NB: limit only works if page specified:
          (params (fedi-opt-params page limit)))
     (fj-authorized-request "GET"
-      (apply #'fedi-http--get-json-async url params cb cbargs))))
+      (apply #'fedi-http--get-response-async ;; get headers too
+             ;;#'fedi-http--get-json-async
+             url params cb cbargs))))
 
 (defun fj-get-comment (repo owner &optional issue comment)
   "GET data for COMMENT of ISSUE in REPO.
@@ -3030,13 +3037,14 @@ Optionally start from POINT."
 Adds tab-stop, keymap, and type."
   (save-excursion
     (goto-char (point-min))
-    (while (setq match (text-property-search-forward 'shr-url))
-      (add-text-properties
-       (prop-match-beginning match)
-       (prop-match-end match)
-       (list 'fj-tab-stop t
-             'keymap fj-link-keymap
-             'type 'shr)))))
+    (let (match)
+      (while (setq match (text-property-search-forward 'shr-url))
+        (add-text-properties
+         (prop-match-beginning match)
+         (prop-match-end match)
+         (list 'fj-tab-stop t
+               'keymap fj-link-keymap
+               'type 'shr))))))
 
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
@@ -3214,13 +3222,16 @@ RENDER-FUN is the function to render DATA with."
 Optionally start searching from POINT."
   (save-excursion
     (goto-char (or point (point-min)))
-    (while (setq match (text-property-search-forward 'shr-url))
-      (fj-insert-permalink-code match))))
+    (let (match)
+      (while (setq match (text-property-search-forward 'shr-url))
+        (fj-insert-permalink-code match)))))
 
 (defun fj-insert-permalink-code (match)
   "Insert the code range of the permalink at point, async.
 A URL is considered a permalink if is on `fj-host', has a trailing
-#target, and has as a \"/commit/$hash\" part."
+#target, and has as a \"/commit/$hash\" part.
+If MATCH is given, use its prop-match data to set beginning and end of
+range for insertion."
   (save-excursion
     (fj-destructure-buf-spec (repo owner)
       (let* ((url (save-excursion
@@ -3709,99 +3720,105 @@ reloading a paginated view."
      repo owner number (or init-page (fj-inc-or-2 page)) limit
      #'fj-item-view-more-cb (current-buffer) (point-max) init-page)))
 
-(defun fj-item-view-more-cb (json buf point &optional init-page end-page)
+(defun fj-item-view-more-cb (response buf point &optional init-page end-page)
   "Callback function to append more timeline items to current view.
-JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
+RESPONSE is the response buffer, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs.
 END-PAGE should be a string of the highest page number to paginate to."
-  (with-current-buffer buf
-    (save-excursion
-      (goto-char point)
-      (cond
-       ((equal 'errors (caar json))
-        (user-error "I am Error: %s - %s"
-                    (alist-get 'message json) json))
-       ((not json)
-        ;; FIXME: this called-interactively-p always fails because we are
-        ;; in a callback:
-        ;; we need to distinguish what exactly? if we reload on nav and
-        ;; have no json, we should error here.
-        ;; but in what cases should we press on?
-        ;; (called-interactively-p 'any))
+  (let* ((headers (cdr response))
+         (json (car response))
+         (total-count (alist-get "x-total-count" headers
+                                 nil nil #'string=)))
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char point)
+        (cond
+         ((equal 'errors (caar json))
+          (user-error "I am Error: %s - %s"
+                      (alist-get 'message json) json))
+         ((not json)
+          ;; FIXME: this called-interactively-p always fails because we are
+          ;; in a callback:
+          ;; we need to distinguish what exactly? if we reload on nav and
+          ;; have no json, we should error here.
+          ;; but in what cases should we press on?
+          ;; (called-interactively-p 'any))
 
-        ;; if we deleted a comment that reduced the number of items by 1,
-        ;; we will end up calling this to the point of having no data, as
-        ;; buf-spec page count will be 1 too many. in that case, we need
-        ;; to still render our item bodies:
-        (fj-render-bodies-final-load-maybe)
-        ;; if no items, async render head item:
-        (fj-render-assets-async)
-        (fj-render-reactions-async)
-        (message "No more items"))
-       (t
-        (fj-destructure-buf-spec (viewargs author owner repo)
-          (when fj-inspect-profile-requests
-            (fj-inspect-profile-requests "item timeline"))
-          ;; unless init-page arg, increment page in viewargs
-          (let* ((page (plist-get viewargs :page))
-                 (first-load-p (and init-page
-                                    (= (string-to-number init-page) 1)))
-                 (final-load-p (and end-page
-                                    (fj-string-number> end-page page #'=)))
-                 (paginating (and (not init-page) (not end-page)))
-                 (args (if (or init-page final-load-p)
-                           viewargs
-                         (plist-put viewargs :page (fj-inc-or-2 page))))
-                 (inhibit-read-only t))
-            (setq fj-buffer-spec
-                  (plist-put fj-buffer-spec :viewargs args))
-            (message "Loading comments...")
-            ;; remove poss [Load more] button (for reload on nav):
-            (save-excursion
-              (beginning-of-line)
-              (when (looking-at "\\[Loa")
-                (delete-line))
-              ;; raw render items:
-              (fj-render-timeline json author owner repo))
-            (when end-page ;; if we are re-paginating, go again maybe:
-              (fj-reload-paginated-pages-maybe end-page page))
-            ;; NB: we need to call `fj-render-item-bodies' exactly once
-            ;; (after it runs on top item only), no matter the situation:
-            ;; - on first load
-            ;; - on loading another page
-            ;; - on reload (`g'), only after loading all pages.
-            (when (or first-load-p
-                      paginating
-                      final-load-p)
-              ;; shr-render-region and regex props:
-              (let ((render-point
-                     ;; on clicking "Load more", only render from that point:
-                     (if paginating
-                         point
-                       ;; else make render from first item after head item:
-                       (save-excursion
-                         (goto-char (point-min))
-                         ;; fj-item-body assumes body is not "":
-                         (text-property-search-forward 'fj-item-data)
-                         (point)))))
-                (fj-render-item-bodies render-point)
-                (message "Loading comments... Done"))
-              ;; async assets render should also run exactly once,
-              ;; the last time we call this cb function. it should cover:
-              ;; - whole buffer on reload
-              ;; - new page items only, on pagination.
-              (let ((async-point (if (or first-load-p final-load-p)
-                                     (point-min) ;; whole buffer
-                                   point))) ;; pagination pointg
-                ;; async render assets:
-                (fj-render-assets-async async-point)
-                ;; async render reactions
-                (fj-render-reactions-async async-point)
-                ;; render code ranges:
-                (fj-render-linked-source-code async-point)))
-            ;; if view still has more items, add a "more" link:
-            (fj-issue-timeline-more-link-mayb))))))))
+          ;; if we deleted a comment that reduced the number of items by 1,
+          ;; we will end up calling this to the point of having no data, as
+          ;; buf-spec page count will be 1 too many. in that case, we need
+          ;; to still render our item bodies:
+          (fj-render-bodies-final-load-maybe)
+          ;; if no items, async render head item:
+          (fj-render-assets-async)
+          (fj-render-reactions-async)
+          (message "No more items"))
+         (t
+          (fj-destructure-buf-spec (viewargs author owner repo)
+            (when fj-inspect-profile-requests
+              (fj-inspect-profile-requests "item timeline"))
+            ;; unless init-page arg, increment page in viewargs
+            (let* ((page (plist-get viewargs :page))
+                   (first-load-p (and init-page
+                                      (= (string-to-number init-page) 1)))
+                   (final-load-p (and end-page
+                                      (fj-string-number> end-page page #'=)))
+                   (paginating (and (not init-page) (not end-page)))
+                   (args (if (or init-page final-load-p)
+                             viewargs
+                           (plist-put viewargs :page (fj-inc-or-2 page))))
+                   (inhibit-read-only t))
+              (setq fj-buffer-spec
+                    (plist-put fj-buffer-spec :total total-count))
+              (setq fj-buffer-spec
+                    (plist-put fj-buffer-spec :viewargs args))
+              (message "Loading comments...")
+              ;; remove poss [Load more] button (for reload on nav):
+              (save-excursion
+                (beginning-of-line)
+                (when (looking-at "\\[Loa")
+                  (delete-line))
+                ;; raw render items:
+                (fj-render-timeline json author owner repo))
+              (when end-page ;; if we are re-paginating, go again maybe:
+                (fj-reload-paginated-pages-maybe end-page page))
+              ;; NB: we need to call `fj-render-item-bodies' exactly once
+              ;; (after it runs on top item only), no matter the situation:
+              ;; - on first load
+              ;; - on loading another page
+              ;; - on reload (`g'), only after loading all pages.
+              (when (or first-load-p
+                        paginating
+                        final-load-p)
+                ;; shr-render-region and regex props:
+                (let ((render-point
+                       ;; on clicking "Load more", only render from that point:
+                       (if paginating
+                           point
+                         ;; else make render from first item after head item:
+                         (save-excursion
+                           (goto-char (point-min))
+                           ;; fj-item-body assumes body is not "":
+                           (text-property-search-forward 'fj-item-data)
+                           (point)))))
+                  (fj-render-item-bodies render-point)
+                  (message "Loading comments... Done"))
+                ;; async assets render should also run exactly once,
+                ;; the last time we call this cb function. it should cover:
+                ;; - whole buffer on reload
+                ;; - new page items only, on pagination.
+                (let ((async-point (if (or first-load-p final-load-p)
+                                       (point-min) ;; whole buffer
+                                     point))) ;; pagination pointg
+                  ;; async render assets:
+                  (fj-render-assets-async async-point)
+                  ;; async render reactions
+                  (fj-render-reactions-async async-point)
+                  ;; render code ranges:
+                  (fj-render-linked-source-code async-point)))
+              ;; if view still has more items, add a "more" link:
+              (fj-issue-timeline-more-link-mayb)))))))))
 
 (defun fj-render-bodies-final-load-maybe ()
   "Call `fj-render-item-bodies' if our first item is not rendered.
@@ -5725,7 +5742,10 @@ If it looks like a link to an item, load it."
   (fj-destructure-buf-spec (repo owner)
     ;; "https://codeberg.org/guix/guix/pulls/7383"
     ;; we might have a link to user/org, to repo, to item...
-    (let* ((item (or item (fj--property 'shr-url)))
+    (let* ((item
+            ;; rel links have no item, so we need to hedge here else we
+            ;; will fail to treat them in the first if clause:
+            (or item (fj--property 'shr-url)))
            (parsed (url-generic-parse-url item)))
       ;; is it a URL we should try to load?:
       (if (not (equal fj-host (concat "https://" (url-host parsed))))
@@ -5742,28 +5762,28 @@ If it looks like a link to an item, load it."
                              (url-filename parsed) "/")
                             "/"))
                (last (car (last file-split))))
-          (if ((string-empty-p last) ;; https://codeberg.org!
-               (shr-browse-url))
-              (pcase (length file-split)
-                ;; user:
-                (1 (fj-user-repos (car owner-repo)))
-                ;; repo (list issues):
-                (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
-                ;; listings:
-                (3 (pcase last
-                     ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
-                     ("issues" (fj-list-issues (cadr owner-repo)))
-                     ;; links to range, commit, branch (browse-url):
-                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
-                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
-                     ;; https://codeberg.org/martianh/fj.el/src/branch/dev
-                     (_ (shr-browse-url))))
-                (_ (pcase (car (last file-split 2))
-                     ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
-                      (fj-item-view (cadr owner-repo) (car owner-repo) last))
-                     ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
-                      (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
-                     (_ (shr-browse-url)))))))))))
+          (if (string-empty-p last) ;; https://codeberg.org!
+              (shr-browse-url)
+            (pcase (length file-split)
+              ;; user:
+              (1 (fj-user-repos (car owner-repo)))
+              ;; repo (list issues):
+              (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+              ;; listings:
+              (3 (pcase last
+                   ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
+                   ("issues" (fj-list-issues (cadr owner-repo)))
+                   ;; links to range, commit, branch (browse-url):
+                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+                   ;; https://codeberg.org/martianh/fj.el/src/branch/dev
+                   (_ (shr-browse-url))))
+              (_ (pcase (car (last file-split 2))
+                   ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                   ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                   (_ (shr-browse-url)))))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
