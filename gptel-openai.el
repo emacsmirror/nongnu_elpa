@@ -521,8 +521,8 @@ Media files, if present, are placed in `gptel-context'."
       :capabilities (media tool-use json url responses-api)
       :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
       :context-window 1050
-      :input-cost 5
-      :output-cost 30
+      :input-cost 4
+      :output-cost 20
       :cutoff-date "2026-02")
      (gpt-5.6-terra
       :description "Faster, more cost-efficient version of GPT-5.6"
