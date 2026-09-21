@@ -377,7 +377,8 @@ PARAMS is an alist of any extra parameters to send with the request."
    url
    params
    (lambda (status)
-     (when status ; for flakey servers
+     (if-let ((err (plist-get status :error)))
+         (message "Error fetching %s: %s" url (car err))
        (apply callback (fedi-http--process-response) cbargs)))))
 
 (defun fedi-http--get-json-async (url &optional params callback &rest cbargs)
@@ -387,7 +388,8 @@ PARAMS is an alist of any extra parameters to send with the request."
    url
    params
    (lambda (status)
-     (when status ;; only when we actually get sth?
+     (if-let ((err (plist-get status :error)))
+         (message "Error fetching %s: %s" url (car err))
        (apply callback (fedi-http--process-json) cbargs)))))
 
 (defun fedi-http--post-async (url params _headers
