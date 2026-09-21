@@ -1719,16 +1719,16 @@ OWNER is the repo owner."
                            owner repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-get-timeline (repo owner issue &optional page limit)
-                                        ; since before
-  "Return comments timeline for ISSUE in REPO.
-OWNER is the repo owner.
-Timeline contains comments and events of any type."
-  (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
-                           owner repo issue))
-         ;; NB: limit only works if page specified:
-         (params (fedi-opt-params page limit)))
-    (fj-get endpoint params)))
+;; (defun fj-issue-get-timeline (repo owner issue &optional page limit)
+;;                                         ; since before
+;;   "Return comments timeline for ISSUE in REPO.
+;; OWNER is the repo owner.
+;; Timeline contains comments and events of any type."
+;;   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
+;;                            owner repo issue))
+;;          ;; NB: limit only works if page specified:
+;;          (params (fedi-opt-params page limit)))
+;;     (fj-get endpoint params)))
 
 (defun fj-issue-timeline-more-link-mayb ()
   "Insert a Load more: link if there is more timeline data.
@@ -3037,13 +3037,14 @@ Optionally start from POINT."
 Adds tab-stop, keymap, and type."
   (save-excursion
     (goto-char (point-min))
-    (while (setq match (text-property-search-forward 'shr-url))
-      (add-text-properties
-       (prop-match-beginning match)
-       (prop-match-end match)
-       (list 'fj-tab-stop t
-             'keymap fj-link-keymap
-             'type 'shr)))))
+    (let (match)
+      (while (setq match (text-property-search-forward 'shr-url))
+        (add-text-properties
+         (prop-match-beginning match)
+         (prop-match-end match)
+         (list 'fj-tab-stop t
+               'keymap fj-link-keymap
+               'type 'shr))))))
 
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
@@ -3221,13 +3222,16 @@ RENDER-FUN is the function to render DATA with."
 Optionally start searching from POINT."
   (save-excursion
     (goto-char (or point (point-min)))
-    (while (setq match (text-property-search-forward 'shr-url))
-      (fj-insert-permalink-code match))))
+    (let (match)
+      (while (setq match (text-property-search-forward 'shr-url))
+        (fj-insert-permalink-code match)))))
 
 (defun fj-insert-permalink-code (match)
   "Insert the code range of the permalink at point, async.
 A URL is considered a permalink if is on `fj-host', has a trailing
-#target, and has as a \"/commit/$hash\" part."
+#target, and has as a \"/commit/$hash\" part.
+If MATCH is given, use its prop-match data to set beginning and end of
+range for insertion."
   (save-excursion
     (fj-destructure-buf-spec (repo owner)
       (let* ((url (save-excursion
@@ -5758,28 +5762,28 @@ If it looks like a link to an item, load it."
                              (url-filename parsed) "/")
                             "/"))
                (last (car (last file-split))))
-          (if ((string-empty-p last) ;; https://codeberg.org!
-               (shr-browse-url))
-              (pcase (length file-split)
-                ;; user:
-                (1 (fj-user-repos (car owner-repo)))
-                ;; repo (list issues):
-                (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
-                ;; listings:
-                (3 (pcase last
-                     ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
-                     ("issues" (fj-list-issues (cadr owner-repo)))
-                     ;; links to range, commit, branch (browse-url):
-                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
-                     ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
-                     ;; https://codeberg.org/martianh/fj.el/src/branch/dev
-                     (_ (shr-browse-url))))
-                (_ (pcase (car (last file-split 2))
-                     ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
-                      (fj-item-view (cadr owner-repo) (car owner-repo) last))
-                     ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
-                      (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
-                     (_ (shr-browse-url)))))))))))
+          (if (string-empty-p last) ;; https://codeberg.org!
+              (shr-browse-url)
+            (pcase (length file-split)
+              ;; user:
+              (1 (fj-user-repos (car owner-repo)))
+              ;; repo (list issues):
+              (2 (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+              ;; listings:
+              (3 (pcase last
+                   ("pulls"  (fj-list-pulls (cadr owner-repo) (car owner-repo)))
+                   ("issues" (fj-list-issues (cadr owner-repo)))
+                   ;; links to range, commit, branch (browse-url):
+                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283/fj.el#L3621-L3629
+                   ;; https://codeberg.org/martianh/fj.el/src/commit/a251f2eb14078b3e975d1382ee5f120f929ff283
+                   ;; https://codeberg.org/martianh/fj.el/src/branch/dev
+                   (_ (shr-browse-url))))
+              (_ (pcase (car (last file-split 2))
+                   ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                   ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                   (_ (shr-browse-url)))))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
