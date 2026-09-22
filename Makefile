@@ -38,6 +38,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 HERMES_CLIENT_LIVE_ABI = (and (fboundp 'hermes-dashboard-transport-client-p) (mapcar (function car) (cl-struct-slot-info 'hermes-dashboard-transport-client)))
+HERMES_EVENTS_LIVE_ABI = (and (fboundp 'hermes-kanban--events-tail-p) (mapcar (function car) (cl-struct-slot-info 'hermes-kanban--events-tail)))
 
 .PHONY: all verify-sources compile do-compile test do-test test-minimum-keymap-popup do-test-minimum-keymap-popup test-load lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load do-load clean
 
@@ -109,6 +110,15 @@ do-test-minimum-keymap-popup:
 	@$(MAKE) --no-print-directory do-test \
 	  TESTS='tests/hermes-dependency-tests.el tests/hermes-ui-tests.el' \
 	  ERT_OPTS="--eval '(setq hermes-test-keymap-popup-minimum t)'"
+
+# Requires a real pre-upgrade Git revision; unlike test-load, needs Git history.
+.PHONY: test-load-upgrade do-test-load-upgrade
+test-load-upgrade:
+	@test -n "$(LOAD_BASE)" || { printf '%s\n' 'Set LOAD_BASE to the pre-upgrade Git revision'; exit 1; }
+	@$(ENV_MAKE) do-test-load-upgrade LOAD_BASE="$(LOAD_BASE)"
+
+do-test-load-upgrade:
+	python3 tests/test-load-upgrade.py --base "$(LOAD_BASE)"
 
 test-load:
 	@test_root=$$(mktemp -d "$(CURDIR)/.test-load.XXXXXX") || exit 1; \
@@ -228,16 +238,20 @@ load: clean
 	@$(ENV_MAKE) do-load
 
 do-load:
-	@client_abi=$$($(BATCH) $(foreach file,$(SRCS),-l $(file)) \
-	    --eval "(prin1 (mapcar (function car) \
-	      (cl-struct-slot-info (quote hermes-dashboard-transport-client))))") || exit 1; \
+	@source_abis=$$($(BATCH) $(foreach file,$(SRCS),-l $(file)) \
+	    --eval "(prin1 (list $(HERMES_CLIENT_LIVE_ABI) \
+	                        $(HERMES_EVENTS_LIVE_ABI)))") || exit 1; \
 	$(EMACSCLIENT) --eval "(progn \
 	  (require 'cl-lib) \
 	  (require 'subr-x) \
-	  (let* ((source-abi '$$client_abi) \
-	         (live-abi $(HERMES_CLIENT_LIVE_ABI))) \
-	    (when (and live-abi (not (equal source-abi live-abi))) \
+	  (let* ((source-abis '$$source_abis) \
+	         (live-abi $(HERMES_CLIENT_LIVE_ABI)) \
+	         (events-abi $(HERMES_EVENTS_LIVE_ABI))) \
+	    (when (and live-abi (not (equal (car source-abis) live-abi))) \
 	      (error \"Hermes client layout changed; restart Emacs before make load\")) \
+	    (when (and events-abi (cadr source-abis) \
+	               (not (equal (cadr source-abis) events-abi))) \
+	      (error \"Hermes event-tail layout changed; restart Emacs before make load\")) \
 	    (add-to-list 'load-path \"$(CURDIR)/lisp\") \
 	    (mapatoms (lambda (symbol) \
 	      (when (and (string-prefix-p \"hermes-\" (symbol-name symbol)) \

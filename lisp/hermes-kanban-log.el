@@ -81,47 +81,38 @@
    (concat "^… omitted [0-9]+ diff line(s)"
            "\\(?: across [0-9]+ additional file(s)/section(s)\\)?$")))
 
+(defun hermes-kanban--consume-diff-body (counts)
+  "Consume a diff body with old/new line COUNTS and report any change."
+  (let ((old-left (car counts)) (new-left (cdr counts))
+        (valid t) saw-change)
+    (while (and valid (not (and (<= old-left 0) (<= new-left 0))) (not (eobp)))
+      (if-let* ((line-counts (hermes-kanban--diff-body-line-counts)))
+          (let ((old-count (car line-counts)) (new-count (cdr line-counts)))
+            (if (or (> old-count old-left) (> new-count new-left))
+                (setq valid nil)
+              (when (/= old-count new-count) (setq saw-change t))
+              (setq old-left (- old-left old-count)
+                    new-left (- new-left new-count))
+              (forward-line 1)))
+        (if (and saw-change (hermes-kanban--diff-omission-line-p))
+            (setq old-left 0 new-left 0)
+          (setq valid nil))))
+    (and valid saw-change (<= old-left 0) (<= new-left 0))))
+
 (defun hermes-kanban--consume-diff-hunk ()
   "Move over a valid unified diff hunk at point.
 Return non-nil when the consumed hunk contains an added or removed line."
   (let ((start (point)))
     (when-let* ((counts (hermes-kanban--diff-hunk-counts)))
-      (let ((old-left (car counts))
-            (new-left (cdr counts))
-            saw-change valid)
-        (forward-line 1)
-        (setq valid t)
-        (while (and valid
-                    (not (and (<= old-left 0) (<= new-left 0)))
-                    (not (eobp)))
-          (let ((line-counts (hermes-kanban--diff-body-line-counts)))
-            (cond
-             (line-counts
-              (let ((old-count (car line-counts))
-                    (new-count (cdr line-counts)))
-                (if (or (> old-count old-left)
-                        (> new-count new-left))
-                    (setq valid nil)
-                  (when (or (and (= old-count 1) (= new-count 0))
-                            (and (= old-count 0) (= new-count 1)))
-                    (setq saw-change t))
-                  (setq old-left (- old-left old-count)
-                        new-left (- new-left new-count))
-                  (forward-line 1))))
-             ((and saw-change (hermes-kanban--diff-omission-line-p))
-              (setq old-left 0
-                    new-left 0))
-             (t (setq valid nil)))))
-        (when (or (> old-left 0) (> new-left 0))
-          (setq valid nil))
-        (while (and valid
-                    (not (eobp))
-                    (looking-at "^\\\\ No newline at end of file"))
-          (forward-line 1))
-        (if (and valid saw-change)
-            t
-          (goto-char start)
-          nil)))))
+      (forward-line 1)
+      (if (hermes-kanban--consume-diff-body counts)
+          (progn
+            (while (and (not (eobp))
+                        (looking-at "^\\\\ No newline at end of file"))
+              (forward-line 1))
+            t)
+        (goto-char start)
+        nil))))
 
 (defun hermes-kanban--diff-range-at-point ()
   "Return embedded unified diff range at point as zero-based offsets, or nil."

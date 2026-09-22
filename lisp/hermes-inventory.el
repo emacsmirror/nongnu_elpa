@@ -253,7 +253,8 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
 for provider setup.  Skill reload is available with
 `\[hermes-inventory-reload-skills]'."
   :interactive nil
-  (setq-local revert-buffer-function #'hermes-inventory--revert))
+  (setq-local revert-buffer-function #'hermes-inventory--revert)
+  (hermes-browser--setup-status))
 
 (defun hermes-inventory--render (spec rows &optional buffer)
   "Display ROWS for inventory SPEC in BUFFER when given."
@@ -266,7 +267,9 @@ for provider setup.  Skill reload is available with
     (setq tabulated-list-format (hermes-inventory--spec-format spec))
     (tabulated-list-init-header)
     (setq tabulated-list-entries rows)
-    (tabulated-list-print t)))
+    (hermes-browser--preserve-reading-position
+     (lambda () (tabulated-list-print t)))
+    (setq hermes-browser--status (if rows "Ready" "Empty"))))
 
 (defun hermes-inventory--render-result (spec result &optional buffer)
   "Render inventory SPEC from dashboard RESULT in BUFFER when given."
@@ -285,7 +288,7 @@ REST is unavailable."
     #'hermes-inventory--skills-result)
    (lambda (reason)
      (message "Hermes: skill status unavailable over REST (%s); using read-only list"
-              reason)
+              (hermes-dashboard-transport--redact-secret reason))
      (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec)))))
 
 (defun hermes-inventory--run-read (generation make-promise on-success)
@@ -305,11 +308,10 @@ still owns client release and promise errors."
           (lambda (reason)
             (when (funcall current-p)
               (with-current-buffer buffer
-                (setq mode-line-process
-                      (if (eq (car-safe reason) 'quit)
-                          " Cancelled · g Retry · ? Help"
-                        " Failed · g Retry · ? Help")))
-              (message "Hermes: %s" reason))))
+                (if (eq (car-safe reason) 'quit)
+                    (setq hermes-browser--status "Cancelled; g retry")
+                  (hermes-browser--read-error
+                   (hermes-dashboard-transport--redact-secret reason)))))))
          acquired)
     (condition-case err
         (hermes-browser--run-on-client
@@ -344,7 +346,7 @@ client for the listing."
       (hermes-browser--own-instance instance)
       (unless (equal hermes-inventory--spec spec)
         (hermes-inventory--render spec nil target))
-      (setq mode-line-process " Loading · ? Help"))
+      (setq hermes-browser--status "Loading"))
     (when display (pop-to-buffer target))
     (let ((generation (or generation
                           (with-current-buffer target
@@ -359,10 +361,7 @@ client for the listing."
               client (hermes-inventory--spec-method spec)
               (hermes-inventory--spec-params spec))))
          (lambda (result)
-           (hermes-inventory--render-result spec result target)
-           (with-current-buffer target
-             (setq mode-line-process
-                   (if tabulated-list-entries " Ready · ? Help" " Empty · g Refresh · ? Help")))))))))
+           (hermes-inventory--render-result spec result target)))))))
 
 (defun hermes-inventory--refresh-origin (buffer)
   "Start a fresh read of live inventory BUFFER."
@@ -584,6 +583,7 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
       (erase-buffer)
       (insert (hermes-inventory--memory-status-text status))
       (goto-char (point-min)))
+    (setq hermes-browser--status "Ready")
     (when display (pop-to-buffer (current-buffer)))))
 
 (defvar-keymap hermes-memory-status-mode-map
@@ -610,7 +610,8 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
 (define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
   "Major mode for redacted Hermes memory provider status."
   :interactive nil
-  (setq-local hermes-browser--snapshot-variables '(hermes-memory--status)))
+  (setq-local hermes-browser--snapshot-variables '(hermes-memory--status))
+  (hermes-browser--setup-status))
 
 (defun hermes-memory--provider-name-p (name)
   "Return non-nil when NAME is safe for a memory provider route."
@@ -897,15 +898,25 @@ The buffer never displays memory contents or secret material."
             (hermes-browser--next-request-generation))))
     (when display (pop-to-buffer target))
     (with-current-buffer target
-      (setq mode-line-process " Loading · ? Help")
+      (setq hermes-browser--status "Loading")
       (hermes-inventory--run-read
        generation
        (lambda (client)
          (hermes-dashboard-transport-api-request-async
           "GET" "/api/memory" :client client))
        (lambda (status)
-         (hermes-inventory--render-memory-status status target)
-         (with-current-buffer target (setq mode-line-process " Ready · ? Help")))))))
+         (hermes-inventory--render-memory-status status target))))))
+
+(defun hermes-memory--reset-promise (client target)
+  "Reset TARGET through CLIENT and read back status under the same guard."
+  (let ((active hermes-dashboard-transport--api-dispatch-guard))
+    (hermes--promise-then
+     (hermes-memory--api client "POST" "/reset" `((target . ,target)))
+     (lambda (result)
+       (when (funcall active)
+         (hermes--promise-map
+          (hermes-memory--status-promise client active)
+          (lambda (status) (list result status))))))))
 
 ;;;###autoload
 (defun hermes-memory-reset (target)
@@ -930,15 +941,7 @@ TARGET is one of all, memory, or user.  External providers are not reset."
           (setq hermes-memory--operation token)
           (hermes-memory--run-owned
            origin generation token
-           (lambda (client)
-             (let ((active hermes-dashboard-transport--api-dispatch-guard))
-               (hermes--promise-then
-                (hermes-memory--api client "POST" "/reset" `((target . ,target)))
-                (lambda (result)
-                  (when (funcall active)
-                    (hermes--promise-map
-                     (hermes-memory--status-promise client active)
-                     (lambda (status) (list result status))))))))
+           (lambda (client) (hermes-memory--reset-promise client target))
            (lambda (result)
              (hermes-inventory--render-memory-status (cadr result) origin)
              (message "Hermes: reset %s memory (%s)"

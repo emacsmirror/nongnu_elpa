@@ -948,8 +948,8 @@
   "Status changes remain discoverable and usable from real diagnostics rows."
   (with-temp-buffer
     (hermes-kanban-diagnostics-mode)
-    (setq hermes-kanban--slug "test-board"
-          hermes-kanban--name "Test"
+    (setq hermes-kanban-diagnostics--slug "test-board"
+          hermes-kanban-diagnostics--name "Test"
           tabulated-list-entries
           (hermes-kanban--diagnostic-rows
            '(((task_id . "task-17") (task_title . "Task")

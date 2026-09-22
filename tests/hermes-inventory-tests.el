@@ -772,19 +772,19 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                        (lambda (&rest _) "Toolsets")))
               (hermes-list-inventory))
             (should (eq (current-buffer) buffer))
-            (should (string-match-p "Loading" mode-line-process))
+            (should (string-match-p "Loading" hermes-browser--status))
             (switch-to-buffer draft)
             (insert "unfinished draft")
             (funcall success '((tools . nil)))
             (should (eq (current-buffer) draft))
             (should (equal (buffer-string) "unfinished draft"))
             (with-current-buffer buffer
-              (should (string-match-p "Empty" mode-line-process))
+              (should (string-match-p "Empty" hermes-browser--status))
               (hermes-inventory--revert))
             (funcall failure "fixture read failure")
             (should (eq (current-buffer) draft))
             (with-current-buffer buffer
-              (should (string-match-p "Failed" mode-line-process)))
+              (should (string-match-p "Failed" hermes-browser--status)))
             (should (equal (buffer-string) "unfinished draft")))
         (kill-buffer buffer)
         (kill-buffer draft)))))
@@ -802,17 +802,17 @@ Toolset toggles are global configuration: no `:session-id' is sent."
             (insert "draft")
             (hermes-memory-status)
             (should (eq (current-buffer) target))
-            (should (string-match-p "Loading" mode-line-process))
+            (should (string-match-p "Loading" hermes-browser--status))
             (switch-to-buffer draft)
             (funcall success '((active . "built-in")))
             (should (eq (current-buffer) draft))
             (with-current-buffer target
-              (should (string-match-p "Ready" mode-line-process))
+              (should (string-match-p "Ready" hermes-browser--status))
               (hermes-memory-status))
             (funcall failure "fixture failure")
             (should (eq (current-buffer) draft))
             (should (equal (buffer-string) "draft"))
-            (with-current-buffer target (should (string-match-p "Failed" mode-line-process))))
+            (with-current-buffer target (should (string-match-p "Failed" hermes-browser--status))))
         (kill-buffer target) (kill-buffer draft)))))
 
 (ert-deftest hermes-inventory-cold-start-failure-is-retryable ()
@@ -843,7 +843,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               (switch-to-buffer draft)
               (should-error (call-interactively command) :type 'user-error)
               (setq target (current-buffer))
-              (should (string-match-p "Failed.*g Retry" mode-line-process))
+              (should (string-match-p "Failed.*g retry" hermes-browser--status))
               (should (eq (window-buffer) target))
               (should failed-client)
               (should (hermes-dashboard-transport-client-stopping-p failed-client))
@@ -861,7 +861,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                          (lambda (&rest _) response)))
                 ;; Invoke the advertised key, retaining real acquire/release.
                 (call-interactively (key-binding (kbd "g")))
-                (should (string-match-p "Loading" mode-line-process))
+                (should (string-match-p "Loading" hermes-browser--status))
                 (should (= 1 (hermes-dashboard-transport-client-refcount client)))
                 (switch-to-buffer draft)
                 (insert "continued draft")
@@ -871,7 +871,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                 (should (eq (window-buffer) draft))
                 (should (equal (buffer-string) "continued draft"))
                 (with-current-buffer target
-                  (should (string-match-p "Ready" mode-line-process))
+                  (should (string-match-p "Ready" hermes-browser--status))
                   (if (eq command 'hermes-list-inventory)
                       (should (equal (caar tabulated-list-entries) "files"))
                     (should (equal (hermes-transport--get hermes-memory--status 'active)
@@ -910,7 +910,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                   (quit (setq escaped t))))
               (should escaped)
               (with-current-buffer target
-                (should (string-match-p "Cancelled.*g Retry" mode-line-process))
+                (should (string-match-p "Cancelled.*g retry" hermes-browser--status))
                 (should (commandp (key-binding (kbd "g")))))
               (should-not requested)
               (should-not released)
@@ -945,7 +945,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                                             '((toolsets . (((name . "successor")))))))))
                                 (call-interactively command))
                               (should (equal (caar tabulated-list-entries) "successor"))
-                              (should (string-match-p "Ready" mode-line-process)))
+                              (should (string-match-p "Ready" hermes-browser--status)))
                              ('mode
                               (fundamental-mode)
                               ;; Retain the other owner fields to isolate mode.
@@ -991,7 +991,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                  (setq reported (apply #'format format-string args)))))
       (with-temp-buffer
         (hermes-inventory--fetch (assoc "Toolsets" hermes-inventory--specs))
-        (should (string-match-p "Failed" mode-line-process))
+        (should (string-match-p "Failed" hermes-browser--status))
         (should (equal reported "Hermes: Renderer failed"))))))
 
 (ert-deftest hermes-memory-reset-input-retirement-prevents-dispatch ()
@@ -1079,6 +1079,24 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                                (_ '("GET" "PUT" "GET")))))
               (should (= releases 1)))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest hermes-inventory-shared-status-redacts-read-errors ()
+  "The shared status and echo-area failure redact dashboard query credentials."
+  (with-temp-buffer
+    (hermes-inventory-mode)
+    (let (reported)
+      (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                 (lambda (_make _success failure)
+                   (funcall failure "http://fixture.invalid/?token=private-token")))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args) (setq reported (apply #'format fmt args)))))
+        (hermes-inventory--run-read
+         (hermes-browser--next-request-generation) #'ignore #'ignore)
+        (should (string-match-p "Failed" hermes-browser--status))
+        (should-not (string-match-p "private-token" reported))
+        (should-not (string-match-p "private-token"
+                                    (get-text-property 0 'help-echo hermes-browser--status)))
+        (should (string-match-p "hermes-browser--status" (prin1-to-string mode-line-misc-info)))))))
 
 (provide 'hermes-inventory-tests)
 ;;; hermes-inventory-tests.el ends here
