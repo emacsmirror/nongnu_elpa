@@ -603,16 +603,25 @@
               ("session.status" (session_id . "sid")))))))
 
 (ert-deftest hermes-dashboard-active-profile-uses-authenticated-rest-client ()
-  "Active-profile lookup uses the exact upstream route and supplied client."
-  (let (request)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
-               (lambda (method path &rest args)
-                 (setq request (list method path (plist-get args :client)))
-                 '((active . "default") (current . "work")))))
-      (should
-       (equal (hermes-dashboard-transport-active-profile 'client)
-              '((active . "default") (current . "work")))))
-    (should (equal request '("GET" "/api/profiles/active" client)))))
+  "Active-profile lookup uses asynchronous REST with the supplied client."
+  (let* ((client (make-hermes-dashboard-transport-client
+                  :base-url "http://dash.example" :token "fixture-token"))
+         request result
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest args)
+            (setq request (cons url args))
+            (hermes--promise-resolved
+             '(:body ((active . "default") (current . "work")))))))
+    (hermes--promise-then
+     (hermes-dashboard-transport-api-request-async
+      "GET" "/api/profiles/active" :client client)
+     (lambda (body) (setq result body)))
+    (should (equal result '((active . "default") (current . "work"))))
+    (should (equal (car request) "http://dash.example/api/profiles/active"))
+    (should (equal (plist-get (cdr request) :method) "GET"))
+    (should (equal (cdr (assoc "X-Hermes-Session-Token"
+                              (plist-get (cdr request) :headers)))
+                   "fixture-token"))))
 
 ;;; Group: kanban events WS-URL plumbing
 
