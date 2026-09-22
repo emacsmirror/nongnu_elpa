@@ -383,6 +383,26 @@ HANDLER receives the accepted process and complete request text."
                             (plist-get snapshot :rows)) '("root"))))
     (should-error (hermes-transport-work-delegates result nil))))
 
+(ert-deftest hermes-transport-work-delegate-ambiguous-index-and-cycle ()
+  "Malformed duplicates cannot restore roots or edges; reachable cycles end."
+  (let* ((rows (mapcar #'hermes-transport-json-parse-lossless
+                      '("{\"subagent_id\":\"root\",\"owner_agent_session_id\":\"A\",\"parent_id\":\"cycle\"}"
+                        "{\"subagent_id\":\"cycle\",\"parent_id\":\"root\"}"
+                        "{\"subagent_id\":\"dup\",\"owner_agent_session_id\":\"A\",\"parent_id\":\"root\"}"
+                        "{\"subagent_id\":\"dup\",\"status\":false}"
+                        "{\"subagent_id\":\"dup\",\"owner_agent_session_id\":\"A\"}"
+                        "{\"subagent_id\":\"hidden\",\"parent_id\":\"dup\"}"
+                        "{\"subagent_id\":\"bad\",\"owner_agent_session_id\":\"A\",\"parent_id\":false}"
+                        "{\"subagent_id\":\"foreign\",\"owner_agent_session_id\":\"a\"}")))
+         (result (make-hash-table :test #'equal)))
+    (dolist (order (list rows (reverse rows)))
+      (puthash "active" (vconcat order) result)
+      (let ((snapshot (hermes-transport-work-delegates result "A")))
+        (should (eq (plist-get snapshot :coverage) 'partial))
+        (should (equal (sort (mapcar (lambda (row) (plist-get row :id))
+                                    (plist-get snapshot :rows)) #'string<)
+                       '("cycle" "root")))))))
+
 (ert-deftest hermes-transport-w0-lossless-json-types ()
   "Lossless parsing preserves every JSON type without altering legacy parsing."
   (let* ((wire "{\"array\":[],\"object\":{},\"null\":null,\"false\":false,\"true\":true,\"number\":0,\"text\":\"\"}")

@@ -1804,6 +1804,23 @@ Use a retirement-only subscription to cancel the timer on stop or replacement."
       (unless active
         (hermes-dashboard-transport--attempt #'cancel-timer timer)))))
 
+(defun hermes-dashboard-transport--arm-ready-heartbeat (client socket heartbeat current)
+  "Arm CLIENT's ready SOCKET, replacing HEARTBEAT under predicate CURRENT.
+The caller clears the heartbeat slot before cancelling the old timer.
+Cancel the new timer if scheduling retires the captured readiness owner."
+  (when heartbeat (hermes-dashboard-transport--attempt #'cancel-timer heartbeat))
+  (when (and (funcall current) socket
+             (numberp hermes-dashboard-transport-heartbeat-interval)
+             (> hermes-dashboard-transport-heartbeat-interval 0))
+    (let ((timer (hermes-dashboard-transport--schedule
+                  hermes-dashboard-transport-heartbeat-interval
+                  (lambda ()
+                    (when (funcall current)
+                      (hermes-dashboard-transport--heartbeat-tick client))))))
+      (if (funcall current)
+          (setf (hermes-dashboard-transport-client-heartbeat-timer client) timer)
+        (hermes-dashboard-transport--attempt #'cancel-timer timer)))))
+
 (defun hermes-dashboard-transport--complete-ready (client frame)
   "Complete CLIENT's entered ready FRAME without advancing a replacement."
   (let* ((generation (hermes-dashboard-transport-client-generation client))
@@ -1831,18 +1848,7 @@ Use a retirement-only subscription to cancel the timer on stop or replacement."
     (setf (hermes-dashboard-transport-client-ready-p client) t
           (hermes-dashboard-transport-client-reconnecting-p client) nil
           (hermes-dashboard-transport-client-heartbeat-timer client) nil)
-    (when heartbeat (hermes-dashboard-transport--attempt #'cancel-timer heartbeat))
-    (when (and (funcall current) socket
-               (numberp hermes-dashboard-transport-heartbeat-interval)
-               (> hermes-dashboard-transport-heartbeat-interval 0))
-      (let ((timer (hermes-dashboard-transport--schedule
-                    hermes-dashboard-transport-heartbeat-interval
-                    (lambda ()
-                      (when (funcall current)
-                        (hermes-dashboard-transport--heartbeat-tick client))))))
-        (if (funcall current)
-            (setf (hermes-dashboard-transport-client-heartbeat-timer client) timer)
-          (hermes-dashboard-transport--attempt #'cancel-timer timer))))
+    (hermes-dashboard-transport--arm-ready-heartbeat client socket heartbeat current)
     (when reconnecting
       (dolist (fn recipients)
         (when (funcall current)

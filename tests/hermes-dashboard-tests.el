@@ -3211,6 +3211,32 @@
 
 ;;; Group: heartbeat keepalive
 
+(ert-deftest hermes-dashboard-ready-heartbeat-precedes-recipients ()
+  "Arm before readiness recipients; resolve before ready events and budget reset."
+  (hermes-dashboard-test--with-reconnect
+    (hermes-dashboard-transport-reconnect client)
+    (let* ((hermes-dashboard-transport-heartbeat-interval 7)
+           (hermes-dashboard-transport-reconnect-stable-period 17)
+           (schedule hermes-dashboard-transport-schedule-function)
+           trace
+           (hermes-dashboard-transport-schedule-function
+            (lambda (delay fn &rest args)
+              (push delay trace)
+              (apply schedule delay fn args))))
+      (hermes-dashboard-transport-subscribe
+       client (lambda (event)
+                (push (list (or (plist-get event :event)
+                                (plist-get event :status))
+                            (not (null (hermes-dashboard-transport-client-heartbeat-timer client)))
+                            (hermes-dashboard-transport-client-reconnect-attempts client))
+                      trace)))
+      (hermes--promise-then
+       (hermes-dashboard-transport-client-ready-promise client)
+       (lambda (_) (push 'resolved trace)))
+      (hermes-dashboard-test--ready (car sockets))
+      (should (equal (nreverse trace)
+                     '(7 ("reconnected" t 1) resolved ("gateway.ready" t 1) 17))))))
+
 (ert-deftest hermes-dashboard-transport-heartbeat-arms-on-ready-and-pings ()
   "With an interval set, `gateway.ready' arms a heartbeat that sends pings."
   (let* ((hermes-dashboard-transport-heartbeat-interval 30)

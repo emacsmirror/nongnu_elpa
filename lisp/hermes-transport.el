@@ -1174,18 +1174,13 @@ notices instead of flattening them to plain status text."
           :started (let ((value (hermes-transport--get row 'started_at)))
                      (and (numberp value) (>= value 0) value)))))
 
-(defun hermes-transport-work-delegates (result key)
-  "Project lossless delegation RESULT for verified durable session KEY.
-Return rows and coverage.  Signal for invalid collections or KEY.  Exclude
-ambiguous IDs and their traversal edges; malformed rows make coverage partial."
-  (unless (and (stringp key) (not (string-empty-p key))
-               (hash-table-p result) (vectorp (gethash "active" result)))
-    (error "Invalid delegate inventory or unbound durable key"))
+(defun hermes-transport--work-delegate-index (active)
+  "Return (NODES . PARTIAL) for the lossless ACTIVE delegate array.
+Index valid rows by ID; retain ambiguous markers for duplicates and invalid
+metadata so neither can contribute roots or traversal edges."
   (let ((nodes (make-hash-table :test #'equal))
-        (children (make-hash-table :test #'equal))
-        (seen (make-hash-table :test #'equal))
-        partial roots rows)
-    (seq-doseq (row (gethash "active" result))
+        partial)
+    (seq-doseq (row active)
       (let ((id (and (hash-table-p row)
                      (hermes-transport-work-string row 'subagent_id))))
         (cond
@@ -1202,6 +1197,20 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (puthash id 'ambiguous nodes)
           (setq partial t))
          (t (puthash id row nodes)))))
+    (cons nodes partial)))
+
+(defun hermes-transport-work-delegates (result key)
+  "Project lossless delegation RESULT for verified durable session KEY.
+Return rows and coverage.  Signal for invalid collections or KEY.  Exclude
+ambiguous IDs and their traversal edges; malformed rows make coverage partial."
+  (unless (and (stringp key) (not (string-empty-p key))
+               (hash-table-p result) (vectorp (gethash "active" result)))
+    (error "Invalid delegate inventory or unbound durable key"))
+  (let* ((index (hermes-transport--work-delegate-index (gethash "active" result)))
+         (nodes (car index))
+         (children (make-hash-table :test #'equal))
+         (seen (make-hash-table :test #'equal))
+         roots rows)
     (maphash
      (lambda (id row)
        (when (hash-table-p row)
@@ -1216,7 +1225,7 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (puthash id t seen)
           (push (hermes-transport-work-delegate-row row) rows)
           (setq roots (append (gethash id children) roots)))))
-    (list :rows rows :coverage (if partial 'partial 'current))))
+    (list :rows rows :coverage (if (cdr index) 'partial 'current))))
 
 (defun hermes-transport-work-process-row (row)
   "Return inert display metadata and typed terminal evidence for process ROW."
