@@ -44,7 +44,7 @@
   "Return backend-reported active provider names, preserving multiple matches."
   (or (delq nil (mapcar
                  (lambda (provider)
-                   (and (eq t (hermes-transport--get provider 'is_active))
+                   (and (hermes-transport--true-p (hermes-transport--get provider 'is_active))
                         (hermes-transport--get provider 'name)))
                  (hermes-transport--get hermes-tool-setup--config 'providers)))
       (when-let* ((name (hermes-transport--non-empty-string
@@ -89,13 +89,13 @@
        (list name
              (vector
               name
-              (if (eq t (hermes-transport--get provider 'is_active)) "Selected" "")
+              (if (hermes-transport--true-p (hermes-transport--get provider 'is_active)) "Selected" "")
               (hermes-browser--status-cell
                (or (hermes-transport--get provider 'status) "unknown"))
               (mapconcat
                (lambda (env)
                  (format "%s: %s" (hermes-transport--get env 'key)
-                         (if (eq t (hermes-transport--get env 'is_set))
+                         (if (hermes-transport--true-p (hermes-transport--get env 'is_set))
                              "saved" "missing")))
                (hermes-transport--get provider 'env_vars) ", ")
               (or (hermes-transport--get provider 'tag) "")))))
@@ -103,15 +103,12 @@
 
 (defun hermes-tool-setup--owner ()
   "Return the exact current setup owner."
-  (list (current-buffer) hermes-browser--request-generation
-        hermes-instance hermes-tool-setup--name hermes-tool-setup--profile))
+  (hermes-browser--owner '(hermes-tool-setup--name hermes-tool-setup--profile)))
 
 (defun hermes-tool-setup--current-p (owner)
   "Return non-nil if OWNER still owns the setup surface."
-  (and (hermes-browser--request-current-mode-p
-        (nth 0 owner) (nth 1 owner) 'hermes-tool-setup-mode)
-       (with-current-buffer (car owner)
-         (equal owner (hermes-tool-setup--owner)))))
+  (and (hermes-browser--buffer-mode-p (car owner) 'hermes-tool-setup-mode)
+       (hermes-browser--owner-current-p owner)))
 
 (defun hermes-tool-setup--idle ()
   "Signal an error while another mutation is pending."
@@ -156,6 +153,13 @@ Fence success and failure against buffer, instance and profile changes."
        (when (hermes-tool-setup--current-p owner)
          (message "Hermes: tool setup request failed; refresh to check state"))))))
 
+(defun hermes-tool-setup--header (status)
+  "Return the owning instance, toolset and profile header with STATUS."
+  (format " %s | %s | Profile: %s | %s"
+          (hermes-instance-name hermes-instance)
+          hermes-tool-setup--name
+          (or hermes-tool-setup--profile "server default") status))
+
 (defun hermes-tool-setup-refresh (&rest _)
   "Recheck provider readiness without invoking a model or a tool."
   (interactive nil hermes-tool-setup-mode)
@@ -167,11 +171,8 @@ Fence success and failure against buffer, instance and profile changes."
      (setq hermes-tool-setup--config config
            tabulated-list-entries (hermes-tool-setup--rows config))
      (setq-local header-line-format
-                 (format " %s | %s | Profile: %s | Backend prerequisites, not a tool test%s"
-                         (hermes-instance-name hermes-instance)
-                         hermes-tool-setup--name
-                         (or hermes-tool-setup--profile "server default")
-                         (concat
+                 (hermes-tool-setup--header
+                  (concat "Backend prerequisites, not a tool test"
                           (unless (hermes-tool-setup--install-scoped-p)
                             " | Install unavailable: explicit non-default profile required")
                           (if tabulated-list-entries "" " | No configurable providers")
@@ -206,9 +207,7 @@ Fence success and failure against buffer, instance and profile changes."
                 hermes-tool-setup--config nil hermes-tool-setup--model-catalog nil
                 hermes-tool-setup--post-status nil tabulated-list-entries nil)
           (setq-local header-line-format
-                      (format " %s | %s | Profile: %s | Prerequisites unknown"
-                              (hermes-instance-name hermes-instance)
-                              hermes-tool-setup--name name))
+                      (hermes-tool-setup--header "Prerequisites unknown"))
           (tabulated-list-print t)
           (hermes-tool-setup-refresh))))))
 
@@ -261,10 +260,10 @@ Call VERIFY, or re-read readiness, after a semantically successful write."
       (hermes-tool-setup--request
        (or method "PUT") suffix
        (lambda (result)
-         (if (eq t (hermes-transport--get result 'ok))
+         (if (hermes-transport--true-p (hermes-transport--get result 'ok))
              (progn
                (message "Hermes: change accepted; checking prerequisites (new sessions may be required)%s"
-                        (if (eq t (hermes-transport--get result 'needs_nous_auth))
+                        (if (hermes-transport--true-p (hermes-transport--get result 'needs_nous_auth))
                             "; provider still needs Portal authentication" ""))
                (funcall (or verify #'hermes-tool-setup-refresh)))
            (message "Hermes: tool setup change refused; refresh to check state")))
@@ -328,7 +327,7 @@ Blank input leaves an existing key intact."
     (hermes-tool-setup--request
      "GET" "/models"
      (lambda (catalog)
-       (if (not (eq t (hermes-transport--get catalog 'has_models)))
+       (if (not (hermes-transport--true-p (hermes-transport--get catalog 'has_models)))
            (message "Hermes: backend exposes no model catalog for this provider")
          (let* ((owner (hermes-tool-setup--owner))
                 (models (hermes-transport--get catalog 'models))
@@ -378,7 +377,7 @@ this toolset or infer readiness from the last process exit code."
    "GET" "/api/actions/tools-post-setup/status"
    (lambda (result)
      (setq hermes-tool-setup--post-status
-           (if (eq t (hermes-transport--get result 'running)) "running"
+           (if (hermes-transport--true-p (hermes-transport--get result 'running)) "running"
              (let ((exit (hermes-transport--get result 'exit_code)))
                (if (numberp exit) (format "exited %s" exit) "no known result"))))
      (message "Hermes: server-wide post-setup: %s; not scoped to this toolset/profile"

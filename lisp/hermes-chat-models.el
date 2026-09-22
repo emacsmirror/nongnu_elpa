@@ -284,6 +284,26 @@ confirmation prompt."
                  (hermes-chat--model-display-name candidate))
          'ready)))))
 
+(defun hermes-chat--apply-selected-model
+    (buffer client candidate provider context)
+  "Apply CANDIDATE to BUFFER via CLIENT after PROVIDER authentication.
+Retain CONTEXT through API-key completion so stale choices stay inert."
+  (let ((auth-type (hermes-transport--scalar-string
+                    (hermes-transport--get provider 'auth_type))))
+    (cond
+     ((plist-get candidate :authenticated)
+      (hermes-chat--apply-model buffer client candidate nil context))
+     ((equal auth-type "api_key")
+      (hermes-chat--connect-provider-candidate
+       buffer client provider
+       (lambda ()
+         (hermes-chat--apply-model buffer client candidate nil context))))
+     (t
+      (message
+       "Hermes: %s requires %s authentication; authenticate it before switching models"
+       (hermes-chat--model-provider-label provider)
+       (if (equal auth-type "oauth") "OAuth" (or auth-type "external")))))))
+
 (defun hermes-chat--prompt-and-set-model (buffer client result &optional context)
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
   (if (not (hermes-chat--model-switch-current-p context))
@@ -308,24 +328,8 @@ confirmation prompt."
             (unless (or (string-empty-p choice) (null candidate))
               (if (not (hermes-chat--model-switch-current-p context))
                   (message "Hermes: model switch is stale or the chat is busy")
-                (let ((auth-type (hermes-transport--scalar-string
-                                  (hermes-transport--get provider 'auth_type))))
-                  (cond
-                   ((plist-get candidate :authenticated)
-                    (hermes-chat--apply-model
-                     buffer client candidate nil context))
-                   ((equal auth-type "api_key")
-                    (hermes-chat--connect-provider-candidate
-                     buffer client provider
-                     (lambda ()
-                       (hermes-chat--apply-model
-                        buffer client candidate nil context))))
-                   (t
-                    (message
-                     "Hermes: %s requires %s authentication; authenticate it before switching models"
-                     (hermes-chat--model-provider-label provider)
-                     (if (equal auth-type "oauth") "OAuth"
-                       (or auth-type "external"))))))))))))))
+                (hermes-chat--apply-selected-model
+                 buffer client candidate provider context)))))))))
 
 (defun hermes-chat--request-model-switch (client refresh)
   "Fetch model choices through CLIENT, bypassing the cache when REFRESH is non-nil."

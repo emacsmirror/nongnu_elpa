@@ -232,6 +232,22 @@ Reject another save until settlement rather than race remote writes.")
                      (insert (or (hermes-profiles--field result 'content) ""))
                      (set-buffer-modified-p nil))))))))))))
 
+(defun hermes-profiles--save-soul (profile content tick current-p)
+  "Save PROFILE's CONTENT captured at TICK while CURRENT-P owns this editor."
+  (let ((target (current-buffer)))
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-profiles--api
+        client "PUT" (hermes-profiles--soul-path profile) `((content . ,content))))
+     (lambda (_result)
+       (when (funcall current-p)
+         (with-current-buffer target
+           (when (= tick (buffer-chars-modified-tick))
+             (set-buffer-modified-p nil)))
+         (message "Hermes: saved SOUL for profile %s" profile)))
+     (lambda (reason)
+       (when (funcall current-p) (message "Hermes: %s" reason))))))
+
 (defun hermes-profiles-soul-save ()
   "Save the current profile SOUL editor through the dashboard API.
 Reject unavailable owners and overlapping saves without discarding the draft.
@@ -270,20 +286,7 @@ Keep edits made during a save modified."
       (unwind-protect
           (prog1
               (hermes--promise-finally
-               (hermes-browser--run-on-client
-                (lambda (client)
-                  (hermes-profiles--api
-                   client "PUT" (hermes-profiles--soul-path profile)
-                   `((content . ,content))))
-                (lambda (_result)
-                  (when (funcall current-p)
-                    (with-current-buffer target
-                      (when (= tick (buffer-chars-modified-tick))
-                        (set-buffer-modified-p nil)))
-                    (message "Hermes: saved SOUL for profile %s" profile)))
-                (lambda (reason)
-                  (when (funcall current-p)
-                    (message "Hermes: %s" reason))))
+               (hermes-profiles--save-soul profile content tick current-p)
                release)
             (setq dispatched t))
         ;; Client acquisition can signal before it returns a promise.

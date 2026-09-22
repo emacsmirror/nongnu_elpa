@@ -51,7 +51,9 @@ Failures are only detected when the cron list refreshes; pair this with
 (defcustom hermes-cron-auto-refresh-interval nil
   "Seconds between automatic refreshes of a cron browser buffer.
 A positive number refreshes the list on that interval; nil or zero disables
-auto-refresh.  Used to detect cron failures for `hermes-cron-notify-on-failure'."
+auto-refresh.  Existing lists start after their next successful refresh.
+Disabling takes effect on the next tick.
+Used with `hermes-cron-notify-on-failure'."
   :type '(choice (const :tag "Disabled" nil) (natnum :tag "Seconds"))
   :group 'hermes)
 
@@ -295,17 +297,28 @@ RUNS is the run list from the dashboard."
               (string-join (mapcar #'hermes-cron--format-run runs) "\n")
             "  No recorded runs.")))
 
-(defun hermes-cron--display-detail (job runs)
+(define-derived-mode hermes-cron-detail-mode special-mode "Hermes Cron Job"
+  "Major mode for a scheduled job and its run history."
+  :interactive nil
+  (hermes-browser--setup-status))
+
+(define-derived-mode hermes-cron-run-mode special-mode "Hermes Cron Run"
+  "Major mode for an inert scheduled-run transcript."
+  :interactive nil
+  (hermes-browser--setup-status))
+
+(defun hermes-cron--display-detail (job runs &optional instance)
   "Display cron JOB with run history in a detail buffer.
-RUNS is the detail run list."
-  (with-current-buffer (hermes-buffer--get "*Hermes Cron Job*" #'special-mode)
-    (unless (derived-mode-p 'special-mode)
-      (special-mode))
+RUNS is the detail run list.  Retain INSTANCE before rendering or display."
+  (with-current-buffer (hermes-buffer--get "*Hermes Cron Job*"
+                                          #'hermes-cron-detail-mode)
+    (when instance (hermes-browser--own-instance instance))
     (hermes-browser--next-request-generation)
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert (hermes-cron--format-job job))
       (insert (hermes-cron--format-runs runs)))
+    (setq hermes-browser--status "Ready")
     (goto-char (point-min))
     (pop-to-buffer (current-buffer))))
 
@@ -332,9 +345,7 @@ RUNS is the detail run list."
      (lambda (detail)
        (when (hermes-browser--request-current-mode-p
               origin generation 'hermes-cron-mode)
-         (hermes-cron--display-detail (car detail) (cadr detail))
-         (with-current-buffer "*Hermes Cron Job*"
-           (hermes-browser--own-instance instance)))))))
+         (hermes-cron--display-detail (car detail) (cadr detail) instance))))))
 
 ;;; Run transcript (log)
 
@@ -366,12 +377,12 @@ RUNS is the detail run list."
         (text (hermes-cron--message-text message)))
     (concat "## " role "\n\n" (if (string-empty-p text) "(no content)" text) "\n")))
 
-(defun hermes-cron--display-run (session-id messages &optional profile)
-  "Display run SESSION-ID's transcript MESSAGES for PROFILE in a log buffer."
+(defun hermes-cron--display-run (session-id messages &optional profile instance)
+  "Display run SESSION-ID's transcript MESSAGES for PROFILE on INSTANCE."
   (let ((entries (if (vectorp messages) (append messages nil) messages)))
-    (with-current-buffer (hermes-buffer--get "*Hermes Cron Run*" #'special-mode)
-      (unless (derived-mode-p 'special-mode)
-        (special-mode))
+    (with-current-buffer (hermes-buffer--get "*Hermes Cron Run*"
+                                            #'hermes-cron-run-mode)
+      (when instance (hermes-browser--own-instance instance))
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (format "Run: %s\n" session-id))
@@ -381,6 +392,7 @@ RUNS is the detail run list."
         (insert (if entries
                     (string-join (mapcar #'hermes-cron--format-message entries) "\n")
                   "No transcript recorded.")))
+      (setq hermes-browser--status (if entries "Ready" "Empty"))
       (goto-char (point-min))
       (pop-to-buffer (current-buffer)))))
 
@@ -402,9 +414,7 @@ RUNS is the detail run list."
      (lambda (result)
        (when (hermes-browser--request-current-p origin generation)
          (hermes-cron--display-run
-          id (hermes-transport--get result 'messages) profile)
-         (with-current-buffer "*Hermes Cron Run*"
-           (hermes-browser--own-instance instance)))))))
+          id (hermes-transport--get result 'messages) profile instance))))))
 
 ;;; Job mutations
 
@@ -581,7 +591,9 @@ Nil until the first render records a baseline.")
 
 (defun hermes-cron--note-failures (result)
   "Notify about newly failed cron jobs in RESULT when enabled.
-The first render only records a baseline so pre-existing failures do not alert."
+The first render only records a baseline so pre-existing failures do not alert.
+Arm newly enabled auto-refresh after a successful owned read."
+  (hermes-cron--maybe-start-auto-refresh)
   (let ((seen hermes-cron--seen-runs)
         (next (make-hash-table :test 'equal)))
     (dolist (job (hermes-transport--get result 'jobs))
@@ -610,7 +622,10 @@ The first render only records a baseline so pre-existing failures do not alert."
     (with-current-buffer buffer
       (when (and (hermes-buffer--owned-p 'hermes-cron-mode)
                  timer (eq timer hermes-cron--auto-refresh-timer))
-        (hermes-cron--revert)))))
+        (if (and (natnump hermes-cron-auto-refresh-interval)
+                 (> hermes-cron-auto-refresh-interval 0))
+            (hermes-cron--revert)
+          (hermes-cron--stop-auto-refresh))))))
 
 (defun hermes-cron--stop-auto-refresh ()
   "Cancel this buffer's cron auto-refresh timer."

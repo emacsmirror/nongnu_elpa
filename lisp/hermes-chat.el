@@ -369,6 +369,32 @@ assistant entry, so the reply placeholder keeps its text."
               '(set-dashboard-running)
               '(drain))))))
 
+(defun hermes-chat--turn-reduce-status (state event now)
+  "Return (NEW-STATE . EFFECTS) for a status EVENT on STATE at time NOW.
+Keep compression clearing, goal notices and session-info effects ordered."
+  (cond
+   ((hermes-chat--compress-bar-clear-event-p event)
+    (let ((status (hermes-chat--entry-with
+                   (hermes-chat--turn-state-get state :status-state)
+                   :status 'ready
+                   :activity "Ready"
+                   :updated now)))
+      (cons (hermes-chat--turn-state-put state :status-state status)
+            (list (cons 'refresh-header status)))))
+   ((equal (hermes-chat--status-name (plist-get event :status)) "goal")
+    (cons state (delq nil (list (hermes-chat--turn-entry-effect event)))))
+   (t
+    (let* ((next-state
+            (if (plist-member event :goal)
+                (hermes-chat--turn-state-put state :goal (plist-get event :goal))
+              state))
+           (status (hermes-chat--turn-status-state next-state event now)))
+      (cons (hermes-chat--turn-state-put next-state :status-state status)
+            (append
+             (delq nil (list (cons 'refresh-header status)
+                             (hermes-chat--turn-entry-effect event)))
+             (hermes-chat--turn-session-info-effects event)))))))
+
 (defun hermes-chat--turn-reduce (state event now)
   "Return (NEW-STATE . EFFECTS) for domain EVENT applied to STATE at time NOW.
 Pure: no buffer, EWOC, process, header, or message side effects.  EFFECTS is an
@@ -376,30 +402,7 @@ ordered list the boundary replays: a header change leads with `refresh-header',
 `done'/`error' append the turn lifecycle, and tool/transcript events emit deltas
 and `upsert-entry'.  Other types return (STATE)."
   (pcase (plist-get event :type)
-    ('status
-     (cond
-      ((hermes-chat--compress-bar-clear-event-p event)
-       (let ((status (hermes-chat--entry-with
-                      (hermes-chat--turn-state-get state :status-state)
-                      :status 'ready
-                      :activity "Ready"
-                      :updated now)))
-         (cons (hermes-chat--turn-state-put state :status-state status)
-               (list (cons 'refresh-header status)))))
-      ((equal (hermes-chat--status-name (plist-get event :status)) "goal")
-       (cons state (delq nil (list (hermes-chat--turn-entry-effect event)))))
-      (t
-       (let* ((next-state
-               (if (plist-member event :goal)
-                   (hermes-chat--turn-state-put state :goal
-                                                (plist-get event :goal))
-                 state))
-              (status (hermes-chat--turn-status-state next-state event now)))
-         (cons (hermes-chat--turn-state-put next-state :status-state status)
-               (append
-                (delq nil (list (cons 'refresh-header status)
-                                (hermes-chat--turn-entry-effect event)))
-                (hermes-chat--turn-session-info-effects event)))))))
+    ('status (hermes-chat--turn-reduce-status state event now))
     ('goal
      (cons (hermes-chat--turn-state-put state :goal (plist-get event :goal))
            '((refresh-header))))
@@ -1478,6 +1481,26 @@ For TERMINAL settlement, allow the captured socket generation to retire."
              :reject fail)
           ((error quit) (funcall fail (error-message-string err))))))))
 
+(defun hermes-chat--restart-reserve (record)
+  "Publish restart RECORD's reservation before invoking display callbacks."
+  (let ((owner (append (hermes-chat--dashboard-begin-bootstrap
+                        hermes-chat--dashboard-client 'restart #'ignore)
+                       (list :buffer (current-buffer)
+                             :stored hermes-chat--session-id :connection nil))))
+    (setcdr record owner)
+    (setq hermes-chat--session-bootstrap owner)
+    (when (buffer-live-p hermes-chat--recovery-buffer)
+      (hermes-chat--insert-local-status
+       (format "Restart: input preserved in %s; inspect history and send manually"
+               (buffer-name hermes-chat--recovery-buffer))))
+    (when (hermes-chat--restart-current-p owner)
+      (hermes-chat--set-header-state
+       :status 'reconnecting
+       :activity (if (buffer-live-p hermes-chat--recovery-buffer)
+                     (format "Restarting; unsent input in %s (send manually)"
+                             (buffer-name hermes-chat--recovery-buffer))
+                   "Restarting dashboard")))))
+
 (defun hermes-chat--restart-prepare (record)
   "Detach the captured attachment in RECORD and reserve it for restart."
   (hermes-chat--in-buffer (car record)
@@ -1523,24 +1546,7 @@ For TERMINAL settlement, allow the captured socket generation to retire."
             (throw 'retired nil))
           (setq hermes-chat--dashboard-token nil
                 hermes-chat--dashboard-detached-assistant-id nil)
-          (let ((owner (append (hermes-chat--dashboard-begin-bootstrap
-                                hermes-chat--dashboard-client 'restart #'ignore)
-                               (list :buffer (current-buffer)
-                                     :stored hermes-chat--session-id :connection nil))))
-            ;; Publish the reservation before any display callback can fail.
-            (setcdr record owner)
-            (setq hermes-chat--session-bootstrap owner)
-            (when (buffer-live-p hermes-chat--recovery-buffer)
-              (hermes-chat--insert-local-status
-               (format "Restart: input preserved in %s; inspect history and send manually"
-                       (buffer-name hermes-chat--recovery-buffer))))
-            (when (hermes-chat--restart-current-p owner)
-              (hermes-chat--set-header-state
-               :status 'reconnecting
-               :activity (if (buffer-live-p hermes-chat--recovery-buffer)
-                             (format "Restarting; unsent input in %s (send manually)"
-                                     (buffer-name hermes-chat--recovery-buffer))
-                           "Restarting dashboard")))))))))
+          (hermes-chat--restart-reserve record))))))
 
 (defun hermes-chat--restart-attach (record client)
   "Attach restart RECORD to replacement CLIENT and await readiness."
@@ -1565,6 +1571,18 @@ For TERMINAL settlement, allow the captured socket generation to retire."
              (when (hermes-chat--dashboard-bootstrap-current-p owner)
                (setf (plist-get owner :connection) nil)
                (hermes-chat--restart-failed owner message)))))))))
+
+(defun hermes-chat--restart-replace-client (client records)
+  "Attach restart RECORDS to a replacement of CLIENT, releasing its lease."
+  (let ((replacement
+         (hermes-dashboard-transport-acquire
+          :host (hermes-dashboard-transport-client-host client)
+          :port (hermes-dashboard-transport-client-port client)
+          :start-mode 'spawn :callback #'ignore)))
+    (unwind-protect
+        (dolist (record records)
+          (hermes-chat--restart-attach record replacement))
+      (hermes-dashboard-transport-release replacement))))
 
 ;;;###autoload
 (defun hermes-dashboard-restart ()
@@ -1617,15 +1635,7 @@ Remote dashboards are unsupported; use `hermes-dashboard-reconnect' instead."
               (mapc #'hermes-chat--restart-prepare records)
               (setq prepared t)
               (hermes-dashboard-transport-stop client "Dashboard explicitly restarted")
-              (let ((replacement
-                     (hermes-dashboard-transport-acquire
-                      :host (hermes-dashboard-transport-client-host client)
-                      :port (hermes-dashboard-transport-client-port client)
-                      :start-mode 'spawn :callback #'ignore)))
-                (unwind-protect
-                    (dolist (record records)
-                      (hermes-chat--restart-attach record replacement))
-                  (hermes-dashboard-transport-release replacement))))
+              (hermes-chat--restart-replace-client client records))
           ((error quit)
            (dolist (record records)
              (condition-case nil
@@ -1929,6 +1939,18 @@ visible while reading."
       (dolist (entry entries) (remhash (plist-get entry :id) hermes-chat--nodes))
       (setf (plist-get owner :history-entries) nil))))
 
+(defun hermes-chat--restore-session-history (client owner result)
+  "Restore CLIENT's history RESULT for OWNER before binding live output."
+  (hermes-chat--dashboard-record-session client result)
+  (hermes-chat--clear-partial-history owner)
+  (hermes-chat--render-history (hermes-transport--get result 'messages))
+  (when (hermes-chat--dashboard-result-live-turn-p result)
+    (hermes-chat--dashboard-restore-inflight-turn client))
+  (hermes-chat--dashboard-restore-pending-clarify result)
+  (when (hermes-chat--dashboard-result-live-turn-p result)
+    (hermes-chat--dashboard-bind-stream-callback
+     client hermes-chat--pending-assistant-id)))
+
 (defun hermes-chat--load-session-history (buffer)
   "Resume BUFFER's session and hydrate history before draining queued input."
   (with-current-buffer buffer
@@ -1999,15 +2021,7 @@ visible while reading."
                                  (hermes-chat--dashboard-stored-id-from-result
                                   client result
                                   (hermes-chat--dashboard-active-id-from-result client result)))
-                           (hermes-chat--dashboard-record-session client result)
-                           (hermes-chat--clear-partial-history owner)
-                           (hermes-chat--render-history (hermes-transport--get result 'messages))
-                           (when (hermes-chat--dashboard-result-live-turn-p result)
-                             (hermes-chat--dashboard-restore-inflight-turn client))
-                           (hermes-chat--dashboard-restore-pending-clarify result)
-                           (when (hermes-chat--dashboard-result-live-turn-p result)
-                             (hermes-chat--dashboard-bind-stream-callback
-                              client hermes-chat--pending-assistant-id))
+                           (hermes-chat--restore-session-history client owner result)
                            (setq restored t))
                        ;; The transport contains callback errors and quits after
                        ;; taking the RPC; only this callback can settle its read.

@@ -15,6 +15,34 @@
           (hermes-chat--image-prior-submits (make-hash-table :test #'equal)))
      (hermes-test-with-chat-buffer ,@body)))
 
+(ert-deftest hermes-images-custom-byte-limit-enforces-range ()
+  "Customize rejects ineffective limits, retaining the last valid value."
+  (let ((hermes-chat-image-max-bytes 32)
+        (setter (or (get 'hermes-chat-image-max-bytes 'custom-set) #'set-default)))
+    (dolist (value '(0 68 2097152))
+      (funcall setter 'hermes-chat-image-max-bytes value)
+      (should (= hermes-chat-image-max-bytes value)))
+    (dolist (value '(-1 2097153 1.5))
+      (should-error (funcall setter 'hermes-chat-image-max-bytes value)
+                    :type 'user-error)
+      (should (= hermes-chat-image-max-bytes 2097152)))))
+
+(ert-deftest hermes-images-pre-session-fence-is-conservative ()
+  "Fresh chats share endpoint admission until actual live session IDs exist."
+  (hermes-images-test-with-chat-buffer
+   (let* ((client (make-hermes-dashboard-transport-client :host "fixture.invalid" :port 8080))
+          (hermes-chat--dashboard-client client)
+          (record (hermes-chat--image-admission-start "first")))
+     (hermes-test-with-chat-buffer
+      (setq hermes-chat--dashboard-client client)
+      (should (equal (hermes-chat--image-session-key)
+                     (plist-get record :session-key)))
+      (should (hermes-chat--images-inhibit))
+      (setq hermes-chat--dashboard-active-session-id "distinct-live-session")
+      (should-not (hermes-chat--images-inhibit)))
+     ;; The submitting owner may still send ordinary busy-control text.
+     (should-not (hermes-chat--images-inhibit)))))
+
 (ert-deftest hermes-images-admission-invalidation-preserves-sibling ()
   "Uncertainty retires only its own admissions, not another chat's record."
   (hermes-images-test-with-chat-buffer

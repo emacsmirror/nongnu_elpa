@@ -378,24 +378,32 @@ status values."
                       hermes-kanban--board-count-statuses)))))
    boards))
 
-(defvar hermes-kanban-boards-mode-map)
-
-(keymap-popup-define hermes-kanban-boards-mode-map
-  "Keymap for `hermes-kanban-boards-mode'."
-  :parent tabulated-list-mode-map
+(hermes-define-list-browser kanban-boards
+  :title "Hermes Boards"
   :description "Hermes Kanban Boards"
-  :group "Navigate"
-  "RET" ("Open board" hermes-kanban-open-board)
-  :group "Board"
-  "+" ("New board" hermes-kanban-create-board)
-  "s" ("Switch current board" hermes-kanban-switch-board)
-  "r" ("Rename board" hermes-kanban-rename-board)
-  "D" ("Archive non-default board" hermes-kanban-archive-board)
-  :group "View"
-  "g" ("Refresh" revert-buffer)
-  "?" ("Help" hermes-kanban-boards-mode-map-popup))
-
-(put 'hermes-kanban-boards-mode-map-popup 'command-modes '(hermes-kanban-boards-mode))
+  :buffer "*Hermes Kanban Boards*"
+  :command hermes-kanban-boards
+  :command-doc "Return to the boards overview."
+  :doc "Major mode for the Hermes Kanban boards overview."
+  :columns (hermes-kanban--boards-tabulated-list-format)
+  :refresh #'hermes-kanban--boards-revert
+  :rows (lambda (payload)
+          (hermes-kanban--board-rows (hermes-transport--get payload 'boards)))
+  :on-mode (lambda ()
+             (add-hook 'window-size-change-functions
+                       #'hermes-kanban--window-size-change nil t))
+  :help (:group "Navigate"
+         hermes-kanban-open-board "Open board"
+         :group "Board"
+         hermes-kanban-create-board "New board"
+         hermes-kanban-switch-board "Switch current board"
+         hermes-kanban-rename-board "Rename board"
+         hermes-kanban-archive-board "Archive non-default board")
+  :keys ("RET" #'hermes-kanban-open-board
+         "+" #'hermes-kanban-create-board
+         "s" #'hermes-kanban-switch-board
+         "r" #'hermes-kanban-rename-board
+         "D" #'hermes-kanban-archive-board))
 
 (defun hermes-kanban--init-boards-header (&optional width)
   "Refresh the boards buffer `tabulated-list' header for WIDTH."
@@ -414,15 +422,6 @@ status values."
       (unless (equal old-format tabulated-list-format)
         (tabulated-list-print t)))))
 
-(define-derived-mode hermes-kanban-boards-mode tabulated-list-mode "Hermes Boards"
-  "Major mode for the Hermes Kanban boards overview."
-  :interactive nil
-  (setq-local revert-buffer-function #'hermes-kanban--boards-revert)
-  (hermes-browser--setup-status)
-  (add-hook 'window-size-change-functions
-            #'hermes-kanban--window-size-change nil t)
-  (hermes-kanban--init-boards-header))
-
 (defun hermes-kanban--render-boards (&optional in-place)
   "Fetch and render the dashboard boards overview asynchronously.
 With IN-PLACE non-nil, refresh the current overview without selecting it."
@@ -438,11 +437,8 @@ With IN-PLACE non-nil, refresh the current overview without selecting it."
     (hermes-kanban--read-view
      target (lambda () (hermes-kanban--api "GET" "/boards"))
      (lambda (payload)
-       (setq tabulated-list-entries
-             (hermes-kanban--board-rows (hermes-transport--get payload 'boards)))
        (hermes-kanban--init-boards-header (hermes-browser--visible-window-width))
-       (hermes-browser--preserve-reading-position (lambda () (tabulated-list-print t)))
-       (setq hermes-browser--status (if tabulated-list-entries "Ready" "Empty")))
+       (hermes-kanban-boards--render payload))
      (not in-place))))
 
 (defun hermes-kanban--boards-revert (&rest _)
@@ -549,6 +545,12 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
          (message "Archived board %s" slug))))))
 
 ;;; Board detail buffer
+
+(defvar-local hermes-kanban-diagnostics--slug nil
+  "Board slug owned by the diagnostics overview.")
+
+(defvar-local hermes-kanban-diagnostics--name nil
+  "Board name owned by the diagnostics overview.")
 
 (defvar-local hermes-kanban--slug nil
   "Slug of the board shown in this detail buffer.")
@@ -782,14 +784,9 @@ With IN-PLACE non-nil, refresh without selecting the board buffer."
   "Refresh the current board detail buffer in place."
   (hermes-kanban--render-board hermes-kanban--slug hermes-kanban--name t))
 
-(defun hermes-kanban-boards ()
-  "Return to the boards overview."
-  (interactive)
-  (hermes-kanban--render-boards))
-
 (defun hermes-kanban--board-query ()
   "Return a board query alist for the current detail buffer, or nil."
-  (and hermes-kanban--slug `((board . ,hermes-kanban--slug))))
+  (hermes-kanban--query-for-board (hermes-kanban--board-slug-for-command)))
 
 (defun hermes-kanban--id-at-point ()
   "Return the task id on the current line or signal a `user-error'."
@@ -906,7 +903,7 @@ and an absent branch or run id is omitted."
      (format "# %s\n\n- ID: `%s`\n- Status: `%s`\n- Priority: `%s`\n- Assignee: `%s`\n- Created: %s\n"
              (hermes-transport--display-field task 'title)
              (hermes-transport--display-field task 'id)
-             (hermes-kanban--format-status (hermes-transport--display-field task 'status))
+             (hermes-kanban-format-status (hermes-transport--display-field task 'status))
              (hermes-transport--display-field task 'priority)
              (or (hermes-transport--non-empty-string (hermes-transport--display-field task 'assignee)) "-")
              (hermes-kanban--format-time (hermes-transport--get task 'created_at)))
@@ -1185,8 +1182,8 @@ With IN-PLACE non-nil, refresh the current detail without selecting it."
   (interactive nil hermes-kanban-mode hermes-kanban-diagnostics-mode)
   (hermes-kanban--open-task
    (hermes-kanban--id-at-point)
-   hermes-kanban--slug
-   hermes-kanban--assignees))
+   (hermes-kanban--board-slug-for-command)
+   (hermes-kanban--assignees-for-command)))
 
 (defun hermes-kanban--task-id-for-command ()
   "Return the current task id for a board or task-detail command."
@@ -1197,9 +1194,18 @@ With IN-PLACE non-nil, refresh the current detail without selecting it."
 
 (defun hermes-kanban--board-slug-for-command ()
   "Return the current board slug for a board or task-detail command."
-  (if (derived-mode-p 'hermes-kanban-task-mode)
-      hermes-kanban-task--board-slug
-    hermes-kanban--slug))
+  (cond ((derived-mode-p 'hermes-kanban-task-mode) hermes-kanban-task--board-slug)
+        ((derived-mode-p 'hermes-kanban-diagnostics-mode)
+         (unless (local-variable-p 'hermes-kanban-diagnostics--slug)
+           (user-error "Reopen diagnostics from its board after reloading Hermes"))
+         hermes-kanban-diagnostics--slug)
+        (t hermes-kanban--slug)))
+
+(defun hermes-kanban--board-name-for-command ()
+  "Return the board name owned by the current board or diagnostics overview."
+  (if (derived-mode-p 'hermes-kanban-diagnostics-mode)
+      hermes-kanban-diagnostics--name
+    hermes-kanban--name))
 
 (defun hermes-kanban--task-status-for-command ()
   "Return the current task status for a board or task-detail command."
@@ -1209,9 +1215,9 @@ With IN-PLACE non-nil, refresh the current detail without selecting it."
 
 (defun hermes-kanban--assignees-for-command ()
   "Return board-known assignees for the current board or task detail buffer."
-  (if (derived-mode-p 'hermes-kanban-task-mode)
-      hermes-kanban-task--assignees
-    hermes-kanban--assignees))
+  (cond ((derived-mode-p 'hermes-kanban-task-mode) hermes-kanban-task--assignees)
+        ((derived-mode-p 'hermes-kanban-diagnostics-mode) nil)
+        (t hermes-kanban--assignees)))
 
 (defun hermes-kanban--log-query (board-slug)
   "Return the query alist for fetching a task log on BOARD-SLUG."
@@ -1439,9 +1445,9 @@ success."
   (interactive nil hermes-kanban-mode hermes-kanban-diagnostics-mode)
   (let* ((instance (hermes-instance-resolve))
          (id (hermes-kanban--id-at-point))
+         (slug (hermes-kanban--board-slug-for-command))
          (status (completing-read "Status: " hermes-kanban--statuses nil t))
-         (slug hermes-kanban--slug)
-         (name hermes-kanban--name))
+         (name (hermes-kanban--board-name-for-command)))
     (hermes-kanban--then
      (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
                          `((status . ,status)) (hermes-kanban--board-query))
@@ -1659,32 +1665,33 @@ summary of the top diagnostic; absent fields fall back to placeholders."
   "Return tabulated-list entries for diagnostic GROUPS from GET /diagnostics."
   (mapcar #'hermes-kanban--diagnostic-row (hermes-kanban--items groups)))
 
-(defvar hermes-kanban-diagnostics-mode-map)
-
-(keymap-popup-define hermes-kanban-diagnostics-mode-map
-  "Keymap for `hermes-kanban-diagnostics-mode'."
-  :parent tabulated-list-mode-map
+(hermes-define-list-browser kanban-diagnostics
+  :title "Hermes Diagnostics"
   :description "Hermes Kanban Diagnostics"
-  :group "Navigate"
-  "RET" ("Show task" hermes-kanban-show)
-  :group "View"
-  "g" ("Refresh" revert-buffer)
-  "?" ("Help" hermes-kanban-diagnostics-mode-map-popup))
-
-(put 'hermes-kanban-diagnostics-mode-map-popup 'command-modes '(hermes-kanban-diagnostics-mode))
-
-(define-derived-mode hermes-kanban-diagnostics-mode tabulated-list-mode
-  "Hermes Diagnostics"
-  "Major mode for the Hermes Kanban diagnostics overview."
-  :interactive nil
-  (setq-local revert-buffer-function #'hermes-kanban--diagnostics-revert)
-  (hermes-browser--setup-status)
-  (setq tabulated-list-format hermes-kanban--diagnostics-format)
-  (tabulated-list-init-header))
+  :buffer "*Hermes Kanban Diagnostics*"
+  :command hermes-kanban--list-diagnostics
+  :command-doc "Display diagnostics after its board context has been installed."
+  :command-modes (hermes-kanban-diagnostics-mode)
+  :doc "Major mode for the Hermes Kanban diagnostics overview."
+  :columns hermes-kanban--diagnostics-format
+  :refresh #'hermes-kanban--diagnostics-revert
+  :rows (lambda (payload)
+          (hermes-kanban--diagnostic-rows
+           (hermes-transport--get payload 'diagnostics)))
+  :on-result (lambda (_payload)
+               (unless tabulated-list-entries
+                 (message "No active diagnostics on this board")))
+  :help (:group "Navigate" hermes-kanban-show "Show task")
+  :keys ("RET" #'hermes-kanban-show))
 
 (defun hermes-kanban--diagnostics-revert (&rest _)
-  "Refresh the diagnostics overview in place."
-  (hermes-kanban--render-diagnostics hermes-kanban--slug hermes-kanban--name t))
+  "Refresh the diagnostics overview in place under its retained board."
+  (let ((slug (hermes-kanban--board-slug-for-command)))
+    (hermes-kanban--read-view
+     (current-buffer)
+     (lambda () (hermes-kanban--api "GET" "/diagnostics" nil
+                                   (hermes-kanban--query-for-board slug)))
+     #'hermes-kanban-diagnostics--render)))
 
 (defun hermes-kanban--render-diagnostics (slug name &optional in-place)
   "Fetch board SLUG's diagnostics, remembering NAME for refreshes.
@@ -1697,22 +1704,16 @@ With IN-PLACE non-nil, refresh without selecting the buffer."
                                       #'hermes-kanban-diagnostics-mode))))
     (with-current-buffer target
       (unless (derived-mode-p 'hermes-kanban-diagnostics-mode) (hermes-kanban-diagnostics-mode))
-      (unless (and (equal hermes-instance instance) (equal hermes-kanban--slug slug))
+      (unless (and (equal hermes-instance instance) (equal hermes-kanban-diagnostics--slug slug))
         (setq tabulated-list-entries nil tabulated-list-sort-key nil)
         (let ((inhibit-read-only t)) (erase-buffer)))
       (hermes-browser--own-instance instance)
-      (setq hermes-kanban--slug slug hermes-kanban--name name
+      (setq hermes-kanban-diagnostics--slug slug
+            hermes-kanban-diagnostics--name name
             mode-line-process (and slug (format " [%s]" slug))))
-    (hermes-kanban--read-view
-     target
-     (lambda () (hermes-kanban--api "GET" "/diagnostics" nil (hermes-kanban--query-for-board slug)))
-     (lambda (payload)
-       (setq tabulated-list-entries
-             (hermes-kanban--diagnostic-rows (hermes-transport--get payload 'diagnostics)))
-       (hermes-browser--preserve-reading-position (lambda () (tabulated-list-print t)))
-       (setq hermes-browser--status (if tabulated-list-entries "Ready" "Empty"))
-       (unless tabulated-list-entries (message "No active diagnostics on this board")))
-     (not in-place))))
+    (with-current-buffer target
+      (if in-place (hermes-kanban--diagnostics-revert)
+        (hermes-kanban--list-diagnostics)))))
 
 ;;;###autoload
 (defun hermes-kanban-diagnostics ()
@@ -1721,7 +1722,7 @@ Lists every task with an active diagnostic, highest severity first; RET opens
 the task and `g' refreshes."
   (interactive)
   (hermes-kanban--render-diagnostics
-   (hermes-kanban--board-slug-for-command) hermes-kanban--name))
+   (hermes-kanban--board-slug-for-command) (hermes-kanban--board-name-for-command)))
 
 ;;; Recovery actions
 

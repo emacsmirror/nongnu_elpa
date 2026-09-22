@@ -41,6 +41,43 @@
            (setq ,calls nil)
            ,@body)))))
 
+(ert-deftest hermes-chat-literal-tail-restore-preserves-reader-and-whitespace ()
+  "Shared recovery appends literal text beside a whitespace-only newer draft."
+  (hermes-test-with-chat-buffer
+   (insert "  \n")
+   (goto-char (hermes-chat--input-position))
+   (narrow-to-region (point) (point-max))
+   (let ((position (- (point) (hermes-chat--input-position))))
+     (hermes-chat--restore-prompt-response "  απάντηση\n")
+     (should (= (- (point) (hermes-chat--input-position)) position))
+     (should (buffer-narrowed-p))
+     (save-restriction
+       (widen)
+       (should (equal (hermes-chat-input-string) "  \n  απάντηση\n")))
+     (should-not hermes-chat--queued-messages))))
+
+(ert-deftest hermes-chat-reset-clarify-tail-restore-is-once-and-literal ()
+  "Reset recovery drains occurrences once without erasing newer input."
+  (hermes-test-with-chat-buffer
+   (insert "newer")
+   (let ((sink (list (current-buffer)
+                     (list (list :text "  first\n") (list :text "second  ")))))
+     (hermes-chat--drain-reset-clarify-owners sink)
+     (hermes-chat--drain-reset-clarify-owners sink)
+     (should (equal (hermes-chat-input-string) "newer\n  first\n\nsecond  "))
+     (should-not hermes-chat--queued-messages))))
+
+(ert-deftest hermes-chat-control-recovery-keeps-literal-draft-and-queue-policy ()
+  "Busy-control recovery preserves whitespace and the existing FIFO policy."
+  (hermes-test-with-chat-buffer
+   (insert "  ")
+   (hermes-chat--preserve-control-content "first")
+   (should (equal (hermes-chat-input-string) "  "))
+   (should (= (length hermes-chat--queued-messages) 1))
+   (hermes-chat--preserve-control-content " second ")
+   (should (equal (hermes-chat-input-string) "  \n second "))
+   (should (= (length hermes-chat--queued-messages) 1))))
+
 (ert-deftest hermes-chat-prompt-notification-keeps-sensitive-content-generic ()
   "A secret request notifies without copying its command or prompt contents."
   (let (notice)

@@ -80,6 +80,52 @@
   (and (stringp value) (not (string-empty-p value))
        (not (string-match-p "\0" value))))
 
+(defun hermes-files--request-guard (client target)
+  "Capture CLIENT's listing and optional TARGET viewer publication authority."
+  (let ((buffer (current-buffer))
+        (owner (hermes-browser--owned-predicate '(hermes-files--path)
+                                               'hermes-files-mode))
+        (scope (hermes-browser--client-scope client))
+        (rows hermes-files--rows)
+        (target-owner (and target (with-current-buffer target
+                                   (hermes-browser--owned-predicate
+                                    nil 'hermes-file-view-mode)))))
+    (lambda ()
+      (and (funcall owner)
+           (eq client (buffer-local-value 'hermes-files--client buffer))
+           (hermes-browser--client-current-p client scope)
+           (eq rows (buffer-local-value 'hermes-files--rows buffer))
+           (or (null target-owner) (funcall target-owner))))))
+
+(defun hermes-files--settle-request (buffer generation client status)
+  "Release BUFFER's GENERATION on CLIENT and set STATUS if still current.
+Resource settlement does not grant permission to paint a retired viewer."
+  (when (and (buffer-live-p buffer)
+             (eq generation (buffer-local-value
+                             'hermes-browser--request-generation buffer))
+             (eq client (buffer-local-value 'hermes-files--client buffer)))
+    (with-current-buffer buffer
+      (hermes-files--unobserve)
+      (setq hermes-files--pending-viewer nil)
+      (when (hermes-browser--request-current-mode-p
+             buffer generation 'hermes-files-mode)
+        (setq hermes-files--status status)))))
+
+(defun hermes-files--observe-request (client generation)
+  "Retire this listing's request GENERATION when CLIENT's connection ends."
+  (let ((buffer (current-buffer))
+        (connection (hermes-dashboard-transport-client-generation client)))
+    (setq hermes-files--subscription
+          (hermes-dashboard-transport-subscribe
+           client nil
+           (lambda ()
+             (when (and (hermes-browser--request-current-mode-p
+                         buffer generation 'hermes-files-mode)
+                        (eq client (buffer-local-value 'hermes-files--client buffer))
+                        (not (equal connection
+                                    (hermes-dashboard-transport-client-generation client))))
+               (with-current-buffer buffer (hermes-files-cancel))))))))
+
 (defun hermes-files--request (route path success &optional target)
   "GET ROUTE with PATH and call SUCCESS only for its current owner.
 Optional TARGET is an already displayed inert viewer, never a local path."
@@ -87,60 +133,15 @@ Optional TARGET is an already displayed inert viewer, never a local path."
   (let* ((buffer (current-buffer))
          (generation hermes-browser--request-generation)
          (client hermes-files--client)
-         (connection (and client
-                          (hermes-dashboard-transport-client-generation client)))
-         (endpoint (and client
-                        (hermes-dashboard-transport--api-client-base-url client)))
-         (instance hermes-instance)
-         (identity (copy-tree instance))
-         (directory (copy-sequence hermes-files--path))
-         (rows hermes-files--rows)
-         (target-generation (and target (buffer-local-value
-                                         'hermes-browser--request-generation target)))
-         (current-p
-          (lambda ()
-            (and (hermes-browser--request-current-mode-p
-                  buffer generation 'hermes-files-mode)
-                 (eq client (buffer-local-value 'hermes-files--client buffer))
-                 (equal connection
-                        (hermes-dashboard-transport-client-generation client))
-                 (equal endpoint
-                        (hermes-dashboard-transport--api-client-base-url client))
-                 (eq instance (buffer-local-value 'hermes-instance buffer))
-                 (equal identity instance)
-                 (equal directory (buffer-local-value 'hermes-files--path buffer))
-                 (eq rows (buffer-local-value 'hermes-files--rows buffer))
-                 (or (null target)
-                     (hermes-browser--request-current-mode-p
-                      target target-generation 'hermes-file-view-mode)))))
-         (settle
-          (lambda (status)
-            ;; Resource settlement does not grant permission to paint a viewer.
-            (when (and (buffer-live-p buffer)
-                       (eq generation (buffer-local-value
-                                       'hermes-browser--request-generation buffer))
-                       (eq client (buffer-local-value 'hermes-files--client buffer)))
-              (with-current-buffer buffer
-                (hermes-files--unobserve)
-                (setq hermes-files--pending-viewer nil)
-                (when (hermes-browser--request-current-mode-p
-                       buffer generation 'hermes-files-mode)
-                  (setq hermes-files--status status)))))))
+         (current-p (hermes-files--request-guard client target))
+         (settle (lambda (status)
+                   (hermes-files--settle-request buffer generation client status))))
     (unless client (user-error "Reopen the managed file browser"))
     (setq hermes-files--status "Loading"
-          hermes-files--pending-viewer (and target (list target target-generation)))
-    (setq hermes-files--subscription
-          (hermes-dashboard-transport-subscribe
-           client nil
-           (lambda ()
-             ;; Settlement checks the request owner, not the retired connection
-             ;; or viewer: neither may still authorize content publication.
-             (when (and (hermes-browser--request-current-mode-p
-                         buffer generation 'hermes-files-mode)
-                        (eq client (buffer-local-value 'hermes-files--client buffer))
-                        (not (equal connection
-                                    (hermes-dashboard-transport-client-generation client))))
-               (with-current-buffer buffer (hermes-files-cancel))))))
+          hermes-files--pending-viewer
+          (and target (list target (buffer-local-value
+                                    'hermes-browser--request-generation target))))
+    (hermes-files--observe-request client generation)
     (hermes--promise-catch
      (hermes--promise-then
       (condition-case err
@@ -171,7 +172,7 @@ Optional TARGET is an already displayed inert viewer, never a local path."
   "Return a tabulated row for server ENTRY, rejecting malformed identities."
   (let ((path (hermes-transport--get entry 'path))
         (name (hermes-transport--get entry 'name))
-        (directory (eq t (hermes-transport--get entry 'is_directory)))
+        (directory (hermes-transport--true-p (hermes-transport--get entry 'is_directory)))
         (size (hermes-transport--get entry 'size)))
     (unless (and (hermes-files--path-p path) (stringp name)
                  (or directory (and (integerp size) (>= size 0))))
@@ -321,7 +322,7 @@ Other content is text only when valid UTF-8 without binary controls."
    (t
     (let ((text (decode-coding-string bytes 'utf-8-unix)))
       ;; Invalid UTF-8 becomes raw-byte characters in Emacs, not Unicode.
-      (if (or (string-match-p "[\0-\10\13\14\16-\37\177-\237]" text)
+      (if (or (string-match-p "[\0-\10\16-\37\177-\237]" text)
               (seq-some (lambda (char) (> char #x10ffff)) text))
           '(binary)
         (cons 'text text))))))
@@ -362,7 +363,7 @@ Retain the original bytes independently for saving, even without image support."
   (let* ((row (tabulated-list-get-id))
          (path (hermes-transport--get row 'path)))
     (unless (memq row hermes-files--rows) (user-error "No current file row"))
-    (if (eq t (hermes-transport--get row 'is_directory))
+    (if (hermes-transport--true-p (hermes-transport--get row 'is_directory))
         (hermes-files--navigate path)
       (unless (<= (hermes-transport--get row 'size) hermes-files--max-bytes)
         (user-error "Managed file exceeds the 4 MiB viewer/download limit"))

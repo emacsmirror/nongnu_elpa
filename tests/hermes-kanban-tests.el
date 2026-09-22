@@ -1302,10 +1302,55 @@
             (should (equal (cdr (assq 'board query)) "emacs-lisp"))
             (with-current-buffer "*Hermes Kanban Diagnostics*"
               (should (derived-mode-p 'hermes-kanban-diagnostics-mode))
-              (should (equal hermes-kanban--slug "emacs-lisp"))
+              (should (equal hermes-kanban-diagnostics--slug "emacs-lisp"))
+              (should-not (local-variable-p 'hermes-kanban--slug))
+              (should-not (local-variable-p 'hermes-kanban--assignees))
+              (let (opened)
+                (cl-letf (((symbol-function 'hermes-kanban--open-task)
+                           (lambda (&rest args) (setq opened args))))
+                  (goto-char (point-min))
+                  (call-interactively (key-binding (kbd "RET"))))
+                (should (equal opened '("t1" "emacs-lisp" nil))))
               (should (equal (caar tabulated-list-entries) "t1"))))
         (when (get-buffer "*Hermes Kanban Diagnostics*")
           (kill-buffer "*Hermes Kanban Diagnostics*"))))))
+
+(ert-deftest hermes-kanban-legacy-diagnostics-refuse-public-operations ()
+  "An old diagnostics view cannot silently dispatch to the active board."
+  (let ((hermes-instances '(("test" . "http://example.test")))
+        calls prompts)
+    (with-temp-buffer
+      (hermes-kanban-diagnostics-mode)
+      ;; A retained pre-upgrade view owns only the old board-local fields.
+      (setq hermes-instance (car hermes-instances)
+            hermes-kanban--slug "retained-board"
+            hermes-kanban--name "Retained"
+            tabulated-list-entries
+            (hermes-kanban--diagnostic-rows
+             '(((task_id . "task") (task_title . "Task")))))
+      (tabulated-list-print)
+      (goto-char (point-min))
+      (should-not (local-variable-p 'hermes-kanban-diagnostics--slug))
+      (cl-letf (((symbol-function 'hermes-kanban--api)
+                 (lambda (&rest args) (push args calls)
+                   (hermes--promise-make)))
+                ((symbol-function 'completing-read)
+                 (lambda (&rest _) (push t prompts) "blocked")))
+        (dolist (command (list (key-binding (kbd "g"))
+                              (key-binding (kbd "RET"))
+                              #'hermes-kanban-set-status))
+          (should-error (call-interactively command) :type 'user-error))
+        (should-not calls)
+        (should-not prompts)
+        ;; Installing the new context (as reopening does) restores dispatch.
+        (setq hermes-kanban-diagnostics--slug "retained-board")
+        (call-interactively (key-binding (kbd "g")))
+        (call-interactively (key-binding (kbd "RET")))
+        (call-interactively #'hermes-kanban-set-status)
+        (should (= (length calls) 3))
+        (should (equal (mapcar #'car (reverse calls)) '("GET" "GET" "PATCH")))
+        (dolist (call calls)
+          (should (equal (nth 3 call) '((board . "retained-board")))))))))
 
 (ert-deftest hermes-kanban-render-diagnostics-inherits-buffer-instance ()
   "A diagnostics buffer inherits its board's instance."
@@ -1363,7 +1408,7 @@
                                      (diagnostics . (((severity . "error")
                                                       (title . "Old")))))))))
             (with-current-buffer "*Hermes Kanban Diagnostics*"
-              (should (equal hermes-kanban--slug "new"))
+              (should (equal hermes-kanban-diagnostics--slug "new"))
               (should (equal (caar tabulated-list-entries) "new-task"))))
         (when (get-buffer "*Hermes Kanban Diagnostics*")
           (kill-buffer "*Hermes Kanban Diagnostics*"))))))
@@ -1641,7 +1686,7 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
 (ert-deftest hermes-kanban-events-callback-fault-retires-real-socket ()
   "Callback faults close both peers before reconnect; stale callbacks are inert."
   (require 'websocket)
-  (dolist (frame '("{\"events\":[{\"task_id\":\"task\",\"kind\":\"blocked\"}],\"cursor\":1}"
+  (dolist (frame '("{\"events\":[{\"id\":1,\"task_id\":\"task\",\"kind\":\"blocked\"}],\"cursor\":1}"
                    "{\"events\":42,\"cursor\":1}"))
     (let (server peers client successor tail old-close old-error)
       (with-temp-buffer
@@ -1809,8 +1854,8 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
       (hermes-kanban--events-handle-frame
        tail
        (concat "{\"events\":["
-               "{\"task_id\":\"done-task\",\"kind\":\"completed\"},"
-               "{\"task_id\":\"blocked-task\",\"kind\":\"blocked\"}"
+               "{\"id\":4,\"task_id\":\"done-task\",\"kind\":\"completed\"},"
+               "{\"id\":5,\"task_id\":\"blocked-task\",\"kind\":\"blocked\"}"
                "],\"cursor\":5}"))
       (should (= 1 (length notifications)))
       (should (string-match-p "blocked-task"
@@ -1843,8 +1888,8 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
       (should (= 5 (hermes-kanban--events-tail-cursor tail)))
       (should scheduled))))
 
-(ert-deftest hermes-kanban-events-handle-frame-ignores-bad-json ()
-  "A malformed frame leaves the cursor untouched and schedules nothing."
+(ert-deftest hermes-kanban-events-handle-frame-retries-bad-json ()
+  "A malformed frame preserves the cursor and schedules only reconnect."
   (let ((tail (hermes-kanban--events-tail-create
                :buffer (current-buffer) :cursor 3))
         scheduled)
@@ -1852,7 +1897,8 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
                (lambda (&rest _) (setq scheduled t) 'timer)))
       (hermes-kanban--events-handle-frame tail "not json")
       (should (= 3 (hermes-kanban--events-tail-cursor tail)))
-      (should-not scheduled))))
+      (should scheduled)
+      (should-not (hermes-kanban--events-tail-refresh-timer tail)))))
 
 (ert-deftest hermes-kanban-live-indicator-reflects-tail-state ()
   "The indicator is shadow when off, warning while retrying, success when live."
@@ -2402,6 +2448,86 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
       (should (equal (cdr (assq 'board seen-query)) "main"))
       (should (cl-some (lambda (m) (string-match-p "1 spawned" m))
                        reported)))))
+
+(ert-deftest hermes-kanban-events-replay-notifies-only-unseen-ids ()
+  "Overlapping, repeated and older batches never notify accepted IDs twice."
+  (let ((tail (hermes-kanban--events-tail-create :buffer (current-buffer)))
+        notices (refreshes 0))
+    (cl-letf (((symbol-function 'hermes-kanban--notify-events)
+               (lambda (_tail events)
+                 (setq notices (append notices (mapcar (lambda (event)
+                                                       (alist-get 'id event)) events)))))
+              ((symbol-function 'hermes-kanban--events-schedule-refresh)
+               (lambda (_) (cl-incf refreshes))))
+      (dolist (text '("{\"events\":[{\"id\":1},{\"id\":2}],\"cursor\":2}"
+                      "{\"events\":[{\"id\":1},{\"id\":2}],\"cursor\":2}"
+                      "{\"events\":[{\"id\":2},{\"id\":3}],\"cursor\":3}"
+                      "{\"events\":[{\"id\":1}],\"cursor\":1}"))
+        (hermes-kanban--events-handle-frame tail text))
+      (should (equal notices '(1 2 3)))
+      (should (= refreshes 2))
+      (should (= (hermes-kanban--events-tail-cursor tail) 3)))))
+
+(ert-deftest hermes-kanban-events-invalid-frames-never-invent-cursor ()
+  "Invalid frames reconnect, then stop; recovery still delivers unseen events."
+  (let ((tail (hermes-kanban--events-tail-create :buffer (current-buffer) :cursor 7))
+        reconnected accepted)
+    (cl-letf (((symbol-function 'hermes-kanban--events-reconnect)
+               (lambda (owner) (push (hermes-kanban--events-tail-cursor owner) reconnected)))
+              ((symbol-function 'hermes-kanban--notify-events)
+               (lambda (_ events) (setq accepted events)))
+              ((symbol-function 'hermes-kanban--events-schedule-refresh) #'ignore))
+      (hermes-kanban--events-handle-frame tail "not json")
+      (hermes-kanban--events-handle-frame tail "{\"events\":[{\"id\":8}]}")
+      (should (equal reconnected '(7 7)))
+      (should (= (hermes-kanban--events-tail-cursor tail) 7))
+      (hermes-kanban--events-handle-frame tail "{\"events\":[{\"id\":8}],\"cursor\":8}")
+      (should (equal accepted '(((id . 8)))))
+      (should (= (hermes-kanban--events-tail-parse-failures tail) 0))
+      (dolist (text '("{\"events\":42,\"cursor\":99}"
+                      "{\"events\":[{\"id\":9}],\"cursor\":99}"
+                      "{\"events\":[{\"id\":10},{\"id\":9}],\"cursor\":10}"))
+        (hermes-kanban--events-handle-frame tail text))
+      (should (= (hermes-kanban--events-tail-cursor tail) 8))
+      (should-not (hermes-kanban--events-tail-active tail))
+      (should (equal reconnected '(8 8 7 7)))
+      (hermes-kanban--events-handle-frame tail "{\"events\":[{\"id\":9}],\"cursor\":9}")
+      (should (= (hermes-kanban--events-tail-cursor tail) 8)))))
+
+(ert-deftest hermes-kanban-events-cursorless-replay-does-not-duplicate-notice ()
+  "Reject cursor-less events before notifying, then accept the recovered batch."
+  (let ((tail (hermes-kanban--events-tail-create :buffer (current-buffer)))
+        notices)
+    (cl-letf (((symbol-function 'hermes-kanban--events-reconnect) #'ignore)
+              ((symbol-function 'hermes-kanban--events-schedule-refresh) #'ignore)
+              ((symbol-function 'hermes-kanban--notify-event)
+               (lambda (_tail notice) (push (plist-get notice :task-id) notices))))
+      (hermes-kanban--events-handle-frame
+       tail "{\"events\":[{\"id\":1,\"kind\":\"blocked\",\"task_id\":\"task\"}]}")
+      (hermes-kanban--events-handle-frame
+       tail "{\"events\":[{\"id\":1,\"kind\":\"blocked\",\"task_id\":\"task\"}],\"cursor\":1}")
+      (should (equal notices '("task")))
+      (should (= (hermes-kanban--events-tail-cursor tail) 1)))))
+
+(ert-deftest hermes-kanban-events-stopped-tail-survives-board-readback ()
+  "A delayed board readback cannot restart a stream stopped for invalid frames."
+  (with-temp-buffer
+    (hermes-kanban-mode)
+    (setq hermes-instance '("test" . "http://test.invalid")
+          hermes-kanban--slug "work"
+          hermes-kanban--events-tail
+          (hermes-kanban--events-tail-create
+           :buffer (current-buffer) :slug "work" :instance hermes-instance
+           :cursor 7 :parse-failures hermes-kanban--events-parse-failure-limit
+           :active nil))
+    (let ((tail hermes-kanban--events-tail) connected)
+      (cl-letf (((symbol-function 'hermes-kanban--events-connect)
+                 (lambda (_) (setq connected t))))
+        (hermes-kanban--events-retarget "work" 99)
+        (should (eq tail hermes-kanban--events-tail))
+        (should-not connected)
+        (should (= (hermes-kanban--events-tail-cursor tail) 7))
+        (should (string-match-p "stopped" (hermes-kanban--live-indicator)))))))
 
 (provide 'hermes-kanban-tests)
 ;;; hermes-kanban-tests.el ends here

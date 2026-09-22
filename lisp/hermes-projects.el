@@ -41,10 +41,6 @@
 (defvar-local hermes-projects--unsupported nil
   "Methods explicitly reported missing by this backend.")
 
-(defun hermes-projects--true-p (value)
-  "Return non-nil for a backend true flag VALUE."
-  (memq value '(t 1)))
-
 (defun hermes-projects--field (object key)
   "Return OBJECT's KEY as display text."
   (hermes-transport--display-field object key))
@@ -71,6 +67,8 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
                      (intern (concat "hermes-dashboard-transport-projects-"
                                      (replace-regexp-in-string "_" "-" method)))
                      client args)))))
+    ;; A write and its readback share a generation, but profiles may disappear
+    ;; between them.  A generation cache would silently weaken this preflight.
     ;; Omitting the override is unambiguously the captured client's launch
     ;; scope.  Never substitute "default" for a named dashboard's launch scope.
     (if (null profile) (funcall dispatch)
@@ -96,7 +94,7 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
               (hermes-browser--status-cell
                (if (equal id (hermes-transport--get result 'active_id)) "active" ""))
               (hermes-browser--status-cell
-               (if (hermes-projects--true-p (hermes-transport--get project 'archived))
+               (if (hermes-transport--true-p (hermes-transport--get project 'archived))
                    "archived" "open"))
               (number-to-string (length (hermes-transport--get project 'folders)))
               (hermes-projects--field project 'primary_path)))))
@@ -219,20 +217,17 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
 (defun hermes-projects--context (&optional selected)
   "Capture an ownership predicate, optionally for SELECTED project."
   (let ((buffer (current-buffer))
-        (profile (copy-sequence hermes-projects--profile))
-        (owner (hermes-browser--dispatch-guard nil))
-        (detail-id hermes-projects--detail-id)
+        (owner (hermes-browser--owned-predicate
+                '(hermes-projects--profile hermes-projects--detail-id)))
         (id (and selected (hermes-projects--field selected 'id))))
     (lambda ()
       (and (funcall owner)
            (with-current-buffer buffer
-             (and (equal profile hermes-projects--profile)
-                  (equal detail-id hermes-projects--detail-id)
-                  (or (null id)
-                      (equal id (condition-case nil
-                                    (hermes-projects--field
-                                     (hermes-projects--selected) 'id)
-                                  (user-error nil))))))))))
+             (or (null id)
+                 (equal id (condition-case nil
+                               (hermes-projects--field
+                                (hermes-projects--selected) 'id)
+                             (user-error nil)))))))))
 
 (defun hermes-projects--error (reason method)
   "Render failure REASON for METHOD without misclassifying transient errors."
@@ -256,12 +251,12 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
            (insert "Project metadata is absent. Directories and sessions are not deleted.\n")
          (insert (propertize (hermes-projects--field project 'name) 'face 'bold) "\n"
                  (hermes-projects--field project 'description) "\n"
-                 "State: " (if (hermes-projects--true-p
+                 "State: " (if (hermes-transport--true-p
 				(hermes-transport--get project 'archived)) "archived" "open")
                  "\nPrimary backend folder: " (hermes-projects--field project 'primary_path)
                  "\n\nBackend folders (metadata; existence not verified):\n")
          (dolist (folder (hermes-transport--get project 'folders))
-           (insert (if (hermes-projects--true-p (hermes-transport--get folder 'is_primary))
+           (insert (if (hermes-transport--true-p (hermes-transport--get folder 'is_primary))
                        "  * " "    ")
                    (hermes-projects--field folder 'path) "  "
                    (hermes-projects--field folder 'label) "\n"))
@@ -378,6 +373,34 @@ point-in-time check cannot prevent backend profile deletion during dispatch."
           (hermes-projects--render nil))
 	(hermes-projects-refresh)))))
 
+(defun hermes-projects--write-and-readback (method project profile args)
+  "Write METHOD for PROJECT in PROFILE with ARGS, then read its actual state."
+  (hermes-browser--next-request-generation)
+  (let ((current (hermes-projects--context project))
+        problem)
+    (setq hermes-browser--status "Saving")
+    (hermes-browser--run-owned
+     (lambda (client guard)
+       (let ((token hermes-dashboard-transport-request-owner))
+         (hermes--promise-then
+	  (hermes--promise-catch
+	   (apply #'hermes-projects--rpc client method
+		  :profile profile (append (and project
+                                                (list :id (hermes-projects--field project 'id)))
+					   args))
+	   (lambda (reason) (setq problem reason) nil))
+	  (lambda (_receipt)
+	    (if (funcall guard)
+                (let ((hermes-dashboard-transport-dispatch-guard guard)
+                      (hermes-dashboard-transport-request-owner token))
+		  (hermes-projects--rpc client "list" :profile profile))
+              (hermes--promise-rejected "Retired project readback"))))))
+     current
+     (lambda (result)
+       (hermes-projects--accept result)
+       (when problem (hermes-projects--error problem method)))
+     (lambda (reason) (hermes-projects--error reason method)))))
+
 (defun hermes-projects--mutate (method prompt &optional unselected)
   "Run METHOD using PROMPT's keyword arguments, optionally UNSELECTED.
 PROMPT receives the selected project, or nil.  Capture ownership before input;
@@ -393,31 +416,7 @@ read back projects.list after any write outcome, without retrying the write."
          (args (funcall prompt project)))
     (when (and (not (eq args 'cancel)) (funcall current))
       (with-current-buffer buffer
-	(hermes-browser--next-request-generation)
-	(let ((current (hermes-projects--context project))
-              problem)
-          (setq hermes-browser--status "Saving")
-          (hermes-browser--run-owned
-           (lambda (client guard)
-             (let ((token hermes-dashboard-transport-request-owner))
-               (hermes--promise-then
-		(hermes--promise-catch
-		 (apply #'hermes-projects--rpc client method
-			:profile profile (append (and project
-                                                      (list :id (hermes-projects--field project 'id)))
-						 args))
-		 (lambda (reason) (setq problem reason) nil))
-		(lambda (_receipt)
-		  (if (funcall guard)
-                      (let ((hermes-dashboard-transport-dispatch-guard guard)
-                            (hermes-dashboard-transport-request-owner token))
-			(hermes-projects--rpc client "list" :profile profile))
-                    (hermes--promise-rejected "Retired project readback"))))))
-           current
-           (lambda (result)
-             (hermes-projects--accept result)
-             (when problem (hermes-projects--error problem method)))
-           (lambda (reason) (hermes-projects--error reason method))))))))
+        (hermes-projects--write-and-readback method project profile args)))))
 
 (defun hermes-projects-create ()
   "Create named workspace metadata with an optional backend folder."

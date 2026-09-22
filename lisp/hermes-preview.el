@@ -247,26 +247,15 @@ Limit zoom to 10–400 percent of the initial displayed size."
           "Cancelled" "Read unavailable; y Copy target"))
      (signal (car err) (cdr err)))))
 
-(defun hermes-preview--start-read ()
-  "Start reading this preview with its captured owning client."
-  (hermes-preview-cancel)
-  (unless (and (not (hermes-buffer--retired-p))
-               (hermes-preview--current-p hermes-preview--owner))
-    (user-error "Preview attachment changed; reopen from its chat"))
+(defun hermes-preview--observe-owner (owner)
+  "Retain OWNER's client and subscribe this viewer to attachment retirement."
   (let* ((viewer (current-buffer))
-         (owner hermes-preview--owner)
          (chat (car owner))
          (client (nth 3 owner))
-         (path (plist-get hermes-preview--descriptor :path))
          (token (list nil))
          (cancel (lambda ()
                    (when (buffer-live-p viewer)
                      (with-current-buffer viewer (hermes-preview-cancel))))))
-    (unless client
-      (hermes-preview--finish "No connected client; y Copy target")
-      (user-error "No connected client; copy the target instead"))
-    (when (string-match-p "\\`[A-Za-z][A-Za-z0-9+.-]*:" path)
-      (user-error "Remote URLs are not managed-file paths; copy the target instead"))
     (hermes-dashboard-transport--cancel-idle-timer client)
     (cl-incf (hermes-dashboard-transport-client-refcount client))
     (setq hermes-preview--cleanup
@@ -287,40 +276,64 @@ Limit zoom to 10–400 percent of the initial displayed size."
             (hermes-dashboard-transport-subscribe
              client nil (lambda ()
                           (unless (hermes-preview--current-p owner)
-                            (funcall cancel)))))
+                            (funcall cancel)))))))
+
+(defun hermes-preview--request-current-p (viewer owner request)
+  "Return non-nil if VIEWER still owns REQUEST and the chat attachment OWNER."
+  (and (buffer-live-p viewer)
+       (with-current-buffer viewer
+         (and (derived-mode-p 'hermes-preview-mode)
+              (not (hermes-buffer--retired-p))
+              (eq request hermes-preview--cleanup)
+              (equal owner hermes-preview--owner)))
+       (hermes-preview--current-p owner)))
+
+(defun hermes-preview--request (client path owner)
+  "Read PATH from CLIENT under chat OWNER and this viewer's cleanup identity."
+  (let ((viewer (current-buffer))
+        (request hermes-preview--cleanup))
+    (hermes--promise-catch
+     (hermes--promise-then
+      (condition-case err
+          (hermes-dashboard-transport-api-request-async
+           "GET" "/api/files/read" :query (list (cons 'path path)) :client client
+           :current-p (lambda ()
+                        (hermes-preview--request-current-p viewer owner request)))
+        ((error quit) (hermes--promise-rejected (car err))))
+      (lambda (result)
+        (when (buffer-live-p viewer)
+          (with-current-buffer viewer
+            (when (eq request hermes-preview--cleanup)
+              (if (not (hermes-preview--request-current-p viewer owner request))
+                  (hermes-preview--finish "Cancelled")
+                (hermes-preview--view (hermes-files--decode result path))
+                (hermes-preview--finish "Ready")))))))
+     (lambda (_reason)
+       (when (buffer-live-p viewer)
+         (with-current-buffer viewer
+           (when (eq request hermes-preview--cleanup)
+             (hermes-preview--finish
+              (if (hermes-preview--current-p owner)
+                  "Read failed or unavailable; y Copy target" "Cancelled")))))))))
+
+(defun hermes-preview--start-read ()
+  "Start reading this preview with its captured owning client."
+  (hermes-preview-cancel)
+  (unless (and (not (hermes-buffer--retired-p))
+               (hermes-preview--current-p hermes-preview--owner))
+    (user-error "Preview attachment changed; reopen from its chat"))
+  (let* ((owner hermes-preview--owner)
+         (client (nth 3 owner))
+         (path (plist-get hermes-preview--descriptor :path)))
+    (unless client
+      (hermes-preview--finish "No connected client; y Copy target")
+      (user-error "No connected client; copy the target instead"))
+    (when (string-match-p "\\`[A-Za-z][A-Za-z0-9+.-]*:" path)
+      (user-error "Remote URLs are not managed-file paths; copy the target instead"))
+    (hermes-preview--observe-owner owner)
     (setq hermes-files--status "Loading"
           header-line-format " Preview | Loading | C-g Cancel | ? Help")
-    (let ((request hermes-preview--cleanup))
-      (hermes--promise-catch
-       (hermes--promise-then
-        (condition-case err
-            (hermes-dashboard-transport-api-request-async
-             "GET" "/api/files/read" :query (list (cons 'path path)) :client client
-             :current-p (lambda ()
-                          (and (buffer-live-p viewer)
-                               (with-current-buffer viewer
-                                 (and (derived-mode-p 'hermes-preview-mode)
-                                      (not (hermes-buffer--retired-p))
-                                      (eq request hermes-preview--cleanup)
-                                      (equal owner hermes-preview--owner)))
-                               (hermes-preview--current-p owner))))
-          ((error quit) (hermes--promise-rejected (car err))))
-        (lambda (result)
-          (when (buffer-live-p viewer)
-            (with-current-buffer viewer
-              (when (eq request hermes-preview--cleanup)
-                (if (or (hermes-buffer--retired-p)
-                        (not (hermes-preview--current-p owner)))
-                    (hermes-preview--finish "Cancelled")
-                  (hermes-preview--view (hermes-files--decode result path))
-                  (hermes-preview--finish "Ready")))))))
-       (lambda (_reason)
-         (when (buffer-live-p viewer)
-           (with-current-buffer viewer
-             (when (eq request hermes-preview--cleanup)
-               (hermes-preview--finish
-                (if (hermes-preview--current-p owner)
-                    "Read failed or unavailable; y Copy target" "Cancelled"))))))))))
+    (hermes-preview--request client path owner)))
 
 (defun hermes-preview-retry ()
   "Retry reading the current remote target from the same chat attachment."

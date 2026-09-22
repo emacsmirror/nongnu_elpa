@@ -129,7 +129,9 @@ heartbeat (a dropped socket is then rebuilt lazily on the next request)."
   "How many times to reconnect the shared socket after an unexpected close.
 While at least one chat buffer is attached, a dropped socket is reopened with
 exponential backoff up to this many times before the client is given up and torn
-down.  nil or 0 disables proactive reconnect; a dropped socket is then rebuilt
+down.  Brief ready/close cycles share this budget; it resets only after
+`hermes-dashboard-transport-reconnect-stable-period' or a manual reconnect.
+nil or 0 disables proactive reconnect; a dropped socket is then rebuilt
 lazily on the next request instead."
   :type '(choice (const :tag "No proactive reconnect" nil) integer)
   :group 'hermes-dashboard-transport)
@@ -144,6 +146,12 @@ Each further attempt doubles the delay up to
 (defcustom hermes-dashboard-transport-reconnect-max-delay 30
   "Maximum backoff in seconds between shared-socket reconnect attempts."
   :type 'number
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-reconnect-stable-period 30
+  "Seconds continuously ready before resetting the reconnect budget.
+A brief `gateway.ready' handshake does not replenish attempts."
+  :type 'natnum
   :group 'hermes-dashboard-transport)
 
 ;;; Subscribers
@@ -382,10 +390,8 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
         :url redacted-url))
 
 (defun hermes-dashboard-transport--generate-token ()
-  "Return a fresh dashboard session token."
-  (secure-hash 'sha256
-               (format "%S:%S:%S:%S" (current-time) (emacs-pid)
-                       (user-uid) (random))))
+  "Return a dashboard session token backed by 32 cryptographic random bytes."
+  (secure-hash 'sha256 (hermes-dashboard-transport--random-bytes 32)))
 
 (defun hermes-dashboard-transport--pick-port ()
   "Return an available loopback TCP port."
@@ -463,15 +469,6 @@ THUNK rather than cleaned up afterward."
                  (apply websocket-inner-create-function plist))))
       (funcall thunk))))
 
-(defun hermes-dashboard-transport--mark-websocket-closed (client)
-  "Mark CLIENT's WebSocket connection closed and stop its heartbeat.
-This is pure state: the close handler decides whether to reconnect the client in
-place or finalize it, so this neither rejects pending requests nor unregisters
-CLIENT from the shared registry."
-  (setf (hermes-dashboard-transport-client-websocket client) nil
-        (hermes-dashboard-transport-client-ready-p client) nil)
-  (hermes-dashboard-transport--cancel-heartbeat client))
-
 (defun hermes-dashboard-transport--current-websocket-p (client websocket)
   "Return non-nil when WEBSOCKET is CLIENT's current WebSocket."
   (eq websocket (hermes-dashboard-transport-client-websocket client)))
@@ -486,19 +483,6 @@ Replacing the promise with a pending one ensures those requests wait for the
 replacement socket's `gateway.ready'."
   (setf (hermes-dashboard-transport-client-ready-promise client)
         (hermes--promise-make)))
-
-(defun hermes-dashboard-transport--close-websocket (client)
-  "Close CLIENT's WebSocket resource and clear its live fields."
-  (when-let* ((websocket (hermes-dashboard-transport-client-websocket client)))
-    (when (fboundp 'websocket-close)
-      (ignore-errors (websocket-close websocket))))
-  (hermes-dashboard-transport--mark-websocket-closed client))
-
-(defun hermes-dashboard-transport--delete-process (client)
-  "Delete CLIENT's spawned dashboard process and clear the field."
-  (when-let* ((process (hermes-dashboard-transport-client-process client)))
-    (ignore-errors (delete-process process)))
-  (setf (hermes-dashboard-transport-client-process client) nil))
 
 (defun hermes-dashboard-transport--normalized-error-message (client message)
   "Return redacted dashboard error MESSAGE for CLIENT."
@@ -555,12 +539,6 @@ emitted its own transport error event."
       (hermes-dashboard-transport--reject-pending-request
        client request message))
     emitted-unhandled))
-
-(defun hermes-dashboard-transport--cancel-startup (client)
-  "Cancel CLIENT's currently registered startup operation, if any."
-  (when-let* ((cancel (hermes-dashboard-transport-client-startup-cancel client)))
-    (setf (hermes-dashboard-transport-client-startup-cancel client) nil)
-    (funcall cancel)))
 
 (defun hermes-dashboard-transport--startup-cancel-setter
     (client expected next &optional owner-current-p)
@@ -746,7 +724,6 @@ Return captured resources, never a lease on later client state."
                 snapshot (plist-put snapshot :ready nil)
                 snapshot (plist-put snapshot :events nil)))
       (cl-incf (hermes-dashboard-transport-client-generation client))
-      (setf (hermes-dashboard-transport-client-reconnect-attempts client) 0)
       (hermes-dashboard-transport--clear-table
        (hermes-dashboard-transport-client-pending client))
       (hermes-dashboard-transport--reset-readiness client))
@@ -790,7 +767,10 @@ Check CURRENT after each effect for reference-only abandonment."
 
 (defun hermes-dashboard-transport--begin-reconnect (client message manual retry maximum)
   "Reserve CLIENT's reconnect for MESSAGE, then retire captured work.
-MANUAL starts immediately; RETRY retains readiness; MAXIMUM bounds attempts."
+MANUAL resets the budget and starts immediately; RETRY retains readiness.
+MAXIMUM bounds attempts."
+  (when manual
+    (setf (hermes-dashboard-transport-client-reconnect-attempts client) 0))
   (let* ((snapshot (hermes-dashboard-transport--take-reconnect client message retry))
          (generation (hermes-dashboard-transport-client-generation client))
          (attempt (hermes-dashboard-transport-client-reconnect-attempts client))
@@ -813,6 +793,7 @@ MANUAL starts immediately; RETRY retains readiness; MAXIMUM bounds attempts."
 (defun hermes-dashboard-transport-reconnect (client &optional message)
   "Restart CLIENT's dashboard WebSocket in place.
 Preserve attached subscribers and registry ownership, rejecting old requests.
+Reset the reconnect budget and try immediately, even with auto-retry disabled.
 MESSAGE describes the restart in local status UI and reject callbacks."
   (unless (hermes-dashboard-transport-client-p client)
     (user-error "No Hermes dashboard transport client to reconnect"))
@@ -1146,6 +1127,15 @@ Sends immediately when CLIENT is already ready or carries no readiness promise
        promise
        (lambda (_value) (funcall on-ready))
        (lambda (reason) (funcall on-fail reason))))))
+
+(defun hermes-dashboard-transport-when-ready (client on-ready on-fail)
+  "Call ON-READY without arguments when CLIENT can send.
+Call ON-FAIL with the failure reason if CLIENT's readiness promise rejects.
+If CLIENT is ready or has no readiness promise, call ON-READY immediately;
+otherwise subscribe to its current readiness promise.  Callbacks run in the
+settling caller's context, without a buffer guarantee.  Callers must retain
+their own operation guards across the wait.  The return value is unspecified."
+  (hermes-dashboard-transport--when-ready client on-ready on-fail))
 
 (defun hermes-dashboard-transport--send-frame (client id method frame reject)
   "Send FRAME for pending request ID/METHOD on CLIENT.
@@ -1729,11 +1719,6 @@ Self-terminating: once CLIENT's WebSocket is gone the chain stops re-arming."
 
 ;;; Event dispatch and frame handling
 
-(defun hermes-dashboard-transport--emit-status (client status content)
-  "Emit a status event with STATUS and CONTENT for CLIENT."
-  (hermes-dashboard-transport--dispatch-event
-   client (list :type 'status :status status :content content)))
-
 (defun hermes-dashboard-transport--emit-error (client message &optional method code)
   "Emit a normalized dashboard error MESSAGE for CLIENT."
   (let ((event (list :type 'error :event "jsonrpc.error" :content message)))
@@ -1798,6 +1783,44 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
     (when (and pending (not handled))
       (hermes-dashboard-transport--emit-error client message method code))))
 
+(defun hermes-dashboard-transport--arm-reconnect-reset (client current)
+  "Reset CLIENT's budget after sustained readiness under predicate CURRENT.
+Use a retirement-only subscription to cancel the timer on stop or replacement."
+  (let ((active t) token timer)
+    (cl-labels ((retire ()
+                 (setq active nil)
+                 (hermes-dashboard-transport-unsubscribe client token)
+                 (when timer
+                   (hermes-dashboard-transport--attempt #'cancel-timer timer))))
+      (setq token (hermes-dashboard-transport-subscribe client nil #'retire)
+            timer (hermes-dashboard-transport--schedule
+                   hermes-dashboard-transport-reconnect-stable-period
+                   (lambda ()
+                     (when (and active (funcall current)
+                                (hermes-dashboard-transport-client-ready-p client))
+                       (setf (hermes-dashboard-transport-client-reconnect-attempts client) 0))
+                     (retire))))
+      ;; A scheduler can reenter retirement before returning its timer.
+      (unless active
+        (hermes-dashboard-transport--attempt #'cancel-timer timer)))))
+
+(defun hermes-dashboard-transport--arm-ready-heartbeat (client socket heartbeat current)
+  "Arm CLIENT's ready SOCKET, replacing HEARTBEAT under predicate CURRENT.
+The caller clears the heartbeat slot before cancelling the old timer.
+Cancel the new timer if scheduling retires the captured readiness owner."
+  (when heartbeat (hermes-dashboard-transport--attempt #'cancel-timer heartbeat))
+  (when (and (funcall current) socket
+             (numberp hermes-dashboard-transport-heartbeat-interval)
+             (> hermes-dashboard-transport-heartbeat-interval 0))
+    (let ((timer (hermes-dashboard-transport--schedule
+                  hermes-dashboard-transport-heartbeat-interval
+                  (lambda ()
+                    (when (funcall current)
+                      (hermes-dashboard-transport--heartbeat-tick client))))))
+      (if (funcall current)
+          (setf (hermes-dashboard-transport-client-heartbeat-timer client) timer)
+        (hermes-dashboard-transport--attempt #'cancel-timer timer)))))
+
 (defun hermes-dashboard-transport--complete-ready (client frame)
   "Complete CLIENT's entered ready FRAME without advancing a replacement."
   (let* ((generation (hermes-dashboard-transport-client-generation client))
@@ -1810,30 +1833,22 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
          (current
           (lambda ()
             (and (= generation (hermes-dashboard-transport-client-generation client))
-                 (= 0 (hermes-dashboard-transport-client-reconnect-attempts client))
                  (eq socket (hermes-dashboard-transport-client-websocket client))
                  (eq ready (hermes-dashboard-transport-client-ready-promise client))
                  (hermes-dashboard-transport--current-registry-owner-p client)
                  (not (hermes-dashboard-transport-client-stopping-p client))
                  (or (not reconnecting)
+                     ;; Readiness is socket-owned; its budget can reset
+                     ;; without retiring this completion or its heartbeat.
                      (hermes-dashboard-transport--reconnect-current-p
-                      client generation 0))))))
+                      client generation
+                      (hermes-dashboard-transport-client-reconnect-attempts client)))))))
+    (when reconnecting
+      (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client)))
     (setf (hermes-dashboard-transport-client-ready-p client) t
           (hermes-dashboard-transport-client-reconnecting-p client) nil
-          (hermes-dashboard-transport-client-reconnect-attempts client) 0
           (hermes-dashboard-transport-client-heartbeat-timer client) nil)
-    (when heartbeat (hermes-dashboard-transport--attempt #'cancel-timer heartbeat))
-    (when (and (funcall current) socket
-               (numberp hermes-dashboard-transport-heartbeat-interval)
-               (> hermes-dashboard-transport-heartbeat-interval 0))
-      (let ((timer (hermes-dashboard-transport--schedule
-                    hermes-dashboard-transport-heartbeat-interval
-                    (lambda ()
-                      (when (funcall current)
-                        (hermes-dashboard-transport--heartbeat-tick client))))))
-        (if (funcall current)
-            (setf (hermes-dashboard-transport-client-heartbeat-timer client) timer)
-          (hermes-dashboard-transport--attempt #'cancel-timer timer))))
+    (hermes-dashboard-transport--arm-ready-heartbeat client socket heartbeat current)
     (when reconnecting
       (dolist (fn recipients)
         (when (funcall current)
@@ -1845,7 +1860,9 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
       (dolist (fn recipients)
         (when (funcall current)
           (hermes-dashboard-transport--attempt fn event)
-          (funcall current))))))
+          (funcall current))))
+    (when (and reconnecting (funcall current))
+      (hermes-dashboard-transport--arm-reconnect-reset client current))))
 
 (defun hermes-dashboard-transport--handle-event-frame (client frame)
   "Dispatch JSON-RPC event FRAME to CLIENT's callback."

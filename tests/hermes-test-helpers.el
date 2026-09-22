@@ -292,5 +292,78 @@ event frame."
     (dotimes (i (length format) total)
       (setq total (+ total (cadr (aref format i)))))))
 
+(defun hermes-test--draft-undo-command (command)
+  "Run undo COMMAND with the relevant command-loop bookkeeping."
+  (let ((this-command command))
+    (funcall command 1)
+    (setq last-command this-command))
+  (undo-boundary))
+
+(defun hermes-test--wait-until (predicate &optional timeout description)
+  "Wait until observational PREDICATE succeeds, for at most TIMEOUT seconds.
+TIMEOUT defaults to three seconds.  DESCRIPTION identifies a failed wait.
+Yield to real timers and process filters; return the predicate's true value."
+  (let ((deadline (+ (float-time) (or timeout 3)))
+        value)
+    (while (and (not (setq value (funcall predicate)))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.01))
+    (unless value
+      (ert-fail (format "Timed out waiting for %s" (or description predicate))))
+    value))
+
+(defun hermes-test--event-loop-barrier ()
+  "Deliver a timer queued after known zero-delay notifications.
+This is not a guarantee that arbitrary future callbacks cannot arrive."
+  (let* (delivered
+         (timer (run-at-time 0 nil (lambda () (setq delivered t)))))
+    (unwind-protect
+        (hermes-test--wait-until (lambda () delivered) nil "event-loop barrier")
+      (cancel-timer timer))))
+
+(defun hermes-test--http-wait (predicate)
+  "Wait for HTTP PREDICATE using the shared bounded event-loop waiter."
+  (hermes-test--wait-until predicate nil "HTTP response"))
+
+(defun hermes-test--with-http-server (handler test)
+  "Run TEST with a loopback URL whose requests are passed to HANDLER.
+HANDLER receives the accepted process and complete request text."
+  (let (peers)
+    (let ((server
+           (make-network-process
+            :name "hermes-test-http" :server t :host "127.0.0.1" :service t
+            :family 'ipv4 :noquery t :coding 'binary
+            :log (lambda (_server peer _message) (push peer peers))
+            :filter
+            (lambda (peer text)
+              (let ((request (concat (process-get peer 'request) text)))
+                (process-put peer 'request request)
+                (when (and (not (process-get peer 'handled))
+                           (string-match "\r\n\r\n" request))
+                  (let* ((end (match-end 0))
+                         (case-fold-search t)
+                         (length (if (string-match
+                                      "Content-Length: *\\([0-9]+\\)" request)
+                                     (string-to-number (match-string 1 request))
+                                   0)))
+                    (when (>= (- (length request) end) length)
+                      (process-put peer 'handled t)
+                      (funcall handler peer request)))))))))
+      (unwind-protect
+          (funcall test (format "http://127.0.0.1:%d"
+                                (process-contact server :service)))
+        (mapc #'delete-process peers)
+        (delete-process server)))))
+
+(defun hermes-test--http-reply (peer status body &optional headers)
+  "Send PEER an HTTP response with STATUS, JSON BODY and optional HEADERS."
+  (process-send-string
+   peer (format "HTTP/1.1 %d Test\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n%s\r\n%s"
+                status (string-bytes body) (or headers "") body)))
+
+(defun hermes-test--transcript-roles (entries)
+  "Return role order from the observed transcript ENTRIES."
+  (mapcar (lambda (entry) (plist-get entry :role)) entries))
+
 (provide 'hermes-test-helpers)
 ;;; hermes-test-helpers.el ends here

@@ -37,6 +37,8 @@
 
 (defvar-local hermes-plugins--snapshot nil
   "Latest authoritative agent hub snapshot.")
+(defvar-local hermes-plugins--snapshot-stale-p nil
+  "Non-nil if the retained inventory may be displayed but cannot admit writes.")
 (defvar-local hermes-plugins--busy nil
   "Non-nil while a mutation and its readback are pending.")
 (defvar-local hermes-plugins--status "Not loaded"
@@ -69,15 +71,7 @@
 
 (defun hermes-plugins--guard ()
   "Return a predicate capturing this buffer's request and instance ownership."
-  (let ((buffer (current-buffer))
-        (generation hermes-browser--request-generation)
-        (instance hermes-instance)
-        (value (copy-tree hermes-instance)))
-    (lambda ()
-      (and (hermes-browser--request-current-mode-p
-            buffer generation 'hermes-plugins-mode)
-           (eq instance (buffer-local-value 'hermes-instance buffer))
-           (equal value instance)))))
+  (hermes-browser--owned-predicate nil 'hermes-plugins-mode))
 
 (defun hermes-plugins--idle ()
   "Require an idle agent plugin browser."
@@ -93,17 +87,22 @@
 
 (defun hermes-plugins--render (result status)
   "Render authoritative RESULT and safe STATUS in the current browser."
-  (setq hermes-plugins--snapshot result
-        hermes-plugins--busy nil
-        hermes-plugins--status status
-        tabulated-list-entries (hermes-plugins--entries result))
-  (tabulated-list-print t))
+  ;; Neither a malformed row nor a failing printer may replace accepted state.
+  (let ((entries (let ((tabulated-list-entries (hermes-plugins--entries result)))
+                   (atomic-change-group (tabulated-list-print t))
+                   tabulated-list-entries)))
+    (setq tabulated-list-entries entries
+          hermes-plugins--snapshot result
+          hermes-plugins--snapshot-stale-p nil
+          hermes-plugins--busy nil
+          hermes-plugins--status status)))
 
-(defun hermes-plugins--scope (client)
-  "Return CLIENT's connection lifetime and endpoint, without credentials."
-  (when (hermes-dashboard-transport-client-p client)
-    (list (hermes-dashboard-transport-client-generation client)
-          (hermes-dashboard-transport--api-client-base-url client))))
+(defun hermes-plugins--stale (status)
+  "Retain the accepted inventory but refuse mutations, displaying safe STATUS."
+  (setq hermes-plugins--snapshot-stale-p t
+        hermes-plugins--busy nil
+        hermes-plugins--status status)
+  (force-mode-line-update))
 
 (defun hermes-plugins--inventory (client hub current-p)
   "Join HUB with CLIENT's published process home while CURRENT-P owns it.
@@ -124,7 +123,7 @@ filesystem actions must then fail closed rather than infer a root."
 (defun hermes-plugins--readback (client result mutation current-p)
   "Read back RESULT of MUTATION on CLIENT while CURRENT-P grants ownership."
   (when (funcall current-p)
-    (when (and mutation (not (eq t (hermes-transport--get result 'ok))))
+    (when (and mutation (not (hermes-transport--true-p (hermes-transport--get result 'ok))))
       (error "Plugin operation rejected"))
     (hermes--promise-then
      (if mutation
@@ -145,34 +144,23 @@ filesystem actions must then fail closed rather than infer a root."
             (when (and warnings (not (seq-empty-p warnings)))
               "; backend reported installation warnings"))))
 
-(defun hermes-plugins--run (client method path body mutation buffer current-p)
-  "Run METHOD PATH BODY on CLIENT for MUTATION in BUFFER owned by CURRENT-P."
-  (let* ((scope (hermes-plugins--scope client))
-         setup-note
-         (owned-p (lambda ()
-                    (and (funcall current-p)
-                         (equal scope (hermes-plugins--scope client))))))
+(defun hermes-plugins--run (client method path body mutation current-p)
+  "Run METHOD PATH BODY on CLIENT for MUTATION while CURRENT-P owns it.
+Return a promise yielding the readback and safe presentation status."
+  (let (setup-note)
     (hermes--promise-then
      (hermes--promise-then
       (hermes-plugins--api client method path body)
       (lambda (result)
-        (when (and mutation (funcall owned-p))
+        (when (and mutation (funcall current-p))
           (setq setup-note (hermes-plugins--setup-note result)))
-        (hermes-plugins--readback client result mutation owned-p)))
+        (hermes-plugins--readback client result mutation current-p)))
      (lambda (result)
-       (when (funcall owned-p)
-         (with-current-buffer buffer
-           (hermes-plugins--render
-            result (if mutation
-                       (concat "Read back; restart/new session may be required (unverified)"
-                               setup-note)
-                     "Configured state; runtime activation unverified")))))
-     (lambda (_reason)
-       ;; Do not print arbitrary error bodies: clone failures can echo secrets.
-       (when (funcall owned-p)
-         (with-current-buffer buffer
-           (hermes-plugins--render
-            nil "Request failed; writes may have applied; refresh (details withheld)")))))))
+       (cons result
+             (if mutation
+                 (concat "Read back; restart/new session may be required (unverified)"
+                         setup-note)
+               "Configured state; runtime activation unverified"))))))
 
 (defun hermes-plugins--request (method path &optional body mutation)
   "Request METHOD PATH with BODY and read back a successful MUTATION."
@@ -180,38 +168,47 @@ filesystem actions must then fail closed rather than infer a root."
   (hermes-browser--next-request-generation)
   (let* ((buffer (current-buffer))
          (generation hermes-browser--request-generation)
-         (current-p (hermes-plugins--guard)))
+         (current-p (hermes-plugins--guard))
+         settled)
     (setq hermes-plugins--busy mutation
-          hermes-plugins--snapshot nil
+          hermes-plugins--snapshot-stale-p t
           hermes-plugins--status (if mutation "Updating; awaiting readback" "Loading"))
-    (hermes-browser--run-on-client
-     (lambda (client)
-       (let ((generation hermes-browser--request-generation))
-         (hermes--promise-finally
-          (hermes-plugins--run client method path body mutation buffer current-p)
-          (lambda ()
-            ;; Release only this request's lock, even after connection retirement.
-            (when (hermes-browser--request-current-mode-p
-                   buffer generation 'hermes-plugins-mode)
-              (with-current-buffer buffer (setq hermes-plugins--busy nil)))))))
-     #'ignore
+    (hermes-browser--run-owned
+     (lambda (client active)
+       (hermes-plugins--run client method path body mutation active))
+     current-p
+     (lambda (result)
+       (hermes-plugins--render (car result) (cdr result))
+       (setq settled t))
      (lambda (_reason)
+       ;; Clone failures and renderer conditions can contain private data.
+       (hermes-plugins--stale
+        "Request failed; snapshot stale; writes may have applied; refresh (details withheld)")
+       (setq settled t))
+     (lambda ()
+       ;; Settlement owns the request lock, not the retired transport's results.
        (when (hermes-browser--request-current-mode-p
               buffer generation 'hermes-plugins-mode)
          (with-current-buffer buffer
-           (setq hermes-plugins--busy nil)))
-       (when (funcall current-p)
-         (with-current-buffer buffer
-           (hermes-plugins--render nil "Connection failed (details withheld)")))))))
+           (setq hermes-plugins--busy nil)
+           (when (and (not settled) (funcall current-p))
+             (hermes-plugins--stale
+              "Interrupted; snapshot stale; writes may have applied; refresh"))))))))
 
 (defun hermes-plugins-refresh (&rest _)
   "Refresh the server's agent plugin inventory asynchronously."
   (interactive nil hermes-plugins-mode)
   (hermes-plugins--request "GET" "/api/dashboard/plugins/hub"))
 
+(defun hermes-plugins--require-snapshot ()
+  "Require a fresh inventory before admitting a plugin mutation."
+  (unless (and hermes-plugins--snapshot (not hermes-plugins--snapshot-stale-p))
+    (user-error "Refresh the plugin inventory first")))
+
 (defun hermes-plugins--selected ()
   "Return the authoritative plugin at point or signal a user error."
   (hermes-plugins--idle)
+  (hermes-plugins--require-snapshot)
   (let ((rows (seq-filter
                (lambda (row)
                  (equal (tabulated-list-get-id) (hermes-transport--get row 'name)))
@@ -268,7 +265,7 @@ The backend resolves filesystem links; the hub cannot prove their destination."
          (target (if permission (hermes-plugins--directory-target row)
                    (hermes-plugins--name-target name)))
          (current-p (hermes-plugins--guard)))
-    (when (and permission (not (eq t (hermes-transport--get row permission))))
+    (when (and permission (not (hermes-transport--true-p (hermes-transport--get row permission))))
       (user-error "The server does not allow this action for this plugin"))
     (when (and (yes-or-no-p
                 (format "%s agent plugin %S%s on instance %S? "
@@ -312,8 +309,7 @@ Install without automatically enabling, forcing replacement, or bypassing
 scan refusals.  Existing enablement may persist; inspect the readback."
   (interactive nil hermes-plugins-mode)
   (hermes-plugins--idle)
-  (unless hermes-plugins--snapshot
-    (user-error "Refresh the plugin inventory before installing"))
+  (hermes-plugins--require-snapshot)
   (let* ((buffer (current-buffer))
          (current-p (hermes-plugins--guard))
          (identifier (read-string "Plugin identifier or Git URL (no credentials): ")))
@@ -337,7 +333,7 @@ scan refusals.  Existing enablement may persist; inspect the readback."
                  (cons "compressor"
                        (mapcar (lambda (row) (hermes-transport--get row 'name))
                                (append (hermes-transport--get providers 'context_options) nil))))))
-    (unless hermes-plugins--snapshot (user-error "Refresh the plugin inventory first"))
+    (hermes-plugins--require-snapshot)
     (let ((name (completing-read "Context engine: " names nil t)))
       (when (and (funcall current-p)
                  (yes-or-no-p (format "Save context engine %s on this server? " name))

@@ -31,10 +31,6 @@
 (require 'json)
 (require 'subr-x)
 
-(defconst hermes-transport-event-types
-  '(delta done error status tool progress commentary diff unknown)
-  "Event types emitted by `hermes-transport-normalize-event'.")
-
 (defun hermes-transport--plist-p (object)
   "Return non-nil if OBJECT is a property list."
   (and (consp object) (keywordp (car object))))
@@ -140,6 +136,12 @@ Path identity, text decoding, and presentation remain caller-owned."
 (defun hermes-transport--display-field (object key)
   "Return OBJECT's KEY as a display string, or an empty string when absent."
   (or (hermes-transport--field object key) ""))
+
+(defun hermes-transport--true-p (value)
+  "Return non-nil for backend boolean VALUE equal to t or integer 1.
+JSON true decodes as t; database-backed flags may use integer 1.
+False, null, strings and other numbers are not true flags."
+  (or (eq value t) (eql value 1)))
 
 (defun hermes-transport--non-empty-string (value)
   "Return VALUE when it is a non-empty string, else nil."
@@ -1057,6 +1059,54 @@ an Unknown error."
       (list (hermes-dashboard-transport--display-fallback-event
              type params payload)))))
 
+(defun hermes-dashboard-transport--normalize-activity-events (type params payload)
+  "Return turn activity events for TYPE, PARAMS and PAYLOAD.
+Delegate non-activity events to the notice and display fallback phase."
+  (pcase type
+    ("message.delta"
+     (list (hermes-dashboard-transport--payload-event type params payload 'delta)))
+    ("message.interim"
+     (list (hermes-dashboard-transport--message-interim-event type params payload)))
+    ("message.complete"
+     (list (hermes-dashboard-transport--message-complete-event type params payload)))
+    ("tool.start"
+     (list (hermes-dashboard-transport--tool-event type params payload "running")))
+    ("tool.complete"
+     (hermes-dashboard-transport--tool-complete-events type params payload))
+    ("todo.updated"
+     (when-let* ((event (hermes-dashboard-transport--todo-event type params payload)))
+       (list event)))
+    ("tool.generating"
+     (list (hermes-dashboard-transport--tool-generating-event type params payload)))
+    ("reasoning.delta"
+     (list (hermes-dashboard-transport--payload-event type params payload 'commentary)))
+    ;; The spinner status is transient activity, not reasoning or transcript text.
+    ("thinking.delta"
+     (list (hermes-dashboard-transport--payload-event type params payload 'thinking)))
+    (_ (hermes-dashboard-transport--normalize-notice-events type params payload))))
+
+(defun hermes-dashboard-transport--normalize-notice-events (type params payload)
+  "Return notice or fallback display events for TYPE, PARAMS and PAYLOAD."
+  (pcase type
+    ;; Voice and skin changes are client-UI concerns, not transcript content.
+    ((or "voice.status" "voice.transcript" "skin.changed") nil)
+    ("review.summary"
+     (list (hermes-dashboard-transport--status-event
+            type params payload "notification"
+            (hermes-dashboard-transport--payload-text payload))))
+    ;; Background completion is persistent content, not a transient status line.
+    ("background.complete"
+     (list (hermes-dashboard-transport--background-complete-event type params payload)))
+    ;; A keyed clear must not decay into an empty transcript line.
+    ((or "notification.show" "notification.clear")
+     (list (hermes-dashboard-transport--notification-event type params payload)))
+    (_
+     (if (and type (string-prefix-p "notification." type))
+         (list (hermes-dashboard-transport--status-event
+                type params payload "notification"
+                (hermes-dashboard-transport--payload-text payload)))
+       (hermes-dashboard-transport--generic-display-event type params payload)))))
+
 (defun hermes-dashboard-transport--normalize-event-frame (frame)
   "Return normalized transport events for JSON-RPC event FRAME."
   (let* ((params (hermes-transport--get frame 'params))
@@ -1068,22 +1118,12 @@ an Unknown error."
        (list (hermes-dashboard-transport--status-event
               type params payload "ready" "Hermes dashboard connected")))
       ("session.info"
-       (list (hermes-dashboard-transport--session-info-event
-              type params payload)))
+       (list (hermes-dashboard-transport--session-info-event type params payload)))
       ("goal.changed"
        (list (plist-put
-              (plist-put (hermes-dashboard-transport--event-base
-                          type params payload)
+              (plist-put (hermes-dashboard-transport--event-base type params payload)
                          :type 'goal)
               :goal (hermes-dashboard-transport--goal-plist payload))))
-      ("message.delta"
-       (list (hermes-dashboard-transport--payload-event type params payload 'delta)))
-      ("message.interim"
-       (list (hermes-dashboard-transport--message-interim-event
-              type params payload)))
-      ("message.complete"
-       (list (hermes-dashboard-transport--message-complete-event
-              type params payload)))
       ("error"
        (list (hermes-dashboard-transport--payload-event type params payload 'error)))
       ("status.update"
@@ -1093,65 +1133,12 @@ an Unknown error."
          (list (hermes-dashboard-transport--status-event
                 type params payload status
                 (hermes-dashboard-transport--payload-text payload)))))
-      ("tool.start"
-       (list (hermes-dashboard-transport--tool-event
-              type params payload "running")))
-      ("tool.complete"
-       (hermes-dashboard-transport--tool-complete-events
-        type params payload))
-      ("todo.updated"
-       (when-let* ((event (hermes-dashboard-transport--todo-event type params payload)))
-         (list event)))
-      ("tool.generating"
-       (list (hermes-dashboard-transport--tool-generating-event
-              type params payload)))
-      ("reasoning.delta"
-       (list (hermes-dashboard-transport--payload-event
-              type params payload 'commentary)))
-      ;; `thinking.delta' carries the kawaii spinner status (face + verb), not
-      ;; real reasoning.  Keep its classification separate from commentary;
-      ;; the chat projects only a static, temporary activity row.
-      ("thinking.delta"
-       (list (hermes-dashboard-transport--payload-event
-              type params payload 'thinking)))
       ((or "approval.request" "clarify.request" "sudo.request"
            "secret.request" "terminal.read.request")
-       (list (hermes-dashboard-transport--prompt-request-event
-              type params payload)))
+       (list (hermes-dashboard-transport--prompt-request-event type params payload)))
       ((or "sudo.expire" "secret.expire" "clarify.expire" "terminal.read.expire")
-       (list (hermes-dashboard-transport--prompt-expire-event
-              type params payload)))
-      ;; Voice mode and skin changes are client-UI concerns, not chat transcript
-      ;; content; drop them so they do not render at all.
-      ((or "voice.status" "voice.transcript" "skin.changed")
-       nil)
-      ;; `review.summary' is a self-improvement notification; show it as a status
-      ;; line in the transcript rather than as an Unknown event.
-      ("review.summary"
-       (list (hermes-dashboard-transport--status-event
-              type params payload "notification"
-              (hermes-dashboard-transport--payload-text payload))))
-      ;; A `/btw' background task finishing in its own session.  Keep it as a
-      ;; dedicated `background' event so the chat layer renders a persistent
-      ;; result entry rather than letting it decay into a transient status line.
-      ("background.complete"
-       (list (hermes-dashboard-transport--background-complete-event
-              type params payload)))
-      ("notification.show"
-       (list (hermes-dashboard-transport--notification-event
-              type params payload)))
-      ;; A clear only retracts a keyed notice; it carries no text and must
-      ;; not decay into an empty transcript line.
-      ("notification.clear"
-       (list (hermes-dashboard-transport--notification-event
-              type params payload)))
-      (_
-       (if (and type (string-prefix-p "notification." type))
-           (list (hermes-dashboard-transport--status-event
-                  type params payload "notification"
-                  (hermes-dashboard-transport--payload-text payload)))
-         (hermes-dashboard-transport--generic-display-event
-          type params payload))))))
+       (list (hermes-dashboard-transport--prompt-expire-event type params payload)))
+      (_ (hermes-dashboard-transport--normalize-activity-events type params payload)))))
 
 (defun hermes-dashboard-transport--notification-event (type params payload)
   "Return a normalized notification event for TYPE/PARAMS/PAYLOAD.
@@ -1193,18 +1180,13 @@ notices instead of flattening them to plain status text."
           :started (let ((value (hermes-transport--get row 'started_at)))
                      (and (numberp value) (>= value 0) value)))))
 
-(defun hermes-transport-work-delegates (result key)
-  "Project lossless delegation RESULT for verified durable session KEY.
-Return rows and coverage.  Signal for invalid collections or KEY.  Exclude
-ambiguous IDs and their traversal edges; malformed rows make coverage partial."
-  (unless (and (stringp key) (not (string-empty-p key))
-               (hash-table-p result) (vectorp (gethash "active" result)))
-    (error "Invalid delegate inventory or unbound durable key"))
+(defun hermes-transport--work-delegate-index (active)
+  "Return (NODES . PARTIAL) for the lossless ACTIVE delegate array.
+Index valid rows by ID; retain ambiguous markers for duplicates and invalid
+metadata so neither can contribute roots or traversal edges."
   (let ((nodes (make-hash-table :test #'equal))
-        (children (make-hash-table :test #'equal))
-        (seen (make-hash-table :test #'equal))
-        partial roots rows)
-    (seq-doseq (row (gethash "active" result))
+        partial)
+    (seq-doseq (row active)
       (let ((id (and (hash-table-p row)
                      (hermes-transport-work-string row 'subagent_id))))
         (cond
@@ -1221,6 +1203,20 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (puthash id 'ambiguous nodes)
           (setq partial t))
          (t (puthash id row nodes)))))
+    (cons nodes partial)))
+
+(defun hermes-transport-work-delegates (result key)
+  "Project lossless delegation RESULT for verified durable session KEY.
+Return rows and coverage.  Signal for invalid collections or KEY.  Exclude
+ambiguous IDs and their traversal edges; malformed rows make coverage partial."
+  (unless (and (stringp key) (not (string-empty-p key))
+               (hash-table-p result) (vectorp (gethash "active" result)))
+    (error "Invalid delegate inventory or unbound durable key"))
+  (let* ((index (hermes-transport--work-delegate-index (gethash "active" result)))
+         (nodes (car index))
+         (children (make-hash-table :test #'equal))
+         (seen (make-hash-table :test #'equal))
+         roots rows)
     (maphash
      (lambda (id row)
        (when (hash-table-p row)
@@ -1235,7 +1231,7 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (puthash id t seen)
           (push (hermes-transport-work-delegate-row row) rows)
           (setq roots (append (gethash id children) roots)))))
-    (list :rows rows :coverage (if partial 'partial 'current))))
+    (list :rows rows :coverage (if (cdr index) 'partial 'current))))
 
 (defun hermes-transport-work-process-row (row)
   "Return inert display metadata and typed terminal evidence for process ROW."

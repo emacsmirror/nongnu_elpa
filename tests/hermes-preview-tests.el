@@ -586,5 +586,16 @@
             (should (equal before (funcall snapshot))))
           (set-buffer-modified-p nil))))))
 
+(ert-deftest hermes-preview-crlf-artifact-fences-preserve-source ()
+  "CRLF delimiters recognize artifacts without rewriting their source bytes."
+  (dolist (delimiter '("```" "~~~~"))
+    (let* ((body "<p>literal</p>\r\n")
+           (entry (list :role 'assistant :status 'done
+                        :content (concat delimiter "html\r\n" body delimiter "\r\n")))
+           (artifacts (hermes-preview-entry entry)))
+      (should (= (length artifacts) 1))
+      (should (eq (plist-get (car artifacts) :kind) 'html))
+      (should (equal (plist-get (car artifacts) :source) body)))))
+
 (provide 'hermes-preview-tests)
 ;;; hermes-preview-tests.el ends here

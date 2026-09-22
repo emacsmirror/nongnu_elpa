@@ -1007,11 +1007,6 @@ settlement order lives in one place."
     (hermes-chat--clear-terminal-prompts event)
     (if (equal hermes-chat--pending-assistant-id assistant-id)
         (progn
-          (when (equal assistant-id hermes-chat--server-queued-assistant-id)
-            (setq hermes-chat--server-queued-assistant-id nil
-                  hermes-chat--server-queued-user-id nil
-                  hermes-chat--server-queued-after-idle-count nil
-                  hermes-chat--server-queued-prior-terminal-p nil))
           (hermes-chat--handle-transport-event
            assistant-id (hermes-chat--closed-status-error-event event))
           (setq hermes-chat--dashboard-detached-assistant-id assistant-id
@@ -1499,6 +1494,29 @@ shared client."
     (hermes-chat--insert-entry entry)
     assistant-id))
 
+(defun hermes-chat--dispatch-accepted-transport-event
+    (assistant-id dashboard-p event)
+  "Route admitted EVENT for ASSISTANT-ID, using dashboard policy if DASHBOARD-P."
+  (unless (and dashboard-p
+               (funcall hermes-chat--busy-submit-event-function event))
+    (if (and dashboard-p (hermes-chat--assistant-independent-event-p event))
+        (hermes-chat--handle-transport-event nil event)
+      (when dashboard-p
+        (hermes-chat--dashboard-start-server-turn
+         hermes-chat--dashboard-client event))
+      (let ((target-id
+             (if dashboard-p
+                 (hermes-chat--dashboard-event-assistant-id assistant-id event)
+               assistant-id)))
+        ;; Socket loss also retires an idle attachment with no turn.
+        (when (or target-id
+                  (and dashboard-p (hermes-chat--closed-status-event-p event)))
+          (if (and dashboard-p
+                   (hermes-chat--dashboard-suppressed-content-event-p event))
+              (hermes-chat--handle-suppressed-dashboard-terminal-event
+               target-id event)
+            (hermes-chat--handle-transport-event target-id event)))))))
+
 (defun hermes-chat--transport-callback
     (buffer assistant-id dashboard-p generation)
   "Return transport callback for BUFFER, ASSISTANT-ID, DASHBOARD-P, and GENERATION."
@@ -1518,27 +1536,8 @@ shared client."
                       hermes-chat--dashboard-client))
             (setq event (list :type 'status :status "closed"
                               :content (plist-get event :content))))
-          (unless (and dashboard-p
-                       (funcall hermes-chat--busy-submit-event-function event))
-            (if (and dashboard-p
-                     (hermes-chat--assistant-independent-event-p event))
-                (hermes-chat--handle-transport-event nil event)
-              (when dashboard-p
-                (hermes-chat--dashboard-start-server-turn
-                 hermes-chat--dashboard-client event))
-              (let ((target-id
-                     (if dashboard-p
-                         (hermes-chat--dashboard-event-assistant-id assistant-id event)
-                       assistant-id)))
-                ;; Socket loss also retires an idle attachment with no turn.
-                (when (or target-id
-                          (and dashboard-p
-                               (hermes-chat--closed-status-event-p event)))
-                  (if (and dashboard-p
-                           (hermes-chat--dashboard-suppressed-content-event-p event))
-                      (hermes-chat--handle-suppressed-dashboard-terminal-event
-                       target-id event)
-                    (hermes-chat--handle-transport-event target-id event)))))))))))
+          (hermes-chat--dispatch-accepted-transport-event
+           assistant-id dashboard-p event))))))
 
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."

@@ -566,5 +566,38 @@
             (should (= (hash-table-count (hermes-dashboard-transport-client-pending client)) 0))
             (should (= released 1)))))))))
 
+(ert-deftest hermes-projects-primary-label-degrades-only-selection-errors ()
+  "Missing selections already degrade; unrelated faults must remain visible."
+  (with-temp-buffer
+    (hermes-projects-mode)
+    (should (equal (hermes-projects--primary-label) "Set primary: Unknown"))
+    (cl-letf (((symbol-function 'hermes-projects--selected)
+               (lambda () '((primary_path . "/backend/project")))))
+      (should (equal (hermes-projects--primary-label) "Set primary: /backend/project")))
+    (cl-letf (((symbol-function 'hermes-projects--selected)
+               (lambda () (error "unexpected resolution fault"))))
+      (should-error (hermes-projects--primary-label) :type 'error))))
+
+(ert-deftest hermes-projects-same-generation-revalidates-profile-before-readback ()
+  "Profile deletion after a write must not redirect its readback to launch scope."
+  (hermes-projects-test--client
+   (let ((reads 0) calls)
+     (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "renamed"))
+               ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (&rest _)
+                  (cl-incf reads)
+                  (hermes--promise-resolved
+                   (if (= reads 1) '((profiles . (((name . "work")))))
+                     '((profiles . nil))))))
+               ((symbol-function 'hermes-dashboard-transport-request)
+                (lambda (_client method _params resolve _reject)
+                  (push method calls)
+                  (funcall resolve '((ok . t))))))
+       (hermes-projects-test--view
+        (hermes-projects-rename)
+        (should (= reads 2))
+        (should (equal calls '("projects.update")))
+        (should (string-match-p "Failed" hermes-browser--status)))))))
+
 (provide 'hermes-projects-tests)
 ;;; hermes-projects-tests.el ends here

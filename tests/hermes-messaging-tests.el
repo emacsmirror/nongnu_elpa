@@ -534,5 +534,30 @@
                       (should-not writes))))
               (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
 
+(ert-deftest hermes-messaging-fetch-retires-before-publishing-profile ()
+  "The old operation's FINISH observes its own profile, not its successor."
+  (with-temp-buffer
+    (hermes-messaging-mode)
+    (setq hermes-instance '("test" . "http://example.invalid")
+          hermes-messaging-profile "old")
+    (let (retired-profile requested-profile)
+      (setq hermes-browser--owned-cleanup
+            (lambda ()
+              (setq retired-profile hermes-messaging-profile
+                    hermes-browser--owned-cleanup nil)))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) (make-hermes-dashboard-transport-client
+                                   :base-url "http://example.invalid")))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-messaging--api)
+                 (lambda (_client _method _path profile &rest _)
+                   (setq requested-profile profile)
+                   (hermes--promise-resolved '((platforms . nil))))))
+        (hermes-messaging--fetch "new" nil (current-buffer) nil hermes-instance)
+        (should (equal retired-profile "old"))
+        (should (equal requested-profile "new"))
+        (should (equal hermes-messaging-profile "new"))))))
+
 (provide 'hermes-messaging-tests)
 ;;; hermes-messaging-tests.el ends here

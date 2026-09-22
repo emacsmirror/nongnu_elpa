@@ -30,10 +30,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 
-(declare-function dbus-unregister-object "dbus.el")
-
 (defvar notifications-on-action-map)
-(defvar notifications-on-action-object)
 
 (defcustom hermes-notifications-events
   '(chat-reply chat-error prompt background kanban-attention cron-failure)
@@ -76,14 +73,11 @@ WIDTH defaults to 160 columns."
 
 (defun hermes-notifications--remove-action-callback (callback)
   "Remove CALLBACK from pending desktop notification actions."
+  ;; notifications.el owns the shared D-Bus registration, not Hermes.  Even
+  ;; an empty action map does not grant authority to unregister that object.
   (setq notifications-on-action-map
         (cl-delete callback notifications-on-action-map
-                   :key #'cadr :test #'eq))
-  (when (and (null notifications-on-action-map)
-             notifications-on-action-object
-             (fboundp 'dbus-unregister-object))
-    (dbus-unregister-object notifications-on-action-object)
-    (setq notifications-on-action-object nil)))
+                   :key #'cadr :test #'eq)))
 
 (defun hermes-notifications--fallback (title body)
   "Show notification TITLE and BODY in the echo area and return nil."

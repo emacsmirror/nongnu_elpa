@@ -3008,5 +3008,58 @@
             (should (equal hermes-dashboard-transport-url url))
             (should-not hermes-browser--owned-cleanup)))))))
 
+(ert-deftest hermes-browser-captured-owner-preserves-distinct-authorities ()
+  "Claims, instance occurrence and mutable identity values cannot be replaced."
+  (dolist (change '(claim instance value profile generation file))
+    (with-temp-buffer
+      (hermes-profiles-mode)
+      (hermes-buffer--claim 'hermes-profiles-mode)
+      (setq hermes-instance (cons (copy-sequence "one") (copy-sequence "http://one.invalid")))
+      (setq-local hermes-messaging-profile (copy-sequence "work"))
+      (let ((current (hermes-browser--owned-predicate '(hermes-messaging-profile))))
+        (should (funcall current))
+        (pcase change
+          ('claim (hermes-buffer--claim 'hermes-profiles-mode))
+          ('instance (setq hermes-instance (copy-tree hermes-instance)))
+          ('value (aset (cdr hermes-instance) 7 ?X))
+          ('profile (aset hermes-messaging-profile 0 ?X))
+          ('generation (hermes-browser--next-request-generation))
+          ('file (set-visited-file-name "/virtual/retired-owner" t)
+                 (set-visited-file-name nil t)))
+        (should-not (funcall current))))))
+
+(ert-deftest hermes-browser-client-scope-fails-closed-and-copies-endpoint ()
+  (should-not (hermes-browser--client-current-p nil nil))
+  (let* ((client (make-hermes-dashboard-transport-client
+                  :base-url (copy-sequence "http://one.invalid")))
+         (scope (hermes-browser--client-scope client)))
+    (should (hermes-browser--client-current-p client scope))
+    (aset (hermes-dashboard-transport-client-base-url client) 7 ?X)
+    (should-not (hermes-browser--client-current-p client scope))))
+
+(ert-deftest hermes-rollback-refresh-never-acquires-an-unrelated-client ()
+  "Native refresh retries on the captured chat even when acquisition is unavailable."
+  (hermes-test--with-rollback
+    (let ((fail t))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (&rest _) (ert-fail "Rollback must not acquire a client")))
+                ((symbol-function 'hermes-dashboard-transport-call-fn)
+                 (lambda (method client &rest args)
+                   (should (eq method #'hermes-dashboard-transport-rollback-list))
+                   (should (eq client 'client-a))
+                   (should (equal args '(:session-id "session-a")))
+                   (if fail (hermes--promise-rejected "Unavailable")
+                     (hermes--promise-resolved
+                      '((checkpoints . (((hash . "recovered"))))))))))
+        (revert-buffer nil t)
+        (should-not hermes-rollback--snapshot)
+        (should (equal hermes-browser--status "Failed; g retry"))
+        (should (equal (get-text-property 0 'help-echo hermes-browser--status)
+                       "Unavailable"))
+        (setq fail nil)
+        (revert-buffer nil t)
+        (should (equal (caar tabulated-list-entries) "recovered"))
+        (should (hermes-rollback--require-snapshot))))))
+
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here

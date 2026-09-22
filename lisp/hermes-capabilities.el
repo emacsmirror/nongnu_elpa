@@ -98,6 +98,20 @@ When nil a default derived from the target and Emacs version is used."
   "Client name advertised during registration."
   :type 'string)
 
+(defcustom hermes-capabilities-buffer-deny-predicate
+  #'hermes-capabilities-sensitive-buffer-p
+  "Predicate excluding buffers from `buffer.list' and `buffer.read'.
+Called with a live buffer; non-nil denies access before content extraction.
+The default rejects credential-like names/paths and eval approval modes using
+only buffer metadata, without opening files.  A custom function can extend
+or relax it by calling `hermes-capabilities-sensitive-buffer-p' selectively;
+nil disables this policy.  Internal-list and remote-read restrictions remain.
+This is a disclosure precaution, not a secret detector or an eval sandbox:
+renamed copies, unknown credential locations, and other methods are outside
+its scope.  Customize it for your own sensitive buffers."
+  :type '(choice (const :tag "No sensitive-buffer policy" nil) function)
+  :group 'hermes-capabilities)
+
 (defcustom hermes-capabilities-buffer-list-max 50
   "Maximum number of buffer entries returned by the `buffer.list' method.
 When more live listable buffers exist, the list is truncated and the response
@@ -548,6 +562,32 @@ re-registers."
              (buffer-live-p (hermes-capabilities--provider-buffer provider)))
     (hermes-capabilities--connect provider)))
 
+(defun hermes-capabilities--open-provider-socket (provider generation auth)
+  "Open PROVIDER's socket for GENERATION using resolved AUTH.
+Publish it only while GENERATION still owns the connection; otherwise close
+it, including when construction delivers a close or error callback inline."
+  (when (hermes-capabilities--current-generation-p provider generation)
+    (let ((socket
+           (funcall hermes-capabilities--open-function
+                    (plist-get auth :url)
+                    (plist-get auth :redacted-url)
+                    (plist-get auth :secrets)
+                    :on-message
+                    (lambda (text)
+                      (when (hermes-capabilities--current-generation-p
+                             provider generation)
+                        (hermes-capabilities--handle-message provider text)))
+                    :on-close
+                    (lambda ()
+                      (hermes-capabilities--on-down provider generation))
+                    :on-error
+                    (lambda (msg)
+                      (hermes-capabilities--on-down provider generation msg)))))
+      (if (hermes-capabilities--current-generation-p provider generation)
+          (setf (hermes-capabilities--provider-socket provider) socket)
+        (when (and socket (fboundp 'websocket-close))
+          (ignore-errors (websocket-close socket)))))))
+
 (defun hermes-capabilities--connect (provider)
   "Resolve the capability `/api/ws' URL and open PROVIDER's socket."
   (let* ((generation (1+ (hermes-capabilities--provider-generation provider)))
@@ -564,29 +604,7 @@ re-registers."
      (hermes--promise-then
       (funcall hermes-capabilities--url-function)
       (lambda (auth)
-        (when (hermes-capabilities--current-generation-p provider generation)
-          (let ((socket
-                 (funcall hermes-capabilities--open-function
-                          (plist-get auth :url)
-                          (plist-get auth :redacted-url)
-                          (plist-get auth :secrets)
-                          :on-message
-                          (lambda (text)
-                            (when (hermes-capabilities--current-generation-p
-                                   provider generation)
-                              (hermes-capabilities--handle-message provider text)))
-                          :on-close
-                          (lambda ()
-                            (hermes-capabilities--on-down provider generation))
-                          :on-error
-                          (lambda (msg)
-                            (hermes-capabilities--on-down
-                             provider generation msg)))))
-            ;; Construction can call on-error/on-close before returning a socket.
-            (if (hermes-capabilities--current-generation-p provider generation)
-                (setf (hermes-capabilities--provider-socket provider) socket)
-              (when (and socket (fboundp 'websocket-close))
-                (ignore-errors (websocket-close socket))))))))
+        (hermes-capabilities--open-provider-socket provider generation auth)))
      (lambda (reason)
        (hermes-capabilities--on-down
         provider generation (format "Connect failed: %s" reason))))))
@@ -636,6 +654,35 @@ Excludes internal buffers whose names begin with a space."
        ;; Space-prefixed names are internal/temp buffers by Emacs convention.
        (not (eq (aref name 0) ?\s))))
 
+(defun hermes-capabilities--credential-name-p (name)
+  "Return non-nil if NAME lexically resembles a credential file or store."
+  (and (stringp name)
+       (let ((case-fold-search t))
+         (string-match-p
+          (rx (or string-start "/")
+              (or (seq (optional (any "._")) (or "authinfo" "netrc")
+                       (or string-end "." "~" "<"))
+                  (seq (optional ".") "password-store"
+                       (or string-end "/"))))
+          name))))
+
+(defun hermes-capabilities-sensitive-buffer-p (buffer)
+  "Return non-nil if BUFFER's metadata suggests credentials or eval approval.
+Inspect names, visited paths, already-known truenames, and the base buffer of
+an indirect view.  Do not resolve paths or inspect buffer contents.  Approval
+modes are denied even after renaming; ordinary namesakes are not owned views."
+  (with-current-buffer buffer
+    (or (derived-mode-p 'hermes-exec-approval-mode)
+        (seq-some #'hermes-capabilities--credential-name-p
+                  (list (buffer-name) buffer-file-name buffer-file-truename))
+        (when-let* ((base (buffer-base-buffer)))
+          (hermes-capabilities-sensitive-buffer-p base)))))
+
+(defun hermes-capabilities--buffer-denied-p (buffer)
+  "Apply the configured disclosure policy to BUFFER."
+  (and hermes-capabilities-buffer-deny-predicate
+       (funcall hermes-capabilities-buffer-deny-predicate buffer)))
+
 (defun hermes-capabilities--remote-path-p (path)
   "Return non-nil when PATH is a TRAMP/remote file name.
 Used by `buffer.read' to reject remote buffers by default.  `file-remote-p'
@@ -663,8 +710,9 @@ Shape: ((name . S) (mode . S) (point . N) (file . PATH/:null))."
 
 (defun hermes-capabilities--listable-buffers ()
   "Return the list of listable live buffer objects."
-  (seq-filter (lambda (b) (hermes-capabilities--listable-buffer-p
-                           (buffer-name b)))
+  (seq-filter (lambda (buffer)
+                (and (hermes-capabilities--listable-buffer-p (buffer-name buffer))
+                     (not (hermes-capabilities--buffer-denied-p buffer))))
               (buffer-list)))
 
 (defun hermes-capabilities--context-buffer ()
@@ -731,8 +779,8 @@ START-LINE exceeds the buffer's line count, returns empty content."
 
 (defun hermes-capabilities--handle-buffer-list (_params)
   "Return the `buffer.list' result alist.
-Excludes internal buffers, caps at `hermes-capabilities-buffer-list-max', and
-reports truncation metadata."
+Exclude internal and policy-denied buffers before counting, then cap at
+`hermes-capabilities-buffer-list-max' and report truncation metadata."
   (let* ((buffers (hermes-capabilities--listable-buffers))
          (total (length buffers))
          (cap hermes-capabilities-buffer-list-max)
@@ -754,11 +802,41 @@ Safe when no project is active: returns null root and name."
     (hermes-capabilities--project-entry
      (project-current nil default-directory))))
 
+(defun hermes-capabilities--read-buffer (name)
+  "Resolve NAME to a buffer allowed by read policy, or signal an error."
+  (unless (and (stringp name) (not (string-empty-p name)))
+    (error "Buffer.read: missing or invalid `buffer' parameter"))
+  (let ((buffer (get-buffer name)))
+    (unless buffer
+      (error "Buffer.read: no buffer named %S" name))
+    (when (hermes-capabilities--buffer-denied-p buffer)
+      (error "Buffer.read: buffer denied by disclosure policy"))
+    (when (hermes-capabilities--remote-buffer-p buffer)
+      (error "Buffer.read: remote/TRAMP buffers rejected by default"))
+    buffer))
+
+(defun hermes-capabilities--buffer-read-envelope (name slice)
+  "Return the bounded read envelope for buffer NAME and line SLICE."
+  (let* ((chars (hermes-capabilities--truncate-by-chars
+                 (plist-get slice :content)
+                 hermes-capabilities-buffer-read-max-chars))
+         (truncated (or (car chars) (plist-get slice :truncated-by-lines))))
+    `((ok . t)
+      (content . ,(cdr chars))
+      (metadata
+       . ((buffer . ,name)
+          (truncated . ,(hermes-capabilities--json-bool truncated))
+          (line_count . ,(1+ (- (plist-get slice :end-line)
+                               (plist-get slice :start-line))))
+          (total_lines . ,(plist-get slice :total-lines))
+          (start_line . ,(plist-get slice :start-line))
+          (end_line . ,(plist-get slice :end-line)))))))
+
 (defun hermes-capabilities--handle-buffer-read (params)
   "Return the `buffer.read' envelope alist for PARAMS.
 PARAMS keys: `buffer' (required), `start' and `end' (roadmap §2.2 wire names);
 `start_line'/`end_line' are accepted as backward-compatible aliases.  Rejects
-buffers visiting remote files and unknown buffers.  Enforces line and char caps.
+unknown, remote, and policy-denied buffers.  Enforces line and char caps.
 
 Line coordinates are 1-based and inclusive in the whole buffer, regardless
 of narrowing.  An empty buffer has one line; a final newline starts another
@@ -768,35 +846,12 @@ Returns the roadmap §2.3 envelope shape
 \((ok . t) (content . STRING) (metadata . ALIST)), where metadata carries
 `buffer', `truncated', `line_count', `total_lines', `start_line', and
 `end_line'."
-  (let ((name (hermes-transport--get params 'buffer)))
-    (unless (and (stringp name) (not (string-empty-p name)))
-      (error "Buffer.read: missing or invalid `buffer' parameter"))
-    (let ((buffer (get-buffer name)))
-      (unless buffer
-        (error "Buffer.read: no buffer named %S" name))
-      (when (hermes-capabilities--remote-buffer-p buffer)
-        (error "Buffer.read: remote/TRAMP buffers rejected by default"))
-      (let* ((start (hermes-transport--get-any
-                     params '(start start_line)))
-             (end (hermes-transport--get-any
-                   params '(end end_line)))
-             (slice (hermes-capabilities--buffer-slice buffer start end))
-             (content (plist-get slice :content))
-             (truncated (plist-get slice :truncated-by-lines))
-             (char-trunc (hermes-capabilities--truncate-by-chars
-                          content hermes-capabilities-buffer-read-max-chars)))
-        (when (car char-trunc)
-          (setq truncated t))
-        `((ok . t)
-          (content . ,(cdr char-trunc))
-          (metadata
-           . ((buffer . ,name)
-              (truncated . ,(hermes-capabilities--json-bool truncated))
-              (line_count . ,(1+ (- (plist-get slice :end-line)
-                                    (plist-get slice :start-line))))
-              (total_lines . ,(plist-get slice :total-lines))
-              (start_line . ,(plist-get slice :start-line))
-              (end_line . ,(plist-get slice :end-line)))))))))
+  (let* ((name (hermes-transport--get params 'buffer))
+         (buffer (hermes-capabilities--read-buffer name))
+         (start (hermes-transport--get-any params '(start start_line)))
+         (end (hermes-transport--get-any params '(end end_line))))
+    (hermes-capabilities--buffer-read-envelope
+     name (hermes-capabilities--buffer-slice buffer start end))))
 
 (defun hermes-capabilities--handle-capabilities-list (_params)
   "Return the `capabilities.list' result alist for runtime discovery.

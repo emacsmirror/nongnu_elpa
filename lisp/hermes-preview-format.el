@@ -65,7 +65,7 @@ Consume other fences too, so nested examples and unfinished code stay prose."
         (let* ((fence (match-string 1))
                (language (downcase (string-trim (match-string 2))))
                (start (progn (forward-line 1) (point)))
-               (closing (format "^ \\{0,3\\}%c\\{%d,\\}[ \t]*$"
+               (closing (format "^ \\{0,3\\}%c\\{%d,\\}[ \t\r]*$"
                                 (aref fence 0) (length fence))))
           (if (not (re-search-forward closing nil t))
               (goto-char (point-max))

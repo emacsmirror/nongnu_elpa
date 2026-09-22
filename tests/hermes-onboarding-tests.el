@@ -17,6 +17,17 @@
   '((slug . "deepseek") (name . "DeepSeek")
     (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY")))
 
+(ert-deftest hermes-onboarding-disconnecting-hides-stale-instructions ()
+  "Disconnect hides retained sign-in URLs and codes, unlike a pending flow."
+  (let ((details '((verification_url . "https://fixture.invalid/sign-in")
+                   (user_code . "fixture-code"))))
+    (let ((text (hermes-onboarding--oauth-status-text
+                 (cons '(status . "disconnecting") details))))
+      (should-not (string-match-p (rx (or "fixture.invalid" "fixture-code" "Sign in:")) text)))
+    (let ((text (hermes-onboarding--oauth-status-text
+                 (cons '(status . "pending") details))))
+      (should (string-match-p "fixture.invalid" text)))))
+
 (ert-deftest hermes-onboarding-unauthed-p-accepts-unauthed-rejects-authed ()
   (should (hermes-onboarding--unauthed-p
            (hermes-onboarding-test--api-key-provider)))
@@ -886,6 +897,26 @@
     (should (string-match-p "Status: pending" text))
     (should (string-match-p "User code: ABCD-EFGH" text))
     (should-not (string-match-p "secret" text))))
+
+(ert-deftest hermes-onboarding-oauth-error-message-precedence ()
+  "Only explicit errors or failed results expose the fallback message."
+  (dolist (case '((nil nil)
+                  (((message . "fallback")) nil)
+                  (((ok . t) (message . "fallback")) nil)
+                  (((ok . nil) (message . "fallback")) "fallback")
+                  (((ok . :false) (message . "fallback")) "fallback")
+                  (((status . "error") (message . "fallback")) "fallback")
+                  (((ok . nil) (error_message . " \t") (message . "fallback"))
+                   "fallback")
+                  (((ok . t) (error_message . "explicit") (message . "fallback"))
+                   "explicit")
+                  (((ok . nil) (message . " \t")) nil)
+                  (((access_token . "secret") (code . "secret")) nil)))
+    (let* ((result (car case))
+           (before (copy-tree result))
+           (expected (cadr case)))
+      (should (equal (hermes-onboarding--oauth-error-message result) expected))
+      (should (equal result before)))))
 
 (ert-deftest hermes-onboarding-oauth-status-shows-backend-error-message ()
   "A failed PKCE response renders the backend's actionable message."

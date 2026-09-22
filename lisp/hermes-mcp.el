@@ -384,6 +384,12 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
      (when (hermes-mcp--current-p context)
        (message "Hermes: MCP request failed; refresh to check backend state")))))
 
+(defun hermes-mcp--env-object (env)
+  "Return string-keyed ENV alist as a JSON-serializable object."
+  (let ((object (make-hash-table :test #'equal)))
+    (dolist (pair env object)
+      (puthash (car pair) (cdr pair) object))))
+
 (defun hermes-mcp--create-body (name transport target args env auth token)
   "Build a create payload for NAME, TRANSPORT and TARGET.
 ARGS and ENV are stdio-only.  AUTH and TOKEN configure HTTP authentication."
@@ -404,7 +410,7 @@ ARGS and ENV are stdio-only.  AUTH and TOKEN configure HTTP authentication."
      (unless (and (equal auth "none") (null token))
        (user-error "Stdio MCP uses environment credentials, not HTTP auth"))
      `((name . ,name) (command . ,target) (args . ,(vconcat args))
-       (env . ,(or env (make-hash-table :test #'equal)))))
+       (env . ,(hermes-mcp--env-object env))))
     (_ (user-error "Unsupported MCP transport"))))
 
 (defun hermes-mcp--read-env ()
@@ -649,7 +655,7 @@ The browser returns to the backend callback URL, which must be reachable."
                               nil nil :client client :current-p current-p)
            (hermes-mcp--api "POST" "/catalog/install"
                             `((name . ,name) (enable . t)
-                              (env . ,(or env (make-hash-table :test #'equal))))
+                              (env . ,(hermes-mcp--env-object env)))
                             nil :secrets (mapcar #'cdr env) :client client
                             :current-p current-p))))
      (lambda (result) (hermes-mcp--operation-started operation result)))))
