@@ -413,8 +413,9 @@ Return nil without moving point when no opening fence is present."
    ((looking-at "^$") '(1 . 1))))
 
 (defun hermes-chat--consume-unified-diff-hunk ()
-  "Move over a unified diff hunk at point.
-Return non-nil when the consumed hunk contains an added or removed line."
+  "Move over a complete unified diff hunk at point.
+Return non-nil if both line counts are exhausted and a line was added or
+removed.  Otherwise return nil and restore point."
   (let ((start (point)))
     (when-let* ((counts (hermes-chat--unified-diff-hunk-counts)))
       (let ((old-left (car counts))
@@ -443,7 +444,7 @@ Return non-nil when the consumed hunk contains an added or removed line."
                     (not (eobp))
                     (looking-at "^\\\\ No newline at end of file"))
           (forward-line 1))
-        (if (and valid saw-change)
+        (if (and valid saw-change (zerop old-left) (zerop new-left))
             t
           (goto-char start)
           nil)))))

@@ -3353,6 +3353,76 @@
      (should (string-match-p "-old-no-final-newline" diff))
      (should (string-match-p "+new-no-final-newline" diff)))))
 
+(ert-deftest hermes-chat-diff-hunk-rejects-truncated-eof ()
+  "EOF cannot complete either missing count, and rejection restores point."
+  (dolist (header '("@@ -1,2 +1,2 @@" "@@ -1,2 +1 @@" "@@ -1 +1,2 @@"))
+    (dolist (ending '("" "\n" "\n\\ No newline at end of file"))
+      (with-temp-buffer
+        (insert "Before:\n" header "\n-old\n+new" ending)
+        (goto-char (point-min))
+        (forward-line 1)
+        (let ((start (point)))
+          (should-not (hermes-chat--consume-unified-diff-hunk))
+          (should (= (point) start)))))))
+
+(ert-deftest hermes-chat-diff-hunk-accepts-exhausted-counts ()
+  "Complete counts work at EOF or before another fence, header or hunk."
+  (dolist (hunk '("@@ -1 +1 @@\n-old\n+new"
+                  "@@ -0,0 +1 @@\n+new"
+                  "@@ -1 +0,0 @@\n-old"
+                  "@@ -1,2 +1,2 @@\n context\n-old\n+new"))
+    (dolist (ending '("" "\n" "\n\\ No newline at end of file"))
+      (with-temp-buffer
+        (insert hunk ending)
+        (goto-char (point-min))
+        (should (hermes-chat--consume-unified-diff-hunk))
+        (should (eobp)))))
+  (dolist (following '("```diff\n-other\n+next\n```\n"
+                       "--- a/next\n+++ b/next\n@@ -1 +1 @@\n-other\n+next\n"
+                       "@@ -2 +2 @@\n-other\n+next\n"))
+    (with-temp-buffer
+      (insert "@@ -1 +1 @@\n-old\n+new\n" following)
+      (goto-char (point-min))
+      (should (hermes-chat--consume-unified-diff-hunk))
+      (should (equal (buffer-substring-no-properties (point) (point-max))
+                     following)))))
+
+(ert-deftest hermes-chat-diff-hunk-refuses-no-change-and-malformed-bodies ()
+  "Count exhaustion alone does not validate unchanged or malformed hunks."
+  (dolist (text '("@@ -1 +1 @@\n context\n"
+                  "@@ -0,0 +0,0 @@\n"
+                  "@@ -1 +1 @@\n-old\nprose\n"
+                  "@@ -0,0 +1 @@\n-old\n+new\n"
+                  "@@ malformed @@\n-old\n+new\n"))
+    (with-temp-buffer
+      (insert text)
+      (goto-char (point-min))
+      (should-not (hermes-chat--consume-unified-diff-hunk))
+      (should (= (point) (point-min))))))
+
+(ert-deftest hermes-chat-settled-diff-eof-requires-complete-counts ()
+  "Settled truncated hunks stay literal; complete hunks still disclose."
+  (dolist (complete '(nil t))
+    (dolist (ending '("" "\n" "\n\\ No newline at end of file\n"))
+      (let ((text (concat (if complete "@@ -1 +1 @@" "@@ -1,2 +1,2 @@")
+                          "\n-old α\n+new β" ending)))
+        (hermes-test-with-chat-buffer
+         (insert "DRAFT")
+         (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant text 'done))
+         (should (equal (hermes-chat-input-string) "DRAFT"))
+         (if complete
+             (progn
+               (should (= 1 (hermes-test--count-buttons-labeled "View Diff")))
+               (should (equal (hermes-test--view-diff-content)
+                              (if (string-suffix-p "\n" text) text
+                                (concat text "\n")))))
+           (should (zerop (hermes-test--count-buttons-labeled "View Diff")))
+           (goto-char (point-min))
+           (search-forward text)
+           (should (equal (filter-buffer-substring (- (point) (length text))
+                                                  (point))
+                          text))))))))
+
 (ert-deftest hermes-chat-stops-inline-diff-link-at-hunk-counts ()
   "The trailing non-diff line stays in the transcript, out of the diff."
   (hermes-test-with-chat-buffer
@@ -8500,6 +8570,29 @@
                (should-not (string-match-p "PARTIAL" (buffer-string)))
                (should (= 1 (how-many "Content:\noriginal" (point-min) (point-max))))))
           (when (buffer-live-p recovery) (kill-buffer recovery)))))))
+
+(ert-deftest hermes-chat-recovery-formatting-preserves-literal-revisions ()
+  "Recovery formatting preserves literal text and exact occurrence identity."
+  (let* ((identity (list 'occurrence))
+         (other (list 'occurrence))
+         (records (list (list identity "Never sent" "  λ\n\t" "shown\n")
+                        (list other "Delivery uncertain" "same" nil)))
+         (before (copy-tree records))
+         (text (hermes-chat--recovery-text records (list (cons identity nil)))))
+    (should (equal text
+                   (concat "\n\nNever sent (later revision)\nContent:\n  λ\n\t"
+                           "\nDisplay:\nshown\n"
+                           "\n\nDelivery uncertain\nContent:\nsame")))
+    (should (equal records before))
+    (should (equal (hermes-chat--recovery-document text "sid" "profile" "instance")
+                   (concat
+                    "Hermes recovery\nSession: sid\nProfile: profile\nInstance: instance\n"
+                    "Open Sessions in this instance/profile and resume this session,\n"
+                    "or use M-x hermes-chat-resume-session in that instance.\n"
+                    "Inspect history before copying selected text and explicitly sending.\n"
+                    "Never automatically resend Delivery uncertain text.\n"
+                    "This editable buffer is in-memory only; save it if needed."
+                    text)))))
 
 (ert-deftest hermes-chat-disconnect-recreates-killed-recovery ()
   "A killed document cannot suppress still-owned input on retry."

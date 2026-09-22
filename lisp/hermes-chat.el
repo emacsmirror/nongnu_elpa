@@ -369,6 +369,32 @@ assistant entry, so the reply placeholder keeps its text."
               '(set-dashboard-running)
               '(drain))))))
 
+(defun hermes-chat--turn-reduce-status (state event now)
+  "Return (NEW-STATE . EFFECTS) for a status EVENT on STATE at time NOW.
+Keep compression clearing, goal notices and session-info effects ordered."
+  (cond
+   ((hermes-chat--compress-bar-clear-event-p event)
+    (let ((status (hermes-chat--entry-with
+                   (hermes-chat--turn-state-get state :status-state)
+                   :status 'ready
+                   :activity "Ready"
+                   :updated now)))
+      (cons (hermes-chat--turn-state-put state :status-state status)
+            (list (cons 'refresh-header status)))))
+   ((equal (hermes-chat--status-name (plist-get event :status)) "goal")
+    (cons state (delq nil (list (hermes-chat--turn-entry-effect event)))))
+   (t
+    (let* ((next-state
+            (if (plist-member event :goal)
+                (hermes-chat--turn-state-put state :goal (plist-get event :goal))
+              state))
+           (status (hermes-chat--turn-status-state next-state event now)))
+      (cons (hermes-chat--turn-state-put next-state :status-state status)
+            (append
+             (delq nil (list (cons 'refresh-header status)
+                             (hermes-chat--turn-entry-effect event)))
+             (hermes-chat--turn-session-info-effects event)))))))
+
 (defun hermes-chat--turn-reduce (state event now)
   "Return (NEW-STATE . EFFECTS) for domain EVENT applied to STATE at time NOW.
 Pure: no buffer, EWOC, process, header, or message side effects.  EFFECTS is an
@@ -376,30 +402,7 @@ ordered list the boundary replays: a header change leads with `refresh-header',
 `done'/`error' append the turn lifecycle, and tool/transcript events emit deltas
 and `upsert-entry'.  Other types return (STATE)."
   (pcase (plist-get event :type)
-    ('status
-     (cond
-      ((hermes-chat--compress-bar-clear-event-p event)
-       (let ((status (hermes-chat--entry-with
-                      (hermes-chat--turn-state-get state :status-state)
-                      :status 'ready
-                      :activity "Ready"
-                      :updated now)))
-         (cons (hermes-chat--turn-state-put state :status-state status)
-               (list (cons 'refresh-header status)))))
-      ((equal (hermes-chat--status-name (plist-get event :status)) "goal")
-       (cons state (delq nil (list (hermes-chat--turn-entry-effect event)))))
-      (t
-       (let* ((next-state
-               (if (plist-member event :goal)
-                   (hermes-chat--turn-state-put state :goal
-                                                (plist-get event :goal))
-                 state))
-              (status (hermes-chat--turn-status-state next-state event now)))
-         (cons (hermes-chat--turn-state-put next-state :status-state status)
-               (append
-                (delq nil (list (cons 'refresh-header status)
-                                (hermes-chat--turn-entry-effect event)))
-                (hermes-chat--turn-session-info-effects event)))))))
+    ('status (hermes-chat--turn-reduce-status state event now))
     ('goal
      (cons (hermes-chat--turn-state-put state :goal (plist-get event :goal))
            '((refresh-header))))

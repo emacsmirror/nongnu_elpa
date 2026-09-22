@@ -344,6 +344,16 @@ with the dashboard's own message."
                '("approved" "cancelled" "disconnecting" "disconnected"
                  "denied" "expired" "error"))))
 
+(defun hermes-onboarding--oauth-error-message (result)
+  "Return the explicit error or failed RESULT's fallback message."
+  (or (hermes-transport--non-blank-string
+       (hermes-transport--display-field result 'error_message))
+      (and (or (and (hermes-transport--field-present-p result 'ok)
+                    (not (eq (hermes-transport--get result 'ok) t)))
+               (equal (hermes-transport--display-field result 'status) "error"))
+           (hermes-transport--non-blank-string
+            (hermes-transport--display-field result 'message)))))
+
 (defun hermes-onboarding--oauth-status-text (result)
   "Return readable, secret-free status text from OAuth RESULT."
   (string-join
@@ -364,22 +374,7 @@ with the dashboard's own message."
                       (code (hermes-transport--non-empty-string
                              (hermes-transport--get result 'user_code))))
             (format "User code: %s" code))
-          (when-let* ((error (or
-                              (hermes-transport--non-blank-string
-                               (hermes-transport--display-field
-                                result 'error_message))
-                              (and
-                               (or (and (hermes-transport--field-present-p
-                                         result 'ok)
-                                        (not (eq (hermes-transport--get
-                                                  result 'ok)
-                                                 t)))
-                                   (equal (hermes-transport--display-field
-                                           result 'status)
-                                          "error"))
-                               (hermes-transport--non-blank-string
-                                (hermes-transport--display-field
-                                 result 'message))))))
+          (when-let* ((error (hermes-onboarding--oauth-error-message result)))
             (format "Error: %s" error))))
    "\n"))
 

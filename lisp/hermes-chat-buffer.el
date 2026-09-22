@@ -727,6 +727,29 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
      (unless (string-empty-p draft)
        (list (list 'draft "Draft — also remains in original chat" draft nil))))))
 
+(defun hermes-chat--recovery-text (records copies)
+  "Return literal recovery text for RECORDS, marking revisions in COPIES."
+  (mapconcat
+   (lambda (record)
+     (pcase-let ((`(,identity ,status ,content ,display) record))
+       (concat "\n\n" status
+               (when (assq identity copies) " (later revision)")
+               "\nContent:\n" content
+               (when display (concat "\nDisplay:\n" display)))))
+   records ""))
+
+(defun hermes-chat--recovery-document (text session profile instance)
+  "Return recovery TEXT with instructions for SESSION, PROFILE and INSTANCE."
+  (concat
+   (format "Hermes recovery\nSession: %s\nProfile: %s\nInstance: %s\n"
+           session profile instance)
+   "Open Sessions in this instance/profile and resume this session,\n"
+   "or use M-x hermes-chat-resume-session in that instance.\n"
+   "Inspect history before copying selected text and explicitly sending.\n"
+   "Never automatically resend Delivery uncertain text.\n"
+   "This editable buffer is in-memory only; save it if needed."
+   text))
+
 (defun hermes-chat--capture-recovery ()
   "Append changed local input to an editable recovery document.
 Stage all text before writing; errors and quits leave input ownership intact."
@@ -736,14 +759,7 @@ Stage all text before writing; errors and quits leave input ownership intact."
                    (lambda (record)
                      (equal (cdr record) (cdr (assq (car record) copies))))
                    (hermes-chat--recovery-records)))
-         (text (mapconcat
-                (lambda (record)
-                  (pcase-let ((`(,identity ,status ,content ,display) record))
-                    (concat "\n\n" status
-                            (when (assq identity copies) " (later revision)")
-                            "\nContent:\n" content
-                            (when display (concat "\nDisplay:\n" display)))))
-                records ""))
+         (text (hermes-chat--recovery-text records copies))
          (revisions (mapcar (lambda (record)
                               (cons (car record)
                                     (mapcar (lambda (value)
@@ -753,16 +769,9 @@ Stage all text before writing; errors and quits leave input ownership intact."
                             records)))
     (when records
       (unless live
-        (setq text (concat
-                    (format "Hermes recovery\nSession: %s\nProfile: %s\nInstance: %s\n"
-                            hermes-chat--session-id hermes-chat--profile
-                            (hermes-instance-name hermes-instance))
-                    "Open Sessions in this instance/profile and resume this session,\n"
-                    "or use M-x hermes-chat-resume-session in that instance.\n"
-                    "Inspect history before copying selected text and explicitly sending.\n"
-                    "Never automatically resend Delivery uncertain text.\n"
-                    "This editable buffer is in-memory only; save it if needed."
-                    text)))
+        (setq text (hermes-chat--recovery-document
+                    text hermes-chat--session-id hermes-chat--profile
+                    (hermes-instance-name hermes-instance))))
       (let ((buffer (if live hermes-chat--recovery-buffer
                       (generate-new-buffer "*Hermes recovery*")))
             committed)

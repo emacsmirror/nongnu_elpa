@@ -163,5 +163,32 @@
     (should (equal (hermes-chat--turn-reduce state '(:type bogus) '(0 0))
                    (cons state nil)))))
 
+(ert-deftest hermes-chat-turn-reduce-status-phases-preserve-order ()
+  "Compression, goal notices and session state keep distinct ordered effects."
+  (let* ((state '(:status-state (:status running :activity "Compressing")
+                 :goal (:status "active")))
+         (before (copy-tree state))
+         (now '(7 7))
+         (clear (hermes-chat--turn-reduce
+                 state '(:type status :status "status" :content "ready") now))
+         (goal '(:type status :status "goal" :content "Goal complete"))
+         (notice (hermes-chat--turn-reduce state goal now)))
+    (should (equal (cdr clear)
+                   '((refresh-header :status ready :activity "Ready"
+                                     :updated (7 7)))))
+    (should (eq (car notice) state))
+    (should (equal (cdr notice) (list (cons 'upsert-entry goal))))
+    (dolist (running '(nil t))
+      (let* ((event (list :type 'status :event "session.info" :status "ready"
+                          :running running :goal nil))
+             (result (hermes-chat--turn-reduce state event now)))
+        (should-not (plist-get (car result) :goal))
+        (should (equal (cdr result)
+                       (append (list (cons 'refresh-header
+                                           (plist-get (car result) :status-state))
+                                     (cons 'set-dashboard-running running))
+                               (unless running '((drain))))))))
+    (should (equal state before))))
+
 (provide 'hermes-chat-reducer-tests)
 ;;; hermes-chat-reducer-tests.el ends here
