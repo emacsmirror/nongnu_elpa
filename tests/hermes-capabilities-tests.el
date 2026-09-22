@@ -422,6 +422,69 @@ touched."
         (should (eq (hermes-capabilities--provider-reconnect-timer provider)
                     'retry-timer))))))
 
+(ert-deftest hermes-capabilities-deferred-auth-publishes-exact-socket ()
+  "Deferred authentication passes its exact values to the current socket opener."
+  (let* ((provider (hermes-capabilities--provider-create
+                    :buffer (current-buffer)))
+         (auth (hermes--promise-make))
+         (resolved '(:url "ws://example.test/api/ws?token=test-token"
+                     :redacted-url "ws://example.test/api/ws?token=<redacted>"
+                     :secrets ("test-token")))
+         received
+         (hermes-capabilities--url-function (lambda () auth))
+         (hermes-capabilities--open-function
+          (lambda (url redacted secrets &rest _handlers)
+            (setq received (list url redacted secrets))
+            'current-socket)))
+    (hermes-capabilities--connect provider)
+    (should-not received)
+    (should-not (hermes-capabilities--provider-socket provider))
+    (hermes--promise-resolve auth resolved)
+    (should (equal received (list (plist-get resolved :url)
+                                 (plist-get resolved :redacted-url)
+                                 (plist-get resolved :secrets))))
+    (should (eq (hermes-capabilities--provider-socket provider) 'current-socket))
+    (should (hermes-capabilities--provider-active provider))
+    (should-not (hermes-capabilities--provider-reconnect-timer provider))))
+
+(ert-deftest hermes-capabilities-returned-socket-respects-reentrant-retirement ()
+  "A socket returned after replacement or teardown closes without new effects."
+  (dolist (invalidation '(replacement teardown))
+    (let* ((provider (hermes-capabilities--provider-create
+                      :buffer (current-buffer)))
+           (opens 0)
+           old-handlers closed retries
+           (hermes-capabilities--url-function
+            (lambda () (hermes--promise-resolved '(:url "ws://example.test"))))
+           (hermes-capabilities--open-function
+            (lambda (_url _redacted _secrets &rest handlers)
+              (if (> (cl-incf opens) 1)
+                  'successor-socket
+                (setq old-handlers handlers)
+                (if (eq invalidation 'replacement)
+                    (hermes-capabilities--connect provider)
+                  (hermes-capabilities--teardown provider))
+                'retired-socket))))
+      (cl-letf (((symbol-function 'websocket-close)
+                 (lambda (socket)
+                   (push socket closed)
+                   (funcall (plist-get old-handlers :on-close))))
+                ((symbol-function 'hermes-capabilities--reconnect)
+                 (lambda (owner) (push owner retries))))
+        (hermes-capabilities--connect provider)
+        (should (equal closed '(retired-socket)))
+        (should-not retries)
+        (should-not (hermes-capabilities--provider-reconnect-timer provider))
+        (if (eq invalidation 'replacement)
+            (progn
+              (should (= opens 2))
+              (should (hermes-capabilities--provider-active provider))
+              (should (eq (hermes-capabilities--provider-socket provider)
+                          'successor-socket)))
+          (should (= opens 1))
+          (should-not (hermes-capabilities--provider-active provider))
+          (should-not (hermes-capabilities--provider-socket provider)))))))
+
 (ert-deftest hermes-capabilities-deferred-connect-failure-retries ()
   "Deferred auth and socket-open failures retry with capped backoff."
   (dolist (failure '(auth open))
@@ -1013,6 +1076,103 @@ checked to exclude session-id-bearing slots."
         (set-window-buffer (selected-window) (other-buffer visible t)))
       (kill-buffer visible)
       (kill-buffer process-buffer))))
+
+(ert-deftest hermes-capabilities-sensitive-buffers-denied ()
+  "Synthetic credentials are neither enumerated nor readable by guessed name."
+  (dolist (path '("/fixture/.authinfo" "/fixture/.authinfo.gpg"
+                  "/fixture/.netrc" "/fixture/_netrc"
+                  "/fixture/.password-store/site.gpg"))
+    (with-temp-buffer
+      (rename-buffer "cap-sensitive-fixture" t)
+      (insert "synthetic credential canary")
+      (setq buffer-file-name path)
+      (unwind-protect
+          (let ((name (buffer-name)) sliced)
+            (should-not (memq (current-buffer)
+                              (hermes-capabilities--listable-buffers)))
+            (cl-letf (((symbol-function 'hermes-capabilities--buffer-slice)
+                       (lambda (&rest _)
+                         (setq sliced t)
+                         (error "Denied buffer was sliced"))))
+              (should (alist-get 'error
+                                (hermes-capabilities--response-for
+                                 (list :id "deny" :method "buffer.read"
+                                       :params `((buffer . ,name)))))))
+            (should-not sliced))
+        (setq buffer-file-name nil)))))
+
+(ert-deftest hermes-capabilities-sensitive-approval-and-indirect-buffers ()
+  "Approval modes and indirect views cannot bypass the default denial."
+  (require 'hermes-exec)
+  (with-temp-buffer
+    (hermes-exec-approval-mode)
+    (rename-buffer "renamed-approval-fixture" t)
+    (should (hermes-capabilities-sensitive-buffer-p (current-buffer)))
+    (should-error (hermes-capabilities--handle-buffer-read
+                   `((buffer . ,(buffer-name))))))
+  (with-temp-buffer
+    (setq buffer-file-name "/fixture/.authinfo.gpg")
+    (let ((indirect (make-indirect-buffer (current-buffer) "indirect-fixture")))
+      (unwind-protect
+          (progn
+            (should (hermes-capabilities-sensitive-buffer-p indirect))
+            (should-not (memq indirect (hermes-capabilities--listable-buffers))))
+        (kill-buffer indirect)
+        (setq buffer-file-name nil)))))
+
+(ert-deftest hermes-capabilities-buffer-deny-policy-customizable ()
+  "A user predicate can extend or explicitly relax the default metadata policy."
+  (with-temp-buffer
+    (rename-buffer "cap-policy-fixture" t)
+    (insert "ordinary text")
+    (let* ((buffer (current-buffer))
+           (params `((buffer . ,(buffer-name))))
+           (hermes-capabilities-buffer-deny-predicate
+            (lambda (candidate)
+              (or (eq candidate buffer)
+                  (hermes-capabilities-sensitive-buffer-p candidate)))))
+      (should-not (memq buffer (hermes-capabilities--listable-buffers)))
+      (should-error (hermes-capabilities--handle-buffer-read params))
+      (let ((hermes-capabilities-buffer-deny-predicate nil))
+        (setq buffer-file-name "/fixture/.netrc")
+        (unwind-protect
+            (progn
+              (should (memq buffer (hermes-capabilities--listable-buffers)))
+              (should (equal "ordinary text"
+                             (alist-get 'content
+                                        (hermes-capabilities--handle-buffer-read
+                                         params)))))
+          (setq buffer-file-name nil))))))
+
+(ert-deftest hermes-capabilities-credential-metadata-without-io ()
+  "Names and known truenames are checked without file or content reads."
+  (with-temp-buffer
+    (rename-buffer ".authinfo.gpg<2>" t)
+    (should (hermes-capabilities-sensitive-buffer-p (current-buffer)))
+    (rename-buffer "ordinary-fixture" t)
+    (should-not (hermes-capabilities-sensitive-buffer-p (current-buffer)))
+    (setq buffer-file-truename "/fixture/.password-store/mail.gpg")
+    (cl-letf (((symbol-function 'file-truename)
+               (lambda (&rest _) (ert-fail "Unexpected filesystem resolution")))
+              ((symbol-function 'insert-file-contents)
+               (lambda (&rest _) (ert-fail "Unexpected file read"))))
+      (should (hermes-capabilities-sensitive-buffer-p (current-buffer)))
+      (should-error (hermes-capabilities--handle-buffer-read
+                     `((buffer . ,(buffer-name))))))))
+
+(ert-deftest hermes-capabilities-pending-approval-not-disclosed ()
+  "The real approval constructor is denied, including after a buffer rename."
+  (require 'hermes-exec)
+  (let ((buffer (hermes-exec--approval-buffer
+                 '(:id synthetic-request :code "\"synthetic canary\""))))
+    (unwind-protect
+        (with-current-buffer buffer
+          (rename-buffer "renamed-real-approval-fixture" t)
+          (should-not (memq buffer (hermes-capabilities--listable-buffers)))
+          (should-error (hermes-capabilities--handle-buffer-read
+                         `((buffer . ,(buffer-name)))))
+          (should (string-match-p "synthetic canary" (buffer-string))))
+      (kill-buffer buffer))))
 
 (provide 'hermes-capabilities-tests)
 ;;; hermes-capabilities-tests.el ends here

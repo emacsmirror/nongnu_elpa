@@ -27,9 +27,11 @@
 ;;
 ;; Contract:
 ;;   POST /eval HTTP/1.1 with `Content-Type: application/json' and body
-;;   {"code":"<elisp source>"}.  The reply is always HTTP 200 with a JSON
-;;   body of either {"ok":true,"result":"..."} or {"ok":false,"error":"..."},
-;;   so evaluation errors are reported in-band rather than as HTTP failures.
+;;   {"code":"<elisp source>"}.  Evaluation replies use HTTP 200 with a JSON
+;;   body of either {"ok":true,"result":"..."} or {"ok":false,"error":"..."}.
+;;   Authentication, framing, size, capacity and timeout refusals use HTTP
+;;   error statuses.  One Content-Length-framed request is served per socket;
+;;   subsequent bytes are discarded and the response closes the connection.
 ;;
 ;; The endpoint reuses `hermes-dashboard-transport.el' for URL parsing, the
 ;; loopback-host predicate, and secret redaction so it never binds a public
@@ -109,9 +111,29 @@ checks input; a CPU-bound loop that never yields runs to completion anyway."
 (defcustom hermes-exec-max-pending 16
   "Maximum number of eval requests that may await approval at once.
 A request that would exceed this is declined immediately rather than queued, so
-a misbehaving bridge cannot grow the queue and its open connections without
-bound."
+a misbehaving bridge cannot grow the approval queue without bound.
+This does not bound incomplete requests; see `hermes-exec-max-connections'."
   :type 'integer)
+
+(defcustom hermes-exec-max-connections 32
+  "Maximum live accepted connections per eval listener.
+Reject excess accepts with HTTP 503, independently of the approval queue.
+This bounds retained clients, not OS backlog or connection-attempt rate."
+  :type 'natnum)
+
+(defcustom hermes-exec-request-timeout 120
+  "Seconds from accept until an eval connection expires with HTTP 408.
+Input progress does not extend this budget, which includes approval wait.
+Timers run only when Emacs services its event loop: this is not a hard CPU
+limit, and closing a socket cannot undo an evaluation already in progress."
+  :type 'number)
+
+(defcustom hermes-exec-idle-timeout 15
+  "Seconds without input before an incomplete eval request expires.
+Reset on received bytes; cancel once the first request is complete.
+The independent `hermes-exec-request-timeout' still bounds slow trickles and
+approval wait.  Both timeout options must be positive numbers."
+  :type 'number)
 
 (defcustom hermes-exec-token nil
   "Shared bearer token the eval endpoint requires, or nil for loopback-only.
@@ -139,7 +161,8 @@ bridge timeout -- rather than running the side effect on a dead socket.")
 ID is a unique symbol retained across display metadata updates.")
 
 (defvar hermes-exec--active nil
-  "The queued request with its approval :buffer, or nil when none is shown.")
+  "The request owning approval construction or display, or nil.
+Its :buffer is nil until construction finishes for the same live owner.")
 
 ;;; Host resolution
 
@@ -204,24 +227,43 @@ nil so the caller can refuse to bind a public interface."
                          (string-trim (match-string 2 line)))))
 
 (defun hermes-exec--content-length (headers)
-  "Return the Content-Length value from HEADERS as a number, or nil."
-  (and-let* ((value (cdr (assoc "content-length" headers))))
-    (string-to-number value)))
+  "Return the unique nonnegative Content-Length in HEADERS, or nil.
+Signal an error for ambiguous framing or unsupported transfer encoding."
+  (let ((lengths (cl-remove-if-not
+                  (lambda (header) (equal (car header) "content-length"))
+                  headers)))
+    (when (or (assoc "transfer-encoding" headers) (cdr lengths))
+      (error "Unsupported HTTP framing"))
+    (when-let* ((value (cdar lengths)))
+      (unless (string-match-p (rx string-start (+ digit) string-end) value)
+        (error "Invalid Content-Length"))
+      (string-to-number value))))
 
 (defun hermes-exec--parse-request (raw)
-  "Return a plist parsed from the RAW HTTP request, or nil when incomplete.
-The plist has :method, :path, :headers, and :body.  Nil means more bytes are
-needed: the header terminator or the full Content-Length body is still missing."
-  (and-let* ((split (string-search "\r\n\r\n" raw)))
-    (let* ((head (substring raw 0 split))
-           (body (substring raw (+ split 4)))
-           (lines (split-string head "\r?\n"))
-           (request-line (hermes-exec--parse-request-line (car lines)))
-           (headers (hermes-exec--parse-headers
-                     (string-join (cdr lines) "\n")))
-           (length (hermes-exec--content-length headers)))
-      (when (or (null length) (>= (string-bytes body) length))
-        (append request-line (list :headers headers :body body))))))
+  "Return the first request parsed from RAW, or nil when incomplete.
+The plist has :method, :path, :headers, and UTF-8 decoded :body.  POST needs
+one valid Content-Length; transfer encoding is unsupported.  Signal an
+error for invalid framing.  Ignore bytes beyond the declared first body:
+this endpoint serves exactly one request per connection, never pipelines."
+  (let ((bytes (if (multibyte-string-p raw)
+                   (encode-coding-string raw 'utf-8-unix) raw)))
+    (when-let* ((split (string-search "\r\n\r\n" bytes)))
+      (let* ((head (decode-coding-string (substring bytes 0 split) 'utf-8-unix))
+             (body-start (+ split 4))
+             (lines (split-string head "\r?\n"))
+             (request-line (hermes-exec--parse-request-line (car lines)))
+             (headers (hermes-exec--parse-headers
+                       (string-join (cdr lines) "\n")))
+             (length (hermes-exec--content-length headers)))
+        (when (and (equal (plist-get request-line :method) "POST") (null length))
+          (error "POST requires Content-Length"))
+        (when (>= (- (length bytes) body-start) (or length 0))
+          (append request-line
+                  (list :headers headers
+                        :body (decode-coding-string
+                               (substring bytes body-start
+                                          (+ body-start (or length 0)))
+                               'utf-8-unix))))))))
 
 ;;; Authentication
 ;;
@@ -229,9 +271,10 @@ needed: the header terminator or the full Content-Length body is still missing."
 ;; an address Tailscale reports as assigned locally.  A shared bearer token is
 ;; the enforced second layer for the non-loopback case, checked here against the
 ;; parsed request before evaluation.  Over plain HTTP the token authenticates but
-;; does not encrypt, so it adds nothing on loopback and is redundant with
-;; WireGuard on Tailscale; its job is to keep other tailnet devices or local
-;; users off the endpoint.
+;; does not encrypt.  WireGuard protects Tailscale traffic in transit, not
+;; application authorization among reachable peers.  The bearer token also
+;; restricts other local users on loopback, but does not isolate code running
+;; as this Emacs user.  Approval permits arbitrary Lisp, not sandboxed code.
 
 (defun hermes-exec--expected-token ()
   "Return the configured bearer token as a non-empty string, or nil.
@@ -244,14 +287,19 @@ variable so the bridge and endpoint can share one secret."
          (string-trim token))))
 
 (defun hermes-exec--secure-equal (a b)
-  "Return non-nil when strings A and B are equal, compared in constant time.
-Scan the whole of A regardless of where bytes differ, so the comparison time
-does not reveal how much of a guessed token was correct."
+  "Return non-nil when strings A and B have equal SHA-256 digests.
+Hash UTF-8 bytes first, then scan all 32 digest bytes without prefix or token
+length short-circuiting.  Hash cost still depends on input length; Emacs Lisp
+and its runtime provide no constant-time guarantee.  This reduces obvious
+comparison leakage rather than proving resistance to timing attacks."
   (and (stringp a) (stringp b)
-       (= (length a) (length b))
-       (let ((diff 0))
-         (dotimes (i (length a))
-           (setq diff (logior diff (logxor (aref a i) (aref b i)))))
+       (let ((left (secure-hash 'sha256 (encode-coding-string a 'utf-8-unix)
+                                nil nil t))
+             (right (secure-hash 'sha256 (encode-coding-string b 'utf-8-unix)
+                                 nil nil t))
+             (diff 0))
+         (dotimes (i 32)
+           (setq diff (logior diff (logxor (aref left i) (aref right i)))))
          (zerop diff))))
 
 (defun hermes-exec--request-bearer (request)
@@ -335,7 +383,8 @@ Signal a reader error when CODE cannot be parsed, so callers fail closed."
 (defun hermes-exec--classify-code (code)
   "Classify CODE as `forbidden', `sensitive', or `ordinary'.
 This is a triage aid, not a security boundary: it flags every symbol it sees,
-so a quoted datum or a shadowing binding can over-classify (never under-).
+so quoted data or shadowing bindings can over-classify.  Indirect effects
+of apparently ordinary functions can escape classification.
 Unreadable, dynamic-dispatch, and too-deeply-nested code all fail closed to
 `sensitive' via the surrounding handler."
   (condition-case nil
@@ -550,33 +599,85 @@ fallback."
          (and (hermes-buffer--owned-p 'hermes-exec-approval-mode)
               (eq id hermes-exec--approval-id)))))
 
+(defun hermes-exec--render-approval (buffer request &optional queued)
+  "Render REQUEST in approval BUFFER while its exact claim remains current.
+When QUEUED, require REQUEST to remain the exact active queue occurrence.
+Stage text before editing, then notify change hooks once around the replacement.
+A before-change hook may retire the owner or render a newer snapshot; abandon
+this edit in either case.  Never roll back text belonging to a new owner."
+  (when (buffer-live-p buffer)
+    (let ((claim (buffer-local-value 'hermes-buffer--owner buffer))
+          (id (plist-get request :id))
+          (tick (buffer-chars-modified-tick buffer))
+          (retired (make-symbol "retired-render")))
+      (cl-labels
+          ((current-p ()
+             (and (buffer-live-p buffer)
+                  (or (not queued) (eq request hermes-exec--active))
+                  (with-current-buffer buffer
+                    (and (eq claim hermes-buffer--owner)
+                         (hermes-buffer--owned-p 'hermes-exec-approval-mode)
+                         (eq id hermes-exec--approval-id)))))
+           (check ()
+             (unless (and (current-p)
+                          (= tick (buffer-chars-modified-tick buffer)))
+               (throw retired nil))))
+        (catch retired
+          (check)
+          (let ((text (with-temp-buffer
+                        (hermes-exec--insert-metadata request)
+                        (insert (hermes-exec--fontify-elisp
+                                 (plist-get request :code)))
+                        (buffer-string))))
+            (check)
+            (with-current-buffer buffer
+              (let ((inhibit-read-only t))
+                (combine-change-calls (point-min) (point-max)
+                  ;; Native before-change hooks have now returned.  No callback
+                  ;; may run between this check and the complete text edit.
+                  (unless (eq (current-buffer) buffer) (throw retired nil))
+                  (check)
+                  (let ((inhibit-modification-hooks t)
+                        (inhibit-quit t))
+                    (erase-buffer)
+                    (insert text))))
+              ;; After-change hooks can also transfer or kill this buffer.
+              (when (current-p)
+                (with-current-buffer buffer (goto-char (point-min))))))))))
+  buffer)
+
 (defun hermes-exec--approval-buffer (request)
   "Return a read-only buffer showing REQUEST's code and metadata for approval.
 REQUEST is a plist with at least :code; optional keys :risk, :peer,
 :origin-buffer, and :queue-total drive the metadata header.  When called
 interactively the buffer is backed by `hermes-exec-approval-mode'."
-  (let ((buffer (hermes-buffer--get hermes-exec--approval-buffer-name
-                                    #'hermes-exec-approval-mode t))
-        (code (plist-get request :code)))
+  (let* ((queued (eq request hermes-exec--active))
+         (buffer (hermes-buffer--get hermes-exec--approval-buffer-name
+                                     #'hermes-exec-approval-mode t)))
     (with-current-buffer buffer
-      (setq hermes-exec--approval-id (plist-get request :id))
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (hermes-exec--insert-metadata request)
-        (insert (hermes-exec--fontify-elisp code))
-        (goto-char (point-min))))
-    buffer))
+      (setq hermes-exec--approval-id (plist-get request :id)))
+    (hermes-exec--render-approval buffer request queued)))
 
-(defun hermes-exec--close-approval-window (&optional buffer)
-  "Close owned approval BUFFER, defaulting to the active request's buffer."
-  (let ((buffer (or buffer (plist-get hermes-exec--active :buffer))))
-    (when (and buffer
-               (eq buffer (hermes-buffer--find hermes-exec--approval-buffer-name
-                                               'hermes-exec-approval-mode)))
+(defun hermes-exec--close-approval-window (&optional buffer id)
+  "Close owned approval BUFFER, defaulting to the active request's buffer.
+When ID is non-nil, close only that request's view, never a replacement.
+Remove the named reuse claim before window or buffer teardown can run hooks."
+  (let ((buffer (or buffer (plist-get hermes-exec--active :buffer)))
+        (claim (cons t 'hermes-exec-approval-mode)))
+    (when (and (buffer-live-p buffer)
+               (with-current-buffer buffer
+                 (and (hermes-buffer--owned-p 'hermes-exec-approval-mode)
+                      (or (null id) (eq id hermes-exec--approval-id)))))
+      ;; Keep an exact, non-reusable claim until this teardown completes.
+      (with-current-buffer buffer (setq hermes-buffer--owner claim))
       (let ((window (get-buffer-window buffer)))
         (when window
           (quit-restore-window window)))
-      (when (buffer-live-p buffer)
+      (when (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (and (eq hermes-buffer--owner claim)
+                        (hermes-buffer--owned-p 'hermes-exec-approval-mode)
+                        (or (null id) (eq id hermes-exec--approval-id)))))
         (kill-buffer buffer)))))
 
 (defun hermes-exec--display-approval (buffer)
@@ -657,9 +758,11 @@ that enqueued the request completes before the modal prompt blocks Emacs."
 
 (defun hermes-exec--finish-active ()
   "Close the approval window and clear the active slot."
-  (when hermes-exec--active
-    (hermes-exec--close-approval-window)
-    (setq hermes-exec--active nil)))
+  (when-let* ((active hermes-exec--active))
+    (setq hermes-exec--active nil)
+    (when (plist-get active :buffer)
+      (hermes-exec--close-approval-window
+       (plist-get active :buffer) (plist-get active :id)))))
 
 (defun hermes-exec--queue-total ()
   "Return the total count of active plus pending requests."
@@ -671,25 +774,47 @@ that enqueued the request completes before the modal prompt blocks Emacs."
     (setq hermes-exec--active
           (plist-put hermes-exec--active :queue-total
                      (hermes-exec--queue-total)))
-    (when (eq (plist-get hermes-exec--active :buffer)
-              (hermes-buffer--find hermes-exec--approval-buffer-name
-                                   'hermes-exec-approval-mode))
-      (hermes-exec--approval-buffer hermes-exec--active))))
+    (let ((buffer (plist-get hermes-exec--active :buffer)))
+      (when (hermes-exec--approval-current-p
+             buffer (plist-get hermes-exec--active :id))
+        (hermes-exec--render-approval buffer hermes-exec--active t)))))
 
 (defun hermes-exec--show-next ()
   "Display the next queued request when none is currently shown.
-Skip requests whose client has already disconnected."
+Reserve its active slot through construction and recheck after mode hooks.
+Skip disconnected requests without taking a replacement owner's display."
   (when (and (null hermes-exec--active) hermes-exec--pending)
     (let* ((next (pop hermes-exec--pending))
-           (proc (plist-get next :proc)))
+           (id (plist-get next :id))
+           (proc (plist-get next :proc))
+           (server hermes-exec--process)
+           (owner (process-get proc 'hermes-exec-connection)))
       (if (not (process-live-p proc))
           (hermes-exec--show-next)
-        (let ((request (plist-put next :queue-total (1+ (hermes-exec--queue-total)))))
-          (setq hermes-exec--active
-                (plist-put (copy-sequence request)
-                           :buffer (hermes-exec--approval-buffer request)))
-          (hermes-exec--display-approval (plist-get hermes-exec--active :buffer))
-          (hermes-exec--maybe-prompt))))))
+        (let ((request (append next (list :buffer nil :queue-total
+                                         (1+ (hermes-exec--queue-total)))))
+              buffer published)
+          (setq hermes-exec--active request)
+          (unwind-protect
+              (progn
+                (setq buffer (hermes-exec--approval-buffer request))
+                (when (and (eq id (plist-get hermes-exec--active :id))
+                           (eq proc (plist-get hermes-exec--active :proc))
+                           (eq server hermes-exec--process)
+                           (eq owner (process-get proc 'hermes-exec-connection))
+                           (process-live-p proc))
+                  (setf (plist-get hermes-exec--active :buffer) buffer)
+                  (when (hermes-exec--approval-current-p buffer id)
+                    (setq published t)
+                    (hermes-exec--display-approval buffer)
+                    (when (hermes-exec--approval-current-p buffer id)
+                      (hermes-exec--maybe-prompt)))))
+            (unless published
+              (when (eq id (plist-get hermes-exec--active :id))
+                (setq hermes-exec--active nil))
+              (when buffer (hermes-exec--close-approval-window buffer id))
+              (when (eq server hermes-exec--process)
+                (hermes-exec--show-next)))))))))
 
 (defun hermes-exec--enqueue-approval (proc code &rest metadata)
   "Queue CODE from PROC for approval and show it when nothing else is pending.
@@ -744,7 +869,8 @@ request afterwards, even on quit, but never advance a replacement listener."
       (setq hermes-exec--active nil)
       (unwind-protect
           (progn
-            (hermes-exec--close-approval-window (plist-get active :buffer))
+            (hermes-exec--close-approval-window
+             (plist-get active :buffer) (plist-get active :id))
             (let ((result (if approve
                               (let ((hermes-exec--connection proc))
                                 (hermes-exec--eval-with-origin
@@ -870,60 +996,114 @@ list (:defer CODE) when the request must wait for asynchronous approval."
     (ignore-errors (process-send-string proc response))
     (ignore-errors (delete-process proc))))
 
+(defun hermes-exec--cancel-connection-timer (proc property)
+  "Retire the timer in PROC's PROPERTY before cancelling it."
+  (when-let* ((timer (process-get proc property)))
+    (process-put proc property nil)
+    (cancel-timer timer)))
+
+(defun hermes-exec--arm-connection-timer (proc property seconds)
+  "Set PROC's PROPERTY to a fresh timeout after SECONDS for its exact owner."
+  (hermes-exec--cancel-connection-timer proc property)
+  (let ((server (process-get proc 'hermes-exec-connection))
+        timer)
+    (when server
+      (setq timer
+            (run-at-time
+             seconds nil
+             (lambda ()
+               (when (and (process-live-p proc)
+                          (eq server (process-get proc 'hermes-exec-connection))
+                          (eq timer (process-get proc property)))
+                 (hermes-exec--send-response
+                  proc (hermes-exec--http-response
+                        408 "Request Timeout"
+                        "{\"ok\":false,\"error\":\"request timed out\"}"))))))
+      (process-put proc property timer))))
+
+(defun hermes-exec--consume-request ()
+  "Retire input before dispatch can yield or run arbitrary evaluation code."
+  (when hermes-exec--connection
+    (process-put hermes-exec--connection 'hermes-exec-consumed t)
+    (process-put hermes-exec--connection 'hermes-buffer nil)
+    (hermes-exec--cancel-connection-timer
+     hermes-exec--connection 'hermes-exec-idle-timer)))
+
 (defun hermes-exec--request-response (buffer)
-  "Return the HTTP response for accumulated BUFFER, or nil for more bytes.
-A 413 is returned once BUFFER exceeds `hermes-exec-max-request-bytes' so the
-accumulator can never grow without bound; otherwise a complete request is
-dispatched and an incomplete one yields nil."
+  "Return a response for accumulated BUFFER, or nil for more bytes.
+Reject oversized input with 413 and invalid framing with 400.  Dispatch only
+the first request; retire its input before any policy callback or evaluation."
   (if (> (string-bytes buffer) hermes-exec-max-request-bytes)
       (hermes-exec--http-response
        413 "Payload Too Large"
-       (json-serialize '((ok . :false) (error . "request too large"))))
-    (and-let* ((request (hermes-exec--parse-request buffer)))
-      (hermes-exec--dispatch request))))
+       "{\"ok\":false,\"error\":\"request too large\"}")
+    (let ((request (condition-case nil (hermes-exec--parse-request buffer)
+                     (error 'invalid))))
+      (cond
+       ((eq request 'invalid)
+        (hermes-exec--http-response
+         400 "Bad Request" "{\"ok\":false,\"error\":\"invalid HTTP framing\"}"))
+       (request
+        (hermes-exec--consume-request)
+        (hermes-exec--dispatch request))))))
 
-;; Input may arrive in chunks, so each connection accumulates bytes in its
-;; `hermes-buffer' process property.  After every chunk the buffer is reparsed;
-;; `hermes-exec--request-response' returns nil until both the header terminator
-;; and the full Content-Length body are present, rejects with 413 once the
-;; accumulated bytes exceed `hermes-exec-max-request-bytes', and otherwise
-;; dispatches.  This bounds memory and keeps partial reads from a premature eval.
+(defun hermes-exec--deliver-outcome (proc outcome origin-buffer origin-window)
+  "Send OUTCOME to PROC or queue it under ORIGIN-BUFFER and ORIGIN-WINDOW."
+  (if (eq (car-safe outcome) :defer)
+      (let ((code (cadr outcome)))
+        (when (process-live-p proc)
+          (hermes-exec--enqueue-approval
+           proc code :origin-buffer origin-buffer :origin-window origin-window
+           :peer (hermes-exec--peer-info proc)
+           :risk (hermes-exec--classify-code code))))
+    (hermes-exec--send-response proc outcome)))
+
 (defun hermes-exec--filter (proc chunk)
-  "Accumulate CHUNK on PROC; respond or queue once a full request arrives."
-  (let* ((origin-window (selected-window))
-         (origin-buffer (and (window-live-p origin-window)
-                             (window-buffer origin-window)))
-         (buffer (concat (process-get proc 'hermes-buffer) chunk))
-         (hermes-exec--connection proc))
-    (process-put proc 'hermes-buffer buffer)
-    (condition-case err
-        (when-let* ((outcome (hermes-exec--request-response buffer)))
-          (process-put proc 'hermes-buffer nil)
-          (if (eq (car-safe outcome) :defer)
-              (let ((code (cadr outcome)))
-                (hermes-exec--enqueue-approval
-                 proc code
-                 :origin-buffer origin-buffer
-                 :origin-window origin-window
-                 :peer (hermes-exec--peer-info proc)
-                 :risk (hermes-exec--classify-code code)))
-            (hermes-exec--send-response proc outcome)))
-      (quit
-       (when (process-live-p proc)
-         (ignore-errors (delete-process proc)))
-       (signal (car err) (cdr err))))))
+  "Accumulate CHUNK on PROC and dispatch at most one request.
+Discard trailing input, whether coalesced with the first body or received
+later during approval/evaluation.  Never retain it or create another request.
+The receive-size cap applies before parsing, including coalesced trailing
+bytes; over-limit input is rejected even if its first request would fit."
+  (unless (process-get proc 'hermes-exec-consumed)
+    (let* ((origin-window (selected-window))
+           (origin-buffer (and (window-live-p origin-window)
+                               (window-buffer origin-window)))
+           (buffer (concat (process-get proc 'hermes-buffer) chunk))
+           (hermes-exec--connection proc))
+      (process-put proc 'hermes-buffer buffer)
+      (hermes-exec--arm-connection-timer
+       proc 'hermes-exec-idle-timer hermes-exec-idle-timeout)
+      (condition-case err
+          (when-let* ((outcome (hermes-exec--request-response buffer)))
+            (process-put proc 'hermes-buffer nil)
+            (hermes-exec--deliver-outcome proc outcome origin-buffer origin-window))
+        (quit
+         (when (process-live-p proc)
+           (ignore-errors (delete-process proc)))
+         (signal (car err) (cdr err)))))))
 
 (defun hermes-exec--sentinel (proc _event)
-  "Drop PROC's buffered input and queued approval when its connection ends."
+  "Retire PROC's timers, buffered input and approval when its connection ends."
   (unless (process-live-p proc)
+    (hermes-exec--cancel-connection-timer proc 'hermes-exec-request-timer)
+    (hermes-exec--cancel-connection-timer proc 'hermes-exec-idle-timer)
     (process-put proc 'hermes-buffer nil)
     (hermes-exec--drop-pending proc)))
 
 (defun hermes-exec--accept (server connection _message)
-  "Tag an accepted CONNECTION so `hermes-exec--live-connections' can find it.
-Marking each connection with a process property is more robust than matching by
-the filter it inherits from SERVER.  Retain its exact owner for teardown."
-  (process-put connection 'hermes-exec-connection server))
+  "Admit CONNECTION for SERVER within its connection and time budgets.
+Tag the exact listener owner before checking the cap, including this accept.
+Excess clients receive 503 and close without joining the approval queue."
+  (process-put connection 'hermes-exec-connection server)
+  (if (> (length (hermes-exec--live-connections server)) hermes-exec-max-connections)
+      (hermes-exec--send-response
+       connection (hermes-exec--http-response
+                   503 "Service Unavailable"
+                   "{\"ok\":false,\"error\":\"too many connections\"}"))
+    (hermes-exec--arm-connection-timer
+     connection 'hermes-exec-request-timer hermes-exec-request-timeout)
+    (hermes-exec--arm-connection-timer
+     connection 'hermes-exec-idle-timer hermes-exec-idle-timeout)))
 
 (defun hermes-exec--start-server (host)
   "Return a new eval endpoint server process bound to HOST."
@@ -934,11 +1114,9 @@ the filter it inherits from SERVER.  Retain its exact owner for teardown."
    :service hermes-exec-port
    :family (if (string-search ":" host) 'ipv6 'ipv4)
    :log #'hermes-exec--accept
-   ;; utf-8-unix, not plain utf-8: a bare coding system auto-detects EOL and
-   ;; rewrites CRLF to LF on read, which would strip the "\r\n\r\n" header
-   ;; terminator the parser looks for.  -unix decodes UTF-8 without touching
-   ;; line endings, so the HTTP framing survives intact.
-   :coding 'utf-8-unix
+   ;; Frame raw bytes before decoding the declared UTF-8 body.  A split UTF-8
+   ;; sequence must not defer input accounting or change Content-Length units.
+   :coding '(binary . utf-8-unix)
    :noquery t
    :filter #'hermes-exec--filter
    :sentinel #'hermes-exec--sentinel))
@@ -954,6 +1132,12 @@ and store the listening process for `hermes-exec-stop'."
       hermes-exec--process
     (unless hermes-exec-enabled
       (user-error "Set `hermes-exec-enabled' to enable the Hermes eval endpoint"))
+    (unless (and (natnump hermes-exec-max-connections)
+                 (numberp hermes-exec-request-timeout)
+                 (> hermes-exec-request-timeout 0)
+                 (numberp hermes-exec-idle-timeout)
+                 (> hermes-exec-idle-timeout 0))
+      (user-error "Eval connection cap must be nonnegative and timeouts positive"))
     (let ((host (hermes-exec--resolve-host)))
       (unless host
         (user-error
