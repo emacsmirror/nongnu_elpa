@@ -66,46 +66,21 @@
 
 (defun hermes-system--render (buffer result &optional secrets)
   "Render RESULT in live system BUFFER, redacting captured SECRETS."
-  (when (buffer-live-p buffer)
+  (when (hermes-browser--buffer-mode-p buffer 'hermes-system-mode)
     (with-current-buffer buffer
-      (when (derived-mode-p 'hermes-system-mode)
-        (let ((inhibit-read-only t)
-              (line (line-number-at-pos))
-              (column (current-column))
-              (windows
-               (mapcar (lambda (window)
-                         (save-excursion
-                           (goto-char (window-point window))
-                           (list window
-                                 (line-number-at-pos (window-start window))
-                                 (save-excursion
-                                   (goto-char (window-start window))
-                                   (current-column))
-                                 (line-number-at-pos) (current-column))))
-                       (get-buffer-window-list buffer nil t))))
-          (erase-buffer)
-          (insert (propertize hermes-system--heading 'face 'bold) "\n\n")
-          (insert (hermes-system--redact-text
-                   (hermes-dashboard-transport--redact-secret
-                    (if (and (equal hermes-system--path "/api/logs")
-                             (not (hermes-transport--get result 'error))
-                             (not (hermes-transport--get result 'lines)))
-                        "No log lines"
-                      (hermes-system--result-text result))
-                    secrets)))
-          (pcase-dolist (`(,window ,start ,start-column ,window-line ,window-column)
-                        windows)
-            (goto-char (point-min))
-            (forward-line (1- start))
-            (move-to-column start-column)
-            (set-window-start window (point) t)
-            (goto-char (point-min))
-            (forward-line (1- window-line))
-            (move-to-column window-column)
-            (set-window-point window (point)))
-          (goto-char (point-min))
-          (forward-line (1- line))
-          (move-to-column column))))))
+      (hermes-browser--preserve-reading-position
+       (lambda ()
+         (let ((inhibit-read-only t))
+           (erase-buffer)
+           (insert (propertize hermes-system--heading 'face 'bold) "\n\n")
+           (insert (hermes-system--redact-text
+                    (hermes-dashboard-transport--redact-secret
+                     (if (and (equal hermes-system--path "/api/logs")
+                              (not (hermes-transport--get result 'error))
+                              (not (hermes-transport--get result 'lines)))
+                         "No log lines"
+                       (hermes-system--result-text result))
+                     secrets)))))))))
 
 (defvar-local hermes-system--auto-refresh nil
   "Non-nil means refresh the visible log tail after each five-second pause.")
@@ -134,9 +109,7 @@
   "Return CLIENT's endpoint and connection lifetime, without credentials.
 The log endpoint is scoped to the server process's profile, not a chat's
 profile selection; the API has no profile parameter."
-  (when (hermes-dashboard-transport-client-p client)
-    (list (hermes-dashboard-transport-client-generation client)
-          (hermes-dashboard-transport--api-client-base-url client))))
+  (hermes-browser--client-scope client))
 
 (defun hermes-system--schedule (buffer current-p)
   "Schedule BUFFER's next poll if CURRENT-P still grants ownership."
@@ -154,38 +127,43 @@ profile selection; the API has no profile parameter."
                        (hermes-system--fetch buffer)
                      (hermes-system--stop))))))))))
 
+(defun hermes-system--settle (buffer owner current-p result secrets scope)
+  "Settle RESULT for BUFFER under OWNER and CURRENT-P, redacting SECRETS.
+A missing SCOPE may display an acquisition failure, but never grant polling."
+  (when (funcall owner)
+    (with-current-buffer buffer
+      (cond
+       ((funcall current-p)
+        (hermes-system--render buffer result secrets)
+        (hermes-system--schedule buffer current-p))
+       ((null scope)
+        (hermes-system--stop)
+        (when (hermes-transport--get result 'error)
+          (hermes-system--render buffer result secrets)))
+       (t (hermes-system--stop))))))
+
 (defun hermes-system--fetch (buffer)
   "Fetch and render the REST view owned by BUFFER."
   (with-current-buffer buffer
     (hermes-system--cancel-timer)
-    (let* ((generation (hermes-browser--next-request-generation))
-           (instance hermes-instance)
-           (instance-value (copy-tree hermes-instance))
+    (hermes-browser--next-request-generation)
+    (let* ((owner (hermes-browser--owned-predicate nil 'hermes-system-mode))
            (path hermes-system--path)
            (query (copy-tree hermes-system--query))
            (visible (get-buffer-window buffer t))
            client scope secrets completed connection-current
            (current-p
             (lambda ()
-              (and (hermes-browser--request-current-mode-p
-                    buffer generation 'hermes-system-mode)
-                   (eq instance (buffer-local-value 'hermes-instance buffer))
-                   (equal instance-value instance)
+              (and (funcall owner)
+                   scope
                    (if completed connection-current
-                     (equal scope (hermes-system--client-scope client)))
+                     (hermes-browser--client-current-p client scope))
                    (equal (cdr scope)
                           (cdr (hermes-system--client-scope client)))
                    (or (not visible) (get-buffer-window buffer t)))))
-           (settle
-            (lambda (result)
-              (when (hermes-browser--request-current-mode-p
-                     buffer generation 'hermes-system-mode)
-                (with-current-buffer buffer
-                  (if (funcall current-p)
-                      (progn
-                        (hermes-system--render buffer result secrets)
-                        (hermes-system--schedule buffer current-p))
-                    (hermes-system--stop)))))))
+           (settle (lambda (result)
+                     (hermes-system--settle
+                      buffer owner current-p result secrets scope))))
       (hermes-browser--run-on-client
        (lambda (owner)
          (setq client owner
@@ -205,7 +183,7 @@ profile selection; the API has no profile parameter."
             ;; Completed HTTP requests and future polls no longer own that
             ;; connection, but still belong to the exact instance and endpoint.
             (setq connection-current
-                  (equal scope (hermes-system--client-scope client))
+                  (hermes-browser--client-current-p client scope)
                   completed t))))
        settle
        (lambda (reason) (funcall settle (list :error reason)))))))

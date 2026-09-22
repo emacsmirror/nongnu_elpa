@@ -1042,5 +1042,17 @@
             (with-current-buffer retired
               (should (equal (buffer-string) "local draft")))))))))
 
+(ert-deftest hermes-files-view-preserves-text-format-controls ()
+  "VT and FF are literal text, but binary controls remain refused."
+  (with-temp-buffer
+    (hermes-file-view-mode)
+    (hermes-buffer--claim 'hermes-file-view-mode)
+    (let ((bytes (unibyte-string ?a 11 ?b 12 ?c)))
+      (hermes-files--view bytes "/output.txt")
+      (should (equal (buffer-string) bytes))
+      (should (equal hermes-files--bytes bytes))))
+  (dolist (control '(0 8 14 31 127))
+    (should (eq (car (hermes-files--preview (unibyte-string ?a control))) 'binary))))
+
 (provide 'hermes-files-tests)
 ;;; hermes-files-tests.el ends here

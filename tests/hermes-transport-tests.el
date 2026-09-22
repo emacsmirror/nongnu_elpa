@@ -4723,5 +4723,11 @@ url.el flags every 4xx/5xx via the callback status; the useless
     (should (memq #'hermes-dashboard-transport--stop-spawn-clients-on-exit
                   kill-emacs-hook))))
 
+(ert-deftest hermes-transport-true-flags-are-explicit ()
+  "Only JSON true and the database integer flag are accepted."
+  (dolist (value '(t 1)) (should (hermes-transport--true-p value)))
+  (dolist (value '(nil :false :null 0 2 -1 1.0 "true" "1" (t) [t]))
+    (should-not (hermes-transport--true-p value))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

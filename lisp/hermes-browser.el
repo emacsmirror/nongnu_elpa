@@ -340,26 +340,55 @@ FN runs without shadowing the source buffer's instance ownership."
         ((stringp value) (copy-sequence value))
         (t value)))
 
+(defun hermes-browser--owner (&optional variables mode)
+  "Capture this browser's request, instance, claim and optional VARIABLES.
+VARIABLES names buffer-local domain values to snapshot independently.
+MODE defaults to the current major mode.  This does not grant a
+constructor claim to an unclaimed origin."
+  (list (current-buffer) hermes-browser--request-generation (or mode major-mode)
+        hermes-instance (hermes-browser--copy-identity hermes-instance)
+        hermes-buffer--owner
+        (mapcar (lambda (variable)
+                  (cons variable (hermes-browser--copy-identity
+                                  (symbol-value variable))))
+                variables)))
+
+(defun hermes-browser--owner-current-p (owner)
+  "Return non-nil if captured OWNER retains its request and exact claim."
+  (pcase-let ((`(,buffer ,generation ,mode ,instance ,value ,claim ,values) owner))
+    (and (hermes-browser--request-current-mode-p buffer generation mode)
+         (with-current-buffer buffer
+           (and (eq claim hermes-buffer--owner)
+                (eq instance hermes-instance)
+                (equal value instance)
+                (seq-every-p (lambda (entry)
+                               (equal (cdr entry) (symbol-value (car entry))))
+                             values))))))
+
+(defun hermes-browser--owned-predicate (&optional variables mode)
+  "Capture a current-owner predicate for optional VARIABLES and MODE.
+See `hermes-browser--owner' for the captured ownership contract."
+  (let ((owner (hermes-browser--owner variables mode)))
+    (lambda () (hermes-browser--owner-current-p owner))))
+
+(defun hermes-browser--client-scope (client)
+  "Return CLIENT's generation and copied endpoint, or nil for no client."
+  (when (hermes-dashboard-transport-client-p client)
+    (list (hermes-dashboard-transport-client-generation client)
+          (copy-sequence (hermes-dashboard-transport--api-client-base-url client)))))
+
+(defun hermes-browser--client-current-p (client scope)
+  "Return non-nil if CLIENT still owns the non-nil captured SCOPE."
+  (and scope (equal scope (hermes-browser--client-scope client))))
+
 (defun hermes-browser--dispatch-guard (client &optional current-p)
   "Return a transport-entry predicate for this browser and CLIENT.
 CURRENT-P, when non-nil, supplies ownership captured before acquisition."
-  (let ((buffer (current-buffer))
-        (mode major-mode)
-        (generation hermes-browser--request-generation)
-        (instance hermes-instance)
-        (value (hermes-browser--copy-identity hermes-instance))
-        (scope (and (hermes-dashboard-transport-client-p client)
-                    (list (hermes-dashboard-transport-client-generation client)
-                          (hermes-dashboard-transport--api-client-base-url client)))))
+  (let ((owner (or current-p (hermes-browser--owned-predicate)))
+        (scope (hermes-browser--client-scope client)))
     (lambda ()
-      (and (if current-p (funcall current-p)
-             (and (hermes-browser--request-current-mode-p buffer generation mode)
-                  (eq instance (buffer-local-value 'hermes-instance buffer))
-                  (equal value instance)))
-           (or (null scope)
-               (equal scope
-                      (list (hermes-dashboard-transport-client-generation client)
-                            (hermes-dashboard-transport--api-client-base-url client))))))))
+      (and (funcall owner)
+           (or (null scope) (hermes-browser--client-current-p client scope))))))
 
 (defun hermes-browser--run-on-client (make-promise &optional on-success on-error)
   "Run MAKE-PROMISE on a client released when its promise settles.
@@ -438,6 +467,65 @@ Restore the originating buffer and reject input if its operation retired."
   (when hermes-browser--owned-cleanup
     (funcall hermes-browser--owned-cleanup)))
 
+(defun hermes-browser--invoke-owned
+    (make-promise client active token success failure cleanup)
+  "Invoke MAKE-PROMISE on CLIENT under ACTIVE and request TOKEN.
+Publish SUCCESS or FAILURE only in the owner buffer, then run CLEANUP."
+  (let ((buffer (current-buffer))
+        (hermes-dashboard-transport--api-dispatch-guard active)
+        (hermes-dashboard-transport-dispatch-guard active)
+        (hermes-dashboard-transport-request-owner token))
+    (hermes--promise-finally
+     (hermes--promise-catch
+      (hermes--promise-then
+       (condition-case err (funcall make-promise client active)
+         ((error quit) (hermes--promise-rejected (error-message-string err))))
+       (lambda (result)
+         (when (funcall active)
+           (with-current-buffer buffer (funcall success result)))))
+      (lambda (reason)
+        (when (funcall active)
+          (with-current-buffer buffer (funcall failure reason)))))
+     cleanup)))
+
+(defun hermes-browser--start-owned
+    (client done make-promise current-p success failure finish)
+  "Start MAKE-PROMISE on CLIENT with DONE under CURRENT-P.
+Deliver SUCCESS or FAILURE while current; release resources and run FINISH
+once on settlement or retirement.  The current buffer owns the operation."
+  (let* ((buffer (current-buffer))
+         (token (list 'browser-operation))
+         (guard (hermes-browser--dispatch-guard client current-p))
+         closed subscription cleanup
+         (active (lambda () (and (not closed) (funcall guard)))))
+    (setq cleanup
+          (lambda ()
+            (unless closed
+              (setq closed t)
+              (when subscription
+                (hermes-dashboard-transport-unsubscribe client subscription))
+              (hermes-dashboard-transport-cancel-owner-requests client token)
+              (when (buffer-live-p buffer)
+                (with-current-buffer buffer
+                  (when (eq hermes-browser--owned-cleanup cleanup)
+                    (setq hermes-browser--owned-cleanup nil)
+                    (when (member hermes-browser--status '("Loading" "Saving"))
+                      (setq hermes-browser--status "Interrupted; g reconcile")))))
+              (unwind-protect (funcall done) (funcall finish)))))
+    (condition-case err
+        (if (not (funcall active)) (funcall cleanup)
+          (setq hermes-browser--owned-cleanup cleanup)
+          (when (hermes-dashboard-transport-client-p client)
+            (setq subscription
+                  (hermes-dashboard-transport-subscribe client nil cleanup)))
+          (add-hook 'kill-buffer-hook #'hermes-browser--retire-owned nil t)
+          (add-hook 'change-major-mode-hook #'hermes-browser--retire-owned nil t)
+          (hermes-browser--invoke-owned
+           make-promise client active token success failure cleanup))
+      ((error quit)
+       (funcall cleanup)
+       (signal (car err) (cdr err))))))
+
 (defun hermes-browser--run-owned (make-promise current-p success failure &optional finish)
   "Run MAKE-PROMISE under CURRENT-P and settle via SUCCESS or FAILURE.
 MAKE-PROMISE receives a client and a dispatch predicate.  Capture CURRENT-P
@@ -447,68 +535,27 @@ an already dispatched mutation may still complete remotely.
 Optional FINISH runs once on settlement or retirement, including acquisition
 failure.  Synchronous acquisition errors and quits re-signal their original
 condition after cleanup; asynchronous rejections call FAILURE normally."
-  (let ((buffer (current-buffer))
-        (token (list 'browser-operation))
-        (finish-once (lambda ()
-                       (when finish
-                         (let ((fn finish))
-                           (setq finish nil)
-                           (funcall fn)))))
-        cleanup)
+  (let* ((buffer (current-buffer))
+         (finish-once (lambda ()
+                        (when finish
+                          (let ((fn finish))
+                            (setq finish nil)
+                            (funcall fn))))))
     (condition-case err
         (hermes-browser--with-client
          (lambda (client done)
            (if (not (buffer-live-p buffer))
                (unwind-protect (funcall done) (funcall finish-once))
              (with-current-buffer buffer
-               (let* ((guard (hermes-browser--dispatch-guard client current-p))
-                      (closed nil)
-                      subscription
-                      (active (lambda () (and (not closed) (funcall guard)))))
-		 (setq cleanup
-                       (lambda ()
-			 (unless closed
-			   (setq closed t)
-			   (when subscription
-                             (hermes-dashboard-transport-unsubscribe client subscription))
-			   (hermes-dashboard-transport-cancel-owner-requests client token)
-			   (when (buffer-live-p buffer)
-                             (with-current-buffer buffer
-                               (when (eq hermes-browser--owned-cleanup cleanup)
-				 (setq hermes-browser--owned-cleanup nil)
-				 (when (member hermes-browser--status '("Loading" "Saving"))
-				   (setq hermes-browser--status "Interrupted; g reconcile")))))
-			   (unwind-protect (funcall done) (funcall finish-once)))))
-		 (if (not (funcall active)) (funcall cleanup)
-		   (setq hermes-browser--owned-cleanup cleanup)
-		   (when (hermes-dashboard-transport-client-p client)
-                     (setq subscription
-			   (hermes-dashboard-transport-subscribe client nil cleanup)))
-		   (add-hook 'kill-buffer-hook #'hermes-browser--retire-owned nil t)
-		   (add-hook 'change-major-mode-hook #'hermes-browser--retire-owned nil t)
-		   (let ((hermes-dashboard-transport--api-dispatch-guard active)
-			 (hermes-dashboard-transport-dispatch-guard active)
-			 (hermes-dashboard-transport-request-owner token))
-                     (hermes--promise-finally
-                      (hermes--promise-catch
-                       (hermes--promise-then
-			(condition-case err (funcall make-promise client active)
-			  ((error quit)
-			   (hermes--promise-rejected (error-message-string err))))
-			(lambda (result)
-			  (when (funcall active)
-                            (with-current-buffer buffer (funcall success result)))))
-                       (lambda (reason)
-			 (when (funcall active)
-			   (with-current-buffer buffer (funcall failure reason)))))
-                      cleanup))))))))
+               (hermes-browser--start-owned
+                client done make-promise current-p success failure finish-once)))))
       ((error quit)
        (unwind-protect
            (unwind-protect
                (when (funcall current-p)
                  (with-current-buffer buffer
                    (funcall failure (error-message-string err))))
-             (if cleanup (funcall cleanup) (funcall finish-once)))
+             (funcall finish-once))
          (signal (car err) (cdr err)))))))
 
 (defvar hermes-browser--request-sequence 0

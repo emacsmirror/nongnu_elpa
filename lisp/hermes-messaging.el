@@ -63,7 +63,7 @@
 
 (defun hermes-messaging--boolean-label (object key true-label false-label)
   "Describe OBJECT's boolean KEY with TRUE-LABEL or FALSE-LABEL."
-  (if (eq (hermes-transport--get object key) t) true-label false-label))
+  (if (hermes-transport--true-p (hermes-transport--get object key)) true-label false-label))
 
 (defun hermes-messaging--row (platform)
   "Return one tabulated row for PLATFORM."
@@ -147,12 +147,7 @@ non-nil, also requires this to be the newest cross-profile display request."
 
 (defun hermes-messaging--guard ()
   "Return a predicate retaining the current messaging view and profile."
-  (let ((buffer (current-buffer))
-        (view (hermes-browser--dispatch-guard nil))
-        (profile (copy-sequence hermes-messaging-profile)))
-    (lambda ()
-      (and (funcall view)
-           (equal profile (buffer-local-value 'hermes-messaging-profile buffer))))))
+  (hermes-browser--owned-predicate '(hermes-messaging-profile)))
 
 (defun hermes-messaging--run-owned
     (buffer generation profile make-promise on-success
@@ -207,14 +202,15 @@ INSTANCE selects the owning Hermes dashboard."
       (unless (derived-mode-p 'hermes-messaging-mode)
         (hermes-messaging-mode))
       (hermes-messaging--require-mutation-idle)
-      (hermes-browser--own-instance instance)
-      (setq hermes-messaging-profile profile))
+      (hermes-browser--own-instance instance))
     (let ((generation (or generation
                           (with-current-buffer target
                             (hermes-browser--next-request-generation))))
           (display-generation
            (and display (cl-incf hermes-messaging--display-generation))))
       (with-current-buffer target
+        ;; Retire the previous operation before publishing its successor scope.
+        (setq hermes-messaging-profile profile)
         (hermes-messaging--run-owned
          target generation profile
          (lambda (client)
@@ -314,7 +310,7 @@ only while the originating profile buffer still owns the operation."
   (hermes-messaging--require-mutation-idle)
   (let* ((platform (hermes-messaging--platform-at-point))
          (id (hermes-messaging--id-at-point))
-         (enable (not (eq (hermes-transport--get platform 'enabled) t))))
+         (enable (not (hermes-transport--true-p (hermes-transport--get platform 'enabled)))))
     (hermes-messaging--mutate
      (hermes-messaging--platform-path id)
      `((enabled . ,(if enable t :false))) nil
@@ -331,7 +327,7 @@ only while the originating profile buffer still owns the operation."
          (id (hermes-messaging--id-at-point))
          (key (hermes-messaging--read-env-key platform "Set"))
          (field (hermes-messaging--env-field platform key))
-         (secret-p (eq (hermes-transport--get field 'is_password) t))
+         (secret-p (hermes-transport--true-p (hermes-transport--get field 'is_password)))
          (value (if secret-p
                     (read-passwd (format "%s: " key))
                   (read-string (format "%s: " key)))))
@@ -372,8 +368,8 @@ accepted.  Arbitrary runtime error text is never displayed."
           (delq nil
                 (mapcar
                  (lambda (field)
-                   (and (eq (hermes-transport--get field 'required) t)
-                        (not (eq (hermes-transport--get field 'is_set) t))
+                   (and (hermes-transport--true-p (hermes-transport--get field 'required))
+                        (not (hermes-transport--true-p (hermes-transport--get field 'is_set)))
                         (hermes-messaging--field field 'key)))
                  (hermes-messaging--env-fields platform))))
          (known
@@ -389,7 +385,7 @@ accepted.  Arbitrary runtime error text is never displayed."
          (raw (hermes-transport--field result 'message)))
     (cond
      ((and raw (member raw known)) raw)
-     ((eq (hermes-transport--get result 'ok) t) "Platform test succeeded.")
+     ((hermes-transport--true-p (hermes-transport--get result 'ok)) "Platform test succeeded.")
      (t "Platform test failed."))))
 
 (defun hermes-messaging-test ()
@@ -417,9 +413,9 @@ accepted.  Arbitrary runtime error text is never displayed."
           (lambda (field)
             (format "  %-28s %-5s%s  %s"
                     (hermes-messaging--field field 'key)
-                    (if (eq (hermes-transport--get field 'is_set) t)
+                    (if (hermes-transport--true-p (hermes-transport--get field 'is_set))
                         "set" "unset")
-                    (if (eq (hermes-transport--get field 'required) t)
+                    (if (hermes-transport--true-p (hermes-transport--get field 'required))
                         " required" "")
                     (hermes-messaging--field field 'description)))
           (hermes-messaging--env-fields platform))))

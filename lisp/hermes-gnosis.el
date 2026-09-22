@@ -115,6 +115,20 @@
   (remove-hook 'change-major-mode-hook #'hermes-gnosis-unbind t)
   (remove-hook 'kill-buffer-hook #'hermes-gnosis-unbind t))
 
+(defun hermes-gnosis--binding (batch connection)
+  "Capture exact BATCH and CONNECTION for the current attached chat."
+  (list :batch (copy-sequence batch) :connection connection
+        :database (copy-sequence (hermes-gnosis--database connection))
+        :buffer (current-buffer) :claim hermes-buffer--owner
+        :client hermes-chat--dashboard-client
+        :socket (hermes-dashboard-transport-client-websocket
+                 hermes-chat--dashboard-client)
+        :destination (mapcar (lambda (value)
+                               (if (stringp value) (copy-sequence value) value))
+                             (hermes-gnosis--destination))
+        :handle (hermes-dashboard-transport--generate-token)
+        :retired nil :attempted nil))
+
 (defun hermes-gnosis-bind (batch connection chat)
   "Bind exact Gnosis BATCH and open SQLite CONNECTION to CHAT, returning a handle.
 CHAT must be an owned, connected Hermes chat with an attached session.
@@ -128,18 +142,7 @@ existing completion, or acquire a backend connection."
     (user-error "An exact batch ID and live chat buffer are required"))
   (with-current-buffer chat
     (unless (hermes-gnosis--ready-p) (user-error "Hermes chat is not attached and ready"))
-    (let* ((binding (list :batch (copy-sequence batch) :connection connection
-                          :database (copy-sequence (hermes-gnosis--database connection))
-                          :buffer chat :claim hermes-buffer--owner
-                          :client hermes-chat--dashboard-client
-                          :socket (hermes-dashboard-transport-client-websocket
-                                   hermes-chat--dashboard-client)
-                          :destination (mapcar (lambda (value)
-                                                 (if (stringp value)
-                                                     (copy-sequence value) value))
-                                               (hermes-gnosis--destination))
-                          :handle (hermes-dashboard-transport--generate-token)
-                          :retired nil :attempted nil)))
+    (let ((binding (hermes-gnosis--binding batch connection)))
       (hermes-gnosis--read binding)
       (unless (and hermes-gnosis--binding
                    (hermes-gnosis--current-p hermes-gnosis--binding)

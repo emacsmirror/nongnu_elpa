@@ -104,9 +104,8 @@ The value is (BUFFER INSTANCE CLIENT SESSION TRANSPORT LIFETIME).")
     (user-error "Checkpoint attachment changed; reopen the rollback browser"))
   hermes-rollback--snapshot)
 
-(defun hermes-rollback--fetch (_client)
-  "Fetch checkpoints on the browser's exact selected chat attachment.
-Ignore _CLIENT: the shared browser may have acquired a different chat client."
+(defun hermes-rollback--fetch ()
+  "Fetch checkpoints on the browser's exact selected chat attachment."
   (setq hermes-rollback--snapshot nil)
   (let ((origin (current-buffer))
         (owner hermes-rollback--owner)
@@ -124,6 +123,21 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
          (with-current-buffer origin
            (setq hermes-rollback--snapshot (list owner)))
          result)))))
+
+(defun hermes-rollback--refresh ()
+  "Refresh checkpoints directly on their retained chat, without acquisition."
+  (hermes-browser--next-request-generation)
+  (let ((buffer (current-buffer))
+        (current-p (hermes-browser--owned-predicate nil 'hermes-rollback-mode)))
+    (setq hermes-browser--status "Loading")
+    (hermes-rollback--run
+     #'hermes-rollback--fetch
+     (lambda (result)
+       (when (funcall current-p)
+         (with-current-buffer buffer (hermes-rollback--render result))))
+     (lambda (reason)
+       (when (funcall current-p)
+         (with-current-buffer buffer (hermes-browser--read-error reason)))))))
 
 (defun hermes-rollback--rows (result)
   "Return `tabulated-list' entries for a `rollback.list' RESULT."
@@ -153,11 +167,12 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
       (hermes-chat--show-diff diff "*Hermes Rollback Diff*"))))
 
 (defun hermes-rollback--run (make-promise on-success on-error)
-  "Run MAKE-PROMISE with ON-SUCCESS and ON-ERROR without acquiring a client."
+  "Call no-argument MAKE-PROMISE with ON-SUCCESS and ON-ERROR callbacks.
+Use only the already retained chat client; never acquire an unrelated one."
   (hermes--promise-catch
    (hermes--promise-then
     (condition-case err
-        (funcall make-promise nil)
+        (funcall make-promise)
       ((error quit) (hermes--promise-rejected (error-message-string err))))
     on-success)
    on-error))
@@ -172,7 +187,7 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
         (generation (hermes-browser--next-request-generation)))
     (unless hash (user-error "No checkpoint on this line"))
     (hermes-rollback--run
-     (lambda (_client)
+     (lambda ()
        (unless (hermes-rollback--current-p origin owner snapshot)
          (user-error "Checkpoint attachment changed"))
        (hermes-dashboard-transport-call-fn
@@ -191,11 +206,23 @@ Ignore _CLIENT: the shared browser may have acquired a different chat client."
 (defun hermes-rollback--checked-restore (result)
   "Return restore RESULT, or signal when it declares failure."
   (if (and (hermes-transport--field-present-p result 'success)
-           (not (eq (hermes-transport--get result 'success) t)))
+           (not (hermes-transport--true-p (hermes-transport--get result 'success))))
       (error "%s" (or (hermes-transport--non-blank-string
                         (hermes-transport--display-field result 'error))
                        "Rollback restore failed"))
     result))
+
+(defun hermes-rollback--restore-request (origin owner snapshot operation hash)
+  "Restore HASH for OWNER in ORIGIN, replacing SNAPSHOT with OPERATION."
+  (unless (hermes-rollback--current-p origin owner snapshot)
+    (user-error "Checkpoint attachment changed"))
+  ;; Once dispatched, this snapshot must not admit another mutation.
+  (with-current-buffer origin (setq hermes-rollback--snapshot operation))
+  (hermes--promise-map
+   (hermes-dashboard-transport-call-fn
+    #'hermes-dashboard-transport-rollback-restore (nth 2 owner) hash
+    :session-id (nth 3 owner))
+   #'hermes-rollback--checked-restore))
 
 (defun hermes-rollback-restore ()
   "Restore the selected file checkpoint and independently rewind history.
@@ -217,16 +244,8 @@ checkpoint does not determine the conversation boundary."
       (unless (hermes-rollback--current-p origin owner snapshot)
         (user-error "Checkpoint attachment changed during confirmation"))
       (hermes-rollback--run
-       (lambda (_client)
-         (unless (hermes-rollback--current-p origin owner snapshot)
-           (user-error "Checkpoint attachment changed"))
-         ;; Once dispatched, this snapshot must not admit another mutation.
-         (with-current-buffer origin (setq hermes-rollback--snapshot operation))
-         (hermes--promise-map
-          (hermes-dashboard-transport-call-fn
-           #'hermes-dashboard-transport-rollback-restore (nth 2 owner) hash
-           :session-id (nth 3 owner))
-          #'hermes-rollback--checked-restore))
+       (lambda ()
+         (hermes-rollback--restore-request origin owner snapshot operation hash))
        (lambda (_result)
          (when (hermes-rollback--current-p origin owner operation)
            (message "Hermes: restored %s" (hermes-rollback--short hash))
@@ -252,7 +271,7 @@ checkpoint does not determine the conversation boundary."
   :command-doc "Browse Hermes checkpoint history for the active session."
   :columns [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)]
   :on-mode #'hermes-rollback--setup
-  :fetch #'hermes-rollback--fetch
+  :refresh #'hermes-rollback--refresh
   :rows #'hermes-rollback--rows
   :help (:group "Checkpoint"
          hermes-rollback-show-diff "View diff"

@@ -77,8 +77,7 @@
 
 (defun hermes-admin--scope (client)
   "Return CLIENT's connection generation and exact endpoint."
-  (list (hermes-dashboard-transport-client-generation client)
-        (copy-sequence (hermes-dashboard-transport--api-client-base-url client))))
+  (hermes-browser--client-scope client))
 
 (defun hermes-admin--instance-value (instance)
   "Return an independent value snapshot of INSTANCE."
@@ -88,15 +87,11 @@
 
 (defun hermes-admin--owner ()
   "Capture the current browser's request and instance ownership."
-  (list (current-buffer) hermes-browser--request-generation major-mode
-        hermes-instance (hermes-admin--instance-value hermes-instance)))
+  (hermes-browser--owner))
 
 (defun hermes-admin--current-p (owner)
   "Return non-nil if OWNER still owns its browser and instance."
-  (pcase-let ((`(,buffer ,generation ,mode ,instance ,value) owner))
-    (and (hermes-browser--request-current-mode-p buffer generation mode)
-         (eq instance (buffer-local-value 'hermes-instance buffer))
-         (equal (hermes-admin--instance-value instance) value))))
+  (hermes-browser--owner-current-p owner))
 
 (defun hermes-admin--prompt-current-p (owner)
   "Return non-nil if the current buffer still owns prompt OWNER."

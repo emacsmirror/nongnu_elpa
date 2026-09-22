@@ -141,6 +141,12 @@ Path identity, text decoding, and presentation remain caller-owned."
   "Return OBJECT's KEY as a display string, or an empty string when absent."
   (or (hermes-transport--field object key) ""))
 
+(defun hermes-transport--true-p (value)
+  "Return non-nil for backend boolean VALUE equal to t or integer 1.
+JSON true decodes as t; database-backed flags may use integer 1.
+False, null, strings and other numbers are not true flags."
+  (or (eq value t) (eql value 1)))
+
 (defun hermes-transport--non-empty-string (value)
   "Return VALUE when it is a non-empty string, else nil."
   (and (stringp value) (not (string-empty-p value)) value))

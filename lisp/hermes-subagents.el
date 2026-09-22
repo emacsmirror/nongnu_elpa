@@ -375,6 +375,21 @@ The endpoint returns whole files, not a tail or a paginated transcript."
        (erase-buffer)
        (insert text)))))
 
+(defun hermes-work-log--accept (buffer binding token result)
+  "Render RESULT while BUFFER retains BINDING and request TOKEN."
+  (when (hermes-work-log--current-p buffer binding token)
+    (let ((text (hermes-kanban--render-log-content
+                 (hermes-work-log--decode result))))
+      ;; Rendering invokes mode hooks in temporary buffers.  Revalidate.
+      (when (hermes-work-log--current-p buffer binding token)
+        (with-current-buffer buffer
+          (hermes-work-log--render
+           (if (string-empty-p text) "No log content yet.\n" text))
+          (setq hermes-work-log--request nil
+                header-line-format
+                (if (string-empty-p text) "Worker log · Empty snapshot · ? Help"
+                  "Worker log · Snapshot; entries may be truncated · ? Help")))))))
+
 (defun hermes-work-log-refresh ()
   "Fetch this worker's remote log asynchronously, preserving point.
 Keep the last snapshot on failure.  Only one request may be pending per view."
@@ -397,19 +412,7 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
              "GET" "/api/files/read" :client (plist-get owner :client)
              :query (list (cons 'path (plist-get binding :path))) :timeout 30)
           (error (hermes--promise-rejected (error-message-string err))))
-        (lambda (result)
-          (when (hermes-work-log--current-p buffer binding token)
-            (let ((text (hermes-kanban--render-log-content
-                         (hermes-work-log--decode result))))
-              ;; Rendering invokes mode hooks in temporary buffers.  Revalidate.
-              (when (hermes-work-log--current-p buffer binding token)
-                (with-current-buffer buffer
-                  (hermes-work-log--render
-                   (if (string-empty-p text) "No log content yet.\n" text))
-                  (setq hermes-work-log--request nil
-                        header-line-format
-                        (if (string-empty-p text) "Worker log · Empty snapshot · ? Help"
-                          "Worker log · Snapshot; entries may be truncated · ? Help"))))))))
+        (lambda (result) (hermes-work-log--accept buffer binding token result)))
        (lambda (reason)
          (when (hermes-work-log--current-p buffer binding token)
            (with-current-buffer buffer

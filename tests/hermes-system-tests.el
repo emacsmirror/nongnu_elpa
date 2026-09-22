@@ -5,6 +5,11 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(defun hermes-system-test--with-client (function)
+  "Call FUNCTION with a real disposable client, without opening a socket."
+  (funcall function (make-hermes-dashboard-transport-client
+                     :base-url "http://example.invalid") #'ignore))
+
 (ert-deftest hermes-system-api-uses-status-and-log-routes ()
   "System requests preserve status path and log tail query."
   (let (calls)
@@ -28,11 +33,8 @@
   "Log requests clamp their tail and refresh with the same query."
   (let (queries)
     (cl-letf (((symbol-function 'pop-to-buffer) #'ignore)
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (make-promise &optional on-success on-error)
-                 (hermes--promise-catch
-                  (hermes--promise-then (funcall make-promise 'client) on-success)
-                  on-error)))
+              ((symbol-function 'hermes-browser--with-client)
+               #'hermes-system-test--with-client)
               ((symbol-function 'hermes-system--api)
                (lambda (_client _path &optional query)
                  (push query queries)
@@ -51,11 +53,8 @@
 (ert-deftest hermes-system-renders-request-errors-in-owning-buffer ()
   "A failed system request replaces the view with a visible error."
   (cl-letf (((symbol-function 'pop-to-buffer) #'ignore)
-            ((symbol-function 'hermes-browser--run-on-client)
-             (lambda (make-promise &optional on-success on-error)
-               (hermes--promise-catch
-                (hermes--promise-then (funcall make-promise 'client) on-success)
-                on-error)))
+            ((symbol-function 'hermes-browser--with-client)
+               #'hermes-system-test--with-client)
             ((symbol-function 'hermes-system--api)
              (lambda (&rest _)
                (hermes--promise-rejected "HTTP 503 unavailable"))))
@@ -73,9 +72,13 @@
   "An older status response cannot replace a reopened status view."
   (let (callbacks)
     (cl-letf (((symbol-function 'pop-to-buffer) #'ignore)
-              ((symbol-function 'hermes-browser--run-on-client)
-               (lambda (_make-promise &optional on-success _on-error)
-                 (push on-success callbacks))))
+              ((symbol-function 'hermes-browser--with-client)
+               #'hermes-system-test--with-client)
+              ((symbol-function 'hermes-system--api)
+               (lambda (&rest _)
+                 (let ((promise (hermes--promise-make)))
+                   (push (lambda (result) (hermes--promise-resolve promise result)) callbacks)
+                   promise))))
       (unwind-protect
           (progn
             (hermes-system-status)
@@ -95,9 +98,13 @@
     (let ((instance '("Alpha" . "http://alpha.invalid")) callbacks)
       (cl-letf (((symbol-function 'hermes-instance-resolve) (lambda () instance))
                 ((symbol-function 'pop-to-buffer) #'ignore)
-                ((symbol-function 'hermes-browser--run-on-client)
-                 (lambda (_make &optional success _error)
-                   (push success callbacks))))
+                ((symbol-function 'hermes-browser--with-client)
+                 #'hermes-system-test--with-client)
+                ((symbol-function 'hermes-system--api)
+                 (lambda (&rest _)
+                   (let ((promise (hermes--promise-make)))
+                     (push (lambda (result) (hermes--promise-resolve promise result)) callbacks)
+                     promise))))
         (unwind-protect
             (progn
               (funcall (car spec))
@@ -152,9 +159,13 @@
             hermes-system--path "/api/logs"
             hermes-system--query '((file . "agent") (lines . 100)))
       (let (resolve tick timer-calls canceled)
-        (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-                   (lambda (_make &optional success _error)
-                     (setq resolve success)))
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   #'hermes-system-test--with-client)
+                  ((symbol-function 'hermes-system--api)
+                   (lambda (&rest _)
+                     (let ((promise (hermes--promise-make)))
+                       (setq resolve (lambda (result) (hermes--promise-resolve promise result)))
+                       promise)))
                   ((symbol-function 'run-at-time)
                    (lambda (seconds repeat function &rest args)
                      (should (= seconds 5))
@@ -189,8 +200,13 @@
     (hermes-system-mode)
     (setq hermes-system--heading "Logs" hermes-system--path "/api/logs")
     (let (resolve)
-      (cl-letf (((symbol-function 'hermes-browser--run-on-client)
-                 (lambda (_make &optional success _error) (setq resolve success))))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 #'hermes-system-test--with-client)
+                ((symbol-function 'hermes-system--api)
+                 (lambda (&rest _)
+                   (let ((promise (hermes--promise-make)))
+                     (setq resolve (lambda (result) (hermes--promise-resolve promise result)))
+                     promise))))
         (hermes-system--fetch (current-buffer))
         (fundamental-mode)
         (let ((inhibit-read-only t)) (insert "replacement"))
@@ -576,6 +592,42 @@
         (should-error (call-interactively #'hermes-system-log-source) :type 'user-error)
         (should-not fetched)
         (should (equal hermes-system--query '((file . "agent"))))))))
+
+(ert-deftest hermes-system-acquisition-failure-cannot-start-polling ()
+  "A public log retry displays failure but nil/nil never grants a poll owner."
+  (save-window-excursion
+    (let ((hermes-instances '(("test" . "http://example.invalid")))
+          fail buffer (polls 0))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _)
+                   (when fail (error "cold acquisition unavailable"))
+                   (make-hermes-dashboard-transport-client
+                    :base-url "http://example.invalid")))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-system--api)
+                 (lambda (&rest _) (hermes--promise-resolved '((lines . ("live"))))))
+                ((symbol-function 'run-at-time)
+                 (lambda (seconds repeat &rest _)
+                   (when (and (equal seconds 5) (null repeat)) (cl-incf polls))
+                   'test-timer))
+                ((symbol-function 'cancel-timer) #'ignore))
+        (unwind-protect
+            (progn
+              (hermes-system-logs)
+              (setq buffer (current-buffer) fail t)
+              (should (string-match-p "live" (buffer-string)))
+              (should-error (call-interactively #'hermes-system-log-auto-refresh))
+              (should (= polls 0))
+              (should-not hermes-system--auto-refresh)
+              (should-not hermes-system--timer)
+              (should (string-match-p "Error: cold acquisition unavailable" (buffer-string)))
+              (setq fail nil)
+              (call-interactively #'hermes-system-log-auto-refresh)
+              (should (= polls 1))
+              (should hermes-system--auto-refresh)
+              (should (string-match-p "live" (buffer-string))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (provide 'hermes-system-tests)
 ;;; hermes-system-tests.el ends here
