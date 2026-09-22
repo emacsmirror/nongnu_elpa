@@ -320,6 +320,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "M-C-q")  #'mastodon-kill-all-buffers)
     ;; toot actions
     (define-key map (kbd "c")      #'mastodon-tl-toggle-spoiler-text-in-toot)
+    (define-key map (kbd "C-M-c")  #'mastodon-tl-toggle-spoiler-in-thread)
     (define-key map (kbd "b")      #'mastodon-toot-toggle-boost)
     (define-key map (kbd "f")      #'mastodon-toot-toggle-favourite)
     (define-key map (kbd "k")      #'mastodon-toot-toggle-bookmark)
