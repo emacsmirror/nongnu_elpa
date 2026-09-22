@@ -341,7 +341,8 @@ with the dashboard's own message."
 (defun hermes-onboarding--oauth-instructions-p (result)
   "Return non-nil when RESULT may still invite provider authorization."
   (not (member (hermes-transport--get result 'status)
-               '("approved" "cancelled" "disconnected" "denied" "expired" "error"))))
+               '("approved" "cancelled" "disconnecting" "disconnected"
+                 "denied" "expired" "error"))))
 
 (defun hermes-onboarding--oauth-status-text (result)
   "Return readable, secret-free status text from OAuth RESULT."
@@ -734,6 +735,23 @@ Return the new request context."
                   context '((status . "disconnected")) t)
              (hermes-onboarding--auth-changed))))))))
 
+(defun hermes-onboarding--confirm-disconnect-provider (result guard)
+  "Choose a provider from RESULT and confirm disconnect under GUARD."
+  (unless (funcall guard)
+    (error "OAuth disconnect request superseded"))
+  (let ((provider (hermes-onboarding--choose-oauth-provider
+                   result #'hermes-onboarding--oauth-provider-disconnectable-p
+                   "Disconnect OAuth provider: ")))
+    (unless (funcall guard)
+      (error "OAuth disconnect request superseded"))
+    (unless (yes-or-no-p
+             (format "Disconnect OAuth provider %s? "
+                     (hermes-onboarding--provider-name provider)))
+      (user-error "OAuth disconnect cancelled"))
+    (unless (funcall guard)
+      (error "OAuth disconnect request superseded"))
+    provider))
+
 ;;;###autoload
 (defun hermes-onboarding-oauth-disconnect-provider ()
   "Choose and disconnect a connected dashboard OAuth provider."
@@ -765,20 +783,8 @@ Return the new request context."
              ((error quit)
               (hermes--promise-rejected (error-message-string err))))
            (lambda (result)
-             (unless (funcall guard)
-               (error "OAuth disconnect request superseded"))
              (setq provider
-                   (hermes-onboarding--choose-oauth-provider
-                    result #'hermes-onboarding--oauth-provider-disconnectable-p
-                    "Disconnect OAuth provider: "))
-             (unless (funcall guard)
-               (error "OAuth disconnect request superseded"))
-             (unless (yes-or-no-p
-                      (format "Disconnect OAuth provider %s? "
-                              (hermes-onboarding--provider-name provider)))
-               (user-error "OAuth disconnect cancelled"))
-             (unless (funcall guard)
-               (error "OAuth disconnect request superseded"))
+                   (hermes-onboarding--confirm-disconnect-provider result guard))
              (setq context
                    (hermes-onboarding--show-oauth
                     provider '((status . "disconnecting")) profile instance))

@@ -13,6 +13,39 @@
 (defvar notifications-on-action-map)
 (defvar notifications-on-action-object)
 
+(ert-deftest hermes-notifications-close-respects-registration-ownership ()
+  "Closing Hermes actions never retires an existing or replacement registration."
+  (dolist (case '(foreign replaced shared))
+    (let* ((foreign (list 'foreign))
+           (created (list 'owned))
+           (notifications-on-action-object (and (eq case 'foreign) foreign))
+           (notifications-on-action-map nil)
+           arguments removed)
+      (cl-letf (((symbol-function 'require) (lambda (&rest _) t))
+                ((symbol-function 'notifications-notify)
+                 (lambda (&rest args)
+                   (setq arguments args)
+                   (unless notifications-on-action-object
+                     (setq notifications-on-action-object created))
+                   (push (list '(bus service 9) (plist-get args :on-action))
+                         notifications-on-action-map)
+                   9))
+                ((symbol-function 'dbus-unregister-object)
+                 (lambda (object) (push object removed))))
+        (hermes-notifications-notify 'chat-reply "Title" "Body" :open #'ignore)
+        (pcase case
+          ('replaced
+           ;; Even a structurally equal registration is a different owner.
+           (setq notifications-on-action-object (copy-sequence created)))
+          ('shared (push (list '(bus service 10) #'ignore)
+                         notifications-on-action-map)))
+        (let ((object notifications-on-action-object))
+          (funcall (plist-get arguments :on-close) 9 'expired)
+          (should-not removed)
+          (should (eq object notifications-on-action-object))
+          (should (= (length notifications-on-action-map)
+                     (if (eq case 'shared) 1 0))))))))
+
 (ert-deftest hermes-notifications-load-keeps-notifications-optional ()
   "Loading the Hermes boundary does not load `notifications'."
   (should-not (featurep 'notifications)))

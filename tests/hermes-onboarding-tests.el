@@ -17,6 +17,17 @@
   '((slug . "deepseek") (name . "DeepSeek")
     (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY")))
 
+(ert-deftest hermes-onboarding-disconnecting-hides-stale-instructions ()
+  "Disconnect hides retained sign-in URLs and codes, unlike a pending flow."
+  (let ((details '((verification_url . "https://fixture.invalid/sign-in")
+                   (user_code . "fixture-code"))))
+    (let ((text (hermes-onboarding--oauth-status-text
+                 (cons '(status . "disconnecting") details))))
+      (should-not (string-match-p (rx (or "fixture.invalid" "fixture-code" "Sign in:")) text)))
+    (let ((text (hermes-onboarding--oauth-status-text
+                 (cons '(status . "pending") details))))
+      (should (string-match-p "fixture.invalid" text)))))
+
 (ert-deftest hermes-onboarding-unauthed-p-accepts-unauthed-rejects-authed ()
   (should (hermes-onboarding--unauthed-p
            (hermes-onboarding-test--api-key-provider)))

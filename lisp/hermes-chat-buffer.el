@@ -1233,18 +1233,31 @@ With QUIET, remove the row without publishing during teardown."
        (nth hermes-chat--input-history-index hermes-chat--input-history)
      hermes-chat--input-history-draft)))
 
+(defun hermes-chat--restore-input-tail (content &optional notice)
+  "Restore literal CONTENT beside any newer draft, without queueing it.
+Preserve point and narrowing.  When appending, insert error NOTICE if non-nil."
+  (when-let* ((text (hermes-transport--non-empty-string content)))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (atomic-change-group
+          (if (string-empty-p (hermes-chat-input-string))
+              (hermes-chat--replace-input-tail text)
+            (hermes-chat--append-input-tail text)
+            (when notice
+              (hermes-chat--insert-local-status notice 'error))))))))
+
 (defun hermes-chat--preserve-control-content (content)
   "Keep busy-control CONTENT recoverable after a dashboard bootstrap error."
   (when-let* ((text (hermes-transport--non-empty-string content)))
-    (if (string-empty-p (string-trim (hermes-chat-input-string)))
-        (hermes-chat--replace-input-tail text)
-      (if (null hermes-chat--queued-messages)
+    (save-restriction
+      (widen)
+      (if (and (not (string-empty-p (hermes-chat-input-string)))
+               (null hermes-chat--queued-messages))
           (hermes-chat--queue-content
            text "Preserved busy-control text after dashboard error")
-        (hermes-chat--append-input-tail text)
-        (hermes-chat--insert-local-status
-         "Restored busy-control text in input tail after dashboard error"
-         'error)))))
+        (hermes-chat--restore-input-tail
+         text "Restored busy-control text in input tail after dashboard error")))))
 
 ;;; Entry and header-state primitives
 
@@ -1940,17 +1953,6 @@ With LABEL, budget the complete action label, not only its value."
   (and-let* ((model (hermes-transport--non-empty-string hermes-chat--model)))
     (propertize model 'face 'hermes-chat-header-model)))
 
-(defun hermes-chat--header-goal-segment ()
-  "Return the compact running-goal segment, or nil."
-  (when (eq (plist-get hermes-chat--goal :running) t)
-    (let ((turns (plist-get hermes-chat--goal :turns-used))
-          (limit (plist-get hermes-chat--goal :max-turns)))
-      (propertize
-       (if (and (numberp turns) (numberp limit))
-           (format "Goal %d/%d" turns limit)
-         "Goal")
-       'face (hermes-chat--header-status-face 'running)))))
-
 (defun hermes-chat--header-runtime-segments ()
   "Return propertized runtime-flag segments for the chat header."
   (delq nil
@@ -1968,17 +1970,6 @@ With LABEL, budget the complete action label, not only its value."
   "Return the propertized context-window segment, or nil."
   (when-let* ((context (hermes-chat--format-context hermes-chat--context)))
     (propertize context 'face 'hermes-chat-header-context)))
-
-(defun hermes-chat--header-parts ()
-  "Return ordered semantic segments for the Hermes chat header."
-  (delq nil
-        (append
-         (list (hermes-chat--header-directory-segment)
-               (hermes-chat--header-status-segment)
-               (hermes-chat--header-goal-segment)
-               (hermes-chat--header-model-segment))
-         (hermes-chat--header-runtime-segments)
-         (list (hermes-chat--header-context-segment)))))
 
 (defconst hermes-chat--header-state-codes
   '(("Ready" . "RDY") ("Running" . "RUN") ("Error" . "ERR")

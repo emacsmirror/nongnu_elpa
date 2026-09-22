@@ -1007,11 +1007,6 @@ settlement order lives in one place."
     (hermes-chat--clear-terminal-prompts event)
     (if (equal hermes-chat--pending-assistant-id assistant-id)
         (progn
-          (when (equal assistant-id hermes-chat--server-queued-assistant-id)
-            (setq hermes-chat--server-queued-assistant-id nil
-                  hermes-chat--server-queued-user-id nil
-                  hermes-chat--server-queued-after-idle-count nil
-                  hermes-chat--server-queued-prior-terminal-p nil))
           (hermes-chat--handle-transport-event
            assistant-id (hermes-chat--closed-status-error-event event))
           (setq hermes-chat--dashboard-detached-assistant-id assistant-id

@@ -11,6 +11,20 @@
       (hermes-buffer--get "*Hermes Sessions*" #'hermes-sessions-mode)
     (hermes-sessions--render `((sessions . ,sessions)))))
 
+(ert-deftest hermes-sessions-pin-projection-tolerates-absent-table ()
+  "Absent cached tables do not break projection; present tables still update."
+  (with-temp-buffer
+    (hermes-sessions-mode)
+    (let ((session '((id . "s1") (profile . "work"))))
+      (setq hermes-sessions--session-map nil)
+      (hermes-sessions--pin-project session t)
+      (should-not hermes-sessions--session-map)
+      (setq hermes-sessions--session-map (make-hash-table :test #'equal))
+      (hermes-sessions--pin-project session t)
+      (should (eq (hermes-sessions--pin-state
+                   (gethash '("work" . "s1") hermes-sessions--session-map))
+                  'pinned)))))
+
 (ert-deftest hermes-sessions-rows-from-session-list ()
   "Session rows map the `session.list' result fields to columns."
   (let* ((rows (hermes-sessions--rows

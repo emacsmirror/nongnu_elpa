@@ -459,7 +459,7 @@ A nil SESSION-ID matches every prompt in the current buffer."
   (let ((owners (cadr sink)))
     (setf (cadr sink) nil)
     (when owners
-      (hermes-chat--replace-input-tail
+      (hermes-chat--restore-input-tail
        (mapconcat (lambda (owner) (plist-get owner :text)) owners "\n")))))
 
 (defun hermes-chat--terminal-approval-session (prompt)
@@ -918,16 +918,8 @@ Return the next pending prompt."
 
 (defun hermes-chat--restore-prompt-response (response)
   "Restore failed prompt RESPONSE without queueing a turn or moving the reader."
-  (when-let* ((text (hermes-transport--non-empty-string response)))
-    (save-excursion
-      (save-restriction
-        (widen)
-        (atomic-change-group
-          (if (string-empty-p (hermes-chat-input-string))
-              (hermes-chat--replace-input-tail text)
-            (hermes-chat--append-input-tail text)
-            (hermes-chat--insert-local-status
-             "Restored failed prompt response after current draft" 'error)))))))
+  (hermes-chat--restore-input-tail
+   response "Restored failed prompt response after current draft"))
 
 (defun hermes-chat--prompt-response-rejected
     (context prompt response message &optional preserve-response)
@@ -1202,6 +1194,24 @@ For a batch, answer only the next unanswered question."
   "Return request id for prompt KEY/PROMPT."
   (or (hermes-chat--event-string prompt '(:request-id :request_id)) key))
 
+(defun hermes-chat--dispatch-prompt-response
+    (client key prompt response all resolve reject)
+  "Dispatch RESPONSE for KEY/PROMPT on CLIENT with RESOLVE and REJECT.
+ALL applies to approval prompts only."
+  (let ((type (hermes-chat--prompt-event-type prompt)))
+    (if (equal type "approval")
+        (hermes-dashboard-transport-approval-respond
+         client :session-id (hermes-chat--approval-session-id prompt)
+         :choice response :all (and all t) :resolve resolve :reject reject)
+      (funcall (pcase type
+                 ("clarify" #'hermes-dashboard-transport-clarify-respond)
+                 ("sudo" #'hermes-dashboard-transport-sudo-respond)
+                 ("secret" #'hermes-dashboard-transport-secret-respond)
+                 ("terminal" #'hermes-dashboard-transport-terminal-read-respond)
+                 (_ (user-error "Unsupported Hermes prompt type: %s" type)))
+               client (hermes-chat--request-prompt-id key prompt) response
+               resolve reject))))
+
 (defun hermes-chat--send-prompt-response
     (key prompt response all canceled &optional preserve-response owner)
   "Send RESPONSE for prompt KEY/PROMPT through the dashboard transport."
@@ -1214,7 +1224,6 @@ For a batch, answer only the next unanswered question."
                       (user-error "Hermes dashboard prompt controls are unavailable"))))
          (context (hermes-chat--prompt-response-context
                    client key prompt all))
-         (type (hermes-chat--prompt-event-type prompt))
          (context (if (and (not canceled)
                            (hermes-chat--clarify-prompt-p prompt)
                            (hermes-transport--non-empty-string response))
@@ -1223,33 +1232,11 @@ For a batch, answer only the next unanswered question."
     (hermes-chat--call-prompt-response
      context prompt response preserve-response
      (lambda ()
-       (pcase type
-        ("approval"
-         (hermes-dashboard-transport-approval-respond
-          client :session-id (hermes-chat--approval-session-id prompt)
-          :choice response :all (and all t)
-          :resolve (hermes-chat--prompt-success-callback
-                    context prompt canceled)
-          :reject (hermes-chat--prompt-reject-callback
-                   context prompt response preserve-response)))
-        ((or "clarify" "sudo" "secret")
-         (funcall (pcase type
-                    ("clarify" #'hermes-dashboard-transport-clarify-respond)
-                    ("sudo" #'hermes-dashboard-transport-sudo-respond)
-                    ("secret" #'hermes-dashboard-transport-secret-respond))
-                  client (hermes-chat--request-prompt-id key prompt) response
-                  (hermes-chat--prompt-success-callback
-                   context prompt canceled)
-                  (hermes-chat--prompt-reject-callback
-                   context prompt response preserve-response)))
-        ("terminal"
-         (hermes-dashboard-transport-terminal-read-respond
-          client (hermes-chat--request-prompt-id key prompt) response
-          (hermes-chat--prompt-success-callback
-           context prompt canceled)
-          (hermes-chat--prompt-reject-callback
-           context prompt response preserve-response)))
-        (_ (user-error "Unsupported Hermes prompt type: %s" type)))))))
+       (hermes-chat--dispatch-prompt-response
+        client key prompt response all
+        (hermes-chat--prompt-success-callback context prompt canceled)
+        (hermes-chat--prompt-reject-callback
+         context prompt response preserve-response))))))
 
 (defun hermes-chat-respond-to-prompt (&optional key response all preserve-response)
   "Respond to pending prompt KEY with RESPONSE.

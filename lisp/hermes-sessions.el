@@ -445,13 +445,34 @@ Retain readback PROFILE for later pins without changing the row identity."
          (lambda ()
            (hermes-sessions--render-detail-contents
             updated hermes-sessions--detail-messages hermes-sessions--detail-count)))
-      (puthash identity updated hermes-sessions--session-map)
+      (when (hash-table-p hermes-sessions--session-map)
+        (puthash identity updated hermes-sessions--session-map))
       (when-let* ((entry (assoc identity tabulated-list-entries)))
         (aset (cadr entry) 5
               (hermes-browser--status-cell
                (symbol-name (hermes-sessions--pin-state updated))))
         (hermes-browser--preserve-reading-position
          (lambda () (tabulated-list-print t)))))))
+
+(defun hermes-sessions--pin-readback (client guard path profile write value)
+  "Read pin PATH with PROFILE on CLIENT under GUARD after optional WRITE VALUE.
+Reconcile uncertain writes once without resending them."
+  (let ((readback (lambda (_receipt)
+                    (if (funcall guard)
+                        (hermes-dashboard-transport-api-request-async
+                         "GET" path :query (and profile `((profile . ,profile)))
+                         :client client :current-p guard)
+                      (hermes--promise-rejected "Retired pin readback")))))
+    (if write
+        (hermes--promise-then
+         (hermes--promise-catch
+          (hermes-sessions--rest
+           client "PATCH" path
+           (append (and profile `((profile . ,profile)))
+                   `((pinned . ,value))))
+          (lambda (_reason) nil))
+         readback)
+      (funcall readback nil))))
 
 (defun hermes-sessions--pin-request (write value)
   "Read the selected pin, or WRITE explicit VALUE and reconcile its record.
@@ -479,23 +500,7 @@ Never retry a mutation after an uncertain outcome."
       (setq hermes-browser--status (if write "Saving" "Loading"))
       (hermes-browser--run-owned
        (lambda (client guard)
-         (let ((readback (lambda (_receipt)
-                           (if (funcall guard)
-                               (hermes-dashboard-transport-api-request-async
-                                "GET" path :query (and profile `((profile . ,profile)))
-                                :client client :current-p guard)
-                             (hermes--promise-rejected "Retired pin readback")))))
-           (if write
-               (hermes--promise-then
-                (hermes--promise-catch
-                 (hermes-sessions--rest
-                  client "PATCH" path
-                  (append (and profile `((profile . ,profile)))
-                          `((pinned . ,value))))
-                 ;; The write may have happened: read once, never resend it.
-                 (lambda (_reason) nil))
-                readback)
-             (funcall readback nil))))
+         (hermes-sessions--pin-readback client guard path profile write value))
        current
        (lambda (result)
          (unless (and (equal (hermes-sessions--id result) (cdr identity))

@@ -37,8 +37,13 @@
 (require 'hermes-dashboard-rpc)
 
 (defcustom hermes-chat-image-max-bytes (* 2 1024 1024)
-  "Maximum bytes per local image, additionally capped at 2 MiB."
+  "Maximum bytes per local image, from zero through 2 MiB.
+The hard 2 MiB cap also applies to values assigned outside Customize."
   :type 'natnum
+  :set (lambda (symbol value)
+         (unless (and (integerp value) (<= 0 value (* 2 1024 1024)))
+           (user-error "Image byte limit must be between 0 and 2097152"))
+         (set-default symbol value))
   :group 'hermes)
 
 (defconst hermes-chat--image-total-limit (* 32 1024 1024)
@@ -50,7 +55,10 @@ Uncertain owners survive chat teardown.  Other Emacs instances and external
 senders cannot be fenced by this registry; do not share an image-send session.")
 
 (defun hermes-chat--image-session-key ()
-  "Return the current dashboard endpoint and live session key."
+  "Return the current dashboard endpoint and live session key.
+Before attachment, the nil session deliberately fences the whole endpoint.
+There is no backend session identity yet, so separate local buffer keys cannot
+prove independent staging.  Once attached, use the actual live session key."
   (when hermes-chat--dashboard-client
     (cons (hermes-dashboard-transport--api-client-base-url
            hermes-chat--dashboard-client)
@@ -366,6 +374,30 @@ restoring never sends automatically.  Bytes are not saved across Emacs exit."
               copy))
           images))
 
+(defun hermes-chat--image-recovery-install-draft (source claim record snapshot)
+  "Install a draft copy of SNAPSHOT from SOURCE's CLAIM and retained RECORD."
+  (let* ((recovery (hermes-chat--image-recovery))
+         (records (buffer-local-value 'hermes-chat--image-records recovery))
+         (used (apply #'+ (mapcar (lambda (item)
+                                   (hermes-chat--image-bytes (plist-get item :images)))
+                                 records)))
+         (copy (list :state 'draft
+                     :images (hermes-chat--image-copy-images (plist-get snapshot :images))
+                     :content nil :session-id nil :session-key nil
+                     :assistant-id nil :client nil :lifetime nil :generation nil
+                     :owner (current-buffer))))
+    (unless (hermes-chat--image-recovery-current-p source claim record)
+      (user-error "Image recovery view changed while opening target"))
+    (when (or (>= (length records) 64)
+              (> (+ used (hermes-chat--image-bytes (plist-get record :images)))
+                 hermes-chat--image-total-limit))
+      (user-error "Target image recovery is full"))
+    (setq hermes-chat--draft-images (plist-get copy :images)
+          hermes-chat--image-draft-record copy)
+    (force-mode-line-update)
+    (with-current-buffer recovery
+      (setq hermes-chat--image-records (append records (list copy))))))
+
 (defun hermes-chat-image-recovery-restore ()
   "Restore a selected record to a chosen chat, without sending it.
 Refuse to overwrite newer text or images.  Ambiguous sends require a new
@@ -424,26 +456,7 @@ session before retrying; the original backend may already have accepted them."
                      (not (memq (plist-get record :state)
 				'(local uploading attaching submitted))))
           (user-error "Composer or image record changed during confirmation"))
-	(let* ((recovery (hermes-chat--image-recovery))
-               (records (buffer-local-value 'hermes-chat--image-records recovery))
-               (used (apply #'+ (mapcar (lambda (item)
-					  (hermes-chat--image-bytes (plist-get item :images)))
-					records)))
-               (copy (list :state 'draft :images (hermes-chat--image-copy-images (plist-get snapshot :images))
-                           :content nil :session-id nil :session-key nil
-                           :assistant-id nil :client nil :lifetime nil :generation nil
-                           :owner (current-buffer))))
-          (unless (hermes-chat--image-recovery-current-p source claim record)
-            (user-error "Image recovery view changed while opening target"))
-          (when (or (>= (length records) 64)
-                    (> (+ used (hermes-chat--image-bytes (plist-get record :images)))
-                       hermes-chat--image-total-limit))
-            (user-error "Target image recovery is full"))
-          (setq hermes-chat--draft-images (plist-get copy :images)
-		hermes-chat--image-draft-record copy)
-          (force-mode-line-update)
-          (with-current-buffer recovery
-            (setq hermes-chat--image-records (append records (list copy)))))
+        (hermes-chat--image-recovery-install-draft source claim record snapshot)
 	(goto-char (point-max))
 	(insert (or (plist-get snapshot :content) ""))))
     (pop-to-buffer origin)))

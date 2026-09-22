@@ -15,6 +15,25 @@
 
 (require 'hermes-subagents)
 
+(ert-deftest hermes-chat-work-repeated-bind-keeps-one-focus-advice ()
+  "Native add-function deduplicates the named observer across attachments."
+  (hermes-test-with-chat-buffer
+   (let ((client (hermes-test--dashboard-client))
+         (after-focus-change-function #'ignore)
+         (pre-redisplay-functions nil)
+         (delete-frame-functions nil)
+         (calls 0))
+     (cl-letf (((symbol-function 'hermes-chat--work-visibility)
+                (lambda (&rest _) (cl-incf calls))))
+       (dotimes (_ 3) (hermes-chat--work-bind client "runtime" nil))
+       (setq calls 0)
+       (funcall after-focus-change-function)
+       (should (= calls 1))
+       (should (= (cl-count #'hermes-chat--work-window-change
+                            pre-redisplay-functions) 1))
+       (should (= (cl-count #'hermes-chat--work-visibility
+                            delete-frame-functions) 1))))))
+
 (ert-deftest hermes-chat-reasoning-cleanup-rejects-reentrant-old-event ()
   (hermes-test-with-chat-buffer
     (hermes-chat--insert-entry '(:id "a1" :role assistant :content "" :status streaming))
