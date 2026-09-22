@@ -390,10 +390,8 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
         :url redacted-url))
 
 (defun hermes-dashboard-transport--generate-token ()
-  "Return a fresh dashboard session token."
-  (secure-hash 'sha256
-               (format "%S:%S:%S:%S" (current-time) (emacs-pid)
-                       (user-uid) (random))))
+  "Return a dashboard session token backed by 32 cryptographic random bytes."
+  (secure-hash 'sha256 (hermes-dashboard-transport--random-bytes 32)))
 
 (defun hermes-dashboard-transport--pick-port ()
   "Return an available loopback TCP port."
@@ -471,15 +469,6 @@ THUNK rather than cleaned up afterward."
                  (apply websocket-inner-create-function plist))))
       (funcall thunk))))
 
-(defun hermes-dashboard-transport--mark-websocket-closed (client)
-  "Mark CLIENT's WebSocket connection closed and stop its heartbeat.
-This is pure state: the close handler decides whether to reconnect the client in
-place or finalize it, so this neither rejects pending requests nor unregisters
-CLIENT from the shared registry."
-  (setf (hermes-dashboard-transport-client-websocket client) nil
-        (hermes-dashboard-transport-client-ready-p client) nil)
-  (hermes-dashboard-transport--cancel-heartbeat client))
-
 (defun hermes-dashboard-transport--current-websocket-p (client websocket)
   "Return non-nil when WEBSOCKET is CLIENT's current WebSocket."
   (eq websocket (hermes-dashboard-transport-client-websocket client)))
@@ -494,19 +483,6 @@ Replacing the promise with a pending one ensures those requests wait for the
 replacement socket's `gateway.ready'."
   (setf (hermes-dashboard-transport-client-ready-promise client)
         (hermes--promise-make)))
-
-(defun hermes-dashboard-transport--close-websocket (client)
-  "Close CLIENT's WebSocket resource and clear its live fields."
-  (when-let* ((websocket (hermes-dashboard-transport-client-websocket client)))
-    (when (fboundp 'websocket-close)
-      (ignore-errors (websocket-close websocket))))
-  (hermes-dashboard-transport--mark-websocket-closed client))
-
-(defun hermes-dashboard-transport--delete-process (client)
-  "Delete CLIENT's spawned dashboard process and clear the field."
-  (when-let* ((process (hermes-dashboard-transport-client-process client)))
-    (ignore-errors (delete-process process)))
-  (setf (hermes-dashboard-transport-client-process client) nil))
 
 (defun hermes-dashboard-transport--normalized-error-message (client message)
   "Return redacted dashboard error MESSAGE for CLIENT."
@@ -563,12 +539,6 @@ emitted its own transport error event."
       (hermes-dashboard-transport--reject-pending-request
        client request message))
     emitted-unhandled))
-
-(defun hermes-dashboard-transport--cancel-startup (client)
-  "Cancel CLIENT's currently registered startup operation, if any."
-  (when-let* ((cancel (hermes-dashboard-transport-client-startup-cancel client)))
-    (setf (hermes-dashboard-transport-client-startup-cancel client) nil)
-    (funcall cancel)))
 
 (defun hermes-dashboard-transport--startup-cancel-setter
     (client expected next &optional owner-current-p)
@@ -1158,6 +1128,15 @@ Sends immediately when CLIENT is already ready or carries no readiness promise
        (lambda (_value) (funcall on-ready))
        (lambda (reason) (funcall on-fail reason))))))
 
+(defun hermes-dashboard-transport-when-ready (client on-ready on-fail)
+  "Call ON-READY without arguments when CLIENT can send.
+Call ON-FAIL with the failure reason if CLIENT's readiness promise rejects.
+If CLIENT is ready or has no readiness promise, call ON-READY immediately;
+otherwise subscribe to its current readiness promise.  Callbacks run in the
+settling caller's context, without a buffer guarantee.  Callers must retain
+their own operation guards across the wait.  The return value is unspecified."
+  (hermes-dashboard-transport--when-ready client on-ready on-fail))
+
 (defun hermes-dashboard-transport--send-frame (client id method frame reject)
   "Send FRAME for pending request ID/METHOD on CLIENT.
 Reject the pending request through REJECT when the WebSocket send fails."
@@ -1739,11 +1718,6 @@ Self-terminating: once CLIENT's WebSocket is gone the chain stops re-arming."
     (hermes-dashboard-transport--arm-heartbeat client)))
 
 ;;; Event dispatch and frame handling
-
-(defun hermes-dashboard-transport--emit-status (client status content)
-  "Emit a status event with STATUS and CONTENT for CLIENT."
-  (hermes-dashboard-transport--dispatch-event
-   client (list :type 'status :status status :content content)))
 
 (defun hermes-dashboard-transport--emit-error (client message &optional method code)
   "Emit a normalized dashboard error MESSAGE for CLIENT."

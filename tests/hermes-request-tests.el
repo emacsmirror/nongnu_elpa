@@ -301,18 +301,41 @@
 (ert-deftest hermes-request-cold-start-waits-before-http-catalogue ()
   (hermes-request-test--with-client
     (let ((reads 0)
+          (waits 0)
+          (when-ready (symbol-function 'hermes-dashboard-transport-when-ready))
           (ready (hermes--promise-make)))
       (setf (hermes-dashboard-transport-client-ready-p h-client) nil
             (hermes-dashboard-transport-client-ready-promise h-client) ready)
       (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
-                 (lambda (&rest _) (cl-incf reads) h-catalogue)))
+                 (lambda (&rest _) (cl-incf reads) h-catalogue))
+                ((symbol-function 'hermes-dashboard-transport-when-ready)
+                 (lambda (&rest args)
+                   (cl-incf waits)
+                   (apply when-ready args))))
         (hermes-request-test--start)
+        (should (= waits 1))
         (should (= reads 0))
         (setf (hermes-dashboard-transport-client-ready-p h-client) t)
         (hermes--promise-resolve ready t)
         (should (= reads 1))
         (hermes-request-test--catalogue h-catalogue)
         (should (equal (alist-get 'method (car h-frames)) "session.create"))))))
+
+(ert-deftest hermes-request-readiness-failure-does-not-read-catalogue ()
+  (hermes-request-test--with-client
+    (let ((ready (hermes--promise-make)) (reads 0))
+      (setf (hermes-dashboard-transport-client-ready-p h-client) nil
+            (hermes-dashboard-transport-client-ready-promise h-client) ready)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest _) (cl-incf reads) h-catalogue)))
+        (hermes-request-test--start)
+        (hermes--promise-reject ready "Connection failed")
+        (sleep-for 0.01)
+        (should (= reads 0))
+        (should (= (length h-errors) 1))
+        (should (= h-releases 1))
+        (should-not h-results)
+        (should-not h-frames)))))
 
 (ert-deftest hermes-request-cancelled-create-timeout-releases ()
   (hermes-request-test--with-client

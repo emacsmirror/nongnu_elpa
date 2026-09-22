@@ -3250,16 +3250,24 @@
     (should-not (hermes-dashboard-transport-client-heartbeat-timer client))))
 
 (ert-deftest hermes-dashboard-transport-heartbeat-cleared-on-close ()
-  "Marking the socket closed clears the heartbeat timer."
+  "Actual socket loss cancels the heartbeat timer and clears live state."
   (let* ((hermes-dashboard-transport-heartbeat-interval 30)
          (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
          (hermes-dashboard-transport-schedule-function
           (lambda (&rest _) 'fake-timer))
+         cancelled
          (client (make-hermes-dashboard-transport-client
-                  :websocket 'fake-websocket)))
+                  :websocket 'fake-websocket :ready-p t)))
     (hermes-dashboard-transport--arm-heartbeat client)
     (should (hermes-dashboard-transport-client-heartbeat-timer client))
-    (hermes-dashboard-transport--mark-websocket-closed client)
+    (cl-letf (((symbol-function 'cancel-timer)
+               (lambda (timer) (push timer cancelled)))
+              ((symbol-function 'websocket-close) #'ignore))
+      (hermes-dashboard-transport--handle-socket-down
+       client "Socket closed" 'fake-websocket))
+    (should (equal cancelled '(fake-timer)))
+    (should-not (hermes-dashboard-transport-client-websocket client))
+    (should-not (hermes-dashboard-transport-client-ready-p client))
     (should-not (hermes-dashboard-transport-client-heartbeat-timer client))))
 
 (ert-deftest hermes-dashboard-transport-heartbeat-tick-stops-without-socket ()

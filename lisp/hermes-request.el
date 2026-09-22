@@ -236,7 +236,7 @@
                  client (lambda (event) (hermes-request--event op event))
                  (lambda () (hermes-request--fail op "Hermes disconnected"))))
           ;; A cold spawn has a token before its HTTP listener is ready.
-          (hermes-dashboard-transport--when-ready
+          (hermes-dashboard-transport-when-ready
            client
            (lambda () (hermes-request--catalogue op))
            (lambda (failure) (hermes-request--fail op failure)))))

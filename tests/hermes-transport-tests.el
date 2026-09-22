@@ -3067,6 +3067,35 @@ other's session."
           (should (string-match-p "<redacted>" text))
           (should-not (string-match-p token text)))))))
 
+(ert-deftest hermes-transport-dashboard-spawn-token-uses-cryptographic-bytes ()
+  "Every token requests fresh entropy and retains the hex wire representation."
+  (let ((bytes (apply #'unibyte-string (number-sequence 224 255)))
+        calls)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--random-bytes)
+               (lambda (count) (push count calls) bytes))
+              ((symbol-function 'random)
+               (lambda (&rest _) (ert-fail "Token used noncryptographic random"))))
+      (dotimes (_ 2)
+        (let ((token (hermes-dashboard-transport--generate-token)))
+          (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'" token))
+          (should (equal token (secure-hash 'sha256 bytes))))))
+    (should (equal calls '(32 32)))))
+
+(ert-deftest hermes-transport-dashboard-spawn-token-entropy-failure-stops-start ()
+  "Missing cryptographic entropy fails before spawning or connecting."
+  (let* (spawned connected
+         (hermes-dashboard-transport-make-process-function
+          (lambda (&rest _) (setq spawned t) (error "Unexpected spawn")))
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (&rest _) (setq connected t) (error "Unexpected connection"))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--random-bytes)
+               (lambda (_) (error "Entropy unavailable"))))
+      (should (equal (should-error
+                      (hermes-dashboard-transport-start :start-mode 'spawn :port 4567))
+                     '(error "Entropy unavailable"))))
+    (should-not spawned)
+    (should-not connected)))
+
 (ert-deftest hermes-transport-dashboard-start-process-error-redacts-token ()
   (let ((token "leaky-dashboard-token-abc123")
         events)
@@ -3218,6 +3247,31 @@ other's session."
         (should (string-match-p "<redacted>" rejected))
         (should-not (string-match-p "secret-token" rejected))
         (should-not events)))))
+
+(ert-deftest hermes-transport-dashboard-public-readiness-settlement ()
+  "The public readiness API preserves immediate and single-shot delivery."
+  (dolist (state '(no-promise ready pending-resolve pending-reject resolved rejected))
+    (let* ((promise (unless (eq state 'no-promise) (hermes--promise-make)))
+           (client (make-hermes-dashboard-transport-client
+                    :ready-p (eq state 'ready) :ready-promise promise))
+           calls)
+      (pcase state
+        ('resolved (hermes--promise-resolve promise t))
+        ('rejected (hermes--promise-reject promise "Not ready")))
+      (hermes-dashboard-transport-when-ready
+       client (lambda () (push 'ready calls))
+       (lambda (reason) (push reason calls)))
+      (when (memq state '(pending-resolve pending-reject))
+        (should-not calls)
+        (if (eq state 'pending-resolve)
+            (hermes--promise-resolve promise t)
+          (hermes--promise-reject promise "Not ready")))
+      (should (equal calls (if (memq state '(pending-reject rejected))
+                              '("Not ready") '(ready))))
+      (when promise
+        (hermes--promise-resolve promise t)
+        (hermes--promise-reject promise "Late failure"))
+      (should (= (length calls) 1)))))
 
 (ert-deftest hermes-transport-dashboard-request-sends-immediately-when-ready ()
   "A client without a readiness promise sends the frame at once."
@@ -3597,6 +3651,35 @@ other's session."
       (should (equal (plist-get event :event) "message.complete"))
       (should (equal (plist-get event :status) "interrupted"))
       (should (equal (plist-get event :content) "Stopped")))))
+
+(ert-deftest hermes-transport-dashboard-normalization-drop-and-fallback ()
+  "Suppressed and invalid snapshots stay empty; unknown events still display."
+  (dolist (type '("voice.status" "voice.transcript" "skin.changed" "todo.updated"))
+    (should-not
+     (hermes-dashboard-transport--normalize-event-frame
+      `((params . ((type . ,type) (session_id . "sid")))))))
+  (dolist (case '(("tool.future" status "Tool Future")
+                  ("future.progress" progress "Future Progress")
+                  ("notification.future" status nil)))
+    (let* ((type (car case))
+           (events (hermes-dashboard-transport--normalize-event-frame
+                    `((params . ((type . ,type) (session_id . "sid"))))))
+           (event (car events)))
+      (should (= (length events) 1))
+      (should (equal (plist-get event :event) type))
+      (should (equal (plist-get event :session-id) "sid"))
+      (should (eq (plist-get event :type) (cadr case)))
+      (should (equal (plist-get event :content) (nth 2 case))))))
+
+(ert-deftest hermes-transport-dashboard-normalization-tool-event-order ()
+  "Tool completion preserves ordered tool, todo and inline diff projections."
+  (let* ((frame (hermes-transport-json-parse-lossless
+                 "{\"params\":{\"type\":\"tool.complete\",\"session_id\":\"sid\",\"payload\":{\"name\":\"todo_list\",\"todos\":[],\"revision\":4,\"inline_diff\":\"+line\"}}}"))
+         (events (hermes-dashboard-transport--normalize-event-frame frame)))
+    (should (equal (mapcar (lambda (event) (plist-get event :type)) events)
+                   '(tool todo diff)))
+    (should (equal (plist-get (nth 1 events) :snapshot) '(:items nil :revision 4)))
+    (should (equal (plist-get (nth 2 events) :content) "+line"))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-message-interim ()
   "An interim assistant boundary preserves text and stream provenance."
