@@ -1459,6 +1459,22 @@ Cancelling one waiter leaves the exchange available to other consumers."
          (when cancel-setter
            (funcall cancel-setter cancel nil)))))))
 
+(defun hermes-dashboard-transport--native-refresh-accept
+    (base-url old-tokens current-p response)
+  "Accept RESPONSE tokens for BASE-URL while OLD-TOKENS remain current.
+CURRENT-P must still own the refresh operation and its persistence."
+  ;; Token identity fences a newer login or rotation.  During the
+  ;; store's own memory replacement its existing owner guard applies.
+  (unless (and (funcall current-p)
+               (eq old-tokens
+                   (hermes-dashboard-transport--native-token-load base-url)))
+    (error "Native dashboard sign-in was superseded"))
+  (if-let* ((next (hermes-dashboard-transport--native-token-plist
+                  (plist-get response :body) old-tokens)))
+      (hermes-dashboard-transport--native-store-owned-tokens
+       base-url next current-p)
+    (error "Gateway refresh response missing access_token")))
+
 (defun hermes-dashboard-transport--native-refresh-start
     (base-url tokens operation)
   "Start the shared refresh OPERATION for BASE-URL and TOKENS."
@@ -1486,18 +1502,8 @@ Cancelling one waiter leaves the exchange available to other consumers."
                 (setf (plist-get operation :cancel) next)
                 t)))
            (lambda (response)
-             ;; Token identity fences a newer login or rotation.  During the
-             ;; store's own memory replacement its existing owner guard applies.
-             (unless (and (funcall current-p)
-                          (eq tokens
-                              (hermes-dashboard-transport--native-token-load
-                               base-url)))
-               (error "Native dashboard sign-in was superseded"))
-             (if-let* ((next (hermes-dashboard-transport--native-token-plist
-                             (plist-get response :body) tokens)))
-                 (hermes-dashboard-transport--native-store-owned-tokens
-                  base-url next current-p)
-               (error "Gateway refresh response missing access_token"))))))
+             (hermes-dashboard-transport--native-refresh-accept
+              base-url tokens current-p response)))))
     (hermes--promise-then
      (hermes--promise-finally
       request

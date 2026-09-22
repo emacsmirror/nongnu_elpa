@@ -2330,6 +2330,40 @@ HANDLER receives the accepted process and complete request text."
       (should (eq (gethash base hermes-dashboard-transport--native-token-memory)
                   successor)))))
 
+(ert-deftest hermes-transport-native-refresh-preserves-successor-operation ()
+  "A replaced refresh operation cannot store or retire its successor."
+  (hermes-test--with-native-refresh
+    (let* ((waiter (hermes-dashboard-transport--native-refresh-async base old))
+           (key (hermes-dashboard-transport--native-token-memory-key base))
+           (successor (list :tokens old :promise (hermes--promise-make)
+                            :waiters (list (lambda () t)) :cancel nil)))
+      (puthash key successor hermes-dashboard-transport--native-refreshes)
+      (hermes-test--resolve-native-refresh refresh)
+      (should (eq (hermes--promise-state waiter) 'rejected))
+      (should (= stores 0))
+      (should (eq old (gethash key hermes-dashboard-transport--native-token-memory)))
+      (should (eq successor (gethash key hermes-dashboard-transport--native-refreshes)))
+      (should (eq (hermes--promise-state (plist-get successor :promise)) 'pending)))))
+
+(ert-deftest hermes-transport-native-refresh-missing-access-keeps-old-tokens ()
+  "A refresh without an access token preserves credentials and permits retry."
+  (dolist (body '(nil ((refresh_token . "new-refresh")) ((access_token . ""))))
+    (hermes-test--with-native-refresh
+      (let ((waiter (hermes-dashboard-transport--native-refresh-async base old)))
+        (hermes--promise-resolve refresh (list :body body))
+        (should (eq (hermes--promise-state waiter) 'rejected))
+        (should (= stores 0))
+        (should (eq old (hermes-dashboard-transport--native-token-load base)))
+        (should (zerop (hash-table-count hermes-dashboard-transport--native-refreshes))))
+      (setq refresh (hermes--promise-make))
+      (let ((retry (hermes-dashboard-transport--native-refresh-async base old)))
+        (hermes--promise-resolve refresh '(:body ((access_token . "new-access"))))
+        (should (eq (hermes--promise-state retry) 'resolved))
+        (should (= stores 1))
+        (should (equal (plist-get (hermes-dashboard-transport--native-token-load base)
+                                 :refresh-token)
+                       "old-refresh"))))))
+
 (ert-deftest hermes-transport-native-refresh-failure-allows-explicit-attempt ()
   "A failed shared refresh settles all waiters and releases its owner."
   (hermes-test--with-native-refresh
