@@ -6,49 +6,6 @@
 (require 'hermes-test-helpers)
 (require 'url-http)
 
-(defun hermes-test--http-wait (predicate)
-  "Wait a bounded time for PREDICATE while processing real socket traffic."
-  (let ((deadline (+ (float-time) 3)))
-    (while (and (not (funcall predicate)) (< (float-time) deadline))
-      (accept-process-output nil 0.01))
-    (should (funcall predicate))))
-
-(defun hermes-test--with-http-server (handler test)
-  "Run TEST with a loopback URL whose requests are passed to HANDLER.
-HANDLER receives the accepted process and complete request text."
-  (let (peers)
-    (let ((server
-           (make-network-process
-            :name "hermes-test-http" :server t :host "127.0.0.1" :service t
-            :family 'ipv4 :noquery t :coding 'binary
-            :log (lambda (_server peer _message) (push peer peers))
-            :filter
-            (lambda (peer text)
-              (let ((request (concat (process-get peer 'request) text)))
-                (process-put peer 'request request)
-                (when (and (not (process-get peer 'handled))
-                           (string-match "\r\n\r\n" request))
-                  (let* ((end (match-end 0))
-                         (case-fold-search t)
-                         (length (if (string-match
-                                      "Content-Length: *\\([0-9]+\\)" request)
-                                     (string-to-number (match-string 1 request))
-                                   0)))
-                    (when (>= (- (length request) end) length)
-                      (process-put peer 'handled t)
-                      (funcall handler peer request)))))))))
-      (unwind-protect
-          (funcall test (format "http://127.0.0.1:%d"
-                                (process-contact server :service)))
-        (mapc #'delete-process peers)
-        (delete-process server)))))
-
-(defun hermes-test--http-reply (peer status body &optional headers)
-  "Send PEER an HTTP response with STATUS, JSON BODY and optional HEADERS."
-  (process-send-string
-   peer (format "HTTP/1.1 %d Test\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n%s\r\n%s"
-                status (string-bytes body) (or headers "") body)))
-
 (defun hermes-test--http-explicit-auth (executor)
   "Exercise EXECUTOR's explicit-only authentication using real HTTP."
   (dolist (challenge '(nil "WWW-Authenticate: Basic realm=\"fixture\"\r\n"))

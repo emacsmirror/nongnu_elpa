@@ -19,7 +19,7 @@ KEYMAP_POPUP ?=
 export EMACSCLIENT
 
 SRCS = lisp/hermes-buffer.el lisp/hermes-promise.el lisp/hermes-notifications.el lisp/hermes-session-title.el lisp/hermes-transport.el lisp/hermes-transport-cli.el lisp/hermes-dashboard-api.el lisp/hermes-dashboard-transport.el lisp/hermes-dashboard-rpc.el lisp/hermes-request.el lisp/hermes-chat-format.el lisp/hermes-preview-format.el lisp/hermes-chat-render.el lisp/hermes-chat-buffer.el lisp/hermes-chat-draft.el lisp/hermes-chat-prompts.el lisp/hermes-chat-images.el lisp/hermes-chat-todos.el lisp/hermes-chat-dashboard.el lisp/hermes-chat-models.el lisp/hermes-chat-handoff.el lisp/hermes-chat-slash.el lisp/hermes-chat.el lisp/hermes-gnosis.el lisp/hermes-browser.el lisp/hermes-files.el lisp/hermes-preview.el lisp/hermes-admin.el lisp/hermes-sessions.el lisp/hermes-projects.el lisp/hermes-inventory.el lisp/hermes-tool-setup.el lisp/hermes-rollback.el lisp/hermes-subagents.el lisp/hermes-cron.el lisp/hermes-profiles.el lisp/hermes-messaging.el lisp/hermes-kanban-log.el lisp/hermes-kanban-events.el lisp/hermes-kanban.el lisp/hermes-mcp.el lisp/hermes-config.el lisp/hermes-plugins.el lisp/hermes-system.el lisp/hermes-command-palette.el lisp/hermes-exec.el lisp/hermes-onboarding.el lisp/hermes-capabilities.el lisp/hermes.el
-TEST_SUPPORT = tests/hermes-test-helpers.el
+TEST_SUPPORT = tests/hermes-test-helpers.el tests/hermes-test-manifest.el
 TESTS = tests/hermes-gnosis-tests.el tests/hermes-buffer-tests.el tests/hermes-dependency-tests.el tests/hermes-request-tests.el tests/hermes-chat-draft-tests.el tests/hermes-chat-todos-tests.el tests/hermes-preview-tests.el tests/hermes-files-tests.el tests/hermes-chat-images-tests.el tests/hermes-notifications-tests.el tests/hermes-transport-tests.el tests/hermes-chat-tests.el tests/hermes-chat-handoff-tests.el tests/hermes-chat-models-tests.el tests/hermes-chat-prompts-tests.el tests/hermes-chat-dashboard-tests.el tests/hermes-chat-reducer-tests.el \
 	tests/hermes-fence-guard-tests.el \
 	tests/hermes-dashboard-tests.el tests/hermes-ui-tests.el tests/hermes-kanban-tests.el \
@@ -30,7 +30,8 @@ TESTS = tests/hermes-gnosis-tests.el tests/hermes-buffer-tests.el tests/hermes-d
 	tests/hermes-messaging-tests.el \
 	tests/hermes-browsers-tests.el tests/hermes-exec-tests.el \
 	tests/hermes-promise-tests.el tests/hermes-onboarding-tests.el \
-	tests/hermes-capabilities-tests.el
+	tests/hermes-capabilities-tests.el \
+	tests/hermes-chat-format-tests.el tests/hermes-chat-fences-tests.el tests/hermes-chat-terminal-tests.el tests/hermes-chat-wire-tests.el tests/hermes-chat-history-tests.el tests/hermes-chat-lifecycle-tests.el tests/hermes-chat-queue-tests.el tests/hermes-chat-slash-tests.el tests/hermes-chat-buffer-tests.el tests/hermes-chat-render-tests.el tests/hermes-test-manifest-tests.el tests/hermes-test-helpers-tests.el
 
 SELECTOR ?= t
 ERT_OPTS ?=
@@ -44,23 +45,12 @@ HERMES_CLIENT_LIVE_ABI = (and (fboundp 'hermes-dashboard-transport-client-p) (ma
 all: compile
 
 verify-sources:
-	@set -eu; \
-	  srcs=$$(mktemp); lisp=$$(mktemp); tests=$$(mktemp); tree_tests=$$(mktemp); \
-	  trap 'rm -f "$$srcs" "$$lisp" "$$tests" "$$tree_tests"' 0 1 2 15; \
-	  printf '%s\n' $(SRCS) | sed 's|^\./||' | sort > "$$srcs"; \
-	  printf '%s\n' lisp/*.el | sed 's|^\./||' | sort > "$$lisp"; \
-	  printf '%s\n' $(TESTS) $(TEST_SUPPORT) | sed 's|^\./||' | sort > "$$tests"; \
-	  printf '%s\n' tests/*.el | sed 's|^\./||' | sort > "$$tree_tests"; \
-	  if ! cmp -s "$$srcs" "$$lisp"; then \
-	    echo "SRCS must match lisp/*.el exactly (normalized set equality):"; \
-	    diff -u "$$lisp" "$$srcs" || true; \
-	    exit 1; \
-	  fi; \
-	  if ! cmp -s "$$tests" "$$tree_tests"; then \
-	    echo "TESTS + TEST_SUPPORT must match tests/*.el exactly (normalized set equality):"; \
-	    diff -u "$$tree_tests" "$$tests" || true; \
-	    exit 1; \
-	  fi
+	@HERMES_MANIFEST_ROOT="$(CURDIR)" \
+	  HERMES_MANIFEST_SRCS="$(SRCS)" \
+	  HERMES_MANIFEST_TESTS="$(TESTS)" \
+	  HERMES_MANIFEST_SUPPORT="$(TEST_SUPPORT)" \
+	  $(EMACS_CMD) -Q --batch -L tests \
+	    -l hermes-test-manifest -f hermes-test-manifest-batch
 
 compile:
 	@$(ENV_MAKE) do-compile
