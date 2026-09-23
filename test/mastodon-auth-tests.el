@@ -9,7 +9,9 @@
 
 (ert-deftest mastodon-auth--handle-token-response--good ()
   "Should extract the access token from a good response."
-  (let ((mastodon-auth-encrypt-tokens nil))
+  (let ((mastodon-auth-encrypt-tokens nil)
+        ;; else we are interactively asked to save to ~/authinfo.gpg:
+        (mastodon-auth-use-auth-source nil))
     (should
      (string=
       "foo"
