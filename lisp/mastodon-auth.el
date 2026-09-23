@@ -73,8 +73,9 @@ again, as auth-source.el only provides unreliable tools for updating
 entries."
   :type 'boolean)
 
-(defcustom mastodon-auth-encrypt-tokens t
-  "Whether to encrypt client (mastodon.el) and user auth sources."
+(defcustom mastodon-auth-encrypt-tokens-plstore t
+  "Whether to encrypt client and user tokens in the plstore.
+Disable this if you don't want to use GPG to encrypt mastodon.plstore."
   :type 'boolean)
 
 (defvar mastodon-auth-source-file nil

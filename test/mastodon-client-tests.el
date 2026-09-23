@@ -36,11 +36,11 @@
   "Test the value `mastodon-client--store' returns/stores."
   (let ((mastodon-instance-url "http://mastodon.example")
         (plist '(:client_id "id" :client_secret "secret"))
-        (mastodon-auth-encrypt-tokens nil))
+        (mastodon-auth-encrypt-tokens-plstore nil))
     (with-mock
-      (mock (mastodon-client--token-file) => "stubfile.plstore")
-      (mock (mastodon-client--fetch) => plist)
-      (should (equal (mastodon-client--store) plist)))
+     (mock (mastodon-client--token-file) => "stubfile.plstore")
+     (mock (mastodon-client--fetch) => plist)
+     (should (equal (mastodon-client--store) plist)))
     (let* ((plstore (plstore-open "stubfile.plstore"))
            (client (mastodon-client--remove-key-from-plstore
                     (plstore-get plstore "mastodon-http://mastodon.example"))))
@@ -156,10 +156,10 @@
 (ert-deftest mastodon-client--store-access-token ()
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
-         (mastodon-auth-encrypt-tokens nil)
+         (mastodon-auth-encrypt-tokens-plstore nil)
          ;; if clause so we can not lose the encrypted plist structure:
          (user-details ;; order changed for new encrypted auth flow:
-          (if mastodon-auth-encrypt-tokens
+          (if mastodon-auth-encrypt-tokens-plstore
               '( :client_id "id" :client_secret "secret"
                  :access_token "token"
                  :username "test8000@mastodon.example"
@@ -173,16 +173,16 @@
     ;; test if mastodon-client--store-access-token /returns/ right
     ;; value
     (with-mock
-      (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
-      (mock (mastodon-client--token-file) => "stubfile.plstore")
-      (should (equal (mastodon-client--store-access-token "token")
-                     user-details)))
+     (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+     (mock (mastodon-client--token-file) => "stubfile.plstore")
+     (should (equal (mastodon-client--store-access-token "token")
+                    user-details)))
     ;; test if mastodon-client--store-access-token /stores/ right value
     (with-mock
-      (mock (mastodon-client--token-file) => "stubfile.plstore")
-      (should (equal (mastodon-client--general-read
-                      "user-test8000@mastodon.example")
-                     user-details)))
+     (mock (mastodon-client--token-file) => "stubfile.plstore")
+     (should (equal (mastodon-client--general-read
+                     "user-test8000@mastodon.example")
+                    user-details)))
     (delete-file "stubfile.plstore")))
 
 ;; FIXME: broken by new encrypted plstore flow
@@ -195,10 +195,10 @@
                          :client_secret nil
                          :username "test@mastodon.example"))
         (mastodon-auth-use-auth-source nil) ;; FIXME: test auth source
-        (mastodon-auth-encrypt-tokens nil))
+        (mastodon-auth-encrypt-tokens-plstore nil))
     (with-mock
-      (mock (mastodon-client--token-file) => "stubfile.plstore")
-      (mastodon-client--make-user-active user-details)
-      (should (equal (mastodon-client--general-read "active-user")
-                     user-details)))
+     (mock (mastodon-client--token-file) => "stubfile.plstore")
+     (mastodon-client--make-user-active user-details)
+     (should (equal (mastodon-client--general-read "active-user")
+                    user-details)))
     (delete-file "stubfile.plstore")))

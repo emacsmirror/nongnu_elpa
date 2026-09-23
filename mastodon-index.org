@@ -340,7 +340,7 @@
 | Custom variable                                    | Description                                                                  |
 |----------------------------------------------------+------------------------------------------------------------------------------|
 | mastodon-active-user                               | Username of the active user.                                                 |
-| mastodon-auth-encrypt-tokens                       | Whether to encrypt client (mastodon.el) and user auth sources.               |
+| mastodon-auth-encrypt-tokens-plstore                       | Whether to encrypt client (mastodon.el) and user auth sources.               |
 | mastodon-auth-use-auth-source                      | Whether to use auth sources for user credentials.                            |
 | mastodon-client--token-file                        | File path where Mastodon access tokens are stored.                           |
 | mastodon-display-featured-tags-on-profiles         | Whether to display featured tags on user profiles.                           |
