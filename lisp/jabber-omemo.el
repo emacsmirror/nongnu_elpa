@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-blocking)
 (require 'hex-util)
 (require 'jabber-util)
 (require 'jabber-omemo-store)
@@ -472,11 +473,39 @@ Extracts <device id=\"N\"/> from the <list> element."
                  (not (memq did current-ids)))
         (jabber-omemo-store-set-device-active account jid did nil)))))
 
+(defun jabber-omemo--request-peer (jc jid node success failure callback)
+  "Request NODE from JID on JC unless the peer is known blocked.
+Pass ordinary responses to SUCCESS or FAILURE.  A blocked peer, or a
+retired peer connection, settles CALLBACK with nil, the existing failure value.
+Check again on response before parsing, persistence or further requests."
+  (let* ((state (fsm-get-state-data jc))
+         (session (plist-get state :blocking-session))
+         (own-p (equal (jabber-jid-user jid)
+                       (concat (plist-get state :username) "@"
+                               (plist-get state :server))))
+         (allowed-p
+          (lambda ()
+            ;; Preserve the existing own-device publication lifecycle.
+            (or own-p
+                (and (eq state (fsm-get-state-data jc))
+                     (eq session (plist-get state :blocking-session))
+                     (jabber-blocking-ready-p jc jid)
+                     (not (jabber-blocking-blocked-p jc jid))))))
+         (cancel (lambda () (when callback (funcall callback nil)))))
+    (if (not (funcall allowed-p))
+        (funcall cancel)
+      (jabber-pubsub-request
+       jc jid node
+       (lambda (&rest args)
+         (if (funcall allowed-p) (apply success args) (funcall cancel)))
+       (lambda (&rest args)
+         (if (funcall allowed-p) (apply failure args) (funcall cancel)))))))
+
 (defun jabber-omemo--fetch-device-list (jc jid callback)
   "Fetch the OMEMO device list for JID via connection JC.
 On success, parse and call (funcall CALLBACK device-id-list).
 Updates the in-memory cache and database."
-  (jabber-pubsub-request
+  (jabber-omemo--request-peer
    jc jid jabber-omemo-devicelist-node
    (lambda (jc xml-data _closure)
      (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
@@ -497,7 +526,8 @@ Updates the in-memory cache and database."
               jid (jabber-parse-error
                    (jabber-iq-error xml-data)))
      (when callback
-       (funcall callback nil)))))
+       (funcall callback nil)))
+   callback))
 
 (defun jabber-omemo--handle-publish-conflict (jc node item-id payload
                                                  options xml-data label)
@@ -632,11 +662,14 @@ then deletes the bundle PubSub node.  Calls CALLBACK when done."
         (message "OMEMO: failed to delete bundle for %d: %s"
                  device-id (jabber-xml-path xml '(error))))))))
 
-(defun jabber-omemo--handle-device-list (jc from _node items)
+(cl-defun jabber-omemo--handle-device-list (jc from _node items)
   "Handle incoming PubSub device list notification.
 JC is the connection, FROM is the sender JID, ITEMS is the
 list of child elements from the event.  When our own device is
 missing from our device list, re-add and re-publish."
+  (unless (and (jabber-blocking-ready-p jc from)
+               (not (jabber-blocking-blocked-p jc from)))
+    (cl-return-from jabber-omemo--handle-device-list nil))
   (let* ((account (jabber-connection-bare-jid jc))
          (bare-jid (jabber-jid-user from))
          (ids (jabber-omemo--parse-device-list items)))
@@ -745,7 +778,7 @@ where bundle-plist has keys from `jabber-omemo--parse-bundle-xml'.
 On error, calls (funcall CALLBACK nil)."
   (let ((node (concat jabber-omemo-bundles-node-prefix
                       (number-to-string device-id))))
-    (jabber-pubsub-request
+    (jabber-omemo--request-peer
      jc jid node
      (lambda (_jc xml-data _closure)
        (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
@@ -760,7 +793,8 @@ On error, calls (funcall CALLBACK nil)."
              jid device-id
              (jabber-parse-error
               (jabber-iq-error xml-data)))
-       (funcall callback nil)))))
+       (funcall callback nil))
+     callback)))
 
 (defun jabber-omemo--bundle-needs-republish-p (local published)
   "Return non-nil if PUBLISHED bundle is out of date vs LOCAL.
@@ -943,12 +977,16 @@ Returns a list of active device ID integers, or nil."
     (mapcar (lambda (r) (plist-get r :device-id))
             (cl-remove-if-not (lambda (r) (plist-get r :active)) records))))
 
-(defun jabber-omemo--ensure-sessions (jc jid callback)
+(cl-defun jabber-omemo--ensure-sessions (jc jid callback)
   "Ensure sessions exist for all active devices of JID via JC.
 Checks in-memory cache, then DB, then PubSub for the device list.
 For each device lacking a session, fetches the bundle and establishes one.
 Calls (funcall CALLBACK sessions) when done, where sessions is
-a list of (DEVICE-ID . SESSION-PTR) for all active devices."
+a list of (DEVICE-ID . SESSION-PTR) for all active devices.
+Blocked peers and pending blocking discovery return nil, like other failures."
+  (unless (and (jabber-blocking-ready-p jc jid)
+               (not (jabber-blocking-blocked-p jc jid)))
+    (cl-return-from jabber-omemo--ensure-sessions (funcall callback nil)))
   (let* ((account (jabber-connection-bare-jid jc))
          (bare-jid (jabber-jid-user jid))
          (cache-key (jabber-omemo--device-list-key account bare-jid))
@@ -986,7 +1024,7 @@ CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
            jc jid did
            (lambda (bundle)
              (condition-case err
-                 (when bundle
+                 (when (and bundle (not (jabber-blocking-blocked-p jc jid)))
                    (let ((session (jabber-omemo--establish-session
                                    jc jid did bundle)))
                      (push (cons did session) results)))
@@ -995,7 +1033,9 @@ CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
                          jid did (error-message-string err))))
              (cl-decf pending)
              (when (zerop pending)
-               (funcall callback results)))))))))
+               (funcall callback
+                        (unless (jabber-blocking-blocked-p jc jid)
+                          results))))))))))
 
 ;;; Message encryption XML
 
@@ -1410,7 +1450,11 @@ all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
            (setq all-sessions (append sessions all-sessions))
            (cl-decf pending)
            (when (zerop pending)
-             (funcall callback all-sessions))))))))
+             (funcall callback
+                      (unless (cl-some (lambda (peer)
+                                         (jabber-blocking-blocked-p jc peer))
+                                       jids)
+                        all-sessions)))))))))
 
 ;;; Send path
 
@@ -1614,6 +1658,16 @@ envelope (e.g. XEP-0308 replace)."
       (error
        (funcall failed (error-message-string err))))))
 
+(defun jabber-omemo--check-blocking (jc jid &optional muc)
+  "Reject sending on JC to blocked JID or, with MUC, its real recipients."
+  (let ((recipients
+         (cons jid (when muc
+                     (jabber-omemo--muc-participant-jids
+                      jid (cdr (assoc jid jabber-muc-participants)))))))
+    (when (cl-some (lambda (peer) (jabber-blocking-blocked-p jc peer))
+                   recipients)
+      (user-error "Cannot send OMEMO messages to blocked recipients"))))
+
 (defun jabber-omemo--send-encrypted (jc body chat-with all-sessions
                                         &optional buffer node id
                                         extra-elements success-callback
@@ -1627,6 +1681,7 @@ non-nil, update its status from :sending to :sent instead of
 inserting a new ewoc entry.  EXTRA-ELEMENTS are spliced into the
 stanza outside the encryption envelope.  SUCCESS-CALLBACK and
 FAILURE-CALLBACK report transport completion.  NODE-BUFFER owns NODE."
+  (jabber-omemo--check-blocking jc (or chat-with jabber-chatting-with))
   (let* ((chat-with (or chat-with jabber-chatting-with))
          (id (or id (format "emacs-msg-%.6f" (float-time))))
          (is-correction (assq 'replace extra-elements))
@@ -1664,6 +1719,7 @@ FAILURE-CALLBACK report transport completion.  NODE-BUFFER owns NODE."
               (plist-put msg-plist :body body)
               (plist-put msg-plist :status :sent)
               (jabber-chat--display-local-message jc msg-plist))))))
+      (jabber-omemo--check-blocking jc chat-with)
       (if (or success-callback failure-callback)
           (jabber-send-sexp
            jc stanza success-callback failure-callback)
@@ -1751,6 +1807,7 @@ EXTRA-ELEMENTS are
 spliced into the stanza outside the encryption envelope.
 SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion.
 No local echo: the MUC server mirrors the message back."
+  (jabber-omemo--check-blocking jc group t)
   (let* ((plaintext (encode-coding-string body 'utf-8))
          (enc-result (jabber-omemo-encrypt-message plaintext))
          (encrypted-xml (jabber-omemo--build-encrypted-xml
@@ -1785,6 +1842,7 @@ No local echo: the MUC server mirrors the message back."
           (when (buffer-live-p buffer)
             (with-current-buffer buffer
               (jabber-chat--run-send-hooks stanza body id)))
+          (jabber-omemo--check-blocking jc group t)
           (if (or success-callback failure-callback)
               (jabber-send-sexp jc stanza success-callback failed)
             (jabber-send-sexp jc stanza)))
@@ -1968,6 +2026,7 @@ Returns non-nil if handled, nil to fall through to plaintext."
         #'jabber-omemo--handle-device-list)
 
   (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
+  (add-hook 'jabber-blocking-ready-hook #'jabber-omemo--prefetch-open-chats)
   (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect)
   (add-hook 'jabber-lifecycle-session-reset-functions
             #'jabber-omemo--session-reset)

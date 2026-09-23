@@ -592,7 +592,8 @@ obtained from `xml-parse-region'."
 	      'jabber-node node))))
       (insert "No items found.\n"))))
 
-(defun jabber-disco-get-info (jc jid node callback closure-data &optional force)
+(defun jabber-disco-get-info (jc jid node callback closure-data &optional force
+                                 response-predicate)
   "Get disco info for JID and NODE, using connection JC.
 
 Call CALLBACK with JC and CLOSURE-DATA as first and second
@@ -602,10 +603,13 @@ On success, result is (IDENTITIES FEATURES), where each identity is [\"name\"
 On error, result is the error node, recognizable by (eq (car result) \\='error).
 
 If CALLBACK is nil, just fetch data.  If FORCE is non-nil,
-invalidate cache and get fresh data."
+invalidate cache and get fresh data.
+RESPONSE-PREDICATE is passed to `jabber-send-iq'; when supplied, bypass
+the shared cache so that only an admitted wire response supplies the result."
   (when force
     (remhash (cons jid node) jabber-disco-info-cache))
-  (let ((result (unless force (jabber-disco-get-info-immediately jid node))))
+  (let ((result (unless (or force response-predicate)
+                  (jabber-disco-get-info-immediately jid node))))
     (if result
 	(and callback (run-with-timer 0 nil callback jc closure-data result))
       (jabber-send-iq jc jid
@@ -616,7 +620,7 @@ invalidate cache and get fresh data."
 		      (lambda (jc xml-data callback-data)
 			(when (car callback-data)
 			  (funcall (car callback-data) jc (cdr callback-data) (jabber-iq-error xml-data))))
-		      (cons callback closure-data)))))
+		      (cons callback closure-data) nil response-predicate))))
 
 (defun jabber-disco-got-info (jc xml-data callback-data)
   "Process the received jabber-disco info query response.

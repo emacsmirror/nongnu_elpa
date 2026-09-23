@@ -29,6 +29,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'jabber-util)
 (require 'jabber-xml)
 (require 'jabber-iq)
@@ -39,6 +40,142 @@
 
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
+
+(defvar jabber-post-connect-hooks)
+
+(defvar jabber-blocking-ready-hook nil
+  "Hook called with a connection after blocking discovery settles.
+Run after a successful blocklist fetch or discovery of an unsupported server.")
+
+(defun jabber-blocking-ready-p (jc jid)
+  "Return non-nil when JC's blocking discovery permits work for JID.
+Own-account work proceeds while peer work waits for a successful snapshot.
+Connections not using startup discovery retain their previous behavior."
+  (let ((state (fsm-get-state-data jc)))
+    (or (not (memq (plist-get state :blocking-status) '(pending failed)))
+        (equal (jabber-jid-user jid)
+               (concat (plist-get state :username) "@"
+                       (plist-get state :server))))))
+
+(defun jabber-blocking--ready (jc status)
+  "Mark blocking discovery on JC as STATUS and release background work."
+  (plist-put (fsm-get-state-data jc) :blocking-status status)
+  (run-hook-with-args 'jabber-blocking-ready-hook jc))
+
+(defun jabber-blocking-blocked-p (jc jid)
+  "Return non-nil if JID is known to be blocked on connection JC.
+Match full JIDs, bare JIDs, domains and domain/resource entries per
+XEP-0191.  Never block communication with the account's own resources.
+Unknown blocklists are not treated as evidence of a block."
+  (when (stringp jid)
+    (let* ((state (fsm-get-state-data jc))
+           (bare (downcase (jabber-jid-user jid)))
+           (domain (car (last (split-string bare "@"))))
+           (resource (jabber-jid-resource jid))
+           (own (downcase (concat (plist-get state :username) "@"
+                                  (plist-get state :server)))))
+      (and (not (equal bare own))
+           (cl-some
+            (lambda (entry)
+              (let ((blocked (downcase (jabber-jid-user entry)))
+                    (blocked-resource (jabber-jid-resource entry)))
+                (and (or (equal blocked bare) (equal blocked domain))
+                     (or (null blocked-resource)
+                         (equal blocked-resource resource)))))
+            (plist-get state :blocking-list))))))
+
+(defun jabber-blocking--valid-items-p (query)
+  "Return non-nil if every item in QUERY has a nonempty JID."
+  (cl-every (lambda (item)
+              (let ((jid (jabber-xml-get-attribute item 'jid)))
+                (and (stringp jid) (not (string-empty-p jid)))))
+            (jabber-xml-get-children query 'item)))
+
+(defun jabber-blocking--set-list (state jids)
+  "Store blocked JIDS in connection STATE and invalidate older snapshots."
+  (plist-put state :blocking-list jids)
+  (plist-put state :blocking-revision (list nil)))
+
+(defun jabber-blocking--response-predicate (jc kind)
+  "Return an IQ admission predicate for JC's blocking request of KIND.
+KIND is `disco', `snapshot' or `command'.  Reject foreign senders,
+connections and retired sessions before they can consume a pending IQ."
+  (let* ((state (fsm-get-state-data jc))
+         (session (plist-get state :blocking-session))
+         (server (plist-get state :server))
+         (bare (concat (plist-get state :username) "@" server)))
+    (lambda (received-jc xml)
+      (let ((from (jabber-xml-get-attribute xml 'from))
+            (query (jabber-iq-query xml)))
+        (and (eq received-jc jc)
+             (eq state (fsm-get-state-data jc))
+             (eq session (plist-get state :blocking-session))
+             (or (null from) (equal from server)
+                 (and (not (eq kind 'disco)) (equal from bare)))
+             (if (equal (jabber-xml-get-attribute xml 'type) "error")
+                 (jabber-iq-error xml)
+               (pcase kind
+                 ('disco
+                  (and (eq (car-safe query) 'query)
+                       (equal (jabber-xml-get-xmlns query) jabber-disco-xmlns-info)
+                       (null (jabber-xml-get-attribute query 'node))))
+                 ('snapshot
+                  (and (eq (car-safe query) 'blocklist)
+                       (equal (jabber-xml-get-xmlns query) jabber-blocking-xmlns)
+                       (jabber-blocking--valid-items-p query)))
+                 ('command (null query)))))))))
+
+(defun jabber-blocking--fetch (jc &optional callback)
+  "Synchronize JC's blocklist, then call CALLBACK with the result stanza.
+Retain known state on failure.  Retry snapshots overtaken by a push."
+  (let* ((state (fsm-get-state-data jc))
+         (revision (plist-get state :blocking-revision))
+         (session (plist-get state :blocking-session)))
+    (jabber-send-iq
+     jc nil "get" `(blocklist ((xmlns . ,jabber-blocking-xmlns)))
+     (lambda (_jc xml _ctx)
+       (when (and (eq state (fsm-get-state-data jc))
+                  (eq session (plist-get state :blocking-session)))
+         (if (not (eq revision (plist-get state :blocking-revision)))
+             (jabber-blocking--fetch jc callback)
+           (let ((query (car (jabber-xml-get-children xml 'blocklist))))
+             (when (and (equal (jabber-xml-get-xmlns query) jabber-blocking-xmlns)
+                        (jabber-blocking--valid-items-p query))
+               (jabber-blocking--set-list
+                state (jabber-blocking--item-jids query))
+               (jabber-blocking--ready jc 'ready)
+               (when callback (funcall callback jc xml nil)))))))
+     nil
+     (lambda (_jc xml _ctx)
+       (when (and (eq state (fsm-get-state-data jc))
+                  (eq session (plist-get state :blocking-session)))
+         (when (and (eq revision (plist-get state :blocking-revision))
+                    (not (eq (plist-get state :blocking-status) 'ready)))
+           (plist-put state :blocking-status 'failed))
+         (message "Failed to retrieve blocklist: %s"
+                  (jabber-parse-error (jabber-iq-error xml)))))
+     nil nil (jabber-blocking--response-predicate jc 'snapshot))))
+
+(defun jabber-blocking--on-connect (jc)
+  "Discover blocking support and synchronize the blocklist on JC."
+  (let* ((state (fsm-get-state-data jc))
+         (session (list nil)))
+    (plist-put state :blocking-session session)
+    (plist-put state :blocking-status 'pending)
+    (jabber-disco-get-info
+     jc (plist-get state :server) nil
+     (lambda (_jc _ctx info)
+       (when (and (eq state (fsm-get-state-data jc))
+                  (eq session (plist-get state :blocking-session)))
+         (cond
+          ((eq (car info) 'error)
+           (plist-put state :blocking-status 'failed))
+          ((member jabber-blocking-xmlns (cadr info))
+           (jabber-blocking--fetch jc))
+          (t
+           (jabber-blocking--set-list state nil)
+           (jabber-blocking--ready jc 'unsupported)))))
+     nil t (jabber-blocking--response-predicate jc 'disco))))
 
 (defun jabber-blocking--item-jids (query)
   "Return the JIDs in blocking QUERY."
@@ -54,8 +191,9 @@
      (delete-dups (append current (jabber-blocking--item-jids query))))
     ('unblock
      (let ((jids (jabber-blocking--item-jids query)))
-       (and jids
-            (cl-remove-if (lambda (jid) (member jid jids)) current))))
+       (if (jabber-xml-get-children query 'item)
+           (cl-remove-if (lambda (jid) (member jid jids)) current)
+         nil)))
     (_ current)))
 
 (defun jabber-blocking--valid-push-p (from state-data)
@@ -63,9 +201,7 @@
   (let ((bare (concat (plist-get state-data :username) "@"
                       (plist-get state-data :server))))
     (or (null from)
-        (string= from (plist-get state-data :server))
-        (string= from bare)
-        (string= from (concat bare "/" (plist-get state-data :resource))))))
+        (string= from bare))))
 
 (defun jabber-blocking--process-push (jc xml-data)
   "Process an XEP-0191 blocking push in XML-DATA on JC."
@@ -73,12 +209,35 @@
          (from (jabber-xml-get-attribute xml-data 'from))
          (id (jabber-xml-get-attribute xml-data 'id))
          (query (jabber-iq-query xml-data)))
-    (when (and (jabber-blocking--valid-push-p from state-data)
+    (when (and (equal (jabber-xml-get-attribute xml-data 'type) "set")
+               (equal (jabber-xml-get-xmlns query) jabber-blocking-xmlns)
+               (jabber-blocking--valid-items-p query)
+               (jabber-blocking--valid-push-p from state-data)
                (memq (jabber-xml-node-name query) '(block unblock)))
-      (plist-put state-data :blocking-list
-                 (jabber-blocking--apply-push
-                  (plist-get state-data :blocking-list) query))
+      (jabber-blocking--set-list
+       state-data (jabber-blocking--apply-push
+                   (plist-get state-data :blocking-list) query))
       (jabber-send-iq jc from "result" nil nil nil nil nil id))))
+
+(defun jabber-blocking--change (jc jid action)
+  "Ask JC's server to apply blocking ACTION to JID.
+Refresh the authoritative snapshot after success instead of replaying a
+possibly stale command over newer pushes."
+  (let* ((state (fsm-get-state-data jc))
+         (session (plist-get state :blocking-session)))
+    (jabber-send-iq
+     jc nil "set"
+     `(,action ((xmlns . ,jabber-blocking-xmlns)) (item ((jid . ,jid))))
+     (lambda (_jc _xml _ctx)
+       (when (and (eq state (fsm-get-state-data jc))
+                  (eq session (plist-get state :blocking-session)))
+         (jabber-blocking--fetch jc)
+         (message "%s %s" (if (eq action 'block) "Blocked" "Unblocked") jid)))
+     nil
+     (lambda (_jc xml _ctx)
+       (message "Failed to %s %s: %s" action jid
+                (jabber-parse-error (jabber-iq-error xml))))
+     nil nil (jabber-blocking--response-predicate jc 'command))))
 
 ;;;###autoload
 (defun jabber-blocking-block-jid (jc jid)
@@ -88,15 +247,7 @@ JC is the Jabber connection.  JID is the bare JID to block."
   (interactive
    (let ((jc (jabber-read-account)))
      (list jc (jabber-read-jid-completing "Block JID: "))))
-  (jabber-send-iq jc nil "set"
-                  `(block ((xmlns . ,jabber-blocking-xmlns))
-                          (item ((jid . ,jid))))
-                  (lambda (_jc _xml _ctx)
-                    (message "Blocked %s" jid))
-                  nil
-                  (lambda (_jc xml _ctx)
-                    (message "Failed to block %s: %S" jid xml))
-                  nil))
+  (jabber-blocking--change jc jid 'block))
 
 ;;;###autoload
 (defun jabber-blocking-unblock-jid (jc jid)
@@ -106,15 +257,7 @@ JC is the Jabber connection.  JID is the bare JID to unblock."
   (interactive
    (let ((jc (jabber-read-account)))
      (list jc (jabber-read-jid-completing "Unblock JID: "))))
-  (jabber-send-iq jc nil "set"
-                  `(unblock ((xmlns . ,jabber-blocking-xmlns))
-                            (item ((jid . ,jid))))
-                  (lambda (_jc _xml _ctx)
-                    (message "Unblocked %s" jid))
-                  nil
-                  (lambda (_jc xml _ctx)
-                    (message "Failed to unblock %s: %S" jid xml))
-                  nil))
+  (jabber-blocking--change jc jid 'unblock))
 
 ;;;###autoload
 (defun jabber-blocking-list (jc)
@@ -122,12 +265,7 @@ JC is the Jabber connection.  JID is the bare JID to unblock."
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)))
-  (jabber-send-iq jc nil "get"
-                  `(blocklist ((xmlns . ,jabber-blocking-xmlns)))
-                  #'jabber-blocking--display-list nil
-                  (lambda (_jc xml _ctx)
-                    (message "Failed to retrieve blocklist: %S" xml))
-                  nil))
+  (jabber-blocking--fetch jc #'jabber-blocking--display-list))
 
 (defun jabber-blocking--display-list (jc xml-data _closure)
   "Display the blocklist from XML-DATA.
@@ -138,7 +276,6 @@ JC is the Jabber connection."
          (jids (mapcar (lambda (item)
                          (jabber-xml-get-attribute item 'jid))
                        blocklist)))
-    (plist-put (fsm-get-state-data jc) :blocking-list jids)
     (if (null jids)
         (message "Blocklist for %s is empty"
                  (jabber-connection-bare-jid jc))
@@ -168,14 +305,9 @@ accordingly.  JC is the Jabber connection."
   (unless (bound-and-true-p jabber-chatting-with)
     (user-error "Not in a chat buffer"))
   (let ((jid (jabber-jid-user jabber-chatting-with)))
-    (jabber-send-iq jc nil "get"
-                    `(blocklist ((xmlns . ,jabber-blocking-xmlns)))
-                    (lambda (jc xml-data _ctx)
-                      (jabber-blocking--toggle jc xml-data jid))
-                    nil
-                    (lambda (_jc xml _ctx)
-                      (message "Failed to retrieve blocklist: %S" xml))
-                    nil)))
+    (jabber-blocking--fetch
+     jc (lambda (jc xml-data _ctx)
+          (jabber-blocking--toggle jc xml-data jid)))))
 
 (defun jabber-blocking--toggle (jc xml-data jid)
   "Block or unblock JID based on current blocklist in XML-DATA.
@@ -196,6 +328,8 @@ JC is the Jabber connection."
 (add-to-list 'jabber-iq-set-xmlns-alist
              (cons jabber-blocking-xmlns #'jabber-blocking--process-push))
 (jabber-disco-advertise-feature jabber-blocking-xmlns)
+
+(add-hook 'jabber-post-connect-hooks #'jabber-blocking--on-connect -90)
 
 (provide 'jabber-blocking)
 

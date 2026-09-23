@@ -94,11 +94,15 @@ obtained from `xml-parse-region'."
      ;; if type is "result" or "error", this is a response to a query we sent.
      ((or (string= type "result")
 	  (string= type "error"))
-      (let ((callback-cons (nth (cdr (assoc type '(("result" . 0)
-						   ("error" . 1)))) (cdr callback))))
-	(when (and (consp callback-cons) (car callback-cons))
-	  (funcall (car callback-cons) jc xml-data (cdr callback-cons))))
-      (setq jabber-open-info-queries (delq callback jabber-open-info-queries)))
+      ;; Admission precedes dispatch AND removal: a rejected reply must not
+      ;; consume the legitimate outstanding request.
+      (when (or (null (nth 3 callback))
+                (funcall (nth 3 callback) jc xml-data))
+        (let ((callback-cons (nth (cdr (assoc type '(("result" . 0)
+                                                   ("error" . 1)))) (cdr callback))))
+          (when (and (consp callback-cons) (car callback-cons))
+            (funcall (car callback-cons) jc xml-data (cdr callback-cons))))
+        (setq jabber-open-info-queries (delq callback jabber-open-info-queries))))
 
      ;; if type is "get" or "set", correct action depends on namespace of request.
      ((and (listp query)
@@ -117,7 +121,8 @@ obtained from `xml-parse-region'."
 	  (jabber-send-iq-error jc from id query "cancel" 'feature-not-implemented)))))))
 
 (defun jabber-send-iq (jc to type query success-callback success-closure-data
-			  error-callback error-closure-data &optional result-id)
+			  error-callback error-closure-data &optional result-id
+                          response-predicate)
   "Send an iq stanza to the specified entity, and optionally set up a callback.
 JC is the Jabber connection.
 TO is the addressee.
@@ -129,6 +134,9 @@ SUCCESS-CLOSURE-DATA is an extra argument to SUCCESS-CALLBACK.
 ERROR-CALLBACK is the function to be called when an error arrives.
 ERROR-CLOSURE-DATA is an extra argument to ERROR-CALLBACK.
 RESULT-ID is the id to be used for a response to a received iq message.
+RESPONSE-PREDICATE, when non-nil, is called with the receiving connection
+and stanza before dispatch.  A nil return ignores the response without
+removing the pending query.  Omit it to retain legacy response handling.
 `jabber-report-success' and `jabber-process-data' are common callbacks.
 
 The callback functions are called like this:
@@ -138,7 +146,8 @@ with XML-DATA being the IQ stanza received in response."
     (if (or success-callback error-callback)
 	(setq jabber-open-info-queries (cons (list id
 						     (cons success-callback success-closure-data)
-						     (cons error-callback error-closure-data))
+						     (cons error-callback error-closure-data)
+                                                     response-predicate)
 
 					       jabber-open-info-queries)))
     (jabber-send-sexp jc
