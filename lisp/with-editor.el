@@ -827,7 +827,7 @@ This command can be used in `shell-mode', `term-mode', `eshell-mode',
                                (format " export EMACS_SERVER_FILE=%S" $))
          (eat-self-input 1 'return))
        (unless interactive
-         (eat-term-send-string eat-terminal "clear")
+         (eat-term-send-string eat-terminal " clear")
          (eat-self-input 1 'return)))))
   (message "Successfully exported %s" envvar))
 
