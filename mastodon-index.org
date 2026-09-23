@@ -199,7 +199,7 @@
 | C-'        | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
 | T          | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
 | S          | mastodon-tl-toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
-|            | mastodon-tl-toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
+| C-M-c      | mastodon-tl-toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
 | c          | mastodon-tl-toggle-spoiler-text-in-toot          | Toggle the visibility of the spoiler text in the current toot.                 |
 |            | mastodon-tl-unblock-domain                       | Read a blocked domain and unblock it.                                          |
 | C-S-b      | mastodon-tl-unblock-user                         | Query for USER-HANDLE from list of blocked users and unblock that user.        |
@@ -340,6 +340,7 @@
 | Custom variable                                    | Description                                                                  |
 |----------------------------------------------------+------------------------------------------------------------------------------|
 | mastodon-active-user                               | Username of the active user.                                                 |
+| mastodon-auth-encrypt-tokens                       | Whether to encrypt client (mastodon.el) and user auth sources.               |
 | mastodon-auth-use-auth-source                      | Whether to use auth sources for user credentials.                            |
 | mastodon-client--token-file                        | File path where Mastodon access tokens are stored.                           |
 | mastodon-display-featured-tags-on-profiles         | Whether to display featured tags on user profiles.                           |
