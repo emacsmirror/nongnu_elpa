@@ -35,7 +35,8 @@
 (ert-deftest mastodon-client--store ()
   "Test the value `mastodon-client--store' returns/stores."
   (let ((mastodon-instance-url "http://mastodon.example")
-        (plist '(:client_id "id" :client_secret "secret")))
+        (plist '(:client_id "id" :client_secret "secret"))
+        (mastodon-auth-encrypt-tokens nil))
     (with-mock
       (mock (mastodon-client--token-file) => "stubfile.plstore")
       (mock (mastodon-client--fetch) => plist)
@@ -153,22 +154,22 @@
 ;; (asks for gpg passphrase)
 ;; otherwise test passes
 (ert-deftest mastodon-client--store-access-token ()
-  (let ((mastodon-instance-url "https://mastodon.example")
-        (mastodon-active-user "test8000")
-        (mastodon-auth-encrypt-tokens nil)
-        ;; if clause so we can not lose the encrypted plist structure:
-        (user-details ;; order changed for new encrypted auth flow:
-         (if mastodon-auth-encrypt-tokens
-             '( :client_id "id" :client_secret "secret"
-                :access_token "token"
-                :username "test8000@mastodon.example"
-                :instance "https://mastodon.example")
-           '( :username "test8000@mastodon.example"
-              :instance "https://mastodon.example"
-              :client_id "id"
-              :client_secret "secret"
-              :access_token "token")))
-        (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
+  (let* ((mastodon-instance-url "https://mastodon.example")
+         (mastodon-active-user "test8000")
+         (mastodon-auth-encrypt-tokens nil)
+         ;; if clause so we can not lose the encrypted plist structure:
+         (user-details ;; order changed for new encrypted auth flow:
+          (if mastodon-auth-encrypt-tokens
+              '( :client_id "id" :client_secret "secret"
+                 :access_token "token"
+                 :username "test8000@mastodon.example"
+                 :instance "https://mastodon.example")
+            '( :username "test8000@mastodon.example"
+               :instance "https://mastodon.example"
+               :client_id "id"
+               :client_secret "secret"
+               :access_token "token")))
+         (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
     ;; test if mastodon-client--store-access-token /returns/ right
     ;; value
     (with-mock
