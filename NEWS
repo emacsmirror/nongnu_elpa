@@ -10,9 +10,12 @@
 
 ** New models and backends
 
-- Anthropic backend: Add support for =claude-fable-5-1=.
+- Anthropic backend: Add support for =claude-fable-5-1= and
+  =claude-opus-5-5=.
 
 - OpenAI backend: Add support for =gpt-6-astra=.
+
+- Bedrock backend: Add support for =claude-opus-5-5=.
 
 - Deepseek backend: Add support for =deepseek-flash=, and deprecate
   =deepseek-v4-flash= and =deepseek-v4-flash-vision-exp=.
