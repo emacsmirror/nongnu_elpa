@@ -7,8 +7,6 @@
 ;; NB: since switching to encrypted (client) plstore, some tests fail if
 ;; `plistore-encrypt-to' is not set to a working gpg key
 
-(setq mastodon-auth-encrypt-tokens nil)
-
 (ert-deftest mastodon-auth--handle-token-response--good ()
   "Should extract the access token from a good response."
   (should
@@ -84,6 +82,8 @@
 (ert-deftest mastodon-auth-plstore-token-check ()
   (let ((mastodon-instance-url "https://mastodon.example")
         (mastodon-active-user "test8000")
+        (mastodon-auth-encrypt-tokens nil)
+        ;; if clause so we can not lose the encrypted plist structure:
         (user-details ;; order changed for new encrypted auth flow:
          (if mastodon-auth-encrypt-tokens
              '( :client_id "id" :client_secret "secret"
