@@ -37,6 +37,7 @@
 (defvar mastodon-instance-url)
 (defvar mastodon-active-user)
 (defvar mastodon-auth-use-auth-source)
+(defvar mastodon-auth-encrypt-tokens)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--post "mastodon-http")
@@ -102,25 +103,30 @@
 Make `mastodon-client--fetch' call to determine client values.
 Return a plist of secret and non-secret key/val pairs."
   (let* ((plstore (plstore-open (mastodon-client--token-file)))
-	 (client (mastodon-client--fetch))
-         (secrets `( :client_id ,(plist-get client :client_id)
-                     :client_secret ,(plist-get client :client_secret)))
+         (client (mastodon-client--fetch))
+         (secrets
+          (when mastodon-auth-encrypt-tokens
+            `( :client_id ,(plist-get client :client_id)
+               :client_secret ,(plist-get client :client_secret))))
          (sans-secrets
-          (dolist (x '(:client_id :client_secret) client)
-            (cl-remf client x)))
-	 ;; alexgriffith reported seeing ellipses in the saved output
-	 ;; which indicate some output truncating. Nothing in
-	 ;; `plstore-save' seems to ensure this cannot happen so let's do
-	 ;; that ourselves:
-	 (print-length nil)
-	 (print-level nil))
+          (when mastodon-auth-encrypt-tokens
+            (dolist (x '(:client_id :client_secret) client)
+              (cl-remf client x))))
+         ;; ensure no truncation:
+         (print-length nil)
+         (print-level nil))
     (plstore-put plstore
                  (concat "mastodon-" mastodon-instance-url)
-                 sans-secrets secrets)
+                 (if mastodon-auth-encrypt-tokens
+                     sans-secrets
+                   client)
+                 (when mastodon-auth-encrypt-tokens secrets))
     ;; FIXME: breaks tests: prompts for gpg passphrase
     (plstore-save plstore)
     (plstore-close plstore)
-    (append secrets sans-secrets)))
+    (if mastodon-auth-encrypt-tokens
+        (append secrets sans-secrets)
+      client)))
 
 (defun mastodon-client--remove-key-from-plstore (plstore)
   "Remove KEY from PLSTORE."
@@ -160,25 +166,44 @@ If `mastodon-auth-use-auth-source', encrypt it in auth source file."
          (plstore (plstore-open (mastodon-client--token-file)))
          (username (mastodon-client--form-user-from-vars))
          (key (concat "user-" username))
-         (secrets `( :client_id ,(plist-get user-details :client_id)
-                     :client_secret ,(plist-get user-details :client_secret)))
+         (plstore-value
+          (unless mastodon-auth-encrypt-tokens
+            (setq user-details
+                  (plist-put user-details :access_token token))))
+         (secrets
+          (when mastodon-auth-encrypt-tokens
+            `( :client_id ,(plist-get user-details :client_id)
+               :client_secret ,(plist-get user-details :client_secret))))
          (sans-secrets
-          (dolist (x '(:client_id :client_secret) user-details)
-            (cl-remf user-details x)))
+          (when mastodon-auth-encrypt-tokens
+            (dolist (x '(:client_id :client_secret) user-details)
+              (cl-remf user-details x))))
          (print-length nil)
          (print-level nil))
     (if mastodon-auth-use-auth-source
-        ;; auth-source:
+        ;; auth-source + plstore:
         (progn
           (mastodon-auth-source-token
            mastodon-instance-url username token :create)
-          (plstore-put plstore key sans-secrets secrets))
-      ;; plstore encrypted:
-      (plstore-put plstore key sans-secrets
-                   (append secrets `(:access_token ,token))))
+          (mastodon-client-plstore-put plstore key plstore-value secrets sans-secrets token))
+      ;; plstore only:
+      (mastodon-client-plstore-put plstore key plstore-value secrets sans-secrets token))
     (plstore-save plstore)
     (plstore-close plstore)
-    (cdr (plstore-get plstore key))))
+    (if mastodon-auth-encrypt-tokens
+        (cdr (plstore-get plstore key))
+      plstore-value)))
+
+(defun mastodon-client-plstore-put (plstore key plstore-value secrets sans-secrets token)
+  ""
+  (plstore-put plstore key
+               ;; KEYS:
+               (if mastodon-auth-encrypt-tokens
+                   sans-secrets
+                 plstore-value)
+               ;; SECRET-KEYS:
+               (when mastodon-auth-encrypt-tokens
+                 (append secrets `(:access_token ,token)))))
 
 (defun mastodon-client--make-user-active (user-details)
   "USER-DETAILS is a plist consisting of user details.
@@ -192,19 +217,28 @@ Return a plist of secret and non-secret key/val pairs."
           (if mastodon-auth-use-auth-source
               (mastodon-auth-source-token mastodon-instance-url handle)
             (plist-get user-details :access_token)))
-         (secrets `( :access_token ,token
-                     :client_id ,(plist-get user-details :client_id)
-                     :client_secret ,(plist-get user-details :client_secret)))
+         (secrets
+          (when mastodon-auth-encrypt-tokens
+            `( :access_token ,token
+               :client_id ,(plist-get user-details :client_id)
+               :client_secret ,(plist-get user-details :client_secret))))
          (deets (copy-sequence user-details))
          (sans-secrets
-          (dolist (x '(:client_id :client_secret :access_token) deets)
-            (cl-remf deets x)))
+          (when mastodon-auth-encrypt-tokens
+            (dolist (x '(:client_id :client_secret :access_token) deets)
+              (cl-remf deets x))))
          (print-length nil)
          (print-level nil))
-    (plstore-put plstore "active-user" sans-secrets secrets)
+    (plstore-put plstore "active-user"
+                 (if mastodon-auth-encrypt-tokens
+                     sans-secrets
+                   user-details)
+                 (when mastodon-auth-encrypt-tokens secrets))
     (plstore-save plstore)
     (plstore-close plstore)
-    (append secrets sans-secrets)))
+    (if mastodon-auth-encrypt-tokens
+        (append secrets sans-secrets)
+      user-details)))
 
 (defun mastodon-client--form-user-from-vars ()
   "Create a username from user variable.  Return that username.

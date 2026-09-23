@@ -73,6 +73,10 @@ again, as auth-source.el only provides unreliable tools for updating
 entries."
   :type 'boolean)
 
+(defcustom mastodon-auth-encrypt-tokens t
+  "Whether to encrypt client (mastodon.el) and user auth sources."
+  :type 'boolean)
+
 (defvar mastodon-auth-source-file nil
   "This variable is obsolete.
 This variable currently serves no purpose and will be removed in

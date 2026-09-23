@@ -7,6 +7,8 @@
 ;; NB: since switching to encrypted (client) plstore, some tests fail if
 ;; `plistore-encrypt-to' is not set to a working gpg key
 
+(setq mastodon-auth-encrypt-tokens nil)
+
 (ert-deftest mastodon-client--register ()
   "Should POST to /apps."
   (with-mock
@@ -156,10 +158,16 @@
   (let ((mastodon-instance-url "https://mastodon.example")
         (mastodon-active-user "test8000")
         (user-details ;; order changed for new encrypted auth flow:
-         '( :client_id "id" :client_secret "secret"
-            :access_token "token"
-            :username "test8000@mastodon.example"
-            :instance "https://mastodon.example"))
+         (if mastodon-auth-encrypt-tokens
+             '( :client_id "id" :client_secret "secret"
+                :access_token "token"
+                :username "test8000@mastodon.example"
+                :instance "https://mastodon.example")
+           '( :username "test8000@mastodon.example"
+              :instance "https://mastodon.example"
+              :client_id "id"
+              :client_secret "secret"
+              :access_token "token")))
         (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
     ;; test if mastodon-client--store-access-token /returns/ right
     ;; value
@@ -185,7 +193,8 @@
                          :client_id nil
                          :client_secret nil
                          :username "test@mastodon.example"))
-        (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
+        (mastodon-auth-use-auth-source nil) ;; FIXME: test auth source
+        (mastodon-auth-encrypt-tokens nil))
     (with-mock
       (mock (mastodon-client--token-file) => "stubfile.plstore")
       (mastodon-client--make-user-active user-details)
