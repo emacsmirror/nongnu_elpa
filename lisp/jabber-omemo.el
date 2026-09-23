@@ -479,7 +479,7 @@ Pass ordinary responses to SUCCESS or FAILURE.  A blocked peer, or a
 retired peer connection, settles CALLBACK with nil, the existing failure value.
 Check again on response before parsing, persistence or further requests."
   (let* ((state (fsm-get-state-data jc))
-         (session (plist-get state :blocking-session))
+         (current-p (jabber-blocking--session-predicate jc))
          (own-p (equal (jabber-jid-user jid)
                        (concat (plist-get state :username) "@"
                                (plist-get state :server))))
@@ -487,8 +487,7 @@ Check again on response before parsing, persistence or further requests."
           (lambda ()
             ;; Preserve the existing own-device publication lifecycle.
             (or own-p
-                (and (eq state (fsm-get-state-data jc))
-                     (eq session (plist-get state :blocking-session))
+                (and (funcall current-p)
                      (jabber-blocking-ready-p jc jid)
                      (not (jabber-blocking-blocked-p jc jid))))))
          (cancel (lambda () (when callback (funcall callback nil)))))

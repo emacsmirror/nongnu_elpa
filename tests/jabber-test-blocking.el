@@ -432,6 +432,121 @@
         (should-not jabber-open-info-queries)
         (should-not (plist-get state :blocking-list))))))
 
+(require 'jabber-core)
+
+(defun jabber-test-blocking--connection ()
+  "Return a disposable established FSM with Stream Management state."
+  (let ((jc (make-symbol "blocking-test")))
+    (put jc :name 'jabber-connection)
+    (put jc :state :session-established)
+    (put jc :state-data
+         (jabber-sm--reset
+          (list :username "me" :server "example.org"
+                :connection (list 'transport) :session-id "stream"
+                :blocking-session (list nil) :blocking-status 'pending)))
+    jc))
+
+(defun jabber-test-blocking--drain (jc)
+  "Run the real SM drain that replaces JC's state between replies."
+  (let ((old (fsm-get-state-data jc)))
+    (jabber-sm--drain-pending jc old)
+    (should-not (eq old (fsm-get-state-data jc)))
+    (should (eq (plist-get old :connection)
+                (plist-get (fsm-get-state-data jc) :connection)))))
+
+(ert-deftest jabber-test-blocking-fsm-replaced-state-responses ()
+  "Real FSM replies survive the ordinary SM drain's plist replacement."
+  (dolist (kind '(disco snapshot block))
+    (dolist (failure '(nil t))
+      (let* ((jc (jabber-test-blocking--connection))
+             (jabber-connections (list jc))
+             (jabber-open-info-queries nil)
+             (jabber-blocking-ready-hook nil)
+             (jabber-disco-info-cache (make-hash-table :test #'equal))
+             sent)
+        (cl-letf (((symbol-function 'jabber-send-sexp)
+                   (lambda (_jc xml &rest _) (push xml sent))))
+          (pcase kind
+            ('disco (jabber-blocking--on-connect jc))
+            ('snapshot (jabber-blocking--fetch jc))
+            (_ (jabber-blocking--change jc "peer@example.net" kind)))
+          (let* ((old (fsm-get-state-data jc))
+                 (id (jabber-xml-get-attribute (car sent) 'id))
+                 (payload
+                  (if failure
+                      '(error ((type . "cancel"))
+                              (service-unavailable
+                               ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))
+                    (pcase kind
+                      ('disco '(query ((xmlns . "http://jabber.org/protocol/disco#info"))))
+                      ('snapshot '(blocklist ((xmlns . "urn:xmpp:blocking"))
+                                            (item ((jid . "peer@example.net")))))))))
+            (jabber-test-blocking--drain jc)
+            (fsm-send-sync jc
+                           `(:stanza (iq ((type . ,(if failure "error" "result"))
+                                          (id . ,id) (from . "example.org"))
+                                         ,@(when payload (list payload)))))
+            (should-not (assoc id jabber-open-info-queries))
+            (should (eq (plist-get old :blocking-status) 'pending))
+            (if (eq kind 'block)
+                (should (= (length sent) (if failure 1 2)))
+              (should (eq (plist-get (fsm-get-state-data jc) :blocking-status)
+                          (if failure 'failed
+                            (if (eq kind 'disco) 'unsupported 'ready)))))
+            (when (and (eq kind 'snapshot) (not failure))
+              (should (jabber-blocking-blocked-p jc "peer@example.net")))))))))
+
+(ert-deftest jabber-test-blocking-fsm-retired-response ()
+  "Replacement transport, stream, blocking session or account rejects old IQs."
+  (dolist (change '((:connection . new-transport)
+                     (:session-id . "new-stream")
+                     (:blocking-session . new-session)
+                     (:username . "other") (:server . "example.net")))
+    (let* ((jc (jabber-test-blocking--connection))
+           (jabber-connections (list jc))
+           (jabber-open-info-queries nil)
+           (jabber-blocking-ready-hook nil)
+           sent)
+      (cl-letf (((symbol-function 'jabber-send-sexp)
+                 (lambda (_jc xml &rest _) (setq sent xml))))
+        (jabber-blocking--fetch jc)
+        (jabber-test-blocking--drain jc)
+        (plist-put (fsm-get-state-data jc) (car change) (cdr change))
+        (let* ((id (jabber-xml-get-attribute sent 'id))
+               (pending (assoc id jabber-open-info-queries)))
+          (fsm-send-sync jc
+                         `(:stanza (iq ((type . "result") (id . ,id))
+                                       (blocklist ((xmlns . "urn:xmpp:blocking"))))))
+          (should (eq pending (assoc id jabber-open-info-queries)))
+          (should (eq (plist-get (fsm-get-state-data jc) :blocking-status)
+                      'pending)))))))
+
+(ert-deftest jabber-test-blocking-omemo-replaced-state ()
+  "Peer replies survive SM copies but not transport or session replacement."
+  (dolist (change '(nil (:connection . replacement)
+                        (:session-id . "replacement")
+                        (:blocking-session . replacement)
+                        (:blocking-list "peer@example.net")))
+    (dolist (failure '(nil t))
+      (let* ((jc (jabber-test-blocking--connection))
+             (jabber-connections (list jc))
+             success error-callback result)
+        (plist-put (fsm-get-state-data jc) :blocking-status 'ready)
+        (cl-letf (((symbol-function 'jabber-pubsub-request)
+                   (lambda (_jc _jid _node ok err)
+                     (setq success ok error-callback err))))
+          (jabber-omemo--request-peer
+           jc "peer@example.net" "test-node"
+           (lambda (&rest _) (setq result 'success))
+           (lambda (&rest _) (setq result 'failure))
+           (lambda (value) (setq result (list value))))
+          (jabber-test-blocking--drain jc)
+          (when change
+            (plist-put (fsm-get-state-data jc) (car change) (cdr change)))
+          (funcall (if failure error-callback success) jc nil nil)
+          (should (equal result (if change '(nil)
+                                  (if failure 'failure 'success)))))))))
+
 (provide 'jabber-test-blocking)
 
 ;;; jabber-test-blocking.el ends here
