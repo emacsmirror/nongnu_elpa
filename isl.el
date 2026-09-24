@@ -248,6 +248,14 @@ in region or use the region as default for searching by using
   "Maximum region length accepted to use region as default.
 It has no effect when `isl-use-region-when-at' value is \\='always."
   :type 'integer)
+
+(defcustom isl-yank-text-at-point-fn #'forward-word
+  "The function used to forward point with `isl-yank-text-at-point'.
+With a nil value, fallback to default `forward-word'.
+The function should take one arg, an integer like `forward-word'.
+NOTE: Using `forward-symbol' here is not very useful as it is
+already provided by \\<isl-map>\\[next-history-element]."
+  :type 'function)
 
 (defface isl-match
   '((t :background "brown4"))
@@ -505,10 +513,12 @@ the initial position i.e. the position before launching `isl-search'."
       (when (or (memq (char-syntax (or (char-after) 0)) '(?w ?_ ? ))
                 (memq (char-syntax (or (char-after (1+ (point))) 0))
                       '(?w ?_ ? )))
-        (setq str (buffer-substring-no-properties (or isl--yank-point (point))
-                                                  (save-excursion
-                                                    (forward-word)
-                                                    (point))))
+        (setq str (buffer-substring-no-properties
+                   (or isl--yank-point (point))
+                   (save-excursion
+                     (funcall (or isl-yank-text-at-point-fn
+                                  #'forward-word))
+                     (point))))
         (when (string-match "\\` " str)
           (setq str (replace-match "\\\\ " nil nil str)))
         (with-selected-window (minibuffer-window)
