@@ -1,4 +1,4 @@
-;;; slime-scheme.el --- Support Scheme programs running under Common Lisp
+;;; slime-scheme.el --- Support Scheme programs running under Common Lisp  -*- lexical-binding: t; -*-
 ;;
 ;; Authors: Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 ;; 
