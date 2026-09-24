@@ -244,7 +244,7 @@ This function uses `geiser-chicken-init-file' if it exists."
   (let* ((version (geiser-chicken--version (geiser-chicken--binary)))
          ;; C4 documentation is no longer available online.
          (cdoc (if (version< version "6.0.0") "cdoc5" "cdoc")))
-    (browse-url (format "http://api.call-cc.org/%s?q=%s&query-name=Look+up"
+    (browse-url (format "http://api.call-cc.org/%s/?q=%s&query-name=Look+up"
                         cdoc (url-hexify-string (symbol-name id))))))
 
 

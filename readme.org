@@ -19,37 +19,41 @@
     source tree: just add it to your load path and require
     ~geiser-chicken~ in your initialisation files.
 
-    You will also need to install some additional Chicken eggs,
-    depending on your Chicken version:
+    Then install the required Chicken eggs:
 
-***** Chicken 5 Addendum
-       These steps are necessary to fully support Chicken Scheme, but are
-       not required for any other scheme.
+    #+BEGIN_EXAMPLE
+    $ chicken-install -s chicken-doc apropos
+    #+END_EXAMPLE
 
-       - Install the necessary support eggs:
-         #+BEGIN_EXAMPLE
-         $ chicken-install -s apropos chicken-doc srfi-18 srfi-1
-         #+END_EXAMPLE
-       - Update the Chicken documentation database:
-         #+BEGIN_EXAMPLE
-         $ cd `csi -R chicken.platform -p '(chicken-home)'`
-         $ curl https://3e8.org/pub/chicken-doc/chicken-doc-repo-5.tgz | sudo tar zx
-         #+END_EXAMPLE
+    Then follow the instructions on the Chicken Wiki to install the documentation
+    package for your Chicken version:
 
-***** Chicken 4 Addendum
-       These steps are necessary to fully support Chicken Scheme, but are
-       not required for any other scheme.
+    https://api.call-cc.org/6/doc/chicken-doc#sec:Pre-built_packages
 
-       - Install the necessary support eggs:
-         #+BEGIN_EXAMPLE
-          $ chicken-install -s apropos chicken-doc
-         #+END_EXAMPLE
+    Packages for Chicken 4, 5, and 6 are currently available.
 
-       - Update the Chicken documentation database:
-         #+BEGIN_EXAMPLE
-          $ cd `csi -p '(chicken-home)'`
-          $ curl http://3e8.org/pub/chicken-doc/chicken-doc-repo.tgz | sudo tar zx
-         #+END_EXAMPLE
+*** Troubleshooting
+
+    If "nothing works", the most likely reason is the missing documentation
+    package, causing the Geiser bootstrap code not to load. To verify, start ~csi~
+    and try to import ~chicken-doc~.
+
+    #+begin_example
+      ____,     CHICKEN
+     /   ^ >    (c) 2008 The CHICKEN Team
+    /| ____     (c) 2000-2007 Felix L. Winkelmann
+    ||/    \\   macosx-unix-clang-arm64 [ 64bit dload ptables ]
+    ||     ||
+     \\____/ . 0 . 1pre1 (rev 3a7cb36d)
+    Type ,? for help.
+    #;1> (import chicken-doc)
+    #;2> (verify-repository)
+    #<chicken-doc#chicken-doc-repository>
+    #;3> (search-only 'car)
+    (scheme base car)  (car pair)
+    #+end_example
+
+    If you see errors instead, verify your documentation package installation.
 
 * Contributing
 *** Generative AI (LLMs)
