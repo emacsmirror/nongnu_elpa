@@ -109,7 +109,7 @@
 (defun slime-mrepl-input-sender (proc string)
   (slime-mrepl-send-string (substring-no-properties string)))
 
-(defun slime-mrepl-send-string (string &optional command-string)
+(defun slime-mrepl-send-string (string &optional _command-string)
   (slime-mrepl-send `(:process ,string)))
 
 (defun slime-mrepl-send (msg)

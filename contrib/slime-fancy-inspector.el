@@ -24,7 +24,7 @@
   (slime-eval-describe `(swank:disassemble-form
                          ,(slime-definition-at-point t))))
 
-(defun slime-edit-inspector-part (name &optional where)
+(defun slime-edit-inspector-part (_name &optional where)
   (and (eq major-mode 'slime-inspector-mode)
        (cl-destructuring-bind (&optional property value)
            (slime-inspector-property-at-point)
