@@ -435,10 +435,7 @@ And some tools that do not handle $EDITOR properly also break."
   ;; Manually enabling the mode is dangerous because canceling the buffer
   ;; deletes the visited file.  The mode must not be disabled manually,
   ;; either `with-editor-finish' or `with-editor-cancel' must be used.
-  :interactive nil                    ; >= 28.1
-  (when (called-interactively-p 'any) ; <  28.1
-    (setq with-editor-mode (not with-editor-mode))
-    (user-error "With-Editor mode is not intended for interactive use"))
+  :interactive nil
   ;; The buffer must also not be killed using regular kill commands.
   (add-hook 'kill-buffer-query-functions
             #'with-editor-kill-buffer-noop nil t)
