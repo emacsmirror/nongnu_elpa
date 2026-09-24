@@ -516,6 +516,22 @@ Media files, if present, are placed in `gptel-context'."
       :input-cost 10
       :output-cost 50
       :cutoff-date "2026-04")
+     (gpt-6-sol
+      :description "Faster, more cost-efficient version of GPT-6"
+      :capabilities (media tool-use json url responses-api)
+      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+      :context-window 1050
+      :input-cost 2
+      :output-cost 10
+      :cutoff-date "2026-04")
+     (gpt-6-luna
+      :description "Fastest, cheapest version of GPT-6"
+      :capabilities (media tool-use json url responses-api)
+      :mime-types ("image/jpeg" "image/png" "image/gif" "image/webp")
+      :context-window 1050
+      :input-cost 0.10
+      :output-cost 0.50
+      :cutoff-date "2026-05")
      (gpt-5.6-sol
       :description "The best model for coding and agentic tasks"
       :capabilities (media tool-use json url responses-api)
