@@ -552,6 +552,16 @@ MAX-ID is a request parameter for pagination."
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
+(defun mastodon-webfinger (&optional query)
+  "Do a webfinger lookup on the server for QUERY."
+  (interactive)
+  (let* ((query (or query (read-string "URL: ")))
+         (url (format "%s/api/v2/search" mastodon-instance-url))
+         (params `(("q" . ,query)
+                   ("resolve" . "t"))) ; webfinger
+         (response (mastodon-http--get-json url params :silent)))
+    response))
+
 ;;;###autoload
 (defun mastodon-url-lookup (&optional query-url force)
   "If a URL resembles a fediverse link, try to load in `mastodon.el'.
@@ -571,10 +581,7 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
         (progn (message "Using external browser")
                (browse-url query))
       (message "Performing lookup...")
-      (let* ((url (format "%s/api/v2/search" mastodon-instance-url))
-             (params `(("q" . ,query)
-                       ("resolve" . "t"))) ; webfinger
-             (response (mastodon-http--get-json url params :silent)))
+      (let* ((response (mastodon-webfinger query)))
         (cond ((not (seq-empty-p (alist-get 'statuses response)))
                (let* ((statuses (assoc 'statuses response))
                       (status (seq-first (cdr statuses)))
@@ -600,6 +607,7 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
 (defun mastodon--fedi-url-p (url)
   "Check if QUERY resembles a fediverse URL."
   ;; calqued off https://github.com/tuskyapp/Tusky/blob/c8fc2418b8f5458a817bba221d025b822225e130/app/src/main/java/com/keylesspalace/tusky/BottomSheetActivity.kt
+  ;; now at https://codeberg.org/tusky/Tusky/src/commit/8eac61a5e002b12a2b7e13aa69d41a32d6a3ecb4/app/src/main/java/com/keylesspalace/tusky/util/LinkHelper.kt
   ;; thx to Conny Duck!
   ;; mastodon at least seems to allow only [a-z0-9_] for usernames, plus "."
   ;; but not at beginning or end, see https://github.com/mastodon/mastodon/issues/6830
@@ -629,13 +637,15 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           ;; (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
-          (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
+          ;; fliboard post (works with modified hometown below):
+          ;; either uri: https://flipboard.com/users/Gizmodo/statuses/UQ_TmLCbShiYB55LrrrzWQ:a:1876139665
+          ;; or url: https://flipboard.com/@gizmodo/tech-fknh6odjz/-/a-UQ_TmLCbShiYB55LrrrzWQ%3Aa%3A1876139665-%2F0
+          (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:alnum:]-_:]+$" query) ; hometown
           (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
           ;; bsky via fed.brid.gy (unsure if this needs narrowing down?):
           (string-prefix-p "https://fed.brid.gy/r/" url)
-          (string-match "^/collections/[[:digit:]_]+$" query) ;; collection
-          ))))
+          (string-match "^/collections/[[:digit:]_]+$" query) ;; collection))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.
