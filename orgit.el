@@ -103,7 +103,6 @@
 (require 'llama)
 (require 'magit)
 (require 'org)
-(require 'seq)
 
 ;;; Options
 
