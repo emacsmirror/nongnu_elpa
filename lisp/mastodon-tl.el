@@ -1364,18 +1364,18 @@ LINK-TYPE is the type of link to produce."
                       'mastodon-tab-stop link-type
                       'help-echo help-text)))
 
-(defun mastodon-tl-do-link-action-at-point (pos)
+(defun mastodon-tl-do-link-action-at-point (pos &optional prefix)
   "Do the action of the link at POS.
 Used for hitting RET on a given link."
-  (interactive "d")
+  (interactive "d\nP")
   (let ((link-type (get-text-property pos 'mastodon-tab-stop))
         (cont-thread (mastodon-tl--property 'continued-thread :nomove))
         (quote-toot (mastodon-tl--property 'quote-url :nomove)))
     (cond (cont-thread
            (mastodon-tl-continued-thread-load))
+          ;; load quote toot:
           (quote-toot
-           (let ((url (mastodon-tl--property 'quote-url :nomove)))
-             (mastodon-url-lookup url)))
+           (mastodon-url-lookup quote-toot prefix))
           ((eq link-type 'content-warning)
            (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
@@ -2059,20 +2059,20 @@ TOOT is the data for the quoting toot."
            ;; FIXME: "warn" should result in CW, but it should be
            ;; a CW independent of post CW:
            (mastodon-tl--format-quote-non-display
-            "Quote hidden due to one of your filters"))
+            "Quote hidden due to one of your filters" .url))
           ;; FIXME: muted account should result in a folded quote
           ;; (unfoldable):
           ((string= state "muted_account")
            (mastodon-tl--format-quote-non-display
-            "Quote hidden, account muted"))
+            "Quote hidden, account muted" .url))
           ((member state '("rejected" "revoked" "deleted"))
            (mastodon-tl--format-quote-non-display
-            (format "Quote %s" state)))
+            (format "Quote %s" state) nil :noprop))
           ((member state '("blocked_account" "blocked_domain"))
            (mastodon-tl--format-quote-non-display
-            (format "Quote hidden, %s" state)))
+            (format "Quote hidden, %s" state) nil :noprop))
           ((string= state "pending")
-           (mastodon-tl--format-quote-non-display "quote pending"))
+           (mastodon-tl--format-quote-non-display "quote pending" .url))
           (t
            (concat
             "\n" (mastodon-tl--quote-symbol-str) "\n"
@@ -2086,21 +2086,34 @@ TOOT is the data for the quoting toot."
                   (mastodon-tl--fold-body rendered
                                (mastodon-search--format-heading "click for full toot"))
                 rendered)
+              'quote-url .uri
               'button t
               'keymap mastodon-tl--link-keymap
               'help-echo "Load quoted toot"
               'mouse-face '(:inherit (highlight link) :underline nil))))))
          'line-prefix bar
          'wrap-prefix bar
-         'quote-url .url
          'mastodon-content-warning-body (when cw t)
          ;; TODO: respect filtering of quoted toot:
          'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
          'mastodon-quote data)))))
 
-(defun mastodon-tl--format-quote-non-display (str)
-  "Return a non-displaying quote string for STR."
-  (concat "\n\n" (mastodon-tl--quote-symbol-str) "\n[" str "]"))
+(defun mastodon-tl--format-quote-non-display (str &optional url no-prop)
+  "Return a non-displaying quote string for STR.
+Propertize STR as a button link loading the quoted toot, unless NO-PROP."
+  (concat
+   "\n\n"
+   (mastodon-tl--quote-symbol-str)
+   "\n["
+   (if no-prop
+       str
+     (propertize str
+                 'button t
+                 'quote-url url
+                 'keymap mastodon-tl--link-keymap
+                 'help-echo "Load quoted toot"
+                 'mouse-face '(:inherit (highlight link) :underline nil)))
+   "]"))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
 (defun mastodon-tl--change-post-quote-policy ()
