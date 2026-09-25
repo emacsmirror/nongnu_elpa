@@ -88,7 +88,6 @@
 (require 'llama)
 (require 'server)
 (require 'shell)
-(eval-when-compile (require 'subr-x))
 
 (declare-function dired-get-filename "dired"
                   (&optional localp no-error-if-not-filep))
