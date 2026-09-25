@@ -645,7 +645,8 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
           ;; bsky via fed.brid.gy (unsure if this needs narrowing down?):
           (string-prefix-p "https://fed.brid.gy/r/" url)
-          (string-match "^/collections/[[:digit:]_]+$" query) ;; collection))))
+          (string-match "^/collections/[[:digit:]_]+$" query) ;; collection
+          ))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.
