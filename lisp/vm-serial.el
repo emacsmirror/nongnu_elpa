@@ -941,11 +941,11 @@ questions will bother you!"
                   (vm-mail-mode-remove-header "FCC:")
                   (vm-postpone-message fcc vm-serial-send-mail-exit t))
               (if vm-serial-send-mail-exit
-                  (kill-this-buffer))))))))
+                  (kill-current-buffer))))))))
 
 (defun vm-serial--send-mail (&rest _)
   (if vm-serial-source-buffer
-      (kill-this-buffer)))
+      (kill-current-buffer)))
 
 ;;;###autoload
 (define-minor-mode vm-serial-mode

@@ -1206,6 +1206,67 @@ recursing down the cdrs would run out of depth."
             ;; a dotted tail is a form too
             (when tail (push tail pending))))))))
 
+(defconst vm-integration-test--menu-only-commands
+  '(kill-this-buffer)
+  "Commands that signal unless a menu or a tool bar invoked them.
+Each compares `last-command-event' with its own menu item and errors when it
+does not match, so a call from Lisp does not do the thing, it stops with
+`This command must be called from a menu or a tool bar'.")
+
+(defun vm-integration-test--top-level-forms (file)
+  "Every top-level form in FILE, read rather than matched as text.
+A name in a comment or a docstring is then not a hit."
+  (let ((forms nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (condition-case nil
+          (while t (push (read (current-buffer)) forms))
+        (end-of-file nil)))
+    forms))
+
+(defun vm-integration-test--elements (form)
+  "FORM's elements, its dotted tail included, each a form of its own."
+  (let ((elements nil) (tail form))
+    (while (consp tail)
+      (push (car tail) elements)
+      (setq tail (cdr tail)))
+    (if tail (cons tail elements) elements)))
+
+(defun vm-integration-test--menu-only-calls-in (file)
+  "Every menu-only command FILE calls."
+  (let ((pending (vm-integration-test--top-level-forms file))
+        (found nil))
+    (while pending
+      (let ((this (pop pending)))
+        (when (consp this)
+          (when (memq (car this) vm-integration-test--menu-only-commands)
+            (push (car this) found))
+          (setq pending (append (vm-integration-test--elements this) pending)))))
+    (delete-dups found)))
+
+(ert-deftest vm-integration-test-no-menu-only-command-is-called ()
+  "REGRESSION: VM calls no command that refuses to run outside a menu.
+
+`kill-this-buffer' has done so since Emacs 30, and VM called it from three
+places.  `vm-postpone-message' was the visible one: it wrote the draft to the
+folder, then signalled where it meant to kill the composition, so the buffer
+it had just filed stayed open (emacs-vm/vm#855).
+
+No lint reports this.  The command exists, is not obsolete, and takes no
+arguments, so nothing about the call reads as wrong; what it does depends on
+`last-command-event'.  The tree is read here instead.
+
+`kill-current-buffer' is the one to call from Lisp."
+  (let ((calls nil))
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (string-match-p "vm-\\(autoloads\\|cus-load\\|version-conf\\)\\.el\\'"
+                              file)
+        (dolist (symbol (vm-integration-test--menu-only-calls-in file))
+          (push (format "%s calls %s" (file-name-nondirectory file) symbol)
+                calls))))
+    (should-not calls)))
+
 (ert-deftest vm-integration-test-no-obsolete-function-is-called ()
   "REGRESSION: VM calls no obsolete Emacs function it has not accounted for.
 

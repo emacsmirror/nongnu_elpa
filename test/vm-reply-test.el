@@ -2819,8 +2819,13 @@ make -- which is what happened when this guard was first written."
 He had `kill-this-buffer' on a key -- \"<f3> runs the command kill-this-buffer
 (found in global-map)\" -- and lost drafts to it (emacs-vm/vm#824).  It is a
 menu-bar command that kills the current buffer, so it reaches `kill-buffer'
-and the guard on `kill-buffer-query-functions' with it; this pins the path he
-actually pressed rather than the `kill-buffer' call the other tests make.
+and the guard on `kill-buffer-query-functions' with it; this pins that path
+rather than the `kill-buffer' call the other tests make.
+
+Invoked as the menu invokes it, `last-command-event' being the menu item's
+own symbol.  The command signals for anything else since Emacs 30, so the f3
+binding he had is no longer a way in (emacs-vm/vm#855); the guard is what is
+under test either way.
 
 He is not available to check the fix, which is why it is tested here."
   (require 'menu-bar)
@@ -2845,7 +2850,7 @@ He is not available to check the fix, which is why it is tested here."
             (setq composition (current-buffer))
             (goto-char (point-max))
             (insert "The draft his f3 used to take.\n")
-            (kill-this-buffer))
+            (let ((last-command-event 'kill-buffer)) (kill-this-buffer)))
           (should-not (buffer-live-p composition))
           (should (file-exists-p vm-save-killed-messages-folder))
           (with-temp-buffer
@@ -2861,7 +2866,7 @@ He is not available to check the fix, which is why it is tested here."
       (delete-directory dir t))))
 
 (ert-deftest vm-reply-test-kill-this-buffer-asks-when-nothing-is-kept ()
-  "With keeping off, his key asks, and no is taken for an answer."
+  "With keeping off, the same way in asks, and no is taken for an answer."
   (require 'menu-bar)
   (let ((vm-save-killed-message nil)
         (asked nil)
@@ -2874,7 +2879,7 @@ He is not available to check the fix, which is why it is tested here."
           (setq composition (current-buffer))
           (goto-char (point-max))
           (insert "Ask me about this one.\n")
-          (kill-this-buffer)
+          (let ((last-command-event 'kill-buffer)) (kill-this-buffer))
           (should (= (length asked) 1))
           (should (string-match-p "has not been sent" (car asked)))
           (should (buffer-live-p composition)))

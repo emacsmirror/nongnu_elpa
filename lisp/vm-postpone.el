@@ -734,7 +734,9 @@ Optional argument DONT-KILL is positive, then do not kill source message."
       ;; composition left one behind, in `vm-folder-directory', which is
       ;; where VM points them.
       (delete-auto-save-file-if-necessary t)
-      (kill-this-buffer))
+      ;; `kill-current-buffer', not `kill-this-buffer': that one signals
+      ;; unless a menu or a tool bar invoked it (#855).
+      (kill-current-buffer))
 
     (if (vm-interactive-p)
         (message "Message postponed to folder `%s'" folder))))
