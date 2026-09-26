@@ -1,6 +1,7 @@
 ;;; test-summary --- Validate and aggregate ERT receipts -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
+(require 'json)
 
 (defun jabber-test-read-record (file)
   "Read exactly one Lisp record from FILE."
@@ -38,4 +39,9 @@
                       stamp (error-message-string err) stamp)))))
   (princ (format "%d completed tests: %d expected, %d unexpected, %d skipped; %d failed files\n"
                  total expected unexpected skipped bad))
+  (when (and (zerop bad) (getenv "JABBER_MATRIX_EVIDENCE"))
+    (with-temp-file (concat (car command-line-args-left) ".summary.json")
+      (insert (json-encode `((stamps . ,(vconcat command-line-args-left))
+                            (total . ,total) (expected . ,expected)
+                            (unexpected . ,unexpected) (skipped . ,skipped))))))
   (kill-emacs (if (zerop bad) 0 1)))

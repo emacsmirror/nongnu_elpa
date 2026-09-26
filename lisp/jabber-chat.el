@@ -2750,7 +2750,7 @@ flight, or the symbol `failed' after an unsuccessful attempt."
   (get-text-property beg 'jabber-chat-image-fetching))
 
 (defun jabber-chat--isolate-image-url (beg end)
-  "Ensure the URL between BEG and END starts on its own line.
+  "Put the URL between BEG and END at the start of its own line.
 Return the possibly shifted bounds as a cons cell."
   (cond ((or (= beg (point-min))
              (eq (char-before beg) ?\n))

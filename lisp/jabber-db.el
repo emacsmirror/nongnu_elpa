@@ -410,7 +410,7 @@ CREATE INDEX IF NOT EXISTS idx_reaction_message_id
     (sqlite-execute db "PRAGMA user_version=7")))
 
 (defun jabber-db--migrate-v7-to-v8-steps (db)
-  "Apply the schema changes from version 7 to version 8 in DB."
+  "Apply the version 7 to version 8 schema migration to DB."
   (dolist (column '("thread_id TEXT" "thread_parent_id TEXT"))
     (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " column)))
   (when (cl-every
@@ -448,7 +448,7 @@ CREATE TABLE IF NOT EXISTS message_thread (
      (signal (car err) (cdr err)))))
 
 (defun jabber-db--migrate-v8-to-v9-steps (db)
-  "Apply the schema changes from version 8 to version 9 in DB."
+  "Apply the version 8 to version 9 schema migration to DB."
   (sqlite-execute db "\
 ALTER TABLE message_thread
 ADD COLUMN dedicated INTEGER NOT NULL DEFAULT 0")
@@ -950,7 +950,7 @@ AND dedicated = 1"
 
 (defun jabber-db--message-thread-stored-p
     (db account peer type thread-id)
-  "Return non-nil when DB stores THREAD-ID for ACCOUNT, PEER, and TYPE."
+  "Return non-nil for THREAD-ID stored in DB for ACCOUNT, PEER, and TYPE."
   (caar
    (sqlite-select
     db

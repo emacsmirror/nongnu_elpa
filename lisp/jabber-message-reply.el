@@ -135,7 +135,7 @@ are useful for re-attaching on a correction."
                  (substring body 0 end)))))))
 
 (defun jabber-message-reply--correction-fallback-length (msg new-body)
-  "Return the length of MSG's quote when NEW-BODY still starts with it.
+  "Return the length of MSG's quote if still at the start of NEW-BODY.
 Nil when the quote was edited away, so a correction must not
 advertise a stale <fallback> range."
   (and-let* ((old-fb (jabber-message-reply--fallback-string msg))
