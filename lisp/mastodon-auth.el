@@ -209,10 +209,12 @@ Used to help users switch to the new encrypted auth token flow."
  If you don't want to use auth sources,\
  also set `mastodon-auth-use-auth-source' to nil.\
  If this message is in error, contact us on the mastodon.el repo")
-      (user-error "Unencrypted access token in your plstore.\
+      (when mastodon-auth-encrypt-tokens-plstore
+        (user-error "Unencrypted access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and log in again.
- If this message is in error, contact us on the mastodon.el repo"))))
+Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
+ If this message is in error, contact us on the mastodon.el repo")))))
 
 (defun mastodon-auth--plstore-access-token-member (&optional auth-source)
   "Return non-nil if the user entry of the plstore contains :access_token.
