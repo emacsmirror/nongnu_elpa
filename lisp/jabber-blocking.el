@@ -262,7 +262,7 @@ possibly stale command over newer pushes."
 JC is the Jabber connection.  JID is the bare JID to block."
   (interactive
    (let ((jc (jabber-read-account)))
-     (list jc (jabber-read-jid-completing "Block JID: "))))
+     (list jc (jabber-read-jid-completing "Block JID: " nil nil nil nil nil jc))))
   (jabber-blocking--change jc jid 'block))
 
 ;;;###autoload
@@ -272,7 +272,7 @@ JC is the Jabber connection.  JID is the bare JID to block."
 JC is the Jabber connection.  JID is the bare JID to unblock."
   (interactive
    (let ((jc (jabber-read-account)))
-     (list jc (jabber-read-jid-completing "Unblock JID: "))))
+     (list jc (jabber-read-jid-completing "Unblock JID: " nil nil nil nil nil jc))))
   (jabber-blocking--change jc jid 'unblock))
 
 ;;;###autoload

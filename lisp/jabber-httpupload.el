@@ -597,9 +597,11 @@ skip the default plaintext send."
 ;;;###autoload
 (defun jabber-httpupload-send-file (jc jid filepath)
   "Upload FILEPATH and send the URL to JID via connection JC."
-  (interactive (list (jabber-read-account)
-                     (jabber-read-jid-completing "Send file to: " nil nil nil 'full t)
-                     (read-file-name "File to send: ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+           (jabber-read-jid-completing "Send file to: " nil nil nil 'full t jc)
+           (read-file-name "File to send: "))))
   (jabber-httpupload--upload
    jc filepath
    (lambda (get-url)

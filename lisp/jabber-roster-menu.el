@@ -254,9 +254,18 @@ The action submenu retains this owner even when roster scope changes.")
   (interactive)
   (if (null jabber-activity-jids)
       (message "No unread messages")
-    (let ((jid (completing-read "Unread: " jabber-activity-jids nil t)))
-      (when (and jid (not (string-empty-p jid)))
-        (jabber-activity-switch-to jid)))))
+    (let* ((candidates
+            (mapcar (lambda (entry)
+                      (cons (format "%s (%s)"
+                                    (jabber-activity--jid entry)
+                                    (if-let* ((owner (jabber-activity--owner entry)))
+                                        (jabber-connection-bare-jid owner)
+                                      "disconnected"))
+                            entry))
+                    jabber-activity-jids))
+           (choice (completing-read "Unread: " candidates nil t)))
+      (when-let* ((entry (cdr (assoc choice candidates))))
+        (jabber-activity-switch-to entry)))))
 
 (defun jabber-roster--muc-room-name (room)
   "Return cached bookmark name for ROOM, respecting roster scope."
@@ -502,9 +511,9 @@ A retained owner must never fall back to a different account."
   (interactive)
   (when-let* ((jid jabber-roster--selected-jid)
               (jc (jabber-roster--jc-for-jid jid)))
-    (let ((values (jabber-roster--read-edit jc (jabber-jid-symbol jid))))
+    (let ((values (jabber-roster--read-edit jc (jabber-jid-symbol jid jc))))
       (jabber-roster--jc-for-jid jid jc)
-      (apply #'jabber-roster-change jc (jabber-jid-symbol jid) values))))
+      (apply #'jabber-roster-change jc (jabber-jid-symbol jid jc) values))))
 
 (defun jabber-roster--action-delete ()
   "Delete the selected contact from roster."

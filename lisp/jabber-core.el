@@ -1221,6 +1221,7 @@ If DONT-REDISPLAY is non-nil, don't update roster buffer.
 JC is the Jabber connection."
   (interactive (list (jabber-read-account) nil 'interactive))
   (fsm-send-sync jc :do-disconnect)
+  (jabber-clear-roster jc)
   (when interactivep
     (message "Disconnected from %s"
 	     (jabber-connection-jid jc)))

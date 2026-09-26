@@ -388,7 +388,7 @@ area after both messages."
               ((symbol-function 'jabber-muc-sender-p)
                (lambda (_jid) nil))
               ((symbol-function 'jabber-db-reply-target-body)
-               (lambda (_account _peer reply-id _muc-p)
+               (lambda (_account _peer reply-id _muc-p &optional _sender)
                  (and (equal reply-id "orig-1")
                       "original text\nsecond line"))))
       (jabber-chat--insert-reply-context
@@ -1856,7 +1856,7 @@ JC is a fake connection from `jabber-test-chat--make-fake-jc'."
 (defun jabber-test-chat--make-jc-with-roster (&rest jids)
   "Create a fake connection whose roster contains JIDS."
   (let ((jc (gensym "jabber-test-chat-jc-")))
-    (put jc :state-data (list :roster (mapcar #'jabber-jid-symbol jids)))
+    (put jc :state-data (list :roster (mapcar (lambda (jid) (jabber-jid-symbol jid jc)) jids)))
     jc))
 
 (defmacro jabber-test-chat--with-policy-buffer (peer &rest body)

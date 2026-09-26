@@ -48,12 +48,9 @@
 (require 'jabber-muc-state)
 
 ;; Groupchat paths run only after MUC has established room state.
-(declare-function jabber-muc-modify-participant
-                  "jabber-muc" (group nickname new-plist))
-(declare-function jabber-muc-participant-plist
-                  "jabber-muc" (group nickname))
+(declare-function jabber-muc--identity-record "jabber-muc" (jc group &optional create))
+(declare-function jabber-muc--identity-jids "jabber-muc" (jc group))
 (declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
-(defvar jabber-muc--room-jids)
 
 (defcustom jabber-omemo-enable t
   "Whether to enable OMEMO encryption support.
@@ -134,6 +131,7 @@ Signal a `user-error' otherwise."
 (declare-function jabber-omemo--legacy-session-blob-p "jabber-omemo-core" t t)
 (declare-function jabber-omemo--encrypt-key "jabber-omemo-core" t t)
 (declare-function jabber-omemo--decrypt-key "jabber-omemo-core" t t)
+(declare-function jabber-omemo--session-remote-identity "jabber-omemo-core" t t)
 (declare-function jabber-omemo--session-skipped-keys "jabber-omemo-core" t t)
 (declare-function jabber-omemo--session-set-skipped-keys "jabber-omemo-core" t t)
 (declare-function jabber-omemo--heartbeat "jabber-omemo-core" t t)
@@ -156,6 +154,9 @@ Signal a `user-error' otherwise."
 
 (define-error 'jabber-omemo-prekey-failed
 	      "OMEMO pre-key decryption failed" 'jabber-omemo-error)
+
+(define-error 'jabber-omemo-identity-changed
+              "OMEMO sender device identity changed" 'jabber-omemo-error)
 
 ;; Public API
 
@@ -1158,44 +1159,59 @@ Returns nil if no <encrypted> element."
 
 ;;; Receive path
 
-(defun jabber-omemo--match-jid-by-affiliation (group nick)
-  "Try to match NICK in GROUP to a bare JID from affiliation data.
-Finds JIDs in `jabber-muc--room-jids' not yet assigned to any
-participant.  If exactly one unassigned JID exists, return it
-and store the mapping for future lookups."
-  (when-let* ((room-jids (gethash group jabber-muc--room-jids)))
-    (let* ((participants (cdr (assoc group jabber-muc-participants)))
-           (assigned (make-hash-table :test #'equal)))
-      (dolist (entry participants)
-        (when-let* ((jid (plist-get (cdr entry) 'jid)))
-          (puthash (jabber-jid-user jid) t assigned)))
-      (let (candidates)
-        (maphash (lambda (bare-jid _aff)
-                   (unless (gethash bare-jid assigned)
-                     (push bare-jid candidates)))
-                 room-jids)
-        (when (= (length candidates) 1)
-          (let ((jid (car candidates)))
-            (jabber-muc-modify-participant
-             group nick (list 'jid jid))
-            jid))))))
+(defun jabber-omemo--match-jid-by-affiliation (group nick &optional jc)
+  "Return an affiliation JID for current NICK in GROUP on JC.
+Use only this membership's snapshots and occupants.  Do not persist guesses
+in presence state: replacing a snapshot must also revoke its inferred map."
+  (let ((jc (or jc jabber-buffer-connection)))
+    (when (and jc (jabber-muc-joined-p group jc))
+      (when-let* ((record (jabber-muc--identity-record jc group))
+                  (participants (plist-get record :occupants))
+                  (current (assoc nick participants)))
+        (let* ((members (apply #'append (mapcar #'cdr (plist-get record :snapshots))))
+               (named (delete-dups
+                       (mapcar #'car (cl-remove-if-not
+                                      (lambda (entry) (equal nick (cdr entry))) members))))
+               (assigned (delq nil (mapcar
+                                    (lambda (entry)
+                                      (when-let* ((jid (plist-get (cdr entry) 'jid)))
+                                        (jabber-jid-user jid))) participants)))
+               (unassigned (cl-set-difference (delete-dups (mapcar #'car members))
+                                              assigned :test #'equal)))
+          (cond ((length= named 1) (car named))
+                ((and (null named) (length= unassigned 1)) (car unassigned))))))))
 
-(defun jabber-omemo--resolve-sender-jid (xml-data)
-  "Return the real bare JID of the sender of XML-DATA.
-For 1:1 messages, this is `jabber-jid-user' of the from attribute.
-For MUC messages (type=groupchat), try in order:
-1. Nickname lookup in `jabber-muc-participants'
-2. Match by affiliation between participants and `jabber-muc--room-jids'"
+(defun jabber-omemo--resolve-sender-jid (xml-data &optional jc)
+  "Return the real bare sender JID of XML-DATA on JC.
+Direct messages use the from attribute.  MUC messages require a current
+occupant on this connection, using presence or current affiliation data."
   (let* ((from (jabber-xml-get-attribute xml-data 'from))
-         (msg-type (jabber-xml-get-attribute xml-data 'type)))
+         (msg-type (jabber-xml-get-attribute xml-data 'type))
+         (jc (or jc jabber-buffer-connection)))
     (if (not (equal msg-type "groupchat"))
         (and from (jabber-jid-user from))
+      (require 'jabber-muc)
       (let* ((group (jabber-jid-user from))
              (nick (jabber-jid-resource from))
-             (plist (jabber-muc-participant-plist group nick))
+             (record (and jc (jabber-muc-joined-p group jc)
+                          (jabber-muc--identity-record jc group)))
+             (plist (cdr (assoc nick (plist-get record :occupants))))
              (real-jid (plist-get plist 'jid)))
         (or (and real-jid (jabber-jid-user real-jid))
-            (jabber-omemo--match-jid-by-affiliation group nick))))))
+            (jabber-omemo--match-jid-by-affiliation group nick jc))))))
+
+(defun jabber-omemo--admit-inbound-session (jc sender-jid sender-did session)
+  "Check SESSION against JC's known identity for SENDER-JID and SENDER-DID.
+Use only the native authenticated remote identity, never an unauthenticated
+wire key.  Preserve unknown-device policy and all existing trust levels."
+  (let* ((identity (jabber-omemo--session-remote-identity session))
+         (known (jabber-omemo-store-load-trust
+                 (jabber-connection-bare-jid jc) sender-jid sender-did)))
+    (unless (and (stringp identity) (not (multibyte-string-p identity))
+                 (= (length identity) 33) (= (aref identity 0) 5))
+      (signal 'jabber-omemo-error '("Missing authenticated session identity")))
+    (when (and known (not (equal identity (plist-get known :identity-key))))
+      (signal 'jabber-omemo-identity-changed (list sender-jid sender-did)))))
 
 (defun jabber-omemo--decrypt-key-with-session (jc sender-jid sender-did
                                                   store-ptr pre-key-p key-data)
@@ -1215,7 +1231,13 @@ inside its serialized blob, so out-of-order messages survive restarts.
 
 Returns (SESSION-PTR DECRYPTED-KEY FRESH-P), FRESH-P non-nil when
 the fresh-session pre-key path was used.  Signals
-`jabber-omemo-no-session' or `jabber-omemo-prekey-failed'."
+`jabber-omemo-no-session', `jabber-omemo-prekey-failed', or
+`jabber-omemo-identity-changed'.  Fresh sessions must match any known
+device identity before their key is returned, regardless of trust level."
+  (when (and pre-key-p
+             (not (fboundp 'jabber-omemo--session-remote-identity)))
+    (signal 'jabber-omemo-error
+            '("Rebuild the OMEMO native module: session identity export missing")))
   (let ((existing (jabber-omemo--get-session jc sender-jid sender-did)))
     (cl-flet ((decrypt-existing (prekey)
                 (let ((key (jabber-omemo-decrypt-key
@@ -1231,15 +1253,17 @@ the fresh-session pre-key path was used.  Signals
                  (condition-case nil
                      (decrypt-existing t)
                    (jabber-omemo-error nil)))
-            (let ((fresh (jabber-omemo-make-session)))
-              (condition-case err
-                  (let ((key (jabber-omemo-decrypt-key
-                              fresh store-ptr t key-data)))
-                    (list fresh key t))
-                (jabber-omemo-error
-                 (signal 'jabber-omemo-prekey-failed
-                         (list sender-jid sender-did
-                               (error-message-string err))))))))))))
+            (let* ((fresh (jabber-omemo-make-session))
+                   (key (condition-case err
+                            (jabber-omemo-decrypt-key fresh store-ptr t key-data)
+                          (jabber-omemo-error
+                           (signal 'jabber-omemo-prekey-failed
+                                   (list sender-jid sender-did
+                                         (error-message-string err)))))))
+              ;; Admission is outside the recoverable authentication handler:
+              ;; changed identities must never delete or rebuild accepted state.
+              (jabber-omemo--admit-inbound-session jc sender-jid sender-did fresh)
+              (list fresh key t))))))))
 
 (defun jabber-omemo--decrypt-stanza (jc xml-data parsed)
   "Decrypt OMEMO message on JC in XML-DATA using PARSED data.
@@ -1256,7 +1280,7 @@ Signals structured errors that callers can dispatch on:
 - `jabber-omemo-error' (the parent) for all other crypto failures."
   (let* ((our-did (jabber-omemo--get-device-id jc))
          (account (jabber-connection-bare-jid jc))
-         (sender-jid (jabber-omemo--resolve-sender-jid xml-data)))
+         (sender-jid (jabber-omemo--resolve-sender-jid xml-data jc)))
     (if (not sender-jid)
         (error "Sender JID unknown (anonymous room?)")
       (let* ((sender-did (plist-get parsed :sid))
@@ -1433,19 +1457,12 @@ encrypted key material to send."
 
 ;;; MUC helpers
 
-(defun jabber-omemo--muc-participant-jids (group participants)
-  "Return deduplicated list of bare JIDs for GROUP.
-Collects JIDs from PARTICIPANTS (the alist from
-`jabber-muc-participants') and from affiliation query results
-in `jabber-muc--room-jids'."
-  (let ((jid-set (make-hash-table :test #'equal)))
-    (dolist (entry participants)
-      (when-let* ((full-jid (plist-get (cdr entry) 'jid))
-                  (bare (jabber-jid-user full-jid)))
-        (puthash bare t jid-set)))
-    (when-let* ((room-jids (gethash group jabber-muc--room-jids)))
-      (maphash (lambda (bare _aff) (puthash bare t jid-set)) room-jids))
-    (hash-table-keys jid-set)))
+(defun jabber-omemo--muc-participant-jids (group _participants &optional jc)
+  "Return current occupant and offline-member JIDs for GROUP on JC.
+Ignore the legacy room-only _PARTICIPANTS argument.  JC defaults to the
+current buffer's connection, never to another account joined to the room."
+  (require 'jabber-muc)
+  (jabber-muc--identity-jids (or jc jabber-buffer-connection) group))
 
 (defun jabber-omemo--ensure-sessions-multi (jc jids callback)
   "Ensure OMEMO sessions for all JIDS via JC.
@@ -1717,7 +1734,7 @@ envelope (e.g. XEP-0308 replace)."
   (let ((recipients
          (cons jid (when muc
                      (jabber-omemo--muc-participant-jids
-                      jid (cdr (assoc jid jabber-muc-participants)))))))
+                      jid nil jc)))))
     (when (cl-some (lambda (peer) (jabber-blocking-blocked-p jc peer))
                    recipients)
       (user-error "Cannot send OMEMO messages to blocked recipients"))))
@@ -1793,6 +1810,7 @@ NODE-OWNER-P validates the node's independently routed view."
 Must be called from a MUC buffer with `jabber-group' set.
 EXTRA-ELEMENTS are spliced into the stanza outside the encryption
 envelope."
+  (require 'jabber-muc)
   (let* ((group jabber-group)
          (is-correction (assq 'replace extra-elements))
          (buffer (current-buffer))
@@ -1804,8 +1822,8 @@ envelope."
             (when completion (setq jabber-chat--input-deferred t))
             (jabber-chat--capture-send-context body extra-elements)))
          (extra-elements (plist-get send-context :extra-elements))
-         (participants (cdr (assoc group jabber-muc-participants)))
-         (bare-jids (jabber-omemo--muc-participant-jids group participants))
+         (bare-jids (jabber-omemo--muc-participant-jids group nil jc))
+         (membership (jabber-muc--identity-record jc group))
          (raw-failed
           (lambda (reason)
             (let ((restore (if completion (funcall completion nil) t)))
@@ -1838,8 +1856,12 @@ envelope."
          (check
           (lambda ()
             (unless (and (jabber-omemo--send-operation-active-p operation)
-                         (funcall owner-p))
-              (error "OMEMO: send buffer changed")))))
+                         (funcall owner-p)
+                         (eq membership (jabber-muc--identity-record jc group))
+                         (equal (sort (copy-sequence bare-jids) #'string<)
+                                (sort (jabber-omemo--muc-participant-jids
+                                       group nil jc) #'string<)))
+              (error "OMEMO: send buffer or room membership changed")))))
     (plist-put operation :transport-success succeeded)
     (if (null bare-jids)
         (progn
@@ -1892,6 +1914,7 @@ spliced into the stanza outside the encryption envelope.
 SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion.
 CHECK validates the captured send owner around hooks and before handoff.
 No local echo: the MUC server mirrors the message back."
+  (when check (funcall check))
   (jabber-omemo--check-blocking jc group t)
   (let* ((plaintext (encode-coding-string body 'utf-8))
          (enc-result (jabber-omemo-encrypt-message plaintext))
@@ -1944,8 +1967,7 @@ Called when OMEMO is enabled in a chat buffer."
 (defun jabber-omemo--prefetch-muc-sessions (jc group)
   "Pre-fetch OMEMO sessions for all participants in GROUP via JC.
 Called when OMEMO is enabled in a MUC buffer."
-  (let* ((participants (cdr (assoc group jabber-muc-participants)))
-         (bare-jids (jabber-omemo--muc-participant-jids group participants)))
+  (let ((bare-jids (jabber-omemo--muc-participant-jids group nil jc)))
     (when bare-jids
       (jabber-omemo--ensure-sessions-multi jc bare-jids #'ignore))))
 

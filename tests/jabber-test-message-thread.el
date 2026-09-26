@@ -1054,7 +1054,7 @@
   (let ((parent (generate-new-buffer " *jabber-muc-private-thread-parent*"))
         displayed)
     (unwind-protect
-        (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) nil))
+        (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_ &optional _jc) nil))
                   ((symbol-function 'jabber-muc-sender-p) (lambda (_) t))
                   ((symbol-function 'jabber-chat--unwrap-carbon)
                    (lambda (_jc xml) (cons xml nil)))
@@ -1255,7 +1255,7 @@
   (let ((target (generate-new-buffer " *jabber-thread-correction*"))
         applied)
     (unwind-protect
-        (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) nil))
+        (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_ &optional _jc) nil))
                   ((symbol-function 'jabber-chat--unwrap-carbon)
                    (lambda (_jc xml) (cons xml nil)))
                   ((symbol-function 'jabber-chat--decrypt-if-needed)
@@ -1287,7 +1287,7 @@
 (ert-deftest jabber-test-message-thread-unthreaded-correction-does-not-create ()
   "An unthreaded correction keeps the old find-only buffer behavior."
   (let (applied)
-    (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) nil))
+    (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_ &optional _jc) nil))
               ((symbol-function 'jabber-chat--unwrap-carbon)
                (lambda (_jc xml) (cons xml nil)))
               ((symbol-function 'jabber-chat--decrypt-if-needed)
@@ -1319,7 +1319,7 @@
   (let ((target (generate-new-buffer " *jabber-muc-thread-correction*"))
         applied)
     (unwind-protect
-        (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) t))
+        (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_ &optional _jc) t))
                   ((symbol-function 'jabber-chat--decrypt-if-needed)
                    (lambda (_jc xml) xml))
                   ((symbol-function 'jabber-connection-bare-jid)
@@ -1527,7 +1527,7 @@
 (ert-deftest jabber-test-message-thread-closed-muc-reply-stays-closed ()
   "MUC dispatch maps a closed known reply to the closed sentinel."
   (let (display-target)
-    (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) t))
+    (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_ &optional _jc) t))
               ((symbol-function 'jabber-chat--decrypt-if-needed)
                (lambda (_jc xml) xml))
               ((symbol-function 'jabber-muc--classify-message)
@@ -1566,8 +1566,8 @@
                    (lambda (&rest _) "alice@example.com"))
                   ((symbol-function 'jabber-message-thread-update-targets)
                    (lambda (&rest _) (list parent thread)))
-                  ((symbol-function 'jabber-chat-ewoc-find-by-id)
-                   (lambda (_) 'node))
+                  ((symbol-function 'jabber-reactions--find-target-node)
+                   (lambda (&rest _) 'node))
                   ((symbol-function 'jabber-reactions--apply-incoming-update)
                    (lambda (&rest _) (push (current-buffer) seen))))
           (jabber-reactions--handle-message

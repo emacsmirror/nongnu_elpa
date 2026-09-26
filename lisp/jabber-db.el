@@ -116,7 +116,9 @@ Each function receives ACCOUNT, PEER, TYPE, THREAD-ID, and TIMESTAMP.")
   fallback_end INTEGER,
   thread_id TEXT,
   thread_parent_id TEXT,
-  retracted INTEGER NOT NULL DEFAULT 0)"
+  retracted INTEGER NOT NULL DEFAULT 0,
+  origin_id TEXT,
+  room_id TEXT)"
     "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
   ON message(account, peer, timestamp)"
     "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
@@ -233,9 +235,26 @@ END"
   PRIMARY KEY (hash, ver))")
   "DDL statements for the latest database schema.")
 
+(defconst jabber-db--archive-ddl
+  '("CREATE TABLE IF NOT EXISTS mam_progress (
+  account TEXT NOT NULL,
+  archive TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  uid TEXT,
+  start TEXT,
+  PRIMARY KEY (account, archive, scope))"
+    "CREATE TABLE IF NOT EXISTS message_archive (
+  account TEXT NOT NULL,
+  archive TEXT NOT NULL,
+  uid TEXT NOT NULL,
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  PRIMARY KEY (account, archive, uid))")
+  "Archive coverage and occurrence schema; empty scope means all peers.
+An absent start records an unbounded scan, not an inferred history date.")
+
 (defun jabber-db--init-schema (db)
   "Initialize the database schema in DB."
-  (dolist (ddl jabber-db--schema-ddl)
+  (dolist (ddl (append jabber-db--schema-ddl jabber-db--archive-ddl))
     (sqlite-execute db ddl)))
 
 (defun jabber-db--table-exists-p (db table)
@@ -294,7 +313,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 11
+(defconst jabber-db--schema-version 12
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -529,6 +548,16 @@ ADD COLUMN retracted INTEGER NOT NULL DEFAULT 0")
 WHERE retracted_by IS NOT NULL")
     (sqlite-execute db "PRAGMA user_version=11")))
 
+(defun jabber-db--migrate-v11-to-v12 (db)
+  "Preserve identity and archive coverage independently in DB.
+Never reinterpret historical server IDs or invent historical scan coverage."
+  (jabber-db--with-savepoint db
+    (sqlite-execute db "ALTER TABLE message ADD COLUMN origin_id TEXT")
+    (sqlite-execute db "ALTER TABLE message ADD COLUMN room_id TEXT")
+    (dolist (ddl jabber-db--archive-ddl)
+      (sqlite-execute db ddl))
+    (sqlite-execute db "PRAGMA user_version=12")))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (jabber-db--with-savepoint db
@@ -570,6 +599,9 @@ WHERE retracted_by IS NOT NULL")
         (jabber-db--migrate-v10-to-v11 db)
         (setq version 11))
       (when (= version 11)
+        (jabber-db--migrate-v11-to-v12 db)
+        (setq version 12))
+      (when (= version 12)
         (jabber-db--repair-reaction-actors db)))))
 
 (defun jabber-db-ensure-open ()
@@ -691,48 +723,16 @@ SELECT identities, features FROM caps_cache
 ;;; Storage
 
 (defun jabber-db--extract-reply-fields (xml-data)
-  "Return XEP-0461 reply metadata in XML-DATA as a plist, or nil.
-Keys are :reply-to-id, :reply-to-jid and :fallback-range.  Mirrors
-`jabber-chat--reply-fields' in jabber-chat.el; duplicated here for
-the same layering reason as `jabber-db--stanza-id-element'."
-  (and-let* ((reply-el
-              (seq-find
-               (lambda (child)
-                 (and (eq (jabber-xml-node-name child) 'reply)
-                      (equal (jabber-xml-get-xmlns child)
-                             "urn:xmpp:reply:0")))
-               (jabber-xml-node-children xml-data))))
-    (list :reply-to-id (jabber-xml-get-attribute reply-el 'id)
-          :reply-to-jid (jabber-xml-get-attribute reply-el 'to)
-          :fallback-range (jabber-db--reply-fallback-range xml-data))))
+  "Return shared reply metadata from XML-DATA."
+  (jabber-xml-reply-fields xml-data))
 
 (defun jabber-db--extract-thread-fields (xml-data)
   "Return valid XEP-0201 thread metadata from XML-DATA, or nil."
   (jabber-message-thread-protocol-fields xml-data))
 
 (defun jabber-db--reply-fallback-range (xml-data)
-  "Return the XEP-0428 fallback range for replies in XML-DATA.
-Same return values as `jabber-chat--reply-fallback-range': a
-\(START END) list, `all', or nil."
-  (when-let* ((fallback
-               (seq-find
-                (lambda (child)
-                  (and (eq (jabber-xml-node-name child) 'fallback)
-                       (equal (jabber-xml-get-xmlns child)
-                              "urn:xmpp:fallback:0")
-                       (equal (jabber-xml-get-attribute child 'for)
-                              "urn:xmpp:reply:0")))
-                (jabber-xml-node-children xml-data))))
-    (if-let* ((body (car (jabber-xml-get-children fallback 'body))))
-        (let ((start (jabber-xml-get-attribute body 'start))
-              (end (jabber-xml-get-attribute body 'end)))
-          (if (or start end)
-              (and start end
-                   (string-match-p "\\`[0-9]+\\'" start)
-                   (string-match-p "\\`[0-9]+\\'" end)
-                   (list (string-to-number start) (string-to-number end)))
-            'all))
-      'all)))
+  "Return shared reply metadata from XML-DATA."
+  (jabber-xml-reply-fallback-range xml-data))
 
 (defun jabber-db--fallback-range-cols (range)
   "Encode RANGE for storage as a (START . END) cons of column values.
@@ -982,10 +982,128 @@ ORDER BY id DESC LIMIT 1"
        root-message-id
        (or (equal type "groupchat") parent-id)))))
 
+(defun jabber-db-mam-progress (account archive with)
+  "Return durable (UID START) for ACCOUNT, exact ARCHIVE and WITH filter.
+Nil means unknown coverage.  A nil START in a recorded row means full scan."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (car (sqlite-select db
+          "SELECT uid, start FROM mam_progress
+WHERE account = ? AND archive = ? AND scope = ?"
+          (list account archive (or with ""))))))
+
+(defun jabber-db--advance-mam-progress (db account archive with expected uid start)
+  "Advance DB's ACCOUNT/ARCHIVE/WITH cursor from EXPECTED to UID.
+START retains the safe scan lower bound.  The caller owns the transaction.
+Return nil on a stale predecessor; opaque UIDs are never ordered."
+  (if expected
+      (sqlite-execute db
+       "UPDATE mam_progress SET uid = ?
+WHERE account = ? AND archive = ? AND scope = ? AND uid IS ?"
+       (list uid account archive (or with "") expected))
+    (sqlite-execute db
+     "INSERT INTO mam_progress (account, archive, scope, uid, start)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(account, archive, scope) DO UPDATE SET uid = excluded.uid
+WHERE mam_progress.uid IS NULL"
+     (list account archive (or with "") uid start)))
+  (= 1 (caar (sqlite-select db "SELECT changes()"))))
+
+(defun jabber-db--message-identity (xml &optional archive uid)
+  "Return operation-specific evidence in XML, plus ARCHIVE and UID.
+Only a stanza ID assigned by the message's room supplies room identity."
+  (let* ((origin (seq-find
+                  (lambda (child)
+                    (and (eq (jabber-xml-node-name child) 'origin-id)
+                         (equal (jabber-xml-get-xmlns child) "urn:xmpp:sid:0")))
+                  (jabber-xml-node-children xml)))
+         (room (and (equal (jabber-xml-get-attribute xml 'type) "groupchat")
+                    (jabber-xml-get-attribute xml 'from)
+                    (jabber-jid-user (jabber-xml-get-attribute xml 'from))))
+         (sid (and room (jabber-db--stanza-id-element xml room))))
+    (list :origin-id (jabber-xml-get-attribute origin 'id)
+          :room-id (jabber-xml-get-attribute sid 'id)
+          :archive archive :archive-id uid)))
+
+(defun jabber-db--identity-compatible-p
+    (db id stanza-id server-id origin-id room-id resource occupant-id)
+  "Check ID in DB against supplied operation-specific evidence.
+STANZA-ID, SERVER-ID, ORIGIN-ID, ROOM-ID and OCCUPANT-ID may fill
+unknown fields, but never replace conflicts.  RESOURCE identifies the sender."
+  (pcase-let ((`(,stanza ,server ,origin ,room ,sender ,occupant ,direction ,type)
+               (car (sqlite-select db
+                     "SELECT stanza_id, server_id, origin_id, room_id, resource,
+occupant_id, direction, type FROM message WHERE id = ?" (list id)))))
+    (and (cl-every (lambda (pair)
+                     (or (null (car pair)) (null (cdr pair))
+                         (equal (car pair) (cdr pair))))
+                   (list (cons stanza stanza-id) (cons server server-id)
+                         (cons origin origin-id)
+                         (cons room room-id) (cons occupant occupant-id)))
+         (or (equal sender resource)
+             (and (equal direction "out") (not (equal type "groupchat"))
+                  (null sender))))))
+
+(defun jabber-db--identity-duplicate
+    (db account peer direction type stanza-id server-id resource occupant-id identity legacy)
+  "Resolve IDENTITY to one compatible row in DB, or nil.
+ACCOUNT, PEER, DIRECTION, TYPE, STANZA-ID, SERVER-ID, RESOURCE and
+OCCUPANT-ID scope admission.  LEGACY is the former detector's candidate,
+not authority.  An archive occurrence conflict signals an error instead
+of rebinding its UID."
+  (let* ((origin (plist-get identity :origin-id))
+         (room (plist-get identity :room-id))
+         (archive (plist-get identity :archive))
+         (uid (plist-get identity :archive-id))
+         (occurrence (and archive uid
+                          (caar (sqlite-select db
+                           "SELECT message_id FROM message_archive
+WHERE account = ? AND archive = ? AND uid = ?" (list account archive uid)))))
+         (strong (mapcar #'car (sqlite-select db
+                   "SELECT id FROM message WHERE account = ? AND peer = ?
+AND type IS ? AND (direction = ? OR (type = 'groupchat' AND room_id = ?))
+AND ((type != 'groupchat' AND origin_id = ?) OR room_id = ? OR id = ?)"
+                   (list account peer type direction room origin room occurrence))))
+         ;; A populated unknown legacy server_id is not room evidence.
+         ;; A partial live row, however, can acquire its first room ID when
+         ;; the scoped detector also proved an equal transport ID.  Body
+         ;; and timestamp alone never authorize this identity upgrade.
+         (candidates (delete-dups
+                      (append strong
+                              (when (and legacy
+                                         (or (not (equal type "groupchat"))
+                                             (caar (sqlite-select db
+                                              "SELECT id FROM message WHERE id = ?
+AND (room_id IS NOT NULL OR (server_id IS NULL AND stanza_id = ?))"
+                                              (list legacy stanza-id)))))
+                                (list legacy)))))
+         (matches (seq-filter
+                   (lambda (id)
+                     (jabber-db--identity-compatible-p
+                      db id stanza-id server-id origin room resource occupant-id))
+                   candidates)))
+    (when (and occurrence
+               (not (and (equal matches (list occurrence))
+                         (equal candidates (list occurrence)))))
+      (error "Conflicting archive occurrence"))
+    (and (= (length candidates) 1) (= (length matches) 1) (car matches))))
+
+(defun jabber-db--enrich-message-identity (db id account identity)
+  "Append compatible IDENTITY to exact ID in DB for ACCOUNT."
+  (sqlite-execute db "UPDATE message SET origin_id = COALESCE(origin_id, ?),
+room_id = COALESCE(room_id, ?) WHERE id = ?"
+                  (list (plist-get identity :origin-id)
+                        (plist-get identity :room-id) id))
+  (when-let* ((archive (plist-get identity :archive))
+              (uid (plist-get identity :archive-id)))
+    (sqlite-execute db
+     "INSERT INTO message_archive (account, archive, uid, message_id)
+VALUES (?, ?, ?, ?) ON CONFLICT(account, archive, uid) DO NOTHING"
+     (list account archive uid id))))
+
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
                                         server-id occupant-id oob-entries
-                                        encrypted reply thread)
+                                        encrypted reply thread identity)
   "Store a message in the database.
 ACCOUNT is the bare JID of the local account.
 PEER is the bare JID of the contact or room.
@@ -994,7 +1112,7 @@ TYPE is the message type (\"chat\", \"groupchat\", \"headline\").
 BODY is the message text.  TIMESTAMP is a unix epoch integer, or
 nil when the source has no authoritative timestamp.
 Optional RESOURCE is the sender resource.
-Optional STANZA-ID is the XEP-0359 origin id.
+Optional STANZA-ID is the transport message/@id, not the origin ID.
 Optional SERVER-ID is the XEP-0359 server-assigned id.
 Optional OCCUPANT-ID is the XEP-0421 occupant id.
 Optional OOB-ENTRIES is a list of (URL . DESC) cons cells for
@@ -1003,12 +1121,21 @@ Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted.
 Optional REPLY is a reply metadata plist from
 `jabber-db--extract-reply-fields'.
 Optional THREAD is a thread metadata plist from
-`jabber-db--extract-thread-fields'."
+`jabber-db--extract-thread-fields'.
+Optional IDENTITY carries distinct origin, room and scoped archive evidence.
+Return the canonical message row ID."
   (when-let* ((db (jabber-db-ensure-open)))
-    (let* ((stored-timestamp (or timestamp (floor (float-time))))
-           (duplicate-id (jabber-db--detect-duplicate
-                          db account peer stored-timestamp body stanza-id
-                          server-id type direction resource occupant-id))
+    (jabber-db--with-savepoint db
+      (let* ((stored-timestamp (or timestamp (floor (float-time))))
+           (legacy-id (jabber-db--detect-duplicate
+                       db account peer stored-timestamp body stanza-id
+                       server-id type direction resource occupant-id))
+           (duplicate-id
+            (if identity
+                (jabber-db--identity-duplicate
+                 db account peer direction type stanza-id server-id resource occupant-id
+                 identity legacy-id)
+              legacy-id))
            (message-id
             (or duplicate-id
                 (jabber-db--insert-message
@@ -1020,13 +1147,16 @@ Optional THREAD is a thread metadata plist from
         (jabber-db--backfill-message-ids db duplicate-id stanza-id server-id)
         (when reply
           (jabber-db--backfill-reply-fields db duplicate-id reply)))
+      (when identity
+        (jabber-db--enrich-message-identity db message-id account identity))
       (jabber-db--backfill-thread-fields db message-id thread)
       (jabber-db--ensure-message-thread
        account peer type stored-timestamp stanza-id server-id thread)
       (when-let* ((thread-id (plist-get thread :thread-id)))
         (run-hook-with-args
          'jabber-db-message-thread-stored-functions
-         account peer type thread-id stored-timestamp)))))
+         account peer type thread-id stored-timestamp))
+      message-id))))
 
 (defun jabber-db-prune-empty-message-threads (account peer)
   "Delete thread metadata without a surviving message for ACCOUNT and PEER."
@@ -1253,36 +1383,65 @@ GROUP BY stanza_id HAVING COUNT(*) = 1"
             (if resource (concat peer "/" resource) peer)
           account)))))
 
-(defun jabber-db-reply-target-body (account peer reply-id muc-p)
-  "Return the body of the message REPLY-ID references, or nil.
-In a MUC (MUC-P non-nil) REPLY-ID is the room-assigned stanza-id
-\(XEP-0461), so match on server_id; in 1:1 chat it is the sender's
-origin id, so match on stanza_id.  ACCOUNT and PEER scope the lookup."
+(defun jabber-db--message-reference-candidates (db account peer type target-id)
+  "Return reply/reaction candidates for TARGET-ID in DB.
+ACCOUNT, PEER and TYPE scope both aliases.  Direct messages retain their
+transport alias after origin enrichment; room references use only room
+identity, falling back to the historical server field.  Archive UIDs
+never identify action targets.  Return all candidates to detect collisions."
+  (when (and account peer type target-id)
+    (sqlite-select
+     db
+     (format "SELECT id, body, retracted, direction, resource FROM message
+WHERE account = ? AND peer = ? AND type = ? AND %s"
+             (if (equal type "groupchat")
+                 "COALESCE(room_id, server_id) = ?"
+               "(origin_id = ? OR stanza_id = ?)"))
+     (append (list account peer type target-id)
+             (unless (equal type "groupchat") (list target-id))))))
+
+(defun jabber-db-reply-target-body (account peer reply-id muc-p &optional sender)
+  "Return the body of the unique message REPLY-ID references, or nil.
+ACCOUNT and PEER scope the lookup.  MUC-P selects room identity; direct
+chat accepts origin and historical transport aliases.  Optional SENDER
+is the reply's author JID: a full JID limits known resources, a bare JID
+limits the account or peer.  Historical outgoing direct messages may lack
+resource evidence.  Ambiguous and retracted targets return nil."
   (when-let* ((db (jabber-db-ensure-open)))
-    (caar (sqlite-select
-           db
-           (format "SELECT body FROM message \
-WHERE account = ? AND peer = ? AND %s = ? AND retracted = 0 \
-LIMIT 1"
-                   (if muc-p "server_id" "stanza_id"))
-           (list account peer reply-id)))))
+    (let ((rows
+           (seq-filter
+            (lambda (row)
+              (let* ((author (if (or muc-p (equal (nth 3 row) "in"))
+                                 peer account))
+                     (full (if (nth 4 row)
+                               (concat author "/" (nth 4 row)) author)))
+                (or (null sender)
+                    (equal sender (if (jabber-jid-resource sender) full author))
+                    (and (not muc-p) (equal (nth 3 row) "out")
+                         (null (nth 4 row))
+                         (equal (jabber-jid-user sender) author)))))
+            (jabber-db--message-reference-candidates
+             db account peer (if muc-p "groupchat" "chat") reply-id))))
+      (when (and (= (length rows) 1) (eql (nth 2 (car rows)) 0))
+        (nth 1 (car rows))))))
 
 ;;; Reactions
 
-(defun jabber-db--reaction-id-column (type)
-  "Return the message ID column used for reaction targets of TYPE."
-  (if (string= type "groupchat") "server_id" "stanza_id"))
-
 (defun jabber-db--message-id-for-reaction-target (db account peer type target-id)
-  "Return DB message id for reaction target TARGET-ID, or nil.
-DB is the SQLite connection.  ACCOUNT, PEER and TYPE scope the lookup."
-  (when (and account peer type target-id)
-    (caar (sqlite-select
-           db
-           (format "SELECT id FROM message \
-WHERE account = ? AND peer = ? AND type = ? AND %s = ? LIMIT 1"
-                   (jabber-db--reaction-id-column type))
-           (list account peer type target-id)))))
+  "Return the unique DB message id for reaction TARGET-ID, or nil.
+ACCOUNT, PEER and TYPE scope the lookup.  Count all aliases together,
+including retracted rows, so a collision cannot choose another message."
+  (let ((rows (jabber-db--message-reference-candidates
+               db account peer type target-id)))
+    (when (= (length rows) 1) (caar rows))))
+
+(defun jabber-db-reaction-target-row (account peer type target-id)
+  "Resolve reaction TARGET-ID for ACCOUNT, PEER and TYPE.
+Return its unique row ID, nil if absent, or `ambiguous' on collision."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (let ((rows (jabber-db--message-reference-candidates
+                 db account peer type target-id)))
+      (if (cdr rows) 'ambiguous (caar rows)))))
 
 (defun jabber-db--reaction-current-updated-at (db message-id sender)
   "Return actor reaction timestamp in DB for MESSAGE-ID and SENDER."
@@ -1378,7 +1537,7 @@ ORDER BY message_id, updated_at, rowid"
 resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
 server_id, retracted_by, retraction_reason, edited, occupant_id, \
 reply_to_id, reply_to_jid, fallback_start, fallback_end, \
-thread_id, thread_parent_id, retracted FROM message"
+thread_id, thread_parent_id, retracted, origin_id, room_id FROM message"
   "Columns shared by parent and thread backlog queries.")
 
 (defun jabber-db--row-to-plist (row)
@@ -1389,7 +1548,7 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
                encrypted stanza-id delivered-at
                displayed-at server-id retracted-by retraction-reason edited
                occupant-id reply-to-id reply-to-jid fallback-start fallback-end
-               thread-id thread-parent-id retracted)
+               thread-id thread-parent-id retracted origin-id room-id)
       row
     (let ((from (cond
                  ;; Incoming: peer/resource (or just peer if no resource).
@@ -1402,7 +1561,8 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
                  (t account))))
       (list :db-id id
             :id stanza-id
-            :server-id server-id
+            :server-id (or room-id server-id)
+            :origin-id origin-id
             :occupant-id occupant-id
             :from from
             :body (or body "")
@@ -2013,7 +2173,7 @@ XML-DATA is the parsed stanza."
             ;; (1:1) or by a joined room itself (MUC).
             (when-let* ((expected-by
                          (if (string= type "groupchat")
-                             (and (jabber-muc-joined-p (jabber-jid-user from))
+                             (and (jabber-muc-joined-p (jabber-jid-user from) jc)
                                   (jabber-jid-user from))
                            (jabber-connection-bare-jid jc)))
                         (sid-el (jabber-db--stanza-id-element
@@ -2036,7 +2196,11 @@ XML-DATA is the parsed stanza."
          oob-entries
          encrypted
          (jabber-db--extract-reply-fields xml-data)
-         (jabber-db--extract-thread-fields xml-data))))))
+         (jabber-db--extract-thread-fields xml-data)
+         (let ((identity (jabber-db--message-identity xml-data)))
+           (when (equal type "groupchat")
+             (plist-put identity :room-id server-id))
+           identity))))))
 
 (defun jabber-db--outgoing-handler (body id &optional reply thread)
   "Store outgoing chat message in the database.
@@ -2066,7 +2230,9 @@ for messages stored before those hooks run."
      (or thread
          (and (bound-and-true-p jabber-chat--send-hook-stanza)
               (jabber-db--extract-thread-fields
-               jabber-chat--send-hook-stanza)))))
+               jabber-chat--send-hook-stanza)))
+     (and (bound-and-true-p jabber-chat--send-hook-stanza)
+          (jabber-db--message-identity jabber-chat--send-hook-stanza))))
   nil)
 
 (defun jabber-db--store-outgoing (jc to body type)

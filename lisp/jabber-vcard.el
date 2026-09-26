@@ -270,8 +270,10 @@ The top node should be the `vCard' node."
   "Request vcard from JID.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Request vcard from: " nil nil nil 'bare-or-muc)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Request vcard from: " nil nil nil 'bare-or-muc nil jc))))
   (jabber-send-iq jc jid
 		  "get"
 		  `(vCard ((xmlns . ,jabber-vcard-xmlns)))

@@ -94,7 +94,7 @@
       (jabber-chat-ewoc-enter (list :muc-foreign msg))
       (cl-letf (((symbol-function
                   'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room) t))
+                 (lambda (_room _jc) t))
                 ((symbol-function 'jabber-connection-bare-jid)
                  (lambda (_jc) "me@example.com"))
                 ((symbol-function 'jabber-db-message-retraction-candidates)
@@ -150,7 +150,7 @@
                  (lambda (_room _jc) "me"))
                 ((symbol-function
                   'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room) t)))
+                 (lambda (_room _jc) t)))
         (jabber-process-input 'fake-jc original)
         (jabber-process-input 'fake-jc retraction))
       (let ((msg (cadr (ewoc-data
@@ -189,7 +189,7 @@
           (let ((jabber-db-path nil))
             (cl-letf (((symbol-function
                         'jabber-moderation--room-supports-occupant-id-p)
-                       (lambda (_room) t))
+                       (lambda (_room _jc) t))
                       ((symbol-function 'jabber-connection-bare-jid)
                        (lambda (_jc) "me@example.com")))
               (should
@@ -226,7 +226,7 @@
     (let (db-call)
       (cl-letf (((symbol-function
                   'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room) t))
+                 (lambda (_room _jc) t))
                 ((symbol-function 'jabber-connection-bare-jid)
                  (lambda (_jc) "me@example.com"))
                 ((symbol-function 'jabber-db-message-retraction-candidates)
@@ -264,7 +264,7 @@
     (let (db-call)
       (cl-letf (((symbol-function
                   'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room) t))
+                 (lambda (_room _jc) t))
                 ((symbol-function 'jabber-connection-bare-jid)
                  (lambda (_jc) "me@example.com"))
                 ((symbol-function 'jabber-db-message-retraction-candidates)
@@ -321,7 +321,7 @@
                            :body "spam" :timestamp (current-time))))))
           (cl-letf (((symbol-function
                       'jabber-moderation--room-supports-occupant-id-p)
-                     (lambda (_room) t))
+                     (lambda (_room _jc) t))
                     ((symbol-function 'jabber-connection-bare-jid)
                      (lambda (_jc) "me@example.com"))
                     ((symbol-function 'jabber-moderation--target-buffers)
@@ -400,7 +400,7 @@
                    (lambda (_room &optional _jc) (current-buffer)))
                   ((symbol-function
                     'jabber-moderation--room-supports-occupant-id-p)
-                   (lambda (_room) t)))
+                   (lambda (_room _jc) t)))
           (should-not
            (jabber-moderation--handle-message
             'fake-jc
@@ -420,7 +420,7 @@
   (let (db-call)
     (cl-letf (((symbol-function
                 'jabber-moderation--room-supports-occupant-id-p)
-               (lambda (_room) t))
+               (lambda (_room _jc) t))
               ((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com"))
               ((symbol-function 'jabber-db-message-retraction-candidates)
@@ -444,7 +444,7 @@
   "Author retraction cannot choose among duplicate room stanza IDs."
   (cl-letf (((symbol-function
               'jabber-moderation--room-supports-occupant-id-p)
-             (lambda (_room) t))
+             (lambda (_room _jc) t))
             ((symbol-function 'jabber-connection-bare-jid)
              (lambda (_jc) "me@example.com"))
             ((symbol-function 'jabber-db-message-retraction-candidates)
@@ -484,7 +484,7 @@
           db-call)
       (cl-letf (((symbol-function
                   'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room) advertised))
+                 (lambda (_room _jc) advertised))
                 ((symbol-function 'jabber-connection-bare-jid)
                  (lambda (_jc) "me@example.com"))
                 ((symbol-function 'jabber-db-message-retraction-candidates)

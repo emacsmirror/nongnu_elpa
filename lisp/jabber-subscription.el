@@ -27,8 +27,8 @@
 ;;; Code:
 
 (require 'ewoc)
+(require 'seq)
 (require 'jabber-alert)
-(require 'jabber-buffer-registry)
 (require 'jabber-chat)
 (require 'jabber-chatbuffer)
 (require 'jabber-presence-events)
@@ -41,9 +41,9 @@
      (list :subscription-request presence-status :time (current-time)))
     (dolist (hook '(jabber-presence-hooks jabber-alert-presence-hooks))
       (run-hook-with-args
-       hook (jabber-jid-symbol from) nil "subscribe" presence-status
+       hook (jabber-jid-symbol from jc) nil "subscribe" presence-status
        (funcall jabber-alert-presence-message-function
-                (jabber-jid-symbol from) nil "subscribe" presence-status)))))
+                (jabber-jid-symbol from jc) nil "subscribe" presence-status)))))
 
 (defun jabber-subscription-accept-mutual (&rest _ignored)
   "Accept the pending request and request a reciprocal subscription."
@@ -67,10 +67,16 @@
       (when (and node (eq :subscription-request (car (ewoc-data node))))
         (jabber-chat-ewoc-delete node)))))
 
-(defun jabber-subscription--remove-stale (_jc from)
-  "Remove all subscription request nodes from FROM's chat buffer."
-  (when-let* ((buffer (jabber-buffer-registry-find
-                       'chat (jabber-jid-user from))))
+(defun jabber-subscription--remove-stale (jc from)
+  "Remove subscription request nodes from FROM's chat on live connection JC."
+  (when-let* ((live (memq jc jabber-connections))
+              (buffer
+               (seq-find
+                (lambda (candidate)
+                  (and (eq (buffer-local-value 'jabber-buffer-connection
+                                                candidate) jc)
+                       (jabber-chat--buffer-peer-p candidate from nil)))
+                (buffer-list))))
     (with-current-buffer buffer
       (when (bound-and-true-p jabber-chat-ewoc)
         (let ((node (ewoc-nth jabber-chat-ewoc 0))

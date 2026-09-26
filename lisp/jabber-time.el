@@ -54,9 +54,11 @@
   "Request time from TO.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-                     (jabber-read-jid-completing "Request time of: "
-                                                 nil nil nil 'full t)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+           (jabber-read-jid-completing "Request time of: "
+                                       nil nil nil 'full t jc))))
 
   (jabber-send-iq jc to "get"
                   `(time ((xmlns . ,jabber-time-xmlns)))
@@ -70,9 +72,11 @@ JC is the Jabber connection."
   "Request legacy time from TO.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-                     (jabber-read-jid-completing "Request time of: "
-                                                 nil nil nil 'full t)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+           (jabber-read-jid-completing "Request time of: "
+                                       nil nil nil 'full t jc))))
 
   (jabber-send-iq jc to
                   "get"
@@ -134,9 +138,11 @@ obtained from `xml-parse-region'."
   "Request time since TO was last online, or uptime of a component.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Get last online for: "
-						 nil nil nil 'bare-or-muc)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Get last online for: "
+				       nil nil nil 'bare-or-muc nil jc))))
   (jabber-send-iq jc to
 		  "get"
 		  `(query ((xmlns . ,jabber-last-xmlns)))
@@ -147,9 +153,11 @@ JC is the Jabber connection."
   "Request idle time of user TO.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Get idle time for: "
-						 nil nil nil 'full t)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Get idle time for: "
+				       nil nil nil 'full t jc))))
   (jabber-send-iq jc to
 		  "get"
 		  `(query ((xmlns . ,jabber-last-xmlns)))

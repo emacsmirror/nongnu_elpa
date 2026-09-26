@@ -82,8 +82,10 @@
 
 JC is the Jabber connection.  RECIPIENT, when non-nil, prefills
 the recipient list."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "To whom? ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "To whom? " nil nil nil nil nil jc))))
   (let* ((interactive-p (called-interactively-p 'interactive))
          (recipients (if interactive-p
                          (jabber-compose--read-recipients
@@ -93,7 +95,7 @@ the recipient list."
          (buffer (generate-new-buffer
                   (concat "*Jabber Compose"
                           (when recipient
-                            (format ": %s" (jabber-jid-displayname recipient)))
+                            (format ": %s" (jabber-jid-displayname recipient jc)))
                           "*"))))
     (with-current-buffer buffer
       (jabber-compose-mode)

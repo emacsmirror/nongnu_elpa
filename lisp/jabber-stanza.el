@@ -162,9 +162,14 @@ Set to a string to also append XML input and output to that file."
 
 (defvar jabber-xml-data)                ; jabber.el
 
+(defvar jabber-stanza-error-handler nil
+  "Handler installed during stanza dispatch to record a downstream failure.
+Bound per dispatch; call it without arguments on an error or quit.")
+
 (defun jabber-process-input (jc xml-data)
   "Dispatch XML-DATA received on JC through its stanza handler chain."
   (let* ((jabber-xml-data xml-data)
+         (jabber-stanza-error-handler nil)
          (tag (jabber-xml-node-name xml-data))
          (handlers (pcase tag
                      ('iq jabber-iq-chain)
@@ -174,7 +179,11 @@ Set to a string to also append XML input and output to that file."
       (let ((handler (if (consp entry) (cdr entry) entry)))
         (condition-case err
             (funcall handler jc xml-data)
-          ((debug error)
+          ((debug error quit)
+           (when jabber-stanza-error-handler
+             (funcall jabber-stanza-error-handler))
+           (when (eq (car err) 'quit)
+             (signal (car err) (cdr err)))
            (fsm-debug-output "Error %S while processing %S with function %s"
                              err xml-data handler)))))))
 

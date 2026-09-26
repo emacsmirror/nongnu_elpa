@@ -77,7 +77,10 @@ BUFFER is the associated chat buffer, TEXT is the message body, and
 TITLE is the notification title; nil suppresses the notification."
   (when title
     (letrec ((body (or (jabber-escape-xml text) " "))
-             (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash))
+             (avatar-hash
+              (when-let* (((buffer-live-p buffer))
+                          (jc (buffer-local-value 'jabber-buffer-connection buffer)))
+                (get (jabber-jid-symbol from jc) 'avatar-hash)))
              (action-callback
               (lambda (&rest _)
                 (when (buffer-live-p buffer)

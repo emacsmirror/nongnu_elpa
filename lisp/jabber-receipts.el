@@ -75,7 +75,7 @@ Incoming receipts are always processed regardless of this setting."
   (let ((bare-jid (jabber-jid-user from)))
     (or (and (jabber-jid-resource from)
              (jabber-muc-joined-p bare-jid jc))
-        (when-let* ((contact (jabber-jid-symbol bare-jid))
+        (when-let* ((contact (jabber-jid-symbol bare-jid jc))
                     ((memq contact
                            (plist-get (fsm-get-state-data jc) :roster))))
           (member (get contact 'subscription) '("from" "both"))))))
@@ -103,7 +103,7 @@ messages until that state exists."
 For MUC participant JIDs, look up the MUC private buffer.
 For regular JIDs, look up the 1:1 chat buffer."
   (if (and (jabber-jid-resource from)
-           (jabber-muc-joined-p (jabber-jid-user from)))
+           (jabber-muc-joined-p (jabber-jid-user from) jc))
       (get-buffer (jabber-muc-private-get-buffer
                    (jabber-jid-user from) (jabber-jid-resource from) jc))
     (get-buffer (jabber-chat-get-buffer from jc))))

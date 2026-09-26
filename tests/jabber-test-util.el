@@ -294,7 +294,7 @@
   "Create a fake connection whose roster contains JIDS."
   (let ((jc (gensym "jabber-test-util-jc-")))
     (put jc :state-data
-         (list :roster (mapcar #'jabber-jid-symbol jids)))
+         (list :roster (mapcar (lambda (jid) (jabber-jid-symbol jid jc)) jids)))
     jc))
 
 (ert-deftest jabber-test-util-roster-contact-p-bare-jid ()

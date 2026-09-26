@@ -79,11 +79,12 @@ Valid senders are: nil (absent), the bare server, or our own full/bare JID."
         (string= from (concat username "@" server))
         (string= from (concat username "@" server "/" resource)))))
 
-(defun jabber--roster-process-item (item roster initialp)
+(defun jabber--roster-process-item (item roster initialp &optional jc)
   "Process a single roster ITEM element.
 ROSTER is the current roster list.  INITIALP non-nil means initial fetch.
+JC selects the connection-owned contact namespace.
 Return (CATEGORY . JID-SYMBOL) where CATEGORY is `new', `changed', or `deleted'."
-  (let* ((jid (jabber-jid-symbol (jabber-xml-get-attribute item 'jid)))
+  (let* ((jid (jabber-jid-symbol (jabber-xml-get-attribute item 'jid) jc))
          (existing (car (memq jid roster))))
     (if (string= (jabber-xml-get-attribute item 'subscription) "remove")
         (progn
@@ -98,7 +99,7 @@ Return (CATEGORY . JID-SYMBOL) where CATEGORY is `new', `changed', or `deleted'.
                        (jabber-xml-get-attribute item 'name) jid)
             (message "%s added to roster" jid)))
         (when initialp
-          (setplist roster-item nil))
+          (setplist roster-item (and jc (list 'jabber--jid-owner jc))))
         (put roster-item 'name (jabber-xml-get-attribute item 'name))
         (put roster-item 'subscription (jabber-xml-get-attribute item 'subscription))
         (put roster-item 'ask (jabber-xml-get-attribute item 'ask))
@@ -127,7 +128,7 @@ obtained from `xml-parse-region'."
         (message "Roster push with invalid \"from\": \"%s\"" from)
       (dolist (item (jabber-xml-get-children
                      (car (jabber-xml-get-children xml-data 'query)) 'item))
-        (pcase (jabber--roster-process-item item roster initialp)
+        (pcase (jabber--roster-process-item item roster initialp jc)
           (`(new . ,sym)     (push sym new-items))
           (`(changed . ,sym) (push sym changed-items))
           (`(deleted . ,sym) (push sym deleted-items))))
@@ -269,13 +270,13 @@ obtained from `xml-parse-region'."
        0.01 nil #'jabber-presence-events-dispatch-subscription-request
        jc from (plist-get metadata :status)))
 
-     ((jabber-muc-presence-p xml-data)
+     ((jabber-muc-presence-p xml-data jc)
       (jabber-presence-events-dispatch-muc jc xml-data))
 
      (t
       (jabber-presence-events-dispatch-contact jc from)
       ;; XXX: Think about what to do about out-of-roster presences.
-      (let ((buddy (jabber-jid-symbol from)))
+      (let ((buddy (jabber-jid-symbol from jc)))
         (when (memq buddy roster)
           (let* ((oldstatus (get buddy 'show))
                  (resource (or (jabber-jid-resource from) ""))
@@ -423,21 +424,22 @@ TYPE is one of:
 
 JC is the Jabber connection."
   (interactive
-   (list (jabber-read-account)
-	 (jabber-read-jid-completing "Send directed presence to: ")
-	 (completing-read "Type (default is online): "
-			  '(("online")
-			    ("away")
-			    ("xa")
-			    ("dnd")
-			    ("chatty")
-			    ("probe")
-			    ("unavailable")
-			    ("subscribe")
-			    ("unsubscribe")
-			    ("subscribed")
-			    ("unsubscribed"))
-			  nil t nil 'jabber-presence-history "online")))
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Send directed presence to: " nil nil nil nil nil jc)
+	   (completing-read "Type (default is online): "
+			    '(("online")
+			      ("away")
+			      ("xa")
+			      ("dnd")
+			      ("chatty")
+			      ("probe")
+			      ("unavailable")
+			      ("subscribe")
+			      ("unsubscribe")
+			      ("subscribed")
+			      ("unsubscribed"))
+			    nil t nil 'jabber-presence-history "online"))))
   (cond
    ((member type '("probe" "unavailable"
 		   "subscribe" "unsubscribe"
@@ -512,9 +514,11 @@ If JC is non-nil, send only for that connection."
 REQUEST, if non-empty, is included as the status text.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "to: ")
-		     (jabber-read-with-input-method "request: ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "to: " nil nil nil nil nil jc)
+	   (jabber-read-with-input-method "request: "))))
   (jabber-send-sexp jc
 		    `(presence
 		      ((to . ,to)
@@ -550,9 +554,10 @@ JID is a roster symbol.  Empty group entries are removed."
   "Add or change roster item JID with NAME and GROUPS.
 JC is the Jabber connection."
   (interactive
-   (let* ((jid (jabber-jid-symbol
-                (jabber-read-jid-completing "Add/change JID: ")))
-          (jc (jabber-read-account))
+   (let* ((jc (jabber-read-account))
+          (jid (jabber-jid-symbol
+                (jabber-read-jid-completing "Add/change JID: " nil nil nil nil nil jc)
+                jc))
           (values (jabber-roster--read-edit jc jid)))
      (unless (memq jc jabber-connections)
        (user-error "Selected Jabber account is no longer connected"))
@@ -574,8 +579,10 @@ JC is the Jabber connection."
 
 (defun jabber-roster-delete (jc jid)
   "Remove JID from the roster on connection JC."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Delete from roster: ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Delete from roster: " nil nil nil nil nil jc))))
   (jabber-send-iq jc nil "set"
 		  `(query ((xmlns . ,jabber-roster-xmlns))
 			  (item ((jid . ,jid)

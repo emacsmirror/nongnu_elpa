@@ -38,9 +38,9 @@
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-buffer-connection)        ; jabber-chatbuffer.el
 
-(defun jabber-info--connected-resources (bare-jid)
-  "Return list of full JIDs for connected resources of BARE-JID."
-  (let* ((sym (jabber-jid-symbol bare-jid))
+(defun jabber-info--connected-resources (bare-jid &optional jc)
+  "Return full JIDs for connected resources of BARE-JID on JC."
+  (let* ((sym (jabber-jid-symbol bare-jid jc))
          (resources (get sym 'resources))
          (full-jids nil))
     (dolist (entry resources)
@@ -118,14 +118,16 @@ For a bare JID, queries disco info, last activity, and also
 queries each connected resource for version, disco, ping, time
 and idle time.  For a full JID, queries the resource directly.
 Results appear in the browse buffer for TO."
-  (interactive (list (jabber-read-account)
-                     (jabber-read-jid-completing
-                      "Get info for: " nil nil nil 'full t)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+           (jabber-read-jid-completing
+            "Get info for: " nil nil nil 'full t jc))))
   (let* ((bare (jabber-jid-user to))
          (resource (jabber-jid-resource to))
          (full-jids (if resource
                         (list to)
-                      (jabber-info--connected-resources bare))))
+                      (jabber-info--connected-resources bare jc))))
     (let ((buf (jabber-browse--buffer bare)))
       (with-current-buffer buf
         (let ((inhibit-read-only t))

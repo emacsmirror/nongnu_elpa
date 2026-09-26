@@ -96,7 +96,7 @@ It can be sent and cancelled several times.")
                   (jabber-chat-ewoc-enter
                    (list :typing
                          (format "%s is typing..."
-                                 (jabber-jid-displayname jabber-chatting-with)))))))
+                                 (jabber-jid-displayname jabber-chatting-with jabber-buffer-connection)))))))
       (jabber-chatstates--delete-typing-node))))
 
 (defun jabber-chatstates--composing-state-p (state)
