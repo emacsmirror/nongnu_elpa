@@ -1,0 +1,232 @@
+;;; test-gates --- Exercise real Make gates with disposable faults -*- lexical-binding: t; -*-
+
+(require 'ert)
+(require 'cl-lib)
+
+(defconst jabber-gate-root
+  (file-name-directory (directory-file-name
+                        (file-name-directory (or load-file-name buffer-file-name)))))
+
+(defun jabber-gate-write (file text)
+  "Write fixture TEXT to FILE in the disposable checkout."
+  (with-temp-file file (insert text)))
+
+(defmacro jabber-gate-with-checkout (&rest body)
+  "Run BODY in a disposable Make checkout without building the package."
+  (declare (indent 0) (debug t))
+  `(let* ((work (make-temp-file "jabber-gates-" t))
+          (default-directory (file-name-as-directory work))
+          (process-environment (copy-sequence process-environment)))
+     (unwind-protect
+         (progn
+           (setenv "MAKEFLAGS" nil)
+           (setenv "MFLAGS" nil)
+           (copy-file (expand-file-name "Makefile" jabber-gate-root) "Makefile")
+           (copy-directory (expand-file-name "admin" jabber-gate-root) "admin")
+           (make-directory "lisp")
+           (make-directory "tests")
+           ,@body)
+       (delete-directory work t))))
+
+(defun jabber-gate-make (&rest arguments)
+  "Run Make with ARGUMENTS and return its exit code and full diagnostics."
+  (with-temp-buffer
+    (let ((status (apply #'call-process "make" nil t nil "--no-print-directory"
+                         "JABBER_ENV_WRAPPED=1"
+                         (concat "EMACS_CMD=" (or (getenv "EMACS_CMD")
+                                                  (expand-file-name invocation-name invocation-directory)))
+                         (concat "EMACS_OPTS=" (or (getenv "EMACS_OPTS") "-Q --batch"))
+                         arguments)))
+      (cons status (buffer-string)))))
+
+(defun jabber-gate-read (file)
+  "Read FILE's full diagnostic text."
+  (with-temp-buffer (insert-file-contents file) (buffer-string)))
+
+(ert-deftest jabber-gate-lint-warning-and-process-failure ()
+  (jabber-gate-with-checkout
+    ;; These Lisp-only fixtures deliberately bypass the production native build.
+    (jabber-gate-write
+     "lisp/good.el"
+     ";;; good.el --- A fixture -*- lexical-binding: t; -*-\n;;; Commentary:\n;; Check lint.\n;;; Code:\n(defun good () \"Return nil.\" nil)\n(provide 'good)\n;;; good.el ends here\n")
+    (jabber-gate-write "lisp/doc.el" "(defun fixture (arg) \"bad\" arg)\n")
+    (jabber-gate-write "lisp/decl.el" "(declare-function fixture \"missing-fixture-library\")\n")
+    (jabber-gate-write "lisp/valid-decl.el" "(declare-function good \"good\" ())\n")
+    (dolist (case '(("checkdoc" "doc.el" "checkdoc warnings")
+                    ("declare" "decl.el" "Invalid declarations")))
+      (let ((target (concat "do-lint-check" (if (equal (car case) "declare") "-declare" "doc"))))
+        (let ((result (jabber-gate-make
+                       target "-o" "do-module" (if (equal (car case) "declare")
+                                  "LINT_FILES=lisp/good.el lisp/valid-decl.el"
+                                "LINT_FILES=lisp/good.el"))))
+          (ert-info ((cdr result)) (should (zerop (car result)))))
+        (let ((result (jabber-gate-make target "-o" "do-module"
+                                       (concat "LINT_FILES=lisp/" (cadr case) " lisp/good.el"))))
+          (should-not (zerop (car result)))
+          (should (string-match-p (nth 2 case) (cdr result))))))
+    ;; Successful last file must not launder a failed first child process.
+    (jabber-gate-write "fail-first" "#!/bin/sh\ncase \"$JABBER_LINT_FILE\" in *first*) exit 7;; *) exit 0;; esac\n")
+    (set-file-modes "fail-first" #o755)
+    (dolist (target '("do-lint-checkdoc" "do-lint-check-declare"))
+      (should-not (zerop (car (jabber-gate-make target "-o" "do-module" "EMACS_CMD=./fail-first"
+                                               "LINT_FILES=first last")))))))
+
+(ert-deftest jabber-gate-native-declarations ()
+  ;; Use the real compiled module, never Lisp stand-ins for native exports.
+  ;; Bypass the build only in these fixtures: they supply or omit that module.
+  (let* ((name (concat "jabber-omemo-core" module-file-suffix))
+         (module (expand-file-name (concat "lisp/" name) jabber-gate-root))
+         (valid "(declare-function jabber-omemo--heartbeat \"jabber-omemo-core\" t t)\n"))
+    (should (file-exists-p module))
+    (jabber-gate-with-checkout
+      (copy-file module (concat "lisp/" name))
+      (jabber-gate-write "lisp/native.el" valid)
+      (let ((result (jabber-gate-make "do-lint-check-declare" "-o" "do-module"
+                                      "LINT_FILES=lisp/native.el")))
+        (ert-info ((cdr result)) (should (zerop (car result)))))
+      (dolist (declaration '("(declare-function jabber-omemo--heartbeat-typo \"jabber-omemo-core\" t t)\n"
+                             "(declare-function car \"jabber-omemo-core\" t t)\n"))
+        (jabber-gate-write "lisp/native.el" declaration)
+        (let ((result (jabber-gate-make "do-lint-check-declare" "-o" "do-module"
+                                      "LINT_FILES=lisp/native.el")))
+          (should-not (zerop (car result)))
+          (should (string-match-p "Missing native export" (cdr result)))))
+      ;; The native exception must not hide ordinary or malformed declarations
+      ;; in the same file, even when their library exists.
+      (jabber-gate-write "lisp/ordinary.el" "(defun ordinary () nil)\n")
+      (dolist (declaration '("(declare-function absent \"ordinary\" ())\n"
+                             "(declare-function ordinary 42 ())\n"))
+        (jabber-gate-write "lisp/native.el" (concat valid declaration))
+        (let ((result (jabber-gate-make "do-lint-check-declare" "-o" "do-module"
+                                      "LINT_FILES=lisp/native.el")))
+          (should-not (zerop (car result)))
+          (should (string-match-p "Invalid declarations" (cdr result)))))
+      ;; No module is an incomplete native check, never a silent pass.
+      (jabber-gate-write "lisp/native.el" valid)
+      (delete-file (concat "lisp/" name))
+      (let ((result (jabber-gate-make "do-lint-check-declare" "-o" "do-module"
+                                      "LINT_FILES=lisp/native.el")))
+        (should-not (zerop (car result)))
+        (should (string-match-p "file not found" (cdr result)))))))
+
+(ert-deftest jabber-gate-native-build-prerequisites ()
+  ;; Test the real Make graph separately from native-export fixture semantics.
+  (jabber-gate-with-checkout
+    (make-directory "src")
+    (jabber-gate-write "src/Makefile"
+                       "all:\n\t@sleep 0.2; printf ready > ../module-state\n")
+    (jabber-gate-write "consumer"
+                       "#!/bin/sh\n[ \"$(cat module-state 2>/dev/null)\" = ready ] || exit 9\nprintf 'lint-consumer-ran\\n'\n")
+    (set-file-modes "consumer" #o755)
+    (dolist (targets '(("-j2" "do-module" "do-lint-check-declare" "do-lint-gate-check")
+                       ("lint-check-declare") ("lint-gate-check")))
+      ;; Both a clean build and a stale artifact must be settled before lint.
+      (dolist (state '(nil "stale"))
+        (if state (jabber-gate-write "module-state" state)
+          (when (file-exists-p "module-state") (delete-file "module-state")))
+        (let ((result (apply #'jabber-gate-make
+                             "EMACS_CMD=./consumer" "LINT_FILES=lisp/native.el" targets)))
+          (ert-info ((cdr result)) (should (zerop (car result))))
+          (should (string-match-p "lint-consumer-ran" (cdr result)))))
+      ;; Even a previously built artifact cannot hide a failed refresh.
+      (jabber-gate-write "src/Makefile" "all:\n\t@printf 'native-build-failed\\n'; exit 7\n")
+      (let ((result (apply #'jabber-gate-make
+                           "EMACS_CMD=./consumer" "LINT_FILES=lisp/native.el" targets)))
+        (should-not (zerop (car result)))
+        (should (string-match-p "native-build-failed" (cdr result)))
+        (should-not (string-match-p "^lint-consumer-ran" (cdr result))))
+      (jabber-gate-write "src/Makefile"
+                         "all:\n\t@sleep 0.2; printf ready > ../module-state\n"))))
+
+(ert-deftest jabber-gate-ert-completion-counts-and-logs ()
+  (jabber-gate-with-checkout
+    (jabber-gate-write "tests/jabber-test-good.el" "(ert-deftest good () (should t))\n")
+    (jabber-gate-write "tests/jabber-test-mixed.el"
+                       "(ert-deftest good () (should t))\n(ert-deftest bad () (should nil))\n")
+    (jabber-gate-write "tests/jabber-test-early.el" "(kill-emacs 0)\n")
+    (jabber-gate-write "tests/jabber-test-broken.el" "(error \"GATE-LOAD-FAILURE\")\n")
+    (jabber-gate-write "tests/jabber-test-empty.el" ";; No ERT tests.\n")
+    (jabber-gate-write "tests/jabber-test-skipped.el" "(ert-deftest skipped () (ert-skip \"fixture\"))\n")
+    (let ((result (jabber-gate-make "do-test-summary" "TESTS=tests/jabber-test-good.el"
+                                    "EMACS_OPTS=-Q --batch -L lisp")))
+      (should (zerop (car result)))
+      (should (string-match-p "1 completed tests: 1 expected, 0 unexpected, 0 skipped; 0 failed files" (cdr result)))
+      (should-not (file-exists-p ".test-results")))
+    ;; Parallel mixed outcomes must finish every worker and preserve every log.
+    (let ((result (jabber-gate-make "-j3" "do-test-summary"
+                                    "TESTS=tests/jabber-test-mixed.el tests/jabber-test-early.el tests/jabber-test-broken.el tests/jabber-test-empty.el tests/jabber-test-skipped.el")))
+      (should-not (zerop (car result)))
+      (should (string-match-p "3 completed tests: 1 expected, 1 unexpected, 1 skipped; 4 failed files" (cdr result)))
+      (should (string-match-p "GATE-LOAD-FAILURE"
+                              (jabber-gate-read ".test-results/jabber-test-broken.stamp.log")))
+      (should (string-match-p "ert-test-failed"
+                              (jabber-gate-read ".test-results/jabber-test-mixed.stamp.log")))
+      (should-not (file-exists-p ".test-results/jabber-test-early.stamp.ert")))
+    (should-not (zerop (car (jabber-gate-make "do-test-summary" "TESTS="))))))
+
+(ert-deftest jabber-gate-oneshot-requires-both-completions ()
+  (jabber-gate-with-checkout
+    ;; Only the suite runner is under test, not the package bootstrap here.
+    (jabber-gate-write "lisp/jabber.el" "(provide 'jabber)\n")
+    (jabber-gate-write "tests/jabber-test-good.el" "(ert-deftest good () (should t))\n")
+    (let ((result (jabber-gate-make "do-test-oneshot" "-o" "autoload" "-o" "do-module"
+                                    "TESTS=tests/jabber-test-good.el")))
+      (should (zerop (car result)))
+      (should (string-match-p "2 completed tests: 2 expected" (cdr result))))
+    (jabber-gate-write "tests/jabber-test-early.el" "(kill-emacs 0)\n")
+    (should-not (zerop (car (jabber-gate-make "do-test-oneshot" "-o" "autoload" "-o" "do-module"
+                                             "TESTS=tests/jabber-test-early.el"))))
+    (jabber-gate-write "tests/jabber-test-second.el"
+                       "(defvar fixture-count 0)\n(ert-deftest second () (when (= (cl-incf fixture-count) 2) (kill-emacs 0)))\n")
+    (should-not (zerop (car (jabber-gate-make "do-test-oneshot" "-o" "autoload" "-o" "do-module"
+                                             "TESTS=tests/jabber-test-second.el"))))
+    (should-not (file-exists-p ".test-results/oneshot.stamp.ert"))))
+
+(ert-deftest jabber-gate-ert-rejects-invalid-receipts ()
+  (jabber-gate-with-checkout
+    (make-directory ".test-results")
+    (jabber-gate-write "tests/jabber-test-good.el" "(ert-deftest good () (should t))\n")
+    ;; Existing stamps avoid rerunning the fixture, exercising the aggregator.
+    (jabber-gate-write ".test-results/jabber-test-good.stamp" "0\n")
+    (dolist (receipt '("" "(complete 0 0 0 0)" "(complete 2 1 0 0)"
+                       "(complete 1 -1 2 0)" "(complete 1 1 0 0) junk"
+                       "(complete 1 1 0 0 . invalid)"))
+      (jabber-gate-write ".test-results/jabber-test-good.stamp.ert" receipt)
+      (should-not (zerop (car (jabber-gate-make "do-test-summary"
+                                               "TESTS=tests/jabber-test-good.el")))))
+    (jabber-gate-write ".test-results/jabber-test-good.stamp.ert" "(complete 1 1 0 0)")
+    (jabber-gate-write ".test-results/jabber-test-good.stamp" "7\n")
+    (should-not (zerop (car (jabber-gate-make "do-test-summary" "TESTS=tests/jabber-test-good.el"))))))
+
+(ert-deftest jabber-gate-module-nix-dispatch ()
+  (jabber-gate-with-checkout
+    (make-directory "src")
+    (jabber-gate-write "src/Makefile" "all:\n\t@printf 'native-module-dispatch\\n'\n")
+    (make-directory "bin")
+    (jabber-gate-write "bin/nix" "#!/bin/sh\nprintf 'nix-dispatch\\n'\n")
+    (set-file-modes "bin/nix" #o755)
+    (setenv "PATH" (concat (expand-file-name "bin") path-separator (getenv "PATH")))
+    (setenv "IN_NIX_SHELL" nil)
+    (let ((result (jabber-gate-make "module" "JABBER_ENV_WRAPPED=")))
+      (should (zerop (car result)))
+      (should (string-match-p "native-module-dispatch" (cdr result)))
+      (should-not (string-match-p "nix-dispatch" (cdr result))))
+    (jabber-gate-write "flake.nix" "{}\n")
+    (should (string-match-p "nix-dispatch"
+                            (cdr (jabber-gate-make "module" "JABBER_ENV_WRAPPED="))))
+    (should (string-match-p "native-module-dispatch"
+                            (cdr (jabber-gate-make "module" "JABBER_ENV_WRAPPED=" "IN_NIX_SHELL=impure"))))))
+
+(ert-deftest jabber-gate-inventory-and-native-failure ()
+  (jabber-gate-with-checkout
+    (jabber-gate-write "tests/jabber-test-new.el" "(ert-deftest new () (should t))\n")
+    (jabber-gate-write "tests/helper.el" "(error \"Not an ordinary suite\")\n")
+    (let ((result (jabber-gate-make "do-test-summary")))
+      (should (zerop (car result)))
+      (should (string-match-p "1 completed tests" (cdr result))))
+    (make-directory "src")
+    (jabber-gate-write "src/Makefile" "check:\n\t@printf 'native-fault-check-executed\\n'\n\t@exit 7\n")
+    ;; Reuse the real dev recipe, bypassing unrelated expensive phases only.
+    (let ((result (jabber-gate-make "do-dev" "-o" "do-compile" "-o" "do-module" "-o" "do-lint")))
+      (should-not (zerop (car result)))
+      (should (string-match-p "native-fault-check-executed" (cdr result))))))

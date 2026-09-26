@@ -1,0 +1,29 @@
+;;; test-file --- Run ERT and publish explicit completion statistics -*- lexical-binding: t; -*-
+
+(require 'ert)
+(require 'cl-lib)
+
+(let ((files command-line-args-left)
+      (runs (or (getenv "JABBER_TEST_RUNS") "1"))
+      (total 0) (expected 0) (unexpected 0) (skipped 0))
+  (setq command-line-args-left nil)
+  (unless (member runs '("1" "2")) (error "Expected one or two ERT runs"))
+  ;; Match Debian's combined test bootstrap, while per-file runs stay isolated.
+  (when (equal runs "2") (require 'jabber))
+  (unless files (error "No test files selected"))
+  (dolist (file files) (load (expand-file-name file) nil t))
+  ;; Nothing is published until all requested runs actually return.
+  (dotimes (_ (string-to-number runs))
+    (let ((stats (ert-run-tests-batch t)))
+      (unless (and (> (ert-stats-total stats) 0)
+                   (= (ert-stats-total stats) (ert-stats-completed stats)))
+        (error "Incomplete or empty ERT run"))
+      (cl-incf total (ert-stats-total stats))
+      (cl-incf expected (ert-stats-completed-expected stats))
+      (cl-incf unexpected (ert-stats-completed-unexpected stats))
+      (cl-incf skipped (ert-stats-skipped stats))))
+  (with-temp-file (or (getenv "JABBER_TEST_RECEIPT")
+                     (error "Missing ERT receipt path"))
+    (prin1 (list 'complete total expected unexpected skipped) (current-buffer))
+    (terpri (current-buffer)))
+  (kill-emacs (if (zerop unexpected) 0 1)))

@@ -2,16 +2,18 @@
         lint-test-autoloads \
         lint-package-lint lint-relint lint-test-compile lint-byte-comp lint-native-comp lint-compile-check \
         clean clean-elc clean-module install uninstall check test test-oneshot test-debian \
-        release-check load \
+        release-check load native-check do-native-check lint-gate-check do-lint-gate-check \
         do-build do-dev do-compile do-lint do-module do-test do-test-oneshot do-test-summary \
         do-lint-check-declare do-lint-checkdoc do-lint-byte-comp do-lint-native-comp
 
 NIX := $(shell command -v nix 2>/dev/null)
 
 ENV_MAKE = $(MAKE) --no-print-directory
-ifeq ($(JABBER_ENV_WRAPPED),)
+ifeq ($(JABBER_ENV_WRAPPED)$(IN_NIX_SHELL),)
+ifneq ($(wildcard flake.nix),)
 ifneq ($(NIX),)
 ENV_MAKE = nix develop path:$(CURDIR) --command env JABBER_ENV_WRAPPED=1 $(MAKE) --no-print-directory
+endif
 endif
 endif
 
@@ -22,56 +24,10 @@ EMACSCLIENT ?= emacsclient
 JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 TEST_RESULTS := .test-results
 
-TESTS ?= tests/jabber-test-activity.el \
-         tests/jabber-test-ahc.el \
-         tests/jabber-test-autoaway.el \
-         tests/jabber-test-avatar.el \
-         tests/jabber-test-blocking.el \
-         tests/jabber-test-bookmarks.el \
-         tests/jabber-test-carbons.el \
-         tests/jabber-test-chat.el \
-         tests/jabber-test-chatbuffer.el \
-         tests/jabber-test-chatstates.el \
-         tests/jabber-test-conn.el \
-         tests/jabber-test-csi.el \
-         tests/jabber-test-db.el \
-         tests/jabber-test-disco.el \
-         tests/jabber-test-httpupload.el \
-         tests/jabber-test-image.el \
-         tests/jabber-test-keepalive.el \
-         tests/jabber-test-link-preview.el \
-         tests/jabber-test-mam.el \
-         tests/jabber-test-menu.el \
-         tests/jabber-test-message-correct.el \
-         tests/jabber-test-message-reply.el \
-         tests/jabber-test-message-thread.el \
-         tests/jabber-test-modeline.el \
-         tests/jabber-test-moderation.el \
-         tests/jabber-test-muc.el \
-         tests/jabber-test-notifications.el \
-         tests/jabber-test-omemo-message.el \
-         tests/jabber-test-omemo-module.el \
-         tests/jabber-test-omemo-protocol.el \
-         tests/jabber-test-omemo-store.el \
-         tests/jabber-test-omemo-trust.el \
-         tests/jabber-test-openpgp.el \
-         tests/jabber-test-openpgp-legacy.el \
-         tests/jabber-test-presence.el \
-         tests/jabber-test-pubsub.el \
-         tests/jabber-test-vcard-avatars.el \
-         tests/jabber-test-reactions.el \
-         tests/jabber-test-receipts.el \
-         tests/jabber-test-reload.el \
-         tests/jabber-test-roster.el \
-         tests/jabber-test-rtt.el \
-         tests/jabber-test-sm.el \
-         tests/jabber-test-srv.el \
-         tests/jabber-test-styling.el \
-         tests/jabber-test-time.el \
-         tests/jabber-test-util.el \
-         tests/jabber-test-widgetless.el \
-         tests/jabber-test-xdata.el \
-         tests/jabber-test-xml.el
+# Ordinary ERT suites have one inventory, shared by both execution modes.
+# Keep TESTS overridable for focused runs.
+TESTS ?= $(sort $(wildcard tests/jabber-test-*.el))
+LINT_FILES ?= $(wildcard admin/*.el lisp/*.el)
 
 TEST_STAMPS := $(patsubst tests/%.el,$(TEST_RESULTS)/%.stamp,$(TESTS))
 
@@ -86,6 +42,7 @@ dev:
 	@$(ENV_MAKE) do-dev
 
 do-dev: do-compile do-module do-lint
+	$(MAKE) do-native-check
 	$(MAKE) do-test
 	$(MAKE) do-test-oneshot
 
@@ -99,6 +56,13 @@ module:
 do-module:
 	$(MAKE) -C src
 
+# CBC/store/RNG faults; API simulations do not certify native OS builds.
+native-check:
+	@$(ENV_MAKE) do-native-check
+
+do-native-check:
+	$(MAKE) -C src check
+
 compile:
 	@$(ENV_MAKE) do-compile
 
@@ -110,18 +74,21 @@ do-compile: autoload
 lint-check-declare:
 	@$(ENV_MAKE) do-lint-check-declare
 
-do-lint-check-declare:
-	for file in admin/*.el lisp/*.el ; do \
-	$(EMACS_CMD) $(EMACS_OPTS) --eval="(check-declare-file \"$$file\")" ; \
+# Both declaration checks and their regression fixtures consume native exports.
+do-lint-check-declare: do-module
+	@set -e; for file in $(LINT_FILES); do \
+	  JABBER_LINT_MODE=declare JABBER_LINT_FILE="$$file" \
+	  $(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -l admin/check-lisp; \
 	done
 
 lint-checkdoc:
 	@$(ENV_MAKE) do-lint-checkdoc
 
 do-lint-checkdoc:
-	for file in admin/*.el lisp/*.el ; do \
-	case "$$file" in lisp/jabber-autoloads.el) continue;; esac; \
-	$(EMACS_CMD) $(EMACS_OPTS) --eval="(checkdoc-file \"$$file\")" ; \
+	@set -e; for file in $(LINT_FILES); do \
+	  case "$$file" in lisp/jabber-autoloads.el) continue;; esac; \
+	  JABBER_LINT_MODE=checkdoc JABBER_LINT_FILE="$$file" \
+	  $(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -l admin/check-lisp; \
 	done
 
 lint-package-lint:
@@ -157,11 +124,18 @@ do-lint-native-comp:
 lint-compile-check:
 	EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" ./admin/test-compile-check
 
+lint-gate-check:
+	@$(ENV_MAKE) do-lint-gate-check
+
+do-lint-gate-check: do-module
+	EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" \
+	  $(EMACS_CMD) $(EMACS_OPTS) -l admin/test-gates -f ert-run-tests-batch-and-exit
+
 lint:
 	@$(ENV_MAKE) do-lint
 
 do-lint: do-lint-check-declare do-lint-checkdoc lint-package-lint lint-relint \
-         lint-test-compile lint-test-autoloads do-lint-byte-comp do-lint-native-comp lint-compile-check
+         lint-test-compile lint-test-autoloads do-lint-byte-comp do-lint-native-comp lint-compile-check do-lint-gate-check
 
 test:
 	@$(ENV_MAKE) -j$(JOBS) -Otarget do-test
@@ -174,19 +148,8 @@ do-test: autoload do-module
 # jabber-db-path is preset to nil so no test can ever open the user's
 # real database; tests that need storage let-bind it to a temp file.
 $(TEST_RESULTS)/%.stamp: tests/%.el
-	@output=$$($(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests \
-	  --eval="(setq jabber-db-path nil load-prefer-newer t)" \
-	  -l ert -l $< -f ert-run-tests-batch-and-exit 2>&1); \
-	rc=$$?; \
-	n=$$(echo "$$output" | grep -o 'Ran [0-9]*' | grep -o '[0-9]*'); \
-	if [ $$rc -ne 0 ]; then \
-	  printf "\033[31mFAIL\033[0m $< ($${n:-0} tests)\n"; \
-	  echo "$$output" | grep '  FAILED'; \
-	  printf "FAIL %s\n" "$${n:-1}" > $@; \
-	else \
-	  printf "\033[32m  OK\033[0m $< ($$n tests)\n"; \
-	  printf "OK %s\n" "$$n" > $@; \
-	fi
+	@EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" \
+	  ./admin/run-test "$@" "$<"
 
 test-oneshot:
 	@$(ENV_MAKE) do-test-oneshot
@@ -204,39 +167,14 @@ release-check: dev
 # pollution and in-place mutation of shared literals that the per-file
 # `do-test' runs (one Emacs per file) cannot see.
 do-test-oneshot: autoload do-module
-	$(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests -l ert \
-	  --eval="(setq jabber-db-path nil load-prefer-newer t)" \
-	  --eval="(require 'jabber)" \
-	  $(addprefix -l ,$(TESTS)) \
-	  --eval="(let ((bad 0)) \
-	            (dotimes (_ 2) \
-	              (setq bad (+ bad (ert-stats-completed-unexpected \
-	                                (ert-run-tests-batch t))))) \
-	            (kill-emacs (if (zerop bad) 0 1)))"
+	@JABBER_TEST_RUNS=2 EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" \
+	  ./admin/run-test "$(TEST_RESULTS)/oneshot.stamp" $(TESTS)
+	@$(EMACS_CMD) $(EMACS_OPTS) -l admin/test-summary "$(TEST_RESULTS)/oneshot.stamp"
+	@rm -f "$(TEST_RESULTS)/oneshot.stamp" "$(TEST_RESULTS)/oneshot.stamp.ert" "$(TEST_RESULTS)/oneshot.stamp.log"
 
 do-test-summary: $(TEST_STAMPS)
-	@total=0; passed=0; failed=0; failed_files=""; \
-	for f in $(TEST_STAMPS); do \
-	  read status n < $$f; \
-	  total=$$((total + n)); \
-	  if [ "$$status" = "FAIL" ]; then \
-	    failed=$$((failed + n)); \
-	    base=$$(basename $$f .stamp); \
-	    failed_files="$$failed_files tests/$$base.el"; \
-	  else \
-	    passed=$$((passed + n)); \
-	  fi; \
-	done; \
-	echo ""; \
-	if [ $$failed -eq 0 ]; then \
-	  printf "\033[32m$$total tests, $$passed passed, 0 failed\033[0m\n"; \
-	  rm -rf $(TEST_RESULTS); \
-	else \
-	  printf "\033[31m$$total tests, $$passed passed, $$failed failed\033[0m\n"; \
-	  for f in $$failed_files; do echo "  $$f"; done; \
-	  printf "\nStamps preserved in $(TEST_RESULTS)/ for debugging.\n"; \
-	fi; \
-	[ $$failed -eq 0 ]
+	@$(EMACS_CMD) $(EMACS_OPTS) -l admin/test-summary $(TEST_STAMPS)
+	@rm -rf $(TEST_RESULTS)
 
 load: clean-elc
 	@$(EMACSCLIENT) --eval "(progn \

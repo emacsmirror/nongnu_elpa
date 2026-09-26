@@ -1,0 +1,22 @@
+#!/bin/sh
+# One process per suite; keep both diagnostics and process/completion evidence.
+set -eu
+stamp=${1:?Expected result path}
+shift
+[ "$#" -gt 0 ] || { printf 'No test files selected\n' >&2; exit 1; }
+mkdir -p "$(dirname -- "$stamp")"
+rm -f "$stamp" "$stamp.ert"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+mkdir -p "$work/home" "$work/tmp"
+status=0
+HOME="$work/home" XDG_CACHE_HOME="$work/home/cache" \
+XDG_CONFIG_HOME="$work/home/config" XDG_DATA_HOME="$work/home/data" \
+XDG_STATE_HOME="$work/home/state" TMPDIR="$work/tmp" \
+JABBER_TEST_RECEIPT="$stamp.ert" \
+${EMACS_CMD:-emacs} ${EMACS_OPTS:--Q --batch} -L admin -L lisp -L tests \
+  --eval='(setq jabber-db-path nil load-prefer-newer t)' \
+  -l admin/test-file "$@" > "$stamp.log" 2>&1 || status=$?
+printf '%s\n' "$status" > "$stamp"
+printf 'Finished %s (process exit %s)\n' "$stamp" "$status"
+# Return success so Make settles every selected worker before aggregation.

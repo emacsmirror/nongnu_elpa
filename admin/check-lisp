@@ -1,0 +1,45 @@
+;;; check-lisp --- Fail on documentation and declaration warnings -*- lexical-binding: t; -*-
+
+(require 'checkdoc)
+(require 'check-declare)
+
+(let ((file (or (getenv "JABBER_LINT_FILE") (error "Missing lint file"))))
+  (pcase (getenv "JABBER_LINT_MODE")
+    ("declare"
+     ;; Malformed declarations warn during scanning without entering the
+     ;; returned error list.  Keep those diagnostics fatal too.
+     (let ((warnings 0))
+       (advice-add 'check-declare-warn :before
+                   (lambda (&rest _) (setq warnings (1+ warnings))))
+       (when (or (check-declare-file file) (> warnings 0))
+         (error "Invalid declarations in %s" file)))
+     ;; check-declare cannot recognize dynamic-module exports.  The module's
+     ;; FILEONLY declarations still require its file; verify the actual
+     ;; definitions in this disposable Emacs, without loading jabber itself.
+     (let ((loaded nil)
+           (count 0))
+       (dolist (declaration (check-declare-scan file))
+         (let ((library (car declaration))
+               (function (intern (cadr declaration))))
+           (when (equal (file-name-base library) "jabber-omemo-core")
+             (unless loaded
+               (load (expand-file-name library) nil t t)
+               (setq loaded t))
+             (unless (and (fboundp function)
+                          (module-function-p (symbol-function function))
+                          (equal (file-truename (symbol-file function 'defun))
+                                 (file-truename library)))
+               (error "Missing native export %s in %s" function library))
+             (setq count (1+ count)))))
+       (when loaded
+         (message "Verified %d native declarations in %s" count file))))
+    ("checkdoc"
+     ;; checkdoc-file emits warnings but neither returns nor signals failure.
+     ;; Observe its diagnostic boundary without replacing diagnostic delivery.
+     (let ((warnings 0))
+       (advice-add 'checkdoc-error :before
+                   (lambda (&rest _) (setq warnings (1+ warnings))))
+       (checkdoc-file file)
+       (unless (zerop warnings)
+         (error "%s: %d checkdoc warnings" file warnings))))
+    (_ (error "Expected declare or checkdoc mode"))))
