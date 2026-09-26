@@ -525,33 +525,38 @@ JC is the Jabber connection."
 (defvar jabber-roster-group-history nil
   "History of entered roster groups.")
 
+(defun jabber-roster--read-edit (jc jid)
+  "Read the name and groups for JID on JC, returning a two-element list.
+JID is a roster symbol.  Empty group entries are removed."
+  (let* ((name (get jid 'name))
+         (groups (get jid 'groups))
+         (all-groups
+          (apply #'append
+                 (mapcar (lambda (contact) (get contact 'groups))
+                         (plist-get (fsm-get-state-data jc) :roster))))
+         (new-name (jabber-read-with-input-method
+                    (format "Name: (default `%s') " name) nil nil name)))
+    (unless (memq jc jabber-connections)
+      (user-error "Selected Jabber account is no longer connected"))
+    (list new-name
+          (delete ""
+                  (completing-read-multiple
+                   (format "Groups, comma-separated: (default %s) "
+                           (if groups (string-join groups ",") "none"))
+                   all-groups nil nil nil 'jabber-roster-group-history
+                   (string-join groups ",") t)))))
+
 (defun jabber-roster-change (jc jid name groups)
   "Add or change roster item JID with NAME and GROUPS.
 JC is the Jabber connection."
-  (interactive (let* ((jid (jabber-jid-symbol
-			    (jabber-read-jid-completing "Add/change JID: ")))
-		      (account (jabber-read-account))
-		      (name (get jid 'name))
-		      (groups (get jid 'groups))
-		      (all-groups
-		       (apply #'append
-			      (mapcar
-			       (lambda (j) (get j 'groups))
-			       (plist-get (fsm-get-state-data account) :roster)))))
-		 (list account
-		       jid (jabber-read-with-input-method (format "Name: (default `%s') " name) nil nil name)
-		       (delete ""
-			       (completing-read-multiple
-				(format
-				 "Groups, comma-separated: (default %s) "
-				 (if groups
-				     (mapconcat #'identity groups ",")
-				   "none"))
-				all-groups
-				nil nil nil
-				'jabber-roster-group-history
-				(mapconcat #'identity groups ",")
-				t)))))
+  (interactive
+   (let* ((jid (jabber-jid-symbol
+                (jabber-read-jid-completing "Add/change JID: ")))
+          (jc (jabber-read-account))
+          (values (jabber-roster--read-edit jc jid)))
+     (unless (memq jc jabber-connections)
+       (user-error "Selected Jabber account is no longer connected"))
+     (append (list jc jid) values)))
   ;; If new fields are added to the roster XML structure in a future standard,
   ;; they will be clobbered by this function.
   ;; XXX: specify account

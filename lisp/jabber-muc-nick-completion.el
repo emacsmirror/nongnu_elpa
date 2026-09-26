@@ -76,10 +76,14 @@ Note that \":\" or alike not needed (it appended in other string)"
 ;;
 
 (defun jabber-my-nick (&optional group)
-  "Return my jabber nick in GROUP."
+  "Return my Jabber nick in GROUP for the current connection.
+MUC dispatch binds `jabber-buffer-connection' to the receiving account,
+including when no room buffer is open."
   (let ((room (or group jabber-group)))
-    (or (jabber-muc-nickname room)
-        (cdr (assoc room jabber-muc-default-nicknames)))))
+    (if jabber-buffer-connection
+        (jabber-muc-nickname room jabber-buffer-connection)
+      (or (jabber-muc-nickname room)
+          (cdr (assoc room jabber-muc-default-nicknames))))))
 
 ;;;###autoload
 (defun jabber-muc-looks-like-personal-p (message &optional group)

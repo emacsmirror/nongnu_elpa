@@ -250,6 +250,9 @@ files."
 
 (defvar jabber-xml-data)                ; jabber.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
+(defvar jabber-chatting-with)           ; jabber-chatbuffer.el
+(defvar jabber-group)                   ; jabber-chatbuffer.el
+(defvar jabber-send-function)           ; jabber-input.el
 
 ;;
 
@@ -516,30 +519,41 @@ The keys are regexps matching the incoming message text, and the values are
 autoanswer phrase."
   :type '(alist :key-type regexp :value-type string))
 
+(defun jabber-autoanswer--message (text)
+  "Return the first configured automatic reply matching TEXT."
+  (cl-loop for (regexp . answer) in jabber-autoanswer-alist
+           when (string-match regexp text) return answer))
+
 (defun jabber-autoanswer-answer (from buffer text proposed-alert)
   "Answer automatically a 1:1 TEXT from FROM via `jabber-autoanswer-alist'.
 BUFFER is the chat buffer; PROPOSED-ALERT gates the action."
-  (when (and from buffer text proposed-alert jabber-autoanswer-alist)
-    (let ((message
-           (cl-dolist (entry jabber-autoanswer-alist)
-             (when (string-match (car entry) text)
-               (cl-return (cdr entry))))))
-      (when (and message jabber-alert-chat-send-function)
-        (funcall jabber-alert-chat-send-function
-                 jabber-buffer-connection message)))))
+  (when (and from (buffer-live-p buffer) text proposed-alert
+             jabber-autoanswer-alist)
+    (with-current-buffer buffer
+      (when (and (memq jabber-buffer-connection jabber-connections)
+                 (not jabber-group)
+                 (stringp jabber-chatting-with)
+                 (or (equal from jabber-chatting-with)
+                     (and (not (jabber-jid-resource jabber-chatting-with))
+                          (equal (jabber-jid-user from) jabber-chatting-with))))
+        (when-let* ((message (jabber-autoanswer--message text))
+                    (send jabber-alert-chat-send-function))
+          (funcall send jabber-buffer-connection message))))))
 (cl-pushnew 'jabber-autoanswer-answer (get 'jabber-alert-message-hooks 'custom-options))
 
 (defun jabber-autoanswer-answer-muc (nick group buffer text proposed-alert)
   "Auto-reply to MUC TEXT from NICK in GROUP using `jabber-autoanswer-alist'.
-BUFFER is the MUC buffer; PROPOSED-ALERT gates the action."
-  (when (and nick group buffer text proposed-alert jabber-autoanswer-alist)
-    (let ((message
-           (cl-dolist (entry jabber-autoanswer-alist)
-             (when (string-match (car entry) text)
-               (cl-return (cdr entry))))))
-      (when (and message jabber-alert-chat-send-function)
-        (funcall jabber-alert-chat-send-function
-                 jabber-buffer-connection message)))))
+Reply to the room using BUFFER's sender, not privately to NICK.
+PROPOSED-ALERT gates the action; stale or absent room buffers stay silent."
+  (when (and nick group (buffer-live-p buffer) text proposed-alert
+             jabber-autoanswer-alist)
+    (with-current-buffer buffer
+      (when (and (memq jabber-buffer-connection jabber-connections)
+                 (equal jabber-group group)
+                 (jabber-muc-joined-p group jabber-buffer-connection))
+        (when-let* ((message (jabber-autoanswer--message text))
+                    (send jabber-send-function))
+          (funcall send jabber-buffer-connection message))))))
 (cl-pushnew 'jabber-autoanswer-answer-muc (get 'jabber-alert-muc-hooks 'custom-options))
 
 (provide 'jabber-alert)

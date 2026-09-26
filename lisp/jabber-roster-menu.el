@@ -52,6 +52,8 @@ Only contacts and rooms belonging to this connection are shown.")
 
 (defun jabber-roster--contacts ()
   "Return roster contacts, filtered by scope if active."
+  (when jabber-roster--scoped-connection
+    (jabber-roster--check-connection jabber-roster--scoped-connection))
   (if jabber-roster--scoped-connection
       (plist-get (fsm-get-state-data jabber-roster--scoped-connection)
                  :roster)
@@ -119,7 +121,8 @@ Only contacts and rooms belonging to this connection are shown.")
   (call-interactively #'jabber-omemo-show-fingerprints))
 
 (defvar jabber-roster--selected-jid nil
-  "JID selected by `completing-read', used by action submenu.")
+  "Selected JID, with its owning connection in the `jabber-account' property.
+The action submenu retains this owner even when roster scope changes.")
 
 (keymap-popup-define jabber-roster-contact-action-map
   "Action for selected contact."
@@ -223,21 +226,27 @@ Only contacts and rooms belonging to this connection are shown.")
 (defun jabber-roster-chat-online ()
   "Select an online contact and open chat."
   (interactive)
-  (let* ((online (cl-remove-if-not
+  (let* ((scope jabber-roster--scoped-connection)
+         (online (cl-remove-if-not
                   (lambda (buddy) (get buddy 'connected))
                   (jabber-roster--contacts)))
-         (jid (jabber-read-jid-completing "Chat with (online): "
-                                          online t)))
+         (jid (progn
+                (unless online (user-error "No online contacts in this roster"))
+                (jabber-read-jid-completing "Chat with (online): " online t))))
     (when jid
-      (let ((jc (jabber-roster--jc-for-jid jid)))
+      (let ((jc (jabber-roster--jc-for-jid jid scope)))
         (jabber-chat-with jc jid)))))
 
 (defun jabber-roster-chat-any ()
   "Select any contact and show action submenu."
   (interactive)
-  (let ((jid (jabber-read-jid-completing "Contact: " nil t)))
-    (when jid
-      (setq jabber-roster--selected-jid jid)
+  (let* ((scope jabber-roster--scoped-connection)
+         (contacts (jabber-roster--contacts)))
+    (unless contacts (user-error "No contacts in this roster"))
+    (when-let* ((jid (jabber-read-jid-completing "Contact: " contacts t))
+                (jc (jabber-roster--jc-for-jid jid scope)))
+      (setq jabber-roster--selected-jid
+            (propertize jid 'jabber-account jc))
       (keymap-popup jabber-roster-contact-action-map))))
 
 (defun jabber-roster-chat-unread ()
@@ -250,8 +259,9 @@ Only contacts and rooms belonging to this connection are shown.")
         (jabber-activity-switch-to jid)))))
 
 (defun jabber-roster--muc-room-name (room)
-  "Return cached bookmark name for ROOM, or nil if absent."
-  (when-let* ((jc (jabber-muc-connection room))
+  "Return cached bookmark name for ROOM, respecting roster scope."
+  (when-let* ((jc (or jabber-roster--scoped-connection
+                     (jabber-muc-connection room)))
               (name (jabber-get-conference-data jc room nil :name)))
     (unless (or (string-empty-p name)
                 (string= name room))
@@ -259,9 +269,14 @@ Only contacts and rooms belonging to this connection are shown.")
 
 (defun jabber-roster--muc-completion-entries ()
   "Return active MUC completion entries as (ROOM . NAME)."
+  (when jabber-roster--scoped-connection
+    (jabber-roster--check-connection jabber-roster--scoped-connection))
   (mapcar (lambda (room)
             (cons room (jabber-roster--muc-room-name room)))
-          (jabber-muc-active-rooms)))
+          (cl-remove-if-not
+           (lambda (room)
+             (jabber-muc-joined-p room jabber-roster--scoped-connection))
+           (jabber-muc-active-rooms))))
 
 (defun jabber-roster--muc-name-counts (entries)
   "Return hash table of cached-name counts from MUC ENTRIES."
@@ -358,7 +373,8 @@ and room JIDs become annotations."
 With prefix argument USE-NAMES, complete on unique cached room
 names and annotate them with room JIDs."
   (interactive "P")
-  (let* ((entries (jabber-roster--muc-completion-entries))
+  (let* ((scope jabber-roster--scoped-connection)
+         (entries (jabber-roster--muc-completion-entries))
          (items (jabber-roster--muc-completion-items entries use-names))
          (candidate (completing-read "Room: "
                                      (jabber-roster--muc-completion-table items)
@@ -366,7 +382,7 @@ names and annotate them with room JIDs."
     (when-let* ((room (and (not (string-empty-p candidate))
                            (jabber-roster--muc-completion-normalize
                             candidate items))))
-      (jabber-muc-switch-to room))))
+      (jabber-muc-switch-to room scope))))
 
 ;;; Account management
 
@@ -440,66 +456,71 @@ entry is offered to clear the scope."
 
 (add-hook 'jabber-post-disconnect-hook #'jabber-roster--clear-scope)
 
-(defun jabber-roster--jc-for-jid (jid)
-  "Return the connection that has JID in its roster."
-  (or (cl-find-if (lambda (jc) (jabber-roster-contact-p jc jid))
-                  jabber-connections)
-      (car jabber-connections)))
+(defun jabber-roster--check-connection (jc)
+  "Return JC if still connected, otherwise reject the stale selection."
+  (unless (memq jc jabber-connections)
+    (user-error "Selected Jabber account is no longer connected"))
+  jc)
+
+(cl-defun jabber-roster--jc-for-jid
+    (jid &optional (scope jabber-roster--scoped-connection))
+  "Return the selected owner of JID, respecting captured SCOPE.
+Ask explicitly when an unscoped contact belongs to multiple accounts.
+A retained owner must never fall back to a different account."
+  (let* ((owner (or (get-text-property 0 'jabber-account jid) scope))
+         (accounts
+          (mapcar (lambda (jc) (cons (jabber-connection-bare-jid jc) jc))
+                  (cl-remove-if-not
+                   (lambda (jc) (jabber-roster-contact-p jc jid))
+                   (if owner (list (jabber-roster--check-connection owner))
+                     jabber-connections))))
+         (jc (cond ((null accounts) (user-error "Contact is no longer in roster"))
+                   ((null (cdr accounts)) (cdar accounts))
+                   (t (cdr (assoc (completing-read "Account: " accounts nil t)
+                                  accounts))))))
+    (jabber-roster--check-connection jc)
+    (unless (jabber-roster-contact-p jc jid)
+      (user-error "Contact is no longer in selected roster"))
+    jc))
 
 (defun jabber-roster--action-chat ()
   "Open chat with the selected contact."
   (interactive)
-  (when jabber-roster--selected-jid
-    (let ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid)))
-      (jabber-chat-with jc jabber-roster--selected-jid))))
+  (when-let* ((jid jabber-roster--selected-jid)
+              (jc (jabber-roster--jc-for-jid jid)))
+    (jabber-chat-with jc jid)))
 
 (defun jabber-roster--action-info ()
   "Get info for the selected contact."
   (interactive)
-  (when jabber-roster--selected-jid
-    (let ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid)))
-      (jabber-get-info jc jabber-roster--selected-jid))))
+  (when-let* ((jid jabber-roster--selected-jid)
+              (jc (jabber-roster--jc-for-jid jid)))
+    (jabber-get-info jc jid)))
 
 (defun jabber-roster--action-edit ()
   "Edit name and groups of the selected contact."
   (interactive)
-  (when jabber-roster--selected-jid
-    (let* ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid))
-           (sym (jabber-jid-symbol jabber-roster--selected-jid))
-           (name (get sym 'name))
-           (groups (get sym 'groups))
-           (all-groups
-            (apply #'append
-                   (mapcar (lambda (j) (get j 'groups))
-                           (plist-get (fsm-get-state-data jc) :roster))))
-           (new-name (jabber-read-with-input-method
-                      (format "Name: (default `%s') " name) nil nil name))
-           (new-groups (delete ""
-                               (completing-read-multiple
-                                (format "Groups, comma-separated: (default %s) "
-                                        (if groups (string-join groups ",") "none"))
-                                all-groups
-                                nil nil nil
-                                'jabber-roster-group-history
-                                (string-join groups ",")
-                                t))))
-      (jabber-roster-change jc sym new-name new-groups))))
+  (when-let* ((jid jabber-roster--selected-jid)
+              (jc (jabber-roster--jc-for-jid jid)))
+    (let ((values (jabber-roster--read-edit jc (jabber-jid-symbol jid))))
+      (jabber-roster--jc-for-jid jid jc)
+      (apply #'jabber-roster-change jc (jabber-jid-symbol jid) values))))
 
 (defun jabber-roster--action-delete ()
   "Delete the selected contact from roster."
   (interactive)
-  (when jabber-roster--selected-jid
-    (when (yes-or-no-p (format "Delete %s from roster? "
-                               jabber-roster--selected-jid))
-      (let ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid)))
-        (jabber-roster-delete jc jabber-roster--selected-jid)))))
+  (when-let* ((jid jabber-roster--selected-jid)
+              (jc (jabber-roster--jc-for-jid jid)))
+    (when (yes-or-no-p (format "Delete %s from roster? " jid))
+      (jabber-roster--jc-for-jid jid jc)
+      (jabber-roster-delete jc jid))))
 
 (defun jabber-roster--action-block ()
   "Block the selected contact."
   (interactive)
-  (when jabber-roster--selected-jid
-    (let ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid)))
-      (jabber-blocking-block-jid jc jabber-roster--selected-jid))))
+  (when-let* ((jid jabber-roster--selected-jid)
+              (jc (jabber-roster--jc-for-jid jid)))
+    (jabber-blocking-block-jid jc jid)))
 
 (provide 'jabber-roster-menu)
 
