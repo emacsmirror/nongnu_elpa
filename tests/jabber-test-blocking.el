@@ -5,6 +5,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'jabber-blocking)
+(require 'jabber-muc)
 
 (ert-deftest jabber-test-blocking-apply-block-push ()
   "A block push adds its JIDs without duplicates."
@@ -307,12 +308,14 @@
   "Direct and room send paths refuse before encryption, not just fetch."
   (let ((state (list :username "me" :server "example.org"
                      :blocking-list '("peer@example.net")))
-        (jabber-muc-participants
-         '(("room@conference.example.org"
-            ("nick" jid "peer@example.net/Phone")))))
+        (jabber-muc--rooms (make-hash-table :test #'equal))
+        (jabber-muc--room-jids (make-hash-table :test #'equal)))
     (cl-letf (((symbol-function 'fsm-get-state-data) (lambda (_) state))
               ((symbol-function 'jabber-omemo-encrypt-message)
                (lambda (&rest _) (ert-fail "Blocked send reached encryption"))))
+      (jabber-muc-add-groupchat "room@conference.example.org" "me" 'account)
+      (jabber-muc--identity-occupant
+       'account "room@conference.example.org" "nick" '(jid "peer@example.net/Phone"))
       (should-error
        (jabber-omemo--send-encrypted 'account "text" "peer@example.net" nil)
        :type 'user-error)
