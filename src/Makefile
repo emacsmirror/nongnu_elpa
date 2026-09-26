@@ -36,8 +36,18 @@ $(INSTALL_DIR)/$(TARGET): $(TARGET)
 
 # Standalone fault injection; never linked into the Emacs module.
 TEST_TARGET = omemo-c-test
-$(TEST_TARGET): ../tests/omemo-c-test.c $(filter-out jabber-omemo-core.c,$(SRCS)) picomemo/omemo.h picomemo/driver.h
-	$(CC) $(CFLAGS) -UNDEBUG $(TEST_CFLAGS) -o $@ $< $(filter-out jabber-omemo-core.c,$(SRCS)) $(MBED_FLAGS) -Wl,--wrap=mbedtls_aes_crypt_cbc
+# Rename only the backend call, not the real implementation in libmbedcrypto.
+# This uses the C preprocessor instead of GNU ld's nonportable --wrap option.
+CBC_TEST_OBJECT = omemo-c-test-mbedtls.o
+$(CBC_TEST_OBJECT): picomemo/mbedtls.c picomemo/omemo.h picomemo/driver.h
+	$(CC) $(CFLAGS) -UNDEBUG $(TEST_CFLAGS) $(MBED_FLAGS) \
+	  -Dmbedtls_aes_crypt_cbc=__wrap_mbedtls_aes_crypt_cbc -c -o $@ $<
+
+$(TEST_TARGET): ../tests/omemo-c-test.c $(filter-out jabber-omemo-core.c picomemo/mbedtls.c,$(SRCS)) $(CBC_TEST_OBJECT) picomemo/omemo.h picomemo/driver.h
+	$(CC) $(CFLAGS) -UNDEBUG $(TEST_CFLAGS) \
+	  -D__real_mbedtls_aes_crypt_cbc=mbedtls_aes_crypt_cbc -o $@ $< \
+	  $(filter-out jabber-omemo-core.c picomemo/mbedtls.c,$(SRCS)) \
+	  $(CBC_TEST_OBJECT) $(MBED_FLAGS) $(LDLIBS)
 
 RANDOM_TESTS = omemo-random-test omemo-random-openbsd-test
 # Linux headers can simulate Android's syscall macro, not its native ABI.
@@ -60,6 +70,6 @@ check: $(TEST_TARGET) check-random
 .PHONY: check check-random
 
 clean:
-	rm -f $(TARGET) $(INSTALL_DIR)/$(TARGET) $(TEST_TARGET) $(RANDOM_TESTS)
+	rm -f $(TARGET) $(INSTALL_DIR)/$(TARGET) $(TEST_TARGET) $(CBC_TEST_OBJECT) $(RANDOM_TESTS)
 
 .PHONY: all clean

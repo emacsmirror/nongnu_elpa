@@ -82,6 +82,24 @@
       (should (eq unregistered 'action-signal))
       (should (null notifications-on-action-object)))))
 
+(ert-deftest jabber-test-notifications-nil-title-is-silent ()
+  "Neither direct nor MUC notification policy overrides title suppression."
+  (let ((jabber-notifications-muc 'all)
+        calls)
+    (cl-letf (((symbol-function 'notifications-notify)
+               (lambda (&rest args) (push args calls))))
+      (save-window-excursion
+        (with-temp-buffer
+          (set-window-buffer (selected-window) (current-buffer))
+          (let ((jabber-message-alert-same-buffer nil))
+            (jabber-message-notifications
+             "peer@example.test" (current-buffer) "hello"
+             (jabber-message-default-message
+              "peer@example.test" (current-buffer) "hello")))
+          (jabber-message-notifications "peer@example.test" nil "hello" nil)
+          (jabber-muc-notifications "nick" "room@example.test" nil "hello" nil)))
+      (should-not calls))))
+
 (provide 'jabber-test-notifications)
 
 ;;; jabber-test-notifications.el ends here

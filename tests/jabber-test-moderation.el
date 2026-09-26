@@ -580,6 +580,65 @@
                        (plist-get msg :retracted-by)))
         (should (equal "spam" (plist-get msg :retraction-reason)))))))
 
+(ert-deftest jabber-test-moderation-tombstone-persists-without-attribution ()
+  "Anonymous and attributed archive tombstones survive history reopening."
+  (require 'jabber-mam)
+  (dolist (moderator '(nil "room@x/admin"))
+    (let* ((directory (make-temp-file "jabber-moderation-db" t))
+           (jabber-db-path (expand-file-name "history.sqlite" directory))
+           (jabber-db--connection nil))
+      (unwind-protect
+          (progn
+            (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                                     "original" 100 "alice" "client" "archive"
+                                     "actor" nil nil nil '(:thread-id "thread"))
+            ;; An unrelated account and room with the same ID stay untouched.
+            (jabber-db-store-message "other@x" "room@x" "in" "groupchat"
+                                     "other account" 100 nil nil "archive")
+            (jabber-db-store-message "me@x" "other-room@x" "in" "groupchat"
+                                     "other room" 100 nil nil "archive")
+            (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                       (lambda (_) "me@x"))
+                      ((symbol-function 'jabber-moderation--target-buffers)
+                       (lambda (&rest _) nil)))
+              (let ((outer (list 'message nil))
+                    (inner
+                     `(message ((from . "room@x/alice") (type . "groupchat"))
+                               (retracted ((xmlns . "urn:xmpp:message-retract:1"))
+                                          (moderated ((xmlns . "urn:xmpp:message-moderate:1")
+                                                      ,@(when moderator `((by . ,moderator)))))
+                                          (reason () "spam")))))
+                (jabber-mam--unwrap-into outer inner "archive")
+                (should (jabber-moderation--handle-message 'jc outer))))
+            (jabber-db-close)
+            (let ((row (car (jabber-db-backlog "me@x" "room@x"))))
+              (should (plist-get row :retracted))
+              (should (equal moderator (plist-get row :retracted-by)))
+              (should (equal "spam" (plist-get row :retraction-reason)))
+              ;; A later author action cannot invent attribution for this row.
+              (should-not (jabber-db-retract-message-row
+                           (plist-get row :db-id) "room@x/alice")))
+            (should-not (plist-get (car (jabber-db-backlog "other@x" "room@x"))
+                                   :retracted))
+            (should-not (plist-get (car (jabber-db-backlog "me@x" "other-room@x"))
+                                   :retracted))
+            (let ((root (plist-get (car (jabber-db-message-threads
+                                        "me@x" "room@x" "groupchat"))
+                                   :root-message)))
+              (should (plist-get root :retracted))
+              (should (equal moderator (plist-get root :retracted-by))))
+            (should-not (jabber-db-server-ids-by-occupant-id "me@x" "room@x" "actor"))
+            (should-not (jabber-db-reply-target-body "me@x" "room@x" "archive" t))
+            (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                                     "[OMEMO: could not decrypt]" 200
+                                     "alice" "client" "archive" "actor" nil t)
+            (should (equal (list (list 1 moderator "spam" "original" 100))
+                           (sqlite-select jabber-db--connection
+                                          "SELECT retracted,retracted_by,retraction_reason,body,timestamp
+FROM message WHERE account = 'me@x' AND peer = 'room@x'"))))
+        (jabber-db-close)
+        (delete-directory directory t)))))
+
 ;;; Group 3: stanza-id source validation
 
 (ert-deftest jabber-test-moderation-rejects-client-id ()

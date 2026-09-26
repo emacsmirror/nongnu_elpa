@@ -277,7 +277,8 @@ authorizes the sender."
                         stored-candidates occupant-id))
                       ((jabber-moderation--live-candidates-match-p
                         live-candidates candidate occupant-id)))
-            (if (plist-get candidate :retracted-by)
+            (if (or (plist-get candidate :retracted)
+                    (plist-get candidate :retracted-by))
                 (progn
                   (dolist (buffer
                            (jabber-moderation--target-buffers-for-row
@@ -325,9 +326,8 @@ server id.  JC is the connection the stanza arrived on."
                  (reason (car (jabber-xml-node-children reason-el)))
                  (buffers
                   (jabber-moderation--target-buffers jc room stanza-id)))
-            (when moderator
-              (jabber-db-retract-message-in-peer
-               (jabber-connection-bare-jid jc) room stanza-id moderator reason))
+            (jabber-db-retract-message-in-peer
+             (jabber-connection-bare-jid jc) room stanza-id moderator reason)
             (dolist (buffer buffers)
               (with-current-buffer buffer
                 (jabber-moderation--mark-ewoc-retracted

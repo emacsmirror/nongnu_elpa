@@ -469,7 +469,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-openpgp-legacy--send-muc
                   "jabber-openpgp-legacy" (jc body &optional extra-elements))
 (declare-function jabber-mam-muc-joined "jabber-mam" (jc group))
-(declare-function jabber-mam--cancel-muc-query "jabber-mam" (group))
+(declare-function jabber-mam--cancel-muc-query "jabber-mam" (group &optional jc))
 (autoload 'jabber-mam-muc-joined "jabber-mam")
 (autoload 'jabber-mam--cancel-muc-query "jabber-mam")
 (declare-function jabber-message-correct--replace-id
@@ -740,7 +740,7 @@ REQUEST, when non-nil, guards the terminal caller's remaining effects."
              (fboundp 'jabber-message-correct--muc-room-leave))
     (jabber-message-correct--muc-room-leave jc group))
   (when request (jabber-muc--check-intent request))
-  (jabber-mam--cancel-muc-query group)
+  (jabber-mam--cancel-muc-query group jc)
   (when request (jabber-muc--check-intent request)))
 
 (cl-defun jabber-muc-connection-closed
@@ -1491,23 +1491,43 @@ JC is the Jabber connection."
       (jabber-bookmarks--publish-one jc group nickname)
       t)))
 
+(defun jabber-muc--room-connection (group &optional jc)
+  "Return an active account joined to GROUP, retaining JC when supplied.
+Prompt when multiple accounts have joined; never replace a stale JC."
+  (let* ((accounts
+          (mapcar (lambda (entry)
+                    (cons (jabber-connection-bare-jid (car entry)) (car entry)))
+                  (cl-remove-if-not
+                   (lambda (entry) (memq (car entry) jabber-connections))
+                   (jabber-muc-room-entries group))))
+         (owner (or jc
+                    (if (cdr accounts)
+                        (cdr (assoc (completing-read "Account: " accounts nil t)
+                                    accounts))
+                      (cdar accounts)))))
+    (unless (and (memq owner jabber-connections)
+                 (jabber-muc-joined-p group owner))
+      (user-error "Selected account is no longer joined to this room"))
+    owner))
+
 ;;;###autoload
-(defun jabber-muc-switch-to (group)
-  "Switch to the active groupchat buffer for GROUP.
-Prompt with completion for joined rooms only."
+(defun jabber-muc-switch-to (group &optional jc)
+  "Switch to the active groupchat buffer for GROUP on JC.
+Prompt with completion for joined rooms only.  When JC is nil,
+ask which account to use if multiple accounts have joined GROUP."
   (interactive
    (list (completing-read "Groupchat: "
 			  (jabber-muc-active-rooms)
 			  nil t)))
-  (let* ((jc (jabber-muc-connection group))
-         (buffer (if jc
-                     (get-buffer (jabber-muc-get-buffer group jc))
-                   (jabber-muc-find-buffer group))))
-    (if buffer
-	(switch-to-buffer buffer)
-      ;; Buffer was killed; recreate it.
-      (when (setq jc (or jc (car jabber-connections)))
-        (switch-to-buffer (jabber-muc-create-buffer jc group))))))
+  (let* ((jc (jabber-muc--room-connection group jc))
+         (buffer (or (jabber-muc-find-buffer group jc)
+                     (jabber-muc-create-buffer jc group))))
+    (jabber-muc--room-connection group jc)
+    (unless (and (buffer-live-p buffer)
+                 (eq (buffer-local-value 'jabber-buffer-connection buffer) jc)
+                 (equal (buffer-local-value 'jabber-group buffer) group))
+      (user-error "Room buffer no longer belongs to selected account"))
+    (switch-to-buffer buffer)))
 
 (defun jabber-muc--disco-callback (jc closure result)
   "Disco callback for MUC join.
@@ -1634,16 +1654,17 @@ JC is the Jabber connection."
   "Change nickname in GROUP to NICKNAME.
 JC is the Jabber connection."
   (interactive
-   (let* ((group (or (and (eq major-mode 'jabber-chat-mode)
-                          (bound-and-true-p jabber-group))
-                     (completing-read "Groupchat: "
-                                      (jabber-muc-active-rooms) nil t)))
-          (jc (or (jabber-muc-connection group)
-                  (jabber-read-account)))
+   (let* ((room (and (eq major-mode 'jabber-chat-mode)
+                     (bound-and-true-p jabber-group)))
+          (owner (and room jabber-buffer-connection))
+          (group (or room (completing-read "Groupchat: "
+                                          (jabber-muc-active-rooms) nil t)))
+          (jc (jabber-muc--room-connection group owner))
           (current (jabber-muc-nickname group jc))
           (new-nick (read-string
                      (format "New nickname (current: %s): " current)
                      nil nil current)))
+     (jabber-muc--room-connection group jc)
      (list jc group new-nick)))
   (when (jabber-sm--active-recovery-room-p (fsm-get-state-data jc) group)
     (jabber-muc--start-attempt jc group nickname (jabber-muc-nickname group jc)))
@@ -2258,11 +2279,25 @@ messages."
                                   (buffer-local-value
                                    'jabber-chat-mam-syncing buffer))))
         (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
-          (run-hook-with-args hook
-                              nick group alert-buffer body-text
-                              (funcall jabber-alert-muc-function
-                                       nick group alert-buffer
-                                       body-text)))))))
+          (let ((title (save-current-buffer
+                         (let ((jabber-buffer-connection jc))
+                           (funcall jabber-alert-muc-function
+                                    nick group alert-buffer body-text)))))
+            (run-hook-wrapped
+             hook
+             (lambda (function)
+               (save-current-buffer
+                 ;; Bind the receiver afresh for each hook, even when a
+                 ;; previous hook switched buffers or changed its locals.
+                 (let ((jabber-buffer-connection jc)
+                       (origin (and (buffer-live-p alert-buffer)
+                                    (eq (buffer-local-value
+                                         'jabber-buffer-connection alert-buffer) jc)
+                                    (equal (buffer-local-value
+                                            'jabber-group alert-buffer) group)
+                                    alert-buffer)))
+                   (funcall function nick group origin body-text title)))
+               nil))))))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-muc-process-message)
 

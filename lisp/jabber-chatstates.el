@@ -75,6 +75,9 @@ Non-nil means send states, nil means don't.")
   "Has composing notification been sent?
 It can be sent and cancelled several times.")
 
+(defvar-local jabber-chatstates--last-input ""
+  "Draft text at the last command, used to distinguish editing from motion.")
+
 ;;; INCOMING
 ;; Code for requesting chat state notifications from others and handling
 ;; them.
@@ -241,6 +244,7 @@ It can be sent and cancelled several times.")
   "Chat-send hook: cancel state timers and attach an `active' element."
   (jabber-chatstates--clear-send-typing)
   (jabber-chatstates-stop-timer)
+  (setq jabber-chatstates--last-input "")
   (when (and jabber-chatstates-confirm jabber-chatstates-requested)
     (setq jabber-chatstates-composing-sent nil)
     `((active ((xmlns . ,jabber-chatstates-xmlns))))))
@@ -275,29 +279,37 @@ It can be sent and cancelled several times.")
       (,state ((xmlns . ,jabber-chatstates-xmlns))))))
 
 (defun jabber-chatstates-stop-timer ()
-  "Stop the `paused' and `inactive' timers."
-  (when jabber-chatstates-paused-timer
-    (cancel-timer jabber-chatstates-paused-timer))
-  (when jabber-chatstates-inactive-timer
-    (cancel-timer jabber-chatstates-inactive-timer)))
+  "Retire and cancel the `paused' and `inactive' timers."
+  (let ((paused jabber-chatstates-paused-timer)
+        (inactive jabber-chatstates-inactive-timer))
+    (setq jabber-chatstates-paused-timer nil
+          jabber-chatstates-inactive-timer nil)
+    (when paused (cancel-timer paused))
+    (when inactive (cancel-timer inactive))))
 
-(defun jabber-chatstates--call-in-buffer (buffer function)
-  "Call FUNCTION in BUFFER when BUFFER is still live."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (funcall function))))
-
-(defun jabber-chatstates--run-with-buffer-timer (seconds function)
-  "Call FUNCTION after SECONDS in the current live buffer."
-  (run-with-timer seconds nil #'jabber-chatstates--call-in-buffer
-                  (current-buffer) function))
+(defun jabber-chatstates--run-with-buffer-timer (seconds function slot)
+  "Call FUNCTION after SECONDS if this buffer still owns the timer in SLOT."
+  (add-hook 'kill-buffer-hook #'jabber-chatstates-stop-timer nil t)
+  (add-hook 'change-major-mode-hook #'jabber-chatstates-stop-timer nil t)
+  (let ((buffer (current-buffer))
+        timer)
+    (setq timer
+          (run-with-timer
+           seconds nil
+           (lambda ()
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer
+                 (when (eq (symbol-value slot) timer)
+                   (set slot nil)
+                   (funcall function)))))))
+    timer))
 
 (defun jabber-chatstates-kick-timer ()
-  "Start (or restart) the `paused' timer as approriate."
+  "Start or restart the `paused' timer."
   (jabber-chatstates-stop-timer)
   (setq jabber-chatstates-paused-timer
         (jabber-chatstates--run-with-buffer-timer
-         5 #'jabber-chatstates-send-paused)))
+         5 #'jabber-chatstates-send-paused 'jabber-chatstates-paused-timer)))
 
 (defun jabber-chatstates-send-paused ()
   "Send a `paused' state notification, then start the inactive timer."
@@ -309,7 +321,8 @@ It can be sent and cancelled several times.")
      jabber-buffer-connection stanza)
     (setq jabber-chatstates-inactive-timer
           (jabber-chatstates--run-with-buffer-timer
-           30 #'jabber-chatstates-send-inactive))))
+           30 #'jabber-chatstates-send-inactive
+           'jabber-chatstates-inactive-timer))))
 
 (defun jabber-chatstates-send-inactive ()
   "Send an `inactive' state notification."
@@ -331,18 +344,22 @@ Added to `kill-buffer-hook' in chat buffers."
      jabber-buffer-connection stanza)))
 
 (defun jabber-chatstates-after-change ()
-  "Post-command-hook: emit `composing'/`active' when typing state flips."
-  (let* ((composing-now (not (= (point-max) jabber-point-insert)))
-         (state (if composing-now 'composing 'active)))
-    (when-let* (((and jabber-chatstates-confirm
-                      jabber-chatstates-requested
-                      (not (eq composing-now
-                               jabber-chatstates-composing-sent))))
-                (stanza (jabber-chatstates--stanza state)))
-      (jabber-send-sexp-if-connected
-       jabber-buffer-connection stanza)
-      (when (setq jabber-chatstates-composing-sent composing-now)
-        (jabber-chatstates-kick-timer)))))
+  "Update chat states and idle deadlines after a command edits the draft."
+  (let ((input (buffer-substring-no-properties jabber-point-insert (point-max))))
+    (unless (equal input jabber-chatstates--last-input)
+      (setq jabber-chatstates--last-input input)
+      (let ((composing-now (not (string-empty-p input))))
+        (unless composing-now
+          (jabber-chatstates-stop-timer))
+        (when (and jabber-chatstates-confirm jabber-chatstates-requested
+                   (jabber-chatstates--conversation))
+          (when (or (not composing-now) (not jabber-chatstates-composing-sent))
+            (when-let* ((stanza (jabber-chatstates--stanza
+                                (if composing-now 'composing 'active))))
+              (jabber-send-sexp-if-connected jabber-buffer-connection stanza)
+              (setq jabber-chatstates-composing-sent composing-now)))
+          (when composing-now
+            (jabber-chatstates-kick-timer)))))))
 
 ;;; COMMON
 
@@ -358,6 +375,7 @@ Added to `kill-buffer-hook' in chat buffers."
        ;; If we get an error message, we shouldn't report any
        ;; events, as the requests are mirrored from us.
        ((string= (jabber-xml-get-attribute xml-data 'type) "error")
+        (jabber-chatstates-stop-timer)
         (remove-hook 'post-command-hook #'jabber-chatstates-after-change t)
         (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t)
         (setq jabber-chatstates-requested nil))
@@ -376,6 +394,7 @@ Added to `kill-buffer-hook' in chat buffers."
           (when (and jabber-chatstates-confirm state)
             (jabber-chatstates--enable-send-hooks nil))
           (when (and body-message-p (not state))
+            (jabber-chatstates-stop-timer)
             (remove-hook 'post-command-hook #'jabber-chatstates-after-change t)
             (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t)
             (setq jabber-chatstates-requested nil))

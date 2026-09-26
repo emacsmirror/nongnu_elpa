@@ -38,6 +38,7 @@
 (require 'jabber-chat)
 (require 'jabber-disco)
 (require 'jabber-iq)
+(require 'jabber-lifecycle)
 (require 'jabber-message-correct)
 (require 'jabber-muc-state)
 
@@ -95,35 +96,20 @@ Each function receives one argument: a list of (ACCOUNT PEER TYPE) entries.")
 ;;; Internal state
 
 (defvar jabber-mam--syncing nil
-  "Non-nil while a MAM sync is in progress.
-Alist of (JC . QUERYID) for active queries.")
+  "Active query plists, including queries waiting for their next page.
+Each owns its connection/session predicate, archive target, page token,
+transaction contribution, pagination timer and completion callback.")
 
 (defvar jabber-mam--dirty-peers nil
-  "Peers that received MAM messages during sync.
-Each entry is (ACCOUNT PEER TYPE), where ACCOUNT is the local bare JID.
-Accumulated during sync, drained after COMMIT.")
+  "Peers awaiting refresh after COMMIT, as (ACCOUNT PEER TYPE) entries.")
 
 (defvar jabber-mam--tx-depth 0
   "Reference count for the shared MAM transaction.
-BEGIN when 0->1, COMMIT when 1->0.  Allows concurrent MAM queries
-to share one SQLite transaction.")
-
-(defvar jabber-mam--completion-callbacks nil
-  "Alist of (QUERYID . CALLBACK) for per-query completion hooks.
-CALLBACK is called with no arguments when the query finishes.")
+Each active page owns exactly one contribution; waiting timers own none.")
 
 (defvar jabber-mam--peer-syncing nil
   "Alist of active automatic peer catch-ups.
 Each entry has the shape ((JC PEER) . TOKEN).")
-
-(defvar jabber-mam--sync-received nil
-  "Alist of (QUERYID . PLIST) for sync-buffer reconciliation.
-PLIST keys: :ids (hash-table), :min-ts, :max-ts, :account, :peer.
-Populated during sync; consumed by `jabber-mam--reconcile-sync'.")
-
-(defvar jabber-mam--query-targets nil
-  "Alist of (QUERYID . TARGET) for active MAM queries.
-TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
 
 ;;; Public predicates
 
@@ -168,21 +154,35 @@ Return its unique token, or nil when one was already active."
 (defun jabber-mam--finish-peer-sync (jc peer token)
   "Finish TOKEN's peer catch-up for JC and PEER."
   (when (jabber-mam--end-peer-sync jc peer token)
-    (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                        peer "chat" nil)))
+    (jabber-lifecycle--dispatch-contained
+     'jabber-mam-peer-syncing-functions peer "chat" nil)))
 
-(defun jabber-mam--complete-query (queryid)
-  "Remove and run the completion callback for QUERYID."
-  (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
-                         #'string=)))
-    (setq jabber-mam--completion-callbacks
-          (delq cb jabber-mam--completion-callbacks))
-    (condition-case err
-        (funcall (cdr cb))
-      (error
-       (message "MAM: completion callback error: %s"
-                (error-message-string err))))
-    t))
+(defun jabber-mam--release-page (query)
+  "Release QUERY's page and transaction contribution at most once."
+  (plist-put query :page nil)
+  (when-let* ((id (plist-get query :iq-id)))
+    (setq jabber-open-info-queries
+          (delete (assoc id jabber-open-info-queries) jabber-open-info-queries))
+    (plist-put query :iq-id nil))
+  (when (plist-get query :transaction)
+    (plist-put query :transaction nil)
+    (jabber-mam--tx-end)))
+
+(defun jabber-mam--complete-query (query)
+  "Retire QUERY before releasing resources and calling its completion hook.
+Completion means settlement, not successful or complete archive coverage.
+Contain callback errors and quits so other queries can finish cleanup."
+  (when (memq query jabber-mam--syncing)
+    (setq jabber-mam--syncing (delq query jabber-mam--syncing))
+    (when-let* ((timer (plist-get query :timer)))
+      (cancel-timer timer)
+      (plist-put query :timer nil))
+    (unwind-protect
+        (jabber-mam--release-page query)
+      (when-let* ((callback (plist-get query :callback)))
+        (jabber-lifecycle--call-contained callback)))
+    (when (zerop jabber-mam--tx-depth)
+      (jabber-mam--redraw-dirty))))
 
 (defun jabber-mam--build-query (queryid &optional with start after-id max
                                         before-id)
@@ -281,35 +281,36 @@ OUTER in place."
                                           . ,archive-id))))))
   (setcdr (cdr outer) (cddr inner)))
 
-(defun jabber-mam--active-query-p (queryid)
-  "Return non-nil if QUERYID is an active MAM query."
-  (cl-find queryid jabber-mam--syncing :key #'cdr :test #'string=))
+(defun jabber-mam--session-predicate (jc)
+  "Return a predicate for JC's captured transport, stream and account.
+Ordinary FSM state copies do not retire this session."
+  (let* ((state (fsm-get-state-data jc))
+         (connection (plist-get state :connection))
+         (stream (plist-get state :session-id))
+         (username (plist-get state :username))
+         (server (plist-get state :server)))
+    (lambda ()
+      (let ((current (fsm-get-state-data jc)))
+        (and (eq connection (plist-get current :connection))
+             (equal stream (plist-get current :session-id))
+             (equal username (plist-get current :username))
+             (equal server (plist-get current :server)))))))
 
-(defun jabber-mam--query-target (queryid)
-  "Return the archive target for QUERYID, excluding control markers."
-  (cdr
-   (cl-find-if
-    (lambda (entry)
-      (and (string= queryid (car entry))
-           (not (eq (cdr entry) 'one-shot))))
-    jabber-mam--query-targets)))
+(defun jabber-mam--current-query-p (jc query)
+  "Return non-nil when JC still owns the registered QUERY."
+  (and (eq jc (plist-get query :jc))
+       (memq query jabber-mam--syncing)
+       (funcall (plist-get query :current-p))))
 
-(defun jabber-mam--valid-sender-p (jc from queryid)
-  "Return non-nil if FROM is a valid MAM result sender for JC.
-Valid senders are the entity recorded for QUERYID: our own bare JID
-for user archives, or the queried room JID for room archives.  A
-nil FROM is accepted only for own-archive queries because some
-servers omit the attribute when the message originates from the
-user's own archive.
-QUERYID identifies the active query for target lookup."
-  (let ((target (jabber-mam--query-target queryid)))
-    (if (null from)
-        (null target)
-      (let ((bare (jabber-jid-user from))
-            (our-jid (jabber-connection-bare-jid jc)))
-        (if target
-            (string= bare target)
-          (string= bare our-jid))))))
+(defun jabber-mam--valid-sender-p (jc from query)
+  "Return non-nil when FROM is QUERY's archive on its owning JC.
+Require the exact archive JID, never a room occupant or account resource.
+For compatibility, absent FROM is accepted for an owned personal archive."
+  (and (jabber-mam--current-query-p jc query)
+       (let ((target (plist-get query :to)))
+         (if from
+             (equal from (or target (jabber-connection-bare-jid jc)))
+           (null target)))))
 
 (defun jabber-mam--classify-direction (jc from to type)
   "Classify message direction and peer from MAM result fields.
@@ -355,23 +356,6 @@ cannot be determined."
           :direction direction :peer peer
           :timestamp timestamp :oob-entries oob-entries)))
 
-(defun jabber-mam--track-sync-ids (qid archive-id stanza-id ts)
-  "Update sync-received tracking for query QID.
-ARCHIVE-ID and STANZA-ID are recorded as seen.  TS updates the
-min/max timestamp range when non-nil."
-  (when-let* ((sync-data (cdr (assoc qid jabber-mam--sync-received
-                                     #'string=)))
-              (ids (plist-get sync-data :ids)))
-    (when archive-id (puthash archive-id t ids))
-    (when stanza-id (puthash stanza-id t ids))
-    (when ts
-      (when (or (null (plist-get sync-data :min-ts))
-                (< ts (plist-get sync-data :min-ts)))
-        (plist-put sync-data :min-ts ts))
-      (when (or (null (plist-get sync-data :max-ts))
-                (> ts (plist-get sync-data :max-ts)))
-        (plist-put sync-data :max-ts ts)))))
-
 (defun jabber-mam--store-new-message-p (jc inner-msg)
   "Return non-nil when INNER-MSG should be stored as a new message for JC."
   (not (run-hook-with-args-until-success
@@ -394,10 +378,13 @@ JC is the Jabber connection.  XML-DATA is the stanza."
   (when-let* ((result-el (jabber-xml-child-with-xmlns
                           xml-data jabber-mam-xmlns))
               (qid (jabber-xml-get-attribute result-el 'queryid))
-              ((jabber-mam--active-query-p qid))
-              (parsed (jabber-mam--parse-result xml-data))
+              (query (cl-find qid jabber-mam--syncing
+                              :key (lambda (entry) (plist-get entry :id))
+                              :test #'equal))
+              (page (plist-get query :page))
               ((jabber-mam--valid-sender-p
-                jc (jabber-xml-get-attribute xml-data 'from) qid)))
+                jc (jabber-xml-get-attribute xml-data 'from) query))
+              (parsed (jabber-mam--parse-result xml-data)))
     (let* ((archive-id (nth 0 parsed))
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
@@ -412,34 +399,34 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (timestamp (and-let* ((time (plist-get fields :timestamp)))
                         (floor (float-time time))))
            (action (jabber-mam--message-action jc inner-msg fields)))
-      (pcase action
-        ((or :correct :store)
-         (pcase action
-           (:correct
-            (unless (jabber--decrypt-failure-body-p body)
-              (jabber-message-correct--apply
-               (jabber-message-correct--replace-id inner-msg)
-               body (plist-get fields :from)
-               (string= (plist-get fields :type) "groupchat") nil
-               (jabber-db--extract-occupant-id inner-msg)
-               (plist-get fields :our-jid) peer nil)))
-           (:store
-            (let ((jabber-db-message-thread-stored-functions nil))
-              (jabber-db-store-message
-               (plist-get fields :our-jid) peer
-               (plist-get fields :direction) (plist-get fields :type)
-               body timestamp (jabber-jid-resource (plist-get fields :from))
-               (plist-get fields :stanza-id) archive-id
-               (jabber-db--extract-occupant-id inner-msg)
-               (plist-get fields :oob-entries) encrypted
-               (jabber-db--extract-reply-fields inner-msg)
-               (jabber-db--extract-thread-fields inner-msg)))))
-         (jabber-mam--track-sync-ids qid archive-id
-                                     (plist-get fields :stanza-id) timestamp)
-         (jabber-mam--mark-dirty jc peer (plist-get fields :type))
-         (setcdr (cdr xml-data) nil))
-        (:unwrap
-         (jabber-mam--unwrap-into xml-data inner-msg archive-id))))))
+      (when (and (eq page (plist-get query :page))
+                 (jabber-mam--current-query-p jc query))
+        (pcase action
+          ((or :correct :store)
+           (pcase action
+             (:correct
+              (unless (jabber--decrypt-failure-body-p body)
+                (jabber-message-correct--apply
+                 (jabber-message-correct--replace-id inner-msg)
+                 body (plist-get fields :from)
+                 (string= (plist-get fields :type) "groupchat") nil
+                 (jabber-db--extract-occupant-id inner-msg)
+                 (plist-get fields :our-jid) peer nil)))
+             (:store
+              (let ((jabber-db-message-thread-stored-functions nil))
+                (jabber-db-store-message
+                 (plist-get fields :our-jid) peer
+                 (plist-get fields :direction) (plist-get fields :type)
+                 body timestamp (jabber-jid-resource (plist-get fields :from))
+                 (plist-get fields :stanza-id) archive-id
+                 (jabber-db--extract-occupant-id inner-msg)
+                 (plist-get fields :oob-entries) encrypted
+                 (jabber-db--extract-reply-fields inner-msg)
+                 (jabber-db--extract-thread-fields inner-msg)))))
+           (jabber-mam--mark-dirty jc peer (plist-get fields :type))
+           (setcdr (cdr xml-data) nil))
+          (:unwrap
+           (jabber-mam--unwrap-into xml-data inner-msg archive-id)))))))
 
 (defun jabber-mam--our-muc-nick-p (room nick jc)
   "Return non-nil if NICK in ROOM is us on connection JC.
@@ -465,7 +452,8 @@ Drains `jabber-mam--dirty-peers' and runs
   (let ((peers (prog1 jabber-mam--dirty-peers
                  (setq jabber-mam--dirty-peers nil))))
     (when peers
-      (run-hook-with-args 'jabber-mam-sync-complete-functions peers))))
+      (jabber-lifecycle--dispatch-contained
+       'jabber-mam-sync-complete-functions peers))))
 
 ;;; Shared transaction management
 
@@ -489,143 +477,111 @@ COMMIT the SQLite transaction when transitioning from 1 to 0."
 ;;; Query and pagination
 
 (defun jabber-mam--query (jc &optional after-id queryid with start to
-                             before-id max)
-  "Send a MAM query via JC, paginating from AFTER-ID.
-QUERYID correlates results; generated if nil.
-WITH and START are optional filters.
-TO is the query target; nil for user archive, a room JID for MUC MAM.
-BEFORE-ID and MAX support backward pagination (last-page queries).
-When BEFORE-ID is non-nil, the query is one-shot (no forward pagination)."
-  (let ((queryid (or queryid (jabber-mam--make-queryid)))
-        (page-size (or max jabber-mam-page-size)))
-    (push (cons jc queryid) jabber-mam--syncing)
-    (when to
-      (push (cons queryid to) jabber-mam--query-targets))
-    ;; Mark one-shot queries so handle-fin skips forward pagination.
-    (when before-id
-      (push (cons queryid 'one-shot) jabber-mam--query-targets))
-    ;; Open a shared transaction for concurrent MAM queries.
-    ;; COMMIT happens when the last active query finishes.
-    (jabber-mam--tx-begin)
-    (condition-case err
-        (jabber-send-iq
-         jc to "set"
-         (jabber-mam--build-query queryid with start after-id
-                                  page-size before-id)
-         #'jabber-mam--handle-fin
-         (list queryid with start to)
-         #'jabber-mam--handle-error
-         (list queryid to))
-      (error
-       (jabber-mam--tx-end)
-       (setq jabber-mam--syncing
-             (cl-remove queryid jabber-mam--syncing
-                        :key #'cdr :test #'string=))
-       (setq jabber-mam--query-targets
-             (cl-remove queryid jabber-mam--query-targets
-                        :key #'car :test #'string=))
-       (jabber-mam--complete-query queryid)
-       (message "MAM: query failed to send: %s"
-                (error-message-string err))))))
+                             before-id max callback)
+  "Start a MAM query on JC, paginating from AFTER-ID.
+QUERYID correlates results; generate it if nil.  WITH and START are filters.
+TO is nil for the personal archive, or a room bare JID.
+BEFORE-ID requests one backward page of MAX messages.
+Call CALLBACK without arguments once on settlement, including failure.
+Contain errors and quits signaled by CALLBACK."
+  (let ((query (list :id (or queryid (jabber-mam--make-queryid)) :jc jc
+                     :current-p (jabber-mam--session-predicate jc)
+                     :with with :start start :to to :before before-id
+                     :max (or max jabber-mam-page-size) :after after-id
+                     :callback callback :page nil :timer nil :iq-id nil
+                     :transaction nil :retried nil)))
+    (push query jabber-mam--syncing)
+    (jabber-mam--send-page query)
+    query))
+
+(defun jabber-mam--send-page (query)
+  "Send the next page of QUERY only while its owner remains current."
+  (when (and (memq query jabber-mam--syncing)
+             (not (plist-get query :page)))
+    (plist-put query :timer nil)
+    (if (not (jabber-mam--current-query-p (plist-get query :jc) query))
+        (jabber-mam--complete-query query)
+      (let ((page (list nil)))
+        (plist-put query :page page)
+        (plist-put query :iq-id (jabber-mam--make-queryid))
+        (condition-case err
+            (progn
+              (jabber-mam--tx-begin)
+              (plist-put query :transaction t)
+              (jabber-send-iq
+               (plist-get query :jc) (plist-get query :to) "set"
+               (jabber-mam--build-query
+                (plist-get query :id) (plist-get query :with)
+                (plist-get query :start) (plist-get query :after)
+                (plist-get query :max) (plist-get query :before))
+               #'jabber-mam--handle-fin (cons query page)
+               #'jabber-mam--handle-error (cons query page)
+               (plist-get query :iq-id)
+               (lambda (jc xml)
+                 (and (eq page (plist-get query :page))
+                      (jabber-mam--valid-sender-p
+                       jc (jabber-xml-get-attribute xml 'from) query)))))
+          ((error quit)
+           (jabber-mam--complete-query query)
+           (if (eq (car err) 'quit)
+               (signal (car err) (cdr err))
+             (message "MAM: query failed to send: %s"
+                      (error-message-string err)))))))))
+
+(defun jabber-mam--reply-query (jc xml-data closure)
+  "Return the active query owned by JC for XML-DATA and CLOSURE."
+  (let ((query (car closure)))
+    (when (and (eq (cdr closure) (plist-get query :page))
+               (jabber-mam--valid-sender-p
+                jc (jabber-xml-get-attribute xml-data 'from) query))
+      query)))
 
 (defun jabber-mam--handle-fin (jc xml-data closure)
-  "Handle the <fin> IQ result for a MAM query.
-JC is the connection.  XML-DATA is the IQ response.
-CLOSURE is (QUERYID WITH START TO)."
-  (let* ((queryid (nth 0 closure))
-         (with (nth 1 closure))
-         (start (nth 2 closure))
-         (to (nth 3 closure))
-         (fin (jabber-mam--parse-fin xml-data))
-         (complete (plist-get fin :complete))
-         (last-id (plist-get fin :last)))
-    (jabber-mam--tx-end)
-    ;; Remove from syncing list
-    (setq jabber-mam--syncing
-          (cl-remove queryid jabber-mam--syncing
-                     :key #'cdr :test #'string=))
-    (let ((one-shot-p (assoc queryid jabber-mam--query-targets
-                             #'string=)))
-      ;; One-shot queries (before-id based) never paginate forward.
-      (setq one-shot-p (and one-shot-p
-                            (eq (cdr one-shot-p) 'one-shot)))
-      (if (or complete (null last-id) one-shot-p)
-          (progn
-            ;; Clean up query target tracking.
-            (setq jabber-mam--query-targets
-                  (cl-remove queryid jabber-mam--query-targets
-                             :key #'car :test #'string=))
-            (let ((inhibit-message t))
-              (message "MAM: sync complete%s"
-                       (if to (format " for %s" to)
-                         (if with (format " for %s" with) ""))))
-            (jabber-mam--complete-query queryid)
-            ;; Redraw affected buffers from DB.
-            (jabber-mam--redraw-dirty))
-        ;; More pages: yield to the event loop for redisplay and input,
-        ;; then continue pagination.
-        (run-with-timer 0.1 nil #'jabber-mam--query
-                        jc last-id queryid with start to)))))
+  "Settle or paginate JC's owned page from XML-DATA and CLOSURE."
+  (when-let* ((query (jabber-mam--reply-query jc xml-data closure)))
+    (let* ((fin (jabber-mam--parse-fin xml-data))
+           (last-id (plist-get fin :last)))
+      (if (or (plist-get fin :complete) (null last-id)
+              (plist-get query :before)
+              (equal last-id (plist-get query :after)))
+          (jabber-mam--complete-query query)
+        (jabber-mam--release-page query)
+        (plist-put query :after last-id)
+        ;; Keep the query registered while waiting so teardown can retire it.
+        (plist-put query :timer
+                   (run-with-timer 0.1 nil #'jabber-mam--send-page query))))))
 
 (defun jabber-mam--handle-error (jc xml-data closure)
-  "Handle a MAM query error.
-JC is the connection.  XML-DATA is the IQ error.
-CLOSURE is (QUERYID TO).
-On item-not-found (stale sync point), falls back to time-based query."
-  (let ((queryid (car closure))
-        (to (cadr closure)))
-    (jabber-mam--tx-end)
-    (setq jabber-mam--syncing
-          (cl-remove queryid jabber-mam--syncing
-                     :key #'cdr :test #'string=))
-    (setq jabber-mam--query-targets
-          (cl-remove queryid jabber-mam--query-targets
-                     :key #'car :test #'string=))
+  "Settle JC's failed page from XML-DATA and CLOSURE.
+Retry a stale forward cursor once without that cursor, preserving filters."
+  (when-let* ((query (jabber-mam--reply-query jc xml-data closure)))
     (let ((error-el (car (jabber-xml-get-children xml-data 'error))))
-      (if (and error-el
+      (if (and (plist-get query :after)
+               (not (plist-get query :before))
+               (not (plist-get query :retried))
                (car (jabber-xml-get-children error-el 'item-not-found)))
           (progn
-            (let ((inhibit-message t))
-              (message "MAM: sync point expired%s, falling back to time-based query"
-                       (if to (format " for %s" to) "")))
-            ;; Transfer completion callback to the fallback query.
-            (let* ((old-cb (assoc queryid jabber-mam--completion-callbacks
-                                  #'string=))
-                   (new-queryid (jabber-mam--make-queryid))
-                   (start (when jabber-mam-catch-up-days
-                            (format-time-string
-                             "%Y-%m-%dT%H:%M:%SZ"
-                             (time-subtract (current-time)
-                                            (* jabber-mam-catch-up-days 86400))
-                             t))))
-              (when old-cb
-                (setq jabber-mam--completion-callbacks
-                      (delq old-cb jabber-mam--completion-callbacks))
-                (push (cons new-queryid (cdr old-cb))
-                      jabber-mam--completion-callbacks))
-              (jabber-mam--query jc nil new-queryid nil start to)))
-        ;; Permanent error: fire completion callback so callers aren't stuck.
-        (jabber-mam--complete-query queryid)
-        (message "MAM: query failed: %s"
-                 (jabber-sexp2xml xml-data))))))
+            (jabber-mam--release-page query)
+            (plist-put query :after nil)
+            (plist-put query :retried t)
+            (jabber-mam--send-page query))
+        (jabber-mam--complete-query query)
+        (message "MAM: query failed: %s" (jabber-sexp2xml xml-data))))))
 
 ;;; Post-connect catch-up
 
+(defun jabber-mam--initial-start ()
+  "Return the configured initial catch-up timestamp, or nil."
+  (when jabber-mam-catch-up-days
+    (format-time-string
+     "%Y-%m-%dT%H:%M:%SZ"
+     (time-subtract (current-time) (* jabber-mam-catch-up-days 86400)) t)))
+
 (defun jabber-mam--catch-up (jc)
   "Sync missed messages for JC via MAM."
-  (let* ((account (jabber-connection-bare-jid jc))
-         (last-id (jabber-db-last-server-id account)))
-    (if last-id
-        ;; Resume from last known server-id
-        (jabber-mam--query jc last-id)
-      ;; First sync: limit to N days back
-      (let ((start (when jabber-mam-catch-up-days
-                     (format-time-string
-                      "%Y-%m-%dT%H:%M:%SZ"
-                      (time-subtract (current-time)
-                                     (* jabber-mam-catch-up-days 86400))
-                      t))))
-        (jabber-mam--query jc nil nil nil start)))))
+  (let ((last-id (jabber-db-last-server-id (jabber-connection-bare-jid jc))))
+    (jabber-mam--query jc last-id nil nil
+                       (unless last-id (jabber-mam--initial-start)))))
 
 (defun jabber-mam-maybe-catchup (jc)
   "Post-connect hook on JC: sync messages via MAM if enabled.
@@ -643,26 +599,13 @@ Added to `jabber-post-connect-hooks'."
 ;;; 1:1 chat MAM catch-up
 
 (defun jabber-mam--chat-catch-up (jc peer token)
-  "Sync missed messages for PEER via MAM.
-JC is the Jabber connection.  PEER is the bare JID.  TOKEN identifies
-the automatic peer sync attempt.
-Registers a completion callback to clear the syncing indicator."
+  "Sync PEER's archive on JC for automatic catch-up TOKEN."
   (let* ((account (jabber-connection-bare-jid jc))
          (last-id (jabber-db-last-server-id account peer))
-         (queryid (jabber-mam--make-queryid)))
-    (push (cons queryid
-                (lambda ()
-                  (jabber-mam--finish-peer-sync jc peer token)))
-          jabber-mam--completion-callbacks)
-    (if last-id
-        (jabber-mam--query jc last-id queryid peer nil nil)
-      (let ((start (when jabber-mam-catch-up-days
-                     (format-time-string
-                      "%Y-%m-%dT%H:%M:%SZ"
-                      (time-subtract (current-time)
-                                     (* jabber-mam-catch-up-days 86400))
-                      t))))
-        (jabber-mam--query jc nil queryid peer start nil)))))
+         (start (unless last-id (jabber-mam--initial-start))))
+    (jabber-mam--query
+     jc last-id nil peer start nil nil nil
+     (lambda () (jabber-mam--finish-peer-sync jc peer token)))))
 
 (defun jabber-mam--handle-chat-disco (jc closure-data result)
   "Start a peer catch-up after disco completes.
@@ -700,26 +643,15 @@ query completes (or when disco reveals MAM is not supported)."
 ;;; MUC MAM catch-up
 
 (defun jabber-mam--muc-catch-up (jc group)
-  "Sync missed messages for GROUP via MUC MAM.
-JC is the Jabber connection.  GROUP is the room bare JID.
-Registers a completion callback to clear the syncing indicator."
+  "Sync GROUP's archive on JC, then clear its syncing indicator."
   (let* ((account (jabber-connection-bare-jid jc))
          (last-id (jabber-db-last-server-id account group))
-         (queryid (jabber-mam--make-queryid)))
-    (push (cons queryid
-                (lambda ()
-                  (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                                      group "groupchat" nil)))
-          jabber-mam--completion-callbacks)
-    (if last-id
-        (jabber-mam--query jc last-id queryid nil nil group)
-      (let ((start (when jabber-mam-catch-up-days
-                     (format-time-string
-                      "%Y-%m-%dT%H:%M:%SZ"
-                      (time-subtract (current-time)
-                                     (* jabber-mam-catch-up-days 86400))
-                      t))))
-        (jabber-mam--query jc nil queryid nil start group)))))
+         (start (unless last-id (jabber-mam--initial-start))))
+    (jabber-mam--query
+     jc last-id nil nil start group nil nil
+     (lambda ()
+       (jabber-lifecycle--dispatch-contained
+        'jabber-mam-peer-syncing-functions group "groupchat" nil)))))
 
 (defun jabber-mam-muc-joined (jc group)
   "Trigger MUC MAM catch-up after joining GROUP.
@@ -741,55 +673,13 @@ query completes (or when disco reveals MAM is not supported)."
                                group "groupchat" nil))))
      (list group))))
 
-(defun jabber-mam--reconcile-sync (queryid)
-  "Delete local messages not found in the remote archive for QUERYID.
-Uses the IDs and timestamp range accumulated during sync to find
-local messages that the server no longer has."
-  (when-let* ((entry (assoc queryid jabber-mam--sync-received #'string=)))
-    (let* ((data (cdr entry))
-           (ids (plist-get data :ids))
-           (min-ts (plist-get data :min-ts))
-           (max-ts (plist-get data :max-ts))
-           (account (plist-get data :account))
-           (peer (plist-get data :peer)))
-      (when (and min-ts max-ts (> (hash-table-count ids) 0))
-        (when-let* ((db (jabber-db-ensure-open)))
-          (let ((local-rows
-                 (sqlite-select db "\
-SELECT id, stanza_id, server_id FROM message \
-WHERE account = ? AND peer = ? AND timestamp BETWEEN ? AND ? \
-AND retracted_by IS NULL"
-                                (list account peer min-ts max-ts)))
-                (deleted 0))
-            (dolist (row local-rows)
-              (let ((row-id (nth 0 row))
-                    (sid (nth 1 row))
-                    (svid (nth 2 row)))
-                ;; Only consider messages that have a server-side ID.
-                ;; Messages without IDs can't be compared.
-                (when (and (or sid svid)
-                           (not (and svid (gethash svid ids)))
-                           (not (and sid (gethash sid ids))))
-                  (sqlite-execute db "DELETE FROM message WHERE id = ?"
-                                  (list row-id))
-                  (cl-incf deleted))))
-            (when (> deleted 0)
-              (jabber-db-prune-empty-message-threads account peer)
-              (message "MAM: removed %d messages not found on server"
-                       deleted))))))
-    (setq jabber-mam--sync-received
-          (cl-remove queryid jabber-mam--sync-received
-                     :key #'car :test #'string=))))
-
-
 (defun jabber-mam-sync-buffer ()
-  "Sync messages from the server archive for this buffer.
-Uses `jabber-chat-buffer-msg-count' for the number of messages.
-Fetches recent messages using RSM backward pagination.  New messages
-are decrypted and stored; existing messages are preserved via dedup.
-Failed-decrypt placeholders are replaced if decryption now succeeds.
-Local messages in the synced time range whose IDs are not found on
-the server are deleted.  The buffer is refreshed in place after sync."
+  "Sync recent messages from this buffer's server archive.
+Fetch at most `jabber-chat-buffer-msg-count' messages.  Store new messages
+and update existing messages through deduplication, including successful
+re-decryption of placeholders.  Never infer deletion from archive absence:
+a bounded page, even a successful one, is not evidence of remote deletion.
+Refresh the buffer after settlement."
   (interactive)
   (unless (memq jabber-buffer-connection jabber-connections)
     (user-error "Not connected"))
@@ -798,98 +688,42 @@ the server are deleted.  The buffer is refreshed in place after sync."
          (group (bound-and-true-p jabber-group))
          (peer (or group
                    (jabber-jid-user (bound-and-true-p jabber-chatting-with))))
-         (account (jabber-connection-bare-jid jc))
-         (muc-p (not (null group)))
-         (queryid (jabber-mam--make-queryid)))
-    ;; Register ID tracking for post-sync reconciliation.
-    (push (cons queryid (list :ids (make-hash-table :test #'equal)
-                              :min-ts nil :max-ts nil
-                              :account account :peer peer))
-          jabber-mam--sync-received)
-    (let ((type (if group "groupchat" "chat")))
-      (push (cons queryid
-                  (lambda ()
-                    (jabber-mam--reconcile-sync queryid)
-                    (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                                        peer type nil)))
-            jabber-mam--completion-callbacks)
-      (run-hook-with-args 'jabber-mam-peer-syncing-functions peer type t))
-    (jabber-mam--mark-dirty jc peer (if group "groupchat" "chat"))
-    (message "MAM: syncing last %d messages for %s..." count peer)
-    (if muc-p
-        (jabber-mam--query jc nil queryid nil nil peer t count)
-      (jabber-mam--query jc nil queryid peer nil nil t count))))
+         (type (if group "groupchat" "chat")))
+    (run-hook-with-args 'jabber-mam-peer-syncing-functions peer type t)
+    (jabber-mam--mark-dirty jc peer type)
+    (jabber-mam--query
+     jc nil nil (unless group peer) nil group t count
+     (lambda ()
+       (jabber-lifecycle--dispatch-contained
+        'jabber-mam-peer-syncing-functions peer type nil)))))
 
 ;;; Disconnect cleanup
 
 (defun jabber-mam--cleanup-connection (jc)
-  "Clean up MAM state for connection JC.
-Called from `jabber-lost-connection-hooks' on involuntary disconnect."
+  "Retire JC's queries and automatic catch-ups on disconnect."
+  (dolist (query (copy-sequence jabber-mam--syncing))
+    (when (eq jc (plist-get query :jc))
+      (jabber-mam--complete-query query)))
   (dolist (entry (copy-sequence jabber-mam--peer-syncing))
     (when (eq (caar entry) jc)
-      (jabber-mam--finish-peer-sync
-       jc (cadar entry) (cdr entry))))
-  (let ((jc-queries (cl-remove-if-not
-                     (lambda (entry) (eq (car entry) jc))
-                     jabber-mam--syncing)))
-    (when jc-queries
-      (setq jabber-mam--syncing
-            (cl-set-difference jabber-mam--syncing jc-queries))
-      (condition-case nil
-          (dotimes (_ (length jc-queries))
-            (jabber-mam--tx-end))
-        (error nil))
-      ;; Fire and remove leaked completion callbacks and query targets.
-      (dolist (entry jc-queries)
-        (let ((qid (cdr entry)))
-          (jabber-mam--complete-query qid)
-          (setq jabber-mam--query-targets
-                (cl-remove qid jabber-mam--query-targets
-                           :key #'car :test #'string=))))
-      ;; Redraw affected buffers.
-      (jabber-mam--redraw-dirty))))
+      (jabber-mam--finish-peer-sync jc (cadar entry) (cdr entry)))))
 
 (defun jabber-mam--cleanup-all ()
-  "Clean up all MAM state on voluntary disconnect.
-Called from `jabber-pre-disconnect-hook'."
-  (condition-case nil
-      (dotimes (_ jabber-mam--tx-depth)
-        (jabber-mam--tx-end))
-    (error nil))
-  ;; Fire remaining completion callbacks to clear syncing flags.
-  (dolist (cb (copy-sequence jabber-mam--completion-callbacks))
-    (jabber-mam--complete-query (car cb)))
+  "Retire all MAM queries and automatic catch-ups on disconnect."
+  (dolist (query (copy-sequence jabber-mam--syncing))
+    (jabber-mam--complete-query query))
   (dolist (entry (copy-sequence jabber-mam--peer-syncing))
-    (jabber-mam--finish-peer-sync
-     (caar entry) (cadar entry) (cdr entry)))
-  (setq jabber-mam--syncing nil
-        jabber-mam--tx-depth 0
-        jabber-mam--completion-callbacks nil
-        jabber-mam--peer-syncing nil
-        jabber-mam--query-targets nil
-        jabber-mam--sync-received nil)
-  (jabber-mam--redraw-dirty))
+    (jabber-mam--finish-peer-sync (caar entry) (cadar entry) (cdr entry))))
 
 ;;; MUC query cancellation
 
-(defun jabber-mam--cancel-muc-query (room)
-  "Cancel any active MUC MAM query for ROOM.
-Removes the query from syncing state and decrements the transaction
-depth.  Called when leaving a room to stop wasting bandwidth."
-  (when-let* ((target-entry (cl-find room jabber-mam--query-targets
-                                     :key #'cdr :test #'string=)))
-    (let ((qid (car target-entry)))
-      (setq jabber-mam--syncing
-            (cl-remove qid jabber-mam--syncing
-                       :key #'cdr :test #'string=))
-      (setq jabber-mam--query-targets
-            (delq target-entry jabber-mam--query-targets))
-      (jabber-mam--complete-query qid)
-      (condition-case nil
-          (jabber-mam--tx-end)
-        (error nil))
-      (when (zerop jabber-mam--tx-depth)
-        (jabber-mam--redraw-dirty)))))
+(defun jabber-mam--cancel-muc-query (room &optional jc)
+  "Retire MAM queries and pending pagination for ROOM on JC.
+When JC is nil, intentionally retire this room's queries on all accounts."
+  (dolist (query (copy-sequence jabber-mam--syncing))
+    (when (and (equal room (plist-get query :to))
+               (or (null jc) (eq jc (plist-get query :jc))))
+      (jabber-mam--complete-query query))))
 
 ;;; Registration
 
@@ -899,6 +733,7 @@ depth.  Called when leaving a room to stop wasting bandwidth."
 
 (add-hook 'jabber-post-connect-hooks #'jabber-mam-maybe-catchup)
 (add-hook 'jabber-pre-disconnect-hook #'jabber-mam--cleanup-all)
+(add-hook 'jabber-lifecycle-session-reset-functions #'jabber-mam--cleanup-connection)
 (add-hook 'jabber-lost-connection-hooks #'jabber-mam--cleanup-connection)
 
 (provide 'jabber-mam)

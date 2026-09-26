@@ -67,9 +67,13 @@ CALLBACK-ARG) on success.  Return non-nil if the upload started."
 (defvar jabber-httpupload-pre-upload-transform nil
   "When non-nil, a function to transform a file before upload.
 Called with (FILEPATH CALLBACK) inside `jabber-httpupload--upload'
-after HTTP Upload support is confirmed.  Must return
+after HTTP Upload support is confirmed.  The function and
+`jabber-chat-encryption' selection are captured before discovery;
+the function runs with that selection even if the chat is closed or changed.
+Must return
 \(TRANSFORMED-FILEPATH . WRAPPED-CALLBACK) to replace both, or nil
-to upload the original file unchanged.
+to upload the original file unchanged.  Signal an error to abort the
+upload when a selected transform fails; nil is not a failure result.
 
 OMEMO sets this to encrypt the file and wrap the callback to build
 an aesgcm:// URL from the server's HTTPS get-url.")
@@ -93,6 +97,67 @@ Each element is (jabber-connection . upload-iri).")
 Each element is (jabber-connection . max-file-size), where
 max-file-size is in bytes.")
 
+(defvar jabber-httpupload--discoveries nil
+  "Active upload discovery operations, each a list containing its connection.
+A nil connection marks a retired operation, including for cached callbacks.")
+
+(defun jabber-httpupload--finish-discovery (operation)
+  "Retire OPERATION and its pending disco IQs before running other work."
+  (setcar operation nil)
+  (setq jabber-httpupload--discoveries
+        (delq operation jabber-httpupload--discoveries)
+        jabber-open-info-queries
+        (cl-delete-if
+         (lambda (query)
+           ;; Disco stores (CALLBACK . CLOSURE-DATA) in each IQ continuation.
+           (eq (car-safe (cdr-safe (cdr-safe (nth 1 query)))) operation))
+         jabber-open-info-queries)))
+
+(defun jabber-httpupload--session-reset (jc)
+  "Retire upload discovery and cached service metadata belonging to JC."
+  (dolist (operation (copy-sequence jabber-httpupload--discoveries))
+    (when (eq (car operation) jc)
+      (jabber-httpupload--finish-discovery operation)))
+  (setq jabber-httpupload-support
+        (assq-delete-all jc jabber-httpupload-support)
+        jabber-httpupload-max-file-size
+        (assq-delete-all jc jabber-httpupload-max-file-size)))
+
+(defun jabber-httpupload--start-discovery (jc)
+  "Return a new upload discovery operation owned by JC."
+  (let ((operation (list jc)))
+    (push operation jabber-httpupload--discoveries)
+    operation))
+
+(defun jabber-httpupload--query (operation iri items-p callback)
+  "Query IRI for OPERATION and pass its parsed result to CALLBACK.
+ITEMS-P selects disco items rather than info.  Consume the owned IQ before
+calling CALLBACK, and retire all sibling queries on a nonlocal exit.
+Always request fresh data: the shared disco cache is not session-qualified."
+  (let ((request (list operation))
+        (completed nil))
+    (unwind-protect
+        (progn
+          (funcall
+           (if items-p #'jabber-disco-get-items #'jabber-disco-get-info)
+           (car operation) iri nil
+           (lambda (jc _data result)
+             (when (and (car request) (eq jc (car operation)))
+               (setq jabber-open-info-queries
+                     (cl-delete-if
+                      (lambda (query) (eq (cdr-safe (cdr-safe (nth 1 query))) request))
+                      jabber-open-info-queries))
+               (setcar request nil)
+               (let ((returned nil))
+                 (unwind-protect
+                     (progn (funcall callback jc result) (setq returned t))
+                   (unless returned
+                     (jabber-httpupload--finish-discovery operation))))))
+           request t)
+          (setq completed t))
+      (unless completed
+        (jabber-httpupload--finish-discovery operation)))))
+
 (defun jabber-httpupload-test-connection-support (jc)
   "Test if HTTP Upload is supported on the JC connection's server.
 If supported, store the item IRI in `jabber-httpupload-support'."
@@ -104,22 +169,29 @@ If supported, store the item IRI in `jabber-httpupload-support'."
   "Test if the IRI Disco item supports HTTP Upload.
 Get the Disco Info from IRI on JC; if the HTTP Upload namespace
 is present, store the IRI in `jabber-httpupload-support'."
-  (jabber-disco-get-info jc iri nil
-                         (lambda (jc _data result)
-                           (when (member jabber-httpupload-xmlns
-                                         (nth 1 result))
-                             (jabber-httpupload--record-support jc iri result)))
-                         nil))
+  (let ((operation (jabber-httpupload--start-discovery jc)))
+    (jabber-httpupload--query
+     operation iri nil
+     (lambda (jc result)
+       (jabber-httpupload--finish-discovery operation)
+       (when (and (not (jabber-httpupload--disco-error-p result))
+                  (member jabber-httpupload-xmlns (nth 1 result)))
+         (jabber-httpupload--record-support jc iri result))))))
 
 (defun jabber-httpupload-apply-to-items (jc callback)
   "Retrieve Disco items from JC's server and call CALLBACK on each.
 CALLBACK receives two arguments: the Jabber connection and the item vector."
-  (let ((node (plist-get (fsm-get-state-data jc) :server)))
-    (jabber-disco-get-items jc node nil
-                            (lambda (jc _data result)
-                              (dolist (item result)
-                                (funcall callback jc item)))
-                            nil)))
+  (let ((operation (jabber-httpupload--start-discovery jc))
+        (node (plist-get (fsm-get-state-data jc) :server)))
+    (jabber-httpupload--query
+     operation node t
+     (lambda (jc result)
+       (unwind-protect
+           (unless (jabber-httpupload--disco-error-p result)
+             (dolist (item result)
+               (when (car operation)
+                 (funcall callback jc item))))
+         (jabber-httpupload--finish-discovery operation))))))
 
 (defun jabber-httpupload-server-has-support (jc)
   "Return (JC . upload-iri) if the server supports HTTP Upload, nil otherwise."
@@ -158,10 +230,11 @@ CALLBACK receives two arguments: the Jabber connection and the item vector."
   "Record HTTP Upload support for JC through IRI using disco RESULT."
   (unless (assq jc jabber-httpupload-support)
     (push (cons jc iri) jabber-httpupload-support))
-  (if-let* ((max-file-size (jabber-httpupload--max-file-size result)))
-      (setf (alist-get jc jabber-httpupload-max-file-size) max-file-size)
-    (setq jabber-httpupload-max-file-size
-          (assq-delete-all jc jabber-httpupload-max-file-size))))
+  (when (equal iri (cdr (assq jc jabber-httpupload-support)))
+    (if-let* ((max-file-size (jabber-httpupload--max-file-size result)))
+        (setf (alist-get jc jabber-httpupload-max-file-size) max-file-size)
+      (setq jabber-httpupload-max-file-size
+            (assq-delete-all jc jabber-httpupload-max-file-size)))))
 
 (defun jabber-httpupload--validate-file-size (jc filepath size)
   "Signal a user error if FILEPATH is larger than JC's advertised SIZE limit."
@@ -390,89 +463,95 @@ certificates.  Return the process on success, nil if curl is not found."
   "Report that the current server has no HTTP Upload service."
   (user-error "HTTP Upload is not supported by this server"))
 
-(defun jabber-httpupload--maybe-upload (jc filepath callback iri result)
-  "Upload FILEPATH on JC through IRI when RESULT advertises HTTP Upload.
-On success, pass the uploaded URL to CALLBACK."
-  (when (and (not (jabber-httpupload--disco-error-p result))
-             (member jabber-httpupload-xmlns (nth 1 result)))
-    (jabber-httpupload--record-support jc iri result)
-    (jabber-httpupload--upload jc filepath callback)
-    t))
-
-(defun jabber-httpupload--discover-from-items (jc filepath callback items)
-  "Inspect ITEMS for JC and upload FILEPATH when one supports HTTP Upload.
-On success, pass the uploaded URL to CALLBACK."
+(defun jabber-httpupload--discover-from-items (operation upload items)
+  "Inspect ITEMS for OPERATION and call UPLOAD once support is found.
+Retire the discovery before invoking the fallible upload continuation."
   (if (or (null items)
           (jabber-httpupload--disco-error-p items))
-      (jabber-httpupload--unsupported-error)
-    (let ((remaining (length items))
-          (done nil))
+      (progn
+        (jabber-httpupload--finish-discovery operation)
+        (jabber-httpupload--unsupported-error))
+    (let ((remaining (length items)))
       (dolist (item items)
-        (let ((iri (elt item 1)))
-          (jabber-disco-get-info
-           jc iri nil
-           (lambda (jc _data result)
-             (unless done
-               (if (jabber-httpupload--maybe-upload jc filepath callback iri result)
-                   (setq done t)
+        (when (car operation)
+          (let ((iri (elt item 1)))
+            (jabber-httpupload--query
+             operation iri nil
+             (lambda (jc result)
+               (if (and (not (jabber-httpupload--disco-error-p result))
+                        (member jabber-httpupload-xmlns (nth 1 result)))
+                   (progn
+                     (jabber-httpupload--finish-discovery operation)
+                     (jabber-httpupload--record-support jc iri result)
+                     (funcall upload))
                  (setq remaining (1- remaining))
                  (when (zerop remaining)
-                   (jabber-httpupload--unsupported-error)))))
-           nil))))))
+                   (jabber-httpupload--finish-discovery operation)
+                   (jabber-httpupload--unsupported-error)))))))))))
 
-(defun jabber-httpupload--discover-and-upload (jc filepath callback)
-  "Discover HTTP Upload support for JC, then upload FILEPATH.
-On success, call (funcall CALLBACK get-url).
+(defun jabber-httpupload--discover-and-upload (jc upload)
+  "Discover HTTP Upload support for JC, then call UPLOAD without arguments.
 Error if the server does not support HTTP Upload."
   (message "Discovering HTTP Upload support...")
-  (let ((node (plist-get (fsm-get-state-data jc) :server)))
-    (jabber-disco-get-items
-     jc node nil
-     (lambda (jc _data result)
-       (jabber-httpupload--discover-from-items jc filepath callback result))
-     nil)))
+  (let ((operation (jabber-httpupload--start-discovery jc))
+        (node (plist-get (fsm-get-state-data jc) :server)))
+    (jabber-httpupload--query
+     operation node t
+     (lambda (_jc result)
+       (jabber-httpupload--discover-from-items operation upload result)))))
 
 (defun jabber-httpupload--upload (jc filepath callback)
   "Upload FILEPATH via HTTP Upload on JC.
 On success, call (funcall CALLBACK get-url).
-If support has not been discovered yet, discover it first."
-  (if (not (jabber-httpupload-server-has-support jc))
-      (jabber-httpupload--discover-and-upload jc filepath callback)
-    (let* ((transform (and jabber-httpupload-pre-upload-transform
-                           (funcall jabber-httpupload-pre-upload-transform
-                                    filepath callback)))
-           (filepath (expand-file-name (if transform (car transform) filepath)))
-           (callback (if transform (cdr transform) callback))
-           (size (file-attribute-size (file-attributes filepath)))
-           (content-type
-            (or (and-let* ((ext (file-name-extension filepath)))
-                  (mailcap-extension-to-mime ext))
-                "application/octet-stream"))
-           (filename (file-name-nondirectory filepath)))
-      (jabber-httpupload--validate-file-size jc filepath size)
-      (jabber-send-iq jc (cdr (jabber-httpupload-server-has-support jc)) "get"
-                      `(request ((xmlns . ,jabber-httpupload-xmlns)
-                                 (filename . ,filename)
-                                 (size . ,size)
-                                 (content-type . ,content-type)))
-                      (lambda (_jc xml-data _data)
-                        (let* ((urls (jabber-httpupload-parse-slot-answer xml-data))
-                               (get-url (cadr urls))
-                               (put-url (caar urls))
-                               (headers (cdar urls)))
-                          (push (cons "content-length" size) headers)
-                          (push (cons "content-type" content-type) headers)
-                          (unless (funcall jabber-httpupload-upload-function
-                                           filepath headers put-url
-                                           callback get-url
-                                           (jabber-httpupload-ignore-certificate jc))
-                            (error "Upload function failed to PUT %s" filename))))
-                      nil
-                      (lambda (_jc xml-data _data)
-                        (user-error "%s"
-                                    (jabber-httpupload--slot-error-message
-                                     filename xml-data)))
-                      nil))))
+Capture the transform and encryption selection before asynchronous discovery."
+  (let* ((filepath (expand-file-name filepath))
+         (transform jabber-httpupload-pre-upload-transform)
+         (encryption jabber-chat-encryption)
+         (upload (lambda ()
+                   (jabber-httpupload--upload-file
+                    jc filepath callback transform encryption))))
+    (if (jabber-httpupload-server-has-support jc)
+        (funcall upload)
+      (jabber-httpupload--discover-and-upload jc upload))))
+
+(defun jabber-httpupload--upload-file (jc filepath callback transform encryption)
+  "Upload FILEPATH on JC after discovery, passing the URL to CALLBACK.
+Apply the captured TRANSFORM with the request's ENCRYPTION selection."
+  (let* ((transform (and transform
+                        (let ((jabber-chat-encryption encryption))
+                          (funcall transform filepath callback))))
+         (filepath (expand-file-name (if transform (car transform) filepath)))
+         (callback (if transform (cdr transform) callback))
+         (size (file-attribute-size (file-attributes filepath)))
+         (content-type
+          (or (and-let* ((ext (file-name-extension filepath)))
+                (mailcap-extension-to-mime ext))
+              "application/octet-stream"))
+         (filename (file-name-nondirectory filepath)))
+    (jabber-httpupload--validate-file-size jc filepath size)
+    (jabber-send-iq jc (cdr (jabber-httpupload-server-has-support jc)) "get"
+                    `(request ((xmlns . ,jabber-httpupload-xmlns)
+                               (filename . ,filename)
+                               (size . ,size)
+                               (content-type . ,content-type)))
+                    (lambda (_jc xml-data _data)
+                      (let* ((urls (jabber-httpupload-parse-slot-answer xml-data))
+                             (get-url (cadr urls))
+                             (put-url (caar urls))
+                             (headers (cdar urls)))
+                        (push (cons "content-length" size) headers)
+                        (push (cons "content-type" content-type) headers)
+                        (unless (funcall jabber-httpupload-upload-function
+                                         filepath headers put-url
+                                         callback get-url
+                                         (jabber-httpupload-ignore-certificate jc))
+                          (error "Upload function failed to PUT %s" filename))))
+                    nil
+                    (lambda (_jc xml-data _data)
+                      (user-error "%s"
+                                  (jabber-httpupload--slot-error-message
+                                   filename xml-data)))
+                    nil)))
 
 ;; Pending OOB for deferred sends (C-c C-a in chat buffers)
 
@@ -538,6 +617,8 @@ skip the default plaintext send."
      (message "Uploaded: %s (copied to kill ring)" get-url))))
 
 (add-hook 'jabber-post-connect-hooks #'jabber-httpupload-test-connection-support)
+(add-hook 'jabber-lifecycle-session-reset-functions
+          #'jabber-httpupload--session-reset)
 
 (provide 'jabber-httpupload)
 

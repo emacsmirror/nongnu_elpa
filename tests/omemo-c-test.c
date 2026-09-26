@@ -9,7 +9,7 @@
 
 static int fail_cbc;
 int __real_mbedtls_aes_crypt_cbc(mbedtls_aes_context *, int, size_t,
-                               unsigned char *, const unsigned char *,
+                               unsigned char iv[16], const unsigned char *,
                                unsigned char *);
 int __wrap_mbedtls_aes_crypt_cbc(mbedtls_aes_context *ctx, int mode, size_t n,
                                unsigned char *iv, const unsigned char *src,

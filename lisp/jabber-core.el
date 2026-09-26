@@ -420,6 +420,11 @@ accepted after an earlier retry claim out of late terminal settlement."
                    fsm state-data preserve-pending))
            (claimed (plist-get claim :state))
            (token (plist-get claimed :nil-entry-token)))
+      (condition-case err
+          (jabber-conn--cancel-connect fsm)
+        ((error quit)
+         (message "Jabber connection cancellation failed: %s"
+                  (error-message-string err))))
       (jabber-core--close-transport (plist-get claim :connection))
       (when (plist-get claim :reset)
         (jabber-lifecycle-dispatch-session-reset fsm))
@@ -491,7 +496,10 @@ accepted after an earlier retry claim out of late terminal settlement."
 			   (network-server (plist-get state-data :network-server))
 			   (port (plist-get state-data :port)))
 		      (funcall connect-function fsm server network-server port))
-		    (list state-data nil))
+                    ;; Discovery and process creation can dispatch events.
+                    ;; Return their authoritative state, not the entry snapshot;
+                    ;; :keep also preserves a reentrant successor's retry timer.
+                    (list (fsm-get-state-data fsm) :keep))
 
 (defun jabber-core--connected-state-data (state-data connection directtls-p)
   "Update STATE-DATA for a new CONNECTION using DIRECTTLS-P."
@@ -502,9 +510,17 @@ accepted after an earlier retry claim out of late terminal settlement."
 (define-state jabber-connection :connecting
 	      (fsm state-data event _callback)
 	      (pcase (or (car-safe event) event)
+                ((and (or :connected :connection-failed)
+                      (guard (let ((attempt (if (eq (car event) :connected)
+                                                (nth 3 event) (nth 2 event))))
+                               (and attempt
+                                    (not (eq attempt (get fsm :connect-attempt)))))))
+                 (list :connecting state-data :keep))
 		(:connected
 		 (let ((connection (cadr event))
-		       (directtls-p (caddr event)))
+		       (directtls-p (caddr event))
+                       (attempt (get fsm :connect-attempt))
+                       (owner (fsm-get-state-data fsm)))
 
 		   (setq state-data
 			 (jabber-core--connected-state-data
@@ -518,14 +534,23 @@ accepted after an earlier retry claim out of late terminal settlement."
 			      "Connection closed before protocol handoff"))
 		     (when (processp connection)
 		       ;; TLS connections leave data in the process buffer, which
-		       ;; the XML parser will choke on.
+		       ;; the XML parser will choke on.  Keep the attempt's canceller
+                       ;; attached until change hooks finish: stop/replacement
+                       ;; must still release this captured transport.
 		       (with-current-buffer (process-buffer connection)
-			 (erase-buffer))
+			 (erase-buffer)))
 
-		       (set-process-filter connection (fsm-make-filter fsm))
-		       (set-process-sentinel connection (fsm-make-sentinel fsm)))
-
-		     (list :connected state-data))))
+                     ;; A native change hook may stop or replace this attempt.
+                     ;; A nil result leaves the authoritative FSM state and
+                     ;; timeout untouched, without reinstalling old handlers.
+                     (when (and (eq owner (fsm-get-state-data fsm))
+                                (eq attempt (get fsm :connect-attempt)))
+                       (put fsm :connect-attempt nil)
+                       (put fsm :connect-cancel nil)
+                       (when (processp connection)
+                         (set-process-filter connection (fsm-make-filter fsm))
+                         (set-process-sentinel connection (fsm-make-sentinel fsm)))
+		       (list :connected state-data)))))
 
 		(:connection-failed
 		 (message "Jabber connection failed")
@@ -534,8 +559,10 @@ accepted after an earlier retry claim out of late terminal settlement."
 		 (list nil state-data))
 
 		(:do-disconnect
-		 ;; We don't have the connection object, so defer the disconnection.
-		 :defer)))
+                 ;; Nil entry publishes terminal state before cancelling the
+                 ;; owned attempt, so cleanup hooks cannot restart its targets.
+                 (list nil (plist-put (copy-sequence state-data)
+                                      :disconnection-expected t)))))
 
 (defsubst jabber-fsm-handle-sentinel (state-data event)
   "Handle sentinel EVENT, updating STATE-DATA."
@@ -589,11 +616,15 @@ STATE-DATA is the connection state to preserve."
 (define-enter-state jabber-connection :connected
 		    (fsm state-data)
 
+                    ;; Publish entry metadata before the send function can
+                    ;; dispatch a synchronous stop, reply, or replacement.
+                    (put fsm :state-data
+                         (plist-put state-data :awaiting-stream-start t))
 		    (jabber-send-stream-header fsm)
 
-		    ;; Next thing happening is the server sending its own <stream:stream> start tag.
-
-		    (list (plist-put state-data :awaiting-stream-start t) nil))
+		    ;; Next comes the server's <stream:stream> start tag.  Sending
+                    ;; may already have advanced the FSM; preserve its timer too.
+		    (list (fsm-get-state-data fsm) :keep))
 
 (define-state jabber-connection :connected
 	      (fsm state-data event _callback)

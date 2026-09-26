@@ -214,7 +214,8 @@
             (funcall filter proc (unibyte-string 5 0 0 1 127))
             (should-not fsm-event)
             (funcall filter proc (unibyte-string 0 0 1 0 0))
-            (should (equal fsm-event (list :connected proc nil)))
+            (should (equal fsm-event (list :connected proc nil
+                                            (get 'fake-fsm :connect-attempt))))
             (should (equal coding '(utf-8 utf-8))))
         (when (process-live-p proc)
           (delete-process proc))
@@ -251,8 +252,9 @@
       (should-not (buffer-live-p (process-buffer proc)))
       (should
        (equal fsm-event
-              '(:connection-failed
-                ("Couldn't connect to xmpp.example:5222: connection timed out")))))))
+              `(:connection-failed
+                ("Couldn't connect to xmpp.example:5222: connection timed out")
+                ,(get 'fake-fsm :connect-attempt)))))))
 
 (ert-deftest jabber-conn-test-proxy-attempts-have-independent-state ()
   "A partial SOCKS5 reply from one attempt cannot affect another."
@@ -341,7 +343,7 @@
             (funcall sentinel proc "closed\n")
             (should
              (equal (nreverse events)
-                    `((:connected ,proc nil)
+                    `((:connected ,proc nil ,(get 'fake-fsm :connect-attempt))
                       (:sentinel ,proc "closed\n")))))
         (when (process-live-p proc)
           (delete-process proc))
@@ -785,8 +787,9 @@
       (funcall sentinel proc "failed with code 1\n")
       (should-not (process-live-p proc))
       (should-not (buffer-live-p (process-buffer proc)))
-      (should (equal '(:connection-failed
-                       ("Couldn't connect to example.com:5222: failed with code 1"))
+      (should (equal `(:connection-failed
+                       ("Couldn't connect to example.com:5222: failed with code 1")
+                       ,(get 'fake-fsm :connect-attempt))
                      fsm-event)))))
 
 (ert-deftest jabber-conn-test-setup-error-kills-generated-buffer ()
@@ -808,8 +811,9 @@
                (lambda (_fsm event) (setq fsm-event event))))
       (jabber-network-connect-async 'fake-fsm "example.com" nil nil)
       (should-not (buffer-live-p generated-buffer))
-      (should (equal '(:connection-failed
-                       ("Couldn't connect to example.com:5222: setup failed"))
+      (should (equal `(:connection-failed
+                       ("Couldn't connect to example.com:5222: setup failed")
+                       ,(get 'fake-fsm :connect-attempt))
                      fsm-event)))))
 
 (ert-deftest jabber-conn-test-keeps-failed-buffer-when-debugging ()
@@ -829,6 +833,653 @@
         (delete-process proc))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
+
+(ert-deftest jabber-conn-test-disconnect-cancels-targets ()
+  "Cancel TCP and SOCKS attempts, timers, and late completions before retry."
+  (dolist (timeout '(nil 60))
+    (dolist (phase '(tcp handoff method reply))
+      (let* ((jabber-connections nil)
+             (jabber-process-buffer " *jabber-test-cancel*")
+             (jabber-debug-keep-process-buffers nil)
+             (jabber-connection-timeout timeout)
+             (proxy (unless (memq phase '(tcp handoff))
+                      '(:type socks5 :host "proxy.test" :port 1080)))
+             (native-run-at-time (symbol-function 'run-at-time))
+             processes buffers targets timers jc fresh)
+        (cl-letf (((symbol-function 'jabber-srv-targets)
+                   (lambda (&rest _) '(("first.test" 5222 nil) ("second.test" 5222 nil))))
+                  ((symbol-function 'jabber-conn--make-process)
+                   (lambda (host _port buffer &rest _)
+                     (push host targets)
+                     (push buffer buffers)
+                     (let ((process (make-pipe-process :name "jabber-test-cancel"
+                                                       :buffer buffer :noquery t)))
+                       (push process processes)
+                       process)))
+                  ((symbol-function 'process-send-string) #'ignore)
+                  ((symbol-function 'run-at-time)
+                   (lambda (time repeat function &rest args)
+                     (let ((timer (apply native-run-at-time time repeat function args)))
+                       (when (equal time 60) (push timer timers))
+                       timer))))
+          (unwind-protect
+              (progn
+                (setq jc (start-jabber-connection
+                          "alice" "example.test" "desktop" nil nil nil nil 'network proxy))
+                (push jc jabber-connections)
+                (let* ((process (car processes))
+                       (buffer (process-buffer process))
+                       (sentinel (process-sentinel process))
+                       filter)
+                  (when (eq phase 'handoff)
+                    (funcall sentinel process "open\n"))
+                  (when proxy
+                    (funcall sentinel process "open\n")
+                    (setq filter (process-filter process))
+                    (when (eq phase 'reply)
+                      (funcall filter process (unibyte-string 5 0))))
+                  (jabber-disconnect-one jc)
+                  (should-not (get jc :state))
+                  (should (plist-get (fsm-get-state-data jc) :disconnection-expected))
+                  (should-not (memq jc jabber-connections))
+                  (should-not (process-live-p process))
+                  (should-not (buffer-live-p buffer))
+                  (dolist (timer timers) (should-not (memq timer timer-list)))
+                  ;; Old callbacks must not start another target or affect a
+                  ;; newly connecting account, even when invoked explicitly.
+                  (setq fresh (start-jabber-connection
+                               "alice" "example.test" "desktop" nil nil nil nil 'network proxy))
+                  (push fresh jabber-connections)
+                  (funcall sentinel process "failed\n")
+                  (funcall sentinel process "open\n")
+                  (when filter
+                    (funcall filter process (unibyte-string 5 0 0 1 127 0 0 1 0 0)))
+                  (dolist (timer timers)
+                    (unless (memq timer timer-list)
+                      (apply (timer--function timer) (timer--args timer))))
+                  (accept-process-output nil 0.01)
+                  (should (equal targets '("first.test" "first.test")))
+                  (should (eq (get fresh :state) :connecting))
+                  (should (process-live-p (car processes)))
+                  ;; The fresh attempt can still complete normally.
+                  (let ((new (car processes)))
+                    (funcall (process-sentinel new) new "open\n")
+                    (when proxy
+                      (funcall (process-filter new) new (unibyte-string 5 0))
+                      (funcall (process-filter new) new
+                               (unibyte-string 5 0 0 1 127 0 0 1 0 0)))
+                    (let ((deadline (+ (float-time) 2)))
+                      (while (and (eq (get fresh :state) :connecting)
+                                  (< (float-time) deadline))
+                        (accept-process-output nil 0.01)))
+                    (should (eq (get fresh :state) :connected))
+                    (should (eq new (plist-get (fsm-get-state-data fresh) :connection))))))
+            (dolist (timer timers) (cancel-timer timer))
+            (dolist (fsm (list jc fresh))
+              (when fsm (jabber-disconnect-one fsm)))
+            (dolist (process processes)
+              (set-process-sentinel process #'ignore)
+              (delete-process process))
+            (dolist (buffer buffers)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))))))))
+
+
+(ert-deftest jabber-conn-test-replacement-rejects-queued-result ()
+  "A queued result from an old attempt cannot claim its replacement."
+  (dolist (status '("open\n" "failed\n"))
+    (let ((jabber-connections nil)
+          (jabber-process-buffer " *jabber-test-replacement*")
+          (jabber-debug-keep-process-buffers nil)
+          (jabber-connection-timeout nil)
+          processes buffers jc)
+      (cl-letf (((symbol-function 'jabber-srv-targets)
+                 (lambda (&rest _) '(("target.test" 5222 nil))))
+                ((symbol-function 'jabber-conn--make-process)
+                 (lambda (_host _port buffer &rest _)
+                   (push buffer buffers)
+                   (let ((process (make-pipe-process :name "jabber-test-replacement"
+                                                     :buffer buffer :noquery t)))
+                     (push process processes)
+                     process)))
+                ((symbol-function 'process-send-string) #'ignore))
+        (unwind-protect
+            (progn
+              (setq jc (start-jabber-connection
+                        "alice" "example.test" "desktop" nil nil nil nil 'network))
+              (push jc jabber-connections)
+              (let ((old (car processes)))
+                (funcall (process-sentinel old) old status)
+                (jabber-network-connect-async jc "example.test" nil nil)
+                (accept-process-output nil 0.01)
+                (should-not (process-live-p old))
+                (should (eq (get jc :state) :connecting))
+                (should (process-live-p (car processes)))
+                (funcall (process-sentinel (car processes)) (car processes) "open\n")
+                (let ((deadline (+ (float-time) 2)))
+                  (while (and (eq (get jc :state) :connecting)
+                              (< (float-time) deadline))
+                    (accept-process-output nil 0.01)))
+                (should (eq (get jc :state) :connected))
+                (should (eq (car processes)
+                            (plist-get (fsm-get-state-data jc) :connection)))))
+          (when jc (jabber-disconnect-one jc))
+          (dolist (process processes)
+            (set-process-sentinel process #'ignore)
+            (delete-process process))
+          (dolist (buffer buffers)
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(defun jabber-conn-test--cancel-during-entry (phase)
+  "Cancel a native reconnect while its PHASE yields, then replace it."
+  (dolist (timeout '(nil 60))
+    (let* ((jc (make-symbol "jabber-test-entry"))
+           (jabber-connections (list jc))
+           (jabber-auto-reconnect t)
+           (jabber-reconnect-delay 600)
+           (jabber-direct-tls-lookup nil)
+           (jabber-connection-timeout timeout)
+           (jabber-debug-keep-process-buffers nil)
+           (jabber-process-buffer " *jabber-test-entry*")
+           (state (jabber-sm--reset
+                   (list :username "alice" :server "example.test"
+                         :resource "desktop" :connection-type 'network
+                         :connection 'old-transport :send-function #'ignore
+                         :ever-session-established t)))
+           (failures 0)
+           (creates 0)
+           cancelled old-attempt fresh processes buffers timers)
+      (put jc :name 'jabber-connection)
+      (put jc :state :session-established)
+      (put jc :state-data state)
+      (plist-put state :sm-enabled t)
+      (plist-put state :sm-id "resume-id")
+      (when (eq phase 'process)
+        (plist-put state :network-server "old.test"))
+      (jabber-sm--enqueue-pending
+       state '(message nil (body nil "queued")) nil
+       (lambda (_reason) (cl-incf failures)))
+      (cl-labels
+          ((cancel-and-replace ()
+             (jabber-disconnect-one jc)
+             (setq cancelled t)
+             ;; Install a successor before the old connecting entry returns.
+             (setq fresh (start-jabber-connection
+                          "alice" "example.test" "desktop" nil nil
+                          "fresh.test" 5222 'network))
+             (push fresh jabber-connections)))
+        (cl-letf (((symbol-function 'dns-query-asynchronous)
+                   (lambda (_name callback &rest _)
+                     ;; Retain native SRV discovery and dns-query's wait loop.
+                     (setq old-attempt (get jc :connect-attempt))
+                     (push (run-at-time
+                            0 nil (lambda ()
+                                    (cancel-and-replace)
+                                    (funcall callback nil)))
+                           timers)
+                     t))
+                  ((symbol-function 'jabber-conn--make-process)
+                   (lambda (host _port buffer &rest _)
+                     (cl-incf creates)
+                     (push buffer buffers)
+                     (let ((process (make-pipe-process
+                                     :name "jabber-test-entry"
+                                     :buffer buffer :noquery t)))
+                       (push process processes)
+                       (when (equal host "old.test")
+                         (setq old-attempt (get jc :connect-attempt))
+                         (push (run-at-time 0 nil #'cancel-and-replace) timers)
+                         (let ((deadline (+ (float-time) 2)))
+                           (while (and (not cancelled) (< (float-time) deadline))
+                             (accept-process-output nil 0.01))))
+                       process)))
+                  ((symbol-function 'process-send-string) #'ignore))
+          (unwind-protect
+              (progn
+                (fsm-send-sync jc '(:connection-dead old-transport "lost"))
+                (should (timerp (get jc :timeout)))
+                (fsm-send-sync jc :timeout)
+                (should cancelled)
+                (should old-attempt)
+                (should-not (get jc :state))
+                (should (plist-get (fsm-get-state-data jc) :terminalized))
+                (should (plist-get (fsm-get-state-data jc) :disconnection-expected))
+                (should-not (memq jc jabber-connections))
+                (dolist (key '(:sm-pending-queue :sm-recovered-queue :sm-outbound-queue))
+                  (should-not (plist-get (fsm-get-state-data jc) key)))
+                (should-not (get jc :timeout))
+                (should-not (get jc :connect-attempt))
+                (should-not (get jc :connect-cancel))
+                (should (= failures 1))
+                ;; Neither repeated stop nor late results may settle it again.
+                (jabber-disconnect-one jc)
+                (fsm-send-sync jc (list :connected 'old-transport nil old-attempt))
+                (fsm-send-sync jc (list :connection-failed '("late") old-attempt))
+                (fsm-send-sync jc :timeout)
+                (should (= failures 1))
+                (should-not (get jc :state))
+                (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))
+                (should (equal jabber-connections (list fresh)))
+                (should (eq (get fresh :state) :connecting))
+                (should (= creates (if (eq phase 'process) 2 1)))
+                (dolist (process (cdr processes))
+                  (should-not (process-live-p process))
+                  (funcall (process-sentinel process) process "failed\n")
+                  (funcall (process-sentinel process) process "open\n"))
+                (dolist (buffer (cdr buffers))
+                  (should-not (buffer-live-p buffer)))
+                (let ((new (car processes)))
+                  (should (process-live-p new))
+                  (funcall (process-sentinel new) new "open\n")
+                  (let ((deadline (+ (float-time) 2)))
+                    (while (and (eq (get fresh :state) :connecting)
+                                (< (float-time) deadline))
+                      (accept-process-output nil 0.01)))
+                  (should (eq (get fresh :state) :connected))
+                  (should (eq new (plist-get (fsm-get-state-data fresh) :connection))))
+                (should (= failures 1))
+                (should (= creates (if (eq phase 'process) 2 1))))
+            (dolist (timer timers) (cancel-timer timer))
+            (dolist (fsm (list jc fresh))
+              (when fsm
+                (jabber-disconnect-one fsm)
+                (fsm-stop-timer fsm)
+                (jabber-conn--cancel-connect fsm)))
+            (dolist (process processes)
+              (set-process-sentinel process #'ignore)
+              (delete-process process))
+            (dolist (buffer buffers)
+              (when (buffer-live-p buffer) (kill-buffer buffer)))))))))
+
+(ert-deftest jabber-conn-test-disconnect-during-native-dns-entry ()
+  "Keep terminal settlement when public disconnect interrupts native DNS."
+  (jabber-conn-test--cancel-during-entry 'dns))
+
+(ert-deftest jabber-conn-test-disconnect-during-process-entry ()
+  "Keep terminal settlement when public disconnect interrupts process setup."
+  (jabber-conn-test--cancel-during-entry 'process))
+
+(ert-deftest jabber-conn-test-connecting-entry-preserves-successor-timer ()
+  "Preserve a retry timer installed by a reentrant connecting failure."
+  (let* ((jc (make-symbol "jabber-test-entry-timer"))
+         (jabber-connections (list jc))
+         (jabber-auto-reconnect t)
+         (jabber-reconnect-delay 600)
+         (state (jabber-sm--reset
+                 (list :username "alice" :server "example.test"
+                       :ever-session-established t)))
+         successor-state successor-timer)
+    (put jc :name 'jabber-connection)
+    (cl-letf (((symbol-function 'jabber-get-connect-function)
+               (lambda (_type)
+                 (lambda (fsm &rest _)
+                   (fsm-send-sync fsm '(:connection-failed ("setup failed")))
+                   (setq successor-state (fsm-get-state-data fsm)
+                         successor-timer (get fsm :timeout))))))
+      (unwind-protect
+          (progn
+            (fsm-update jc :connecting state nil)
+            (should-not (get jc :state))
+            (should (eq successor-state (fsm-get-state-data jc)))
+            (should (timerp successor-timer))
+            (should (eq successor-timer (get jc :timeout)))
+            (should (memq successor-timer timer-list)))
+        (jabber-disconnect-one jc)
+        (fsm-stop-timer jc)))))
+
+(defun jabber-conn-test--replacement-cleanup (action timeout)
+  "Exercise ACTION in predecessor cleanup with connection TIMEOUT."
+  (let ((jabber-connections nil)
+        (jabber-process-buffer " *jabber-test-cleanup-admission*")
+        (jabber-debug-keep-process-buffers nil)
+        (jabber-connection-timeout timeout)
+        (native-run-at-time (symbol-function 'run-at-time))
+        (native-srv-targets (symbol-function 'jabber-srv-targets))
+        jc processes buffers hosts discoveries timers
+        old-token outer-token newer-token newer-cancel newer-process)
+    (cl-letf (((symbol-function 'jabber-conn--make-process)
+               (lambda (host _port buffer &rest _)
+                 (push host hosts)
+                 (push buffer buffers)
+                 (let ((process (make-pipe-process
+                                 :name "jabber-test-cleanup-admission"
+                                 :buffer buffer :noquery t)))
+                   (push process processes)
+                   process)))
+              ((symbol-function 'jabber-srv-targets)
+               (lambda (server network-server port &optional proxy)
+                 (push network-server discoveries)
+                 (funcall native-srv-targets server network-server port proxy)))
+              ((symbol-function 'process-send-string) #'ignore)
+              ((symbol-function 'run-at-time)
+               (lambda (time repeat function &rest args)
+                 (let ((timer (apply native-run-at-time time repeat function args)))
+                   ;; Native editing may also allocate an undo boundary timer.
+                   (when (equal time 60) (push timer timers))
+                   timer))))
+      (unwind-protect
+          (progn
+            ;; Native construction connects before account registration.
+            (setq jc (start-jabber-connection
+                      "alice" "example.test" "desktop" nil nil
+                      "old.test" 5222 'network))
+            (should-not (memq jc jabber-connections))
+            (should (process-live-p (car processes)))
+            (setq old-token (get jc :connect-attempt))
+            (push jc jabber-connections)
+            (with-current-buffer (car buffers)
+              (add-hook
+               'kill-buffer-hook
+               (lambda ()
+                 (setq outer-token (get jc :connect-attempt))
+                 (if (eq action 'stop)
+                     (jabber-disconnect-one jc)
+                   (jabber-network-connect-async
+                    jc "example.test" "newer.test" 5222)
+                   (setq newer-token (get jc :connect-attempt)
+                         newer-cancel (get jc :connect-cancel)
+                         newer-process (car processes))))
+               nil t))
+            (jabber-network-connect-async jc "example.test" "outer.test" 5222)
+            (if (eq action 'stop)
+                (progn
+                  (should (equal hosts '("old.test")))
+                  (should (equal discoveries '("old.test")))
+                  (should (= (length timers) (if timeout 1 0))))
+              (should (equal hosts '("newer.test" "old.test")))
+              (should (equal discoveries '("newer.test" "old.test")))
+              (should (= (length timers) (if timeout 2 0)))
+              (should newer-token)
+              (should newer-cancel)
+              (should-not (eq newer-token outer-token))
+              (should (eq newer-token (get jc :connect-attempt)))
+              (should (eq newer-cancel (get jc :connect-cancel)))
+              (should (process-live-p newer-process))
+              (should-not (process-live-p (cadr processes)))
+              (should-not (buffer-live-p (cadr buffers)))
+              ;; The winner's timer remains active until normal handoff.
+              (when timeout
+                (should (memq (car timers) timer-list))
+                (should-not (memq (cadr timers) timer-list)))
+              (funcall (process-sentinel newer-process) newer-process "open\n")
+              (let ((deadline (+ (float-time) 2)))
+                (while (and (eq (get jc :state) :connecting)
+                            (< (float-time) deadline))
+                  (accept-process-output nil 0.01)))
+              (should (eq (get jc :state) :connected))
+              (should (eq newer-process
+                          (plist-get (fsm-get-state-data jc) :connection))))
+            ;; Teardown must see B's admission, not A or an empty slot.
+            (should outer-token)
+            (should-not (eq old-token outer-token))
+            (jabber-disconnect-one jc)
+            (jabber-disconnect-one jc)
+            (should-not (get jc :state))
+            (should (plist-get (fsm-get-state-data jc) :terminalized))
+            (should (plist-get (fsm-get-state-data jc) :disconnection-expected))
+            (should-not (memq jc jabber-connections))
+            (should-not (get jc :timeout))
+            (should-not (get jc :connect-attempt))
+            (should-not (get jc :connect-cancel))
+            (should-not (cl-some #'process-live-p processes))
+            (should-not (cl-some #'buffer-live-p buffers))
+            (dolist (timer timers)
+              (should-not (memq timer timer-list))
+              (should-not (memq timer timer-idle-list))))
+        (when jc
+          (jabber-disconnect-one jc)
+          (jabber-conn--cancel-connect jc)
+          (fsm-stop-timer jc))
+        (dolist (timer timers) (cancel-timer timer))
+        (dolist (process processes)
+          (set-process-sentinel process #'ignore)
+          (delete-process process))
+        (dolist (buffer buffers)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (setq kill-buffer-hook nil))
+            (kill-buffer buffer)))))))
+
+(ert-deftest jabber-conn-test-replacement-cleanup-stop-without-timeout ()
+  "Respect public stop during replacement cleanup without a timeout."
+  (jabber-conn-test--replacement-cleanup 'stop nil))
+
+(ert-deftest jabber-conn-test-replacement-cleanup-stop-with-timeout ()
+  "Respect public stop during replacement cleanup with a finite timeout."
+  (jabber-conn-test--replacement-cleanup 'stop 60))
+
+(ert-deftest jabber-conn-test-replacement-cleanup-successor-without-timeout ()
+  "Preserve a cleanup-hook successor without a timeout."
+  (jabber-conn-test--replacement-cleanup 'replace nil))
+
+(ert-deftest jabber-conn-test-replacement-cleanup-successor-with-timeout ()
+  "Preserve a cleanup-hook successor with a finite timeout."
+  (jabber-conn-test--replacement-cleanup 'replace 60))
+
+(defun jabber-conn-test--handoff-change (action keep-buffer timeout hook)
+  "Exercise ACTION during native handoff with KEEP-BUFFER, TIMEOUT and HOOK."
+  (let ((jabber-connections nil)
+        (jabber-process-buffer " *jabber-test-handoff-change*")
+        (jabber-debug-keep-process-buffers keep-buffer)
+        (jabber-connection-timeout timeout)
+        (jabber-auto-reconnect t)
+        (jabber-reconnect-delay 600)
+        (native-send (symbol-function 'process-send-string))
+        (native-run-at-time (symbol-function 'run-at-time))
+        (failures 0)
+        jc processes buffers timers writes fired successor-state
+        successor-token successor-cancel successor-timer retired-filter
+        retired-sentinel)
+    (cl-letf (((symbol-function 'jabber-conn--make-process)
+               (lambda (_host _port buffer &rest _)
+                 (push buffer buffers)
+                 (let ((process (make-pipe-process
+                                 :name "jabber-test-handoff-change"
+                                 :buffer buffer :noquery t)))
+                   (push process processes)
+                   process)))
+              ((symbol-function 'process-send-string)
+               (lambda (process wire)
+                 (push process writes)
+                 (funcall native-send process wire)))
+              ((symbol-function 'run-at-time)
+               (lambda (time repeat function &rest args)
+                 (let ((timer (apply native-run-at-time time repeat function args)))
+                   (when (memq time '(60 600)) (push timer timers))
+                   timer))))
+      (unwind-protect
+          (progn
+            (setq jc (start-jabber-connection
+                      "alice" "example.test" "desktop" nil nil
+                      "old.test" 5222 'network))
+            (push jc jabber-connections)
+            (plist-put (fsm-get-state-data jc) :ever-session-established t)
+            (jabber-sm--enqueue-pending
+             (fsm-get-state-data jc) '(message nil (body nil "pending")) nil
+             (lambda (_reason) (cl-incf failures)))
+            (let ((old (car processes))
+                  (buffer (car buffers)))
+              (with-current-buffer buffer
+                (insert "transport bytes")
+                (add-hook
+                 hook
+                 (lambda (&rest _)
+                   (unless fired
+                     (setq fired t)
+                     (pcase action
+                       ('stop (jabber-disconnect-one jc))
+                       ('replace
+                        (jabber-network-connect-async
+                         jc "example.test" "newer.test" 5222))
+                       ('retry
+                        (fsm-send-sync jc '(:connection-failed ("handoff lost")))))
+                     (setq successor-state (fsm-get-state-data jc)
+                           successor-token (get jc :connect-attempt)
+                           successor-cancel (get jc :connect-cancel)
+                           successor-timer (get jc :timeout)
+                           retired-filter (process-filter old)
+                           retired-sentinel (process-sentinel old))))
+                 nil t))
+              (funcall (process-sentinel old) old "open\n")
+              (let ((deadline (+ (float-time) 2)))
+                (while (and (not fired) (< (float-time) deadline))
+                  (accept-process-output nil 0.01)))
+              (should fired)
+              (if (eq action 'normal)
+                  (progn
+                    (should (eq (get jc :state) :connected))
+                    (should (eq old (plist-get (fsm-get-state-data jc) :connection)))
+                    (should (plist-get (fsm-get-state-data jc) :awaiting-stream-start))
+                    (should (equal writes (list old)))
+                    (should (process-live-p old))
+                    (should-not (get jc :connect-attempt))
+                    (should-not (get jc :connect-cancel))
+                    (should (= (buffer-size buffer) 0)))
+                (should-not writes)
+                (should (eq successor-state (fsm-get-state-data jc)))
+                (should (eq retired-filter (process-filter old)))
+                (should (eq retired-sentinel (process-sentinel old)))
+                (should-not (process-live-p old))
+                (should (eq (buffer-live-p buffer) keep-buffer))
+                (should (eq successor-token (get jc :connect-attempt)))
+                (should (eq successor-cancel (get jc :connect-cancel)))
+                (should (eq successor-timer (get jc :timeout)))
+                (pcase action
+                  ('stop
+                   (should-not (get jc :state))
+                   (should (= failures 1))
+                   (should (plist-get successor-state :terminalized))
+                   (should (plist-get successor-state :disconnection-expected))
+                   (should-not (memq jc jabber-connections))
+                   (should-not (plist-get successor-state :sm-pending-queue)))
+                  ('retry
+                   (should-not (get jc :state))
+                   (should (timerp successor-timer))
+                   (should (memq successor-timer timer-list))
+                   (should (memq jc jabber-connections)))
+                  ('replace
+                   (should (eq (get jc :state) :connecting))
+                   (should successor-token)
+                   (should successor-cancel)
+                   (should (process-live-p (car processes)))
+                   (when timeout (should (memq (car timers) timer-list)))
+                   (let ((new (car processes)))
+                     (funcall (process-sentinel new) new "open\n")
+                     (let ((deadline (+ (float-time) 2)))
+                       (while (and (eq (get jc :state) :connecting)
+                                   (< (float-time) deadline))
+                         (accept-process-output nil 0.01)))
+                     (should (eq (get jc :state) :connected))
+                     (should (eq new (plist-get (fsm-get-state-data jc) :connection)))
+                     (should (equal writes (list new)))))))
+              (jabber-disconnect-one jc)
+              (jabber-disconnect-one jc)
+              (should (= failures 1))
+              (should-not (get jc :state))
+              (should-not (memq jc jabber-connections))
+              (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))
+              (should-not (get jc :connect-attempt))
+              (should-not (get jc :connect-cancel))
+              (should-not (get jc :timeout))
+              (should-not (cl-some #'process-live-p processes))
+              (unless keep-buffer (should-not (cl-some #'buffer-live-p buffers)))
+              (dolist (timer timers) (should-not (memq timer timer-list)))))
+        (when jc
+          (jabber-disconnect-one jc)
+          (jabber-conn--cancel-connect jc)
+          (fsm-stop-timer jc))
+        (dolist (timer timers) (cancel-timer timer))
+        (dolist (process processes)
+          (set-process-sentinel process #'ignore)
+          (delete-process process))
+        (dolist (buffer buffers)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (setq before-change-functions nil after-change-functions nil))
+            (kill-buffer buffer)))))))
+
+(ert-deftest jabber-conn-test-handoff-change-stop ()
+  "Preserve terminal settlement after native buffer modification hooks."
+  (dolist (timeout '(nil 60))
+    (dolist (keep-buffer '(nil t))
+      (dolist (hook '(before-change-functions after-change-functions))
+        (jabber-conn-test--handoff-change 'stop keep-buffer timeout hook)))))
+
+(ert-deftest jabber-conn-test-handoff-change-successor ()
+  "Preserve same-FSM replacement and retire only the captured transport."
+  (dolist (timeout '(nil 60))
+    (dolist (keep-buffer '(nil t))
+      (dolist (hook '(before-change-functions after-change-functions))
+        (jabber-conn-test--handoff-change 'replace keep-buffer timeout hook)))))
+
+(ert-deftest jabber-conn-test-handoff-change-retry-timer ()
+  "Preserve the authoritative retry timer after handoff cleanup reentry."
+  (dolist (timeout '(nil 60))
+    (dolist (keep-buffer '(nil t))
+      (jabber-conn-test--handoff-change
+       'retry keep-buffer timeout 'before-change-functions))))
+
+(ert-deftest jabber-conn-test-handoff-change-normal ()
+  "Complete normal handoff after harmless native modification hooks."
+  (dolist (timeout '(nil 60))
+    (dolist (keep-buffer '(nil t))
+      (jabber-conn-test--handoff-change
+       'normal keep-buffer timeout 'before-change-functions))))
+
+(ert-deftest jabber-conn-test-handoff-send-reentry ()
+  "Preserve current state and timer after a synchronous stream-header send."
+  (dolist (action '(stop retry reply))
+    (let ((jabber-connections nil)
+          (jabber-auto-reconnect t)
+          (jabber-reconnect-delay 600)
+          (failures 0)
+          fired successor-state successor-timer jc)
+      (cl-letf (((symbol-function 'jabber-network-connect) #'ignore))
+        (unwind-protect
+            (progn
+              (setq jc (start-jabber-connection
+                        "alice" "example.test" "desktop" nil nil
+                        "old.test" 5222 'network))
+              (push jc jabber-connections)
+              (let ((state (fsm-get-state-data jc)))
+                (plist-put state :ever-session-established t)
+                (jabber-sm--enqueue-pending
+                 state '(message nil (body nil "pending")) nil
+                 (lambda (_reason) (cl-incf failures)))
+                (plist-put
+                 state :send-function
+                 (lambda (_connection _wire)
+                   (unless fired
+                     (setq fired t)
+                     (pcase action
+                       ('stop (jabber-disconnect-one jc))
+                       ('retry
+                        (fsm-send-sync jc '(:sentinel transport "lost\n")))
+                       ('reply (fsm-send-sync jc '(:stream-start "new-stream" "1.0"))))
+                     (setq successor-state (fsm-get-state-data jc)
+                           successor-timer (get jc :timeout))))))
+              (fsm-send-sync jc '(:connected transport nil))
+              (should fired)
+              (should (eq successor-state (fsm-get-state-data jc)))
+              (should (eq successor-timer (get jc :timeout)))
+              (pcase action
+                ('stop
+                 (should-not (get jc :state))
+                 (should (plist-get successor-state :terminalized))
+                 (should-not (plist-get successor-state :sm-pending-queue))
+                 (should (= failures 1)))
+                ('retry
+                 (should-not (get jc :state))
+                 (should (timerp successor-timer))
+                 (should (memq successor-timer timer-list)))
+                ('reply
+                 (should (eq (get jc :state) :connected))
+                 (should-not (plist-get successor-state :awaiting-stream-start))
+                 (should (equal (plist-get successor-state :session-id) "new-stream"))))
+              (jabber-disconnect-one jc)
+              (jabber-disconnect-one jc)
+              (should (= failures 1)))
+          (when jc
+            (jabber-disconnect-one jc)
+            (fsm-stop-timer jc)))))))
 
 (provide 'jabber-test-conn)
 

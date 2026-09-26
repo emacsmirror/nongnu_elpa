@@ -74,31 +74,32 @@ nil disables MUC notifications entirely."
 (defun jabber-message-notifications (from buffer text title)
   "Show a message from FROM through the notifications.el interface.
 BUFFER is the associated chat buffer, TEXT is the message body, and
-TITLE is the notification title."
-  (letrec ((body (or (jabber-escape-xml text) " "))
-           (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash))
-           (action-callback
-            (lambda (&rest _)
-              (when (buffer-live-p buffer)
-                (pop-to-buffer buffer))))
-           (close-callback
-            (lambda (&rest _)
-              (jabber-notifications--remove-action-callback
-               action-callback))))
-    (condition-case err
-        (notifications-notify
-         :title title
-         :body body
-         :app-icon (or (and avatar-hash (jabber-avatar-find-cached avatar-hash))
-                       jabber-notifications-icon)
-         :app-name jabber-notifications-app
-         :category "jabber.message"
-         :actions '("default" "Switch to buffer")
-         :on-action action-callback
-         :on-close close-callback
-         :timeout jabber-notifications-timeout)
-      (dbus-error
-       (message "jabber-notifications: D-Bus error: %s" (error-message-string err))))))
+TITLE is the notification title; nil suppresses the notification."
+  (when title
+    (letrec ((body (or (jabber-escape-xml text) " "))
+             (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash))
+             (action-callback
+              (lambda (&rest _)
+                (when (buffer-live-p buffer)
+                  (pop-to-buffer buffer))))
+             (close-callback
+              (lambda (&rest _)
+                (jabber-notifications--remove-action-callback
+                 action-callback))))
+      (condition-case err
+          (notifications-notify
+           :title title
+           :body body
+           :app-icon (or (and avatar-hash (jabber-avatar-find-cached avatar-hash))
+                         jabber-notifications-icon)
+           :app-name jabber-notifications-app
+           :category "jabber.message"
+           :actions '("default" "Switch to buffer")
+           :on-action action-callback
+           :on-close close-callback
+           :timeout jabber-notifications-timeout)
+        (dbus-error
+         (message "jabber-notifications: D-Bus error: %s" (error-message-string err)))))))
 
 (defun jabber-muc-notifications (nick group buffer text title)
   "Show MUC message from NICK in GROUP through the notifications.el interface.

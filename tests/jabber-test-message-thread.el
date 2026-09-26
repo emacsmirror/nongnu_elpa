@@ -1453,29 +1453,62 @@
          '(:body "reply" :thread-id "thread-1"))))))
 
 (ert-deftest jabber-test-message-thread-closed-muc-alert-has-parent-buffer ()
-  "A closed MUC reply alerts with the room buffer without insertion."
-  (let ((parent (generate-new-buffer " *jabber-thread-muc-alert-parent*"))
-        seen)
-    (unwind-protect
-        (cl-letf (((symbol-function 'jabber-muc-find-buffer)
-                   (lambda (&rest _) parent)))
-          (let ((jabber-muc-hooks
-                 (list (lambda (_nick _group buffer _body _alert)
-                         (setq seen buffer))))
-                (jabber-alert-muc-hooks nil)
-                (jabber-alert-muc-function
-                 (lambda (&rest _) "alert")))
-            (jabber-muc--display-message
-             'jc
-             '(message ((from . "room@example.com/Alice")
-                        (type . "groupchat")))
-             "room@example.com" "Alice" :muc-foreign
-             '(:body "reply" :thread-id "thread-1")
-             'closed)
-            (should (eq parent seen))
-            (should (equal "" (with-current-buffer parent
-                                (buffer-string))))))
-      (kill-buffer parent))))
+  "A closed MUC reply alerts only through its still-owned native room."
+  (let* ((jc (make-symbol "thread-account"))
+         (other (make-symbol "other-account"))
+         (jabber-db-path nil)
+         (jabber-chat-mode-hook nil)
+         (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+         (jabber-jid-obarray (make-vector 127 0)))
+    (put jc :state-data '(:username "me" :server "example.com"))
+    (save-window-excursion
+      (dolist (change '(nil account room killed))
+        (let* ((jabber-groupchat-buffer-format
+                (generate-new-buffer-name " *jabber-thread-muc-alert-parent*"))
+               (parent (jabber-muc-create-buffer jc "room@example.com"))
+               (calls 0)
+               seen before)
+          (unwind-protect
+              (progn
+                (should (eq parent (jabber-muc-find-buffer "room@example.com" jc)))
+                (with-current-buffer parent
+                  (should (derived-mode-p 'jabber-chat-mode))
+                  (should (eq jabber-buffer-connection jc))
+                  (should (equal jabber-group "room@example.com"))
+                  (insert "Unsent room draft")
+                  (setq before (buffer-string)))
+                (let ((jabber-muc-hooks
+                       (list
+                        ;; An earlier hook can invalidate a once-valid origin.
+                        (lambda (_nick _group _buffer _body _alert)
+                          (pcase change
+                            ('account
+                             (with-current-buffer parent
+                               (setq jabber-buffer-connection other)))
+                            ('room
+                             (with-current-buffer parent
+                               (setq jabber-group "other-room@example.com")))
+                            ('killed (kill-buffer parent))))
+                        (lambda (_nick _group buffer _body _alert)
+                          (setq seen buffer)
+                          (cl-incf calls))))
+                      (jabber-alert-muc-hooks nil)
+                      (jabber-alert-muc-function (lambda (&rest _) "alert")))
+                  (jabber-muc--display-message
+                   jc
+                   '(message ((from . "room@example.com/Alice")
+                              (type . "groupchat")))
+                   "room@example.com" "Alice" :muc-foreign
+                   '(:body "reply" :thread-id "thread-1")
+                   'closed))
+                (should (= calls 1))
+                (should (eq seen (unless change parent)))
+                (when (buffer-live-p parent)
+                  (with-current-buffer parent
+                    (should (equal before (buffer-string)))
+                    (should-not (ewoc-nth jabber-chat-ewoc 0)))))
+            (when (buffer-live-p parent)
+              (kill-buffer parent))))))))
 
 (ert-deftest jabber-test-message-thread-closed-muc-reply-stays-closed ()
   "MUC dispatch maps a closed known reply to the closed sentinel."

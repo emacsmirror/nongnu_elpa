@@ -115,7 +115,8 @@ Each function receives ACCOUNT, PEER, TYPE, THREAD-ID, and TIMESTAMP.")
   fallback_start INTEGER,
   fallback_end INTEGER,
   thread_id TEXT,
-  thread_parent_id TEXT)"
+  thread_parent_id TEXT,
+  retracted INTEGER NOT NULL DEFAULT 0)"
     "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
   ON message(account, peer, timestamp)"
     "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
@@ -293,7 +294,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 10
+(defconst jabber-db--schema-version 11
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -318,72 +319,95 @@ Delete it and start fresh? "
 delete %s manually to continue"
                     version jabber-db--schema-version jabber-db-path)))))
 
+(defmacro jabber-db--with-savepoint (db &rest body)
+  "Execute BODY atomically on DB, including on nonlocal exits.
+Savepoints permit migration inside a caller-owned transaction."
+  (declare (indent 1) (debug t))
+  (let ((connection (make-symbol "connection"))
+        (complete (make-symbol "complete")))
+    `(let ((,connection ,db)
+           (,complete nil))
+       (sqlite-execute ,connection "SAVEPOINT jabber_schema")
+       (unwind-protect
+           (prog1 (progn ,@body)
+             (sqlite-execute ,connection "RELEASE jabber_schema")
+             (setq ,complete t))
+         (unless ,complete
+           (sqlite-execute ,connection "ROLLBACK TO jabber_schema")
+           (sqlite-execute ,connection "RELEASE jabber_schema"))))))
+
 (defun jabber-db--migrate-v1-to-v2 (db)
   "Migrate DB from schema version 1 to version 2."
-  (sqlite-execute db "ALTER TABLE message ADD COLUMN occupant_id TEXT")
-  (sqlite-execute db "ALTER TABLE message DROP COLUMN raw_xml")
-  (sqlite-execute db "\
+  (jabber-db--with-savepoint db
+    (sqlite-execute db "ALTER TABLE message ADD COLUMN occupant_id TEXT")
+    (sqlite-execute db "ALTER TABLE message DROP COLUMN raw_xml")
+    (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
   ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL")
-  (sqlite-execute db "PRAGMA user_version=2"))
+    (sqlite-execute db "PRAGMA user_version=2")))
 
 (defun jabber-db--migrate-v2-to-v3 (db)
   "Migrate DB from schema version 2 to version 3."
-  (sqlite-execute db "\
+  (jabber-db--with-savepoint db
+    (sqlite-execute db "\
 CREATE TABLE IF NOT EXISTS message_oob (
   id         INTEGER PRIMARY KEY,
   message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
   url        TEXT NOT NULL,
   desc       TEXT)")
-  (sqlite-execute db "\
+    (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_oob_message_id
   ON message_oob(message_id)")
-  (sqlite-execute db "\
+    (sqlite-execute db "\
 INSERT INTO message_oob (message_id, url, desc)
   SELECT id, oob_url, oob_desc FROM message WHERE oob_url IS NOT NULL")
-  (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_url")
-  (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_desc")
-  (sqlite-execute db "PRAGMA user_version=3"))
+    (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_url")
+    (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_desc")
+    (sqlite-execute db "PRAGMA user_version=3")))
 
 (defun jabber-db--migrate-v3-to-v4 (db)
   "Migrate DB from schema version 3 to version 4."
-  (sqlite-execute db "\
+  (jabber-db--with-savepoint db
+    (sqlite-execute db "\
 CREATE TABLE IF NOT EXISTS caps_cache (
   hash       TEXT NOT NULL,
   ver        TEXT NOT NULL,
   identities TEXT NOT NULL,
   features   TEXT NOT NULL,
   PRIMARY KEY (hash, ver))")
-  (sqlite-execute db "PRAGMA user_version=4"))
+    (sqlite-execute db "PRAGMA user_version=4")))
 
 (defun jabber-db--migrate-v4-to-v5 (db)
   "Migrate DB from schema version 4 to version 5."
-  (sqlite-execute db "\
+  (jabber-db--with-savepoint db
+    (sqlite-execute db "\
 CREATE TABLE IF NOT EXISTS message_reaction (
   message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
   sender     TEXT NOT NULL,
   reaction   TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (message_id, sender, reaction))")
-  (sqlite-execute db "\
+    (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_reaction_message_id
   ON message_reaction(message_id)")
-  (jabber-db--ensure-reaction-actor-table db)
-  (jabber-db--backfill-reaction-actors db)
-  (sqlite-execute db "PRAGMA user_version=5"))
+    (jabber-db--ensure-reaction-actor-table db)
+    (jabber-db--backfill-reaction-actors db)
+    (sqlite-execute db "PRAGMA user_version=5")))
 
 (defun jabber-db--migrate-v5-to-v6 (db)
   "Migrate DB from schema version 5 to version 6."
-  (sqlite-execute db
-                  "ALTER TABLE omemo_store ADD COLUMN spk_rotated_at INTEGER")
-  (sqlite-execute db "PRAGMA user_version=6"))
+  (jabber-db--with-savepoint db
+    (sqlite-execute db
+                    "ALTER TABLE omemo_store ADD COLUMN spk_rotated_at INTEGER")
+    (sqlite-execute db "PRAGMA user_version=6")))
 
 (defun jabber-db--migrate-v6-to-v7 (db)
   "Migrate DB from schema version 6 to version 7."
-  (dolist (column '("reply_to_id TEXT" "reply_to_jid TEXT"
-                    "fallback_start INTEGER" "fallback_end INTEGER"))
-    (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " column)))
-  (sqlite-execute db "PRAGMA user_version=7"))
+  (jabber-db--with-savepoint db
+    (dolist (column '("reply_to_id TEXT" "reply_to_jid TEXT"
+                      "fallback_start INTEGER" "fallback_end INTEGER"))
+      (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " column)))
+    (sqlite-execute db "PRAGMA user_version=7")))
 
 (defun jabber-db--migrate-v7-to-v8-steps (db)
   "Apply the schema changes from version 7 to version 8 in DB."
@@ -496,72 +520,89 @@ CREATE TABLE IF NOT EXISTS chat_settings (
        (sqlite-execute db "RELEASE jabber_schema_v10"))
      (signal (car err) (cdr err)))))
 
+(defun jabber-db--migrate-v10-to-v11 (db)
+  "Separate retraction state from optional attribution in DB."
+  (jabber-db--with-savepoint db
+    (sqlite-execute db "ALTER TABLE message
+ADD COLUMN retracted INTEGER NOT NULL DEFAULT 0")
+    (sqlite-execute db "UPDATE message SET retracted = 1
+WHERE retracted_by IS NOT NULL")
+    (sqlite-execute db "PRAGMA user_version=11")))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
-  (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
-    (when (zerop version)
-      (jabber-db--init-schema db)
-      (sqlite-execute db
-                      (format "PRAGMA user_version=%d"
-                              jabber-db--schema-version))
-      (setq version jabber-db--schema-version))
-    (when (= version 1)
-      (jabber-db--migrate-v1-to-v2 db)
-      (setq version 2))
-    (when (= version 2)
-      (jabber-db--migrate-v2-to-v3 db)
-      (setq version 3))
-    (when (= version 3)
-      (jabber-db--migrate-v3-to-v4 db)
-      (setq version 4))
-    (when (= version 4)
-      (jabber-db--migrate-v4-to-v5 db)
-      (setq version 5))
-    (when (= version 5)
-      (jabber-db--migrate-v5-to-v6 db)
-      (setq version 6))
-    (when (= version 6)
-      (jabber-db--migrate-v6-to-v7 db)
-      (setq version 7))
-    (when (= version 7)
-      (jabber-db--migrate-v7-to-v8 db)
-      (setq version 8))
-    (when (= version 8)
-      (jabber-db--migrate-v8-to-v9 db)
-      (setq version 9))
-    (when (= version 9)
-      (jabber-db--migrate-v9-to-v10 db)
-      (setq version 10))
-    (when (= version 10)
-      (jabber-db--repair-reaction-actors db))))
+  (jabber-db--with-savepoint db
+    (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
+      (when (zerop version)
+        (jabber-db--init-schema db)
+        (sqlite-execute db
+                        (format "PRAGMA user_version=%d"
+                                jabber-db--schema-version))
+        (setq version jabber-db--schema-version))
+      (when (= version 1)
+        (jabber-db--migrate-v1-to-v2 db)
+        (setq version 2))
+      (when (= version 2)
+        (jabber-db--migrate-v2-to-v3 db)
+        (setq version 3))
+      (when (= version 3)
+        (jabber-db--migrate-v3-to-v4 db)
+        (setq version 4))
+      (when (= version 4)
+        (jabber-db--migrate-v4-to-v5 db)
+        (setq version 5))
+      (when (= version 5)
+        (jabber-db--migrate-v5-to-v6 db)
+        (setq version 6))
+      (when (= version 6)
+        (jabber-db--migrate-v6-to-v7 db)
+        (setq version 7))
+      (when (= version 7)
+        (jabber-db--migrate-v7-to-v8 db)
+        (setq version 8))
+      (when (= version 8)
+        (jabber-db--migrate-v8-to-v9 db)
+        (setq version 9))
+      (when (= version 9)
+        (jabber-db--migrate-v9-to-v10 db)
+        (setq version 10))
+      (when (= version 10)
+        (jabber-db--migrate-v10-to-v11 db)
+        (setq version 11))
+      (when (= version 11)
+        (jabber-db--repair-reaction-actors db)))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
 Migrate an existing connection when the package schema has advanced.
 Return the database connection, or nil if storage is disabled."
   (when jabber-db-path
-    (let ((connection-live-p
-           (and jabber-db--connection
-                (sqlitep jabber-db--connection))))
-      (unless connection-live-p
-        (let ((dir (file-name-directory jabber-db-path)))
-          (unless (file-directory-p dir)
-            (make-directory dir t)))
-        (let ((db (sqlite-open jabber-db-path)))
-          (when (jabber-db--handle-unknown-schema db)
-            ;; Database was deleted; re-open fresh.
-            (setq db (sqlite-open jabber-db-path)))
-          (setq jabber-db--connection db))
-        (sqlite-execute jabber-db--connection "PRAGMA journal_mode=WAL")
-        (sqlite-execute jabber-db--connection "PRAGMA synchronous=NORMAL")
-        (sqlite-execute jabber-db--connection "PRAGMA foreign_keys=ON")
-        (jabber-db--migrate jabber-db--connection))
-      (when (and connection-live-p
-                 (< (caar (sqlite-select jabber-db--connection
-                                         "PRAGMA user_version"))
-                    jabber-db--schema-version))
-        (jabber-db--migrate jabber-db--connection))
-      jabber-db--connection)))
+    (let* ((live (and jabber-db--connection (sqlitep jabber-db--connection)))
+           (db (and live jabber-db--connection))
+           (complete nil))
+      (unwind-protect
+          (progn
+            (unless live
+              (when-let* ((dir (file-name-directory jabber-db-path)))
+                (unless (file-directory-p dir)
+                  (make-directory dir t)))
+              (setq db (sqlite-open jabber-db-path))
+              (when (jabber-db--handle-unknown-schema db)
+                (setq db (sqlite-open jabber-db-path)))
+              (sqlite-execute db "PRAGMA journal_mode=WAL")
+              (sqlite-execute db "PRAGMA synchronous=NORMAL")
+              (sqlite-execute db "PRAGMA foreign_keys=ON"))
+            (when (or (not live)
+                      (< (caar (sqlite-select db "PRAGMA user_version"))
+                         jabber-db--schema-version))
+              (jabber-db--migrate db))
+            (setq jabber-db--connection db
+                  complete t)
+            db)
+        (unless complete
+          (when (and db (sqlitep db))
+            (sqlite-close db))
+          (setq jabber-db--connection nil))))))
 
 (defun jabber-db-close ()
   "Close the database connection."
@@ -708,40 +749,48 @@ Inverse of `jabber-db--fallback-range-cols'."
   (cond ((and (eql start -1) (eql end -1)) 'all)
         ((and start end) (list start end))))
 
-(defun jabber-db--detect-duplicate (db account peer timestamp body
-                                       stanza-id server-id &optional type)
-  "Check whether a message for ACCOUNT already exists in DB.
-PEER, TIMESTAMP, BODY, STANZA-ID and SERVER-ID identify the candidate.
-Return a symbol indicating the match type: `stanza_id', `server_id',
-`content', or nil for no match.
-Optional TYPE is the message type; stanza_id dedup is skipped for
-\"groupchat\" because MUC servers recycle short message IDs."
-  (cond
-   ;; Server-assigned IDs are unique only within the assigning entity.
-   ;; PEER is that entity for the stored conversation.
-   ((and server-id
-         (caar (sqlite-select
-                db "SELECT 1 FROM message \
-WHERE server_id = ? AND account = ? AND peer = ? LIMIT 1"
-                (list server-id account peer))))
-    'server_id)
-   ;; Stanza IDs (origin-id or message id attr) can be recycled by
-   ;; MUC servers, so only use them for 1:1 chat dedup.
-   ((and stanza-id
-         (not (equal type "groupchat"))
-         (caar (sqlite-select
-                db "SELECT 1 FROM message \
-WHERE stanza_id = ? AND account = ? AND peer = ? LIMIT 1"
-                (list stanza-id account peer))))
-    'stanza_id)
-   ;; Content-based dedup: matches messages stored by the
-   ;; live handler (nil IDs) against MAM replays (with IDs),
-   ;; or MUC history replayed on every join.
-   ((caar (sqlite-select
-           db "SELECT 1 FROM message \
-WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
-           (list account peer timestamp body)))
-    'content)))
+(defun jabber-db--detect-duplicate
+    (db account peer timestamp body stanza-id server-id
+        type direction resource occupant-id)
+  "Return the unambiguous duplicate row id in DB, or nil.
+ACCOUNT, PEER, TYPE and DIRECTION scope the message.  Populated STANZA-ID,
+SERVER-ID and OCCUPANT-ID must not conflict.  A MUC row with all three
+IDs equal and the same RESOURCE may retain its original direction when
+nickname-based archive classification drifts.  MUC client IDs alone are
+not unique.  Content matching requires one row with equal TIMESTAMP,
+BODY, RESOURCE and OCCUPANT-ID, and missing IDs.  An ID-less outgoing
+non-MUC row may lack the archive sender's resource.  A matching MUC client
+ID may be upgraded only when the replay supplies a SERVER-ID."
+  (let ((matches
+         (sqlite-select
+          db "SELECT id FROM message
+WHERE account = ? AND peer = ? AND type IS ?
+AND (direction = ? OR (type = 'groupchat' AND server_id = ?
+     AND stanza_id = ? AND occupant_id = ? AND resource IS ?))
+AND (? IS NULL OR stanza_id IS NULL OR stanza_id = ?)
+AND (? IS NULL OR server_id IS NULL OR server_id = ?)
+AND (? IS NULL OR occupant_id IS NULL OR occupant_id = ?)
+AND (server_id = ? OR (? != 'groupchat' AND stanza_id = ?)) LIMIT 2"
+          (list account peer type direction server-id stanza-id occupant-id resource
+                stanza-id stanza-id server-id server-id occupant-id occupant-id
+                server-id type stanza-id))))
+    (if matches
+        (and (null (cdr matches)) (caar matches))
+      ;; Without an ID, identical messages may be independent sends.
+      ;; Never upgrade every equal-content row or pick an arbitrary one.
+      (when (or stanza-id server-id)
+        (let ((legacy
+               (sqlite-select
+                db "SELECT id FROM message
+WHERE account = ? AND peer = ? AND type IS ? AND direction = ?
+AND timestamp = ? AND body = ? AND occupant_id IS ?
+AND (resource IS ? OR (direction = 'out' AND type != 'groupchat'
+     AND resource IS NULL AND stanza_id IS NULL AND ? IS NOT NULL))
+AND server_id IS NULL
+AND (stanza_id IS NULL OR (? IS NOT NULL AND stanza_id = ?)) LIMIT 2"
+                (list account peer type direction timestamp body
+                      occupant-id resource server-id server-id stanza-id))))
+          (and (null (cdr legacy)) (caar legacy)))))))
 
 (defun jabber-db--insert-message (db account peer resource occupant-id
                                      direction type body timestamp
@@ -777,107 +826,51 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
          (list msg-id (car entry) (cdr entry)))))
     msg-id))
 
-(defun jabber-db--update-duplicate-ids (db account peer timestamp body
-                                           stanza-id server-id oob-entries
-                                           dup-id-col)
-  "Update an existing duplicate in DB matched by DUP-ID-COL.
+(defun jabber-db--update-duplicate-message (db message-id timestamp body oob-entries)
+  "Update the exact duplicate MESSAGE-ID in DB.
 Normalize TIMESTAMP when non-nil and replace failed placeholders with BODY.
 Skip retracted messages to prevent MAM replays from undoing retractions.
-ACCOUNT and PEER scope the row; STANZA-ID and SERVER-ID identify it;
 OOB-ENTRIES replaces the row's OOB metadata when BODY is upgraded."
-  (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
-         (where-clause
-          (format "%s = ? AND account = ? AND peer = ?" dup-id-col))
-         (where-params (list id-val account peer))
-         (retracted (caar (sqlite-select
-                           db
-                           (format "SELECT 1 FROM message WHERE %s \
-AND retracted_by IS NOT NULL LIMIT 1"
-                                   where-clause)
-                           where-params))))
-    (unless retracted
-      (when timestamp
+  (unless (eql 1 (caar (sqlite-select
+                       db "SELECT retracted FROM message WHERE id = ?"
+                       (list message-id))))
+    (when timestamp
+      (sqlite-execute
+       db "UPDATE message SET timestamp = ? WHERE id = ? AND timestamp != ?"
+       (list timestamp message-id timestamp)))
+    (when (and body
+               (not (jabber--decrypt-failure-body-p body))
+               (jabber--decrypt-failure-body-p
+                (caar (sqlite-select db "SELECT body FROM message WHERE id = ?"
+                                     (list message-id)))))
+      (sqlite-execute db "UPDATE message SET body = ? WHERE id = ?"
+                      (list body message-id))
+      (sqlite-execute db "DELETE FROM message_oob WHERE message_id = ?"
+                      (list message-id))
+      (dolist (entry oob-entries)
         (sqlite-execute
-         db
-         (format "UPDATE message SET timestamp = ? WHERE %s AND timestamp != ?"
-                 where-clause)
-         (append (list timestamp) where-params (list timestamp))))
-      ;; Replace failed-decrypt placeholder if new body is real text.
-      (when (and body
-                 (not (jabber--decrypt-failure-body-p body)))
-        (let ((msg-id
-               (caar (sqlite-select
-                      db
-                      (format "SELECT id FROM message WHERE %s \
-AND body LIKE '%%: could not decrypt]' LIMIT 1"
-                              where-clause)
-                      where-params))))
-          (when msg-id
-            (sqlite-execute
-             db "UPDATE message SET body = ? WHERE id = ?"
-             (list body msg-id))
-            (sqlite-execute
-             db "DELETE FROM message_oob WHERE message_id = ?"
-             (list msg-id))
-            (dolist (entry oob-entries)
-              (sqlite-execute
-               db
-               "INSERT INTO message_oob (message_id, url, desc) \
-VALUES (?, ?, ?)"
-               (list msg-id (car entry) (cdr entry))))))))))
+         db "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
+         (list message-id (car entry) (cdr entry)))))))
 
-(defun jabber-db--upgrade-content-match (db account peer timestamp body
-                                            stanza-id server-id)
-  "Upgrade a content-matched row in DB with server-assigned IDs.
-ACCOUNT, PEER, TIMESTAMP and BODY locate the row;
-STANZA-ID and SERVER-ID are the new IDs to fill in if missing."
-  (when (or stanza-id server-id)
-    (sqlite-execute
-     db
-     "UPDATE message SET stanza_id = COALESCE(stanza_id, ?), \
-server_id = COALESCE(server_id, ?) \
-WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? \
-AND stanza_id IS NULL AND server_id IS NULL"
-     (list stanza-id server-id account peer timestamp body))))
+(defun jabber-db--backfill-message-ids (db message-id stanza-id server-id)
+  "Fill missing STANZA-ID and SERVER-ID on exact MESSAGE-ID in DB."
+  (sqlite-execute
+   db "UPDATE message SET stanza_id = COALESCE(stanza_id, ?),
+server_id = COALESCE(server_id, ?) WHERE id = ?"
+   (list stanza-id server-id message-id)))
 
-(defun jabber-db--backfill-reply-fields (db account peer stanza-id reply)
-  "Fill NULL reply columns in DB for ACCOUNT/PEER using STANZA-ID and REPLY.
-Completes rows stored before the reply elements were attached to
-the outgoing stanza (e.g. the OMEMO pending echo)."
+(defun jabber-db--backfill-reply-fields (db message-id reply)
+  "Fill NULL reply columns in DB for exact MESSAGE-ID using REPLY.
+Complete rows stored before the outgoing reply elements were attached."
   (pcase-let ((`(,fb-start . ,fb-end)
                (jabber-db--fallback-range-cols
                 (plist-get reply :fallback-range))))
     (sqlite-execute
-     db
-     "UPDATE message SET reply_to_id = ?, reply_to_jid = ?, \
-fallback_start = ?, fallback_end = ? \
-WHERE stanza_id = ? AND account = ? AND peer = ? AND reply_to_id IS NULL"
+     db "UPDATE message SET reply_to_id = ?, reply_to_jid = ?,
+fallback_start = ?, fallback_end = ? WHERE id = ? AND reply_to_id IS NULL"
      (list (plist-get reply :reply-to-id)
            (plist-get reply :reply-to-jid)
-           fb-start fb-end stanza-id account peer))))
-
-(defun jabber-db--duplicate-row-id
-    (db account peer timestamp body stanza-id server-id duplicate-kind)
-  "Return the exact duplicate row in DB described by DUPLICATE-KIND.
-ACCOUNT and PEER scope all identifiers.  TIMESTAMP and BODY identify a
-content match; STANZA-ID and SERVER-ID identify protocol matches."
-  (pcase duplicate-kind
-    ('server_id
-     (caar (sqlite-select
-            db "SELECT id FROM message \
-WHERE account = ? AND peer = ? AND server_id = ? ORDER BY id DESC LIMIT 1"
-            (list account peer server-id))))
-    ('stanza_id
-     (caar (sqlite-select
-            db "SELECT id FROM message \
-WHERE account = ? AND peer = ? AND stanza_id = ? ORDER BY id DESC LIMIT 1"
-            (list account peer stanza-id))))
-    ('content
-     (caar (sqlite-select
-            db "SELECT id FROM message \
-WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? \
-ORDER BY id DESC LIMIT 1"
-            (list account peer timestamp body))))))
+           fb-start fb-end message-id))))
 
 (defun jabber-db--backfill-thread-fields (db message-id thread)
   "Fill missing THREAD columns for MESSAGE-ID in DB."
@@ -1013,35 +1006,20 @@ Optional THREAD is a thread metadata plist from
 `jabber-db--extract-thread-fields'."
   (when-let* ((db (jabber-db-ensure-open)))
     (let* ((stored-timestamp (or timestamp (floor (float-time))))
-           (dup-id-col (jabber-db--detect-duplicate
-                        db account peer stored-timestamp body stanza-id
-                        server-id type))
-           message-id)
-      (pcase dup-id-col
-        ('nil
-         (setq message-id
-               (jabber-db--insert-message
-                db account peer resource occupant-id direction type body
-                stored-timestamp stanza-id server-id encrypted oob-entries
-                reply thread)))
-        ((or 'stanza_id 'server_id)
-         (jabber-db--update-duplicate-ids db account peer timestamp body
-                                          stanza-id server-id oob-entries
-                                          dup-id-col)
-         (setq message-id
-               (jabber-db--duplicate-row-id
-                db account peer stored-timestamp body stanza-id server-id
-                dup-id-col))
-         (when (and reply stanza-id)
-           (jabber-db--backfill-reply-fields db account peer stanza-id
-                                             reply)))
-        ('content
-         (jabber-db--upgrade-content-match
-          db account peer stored-timestamp body stanza-id server-id)
-         (setq message-id
-               (jabber-db--duplicate-row-id
-                db account peer stored-timestamp body stanza-id server-id
-                dup-id-col))))
+           (duplicate-id (jabber-db--detect-duplicate
+                          db account peer stored-timestamp body stanza-id
+                          server-id type direction resource occupant-id))
+           (message-id
+            (or duplicate-id
+                (jabber-db--insert-message
+                 db account peer resource occupant-id direction type body
+                 stored-timestamp stanza-id server-id encrypted oob-entries
+                 reply thread))))
+      (when duplicate-id
+        (jabber-db--update-duplicate-message db duplicate-id timestamp body oob-entries)
+        (jabber-db--backfill-message-ids db duplicate-id stanza-id server-id)
+        (when reply
+          (jabber-db--backfill-reply-fields db duplicate-id reply)))
       (jabber-db--backfill-thread-fields db message-id thread)
       (jabber-db--ensure-message-thread
        account peer type stored-timestamp stanza-id server-id thread)
@@ -1082,18 +1060,37 @@ AND direction = 'out' AND %s IS NULL"
                             column column)
                     (list timestamp account peer stanza-id))))
 
-(defun jabber-db-cascade-displayed (account peer timestamp ref-timestamp)
-  "Mark all outgoing messages before REF-TIMESTAMP as displayed.
-ACCOUNT and PEER identify the conversation.  TIMESTAMP is the
-current time to store as displayed_at.  REF-TIMESTAMP is the
-timestamp of the referenced message.  Only updates messages with
-direction=out that have delivered_at set but displayed_at IS NULL."
+(defun jabber-db-cascade-displayed
+    (account peer timestamp ref-timestamp &optional ref-id)
+  "Mark delivered outgoing messages through the referenced row as displayed.
+ACCOUNT and PEER identify the conversation.  TIMESTAMP is the time
+stored in displayed_at.  REF-TIMESTAMP is the referenced message's
+epoch; optional REF-ID is its stanza ID and takes precedence.
+Resolve exactly one outgoing row, then order by its stored timestamp
+and primary row ID to break equal-second ties within its message type.
+Without REF-ID, accept only an unambiguous stored REF-TIMESTAMP.
+Missing, ambiguous or older boundaries leave every row unchanged.
+Preserve existing displayed_at values and skip undelivered messages."
   (when jabber-db--connection
-    (sqlite-execute jabber-db--connection
-                    "UPDATE message SET displayed_at = ? \
+    (sqlite-execute
+     jabber-db--connection
+     "WITH reference AS (\
+SELECT id, timestamp, type FROM message \
 WHERE account = ? AND peer = ? AND direction = 'out' \
-AND timestamp <= ? AND delivered_at IS NOT NULL AND displayed_at IS NULL"
-                    (list timestamp account peer ref-timestamp))))
+AND CASE WHEN ? IS NOT NULL THEN stanza_id = ? ELSE timestamp = ? END) \
+UPDATE message SET displayed_at = ? \
+WHERE account = ? AND peer = ? AND direction = 'out' \
+AND (SELECT count(*) FROM reference) = 1 \
+AND type = (SELECT type FROM reference) \
+AND (timestamp, id) <= (SELECT timestamp, id FROM reference) \
+AND delivered_at IS NOT NULL AND displayed_at IS NULL \
+AND NOT EXISTS (SELECT 1 FROM message AS newer \
+WHERE newer.account = ? AND newer.peer = ? AND newer.direction = 'out' \
+AND newer.type = (SELECT type FROM reference) \
+AND newer.displayed_at IS NOT NULL \
+AND (newer.timestamp, newer.id) > (SELECT timestamp, id FROM reference))"
+     (list account peer ref-id ref-id ref-timestamp timestamp
+           account peer account peer))))
 
 (defun jabber-db-message-retraction-candidates (account peer server-id)
   "Return stored MUC retraction candidates for SERVER-ID.
@@ -1103,28 +1100,30 @@ existing retraction state for one exact row."
     (mapcar
      (lambda (row)
        (seq-let (row-id resource occupant-id retracted-by
-                        retraction-reason)
+                        retraction-reason retracted)
            row
          (list :row-id row-id
+               :retracted (eql retracted 1)
                :from (if resource (concat peer "/" resource) peer)
                :occupant-id occupant-id
                :retracted-by retracted-by
                :retraction-reason retraction-reason)))
      (sqlite-select
       db
-      "SELECT id, resource, occupant_id, retracted_by, retraction_reason \
+      "SELECT id, resource, occupant_id, retracted_by, retraction_reason, retracted \
 FROM message \
 WHERE account = ? AND peer = ? AND type = 'groupchat' AND server_id = ?"
       (list account peer server-id)))))
 
 (defun jabber-db-retract-message-row (row-id retracted-by &optional reason)
   "Mark primary message ROW-ID as retracted by RETRACTED-BY.
+RETRACTED-BY may be nil when attribution is unavailable.
 Optional REASON is the human-readable retraction reason string.
 Return non-nil only when this call performed the first retraction."
   (when-let* ((db (and row-id (jabber-db-ensure-open))))
     (sqlite-execute db
-                    "UPDATE message SET retracted_by = ?, retraction_reason = ? \
-WHERE id = ? AND retracted_by IS NULL"
+                    "UPDATE message SET retracted = 1, retracted_by = ?, retraction_reason = ? \
+WHERE id = ? AND retracted = 0"
                     (list retracted-by reason row-id))
     (= 1 (caar (sqlite-select db "SELECT changes()")))))
 
@@ -1135,7 +1134,7 @@ Conversation-aware callers should use
 `jabber-db-retract-message-in-peer'."
   (when (and jabber-db--connection server-id)
     (sqlite-execute jabber-db--connection
-                    "UPDATE message SET retracted_by = ?, retraction_reason = ? \
+                    "UPDATE message SET retracted = 1, retracted_by = ?, retraction_reason = ? \
 WHERE server_id = ? AND \
 (SELECT COUNT(*) FROM message WHERE server_id = ?) = 1"
                     (list retracted-by reason server-id server-id))))
@@ -1143,11 +1142,11 @@ WHERE server_id = ? AND \
 (defun jabber-db-retract-message-in-peer (account peer server-id retracted-by
                                                   &optional reason)
   "Mark SERVER-ID as retracted in PEER on ACCOUNT.
-RETRACTED-BY is the moderator or sender JID.  Optional REASON is
-the human-readable retraction reason string."
+RETRACTED-BY is the moderator or sender JID, or nil if anonymous.
+Optional REASON is the human-readable retraction reason string."
   (when (and jabber-db--connection account peer server-id)
     (sqlite-execute jabber-db--connection
-                    "UPDATE message SET retracted_by = ?, retraction_reason = ? \
+                    "UPDATE message SET retracted = 1, retracted_by = ?, retraction_reason = ? \
 WHERE account = ? AND peer = ? AND server_id = ?"
                     (list retracted-by reason account peer server-id))))
 
@@ -1183,7 +1182,7 @@ Only returns non-retracted messages that have a server-id."
             (sqlite-select db
                            "SELECT server_id FROM message \
 WHERE account = ? AND peer = ? AND occupant_id = ? \
-AND server_id IS NOT NULL AND retracted_by IS NULL"
+AND server_id IS NOT NULL AND retracted = 0"
                            (list account peer occupant-id)))))
 
 (defun jabber-db-correct-message (stanza-id new-body)
@@ -1263,7 +1262,7 @@ origin id, so match on stanza_id.  ACCOUNT and PEER scope the lookup."
     (caar (sqlite-select
            db
            (format "SELECT body FROM message \
-WHERE account = ? AND peer = ? AND %s = ? AND retracted_by IS NULL \
+WHERE account = ? AND peer = ? AND %s = ? AND retracted = 0 \
 LIMIT 1"
                    (if muc-p "server_id" "stanza_id"))
            (list account peer reply-id)))))
@@ -1379,7 +1378,7 @@ ORDER BY message_id, updated_at, rowid"
 resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
 server_id, retracted_by, retraction_reason, edited, occupant_id, \
 reply_to_id, reply_to_jid, fallback_start, fallback_end, \
-thread_id, thread_parent_id FROM message"
+thread_id, thread_parent_id, retracted FROM message"
   "Columns shared by parent and thread backlog queries.")
 
 (defun jabber-db--row-to-plist (row)
@@ -1390,7 +1389,7 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
                encrypted stanza-id delivered-at
                displayed-at server-id retracted-by retraction-reason edited
                occupant-id reply-to-id reply-to-jid fallback-start fallback-end
-               thread-id thread-parent-id)
+               thread-id thread-parent-id retracted)
       row
     (let ((from (cond
                  ;; Incoming: peer/resource (or just peer if no resource).
@@ -1411,7 +1410,7 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
             :timestamp (seconds-to-time timestamp)
             :delayed t
             :encrypted (and encrypted (not (zerop encrypted)))
-            :retracted (and retracted-by t)
+            :retracted (eql retracted 1)
             :retracted-by retracted-by
             :retraction-reason retraction-reason
             :edited (and edited (not (zerop edited)))
@@ -1512,7 +1511,7 @@ AND dedicated = 1"
 COALESCE(MAX(m.timestamp), mt.created_at) AS latest_at,
 root.id, root.stanza_id, root.server_id, root.resource,
 root.direction, root.body, root.timestamp,
-root.retracted_by, root.retraction_reason,
+root.retracted_by, root.retraction_reason, root.retracted,
 COALESCE(SUM(CASE WHEN m.id IS NULL THEN 0
 WHEN (CASE WHEN mt.root_message_id IS NOT NULL
 THEN m.id = mt.root_message_id
@@ -1568,6 +1567,7 @@ LIMIT 50"
   (seq-let (thread-id parent-id created-at latest-at root-id root-stanza-id
                       root-server-id root-resource root-direction root-body
                       root-timestamp root-retracted-by root-retraction-reason
+                      root-retracted
                       reply-count local-reply-count latest-in-id read-message-id
                       title)
       row
@@ -1590,7 +1590,7 @@ LIMIT 50"
                             account peer type root-resource root-direction)
                      :resource root-resource :body (or root-body "")
                      :timestamp (seconds-to-time root-timestamp)
-                     :retracted (and root-retracted-by t)
+                     :retracted (eql root-retracted 1)
                      :retracted-by root-retracted-by
                      :retraction-reason root-retraction-reason
                      :thread-id thread-id :thread-parent-id parent-id

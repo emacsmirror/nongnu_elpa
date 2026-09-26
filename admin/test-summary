@@ -1,0 +1,41 @@
+;;; test-summary --- Validate and aggregate ERT receipts -*- lexical-binding: t; -*-
+
+(require 'cl-lib)
+
+(defun jabber-test-read-record (file)
+  "Read exactly one Lisp record from FILE."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let ((record (read (current-buffer))))
+      (skip-chars-forward " \t\r\n")
+      (unless (eobp) (error "Trailing receipt data: %s" file))
+      record)))
+
+(let ((total 0) (expected 0) (unexpected 0) (skipped 0) (bad 0))
+  (unless command-line-args-left (error "No test files selected"))
+  (dolist (stamp command-line-args-left)
+    (condition-case err
+        (let ((status (jabber-test-read-record stamp))
+              (record (jabber-test-read-record (concat stamp ".ert"))))
+          (unless (and (integerp status) (<= 0 status 255)
+                       (proper-list-p record) (= (length record) 5)
+                       (eq (car record) 'complete)
+                       (cl-every (lambda (n) (and (integerp n) (>= n 0)))
+                                 (cdr record))
+                       (> (nth 1 record) 0)
+                       (= (nth 1 record) (apply #'+ (cddr record))))
+            (error "Invalid process or completion record"))
+          (cl-incf total (nth 1 record))
+          (cl-incf expected (nth 2 record))
+          (cl-incf unexpected (nth 3 record))
+          (cl-incf skipped (nth 4 record))
+          (unless (and (zerop status) (zerop (nth 3 record)))
+            (error "Process exit %s; %s unexpected results" status (nth 3 record)))
+          (princ (format "OK %s (%s tests)\n" stamp (nth 1 record))))
+      (error
+       (cl-incf bad)
+       (princ (format "FAIL %s: %s\n  Diagnostics: %s.log\n"
+                      stamp (error-message-string err) stamp)))))
+  (princ (format "%d completed tests: %d expected, %d unexpected, %d skipped; %d failed files\n"
+                 total expected unexpected skipped bad))
+  (kill-emacs (if (zerop bad) 0 1)))

@@ -322,110 +322,139 @@ Call SUCCESS or FAILURE when negotiation reaches a terminal state."
              (not jabber-debug-keep-process-buffers))
     (kill-buffer buffer)))
 
+(defun jabber-conn--cancel-connect (fsm &optional replacement)
+  "Revoke FSM's pending connection attempt and release its resources.
+Admit REPLACEMENT, or nil for cancellation, before retiring the old attempt."
+  (let ((cancel (get fsm :connect-cancel)))
+    ;; Retire admission before cleanup can run sentinels or buffer hooks.
+    (put fsm :connect-attempt replacement)
+    (put fsm :connect-cancel nil)
+    (when cancel
+      (funcall cancel))))
+
 (defun jabber-network-connect-async
     (fsm server network-server port &optional proxy)
   "Asynchronously connect FSM to SERVER, trying each SRV target in turn.
 NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults.
-When PROXY is non-nil, establish SOCKS5 before reporting success."
-  ;; Get all potential targets...
+When PROXY is non-nil, establish SOCKS5 before reporting success.
+FSM owns the attempt through its :connect-attempt and :connect-cancel
+properties until protocol handoff or cancellation."
   (let* ((proxy (jabber-conn--normalize-proxy proxy))
-         (targets (jabber-srv-targets server network-server port proxy))
-	errors)
+         (attempt (make-symbol "connect-attempt"))
+         errors)
     ;; ...and connect to them one after another, asynchronously, until
     ;; connection succeeds.
     (cl-labels
-        ((connect
-           (target remaining-targets)
-	   (let ((host (nth 0 target))
-		 (svc (nth 1 target))
-		 (directtls-p (nth 2 target))
-		 (proc nil)
-		 (process-buffer nil)
-		 (timeout-timer nil)
-		 (settled nil))
-	     (cl-labels ((cancel-timeout
-			   ()
-			   (when timeout-timer
-			     (cancel-timer timeout-timer)
-			     (setq timeout-timer nil)))
-			 (connection-successful
-			   (c)
-			   (unless settled
-			     (setq settled t)
-			     (cancel-timeout)
-			     ;; Direct success runs inside the old sentinel, so it
-			     ;; must remain asynchronous.  SOCKS success runs in
-			     ;; the filter and changes sentinel ownership before
-			     ;; a close can be delivered.
-			     (if proxy
-				 (fsm-send-sync
-				  fsm (list :connected c directtls-p))
-			       (fsm-send
-				fsm (list :connected c directtls-p)))))
-			 (connection-failed
-			   (c status)
-			   (unless settled
-			     (setq settled t)
-			     (cancel-timeout)
-			     (when (and (> (length status) 0)
-					(eq (aref status (1- (length status))) ?\n))
-			       (setq status (substring status 0 -1)))
-			     (let ((err
-				    (format "Couldn't connect to %s:%s: %s"
-					    host svc status)))
-			       (message "%s" err)
-			       (push err errors))
-			     (jabber-conn--delete-failed-process c process-buffer)
-			     (if remaining-targets
-				 (progn
-				   (message
-				    "Connecting to %s:%s..."
-				    (nth 0 (car remaining-targets))
-				    (nth 1 (car remaining-targets)))
-				   (connect (car remaining-targets)
-					    (cdr remaining-targets)))
-			       (fsm-send fsm (list :connection-failed
-						   (nreverse errors)))))))
-	       (condition-case e
-		   (let ((buffer (generate-new-buffer jabber-process-buffer)))
-                     (setq process-buffer buffer)
-                     (setq proc
-                           (jabber-conn--make-process
-                            host svc buffer directtls-p server proxy))
-		     (set-process-sentinel
-		      proc
-		      (lambda (connection status)
-			(cond
-			 ((string-match "^open" status)
-			  (if proxy
-			      (jabber-conn--start-socks5
-			       connection host svc
-			       #'connection-successful #'connection-failed)
-			    (connection-successful connection)))
-			 ((string-match "^failed" status)
-			  (connection-failed connection status))
-			 ((string-match "^deleted" status)
-			  nil)
-			 (t
-			  (if proxy
-			      (connection-failed connection status)
-			    (message "Unknown sentinel status `%s'" status))))))
-		     (when jabber-connection-timeout
-		       (setq timeout-timer
-			     (run-at-time
-			      jabber-connection-timeout nil
-			      (lambda ()
-				(connection-failed
-				 proc "connection timed out"))))))
-		 (file-error
-                  (jabber-conn--delete-failed-process proc process-buffer)
-		  (connection-failed nil (car (cddr e))))
-		 (error
-                  (jabber-conn--delete-failed-process proc process-buffer)
-		  (connection-failed nil (error-message-string e))))))))
-      (message "Connecting to %s:%s..."
-	       (nth 0 (car targets)) (nth 1 (car targets)))
-      (connect (car targets) (cdr targets)))))
+     ((active-p () (eq attempt (get fsm :connect-attempt)))
+      (connect
+        (target remaining-targets)
+        (when (active-p)
+	  (let ((host (nth 0 target))
+		(svc (nth 1 target))
+		(directtls-p (nth 2 target))
+		(proc nil)
+		(process-buffer nil)
+		(timeout-timer nil)
+		(settled nil))
+	    (cl-labels ((cancel-timeout
+			  ()
+			  (when timeout-timer
+			    (cancel-timer timeout-timer)
+			    (setq timeout-timer nil)))
+			(connection-successful
+			  (c)
+			  (when (and (active-p) (not settled))
+			    (setq settled t)
+			    (cancel-timeout)
+			    ;; Direct success runs inside the old sentinel, so it
+			    ;; must remain asynchronous.  SOCKS success runs in
+			    ;; the filter and changes sentinel ownership before
+			    ;; a close can be delivered.
+			    (if proxy
+				(fsm-send-sync
+				 fsm (list :connected c directtls-p attempt))
+			      (fsm-send
+			       fsm (list :connected c directtls-p attempt)))))
+			(connection-failed
+			  (c status)
+			  (when (and (active-p) (not settled))
+			    (setq settled t)
+			    (cancel-timeout)
+			    (when (and (> (length status) 0)
+				       (eq (aref status (1- (length status))) ?\n))
+			      (setq status (substring status 0 -1)))
+			    (let ((err
+				   (format "Couldn't connect to %s:%s: %s"
+					   host svc status)))
+			      (message "%s" err)
+			      (push err errors))
+			    (jabber-conn--delete-failed-process c process-buffer)
+			    (when (active-p)
+                              (if remaining-targets
+				  (progn
+				    (message
+				     "Connecting to %s:%s..."
+				     (nth 0 (car remaining-targets))
+				     (nth 1 (car remaining-targets)))
+				    (connect (car remaining-targets)
+					     (cdr remaining-targets)))
+				(fsm-send fsm (list :connection-failed
+						    (nreverse errors) attempt)))))))
+		       (put fsm :connect-cancel
+			    (lambda ()
+			      (setq settled t)
+			      (cancel-timeout)
+			      (when (processp proc)
+				(set-process-filter proc nil)
+				(set-process-sentinel proc #'ignore))
+			      (jabber-conn--delete-failed-process proc process-buffer)))
+		       (condition-case e
+			   (let ((buffer (generate-new-buffer jabber-process-buffer)))
+			     (setq process-buffer buffer)
+			     (setq proc
+				   (jabber-conn--make-process
+				    host svc buffer directtls-p server proxy))
+			     (set-process-sentinel
+			      proc
+			      (lambda (connection status)
+				(when (and (active-p) (not settled) (eq connection proc))
+				  (cond
+				   ((string-match "^open" status)
+				    (if proxy
+					(jabber-conn--start-socks5
+					 connection host svc
+					 #'connection-successful #'connection-failed)
+				      (connection-successful connection)))
+				   ((string-match "^failed" status)
+				    (connection-failed connection status))
+				   ((string-match "^deleted" status)
+				    nil)
+				   (t
+				    (if proxy
+					(connection-failed connection status)
+				      (message "Unknown sentinel status `%s'" status)))))))
+			     (when (and (active-p) (not settled) jabber-connection-timeout)
+			       (setq timeout-timer
+				     (run-at-time
+				      jabber-connection-timeout nil
+				      (lambda ()
+					(connection-failed
+					 proc "connection timed out")))))
+			     (unless (active-p)
+			       (jabber-conn--delete-failed-process proc process-buffer)))
+			 (file-error
+			  (connection-failed proc (car (cddr e))))
+			 (error
+			  (connection-failed proc (error-message-string e)))))))))
+     ;; Both predecessor cleanup and discovery can yield to stop/replacement.
+     ;; Publish this admission first, then revalidate at each boundary.
+     (jabber-conn--cancel-connect fsm attempt)
+     (when (active-p)
+       (let ((targets (jabber-srv-targets server network-server port proxy)))
+         (when (active-p)
+           (message "Connecting to %s:%s..."
+                    (nth 0 (car targets)) (nth 1 (car targets)))
+           (connect (car targets) (cdr targets))))))))
 
 (defun jabber-network-send (connection string)
   "Send STRING via the plain TCP/IP CONNECTION to the Jabber server."

@@ -3684,6 +3684,84 @@
                                  (plist-get (fsm-get-state-data jc) :sm-pending-queue))
                           (list old new)))))))))
 
+(ert-deftest jabber-sm-test-ack-parser-keeps-pending-fifo ()
+  "An IQ callback between acknowledgement and drain cannot overtake messages."
+  (let* ((jc (make-symbol "sm-parser"))
+         (jabber-connections (list jc))
+         (jabber-sm-max-in-flight 1)
+         (jabber-open-info-queries nil)
+         (jabber-iq-chain '(jabber-process-iq))
+         (buffer (generate-new-buffer " *jabber-sm-parser*"))
+         (proc (make-pipe-process :name "jabber-sm-parser" :buffer buffer :noquery t))
+         sent callbacks
+         (state (jabber-sm--reset
+                 (list :connection proc
+                       :send-function (lambda (_proc wire) (push wire sent))))))
+    (unwind-protect
+        (progn
+          (put jc :name 'jabber-connection)
+          (put jc :state :session-established)
+          (put jc :state-data state)
+          (plist-put state :sm-enabled t)
+          (jabber-send-sexp jc '(message nil (body nil "first"))
+                            (lambda () (push 'first callbacks)))
+          (jabber-send-sexp jc '(message nil (body nil "second"))
+                            (lambda () (push 'second callbacks)))
+          (push (list "fifo-iq"
+                      (cons (lambda (conn _stanza _context)
+                              (jabber-send-sexp
+                               conn '(message nil (body nil "third"))
+                               (lambda () (push 'third callbacks)))) nil)
+                      nil nil)
+                jabber-open-info-queries)
+          (jabber-pre-filter
+           proc "<a xmlns='urn:xmpp:sm:3' h='1'/><iq type='result' id='fifo-iq'/>" jc)
+          ;; Exercise the native FSM and its deferred zero-delay timers.
+          (let ((deadline (+ (float-time) 2)))
+            (while (and (< (length sent) 2) (< (float-time) deadline))
+              (accept-process-output nil 0.01)))
+          (should (= (length sent) 2))
+          (should (string-match-p "second" (car sent)))
+          (should (equal (reverse callbacks) '(first second)))
+          (jabber-pre-filter proc "<a xmlns='urn:xmpp:sm:3' h='2'/>" jc)
+          (let ((deadline (+ (float-time) 2)))
+            (while (and (< (length sent) 3) (< (float-time) deadline))
+              (accept-process-output nil 0.01)))
+          (should (= (length sent) 3))
+          (should (string-match-p "third" (car sent)))
+          (should (equal (reverse callbacks) '(first second third)))
+          (should (= (plist-get (fsm-get-state-data jc) :sm-outbound-count) 3))
+          (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))
+          (jabber-pre-filter proc "<a xmlns='urn:xmpp:sm:3' h='3'/>" jc)
+          (let ((deadline (+ (float-time) 2)))
+            (while (and (plist-get (fsm-get-state-data jc) :sm-outbound-queue)
+                        (< (float-time) deadline))
+              (accept-process-output nil 0.01)))
+          (should-not (plist-get (fsm-get-state-data jc) :sm-outbound-queue))
+          (should (equal (reverse callbacks) '(first second third))))
+      (put jc :state nil)
+      (delete-process proc)
+      (kill-buffer buffer))))
+
+(ert-deftest jabber-sm-test-pending-barrier-respects-priority-and-room-gates ()
+  "Eligible pending work blocks peers, not higher priority or bootstrap IQ."
+  (let ((state (jabber-sm--reset (list :connection 'transport))))
+    (plist-put state :sm-enabled t)
+    (jabber-sm--enqueue-pending state '(presence nil))
+    (should-not (jabber-sm--should-queue-p state '(message nil)))
+    (should (jabber-sm--should-queue-p state '(presence nil)))
+    (should-not (jabber-sm--should-queue-p state '(iq nil)))
+    (plist-put state :sm-pending-queue nil)
+    (jabber-sm--enqueue-pending state '(message nil))
+    (should (jabber-sm--should-queue-p state '(message nil)))
+    (should (jabber-sm--should-queue-p state '(presence nil)))
+    (should-not (jabber-sm--should-queue-p state '(iq nil)))
+    (plist-put state :sm-pending-queue
+               (list (jabber-sm--pending-entry
+                      '(message ((to . "room@example.test") (type . "groupchat")))
+                      nil nil '(:retained-room "room@example.test"))))
+    (should-not (jabber-sm--should-queue-p state '(message ((to . "friend@example.test")))))))
+
 (provide 'jabber-test-sm)
 
 ;;; jabber-test-sm.el ends here

@@ -41,6 +41,9 @@
 (declare-function jabber-chat-ewoc-unregister-node
                   "jabber-chatbuffer" (node))
 (autoload 'jabber-chat-ewoc-unregister-node "jabber-chatbuffer")
+(declare-function jabber-chat-buffer--call-with-transcript
+                  "jabber-chatbuffer" (function &rest args))
+(autoload 'jabber-chat-buffer--call-with-transcript "jabber-chatbuffer")
 
 (defun jabber-truncate-top (buffer &optional ewoc)
   "Clean old history from a chat BUFFER.
@@ -52,24 +55,27 @@ Note that this might interfere with
 `jabber-chat-display-more-backlog': you ask for more history, you
 get it, and then it just gets deleted."
   (interactive)
-  (let* ((buffer-undo-list t)
-         (inhibit-read-only t)
-         (work-ewoc (if ewoc ewoc jabber-chat-ewoc))
-         (delete-before
-          ;; go back one node, to make this function "idempotent"
-          (ewoc-prev
-           work-ewoc
-           (ewoc-locate work-ewoc
-                        (with-current-buffer buffer
-                          (goto-char (point-max))
-                          (forward-line (- jabber-log-lines-to-keep))
-                          (point))))))
-    (while delete-before
-      (jabber-chat-ewoc-unregister-node delete-before)
-      (setq delete-before
-            (prog1
-                (ewoc-prev work-ewoc delete-before)
-              (ewoc-delete work-ewoc delete-before))))))
+  (with-current-buffer buffer
+    (save-restriction
+      (widen)
+      (jabber-chat-buffer--call-with-transcript
+       (lambda ()
+         (let* ((work-ewoc (or ewoc jabber-chat-ewoc))
+                (delete-before
+                 ;; Keep whole nodes, including the one crossing the cutoff.
+                 (ewoc-prev
+                  work-ewoc
+                  (ewoc-locate work-ewoc
+                               (save-excursion
+                                 (goto-char (point-max))
+                                 (forward-line (- jabber-log-lines-to-keep))
+                                 (point))))))
+           (while delete-before
+             (jabber-chat-ewoc-unregister-node delete-before)
+             (setq delete-before
+                   (prog1
+                       (ewoc-prev work-ewoc delete-before)
+                     (ewoc-delete work-ewoc delete-before))))))))))
 
 (defun jabber-truncate-muc (_nick _group buffer _text _proposed-alert)
   "Clean old history from the MUC BUFFER.

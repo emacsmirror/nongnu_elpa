@@ -30,6 +30,10 @@
 (require 'jabber-stanza)
 (require 'jabber-util)
 (require 'jabber-truncate)
+;; Chat-buffer support requires the core, which loads the console.
+(declare-function jabber-chat-buffer--call-with-transcript
+                  "jabber-chatbuffer" (function &rest args))
+(autoload 'jabber-chat-buffer--call-with-transcript "jabber-chatbuffer")
 (require 'xml)
 (require 'ewoc)
 (require 'sgml-mode) ;we base on this mode to hightlight XML
@@ -40,8 +44,9 @@
   :group 'jabber-debug)
 
 (defcustom jabber-console-truncate-lines 3000
-  "Maximum number of lines in console buffer.
-Not truncate if set to 0."
+  "Approximate number of lines to retain in the console buffer.
+Keep whole XML entries at the cutoff and always retain the newest entry.
+Zero disables truncation.  The editable draft is never truncated."
   :type 'integer
   :group 'jabber-debug)
 
@@ -54,7 +59,10 @@ what kind of chat buffer is being created.")
   "The ewoc showing the XML elements of this stream buffer.")
 
 (defvar-keymap jabber-console-mode-map
-  :parent jabber-common-keymap
+  ;; Keep common commands without inheriting special-mode's typing suppression.
+  :parent (let ((map (copy-keymap jabber-common-keymap)))
+            (set-keymap-parent map sgml-mode-map)
+            map)
   "RET" #'jabber-chat-buffer-send)
 
 (defun jabber-console-create-buffer (jc)
@@ -85,7 +93,8 @@ what kind of chat buffer is being created.")
 
 (defun jabber-console-pp (data)
   "Pretty-print DATA, an XML-sexp or raw bytes, into the console buffer."
-  (let ((direction (car data))
+  (let ((start (point))
+        (direction (car data))
         (xml-list (cdr data))
         (raw (cadr data)))
     (jabber-console-comment direction)
@@ -100,7 +109,11 @@ what kind of chat buffer is being created.")
         (xml-print xml-list)
         (when (stringp jabber-debug-log-xml)
           (jabber-append-string-to-file
-           "\n" jabber-debug-log-xml 'xml-print xml-list))))))
+           "\n" jabber-debug-log-xml 'xml-print xml-list))))
+    ;; Own the separator too: EWOC's default wrapper adds it after this guard.
+    (insert "\n")
+    (add-text-properties start (point)
+                         '(read-only t front-sticky t rear-nonsticky t))))
 
 (define-derived-mode jabber-console-mode sgml-mode "Jabber Console"
   "Major mode for debug XMPP protocol."
@@ -108,9 +121,9 @@ what kind of chat buffer is being created.")
   (setq-local jabber-point-insert nil)
   (setq-local jabber-console-ewoc nil)
 
-  (unless jabber-console-ewoc
+  (let ((buffer-undo-list t))
     (setq jabber-console-ewoc
-	  (ewoc-create #'jabber-console-pp nil "<!-- + -->"))
+          (ewoc-create #'jabber-console-pp "\n" "<!-- + -->\n" t))
     (goto-char (point-max))
     (put-text-property (point-min) (point) 'read-only t)
     (let ((inhibit-read-only t))
@@ -130,13 +143,13 @@ what kind of chat buffer is being created.")
 (defun jabber-process-console (jc direction xml-data)
   "Log XML-DATA i/o for JC as XML in \"*-jabber-console-JID-*\" buffer.
 DIRECTION is a marker string (typically \"send\", \"recv\", or \"raw\")."
-  (let ((buffer (get-buffer-create (jabber-console-create-buffer jc))))
-    (with-current-buffer buffer
-      (progn
-        (ewoc-enter-last jabber-console-ewoc (list direction (jabber-console-sanitize xml-data)))
-	(when (< 1  jabber-console-truncate-lines)
-	  (let ((_jabber-log-lines-to-keep jabber-console-truncate-lines))
-	    (jabber-truncate-top buffer jabber-console-ewoc)))))))
+  (with-current-buffer (jabber-console-create-buffer jc)
+    (jabber-chat-buffer--call-with-transcript
+     #'ewoc-enter-last jabber-console-ewoc
+     (list direction (jabber-console-sanitize xml-data)))
+    (when (> jabber-console-truncate-lines 0)
+      (let ((jabber-log-lines-to-keep jabber-console-truncate-lines))
+        (jabber-truncate-top (current-buffer) jabber-console-ewoc)))))
 
 (setq jabber-stanza-log-function #'jabber-process-console)
 
