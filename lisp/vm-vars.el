@@ -128,10 +128,6 @@
   "Options affecting the VM toolbar"
   :group 'vm)
 
-(defgroup vm-add-ons nil
-  "Options for non-core VM extensions"
-  :group 'vm)
-
 ;; Custom variable definitions
 
 (defcustom vm-assimilate-new-messages-sorted nil

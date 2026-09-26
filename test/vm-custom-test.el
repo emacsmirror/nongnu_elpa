@@ -74,6 +74,27 @@ too, so a genuinely untyped option is what would show here."
     (should (> (string-to-number (match-string 1 output)) 300))
     (should (equal nil (sort untyped #'string<)))))
 
+(ert-deftest vm-custom-test-every-group-has-something-in-it ()
+  "REGRESSION: no VM customize group shows the reader an empty page.
+
+`vm-add-ons' was defined and nothing was ever put in it: no option, face or
+subgroup named it, so Customize listed it under `vm' and then showed the
+reader nothing (emacs-vm/vm#857).  `vm-ext' is the group that holds the
+add-ons.
+
+Emptiness is not something a lint can see, and a group can fill up from a
+file that is loaded later, so this asks an Emacs that has loaded them all."
+  (let* ((result (vm-custom-test--run-checker))
+         (output (cdr result))
+         (empty nil))
+    (dolist (line (split-string output "\n" t))
+      (when (string-prefix-p "EMPTYGROUP " line)
+        (push (substring line (length "EMPTYGROUP ")) empty)))
+    ;; the same premise as the tests above: a load that went wrong checks nothing
+    (should (string-match "checked \\([0-9]+\\) VM customize groups" output))
+    (should (> (string-to-number (match-string 1 output)) 25))
+    (should (equal nil (sort empty #'string<)))))
+
 ;;; The misspelled option names are gone, not aliased
 
 ;; Three user options were spelled wrong in their own names.  They were

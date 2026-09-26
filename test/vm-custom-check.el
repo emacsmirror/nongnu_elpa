@@ -7,8 +7,8 @@
 ;;; Commentary:
 
 ;; Prints every VM `defcustom' whose `:type' does not accept its own default
-;; value, and every option that declares no `:type' at all, and exits non-zero
-;; if there are any of the first.  Run by
+;; value, every option that declares no `:type' at all, and every customize
+;; group with nothing in it, and exits non-zero if there are any of the first.  Run by
 ;; `vm-custom-test-every-type-accepts-its-own-default', and by hand as
 ;;
 ;;     emacs -Q --batch -L lisp -l test/vm-custom-check.el
@@ -68,6 +68,23 @@ a second option either, and resolving it here says so once
   (seq-filter (lambda (sym) (get sym 'custom-type))
               (vm-custom-check-options)))
 
+(defun vm-custom-check-groups ()
+  "Return every VM customize group, sorted by name."
+  (let ((out nil))
+    (mapatoms
+     (lambda (sym)
+       (when (and (string-prefix-p "vm" (symbol-name sym))
+                  (get sym 'group-documentation))
+         (push sym out))))
+    (sort out (lambda (a b) (string< (symbol-name a) (symbol-name b))))))
+
+(defun vm-custom-check-empty-groups ()
+  "Return every VM customize group that holds nothing, sorted by name.
+Customize shows such a group in its parent and then shows the reader an
+empty page, which says the options are somewhere they are not."
+  (seq-remove (lambda (sym) (get sym 'custom-group))
+              (vm-custom-check-groups)))
+
 (defun vm-custom-check-untyped ()
   "Return every VM option that declares no `:type', sorted by name.
 Customize offers a raw sexp editor for one of those, which asks the reader
@@ -94,7 +111,11 @@ Return a cons of (CHECKED . MISMATCHES)."
       (princ (format "MISMATCH %s\n" line)))
     (dolist (sym (vm-custom-check-untyped))
       (princ (format "UNTYPED %s\n" sym)))
+    (dolist (sym (vm-custom-check-empty-groups))
+      (princ (format "EMPTYGROUP %s\n" sym)))
     (princ (format "checked %d VM defcustoms\n" (length customs)))
+    (princ (format "checked %d VM customize groups\n"
+                   (length (vm-custom-check-groups))))
     (cons (length customs) (length mismatched))))
 
 (when noninteractive
