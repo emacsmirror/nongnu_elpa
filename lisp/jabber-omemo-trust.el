@@ -327,10 +327,8 @@ server-side device list and delete its bundle PubSub node."
           (when (= did our-did)
             (user-error "Cannot delete the current device"))
           (when (y-or-n-p (format "Remove device %d from server and delete local data? " did))
-            (jabber-omemo-store-delete-trust jabber-omemo-trust--account
-                                             jabber-omemo-trust--peer did)
-            (jabber-omemo-store-delete-session jabber-omemo-trust--account
-                                               jabber-omemo-trust--peer did)
+            (jabber-omemo--delete-session jabber-omemo-trust--account
+                                         jabber-omemo-trust--peer did t)
             (setq jabber-omemo-trust--fetched
                   (cl-remove-if (lambda (entry) (= (car entry) did))
                                 jabber-omemo-trust--fetched))
@@ -344,10 +342,8 @@ server-side device list and delete its bundle PubSub node."
             (tabulated-list-print t)
             (message "Device %d removed" did)))
       (when (y-or-n-p (format "Delete key and session for device %d? " did))
-        (jabber-omemo-store-delete-trust jabber-omemo-trust--account
-                                         jabber-omemo-trust--peer did)
-        (jabber-omemo-store-delete-session jabber-omemo-trust--account
-                                           jabber-omemo-trust--peer did)
+        (jabber-omemo--delete-session jabber-omemo-trust--account
+                                     jabber-omemo-trust--peer did t)
         (tabulated-list-print t)
         (message "Device %d deleted" did)))))
 

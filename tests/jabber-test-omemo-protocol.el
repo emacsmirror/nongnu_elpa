@@ -571,7 +571,7 @@ skipped message keys, so no fresh-session fallback is needed."
                    (should-not
                     (gethash (jabber-omemo--session-key account peer did)
                              jabber-omemo--sessions))
-                   (funcall callback (list (cons did 'fresh-session))))))
+                   (funcall callback (list (list did account peer 'fresh-session))))))
         (jabber-omemo-store-save-trust account peer did "identity" 2)
         (jabber-omemo-store-save-session account peer did "stale-session")
         (puthash (jabber-omemo--session-key account peer did)
@@ -876,6 +876,91 @@ Skipped ratchet keys persist inside the session blob."
         ;; No separate skipped-key rows are written or consumed.
         (should (null (jabber-omemo-store-all-skipped-keys
                        "me@example.com" "alice@example.com" 111)))))))
+
+(ert-deftest jabber-test-omemo-protocol-malformed-fetch-completes ()
+  "Malformed base64 completes the real bundle response with failure."
+  (let ((calls 0) result escaped)
+    (cl-letf (((symbol-function 'jabber-omemo--request-peer)
+               (lambda (_jc _jid _node success _failure _callback)
+                 (funcall success nil
+                          '(iq () (pubsub () (items () (item ()
+                            (bundle ()
+                              (signedPreKeyPublic ((signedPreKeyId . "1")) "%%%%")
+                              (signedPreKeySignature () "YQ==")
+                              (identityKey () "YQ==")))))) nil))))
+      (condition-case err
+          (jabber-omemo--fetch-bundle
+           'fake-jc "peer@example.com" 7
+           (lambda (value) (cl-incf calls) (setq result value)))
+        (error (setq escaped err)))
+      (should-not escaped)
+      (should (= calls 1))
+      (should-not result))))
+
+(ert-deftest jabber-test-omemo-protocol-bundle-response-completion-matrix ()
+  "Malformed fields settle acquisition and publication without stranding state."
+  (dolist (field '(signedPreKeyPublic signedPreKeySignature identityKey preKeyPublic))
+    (dolist (text '("%%%%" "" (nested nil "not text")))
+      (let* ((bundle (copy-tree
+                      '(bundle ()
+                         (signedPreKeyPublic ((signedPreKeyId . "1")) "YQ==")
+                         (signedPreKeySignature () "YQ==")
+                         (identityKey () "YQ==")
+                         (prekeys () (preKeyPublic ((preKeyId . "1")) "YQ==")))))
+             (container (if (eq field 'preKeyPublic)
+                            (car (jabber-xml-get-children bundle 'prekeys))
+                          bundle))
+             (element (car (jabber-xml-get-children container field)))
+             (jabber-omemo--bundle-publishes-in-flight (make-hash-table :test #'equal))
+             (calls 0) (published 0) result)
+        (setcar (cddr element) text)
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (_) "me@example.com"))
+                  ((symbol-function 'jabber-omemo--get-device-id) (lambda (_) 99))
+                  ((symbol-function 'jabber-omemo--get-session) (lambda (&rest _) nil))
+                  ((symbol-function 'jabber-omemo--get-store) #'ignore)
+                  ((symbol-function 'jabber-omemo-get-bundle) #'ignore)
+                  ((symbol-function 'jabber-omemo-refill-pre-keys) #'ignore)
+                  ((symbol-function 'jabber-omemo--persist-store) #'ignore)
+                  ((symbol-function 'jabber-omemo--publish-bundle)
+                   (lambda (_) (cl-incf published)))
+                  ((symbol-function 'jabber-omemo--request-peer)
+                   (lambda (_jc _jid _node success _failure _callback)
+                     (funcall success nil
+                              `(iq () (pubsub () (items () (item () ,bundle)))) nil))))
+          (jabber-omemo--ensure-sessions-for-ids
+           'fake-jc "peer@example.com" '(7 8)
+           (lambda (value) (cl-incf calls) (setq result value)))
+          (should (= calls 1))
+          (should-not result)
+          (jabber-omemo--publish-bundle-if-needed 'fake-jc)
+          (should (= published 1))
+          (should (= 0 (hash-table-count jabber-omemo--bundle-publishes-in-flight))))))))
+
+(ert-deftest jabber-test-omemo-protocol-bundle-callback-errors-not-retried ()
+  "A valid, empty or malformed response must not retry a failing consumer."
+  (dolist (bundle '(nil
+                    (bundle () (signedPreKeyPublic () "YQ==")
+                            (signedPreKeySignature () "YQ==") (identityKey () "YQ=="))
+                    (bundle () (signedPreKeyPublic () "%%%%")
+                            (signedPreKeySignature () "YQ==") (identityKey () "YQ=="))))
+    (let ((calls 0) result)
+      (cl-letf (((symbol-function 'jabber-omemo--request-peer)
+                 (lambda (_jc _jid _node success _failure _callback)
+                   (funcall success nil
+                            `(iq () (pubsub () (items () (item () ,bundle)))) nil))))
+        (should-error
+         (jabber-omemo--fetch-bundle
+          'fake-jc "peer@example.com" 7
+          (lambda (value)
+            (cl-incf calls)
+            (setq result value)
+            (error "Consumer failed"))))
+        (should (= calls 1))
+        (should (eq (not (null result))
+                    (equal (car (jabber-xml-node-children
+                                 (car (jabber-xml-get-children bundle 'signedPreKeyPublic))))
+                           "YQ==")))))))
 
 (provide 'jabber-test-omemo-protocol)
 ;;; jabber-test-omemo-protocol.el ends here

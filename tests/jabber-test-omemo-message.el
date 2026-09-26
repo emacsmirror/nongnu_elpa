@@ -138,7 +138,7 @@ Clears OMEMO in-memory caches and tears down on exit."
           (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                      (lambda (_jc) account)))
             (let ((xml (jabber-omemo--build-encrypted-xml
-                        jc (list (cons peer-did session-ptr)) enc-result)))
+                        jc (list (list peer-did account peer session-ptr)) enc-result)))
               ;; Verify structure
               (should (eq 'encrypted (car xml)))
               (should (string= "eu.siacs.conversations.axolotl"
@@ -466,12 +466,11 @@ buffer-local `jabber-group'."
 
 (ert-deftest jabber-test-omemo-message-trusted-sessions-excludes-untrusted ()
   "trusted-sessions drops devices with trust = -1."
-  (let ((sessions '((100 . fake-ptr-100) (200 . fake-ptr-200) (300 . fake-ptr-300))))
+  (let ((sessions '((100 "me@example.com" "peer100@example.com" fake-ptr-100)
+                    (200 "me@example.com" "peer200@example.com" fake-ptr-200)
+                    (300 "me@example.com" "peer300@example.com" fake-ptr-300))))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com"))
-              ((symbol-function 'jabber-omemo--session-jid-for-did)
-               (lambda (_jc did)
-                 (format "peer%d@example.com" did)))
               ((symbol-function 'jabber-omemo-store-load-trust)
                (lambda (_account _jid did)
                  (pcase did
@@ -486,11 +485,9 @@ buffer-local `jabber-group'."
 
 (ert-deftest jabber-test-omemo-message-trusted-sessions-keeps-undecided ()
   "trusted-sessions keeps devices with trust = 0 (undecided)."
-  (let ((sessions '((100 . fake-ptr-100))))
+  (let ((sessions '((100 "me@example.com" "peer@example.com" fake-ptr-100))))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com"))
-              ((symbol-function 'jabber-omemo--session-jid-for-did)
-               (lambda (_jc _did) "peer@example.com"))
               ((symbol-function 'jabber-omemo-store-load-trust)
                (lambda (_account _jid _did)
                  (list :identity-key "k" :trust 0 :first-seen 0))))
@@ -499,11 +496,9 @@ buffer-local `jabber-group'."
 
 (ert-deftest jabber-test-omemo-message-trusted-sessions-keeps-no-trust-record ()
   "trusted-sessions keeps devices with no trust record."
-  (let ((sessions '((100 . fake-ptr-100))))
+  (let ((sessions '((100 "me@example.com" "peer@example.com" fake-ptr-100))))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com"))
-              ((symbol-function 'jabber-omemo--session-jid-for-did)
-               (lambda (_jc _did) "peer@example.com"))
               ((symbol-function 'jabber-omemo-store-load-trust)
                (lambda (_account _jid _did) nil)))
       (let ((result (jabber-omemo--trusted-sessions 'fake-jc sessions)))
@@ -513,14 +508,12 @@ buffer-local `jabber-group'."
   "build-encrypted-xml signals error when all devices are untrusted."
   (cl-letf (((symbol-function 'jabber-connection-bare-jid)
              (lambda (_jc) "me@example.com"))
-            ((symbol-function 'jabber-omemo--session-jid-for-did)
-             (lambda (_jc _did) "peer@example.com"))
             ((symbol-function 'jabber-omemo-store-load-trust)
              (lambda (_account _jid _did)
                (list :identity-key "k" :trust -1 :first-seen 0))))
     (should-error
      (jabber-omemo--build-encrypted-xml
-      'fake-jc '((100 . fake-ptr)) '(:key "k" :iv "i" :ciphertext "c"))
+      'fake-jc '((100 "me@example.com" "peer@example.com" fake-ptr)) '(:key "k" :iv "i" :ciphertext "c"))
      :type 'user-error)))
 
 ;;; Group 12: Structured decrypt errors
@@ -1755,6 +1748,527 @@ session and the database blob must serialize identically."
                                   (plist-get (fsm-get-state-data jc) :sm-pending-queue))
                            (list room))))
         (fsm-stop-timer jc)))))
+
+(ert-deftest jabber-test-omemo-message-upload-encryption-failure-stops-slot ()
+  "Selected encryption must fail before slot allocation or plaintext upload."
+  (require 'jabber-httpupload)
+  (dolist (failure '(read encrypt write))
+    (let* ((temporary-file-directory (make-temp-file "jabber-upload-failure-" t))
+           (file (make-temp-file "attachment-" nil nil "private bytes"))
+           (jabber-chat-encryption 'omemo)
+           (jabber-httpupload-support '((fake-jc . "upload.example")))
+           (jabber-httpupload-pre-upload-transform #'jabber-omemo--httpupload-transform)
+           (native-comp-enable-subr-trampolines nil)
+           (read-file (symbol-function 'insert-file-contents-literally))
+           (encrypt (symbol-function 'jabber-omemo-aesgcm-encrypt))
+           (write-file (symbol-function 'write-region))
+           slots uploads)
+      (unwind-protect
+          (cl-letf (((symbol-function 'insert-file-contents-literally)
+                     (lambda (&rest args)
+                       (if (eq failure 'read) (error "Read failed")
+                         (apply read-file args))))
+                    ((symbol-function 'jabber-omemo-aesgcm-encrypt)
+                     (lambda (bytes)
+                       (if (eq failure 'encrypt) (error "Encryption/RNG failed")
+                         (funcall encrypt bytes))))
+                    ((symbol-function 'write-region)
+                     (lambda (&rest args)
+                       (if (eq failure 'write) (error "Write failed")
+                         (apply write-file args))))
+                    ((symbol-function 'jabber-send-iq)
+                     (lambda (&rest _) (push t slots)))
+                    ((symbol-function 'jabber-httpupload-put-file-curl)
+                     (lambda (&rest _) (push t uploads))))
+            (should-error (jabber-httpupload--upload 'fake-jc file #'ignore))
+            (should-not slots)
+            (should-not uploads)
+            (should (equal (directory-files temporary-file-directory nil
+                                            directory-files-no-dot-files-regexp)
+                           (list (file-name-nondirectory file)))))
+        (delete-directory temporary-file-directory t)))))
+
+(ert-deftest jabber-test-omemo-message-colliding-device-trust ()
+  "Peer identity must survive session acquisition and trust filtering."
+  (jabber-test-omemo-message-with-db
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_) "me@example.com"))
+              ((symbol-function 'jabber-omemo--get-device-id) (lambda (_) 99)))
+      (dolist (peer '("good@example.com" "bad@example.com"))
+        (puthash (jabber-omemo--session-key "me@example.com" peer 7)
+                 (intern peer) jabber-omemo--sessions)
+        (jabber-omemo-store-save-trust
+         "me@example.com" peer 7 "identity"
+         (if (equal peer "bad@example.com") -1 2)))
+      (let (sessions)
+        (jabber-omemo--ensure-sessions-for-ids
+         'fake-jc "bad@example.com" '(7) (lambda (value) (setq sessions value)))
+        (should sessions)
+        (should-not (jabber-omemo--trusted-sessions 'fake-jc sessions))))))
+
+(ert-deftest jabber-test-omemo-message-peer-device-may-match-own-id ()
+  "Self exclusion requires the own JID as well as the numeric device ID."
+  (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_) "me@example.com"))
+            ((symbol-function 'jabber-omemo--get-device-id) (lambda (_) 7))
+            ((symbol-function 'jabber-omemo--get-session)
+             (lambda (&rest _) 'session)))
+    (let (peer own)
+      (jabber-omemo--ensure-sessions-for-ids
+       'fake-jc "peer@example.com" '(7) (lambda (value) (setq peer value)))
+      (jabber-omemo--ensure-sessions-for-ids
+       'fake-jc "me@example.com" '(7) (lambda (value) (setq own value)))
+      (should peer)
+      (should-not own))))
+
+(ert-deftest jabber-test-omemo-message-colliding-multi-peer-native ()
+  "Merged native sessions retain peer, account and persistence ownership."
+  (jabber-test-omemo-message-with-db
+    (let* ((account "me@example.com")
+           (peers '("one@example.com" "two@example.com" "me@example.com"))
+           (stores (mapcar (lambda (_) (jabber-omemo-deserialize-store
+                                       (jabber-omemo-setup-store))) peers))
+           sessions)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid) (lambda (_) account))
+                ((symbol-function 'jabber-blocking-ready-p) (lambda (&rest _) t))
+                ((symbol-function 'jabber-blocking-blocked-p) (lambda (&rest _) nil)))
+        (puthash account 99 jabber-omemo--device-ids)
+        (cl-mapc
+         (lambda (peer store)
+           (jabber-omemo--establish-session
+            'fake-jc peer 7 (jabber-omemo-get-bundle store))
+           (puthash (jabber-omemo--device-list-key account peer) '(7)
+                    jabber-omemo--device-lists))
+         peers stores)
+        (jabber-omemo--ensure-sessions-multi
+         'fake-jc peers (lambda (value) (setq sessions value)))
+        (should (= 3 (length sessions)))
+        (let* ((enc (jabber-omemo-encrypt-message "hello"))
+               (xml (jabber-omemo--build-encrypted-xml 'fake-jc sessions enc))
+               (header (car (jabber-xml-get-children xml 'header)))
+               (keys (jabber-xml-get-children header 'key)))
+          (should (= 3 (length keys)))
+          (cl-mapc
+           (lambda (entry key)
+             (let* ((peer (nth 2 entry))
+                    (store (nth (cl-position peer peers :test #'equal) stores))
+                    (receiver (jabber-omemo-make-session)))
+               (should (equal (jabber-omemo-decrypt-key
+                               receiver store t
+                               (base64-decode-string
+                                (car (jabber-xml-node-children key))))
+                              (plist-get enc :key)))
+               (should (equal (jabber-omemo-serialize-session (nth 3 entry))
+                              (jabber-omemo-store-load-session account peer 7)))))
+           sessions keys)
+          (jabber-omemo-store-set-trust account "one@example.com" 7 -1)
+          (let* ((before (jabber-omemo-store-load-session account "one@example.com" 7))
+                 (filtered (jabber-omemo--build-encrypted-xml 'fake-jc sessions enc)))
+            (should (= 2 (length (jabber-xml-get-children
+                                  (car (jabber-xml-get-children filtered 'header)) 'key))))
+            (should (equal before (jabber-omemo-store-load-session
+                                   account "one@example.com" 7))))
+          (should-error
+           (jabber-omemo--build-encrypted-xml
+            'other-jc (list (list 7 "other@example.com" "one@example.com"
+                                 (nth 3 (car sessions)))) enc)
+           :type 'user-error)
+          ;; A pending send must not restore a device deleted in the meantime.
+          (jabber-omemo--delete-session account (nth 2 (car sessions)) 7 t)
+          (should-error (jabber-omemo--build-encrypted-xml 'fake-jc sessions enc)
+                        :type 'user-error)
+          (should-not (jabber-omemo-store-load-session
+                       account (nth 2 (car sessions)) 7)))))))
+
+(ert-deftest jabber-test-omemo-message-upload-native-and-plain ()
+  "Upload uses ciphertext when selected and plaintext only when intentional."
+  (require 'jabber-httpupload)
+  (dolist (encryption '(omemo nil))
+    (let* ((file (make-temp-file "jabber-upload-native-" nil nil "private bytes"))
+           (jabber-chat-encryption encryption)
+           (jabber-httpupload-support '((fake-jc . "upload.example")))
+           (jabber-httpupload-max-file-size nil)
+           (jabber-httpupload-pre-upload-transform #'jabber-omemo--httpupload-transform)
+           uploaded-path uploaded-bytes url
+           (jabber-httpupload-upload-function
+            (lambda (path _headers _url callback arg &optional _ignore)
+              (setq uploaded-path path
+                    uploaded-bytes (with-temp-buffer
+                                     (set-buffer-multibyte nil)
+                                     (insert-file-contents-literally path)
+                                     (buffer-string)))
+              (funcall callback arg)
+              t)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'jabber-send-iq)
+                     (lambda (jc _to _type _request success &rest _)
+                       (funcall success jc
+                                '(iq () (slot ((xmlns . "urn:xmpp:http:upload:0"))
+                                          (put ((url . "https://upload.example/put")))
+                                          (get ((url . "https://upload.example/get"))))) nil)))
+                    ((symbol-function 'jabber-httpupload-ignore-certificate) #'ignore))
+            (jabber-httpupload--upload 'fake-jc file (lambda (value) (setq url value)))
+            (if encryption
+                (progn
+                  (should-not (equal uploaded-bytes "private bytes"))
+                  (should-not (equal uploaded-path file))
+                  (should (string-prefix-p "aesgcm://" url))
+                  (should-not (file-exists-p uploaded-path)))
+              (should (equal uploaded-path file))
+              (should (equal uploaded-bytes "private bytes"))
+              (should (equal url "https://upload.example/get")))
+            (should (file-exists-p file)))
+        (delete-file file)))))
+
+(defun jabber-test-omemo-message--cold-upload (encryption change &optional failure)
+  "Exercise cold upload with ENCRYPTION, then CHANGE the source chat.
+Inject FAILURE after discovery starts, before the upload service replies."
+  (require 'jabber-httpupload)
+  (let* ((temporary-file-directory (make-temp-file "jabber-cold-upload-" t))
+         (file (make-temp-file "attachment-" nil nil "private bytes"))
+         (chat (generate-new-buffer " *jabber-upload-chat*"))
+         (dispatch (generate-new-buffer " *jabber-upload-dispatch*"))
+         (jabber-httpupload-support nil)
+         (jabber-httpupload-max-file-size nil)
+         (jabber-disco-info-cache (make-hash-table :test #'equal))
+         (jabber-disco-items-cache (make-hash-table :test #'equal))
+         (jabber-open-info-queries nil)
+         (jabber-httpupload-pre-upload-transform nil)
+         (native-comp-enable-subr-trampolines nil)
+         (read-file (symbol-function 'insert-file-contents-literally))
+         (encrypt (symbol-function 'jabber-omemo-aesgcm-encrypt))
+         (write-file (symbol-function 'write-region))
+         (transforms 0)
+         sent uploaded-path uploaded-bytes url
+         (jabber-httpupload-upload-function
+          (lambda (path _headers _url callback arg &optional _ignore)
+            (setq uploaded-path path
+                  uploaded-bytes (with-temp-buffer
+                                   (set-buffer-multibyte nil)
+                                   (insert-file-contents-literally path)
+                                   (buffer-string)))
+            (funcall callback arg)
+            t)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'fsm-get-state-data)
+                   (lambda (_) '(:server "example.com")))
+                  ((symbol-function 'jabber-caps-get-cached) #'ignore)
+                  ((symbol-function 'jabber-httpupload-ignore-certificate) #'ignore)
+                  ((symbol-function 'jabber-send-sexp)
+                   (lambda (_jc stanza &rest _) (push stanza sent))))
+          (with-current-buffer chat
+            (setq-local jabber-chat-encryption encryption)
+            ;; Retain the existing two-argument hook contract, including a
+            ;; buffer-local custom hook rather than only the OMEMO symbol.
+            (setq-local jabber-httpupload-pre-upload-transform
+                        (lambda (path callback)
+                          (cl-incf transforms)
+                          (jabber-omemo--httpupload-transform path callback)))
+            (jabber-httpupload--upload
+             'jc file (lambda (value) (setq url value))))
+          (should (= (length sent) 1))
+          (should (= transforms 0))
+          (pcase change
+            ('close (kill-buffer chat))
+            ('mode (with-current-buffer chat (fundamental-mode)))
+            ('toggle (with-current-buffer chat
+                       (setq jabber-chat-encryption
+                             (if encryption nil 'omemo)))))
+          (with-current-buffer dispatch
+            ;; A callback buffer can even have the opposite selection.
+            (setq-local jabber-chat-encryption (if encryption nil 'omemo))
+            (cl-labels
+                ((reply (from payload)
+                   (jabber-process-iq
+                    'jc `(iq ((type . "result") (from . ,from)
+                              (id . ,(jabber-xml-get-attribute (car sent) 'id)))
+                             ,payload))))
+              (reply "example.com"
+                     '(query ((xmlns . "http://jabber.org/protocol/disco#items"))
+                             (item ((jid . "upload.example")))))
+              (should (= (length sent) 2))
+              (cl-letf (((symbol-function 'insert-file-contents-literally)
+                         (lambda (&rest args)
+                           (if (eq failure 'read) (error "Read failed")
+                             (apply read-file args))))
+                        ((symbol-function 'jabber-omemo-aesgcm-encrypt)
+                         (lambda (bytes)
+                           (if (eq failure 'encrypt) (error "Encryption failed")
+                             (funcall encrypt bytes))))
+                        ((symbol-function 'write-region)
+                         (lambda (&rest args)
+                           (if (eq failure 'write) (error "Write failed")
+                             (apply write-file args)))))
+                (let ((info '(query ((xmlns . "http://jabber.org/protocol/disco#info"))
+                                    (feature ((var . "urn:xmpp:http:upload:0"))))))
+                  (if failure
+                      (should-error (reply "upload.example" info))
+                    (reply "upload.example" info))))
+              (should (= transforms 1))
+              (if failure
+                  (progn
+                    (should (= (length sent) 2))
+                    (should-not uploaded-path)
+                    (should-not url))
+                (should (= (length sent) 3))
+                (should (eq 'request (car (jabber-iq-query (car sent)))))
+                (reply "upload.example"
+                       '(slot ((xmlns . "urn:xmpp:http:upload:0"))
+                              (put ((url . "https://upload.example/put")))
+                              (get ((url . "https://upload.example/get")))))
+                (if encryption
+                    (progn
+                      (should-not (equal uploaded-path file))
+                      (should-not (equal uploaded-bytes "private bytes"))
+                      (should (string-prefix-p "aesgcm://" url))
+                      (should-not (file-exists-p uploaded-path))
+                      (let ((parts (jabber-chat--parse-aesgcm-url url)))
+                        (should (equal
+                                 (jabber-omemo-aesgcm-decrypt
+                                  (plist-get parts :key) (plist-get parts :iv)
+                                  uploaded-bytes)
+                                 "private bytes"))))
+                  (should (equal uploaded-path file))
+                  (should (equal uploaded-bytes "private bytes"))
+                  (should (equal url "https://upload.example/get"))))))
+          (unless failure (should-not jabber-open-info-queries))
+          (should (equal (directory-files temporary-file-directory nil
+                                          directory-files-no-dot-files-regexp)
+                         (list (file-name-nondirectory file)))))
+      (when (buffer-live-p chat) (kill-buffer chat))
+      (kill-buffer dispatch)
+      (delete-directory temporary-file-directory t))))
+
+(ert-deftest jabber-test-omemo-message-cold-upload-retains-selection ()
+  "Cold native IQ discovery cannot downgrade an accepted encrypted upload."
+  (dolist (change '(close mode toggle))
+    (jabber-test-omemo-message--cold-upload 'omemo change)))
+
+(ert-deftest jabber-test-omemo-message-cold-upload-plaintext-control ()
+  "A deliberately plaintext upload keeps its original selection and hook."
+  (dolist (change '(close mode toggle))
+    (jabber-test-omemo-message--cold-upload nil change)))
+
+(ert-deftest jabber-test-omemo-message-cold-upload-failures-stop-slot ()
+  "Selected failures after held discovery must cause no slot or HTTP effects."
+  (dolist (failure '(read encrypt write))
+    (dolist (change '(close mode toggle))
+      (jabber-test-omemo-message--cold-upload 'omemo change failure))))
+
+(ert-deftest jabber-test-omemo-message-malformed-bundle-settles-send ()
+  "A malformed asynchronous bundle fails the real send operation once."
+  (let ((jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+        (jabber-omemo--device-lists (make-hash-table :test #'equal))
+        (jabber-chatting-with "peer@example.com")
+        (failures 0) (encrypted 0) reply)
+    (puthash (jabber-omemo--device-list-key "me@example.com" "peer@example.com")
+             '(7) jabber-omemo--device-lists)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_) "me@example.com"))
+              ((symbol-function 'jabber-blocking-ready-p) (lambda (&rest _) t))
+              ((symbol-function 'jabber-blocking-blocked-p) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-omemo--get-device-id) (lambda (_) 99))
+              ((symbol-function 'jabber-omemo--get-session) #'ignore)
+              ((symbol-function 'jabber-omemo--display-pending) #'ignore)
+              ((symbol-function 'jabber-omemo--send-failed) #'ignore)
+              ((symbol-function 'jabber-omemo--send-encrypted)
+               (lambda (&rest _) (cl-incf encrypted)))
+              ((symbol-function 'jabber-omemo--request-peer)
+               (lambda (_jc _jid _node success _failure _callback)
+                 (setq reply success))))
+      (jabber-omemo--send-chat 'fake-jc "hello" nil #'ignore
+                             (lambda (_) (cl-incf failures)))
+      (should (gethash 'fake-jc jabber-omemo--pending-send-operations))
+      (funcall reply nil
+               '(iq () (pubsub () (items () (item ()
+                 (bundle () (signedPreKeyPublic () "%%%%")
+                         (signedPreKeySignature () "YQ==")
+                         (identityKey () "YQ==")))))) nil)
+      (should (= failures 1))
+      (should (= encrypted 0))
+      (should-not (gethash 'fake-jc jabber-omemo--pending-send-operations)))))
+
+;;; Interactive attachment settlement
+
+(require 'jabber-chat-commands)
+
+(defun jabber-test-omemo--attachment-reply (jc request payload)
+  "Deliver PAYLOAD through native IQ dispatch for JC and REQUEST."
+  (jabber-process-iq
+   jc (with-temp-buffer
+        (insert (format "<iq type='result' from='%s' id='%s'>%s</iq>"
+                        (jabber-xml-get-attribute request 'to)
+                        (jabber-xml-get-attribute request 'id) payload))
+        (car (xml-parse-region (point-min) (point-max))))))
+(defconst jabber-test-omemo--attachment-info "<query xmlns='http://jabber.org/protocol/disco#info'><feature var='urn:xmpp:http:upload:0'/></query>")
+(defconst jabber-test-omemo--attachment-slot "<slot xmlns='urn:xmpp:http:upload:0'><put url='https://upload.example.invalid/put'/><get url='https://upload.example.invalid/get'/></slot>")
+(defun jabber-test-omemo--attachment-slots (wire)
+  "Count slot requests in WIRE."
+  (cl-count-if (lambda (stanza) (eq (car (jabber-iq-query stanza)) 'request)) wire))
+(defun jabber-test-omemo--attachment-case (cold failure &optional terminal-check replay)
+  "Exercise COLD discovery and FAILURE with optional TERMINAL-CHECK or REPLAY."
+  (let* ((temporary-file-directory (make-temp-file "jabber-test-omemo-attachment-" t))
+         (file (make-temp-file "selected-" nil ".txt" "private attachment bytes"))
+         (chat (generate-new-buffer " *jabber-test-omemo-attachment-chat*"))
+         (dispatch (generate-new-buffer " *jabber-test-omemo-attachment-dispatch*"))
+         (jc (make-symbol "attachment"))
+         (jabber-httpupload-support (unless cold (list (cons jc "upload.example.invalid"))))
+         (jabber-httpupload-max-file-size nil)
+         (jabber-httpupload--discoveries nil)
+         (jabber-disco-info-cache (make-hash-table :test #'equal))
+         (jabber-disco-items-cache (make-hash-table :test #'equal))
+         (jabber-open-info-queries nil)
+         (jabber-chat-display-help-at-point nil)
+         (jabber-chat-mode-hook nil)
+         (jabber-httpupload-pre-upload-transform #'jabber-omemo--httpupload-transform)
+         (command-history nil)
+         (native-comp-enable-subr-trampolines nil)
+         (read-original (symbol-function 'insert-file-contents-literally))
+         (write-original (symbol-function 'write-region))
+         (encrypt-original (symbol-function 'jabber-omemo-aesgcm-encrypt))
+         (fault failure) (uploads 0) (selections 0)
+         wire pending-error info-request uploaded-bytes uploaded-path
+         (jabber-httpupload-upload-function
+          (lambda (path _headers _put callback arg &optional _ignore)
+            (cl-incf uploads)
+            (setq uploaded-path path
+                  uploaded-bytes (with-temp-buffer
+                                   (set-buffer-multibyte nil)
+                                   (insert-file-contents-literally path)
+                                   (buffer-string)))
+            (funcall callback arg) t)))
+    (put jc :state-data '(:server "example.invalid" :username "attachment" :resource "test"))
+    (unwind-protect
+        (cl-letf (((symbol-function 'read-file-name)
+                   (lambda (&rest _) (cl-incf selections) file))
+                  ((symbol-function 'jabber-send-sexp)
+                   (lambda (_owner stanza &rest _) (push stanza wire)))
+                  ((symbol-function 'jabber-caps-get-cached) #'ignore)
+                  ((symbol-function 'jabber-httpupload-ignore-certificate) #'ignore)
+                  ((symbol-function 'make-network-process)
+                   (lambda (&rest _) (error "Network forbidden")))
+                  ((symbol-function 'url-retrieve)
+                   (lambda (&rest _) (error "HTTP forbidden")))
+                  ((symbol-function 'insert-file-contents-literally)
+                   (lambda (&rest args)
+                     (if (and (eq fault 'read) (equal (car args) file))
+                         (error "Injected attachment read failure")
+                       (apply read-original args))))
+                  ((symbol-function 'write-region)
+                   (lambda (&rest args)
+                     (if (eq fault 'write) (error "Injected ciphertext write failure")
+                       (apply write-original args))))
+                  ((symbol-function 'jabber-omemo-aesgcm-encrypt)
+                   (lambda (bytes)
+                     (pcase fault
+                       ('encrypt (error "Injected encryption failure"))
+                       ('rng (error "Injected random generation failure"))
+                       (_ (funcall encrypt-original bytes))))))
+          (with-current-buffer chat
+            (jabber-chat-mode)
+            (setq-local jabber-buffer-connection jc)
+            (setq-local jabber-chat-encryption (if (eq failure 'plaintext) 'plaintext 'omemo))
+            (setq-local jabber-point-insert (copy-marker (point-min)))
+            (insert "Unicode draft λ with an earlier https://existing.invalid/file")
+            (setq-local jabber-httpupload--pending-url "https://existing.invalid/file")
+            (goto-char (+ (point-min) 5))
+            (condition-case err
+                ;; Force ordinary command history recording despite scripted minibuffer.
+                (call-interactively #'jabber-chat-attach-file t)
+              (error (setq pending-error (error-message-string err)))))
+          (when cold
+            (should-not pending-error)
+            (should (= (length wire) 1))
+            (with-current-buffer dispatch
+              (setq-local jabber-chat-encryption 'plaintext)
+              (jabber-test-omemo--attachment-reply jc (car wire)
+                                                   "<query xmlns='http://jabber.org/protocol/disco#items'><item jid='upload.example.invalid'/></query>")
+              (setq info-request (car wire))
+              (condition-case err
+                  (jabber-test-omemo--attachment-reply jc info-request jabber-test-omemo--attachment-info)
+                (error (setq pending-error (error-message-string err))))))
+          (if (memq failure '(read write encrypt rng))
+              (progn
+                (should (equal pending-error
+                               (pcase failure
+                                 ('read "Injected attachment read failure")
+                                 ('write "Injected ciphertext write failure")
+                                 ('encrypt "Injected encryption failure")
+                                 ('rng "Injected random generation failure"))))
+                (should (= (jabber-test-omemo--attachment-slots wire) 0))
+                (should (= uploads 0))
+                (with-current-buffer chat
+                  (should (equal (buffer-string) "Unicode draft λ with an earlier https://existing.invalid/file"))
+                  (should (= (point) (+ (point-min) 5)))
+                  (should (equal jabber-httpupload--pending-url "https://existing.invalid/file")))
+                (should (file-exists-p file))
+                (should (equal (with-temp-buffer (funcall read-original file) (buffer-string))
+                               "private attachment bytes"))
+                (should (equal (car command-history) `(jabber-chat-attach-file ,file)))
+
+                (when terminal-check
+                  ;; A failed operation may not remain owned by an outstanding IQ.
+                  (should-not jabber-open-info-queries))
+                (should-not jabber-httpupload--discoveries)
+                (setq fault nil)
+                (if replay
+                    (progn
+                      (with-current-buffer dispatch (jabber-test-omemo--attachment-reply jc info-request jabber-test-omemo--attachment-info))
+                      (when (> (jabber-test-omemo--attachment-slots wire) 0)
+                        (with-current-buffer dispatch (jabber-test-omemo--attachment-reply jc (car wire) jabber-test-omemo--attachment-slot)))
+
+                      ;; Closure acceptance: a repeated result may not restart failed work.
+                      (should (= (jabber-test-omemo--attachment-slots wire) 0))
+                      (should (= uploads 0))
+                      (with-current-buffer chat
+                        (should (equal (buffer-string)
+                                       "Unicode draft λ with an earlier https://existing.invalid/file"))
+                        (should (equal jabber-httpupload--pending-url
+                                       "https://existing.invalid/file"))))
+                  ;; Explicit retry uses the expression retained by command history.
+                  (with-current-buffer chat (eval (car command-history) t))
+                  (should (= selections 1))
+                  (should (= (jabber-test-omemo--attachment-slots wire) 1))
+                  (with-current-buffer dispatch (jabber-test-omemo--attachment-reply jc (car wire) jabber-test-omemo--attachment-slot))
+                  (should (= uploads 1))
+                  (should-not jabber-open-info-queries)))
+            (should-not pending-error)
+            (should (= (jabber-test-omemo--attachment-slots wire) 1))
+            (with-current-buffer dispatch (jabber-test-omemo--attachment-reply jc (car wire) jabber-test-omemo--attachment-slot))
+            (should (= uploads 1))
+            (should-not jabber-open-info-queries))
+          (unless (or terminal-check replay)
+            (with-current-buffer chat
+              (let ((url jabber-httpupload--pending-url))
+                (should (string-suffix-p url (buffer-string)))
+                (if (eq failure 'plaintext)
+                    (progn (should (equal uploaded-path file))
+                           (should (equal uploaded-bytes "private attachment bytes")))
+                  (should-not (equal uploaded-path file))
+                  (should-not (file-exists-p uploaded-path))
+                  (should-not (equal uploaded-bytes "private attachment bytes"))
+                  (let ((parts (jabber-chat--parse-aesgcm-url url)))
+                    (should (equal (jabber-omemo-aesgcm-decrypt
+                                    (plist-get parts :key) (plist-get parts :iv) uploaded-bytes)
+                                   "private attachment bytes"))))
+                ;; Native deferred-send OOB consumer attaches once, then retires URL.
+                (should (equal (jabber-httpupload--send-hook (buffer-string) "probe")
+                               `((x ((xmlns . ,jabber-oob-xmlns)) (url () ,url)))))
+                (should-not jabber-httpupload--pending-url)
+                (should-not (jabber-httpupload--send-hook (buffer-string) "probe2"))))))
+      (kill-buffer chat)
+      (kill-buffer dispatch)
+      (delete-directory temporary-file-directory t))))
+
+(dolist (cold '(nil t))
+  (dolist (failure '(read write encrypt rng nil plaintext))
+    (eval `(ert-deftest ,(intern (format "jabber-test-omemo-attachment-observe-%s-%s" (if cold "cold" "cached") failure)) ()
+             (jabber-test-omemo--attachment-case ,cold ',failure)))))
+(dolist (failure '(read write encrypt rng))
+  (eval `(ert-deftest ,(intern (format "jabber-test-omemo-attachment-terminal-cold-%s" failure)) ()
+           (jabber-test-omemo--attachment-case t ',failure t)))
+  (eval `(ert-deftest ,(intern (format "jabber-test-omemo-attachment-replay-cold-%s" failure)) ()
+           (jabber-test-omemo--attachment-case t ',failure nil t))))
 
 (provide 'jabber-test-omemo-message)
 ;;; jabber-test-omemo-message.el ends here

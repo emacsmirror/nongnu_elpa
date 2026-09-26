@@ -181,5 +181,93 @@
   (should (eq #'jabber-omemo-reset-session
               (keymap-lookup jabber-omemo-trust-mode-map "r"))))
 
+(ert-deftest jabber-test-omemo-trust-delete-invalidates-cache ()
+  "Deleting a peer device must retire its live session without rebuilding."
+  (let ((jabber-omemo--sessions (make-hash-table :test 'equal))
+        (jabber-omemo-trust--account "me@example.com")
+        (jabber-omemo-trust--peer "peer@example.com")
+        (jabber-omemo-trust--jc 'fake-jc))
+    (puthash (jabber-omemo--session-key "me@example.com" "peer@example.com" 7)
+             'old-session jabber-omemo--sessions)
+    (cl-letf (((symbol-function 'jabber-omemo-trust--device-at-point) (lambda () 7))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_) "me@example.com"))
+              ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+              ((symbol-function 'tabulated-list-print) #'ignore)
+              ((symbol-function 'jabber-omemo-store-delete-trust) #'ignore)
+              ((symbol-function 'jabber-omemo-store-delete-session) #'ignore)
+              ((symbol-function 'jabber-omemo-store-load-session) #'ignore))
+      (jabber-omemo-trust-delete)
+      (should-not (jabber-omemo--get-session 'fake-jc "peer@example.com" 7)))))
+
+(ert-deftest jabber-test-omemo-trust-delete-durable-state-and-rollback ()
+  "Peer and own-device deletion are atomic across SQLite and the cache."
+  (dolist (own '(nil t))
+    (dolist (fail-table '(nil "omemo_sessions" "omemo_skipped_keys" "omemo_trust"))
+      (let* ((dir (make-temp-file "jabber-delete-test-" t))
+             (jabber-db-path (expand-file-name "test.sqlite" dir))
+             (jabber-db--connection nil)
+             (jabber-omemo--sessions (make-hash-table :test 'equal))
+             (jabber-omemo-trust--account "me@example.com")
+             (jabber-omemo-trust--peer
+              (if own "me@example.com" "peer@example.com"))
+             (jabber-omemo-trust--jc 'fake-jc)
+             (key (jabber-omemo--session-key
+                   jabber-omemo-trust--account jabber-omemo-trust--peer 7))
+             removed rebuilt)
+        (unwind-protect
+            (progn
+              (jabber-db-ensure-open)
+              (jabber-omemo-store-save-session
+               jabber-omemo-trust--account jabber-omemo-trust--peer 7 "session")
+              (jabber-omemo-store-save-trust
+               jabber-omemo-trust--account jabber-omemo-trust--peer 7 "identity" 2)
+              (sqlite-execute
+               jabber-db--connection
+               "INSERT INTO omemo_skipped_keys
+                (account, jid, device_id, dh_key, message_number, message_key, created_at)
+                VALUES (?, ?, 7, 'dh', 1, 'key', 0)"
+               (list jabber-omemo-trust--account jabber-omemo-trust--peer))
+              (puthash key 'old-session jabber-omemo--sessions)
+              (puthash "unrelated" 'other-session jabber-omemo--sessions)
+              (when fail-table
+                (sqlite-execute
+                 jabber-db--connection
+                 (format "CREATE TEMP TRIGGER fail_delete BEFORE DELETE ON %s
+                          BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+                         fail-table)))
+              (cl-letf (((symbol-function 'jabber-omemo-trust--device-at-point)
+                         (lambda () 7))
+                        ((symbol-function 'jabber-omemo--get-device-id)
+                         (lambda (_) 99))
+                        ((symbol-function 'jabber-connection-bare-jid)
+                         (lambda (_) jabber-omemo-trust--account))
+                        ((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+                        ((symbol-function 'tabulated-list-print) #'ignore)
+                        ((symbol-function 'jabber-omemo--ensure-sessions)
+                         (lambda (&rest _) (setq rebuilt t)))
+                        ((symbol-function 'jabber-omemo--remove-device)
+                         (lambda (&rest _) (setq removed t))))
+                (if fail-table
+                    (should-error (jabber-omemo-trust-delete))
+                  (jabber-omemo-trust-delete))
+                (should-not rebuilt)
+                (should (eq (and own (not fail-table)) removed))
+                (should (eq (gethash key jabber-omemo--sessions)
+                            (and fail-table 'old-session)))
+                (unless fail-table
+                  (should-not (jabber-omemo--get-session
+                               'fake-jc jabber-omemo-trust--peer 7))))
+              (should (eq 'other-session (gethash "unrelated" jabber-omemo--sessions)))
+              ;; Reopen the real database; TEMP failure triggers are gone.
+              (jabber-db-close)
+              (dolist (table '("omemo_sessions" "omemo_skipped_keys" "omemo_trust"))
+                (should (= (caar (sqlite-select
+                                 (jabber-db-ensure-open)
+                                 (format "SELECT COUNT(*) FROM %s" table)))
+                           (if fail-table 1 0)))))
+          (jabber-db-close)
+          (delete-directory dir t))))))
+
 (provide 'jabber-test-omemo-trust)
 ;;; jabber-test-omemo-trust.el ends here

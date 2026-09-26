@@ -423,21 +423,32 @@ Updates both the database and in-memory cache."
      account jid device-id blob)
     (puthash key session-ptr jabber-omemo--sessions)))
 
+(defun jabber-omemo--delete-session (account jid device-id &optional delete-trust)
+  "Delete durable and cached session state for ACCOUNT, JID and DEVICE-ID.
+When DELETE-TRUST is non-nil, delete trust in the same transaction.
+Do not rebuild the session.  Leave the cache unchanged on storage failure."
+  (jabber-omemo-store--session-transaction
+   (lambda ()
+     (jabber-omemo-store-delete-session account jid device-id)
+     (jabber-omemo-store-delete-skipped-keys account jid device-id)
+     (when delete-trust
+       (jabber-omemo-store-delete-trust account jid device-id))))
+  (remhash (jabber-omemo--session-key account jid device-id)
+           jabber-omemo--sessions))
+
 (defun jabber-omemo--reset-session (jc jid device-id callback)
   "Reset and rebuild JID's DEVICE-ID session via JC.
 Delete the durable and cached session without changing device trust.
 Call CALLBACK with the rebuilt session, or nil when the device is no
 longer active or its bundle could not be fetched."
   (let* ((account (jabber-connection-bare-jid jc))
-         (bare-jid (jabber-jid-user jid))
-         (key (jabber-omemo--session-key account bare-jid device-id)))
-    (jabber-omemo-store-delete-session-state account bare-jid device-id)
-    (remhash key jabber-omemo--sessions)
+         (bare-jid (jabber-jid-user jid)))
+    (jabber-omemo--delete-session account bare-jid device-id)
     (jabber-omemo--ensure-sessions
      jc bare-jid
      (lambda (sessions)
        (when callback
-         (funcall callback (cdr (assoc device-id sessions))))))))
+         (funcall callback (nth 3 (assoc device-id sessions))))))))
 
 ;;; Device list XML helpers
 
@@ -719,7 +730,8 @@ XML is a <bundle> element sexp.  Returns
   (:signature BYTES :signed-pre-key BYTES :identity-key BYTES
    :signed-pre-key-id INT :pre-keys ((ID . BYTES) ...))
 All key material is base64-decoded to unibyte strings.
-Returns nil if any required element is missing or empty."
+Return nil if a required key or signature is missing or empty.
+Signal an error for malformed base64 or pre-key text."
   (let* ((spk-el (car (jabber-xml-get-children xml 'signedPreKeyPublic)))
          (sig-el (car (jabber-xml-get-children xml 'signedPreKeySignature)))
          (ik-el (car (jabber-xml-get-children xml 'identityKey)))
@@ -727,7 +739,9 @@ Returns nil if any required element is missing or empty."
          (spk-text (car (jabber-xml-node-children spk-el)))
          (sig-text (car (jabber-xml-node-children sig-el)))
          (ik-text (car (jabber-xml-node-children ik-el))))
-    (if (not (and (stringp spk-text) (stringp sig-text) (stringp ik-text)))
+    (if (not (cl-every (lambda (text)
+                        (and (stringp text) (not (string-empty-p text))))
+                      (list spk-text sig-text ik-text)))
         (progn
           (message "jabber-omemo: malformed bundle XML (missing key data)")
           nil)
@@ -739,11 +753,12 @@ Returns nil if any required element is missing or empty."
             pre-keys)
         (dolist (pk (jabber-xml-get-children pks-el 'preKeyPublic))
           (let ((pk-text (car (jabber-xml-node-children pk))))
-            (when (stringp pk-text)
-              (let ((pk-id (string-to-number
-                            (or (jabber-xml-get-attribute pk 'preKeyId) "0")))
-                    (pk-data (base64-decode-string pk-text)))
-                (push (cons pk-id pk-data) pre-keys)))))
+            (unless (and (stringp pk-text) (not (string-empty-p pk-text)))
+              (error "OMEMO: malformed pre-key data"))
+            (let ((pk-id (string-to-number
+                          (or (jabber-xml-get-attribute pk 'preKeyId) "0")))
+                  (pk-data (base64-decode-string pk-text)))
+              (push (cons pk-id pk-data) pre-keys))))
         (list :signature sig-data
               :signed-pre-key spk-data
               :identity-key ik-data
@@ -780,12 +795,18 @@ On error, calls (funcall CALLBACK nil)."
     (jabber-omemo--request-peer
      jc jid node
      (lambda (_jc xml-data _closure)
-       (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
-              (items-node (car (jabber-xml-get-children pubsub 'items)))
-              (item (car (jabber-xml-get-children items-node 'item)))
-              (bundle-el (car (jabber-xml-get-children item 'bundle)))
-              (parsed (when bundle-el
-                        (jabber-omemo--parse-bundle-xml bundle-el))))
+       (let ((parsed
+              (condition-case err
+                  (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
+                         (items (car (jabber-xml-get-children pubsub 'items)))
+                         (item (car (jabber-xml-get-children items 'item)))
+                         (bundle (car (jabber-xml-get-children item 'bundle))))
+                    (when bundle (jabber-omemo--parse-bundle-xml bundle)))
+                (error
+                 (message "OMEMO: invalid bundle for %s device %d: %s"
+                          jid device-id (error-message-string err))
+                 nil))))
+         ;; Callback errors are not parse errors: never call it twice.
          (funcall callback parsed)))
      (lambda (_jc xml-data _closure)
        (warn "Jabber-omemo: failed to fetch bundle for %s device %d: %s"
@@ -981,7 +1002,7 @@ Returns a list of active device ID integers, or nil."
 Checks in-memory cache, then DB, then PubSub for the device list.
 For each device lacking a session, fetches the bundle and establishes one.
 Calls (funcall CALLBACK sessions) when done, where sessions is
-a list of (DEVICE-ID . SESSION-PTR) for all active devices.
+a list of (DEVICE-ID ACCOUNT JID SESSION-PTR) for all active devices.
 Blocked peers and pending blocking discovery return nil, like other failures."
   (unless (and (jabber-blocking-ready-p jc jid)
                (not (jabber-blocking-blocked-p jc jid)))
@@ -1007,13 +1028,14 @@ Blocked peers and pending blocking discovery return nil, like other failures."
 
 (defun jabber-omemo--ensure-sessions-for-ids (jc jid device-ids callback)
   "Ensure sessions for DEVICE-IDS of JID via JC, then call CALLBACK.
-CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
+CALLBACK receives a list of (DEVICE-ID ACCOUNT JID SESSION-PTR)."
   (let ((our-id (jabber-omemo--get-device-id jc))
+        (account (jabber-connection-bare-jid jc))
         results missing)
     (dolist (did device-ids)
-      (unless (= did our-id)
+      (unless (and (equal jid account) (= did our-id))
         (if-let* ((existing (jabber-omemo--get-session jc jid did)))
-            (push (cons did existing) results)
+            (push (list did account jid existing) results)
           (push did missing))))
     (let ((pending (length missing)))
       (if (zerop pending)
@@ -1026,7 +1048,7 @@ CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
                  (when (and bundle (not (jabber-blocking-blocked-p jc jid)))
                    (let ((session (jabber-omemo--establish-session
                                    jc jid did bundle)))
-                     (push (cons did session) results)))
+                     (push (list did account jid session) results)))
                (error
                 (message "OMEMO: could not establish session for %s device %d: %s"
                          jid did (error-message-string err))))
@@ -1040,27 +1062,34 @@ CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
 
 (defun jabber-omemo--trusted-sessions (jc sessions)
   "Filter SESSIONS to exclude devices marked untrusted via JC.
-SESSIONS is a list of (DEVICE-ID . SESSION-PTR).
+SESSIONS is a list of (DEVICE-ID ACCOUNT JID SESSION-PTR).
 Returns the filtered list, dropping any device with trust = -1."
   (let ((account (jabber-connection-bare-jid jc)))
     (cl-remove-if
      (lambda (entry)
-       (let* ((did (car entry))
-              (jid (jabber-omemo--session-jid-for-did jc did))
-              (trust-rec (and jid (jabber-omemo-store-load-trust
-                                   account jid did))))
-         (and trust-rec (= (plist-get trust-rec :trust) -1))))
+       (pcase-let ((`(,did ,owner ,jid ,_session) entry))
+         (unless (equal owner account)
+           (user-error "OMEMO: session belongs to another account"))
+         (let ((trust-rec (jabber-omemo-store-load-trust account jid did)))
+           (and trust-rec (= (plist-get trust-rec :trust) -1)))))
      sessions)))
 
 (defun jabber-omemo--build-encrypted-xml (jc sessions enc-result)
   "Build <encrypted> XML sexp for an OMEMO 0.3 message.
 JC is the Jabber connection (for our device ID).
-SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all recipients
+SESSIONS is a list of (DEVICE-ID ACCOUNT JID SESSION-PTR) for all recipients
 \(including our own other devices).
 ENC-RESULT is the plist from `jabber-omemo-encrypt-message'."
   (setq sessions (jabber-omemo--trusted-sessions jc sessions))
   (unless sessions
     (user-error "OMEMO: no trusted devices for any recipient"))
+  ;; A deletion or reset may have retired a session while other bundles
+  ;; were in flight.  Do not ratchet or persist a captured stale pointer.
+  (dolist (entry sessions)
+    (pcase-let ((`(,did ,account ,jid ,session) entry))
+      (unless (eq session (gethash (jabber-omemo--session-key account jid did)
+                                   jabber-omemo--sessions))
+        (user-error "OMEMO: session for %s device %d was retired" jid did))))
   (let* ((our-sid (jabber-omemo--get-device-id jc))
          (key (plist-get enc-result :key))
          (iv (plist-get enc-result :iv))
@@ -1068,7 +1097,8 @@ ENC-RESULT is the plist from `jabber-omemo-encrypt-message'."
          key-elements)
     (dolist (entry sessions)
       (let* ((did (car entry))
-             (session-ptr (cdr entry))
+             (jid (nth 2 entry))
+             (session-ptr (nth 3 entry))
              (encrypted-key (jabber-omemo-encrypt-key session-ptr key))
              (data (plist-get encrypted-key :data))
              (pre-key-p (plist-get encrypted-key :pre-key-p)))
@@ -1077,31 +1107,13 @@ ENC-RESULT is the plist from `jabber-omemo-encrypt-message'."
                     ,(base64-encode-string data t))
               key-elements)
         (jabber-omemo--save-session
-         jc (jabber-jid-user (jabber-omemo--session-jid-for-did jc did))
-         did session-ptr)))
+         jc jid did session-ptr)))
     (jabber-omemo--persist-store jc)
     `(encrypted ((xmlns . ,jabber-omemo-xmlns))
                 (header ((sid . ,(number-to-string our-sid)))
                         ,@(nreverse key-elements)
                         (iv () ,(base64-encode-string iv t)))
                 (payload () ,(base64-encode-string ciphertext t)))))
-
-(defun jabber-omemo--session-jid-for-did (jc device-id)
-  "Look up the JID associated with DEVICE-ID in the session cache for JC.
-Searches through `jabber-omemo--sessions' hash keys."
-  (let ((account (jabber-connection-bare-jid jc))
-        result)
-    (maphash (lambda (key _val)
-               (unless result
-                 (let* ((parts (split-string key "\0"))
-                        (acct (nth 0 parts))
-                        (jid (nth 1 parts))
-                        (did (string-to-number (nth 2 parts))))
-                   (when (and (string= acct account)
-                              (= did device-id))
-                     (setq result jid)))))
-             jabber-omemo--sessions)
-    result))
 
 ;;; Message decryption XML
 
@@ -1437,7 +1449,7 @@ in `jabber-muc--room-jids'."
 (defun jabber-omemo--ensure-sessions-multi (jc jids callback)
   "Ensure OMEMO sessions for all JIDS via JC.
 Calls (funcall CALLBACK all-sessions) when done, where
-all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
+all-sessions is a list of (DEVICE-ID ACCOUNT JID SESSION-PTR)."
   (if (null jids)
       (funcall callback nil)
     (let ((pending (length jids))
@@ -1674,7 +1686,7 @@ envelope (e.g. XEP-0308 replace)."
   "Build and send an OMEMO-encrypted stanza.
 JC is the connection.  BODY is the plaintext.  CHAT-WITH is the
 recipient full/bare JID for addressing.  ALL-SESSIONS is a list
-of (DEVICE-ID . SESSION-PTR) for recipient + own other devices.
+of (DEVICE-ID ACCOUNT JID SESSION-PTR) for recipient + own other devices.
 Optional BUFFER, NODE, ID support immediate display: when NODE is
 non-nil, update its status from :sending to :sent instead of
 inserting a new ewoc entry.  EXTRA-ELEMENTS are spliced into the
@@ -1799,7 +1811,7 @@ envelope."
                                             success-callback failure-callback)
   "Build and send an OMEMO-encrypted MUC stanza.
 JC is the connection.  BODY is the plaintext.  GROUP is the room JID.
-ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all
+ALL-SESSIONS is a list of (DEVICE-ID ACCOUNT JID SESSION-PTR) for all
 participants plus own other devices.  BUFFER is the MUC buffer whose
 buffer-local state the send hooks must see.  ID is the captured stanza ID.
 EXTRA-ELEMENTS are
@@ -1973,32 +1985,31 @@ of date, and pre-fetches sessions for open chat buffers."
 (defun jabber-omemo--httpupload-transform (filepath callback)
   "Encrypt FILEPATH for aesgcm upload when OMEMO is active.
 CALLBACK receives the URL of the uploaded ciphertext.
-Returns (ENCRYPTED-PATH . WRAPPED-CALLBACK) or nil."
+Return (ENCRYPTED-PATH . WRAPPED-CALLBACK), or nil if OMEMO is not selected.
+Signal encryption or file errors so the caller cannot upload plaintext."
   (when (eq jabber-chat-encryption 'omemo)
-    (condition-case err
-        (let* ((plaintext (with-temp-buffer
-                            (set-buffer-multibyte nil)
-                            (insert-file-contents-literally filepath)
-                            (buffer-string)))
-               (enc (jabber-omemo-aesgcm-encrypt plaintext))
-               (key (plist-get enc :key))
-               (iv (plist-get enc :iv))
-               (ciphertext (plist-get enc :ciphertext))
-               (tmp (make-temp-file "jabber-aesgcm-" nil
-                                    (file-name-extension filepath t))))
+    (let* ((plaintext (with-temp-buffer
+                        (set-buffer-multibyte nil)
+                        (insert-file-contents-literally filepath)
+                        (buffer-string)))
+           (enc (jabber-omemo-aesgcm-encrypt plaintext))
+           (key (plist-get enc :key))
+           (iv (plist-get enc :iv))
+           (ciphertext (plist-get enc :ciphertext))
+           (tmp (make-temp-file "jabber-aesgcm-" nil
+                                (file-name-extension filepath t))))
+      (condition-case err
           (with-temp-file tmp
             (set-buffer-multibyte nil)
             (insert ciphertext))
-          (cons tmp
-                (lambda (get-url)
-                  (ignore-errors (delete-file tmp))
-                  (funcall callback
-                           (jabber-omemo--build-aesgcm-url
-                            get-url iv key)))))
-      (error
-       (message "aesgcm: file encryption failed: %s"
-                (error-message-string err))
-       nil))))
+        ((error quit)
+         (ignore-errors (delete-file tmp))
+         (signal (car err) (cdr err))))
+      (cons tmp
+            (lambda (get-url)
+              (ignore-errors (delete-file tmp))
+              (funcall callback
+                       (jabber-omemo--build-aesgcm-url get-url iv key)))))))
 
 (defun jabber-omemo--httpupload-send-url (jc jid get-url)
   "Send GET-URL (aesgcm://) as an OMEMO-encrypted message from JC to JID.
