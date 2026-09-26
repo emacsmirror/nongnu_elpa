@@ -324,16 +324,9 @@ nil after the first message, breaking subsequent composing detection."
 (ert-deftest jabber-test-chatstates-timer-keeps-originating-thread ()
   "A paused timer sends from the thread buffer that started it."
   (let ((origin (generate-new-buffer " *jabber-chatstate-origin*"))
-        callback
-        callback-args
-        sent)
+        timer sent)
     (unwind-protect
-        (cl-letf (((symbol-function 'run-with-timer)
-                   (lambda (_seconds _repeat function &rest args)
-                     (setq callback function
-                           callback-args args)
-                     'fake-timer))
-                  ((symbol-function 'jabber-send-sexp-if-connected)
+        (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
                    (lambda (_jc stanza) (setq sent stanza))))
           (with-current-buffer origin
             (setq-local jabber-chatstates-confirm t)
@@ -342,17 +335,18 @@ nil after the first message, breaking subsequent composing detection."
             (setq-local jabber-buffer-connection 'fake-jc)
             (setq-local jabber-message-thread-id "thread-1")
             (setq-local jabber-message-thread-parent-id nil)
-            (setq-local jabber-chatstates-paused-timer nil)
-            (setq-local jabber-chatstates-inactive-timer nil)
-            (jabber-chatstates-kick-timer))
+            (jabber-chatstates-kick-timer)
+            (setq timer jabber-chatstates-paused-timer))
           (with-temp-buffer
-            (apply callback callback-args))
+            (apply (timer--function timer) (timer--args timer)))
           (should
            (equal sent
                   `(message ((to . "them@example.com") (type . "chat"))
                             (thread () "thread-1")
                             (paused
                              ((xmlns . ,jabber-chatstates-xmlns)))))))
+      (when timer (cancel-timer timer))
+      (with-current-buffer origin (jabber-chatstates-stop-timer))
       (kill-buffer origin))))
 
 (ert-deftest jabber-test-chatstates-paused-not-sent-when-not-requested ()
@@ -1376,6 +1370,158 @@ nil after the first message, breaking subsequent composing detection."
           (should (eq jabber-chatstates--ewoc-node node))
           (should (equal (jabber-test-chatstates--ewoc-data)
                          '((:typing "alice@example.org is typing...")))))))))
+
+;;; Native composition lifecycle
+
+(defmacro jabber-test-chatstates--with-composer (&rest body)
+  "Run BODY with real chat input, hooks, and timers but captured wire sends."
+  (declare (indent 0) (debug t))
+  `(let ((buffer (generate-new-buffer " *chatstate-composer*"))
+         sent)
+     (unwind-protect
+         (save-window-excursion
+           (switch-to-buffer buffer)
+           (jabber-chat-mode)
+           (let ((jabber-chat-encryption 'plaintext))
+             (jabber-chat-mode-setup 'test-connection #'ignore))
+           (setq-local jabber-chatting-with "peer@example.invalid")
+           (setq-local jabber-chatstates-confirm t)
+           ;; Avoid a gone send during fixture teardown.
+           (jabber-chatstates--enable-send-hooks t)
+           (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+                      (lambda (_jc stanza)
+                        (push (caar (last stanza)) sent))))
+             ,@body))
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer (jabber-chatstates-stop-timer))
+         (kill-buffer buffer)))))
+
+(defun jabber-test-chatstates--fire (timer)
+  "Deliver TIMER's captured callback, including after cancellation."
+  (cancel-timer timer)
+  (apply (timer--function timer) (timer--args timer)))
+
+(ert-deftest jabber-test-chatstates-native-continued-input-restarts-timer ()
+  "Typing restarts the deadline without repeated composing notifications."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (let ((first jabber-chatstates-paused-timer))
+      (should (timerp first))
+      (execute-kbd-macro "b")
+      (should-not (eq first jabber-chatstates-paused-timer))
+      (should-not (memq first timer-list))
+      (should (equal sent '(composing)))
+      (jabber-test-chatstates--fire first)
+      (should (equal sent '(composing)))
+      (should-not jabber-chatstates-inactive-timer))))
+
+(ert-deftest jabber-test-chatstates-native-clear-retires-timers ()
+  "Clearing the draft sends active and makes the old paused callback inert."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (let ((first jabber-chatstates-paused-timer))
+      (execute-kbd-macro (kbd "DEL"))
+      (should (equal sent '(active composing)))
+      (should-not jabber-chatstates-paused-timer)
+      (should-not jabber-chatstates-inactive-timer)
+      (should-not (memq first timer-list))
+      (jabber-test-chatstates--fire first)
+      (should (equal sent '(active composing)))
+      (should-not jabber-chatstates-inactive-timer))))
+
+(ert-deftest jabber-test-chatstates-native-motion-does-not-compose ()
+  "Navigation neither restarts composing nor resumes a paused draft."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "ab")
+    (let ((timer jabber-chatstates-paused-timer))
+      (execute-kbd-macro (kbd "C-b"))
+      (should (eq timer jabber-chatstates-paused-timer))
+      (jabber-test-chatstates--fire timer)
+      (should (equal sent '(paused composing)))
+      (let ((inactive jabber-chatstates-inactive-timer))
+        (execute-kbd-macro (kbd "C-f"))
+        (should (eq inactive jabber-chatstates-inactive-timer))
+        (should (equal sent '(paused composing)))
+        (execute-kbd-macro "c")
+        (should (equal sent '(composing paused composing)))
+        (should-not (memq inactive timer-list))
+        (jabber-test-chatstates--fire inactive)
+        (should (equal sent '(composing paused composing)))))))
+
+(ert-deftest jabber-test-chatstates-native-clear-after-paused ()
+  "Clearing a paused draft retires inactive and reports active once."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (jabber-test-chatstates--fire jabber-chatstates-paused-timer)
+    (let ((inactive jabber-chatstates-inactive-timer))
+      (execute-kbd-macro (kbd "DEL"))
+      (should (equal sent '(active paused composing)))
+      (should-not jabber-chatstates-inactive-timer)
+      (jabber-test-chatstates--fire inactive)
+      (should (equal sent '(active paused composing))))))
+
+(ert-deftest jabber-test-chatstates-native-mode-change-retires-timer ()
+  "Mode replacement cancels timers and prevents same-buffer stale sends."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (let ((timer jabber-chatstates-paused-timer))
+      (fundamental-mode)
+      (should-not (memq timer timer-list))
+      (jabber-test-chatstates--fire timer)
+      (should (equal sent '(composing))))))
+
+(ert-deftest jabber-test-chatstates-native-timer-delivery ()
+  "The native event loop delivers the current timer exactly once."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (let ((timer jabber-chatstates-paused-timer))
+      (cancel-timer timer)
+      (timer-set-time timer (current-time))
+      (timer-activate timer)
+      (sleep-for 0.01)
+      (should (equal sent '(paused composing)))
+      (should-not jabber-chatstates-paused-timer)
+      (should (timerp jabber-chatstates-inactive-timer))
+      (jabber-test-chatstates--fire timer)
+      (should (equal sent '(paused composing))))))
+
+(ert-deftest jabber-test-chatstates-native-send-retires-timers ()
+  "A send hook retires old callbacks without an extra active notification."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "draft")
+    (let ((timer jabber-chatstates-paused-timer))
+      (should (equal (caar (jabber-chatstates-when-sending "draft" "id"))
+                     'active))
+      (delete-region jabber-point-insert (point-max))
+      (run-hooks 'post-command-hook)
+      (jabber-test-chatstates--fire timer)
+      (should (equal sent '(composing)))
+      (should-not jabber-chatstates-paused-timer)
+      (should-not jabber-chatstates-inactive-timer))))
+
+(ert-deftest jabber-test-chatstates-native-kill-retires-timer ()
+  "A callback for a killed buffer cannot send or create an inactive timer."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (let ((timer jabber-chatstates-paused-timer))
+      (kill-buffer buffer)
+      (should-not (memq timer timer-list))
+      (jabber-test-chatstates--fire timer)
+      (should (equal sent '(composing))))))
+
+(ert-deftest jabber-test-chatstates-native-opt-out-retires-timer ()
+  "Negotiation opt-out retires callbacks even if negotiation later resumes."
+  (jabber-test-chatstates--with-composer
+    (execute-kbd-macro "a")
+    (let ((timer jabber-chatstates-paused-timer))
+      (jabber-chatstates--handle-direct-state
+       buffer 'test-connection
+       (jabber-test-chatstates--plain-message "peer@example.invalid" "chat"))
+      (should-not (memq timer timer-list))
+      (should-not jabber-chatstates-paused-timer)
+      (jabber-chatstates--enable-send-hooks t)
+      (jabber-test-chatstates--fire timer)
+      (should (equal sent '(composing))))))
 
 (provide 'jabber-test-chatstates)
 
