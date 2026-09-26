@@ -2036,6 +2036,36 @@ buffers.")
 (declare-function vm-save-killed-message-hook "vm-postpone" ())
 (declare-function vm-remove-save-killed-message-hook "vm-postpone" ())
 
+(defvar vm-composition-headers-vm-wrote nil
+  "This composition\\='s headers as VM wrote them, or nil where VM did not say.
+Set once the composition is ready for the writer, `mail-setup-hook' included,
+so that `vm-composition-headers-changed-p' can tell a header the writer typed
+from one they were handed.")
+(make-variable-buffer-local 'vm-composition-headers-vm-wrote)
+
+(defun vm-composition-header-text ()
+  "This composition\\='s headers, as text, or nil where it has no separator."
+  (save-excursion
+    (goto-char (point-min))
+    (and (re-search-forward
+          (concat "^" (regexp-quote mail-header-separator) "$") nil t)
+         (buffer-substring-no-properties (point-min) (match-beginning 0)))))
+
+(defun vm-composition-has-body-p ()
+  "Whether anything but whitespace follows `mail-header-separator' here."
+  (save-excursion
+    (goto-char (point-min))
+    (and (re-search-forward
+          (concat "^" (regexp-quote mail-header-separator) "$") nil t)
+         (re-search-forward "[^ \t\n]" nil t))))
+
+(defun vm-composition-headers-changed-p ()
+  "Whether this composition\\='s headers differ from the ones VM wrote.
+Nil where VM did not record them, which is a composition VM did not make."
+  (and vm-composition-headers-vm-wrote
+       (not (equal (vm-composition-header-text)
+                   vm-composition-headers-vm-wrote))))
+
 (defun vm-composition-worth-keeping-p (&optional buffer)
   "Whether BUFFER holds a composition with anything in it.
 A composition begun and abandoned untouched is not worth a question, still
@@ -2043,14 +2073,13 @@ less a draft in the postponed folder.
 
 Modified is not enough on its own: VM writes the headers itself, so a
 composition is modified from the moment it appears.  What says the writer has
-written something is text after `mail-header-separator'."
+written something is text after `mail-header-separator', or a header they
+changed from the one VM handed them: a recipient and a subject typed with the
+body still empty were writing, and were killed silently (emacs-vm/vm#856)."
   (with-current-buffer (or buffer (current-buffer))
     (and (buffer-modified-p)
-         (save-excursion
-           (goto-char (point-min))
-           (and (re-search-forward
-                 (concat "^" (regexp-quote mail-header-separator) "$") nil t)
-                (re-search-forward "[^ \t\n]" nil t))))))
+         (or (vm-composition-has-body-p)
+             (vm-composition-headers-changed-p)))))
 
 (defcustom vm-confirm-killing-a-composition t
   "*Whether VM asks before a composition with writing in it is killed.
@@ -2364,7 +2393,10 @@ Binds the `vm-mail-mode-map' and hooks"
 	    (run-with-idle-timer
 	     1.5 t 'vm-update-composition-buffer-name)))
     (vm-new-composition-buffer)
-    (run-hooks 'mail-setup-hook)))
+    (run-hooks 'mail-setup-hook)
+    ;; Now that the composition is the writer's, what its headers say is what
+    ;; VM said.  After the hook, which may add a header of its own.
+    (setq vm-composition-headers-vm-wrote (vm-composition-header-text))))
 
 ;;;###autoload
 (defun vm-reply-other-frame (count)
