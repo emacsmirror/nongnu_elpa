@@ -10,6 +10,8 @@
 (require 'jabber-chat)
 (require 'jabber-chat-commands)
 (require 'jabber-db)
+(require 'jabber-mam)
+(require 'jabber-muc)
 (require 'jabber-reactions)
 
 (declare-function jabber-db-replace-reactions
@@ -51,29 +53,6 @@ and tears down on exit."
           (db2 (jabber-db-ensure-open)))
       (should (eq db1 db2)))))
 
-(ert-deftest jabber-test-db-ensure-open-migrates-live-connection ()
-  "Ensure-open migrates an existing connection after a code reload."
-  (jabber-test-db-with-db
-    (sqlite-execute jabber-db--connection "DROP TABLE message_thread")
-    (sqlite-execute jabber-db--connection "DROP INDEX idx_msg_thread")
-    (sqlite-execute
-     jabber-db--connection
-     "ALTER TABLE message DROP COLUMN thread_parent_id")
-    (sqlite-execute
-     jabber-db--connection
-     "ALTER TABLE message DROP COLUMN thread_id")
-    (sqlite-execute jabber-db--connection "PRAGMA user_version=7")
-    (let ((db jabber-db--connection))
-      (should (eq db (jabber-db-ensure-open)))
-      (should (= jabber-db--schema-version
-                 (caar (sqlite-select db "PRAGMA user_version"))))
-      (should
-       (member "thread_id"
-               (mapcar #'car
-                       (sqlite-select
-                        db
-                        "SELECT name FROM pragma_table_info('message')"))))
-      (should (jabber-db--table-exists-p db "message_thread")))))
 
 (ert-deftest jabber-test-db-close-and-reopen ()
   "Closing and reopening the database works."
@@ -354,6 +333,277 @@ and tears down on exit."
       (should (null (jabber-db-search "me@example.com" "xyzzynonexistent"))))))
 
 ;;; Group 5: Dedup and last-timestamp
+
+(ert-deftest jabber-test-db-dedup-preserves-conflicting-identities ()
+  "Equal content and timestamps never override distinct message identities."
+  (dolist (pair '((("in" "groupchat" "alice" "a" "sa" "oa")
+                   ("in" "groupchat" "bob" "b" "sb" "ob"))
+                  (("in" "chat" nil "a" "sa" nil)
+                   ("in" "chat" nil "b" "sb" nil))
+                  (("in" "chat" nil "same" nil nil)
+                   ("out" "chat" nil "same" nil nil))
+                  (("in" "groupchat" "alice" "same" "same" "a")
+                   ("in" "groupchat" "alice" "same" "same" "b"))
+                  (("in" "groupchat" "alice" "a" "same" "same")
+                   ("in" "groupchat" "alice" "b" "same" "same"))
+                  (("in" "groupchat" "alice" nil nil nil)
+                   ("in" "groupchat" "bob" nil nil nil))
+                  (("in" "chat" nil nil nil nil)
+                   ("in" "headline" nil nil nil nil))
+                  (("in" "chat" nil nil nil nil)
+                   ("in" "chat" nil nil nil nil))))
+    (jabber-test-db-with-db
+      (dolist (entry pair)
+        (pcase-let ((`(,direction ,type ,resource ,stanza ,server ,occupant)
+                     entry))
+          (jabber-db-store-message "me@x" "peer@x" direction type "yes" 100
+                                   resource stanza server occupant)))
+      (should (= 2 (caar (sqlite-select jabber-db--connection
+                                       "SELECT count(*) FROM message"))))
+      (jabber-db-close)
+      (let ((jabber-backlog-days nil))
+        (should (= 2 (length (jabber-db-backlog "me@x" "peer@x"))))))))
+
+
+(ert-deftest jabber-test-db-dedup-muc-live-before-archive-id ()
+  "An exact MUC replay upgrades its live row's missing archive identity."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                             "yes" 100 "alice" "client" nil "actor")
+    (dotimes (_ 2)
+      (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                               "yes" 100 "alice" "client" "archive" "actor"))
+    (should (equal '(("client" "archive"))
+                   (sqlite-select jabber-db--connection
+                                  "SELECT stanza_id,server_id FROM message")))))
+
+(ert-deftest jabber-test-db-dedup-legacy-candidate-must-be-unambiguous ()
+  "Only one exactly scoped ID-less row may receive replay identifiers."
+  (dolist (count '(1 2))
+    (jabber-test-db-with-db
+      (dotimes (_ count)
+        (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                                 "yes" 100 "alice"))
+      (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                               "yes" 100 "alice" "client" "archive")
+      (let ((rows (sqlite-select jabber-db--connection
+                                "SELECT stanza_id, server_id FROM message ORDER BY id")))
+        (should (equal rows (if (= count 1) '(("client" "archive"))
+                              '((nil nil) (nil nil) ("client" "archive")))))))))
+
+(ert-deftest jabber-test-db-dedup-conflicting-ids-do-not-rewrite-siblings ()
+  "A replay updates only its exact row, even with recycled client IDs."
+  (jabber-test-db-with-db
+    (dolist (server '("a" "b"))
+      (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                               "yes" 100 nil "same" server))
+    (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                             "yes" 200 nil "same" "b" nil nil nil
+                             '(:reply-to-id "parent"))
+    (should (equal '(("a" 100 nil) ("b" 200 "parent"))
+                   (sqlite-select jabber-db--connection
+                                  "SELECT server_id,timestamp,reply_to_id
+FROM message ORDER BY id")))))
+
+(ert-deftest jabber-test-db-dedup-live-and-archive-fields-roundtrip ()
+  "Live storage and MAM field extraction retain one exact encrypted message."
+  (require 'jabber-mam)
+  (jabber-test-db-with-db
+    (let* ((stamp "2026-01-01T00:00:00Z")
+           (timestamp (floor (float-time (jabber-parse-time stamp))))
+           (message `(message ((from . "peer@x/phone") (to . "me@x")
+                               (type . "chat") (id . "client"))
+                              (body () "decrypted text")
+                              (delay ((xmlns . "urn:xmpp:delay") (stamp . ,stamp)))
+                              (stanza-id ((xmlns . "urn:xmpp:sid:0")
+                                          (by . "me@x") (id . "archive")))))
+           (jabber-history-inhibit-received-message-functions nil))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_) "me@x")))
+        (jabber-db--message-handler 'jc message)
+        (let ((fields (jabber-mam--extract-fields 'jc message stamp)))
+          (dotimes (_ 2)
+            (jabber-db-store-message
+             (plist-get fields :our-jid) (plist-get fields :peer)
+             (plist-get fields :direction) (plist-get fields :type)
+             (plist-get fields :body) timestamp
+             (jabber-jid-resource (plist-get fields :from))
+             (plist-get fields :stanza-id) "archive" nil nil t))))
+      ;; A later decryption failure must not replace valid stored text.
+      (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                               "[OMEMO: could not decrypt]" timestamp
+                               "phone" "client" "archive" nil nil t)
+      (jabber-db-close)
+      (let ((rows (jabber-db-query "me@x" "peer@x")))
+        (should (= 1 (length rows)))
+        (should (equal "decrypted text" (plist-get (car rows) :body))))
+      (should (equal '(("client" "archive"))
+                     (sqlite-select jabber-db--connection
+                                    "SELECT stanza_id,server_id FROM message"))))))
+
+(defun jabber-test-db--archive-message (from inner)
+  "Wrap INNER in a MAM result from FROM for the replay test query."
+  (list 'message `((from . ,from))
+        (list 'result `((xmlns . ,jabber-mam-xmlns) (queryid . "replay")
+                       (id . "archive"))
+              (list 'forwarded `((xmlns . ,jabber-mam-forward-xmlns))
+                    '(delay ((xmlns . "urn:xmpp:delay")
+                             (stamp . "2026-01-01T00:00:00Z")))
+                    (copy-tree inner)))))
+
+(ert-deftest jabber-test-db-dedup-native-muc-nickname-replay ()
+  "Native MAM replay retains outgoing identity after our nickname changes."
+  (jabber-test-db-with-db
+    (let ((nickname "old-custom")
+          (jabber-history-inhibit-received-message-functions nil)
+          (jabber-mam--syncing '((jc . "replay")))
+          (jabber-mam--query-targets '(("replay" . "room@x")))
+          (jabber-mam--dirty-peers nil)
+          (jabber-mam--sync-received nil)
+          (inner '(message ((from . "room@x/old-custom") (to . "me@x/desktop")
+                            (type . "groupchat") (id . "client"))
+                           (body () "preserved")
+                           (delay ((xmlns . "urn:xmpp:delay")
+                                   (stamp . "2026-01-01T00:00:00Z")))
+                           (stanza-id ((xmlns . "urn:xmpp:sid:0")
+                                       (by . "room@x") (id . "archive")))
+                           (occupant-id ((xmlns . "urn:xmpp:occupant-id:0")
+                                         (id . "same-actor"))))))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid) (lambda (_) "me@x"))
+                ((symbol-function 'jabber-muc-nickname) (lambda (&rest _) nickname))
+                ((symbol-function 'jabber-muc-joined-p) (lambda (_) t))
+                ((symbol-function 'fsm-get-state-data) (lambda (_) '(:username "me"))))
+        (jabber-db--message-handler 'jc inner)
+        (let ((original (sqlite-select jabber-db--connection
+                                      "SELECT * FROM message")))
+          (should (equal '(("out"))
+                         (sqlite-select jabber-db--connection
+                                        "SELECT direction FROM message")))
+          (setq nickname "new-custom")
+          (should (equal '("in" . "room@x")
+                         (jabber-mam--classify-direction
+                          'jc "room@x/old-custom" "me@x/desktop" "groupchat")))
+          ;; Replay both before and after reopening, preserving the primary ID.
+          (dotimes (_ 2)
+            (jabber-mam--process-message
+             'jc (jabber-test-db--archive-message "room@x" inner))
+            (jabber-db-close)
+            (jabber-db-ensure-open)
+            (should (equal original (sqlite-select jabber-db--connection
+                                                   "SELECT * FROM message")))))))))
+
+(ert-deftest jabber-test-db-dedup-native-idless-outgoing-replay ()
+  "Own full-JID replay upgrades one ID-less send, never ambiguous siblings."
+  (dolist (count '(1 2))
+    (jabber-test-db-with-db
+      (let ((jabber-history-inhibit-received-message-functions nil)
+            (jabber-mam--syncing '((jc . "replay")))
+            (jabber-mam--query-targets nil)
+            (jabber-mam--dirty-peers nil)
+            (jabber-mam--sync-received nil)
+            (instant (jabber-parse-time "2026-01-01T00:00:00Z"))
+            (real-float-time (symbol-function 'float-time)))
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid) (lambda (_) "me@x"))
+                  ((symbol-function 'jabber-send-sexp) (lambda (&rest _) nil))
+                  ((symbol-function 'float-time)
+                   (lambda (&optional time) (funcall real-float-time (or time instant)))))
+          (dotimes (_ count)
+            (jabber-send-message 'jc "peer@x" "" "preserved" "chat"))
+          (should (equal (make-list count '(nil nil nil))
+                         (sqlite-select jabber-db--connection
+                                        "SELECT resource,stanza_id,server_id FROM message")))
+          (dotimes (_ 2)
+            (jabber-mam--process-message
+             'jc (jabber-test-db--archive-message
+                  "me@x" '(message ((from . "me@x/desktop") (to . "peer@x")
+                                    (type . "chat")) (body () "preserved"))))
+            (jabber-db-close)
+            (jabber-db-ensure-open)
+            (should
+             (equal (if (= count 1)
+                        '((1 "out" nil nil "archive" "preserved"))
+                      '((1 "out" nil nil nil "preserved")
+                        (2 "out" nil nil nil "preserved")
+                        (3 "out" "desktop" nil "archive" "preserved")))
+                    (sqlite-select jabber-db--connection
+                                   "SELECT id,direction,resource,stanza_id,server_id,body
+FROM message ORDER BY id")))))))))
+
+(ert-deftest jabber-test-db-dedup-direction-drift-requires-muc-identity ()
+  "Conflicting or incomplete MUC identities cannot cross direction scope."
+  (dolist (identity '(("chat" "nick" "client" "archive" "actor")
+                      ("groupchat" "other" "client" "archive" "actor")
+                      ("groupchat" "nick" "other" "archive" "actor")
+                      ("groupchat" "nick" "client" "other" "actor")
+                      ("groupchat" "nick" "client" "archive" "other")
+                      ("groupchat" "nick" nil "archive" "actor")
+                      ("groupchat" "nick" "client" nil "actor")
+                      ("groupchat" "nick" "client" "archive" nil)))
+    (jabber-test-db-with-db
+      (pcase-let ((`(,type ,resource ,client ,server ,occupant) identity))
+        (jabber-db-store-message "me@x" "room@x" "out" type
+                                 "original" 100 "nick" "client" "archive" "actor")
+        (let ((original (car (sqlite-select jabber-db--connection
+                                           "SELECT * FROM message"))))
+          (dotimes (_ (if server 2 1))
+            (jabber-db-store-message "me@x" "room@x" "in" type
+                                     "replay" 200 resource client server occupant))
+          (jabber-db-close)
+          (jabber-db-ensure-open)
+          (let ((rows (sqlite-select jabber-db--connection
+                                     "SELECT * FROM message ORDER BY id")))
+            (should (= 2 (length rows)))
+            (should (equal original (car rows)))))))))
+
+(ert-deftest jabber-test-db-dedup-direction-drift-refuses-ambiguity ()
+  "Direction drift cannot choose between two historical matching rows."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@x" "room@x" "out" "groupchat"
+                             "original" 100 "nick" "client" "archive" "actor")
+    ;; Model a database already containing both classifications of this ID.
+    (sqlite-execute jabber-db--connection
+                    "INSERT INTO message
+(account,peer,direction,type,body,timestamp,resource,stanza_id,server_id,occupant_id)
+SELECT account,peer,'in',type,body,timestamp,resource,stanza_id,server_id,occupant_id
+FROM message")
+    (let ((original (sqlite-select jabber-db--connection
+                                  "SELECT * FROM message ORDER BY id")))
+      (dotimes (_ 2)
+        (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                                 "replay" 200 "nick" "client" "archive" "actor"))
+      (jabber-db-close)
+      (jabber-db-ensure-open)
+      (should (equal original (sqlite-select jabber-db--connection
+                                            "SELECT * FROM message WHERE id <= 2 ORDER BY id"))))))
+
+(ert-deftest jabber-test-db-dedup-missing-resource-is-outgoing-only ()
+  "Missing-resource fallback never conflates MUC senders or incoming rows."
+  (dolist (scope '(("in" "chat") ("out" "groupchat") ("in" "groupchat")))
+    (jabber-test-db-with-db
+      (pcase-let ((`(,direction ,type) scope))
+        (jabber-db-store-message "me@x" "peer@x" direction type "same" 100)
+        (dotimes (_ 2)
+          (jabber-db-store-message "me@x" "peer@x" direction type "same" 100
+                                   "desktop" nil "archive"))
+        (jabber-db-close)
+        (jabber-db-ensure-open)
+        (should (equal '((nil nil) ("desktop" "archive"))
+                       (sqlite-select jabber-db--connection
+                                      "SELECT resource,server_id FROM message ORDER BY id")))))))
+
+(ert-deftest jabber-test-db-dedup-missing-resource-mixed-ambiguity ()
+  "Exact-resource and missing-resource candidates participate in one count."
+  (jabber-test-db-with-db
+    (dolist (resource '(nil "desktop"))
+      (jabber-db-store-message "me@x" "peer@x" "out" "chat" "same" 100 resource))
+    (dotimes (_ 2)
+      (jabber-db-store-message "me@x" "peer@x" "out" "chat" "same" 100
+                               "desktop" nil "archive"))
+    (jabber-db-close)
+    (jabber-db-ensure-open)
+    (should (equal '((nil nil) ("desktop" nil) ("desktop" "archive"))
+                   (sqlite-select jabber-db--connection
+                                  "SELECT resource,server_id FROM message ORDER BY id")))))
 
 (ert-deftest jabber-test-db-dedup-stanza-id ()
   "Duplicate stanza_id keeps one row with body preserved and timestamp updated."
@@ -1258,6 +1508,56 @@ the corrected jabber-muc-create-buffer order."
 
 ;;; Group: Failed-decrypt replacement
 
+(ert-deftest jabber-test-db-store-preserves-placeholder-like-text-and-oob ()
+  "Only full decrypt-failure placeholders permit body and OOB replacement."
+  (dolist (body '("Log: could not decrypt]"
+                  "[OMEMO: could not decrypt] trailing text"
+                  "prefix [OMEMO: could not decrypt]"
+                  "[OMEMO: could not decrypt]"))
+    (jabber-test-db-with-db
+      (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                               body 100 nil "client" "archive" nil
+                               '(("https://example.org/old" . "original")))
+      ;; A recycled client ID must not upgrade a sibling placeholder.
+      (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                               "[OMEMO: could not decrypt]" 100 nil "client" "other" nil
+                               '(("https://example.org/sibling" . "sibling")))
+      (dotimes (_ 2)
+        (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                                 "decrypted" 100 nil "client" "archive" nil
+                                 '(("https://example.org/new" . "replacement")))
+        ;; A failed decryption retry must not replace either valid body.
+        (jabber-db-store-message "me@x" "peer@x" "in" "chat"
+                                 "[OpenPGP: could not decrypt]" 100 nil "client" "archive")
+        (jabber-db-close)
+        (jabber-db-ensure-open)
+        (should
+         (equal (list (if (jabber--decrypt-failure-body-p body)
+                          '(1 "decrypted" "https://example.org/new" "replacement")
+                        (list 1 body "https://example.org/old" "original"))
+                      '(2 "[OMEMO: could not decrypt]" "https://example.org/sibling" "sibling"))
+                (sqlite-select jabber-db--connection
+                               "SELECT m.id,m.body,o.url,o.desc FROM message m
+JOIN message_oob o ON o.message_id=m.id ORDER BY m.id")))))))
+
+(ert-deftest jabber-test-db-store-preserves-retracted-placeholder-and-oob ()
+  "Even a real placeholder cannot upgrade a retracted message's body or OOB."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                             "[OMEMO: could not decrypt]" 100 "nick" "client" "archive" nil
+                             '(("https://example.org/old" . "original")))
+    (jabber-db-retract-message-in-peer "me@x" "room@x" "archive" nil)
+    (dotimes (_ 2)
+      (jabber-db-store-message "me@x" "room@x" "in" "groupchat"
+                               "decrypted" 200 "nick" "client" "archive" nil
+                               '(("https://example.org/new" . "replacement")))
+      (jabber-db-close)
+      (jabber-db-ensure-open)
+      (should (equal '((1 100 "[OMEMO: could not decrypt]" "https://example.org/old" "original"))
+                     (sqlite-select jabber-db--connection
+                                    "SELECT m.retracted,m.timestamp,m.body,o.url,o.desc
+FROM message m JOIN message_oob o ON o.message_id=m.id"))))))
+
 (ert-deftest jabber-test-db-store-replaces-failed-decrypt-by-stanza-id ()
   "Re-storing a message with real text replaces a decrypt-failure placeholder."
   (jabber-test-db-with-db
@@ -1461,6 +1761,230 @@ the corrected jabber-muc-create-buffer order."
        (when (file-directory-p jabber-test-db--dir)
          (delete-directory jabber-test-db--dir t)))))
 
+(ert-deftest jabber-test-db-legacy-migration-failure-is-atomic ()
+  "A failed legacy ALTER rolls back schema, rows and version before retry."
+  (jabber-test-db-with-v1-db
+    (let ((db (sqlite-open jabber-db-path)))
+      (unwind-protect
+          (progn
+            (dolist (migration '(jabber-db--migrate-v1-to-v2
+                                 jabber-db--migrate-v2-to-v3
+                                 jabber-db--migrate-v3-to-v4
+                                 jabber-db--migrate-v4-to-v5
+                                 jabber-db--migrate-v5-to-v6))
+              (funcall migration db))
+            (sqlite-execute db "INSERT INTO message
+(account,peer,direction,type,body,timestamp)
+VALUES ('me@x','peer@x','in','chat','preserve',100)")
+            (let ((before (sqlite-select db "SELECT * FROM sqlite_master"))
+                  (real-execute (symbol-function 'sqlite-execute)))
+              (cl-letf (((symbol-function 'sqlite-execute)
+                         (lambda (connection sql &rest values)
+                           (if (equal sql "ALTER TABLE message ADD COLUMN reply_to_jid TEXT")
+                               (error "Injected migration failure")
+                             (apply real-execute connection sql values)))))
+                (should-error (jabber-db--migrate-v6-to-v7 db)))
+              (should (equal before (sqlite-select db "SELECT * FROM sqlite_master")))
+              (should (= 6 (caar (sqlite-select db "PRAGMA user_version")))))
+            (jabber-db--migrate db)
+            (should (= jabber-db--schema-version
+                       (caar (sqlite-select db "PRAGMA user_version")))))
+        (sqlite-close db)))
+    (should (equal "preserve"
+                   (plist-get (car (jabber-db-backlog "me@x" "peer@x")) :body)))))
+
+(ert-deftest jabber-test-db-ensure-open-migrates-live-connection ()
+  "Ensure-open migrates an existing historical connection after a reload."
+  (jabber-test-db-with-v1-db
+    (setq jabber-db--connection (sqlite-open jabber-db-path))
+    (let ((db jabber-db--connection))
+      (should (eq db (jabber-db-ensure-open)))
+      (should (= jabber-db--schema-version
+                 (caar (sqlite-select db "PRAGMA user_version")))))
+    (should (jabber-db--table-exists-p jabber-db--connection "message_thread"))))
+
+(defun jabber-test-db--prepare-version (db version)
+  "Populate the historical v1 DB and advance it to VERSION."
+  (sqlite-execute db "INSERT INTO message
+(account,peer,direction,type,body,timestamp,raw_xml,oob_url,oob_desc,retracted_by)
+VALUES ('me@x','peer@x','in','chat','preserved',100,'<message/>','https://x','file','mod@x')")
+  (sqlite-execute db "INSERT INTO omemo_store (account,store_blob)
+VALUES ('me@x',x'010203')")
+  (cl-loop for old from 1 below version
+           do (funcall (intern (format "jabber-db--migrate-v%d-to-v%d" old (1+ old)))
+                       db)))
+
+(defun jabber-test-db--snapshot (db)
+  "Return schema, version and message/encryption rows from DB."
+  (list (sqlite-select db "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY name")
+        (sqlite-select db "PRAGMA user_version")
+        (sqlite-select db "SELECT * FROM message")
+        (sqlite-select db "SELECT * FROM omemo_store")))
+
+(ert-deftest jabber-test-db-migrations-rollback-every-statement ()
+  "Every legacy or retraction migration write rolls back after a fault."
+  (dolist (version '(1 2 3 4 5 6 10))
+    (let ((migration (intern (format "jabber-db--migrate-v%d-to-v%d"
+                                    version (1+ version))))
+          (statements 0))
+      ;; Discover the actual writes on this version, excluding savepoint control.
+      (jabber-test-db-with-v1-db
+        (let ((db (sqlite-open jabber-db-path)))
+          (unwind-protect
+              (progn
+                (jabber-test-db--prepare-version db version)
+                (let ((execute (symbol-function 'sqlite-execute)))
+                  (cl-letf (((symbol-function 'sqlite-execute)
+                             (lambda (connection sql &rest values)
+                               (when (string-match-p "\\`\\(?:ALTER\\|CREATE\\|INSERT\\|UPDATE\\|PRAGMA user_version\\)" sql)
+                                 (cl-incf statements))
+                               (apply execute connection sql values))))
+                    (funcall migration db))))
+            (sqlite-close db))))
+      (should (> statements 0))
+      (dotimes (failure statements)
+        (ert-info ((format "version=%d write=%d" version (1+ failure)))
+          (jabber-test-db-with-v1-db
+            (let ((db (sqlite-open jabber-db-path)))
+              (unwind-protect
+                  (progn
+                    (jabber-test-db--prepare-version db version)
+                    (let ((before (jabber-test-db--snapshot db))
+                          (execute (symbol-function 'sqlite-execute))
+                          (writes 0))
+                      (cl-letf (((symbol-function 'sqlite-execute)
+                                 (lambda (connection sql &rest values)
+                                   (prog1 (apply execute connection sql values)
+                                     (when (and (string-match-p "\\`\\(?:ALTER\\|CREATE\\|INSERT\\|UPDATE\\|PRAGMA user_version\\)" sql)
+                                                (= (cl-incf writes) (1+ failure)))
+                                       (error "Injected failure after migration write"))))))
+                        (should-error (funcall migration db)))
+                      (sqlite-close db)
+                      (setq db (sqlite-open jabber-db-path))
+                      (should (equal before (jabber-test-db--snapshot db))))
+                    (jabber-db--migrate db)
+                    (should (= jabber-db--schema-version
+                               (caar (sqlite-select db "PRAGMA user_version")))))
+                (sqlite-close db)))
+            (let ((row (car (jabber-db-backlog "me@x" "peer@x"))))
+              (should (equal "preserved" (plist-get row :body)))
+              (should (plist-get row :retracted))
+              (should (equal '(("https://x" "file"))
+                             (sqlite-select jabber-db--connection
+                                            "SELECT url,desc FROM message_oob"))))))))))
+
+(ert-deftest jabber-test-db-migration-nonlocal-exit-preserves-caller-transaction ()
+  "A migration throw rolls back only migration work inside the caller's SQL."
+  (jabber-test-db-with-v1-db
+    (let ((db (sqlite-open jabber-db-path)))
+      (unwind-protect
+          (progn
+            (jabber-test-db--prepare-version db 6)
+            (sqlite-execute db "BEGIN")
+            (sqlite-execute db "UPDATE message SET body = 'caller-owned'")
+            (let ((execute (symbol-function 'sqlite-execute)))
+              (should
+               (eq 'cancelled
+                   (catch 'stop
+                     (cl-letf (((symbol-function 'sqlite-execute)
+                                (lambda (connection sql &rest values)
+                                  (prog1 (apply execute connection sql values)
+                                    (when (equal sql "PRAGMA user_version=7")
+                                      (throw 'stop 'cancelled))))))
+                       (jabber-db--migrate db))))))
+            (should (= 6 (caar (sqlite-select db "PRAGMA user_version"))))
+            (should (equal '(("caller-owned"))
+                           (sqlite-select db "SELECT body FROM message")))
+            (sqlite-execute db "ROLLBACK")
+            (should (equal '(("preserved"))
+                           (sqlite-select db "SELECT body FROM message")))
+            (jabber-db--migrate db))
+        (sqlite-close db)))))
+
+(ert-deftest jabber-test-db-open-failure-closes-and-unpublishes ()
+  "Old-schema failures close newly opened and retained connections."
+  (dolist (live '(nil t))
+    (jabber-test-db-with-v1-db
+      (let ((db (sqlite-open jabber-db-path)))
+        (jabber-test-db--prepare-version db 6)
+        (sqlite-close db))
+      (let ((execute (symbol-function 'sqlite-execute))
+            failed-db)
+        (when live
+          (setq jabber-db--connection (sqlite-open jabber-db-path)))
+        (cl-letf (((symbol-function 'sqlite-execute)
+                   (lambda (db sql &rest values)
+                     (if (equal sql "ALTER TABLE message ADD COLUMN reply_to_jid TEXT")
+                         (progn (setq failed-db db) (error "Injected open failure"))
+                       (apply execute db sql values)))))
+          (should-error (jabber-db-ensure-open)))
+        (should failed-db)
+        (should-not jabber-db--connection)
+        (should-error (sqlite-select failed-db "SELECT 1"))
+        (let ((db (sqlite-open jabber-db-path)))
+          (unwind-protect
+              (should (= 6 (caar (sqlite-select db "PRAGMA user_version"))))
+            (sqlite-close db)))
+        (should (sqlitep (jabber-db-ensure-open)))
+        (should (equal "preserved"
+                       (plist-get (car (jabber-db-backlog "me@x" "peer@x")) :body)))))))
+
+(ert-deftest jabber-test-db-initial-schema-failure-is-retryable ()
+  "Failure during initial DDL leaves an empty version-zero database."
+  (let* ((directory (make-temp-file "jabber-db-init" t))
+         (jabber-db-path (expand-file-name "history.sqlite" directory))
+         (jabber-db--connection nil)
+         (execute (symbol-function 'sqlite-execute))
+         failed-db)
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'sqlite-execute)
+                     (lambda (db sql &rest values)
+                       (if (string-prefix-p "CREATE TABLE IF NOT EXISTS message_oob" sql)
+                           (progn (setq failed-db db) (error "Injected DDL failure"))
+                         (apply execute db sql values)))))
+            (should-error (jabber-db-ensure-open)))
+          (should failed-db)
+          (should-not jabber-db--connection)
+          (should-error (sqlite-select failed-db "SELECT 1"))
+          (let ((db (sqlite-open jabber-db-path)))
+            (unwind-protect
+                (progn
+                  (should (= 0 (caar (sqlite-select db "PRAGMA user_version"))))
+                  (should-not (sqlite-select db "SELECT name FROM sqlite_master")))
+              (sqlite-close db)))
+          (should (sqlitep (jabber-db-ensure-open))))
+      (jabber-db-close)
+      (delete-directory directory t))))
+
+(ert-deftest jabber-test-db-migration-v11-retraction-state ()
+  "Migrated and fresh databases agree on independent retraction state."
+  (let (fresh-column)
+    (jabber-test-db-with-db
+      (setq fresh-column
+            (sqlite-select jabber-db--connection
+                           "SELECT name,type,\"notnull\",dflt_value,pk
+FROM pragma_table_info('message') WHERE name = 'retracted'")))
+    (jabber-test-db-with-v1-db
+      (let ((db (sqlite-open jabber-db-path)))
+        (unwind-protect
+            (jabber-test-db--prepare-version db 10)
+          (sqlite-close db)))
+      (jabber-db-ensure-open)
+      (should (equal fresh-column
+                     (sqlite-select jabber-db--connection
+                                    "SELECT name,type,\"notnull\",dflt_value,pk
+FROM pragma_table_info('message') WHERE name = 'retracted'")))
+      (should (equal '((1 "mod@x"))
+                     (sqlite-select jabber-db--connection
+                                    "SELECT retracted,retracted_by FROM message")))
+      (jabber-db-store-message "me@x" "peer@x" "in" "chat" "new" 101)
+      (should (equal '((1 "mod@x") (0 nil))
+                     (sqlite-select jabber-db--connection
+                                    "SELECT retracted,retracted_by FROM message ORDER BY id")))
+      (jabber-db-close)
+      (should (= 2 (length (jabber-db-backlog "me@x" "peer@x")))))))
+
 (defmacro jabber-test-db-with-migration-fixture (version ddl &rest body)
   "Create a database at VERSION from DDL, migrate it, then run BODY."
   (declare (indent 2) (debug t))
@@ -1481,7 +2005,7 @@ the corrected jabber-muc-create-buffer order."
          (delete-directory jabber-test-db--dir t)))))
 
 (defconst jabber-test-db--v3-ddl
-  '("CREATE TABLE message (id INTEGER PRIMARY KEY)"
+  '("CREATE TABLE message (id INTEGER PRIMARY KEY, retracted_by TEXT)"
     "CREATE TABLE omemo_store (
   account TEXT PRIMARY KEY,
   store_blob BLOB NOT NULL)")
@@ -1498,7 +2022,7 @@ the corrected jabber-muc-create-buffer order."
   "Minimal valid tables needed to migrate a v4 database.")
 
 (defconst jabber-test-db--v7-reaction-ddl
-  '("CREATE TABLE message (id INTEGER PRIMARY KEY)"
+  '("CREATE TABLE message (id INTEGER PRIMARY KEY, retracted_by TEXT)"
     "CREATE TABLE message_reaction (
   message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
   sender TEXT NOT NULL,
@@ -1951,7 +2475,7 @@ CREATE TABLE omemo_store (
 CREATE TABLE message (
   id INTEGER PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
   direction TEXT NOT NULL, type TEXT, body TEXT,
-  timestamp INTEGER NOT NULL, stanza_id TEXT)")
+  timestamp INTEGER NOT NULL, stanza_id TEXT, retracted_by TEXT)")
             (sqlite-execute db "\
 CREATE TABLE omemo_store (
   account TEXT PRIMARY KEY,
@@ -2000,7 +2524,7 @@ CREATE TABLE message_reaction_actor (
 CREATE TABLE message (
   id INTEGER PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
   direction TEXT NOT NULL, type TEXT, body TEXT,
-  timestamp INTEGER NOT NULL, stanza_id TEXT)")
+  timestamp INTEGER NOT NULL, stanza_id TEXT, retracted_by TEXT)")
             (sqlite-execute db "\
 CREATE TABLE message_reaction (
   message_id INTEGER NOT NULL, sender TEXT NOT NULL,
@@ -2046,7 +2570,7 @@ CREATE TABLE message (
   direction TEXT NOT NULL, type TEXT, body TEXT,
   timestamp INTEGER NOT NULL, stanza_id TEXT, server_id TEXT,
   reply_to_id TEXT, reply_to_jid TEXT,
-  fallback_start INTEGER, fallback_end INTEGER)")
+  fallback_start INTEGER, fallback_end INTEGER, retracted_by TEXT)")
             (sqlite-execute db "\
 INSERT INTO message
   (account, peer, direction, type, body, timestamp, stanza_id)
@@ -2105,7 +2629,7 @@ CREATE TABLE message (
   direction TEXT NOT NULL, type TEXT, body TEXT,
   timestamp INTEGER NOT NULL, stanza_id TEXT, server_id TEXT,
   reply_to_id TEXT, reply_to_jid TEXT,
-  fallback_start INTEGER, fallback_end INTEGER)")
+  fallback_start INTEGER, fallback_end INTEGER, retracted_by TEXT)")
           (sqlite-execute db "\
 INSERT INTO message
   (account, peer, direction, type, body, timestamp, stanza_id)
@@ -3028,7 +3552,7 @@ CREATE TABLE message (
   type TEXT,
   body TEXT,
   timestamp INTEGER NOT NULL,
-  stanza_id TEXT)")
+  stanza_id TEXT, retracted_by TEXT)")
             (sqlite-execute db "\
 CREATE TABLE message_reaction (
   message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
@@ -3332,6 +3856,102 @@ CREATE TABLE omemo_store (
                                       (by . "me@example.com"))))))
     (let ((el (jabber-db--stanza-id-element stanza "me@example.com")))
       (should (equal "archive-1" (jabber-xml-get-attribute el 'id))))))
+
+(ert-deftest jabber-test-db-displayed-cascade-ambiguous-time ()
+  "A timestamp alone cannot select one of two equal-second messages."
+  (jabber-test-db-with-db
+    (dolist (id '("first" "second"))
+      (jabber-db-store-message "me@example.org" "peer@example.org"
+                               "out" "chat" id 100 nil id)
+      (jabber-db-update-receipt "me@example.org" "peer@example.org"
+                                id "delivered_at" 101))
+    (jabber-db-update-receipt "me@example.org" "peer@example.org"
+                              "first" "displayed_at" 102)
+    (jabber-db-cascade-displayed "me@example.org" "peer@example.org" 102 100)
+    (should (equal '(("first" 102) ("second" nil))
+                   (sqlite-select jabber-db--connection
+                                  "SELECT stanza_id, displayed_at FROM message ORDER BY id")))))
+
+(ert-deftest jabber-test-db-displayed-cascade-row-order ()
+  "Use persisted row order for ties and preserve scope after reopening."
+  (jabber-test-db-with-db
+    ;; Insert the older timestamp last: timestamp is the primary ordering key.
+    (dolist (row '(("me@example.org" "peer@example.org" "out" "chat" "first" 100)
+                   ("me@example.org" "peer@example.org" "out" "chat" "second" 100)
+                   ("me@example.org" "peer@example.org" "out" "chat" "future" 101)
+                   ("other@example.org" "peer@example.org" "out" "chat" "first" 99)
+                   ("me@example.org" "other@example.org" "out" "chat" "first" 99)
+                   ("me@example.org" "peer@example.org" "in" "chat" "incoming" 99)
+                   ("me@example.org" "peer@example.org" "out" "groupchat" "room" 99)
+                   ("me@example.org" "peer@example.org" "out" "chat" "undelivered" 99)
+                   ("me@example.org" "peer@example.org" "out" "chat" "older" 99)))
+      (apply #'jabber-db-store-message (append row (list nil (nth 4 row)))))
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET delivered_at = 101 WHERE stanza_id != 'undelivered'")
+    (cl-labels ((state ()
+                 (sqlite-select jabber-db--connection
+                                "SELECT stanza_id, displayed_at FROM message ORDER BY id"))
+                (mark (id time)
+                 (jabber-db-cascade-displayed
+                  "me@example.org" "peer@example.org" time 100 id)))
+      (mark "first" 102)
+      (let ((expected '(("first" 102) ("second" nil) ("future" nil)
+                        ("first" nil) ("first" nil) ("incoming" nil)
+                        ("room" nil) ("undelivered" nil) ("older" 102))))
+        (should (equal expected (state)))
+        (jabber-db-close)
+        (jabber-db-ensure-open)
+        (should (equal expected (state)))
+        (mark "missing" 103)
+        (mark "first" 103)
+        (should (equal expected (state))))
+      (mark "second" 104)
+      (let ((expected '(("first" 102) ("second" 104) ("future" nil)
+                        ("first" nil) ("first" nil) ("incoming" nil)
+                        ("room" nil) ("undelivered" nil) ("older" 102))))
+        (should (equal expected (state)))
+        (mark "first" 105)
+        (mark "older" 105)
+        (mark "second" 105)
+        (mark "missing" 105)
+        (should (equal expected (state)))
+        (jabber-db-close)
+        (jabber-db-ensure-open)
+        (should (equal expected (state)))))))
+
+(ert-deftest jabber-test-db-displayed-cascade-reverse-and-missing ()
+  "Ignore stale or missing boundaries, including late delivery changes."
+  (jabber-test-db-with-db
+    (dolist (id '("older" "first" "second" "future"))
+      (jabber-db-store-message "me@example.org" "peer@example.org"
+                               "out" "chat" id 100 nil id))
+    (dolist (id '("first" "second" "future"))
+      (jabber-db-update-receipt "me@example.org" "peer@example.org"
+                                id "delivered_at" 101))
+    (jabber-db-cascade-displayed "me@example.org" "peer@example.org" 102 100 "second")
+    (jabber-db-update-receipt "me@example.org" "peer@example.org"
+                              "older" "delivered_at" 103)
+    (jabber-db-cascade-displayed "me@example.org" "peer@example.org" 104 100 "first")
+    (jabber-db-cascade-displayed "me@example.org" "peer@example.org" 104 100 "missing")
+    (jabber-db-close)
+    (jabber-db-ensure-open)
+    (should (equal '(("older" nil) ("first" 102) ("second" 102) ("future" nil))
+                   (sqlite-select jabber-db--connection
+                                  "SELECT stanza_id, displayed_at FROM message ORDER BY id")))))
+
+(ert-deftest jabber-test-db-displayed-cascade-ambiguous-id ()
+  "Refuse a reused stanza ID instead of choosing an arbitrary row."
+  (jabber-test-db-with-db
+    (dolist (timestamp '(100 101))
+      (jabber-db-store-message "me@example.org" "peer@example.org"
+                               "out" "chat" "body" timestamp nil))
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET stanza_id = 'reused', delivered_at = 102")
+    (jabber-db-cascade-displayed "me@example.org" "peer@example.org" 103 100 "reused")
+    (jabber-db-cascade-displayed "me@example.org" "peer@example.org" 103 999)
+    (should (equal '((nil) (nil))
+                   (sqlite-select jabber-db--connection
+                                  "SELECT displayed_at FROM message ORDER BY id")))))
 
 (provide 'jabber-test-db)
 
