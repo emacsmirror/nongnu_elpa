@@ -5192,11 +5192,9 @@ decide the face."
     (((class grayscale) (background light)) 
      (:foreground "grey50" :strike-through "grey70"))
     (((class grayscale) (background dark)) 
-     (:foreground "grey70" :strike-trhough "grey50"))
+     (:foreground "grey70" :strike-through "grey50"))
     (((class mono))
      (:strike-through t))
-    (((type tty)) 
-     (:dim t))
     (t ()))
   "The face used in VM Summary buffers for deleted messages."
   :group 'vm-summary-faces)
@@ -5345,9 +5343,7 @@ collapsed threads."
     (((class grayscale) (background dark))
      (:foreground "grey70"))
     (((class mono))
-     (:strikethru t))
-    (((type tty)) 
-     (:dim t))
+     (:strike-through t))
     (t ()))
   "The face used in VM Summary buffers for low-priority messages."
   :group 'vm-summary-faces)
@@ -7622,7 +7618,7 @@ which is the file on disk."
      (:background "grey"))
     (((class color) (background dark))
      (:background "DimGrey"))
-    (t (:dim t)))
+    (t (:inverse-video t)))
   "Used for marking shrunken headers."
   :group 'vm-presentation)
 
