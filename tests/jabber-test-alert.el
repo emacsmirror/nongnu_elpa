@@ -44,7 +44,9 @@
                       ((symbol-function 'jabber-chat--run-send-hooks) #'ignore)
                       ((symbol-function 'jabber-chat--display-local-message) #'ignore)
                       ((symbol-function 'jabber-send-sexp)
-                       (lambda (jc stanza) (push (list jc stanza) sent))))
+                       (lambda (jc stanza &optional success _failure)
+                         (push (list jc stanza) sent)
+                         (when success (funcall success)))))
               (jabber-chat--display-message
                a nil nil nil "peer@example.test/resource"
                '(:body "ping" :thread-id "closed")))

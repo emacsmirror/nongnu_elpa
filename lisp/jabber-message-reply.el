@@ -38,6 +38,11 @@
 (require 'jabber-muc-protocol)
 (require 'jabber-xml)
 
+;; Chat loads this library before defining its shared composition policy.
+(declare-function jabber-chat--captured-reply-elements
+                  "jabber-chat" (body correction-p &optional stanza))
+(declare-function jabber-chat--clear-send-context "jabber-chat" ())
+
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat-send-hooks)         ; jabber-chat.el
@@ -179,22 +184,13 @@ user's own text, which receivers strip from display.
 Stays inert during corrections: the pending reply belongs to the
 message being composed, not to a re-sent old one."
   (when (and jabber-message-reply--id
+             (not (bound-and-true-p jabber-chat--send-context-captured))
              (not (bound-and-true-p jabber-chat--sending-correction)))
-    (let ((reply-id jabber-message-reply--id)
-          (reply-jid jabber-message-reply--jid)
-          (fb-text jabber-message-reply--fallback-text)
-          (thread-elements (jabber-message-reply--thread-elements)))
-      (setq jabber-message-reply--id nil
-            jabber-message-reply--jid nil
-            jabber-message-reply--fallback-text nil
-            jabber-message-reply--thread nil)
-      (append
-       thread-elements
-       (jabber-message-reply--elements
-        reply-id reply-jid
-        (and fb-text (not (string-empty-p fb-text))
-             (string-prefix-p fb-text body)
-             (length fb-text)))))))
+    (prog1
+        (append (jabber-message-reply--thread-elements)
+                (jabber-chat--captured-reply-elements
+                 body nil (bound-and-true-p jabber-chat--send-hook-stanza)))
+      (jabber-chat--clear-send-context))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-message-reply--send-hook)
 

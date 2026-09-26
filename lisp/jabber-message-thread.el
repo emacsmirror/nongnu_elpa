@@ -37,6 +37,11 @@
 (require 'jabber-util)
 (require 'jabber-xml)
 
+;; Chat loads this library before defining its shared composition policy.
+(declare-function jabber-chat--captured-reply-elements
+                  "jabber-chat" (body correction-p &optional stanza))
+(declare-function jabber-chat--clear-send-context "jabber-chat" ())
+
 (defvar jabber-chat-earliest-backlog)
 (defvar jabber-chat-ewoc)
 (defvar jabber-chat-encryption)
@@ -168,30 +173,23 @@ Return nil when THREAD-ID is empty or equals PARENT-ID."
       account jabber-message-thread-peer jabber-message-thread-type new-id))
     new-id))
 
-(defun jabber-message-thread--send-hook (_body _id)
-  "Return thread metadata and the pending root reply link."
-  (jabber-message-thread--ensure-buffers)
-  (let ((elements
-         (unless (and (bound-and-true-p jabber-chat--send-hook-stanza)
-                      (jabber-message-thread-protocol-has-core-p
-                       jabber-chat--send-hook-stanza))
-           (jabber-message-thread--elements
-            jabber-message-thread-id jabber-message-thread-parent-id))))
-    (unless (bound-and-true-p jabber-chat--sending-correction)
-      (when jabber-message-thread--root-reply-id
+(defun jabber-message-thread--send-hook (body _id)
+  "Return thread metadata and the pending reply elements for BODY."
+  (unless (bound-and-true-p jabber-chat--send-context-captured)
+    (jabber-message-thread--ensure-buffers)
+    (let ((elements
+           (unless (and (bound-and-true-p jabber-chat--send-hook-stanza)
+                        (jabber-message-thread-protocol-has-core-p
+                         jabber-chat--send-hook-stanza))
+             (jabber-message-thread--elements
+              jabber-message-thread-id jabber-message-thread-parent-id))))
+      (unless (bound-and-true-p jabber-chat--sending-correction)
         (setq elements
-              (append
-               elements
-               (list
-                `(reply ((xmlns . "urn:xmpp:reply:0")
-                         ,@(and jabber-message-thread--root-reply-jid
-                                (list
-                                 (cons 'to
-                                       jabber-message-thread--root-reply-jid)))
-                         (id . ,jabber-message-thread--root-reply-id))))))
-        (setq jabber-message-thread--root-reply-id nil
-              jabber-message-thread--root-reply-jid nil)))
-    elements))
+              (append elements
+                      (jabber-chat--captured-reply-elements
+                       body nil (bound-and-true-p jabber-chat--send-hook-stanza))))
+        (jabber-chat--clear-send-context))
+      elements)))
 
 (defun jabber-message-thread--key (account peer type thread-id)
   "Return the registry key for ACCOUNT, PEER, TYPE, and THREAD-ID."
@@ -495,7 +493,7 @@ PEER and TYPE scope the exact stored message lookup."
                   jabber-chat-ewoc summary)))
           (progn
             (plist-put (cadr (ewoc-data node)) :thread-summary summary)
-            (ewoc-invalidate jabber-chat-ewoc node))
+            (jabber-chat-ewoc-invalidate node))
         (when (jabber-message-thread--new-row-only-root-p summary)
           (jabber-chat-buffer-refresh))))))
 

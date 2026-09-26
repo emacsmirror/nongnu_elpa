@@ -226,11 +226,13 @@ FROM is the JID that sent the signed presence."
 
 ;;; Message encryption (send) - 1:1 chat
 
-(defun jabber-openpgp-legacy--send-chat (jc body &optional extra-elements)
+(defun jabber-openpgp-legacy--send-chat
+    (jc body &optional extra-elements success-callback failure-callback)
   "Send BODY as XEP-0027 encrypted message via JC.
 Must be called from a chat buffer with `jabber-chatting-with' set.
 EXTRA-ELEMENTS are spliced into the stanza outside the encryption
-envelope."
+envelope.  SUCCESS-CALLBACK and FAILURE-CALLBACK report actual
+transport handoff or failure, not Stream Management queue admission."
   (require 'jabber-openpgp)
   (let* ((recipient (jabber-jid-user jabber-chatting-with))
          (key (jabber-openpgp--recipient-key recipient))
@@ -259,7 +261,9 @@ envelope."
           (plist-put msg-plist :body body)
           (plist-put msg-plist :status :sent)
           (jabber-chat--display-local-message jc msg-plist)))
-      (jabber-send-sexp jc stanza))))
+      (if (or success-callback failure-callback)
+          (jabber-send-sexp jc stanza success-callback failure-callback)
+        (jabber-send-sexp jc stanza)))))
 
 ;;; Message encryption (send) - MUC
 
@@ -276,11 +280,13 @@ Excludes entries without a real JID."
           (push bare jids))))
     (nreverse jids)))
 
-(defun jabber-openpgp-legacy--send-muc (jc body &optional extra-elements)
+(defun jabber-openpgp-legacy--send-muc
+    (jc body &optional extra-elements success-callback failure-callback)
   "Send BODY as XEP-0027 encrypted groupchat message via JC.
 Must be called from a MUC buffer with `jabber-group' set.
 EXTRA-ELEMENTS are spliced into the stanza outside the encryption
-envelope."
+envelope.  SUCCESS-CALLBACK and FAILURE-CALLBACK report actual
+transport handoff or failure, not Stream Management queue admission."
   (require 'jabber-openpgp)
   (let* ((group jabber-group)
          (recipient-jids (jabber-openpgp-legacy--muc-participant-jids group)))
@@ -309,7 +315,9 @@ envelope."
                              ,(jabber-hints-store)
                              ,@extra-elements)))
       (jabber-chat--run-send-hooks stanza body id)
-      (jabber-send-sexp jc stanza))))
+      (if (or success-callback failure-callback)
+          (jabber-send-sexp jc stanza success-callback failure-callback)
+        (jabber-send-sexp jc stanza)))))
 
 ;;; Message decryption (receive)
 

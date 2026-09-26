@@ -101,6 +101,42 @@
        (nth jabber-chat--input-history-index jabber-chat--input-history)
      jabber-chat--input-history-draft)))
 
+(defvar jabber-chat--input-completion nil
+  "Completion function captured by an asynchronous input provider.
+Call with non-nil on transport handoff, nil on definite failure.
+The return value on failure says whether the original draft was restored.")
+
+(defvar jabber-chat--input-deferred nil
+  "Non-nil when the current input provider owns deferred completion.")
+
+(defvar-local jabber-chat--input-submission nil
+  "Identity of the most recent input submission.")
+
+(defun jabber-chat--capture-input-owner ()
+  "Return a predicate for the current input buffer's exact owner.
+Track its marker, mode, connection, account and direct or group peer.
+A live buffer alone does not authorize completion or local publication."
+  (let ((buffer (current-buffer))
+        (input jabber-point-insert)
+        (mode major-mode)
+        (connection jabber-buffer-connection)
+        (account (and jabber-buffer-connection
+                      (jabber-connection-bare-jid jabber-buffer-connection)))
+        (peer (bound-and-true-p jabber-chatting-with))
+        (group (bound-and-true-p jabber-group)))
+    (lambda ()
+      (and (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (and (eq input jabber-point-insert)
+                  (or (null input)
+                      (and (markerp input) (eq (marker-buffer input) buffer)))
+                  (eq mode major-mode)
+                  (eq connection jabber-buffer-connection)
+                  (equal account (and connection
+                                      (jabber-connection-bare-jid connection)))
+                  (equal peer (bound-and-true-p jabber-chatting-with))
+                  (equal group (bound-and-true-p jabber-group))))))))
+
 (defun jabber-chat-buffer-send (&optional extra-elements)
   "Send the input composed below the prompt in the current buffer.
 EXTRA-ELEMENTS are optional XML elements for the outgoing stanza."
@@ -110,13 +146,57 @@ EXTRA-ELEMENTS are optional XML elements for the outgoing stanza."
       (setq jabber-buffer-connection
             (or (jabber-find-active-connection jabber-buffer-connection)
                 (jabber-read-account t))))
-    (let ((body (delete-and-extract-region jabber-point-insert (point-max))))
-      (prog1
-          (if extra-elements
-              (funcall jabber-send-function
-                       jabber-buffer-connection body extra-elements)
-            (funcall jabber-send-function jabber-buffer-connection body))
-        (jabber-chat--record-input-history body)))))
+    (let* ((buffer (current-buffer))
+           (input jabber-point-insert)
+           (connection jabber-buffer-connection)
+           (owner-p (jabber-chat--capture-input-owner))
+           (offset (- (point) input))
+           (undo buffer-undo-list)
+           (token (list t))
+           (body (delete-and-extract-region input (point-max)))
+           edited
+           (changed
+            (lambda (beg _end _old-length)
+              ;; Transcript writers bind `inhibit-read-only'; their marker
+              ;; shifts do not transfer ownership of the writable tail.
+              (when (and (not inhibit-read-only)
+                         (marker-position input) (>= beg input))
+                (setq edited t))))
+           (jabber-chat--input-deferred nil)
+           (jabber-chat--input-completion
+            (lambda (success)
+              (when (car token)
+                (setcar token nil)
+                (when (buffer-live-p buffer)
+                  (with-current-buffer buffer
+                    (remove-hook 'after-change-functions changed t)
+                    (when (funcall owner-p)
+                      (if success
+                          (jabber-chat--record-input-history body)
+                        (when (and (eq token jabber-chat--input-submission)
+                                   (eq (marker-buffer input) buffer)
+                                   (= input (point-max))
+                                   (not edited))
+                          ;; The rejected edit is not an undo transaction.
+                          (let ((buffer-undo-list t))
+                            (goto-char input)
+                            (insert body))
+                          (setq buffer-undo-list undo)
+                          (goto-char (+ input (max 0 (min offset (length body)))))
+                          t))))))))
+           returned)
+      (setq jabber-chat--input-submission token)
+      (add-hook 'after-change-functions changed nil t)
+      (unwind-protect
+          (prog1
+              (if extra-elements
+                  (funcall jabber-send-function connection body extra-elements)
+                (funcall jabber-send-function connection body))
+            (setq returned t)
+            (unless jabber-chat--input-deferred
+              (funcall jabber-chat--input-completion t)))
+        (unless returned
+          (funcall jabber-chat--input-completion nil))))))
 
 (provide 'jabber-input)
 

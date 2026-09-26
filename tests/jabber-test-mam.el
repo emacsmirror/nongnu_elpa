@@ -998,12 +998,15 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
   "Pagination retains ownership across timers and retires safely at every exit."
   (dolist (ending '(success connection all room replacement))
     (jabber-test-mam--with-native
-      (let ((calls 0))
+      (let ((calls 0) outcomes)
         (jabber-mam--query jc nil "pages" nil nil "room@example.com" nil 7
-                           (lambda () (cl-incf calls)))
+                           (lambda () (cl-incf calls))
+                           (lambda (outcome) (push outcome outcomes)))
         (let ((first (car sent))
               (query (car jabber-mam--syncing)))
           (jabber-test-mam--reply jc first "room@example.com" nil t)
+          (should (= 0 calls))
+          (should-not outcomes)
           (should (= 0 jabber-mam--tx-depth))
           (should (jabber-mam-syncing-p))
           (let* ((timer (plist-get query :timer))
@@ -1032,6 +1035,10 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                   (jabber-test-mam--reply jc (car sent) "room@example.com"))
               (should (= 1 (length sent))))
             (should (= 1 calls))
+            (should (equal (list (if (eq ending 'success) 'success 'cancelled))
+                           outcomes))
+            (apply function args)
+            (should (= 1 (length outcomes)))
             (should-not (jabber-mam-syncing-p))
             (should-not jabber-open-info-queries)
             (should (= 0 jabber-mam--tx-depth))))))))
@@ -1069,20 +1076,31 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
 
 (ert-deftest jabber-test-mam-native-query-start-failures ()
   "Real BEGIN failure and failed send settle only the owned contribution."
-  (dolist (failure '(begin send quit))
+  (dolist (failure '(begin begin-quit send quit))
     (jabber-test-mam--with-native
-      (let ((calls 0))
+      (let ((calls 0) outcomes returned quit-seen)
         (when (eq failure 'begin)
           (sqlite-execute jabber-db--connection "BEGIN"))
-        (cl-letf (((symbol-function 'jabber-send-sexp)
-                   (lambda (&rest _)
-                     (if (eq failure 'quit) (signal 'quit nil)
-                       (error "Injected send failure")))))
-          (condition-case nil
-              (jabber-mam--query jc nil nil nil nil nil nil nil
-                                 (lambda () (cl-incf calls)))
-            (quit (should (eq failure 'quit)))))
+        (let ((begin (symbol-function 'jabber-mam--tx-begin)))
+          (cl-letf (((symbol-function 'jabber-mam--tx-begin)
+                     (lambda ()
+                       (if (eq failure 'begin-quit) (signal 'quit nil)
+                         (funcall begin))))
+                    ((symbol-function 'jabber-send-sexp)
+                     (lambda (&rest _)
+                       (if (eq failure 'quit) (signal 'quit nil)
+                         (error "Injected send failure")))))
+            (condition-case nil
+                (progn
+                  (jabber-mam--query
+                   jc nil nil nil nil nil nil nil
+                   (lambda () (cl-incf calls))
+                   (lambda (outcome) (push (list outcome returned) outcomes)))
+                  (setq returned t))
+              (quit (setq quit-seen t)))))
         (should (= 1 calls))
+        (should (eq quit-seen (and (memq failure '(quit begin-quit)) t)))
+        (should (equal (list (list (if quit-seen 'cancelled 'failed) nil)) outcomes))
         (should-not (jabber-mam-syncing-p))
         (should-not jabber-open-info-queries)
         (should (= 0 jabber-mam--tx-depth))
@@ -1094,25 +1112,33 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
 
 (ert-deftest jabber-test-mam-native-stale-cursor-retry ()
   "A stale cursor retry retains filters and callback and cannot loop forever."
-  (jabber-test-mam--with-native
-    (let ((calls 0))
-      (jabber-mam--query jc "expired" "retry" "friend@example.com"
-                         "2020-01-01T00:00:00Z" nil nil 7
-                         (lambda () (cl-incf calls)))
-      (dotimes (_ 2)
-        (fsm-send-sync
-         jc `(:stanza
-              (iq ((type . "error")
-                   (id . ,(jabber-xml-get-attribute (car sent) 'id)))
-                  (error () (item-not-found ()))))))
-      (should (= 2 (length sent)))
-      (should (= 1 calls))
-      (should-not (jabber-mam-syncing-p))
-      (should-not jabber-open-info-queries)
-      (let ((xml (jabber-sexp2xml (car sent))))
-        (should (string-match-p "friend@example.com" xml))
-        (should (string-match-p "2020-01-01T00:00:00Z" xml))
-        (should-not (string-match-p "<after>" xml))))))
+  (dolist (failure '(nil t))
+    (jabber-test-mam--with-native
+      (let ((calls 0) outcomes)
+        (jabber-mam--query jc "expired" "retry" "friend@example.com"
+                           "2020-01-01T00:00:00Z" nil nil 7
+                           (lambda () (cl-incf calls))
+                           (lambda (outcome) (push outcome outcomes)))
+        (cl-labels ((stale ()
+                     (fsm-send-sync
+                      jc `(:stanza
+                           (iq ((type . "error")
+                                (id . ,(jabber-xml-get-attribute (car sent) 'id)))
+                               (error () (item-not-found ())))))))
+          (stale)
+          (should (= 0 calls))
+          (should-not outcomes)
+          (should (= 1 jabber-mam--tx-depth))
+          (if failure (stale) (jabber-test-mam--reply jc (car sent))))
+        (should (= 2 (length sent)))
+        (should (= 1 calls))
+        (should (equal (list (if failure 'failed 'success)) outcomes))
+        (should-not (jabber-mam-syncing-p))
+        (should-not jabber-open-info-queries)
+        (let ((xml (jabber-sexp2xml (car sent))))
+          (should (string-match-p "friend@example.com" xml))
+          (should (string-match-p "2020-01-01T00:00:00Z" xml))
+          (should-not (string-match-p "<after>" xml)))))))
 
 (ert-deftest jabber-test-mam-native-reentrant-decrypt-retirement ()
   "Retirement during decryption prevents storage and unwrapping afterwards."
@@ -1173,7 +1199,9 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
             ;; Reopen the actual file, not just the writer's uncommitted view.
             (jabber-db-close)
             (should (= 2 (caar (sqlite-select (jabber-db-ensure-open)
-                                              "SELECT count(*) FROM message"))))))))))
+                                              "SELECT count(*) FROM message"))))
+            (should (jabber-db-message-thread-known-p
+                     "me@example.com" peer type "thread"))))))))
 
 (ert-deftest jabber-test-mam-native-connection-cleanup-is-scoped ()
   "Disconnect settles only the selected connection, even with failing callbacks."
@@ -1347,16 +1375,20 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
     (dolist (failure '(error quit))
       (jabber-test-mam--with-native
         (jabber-test-mam--with-lifecycle
-          (let ((room "room@example.com") (calls nil) captures survivor)
+          (let ((room "room@example.com") (calls nil) outcomes captures survivor)
             (jabber-mam--query other nil "foreign" nil nil nil nil nil
-                               (lambda () (push 'foreign calls)))
+                               (lambda () (push 'foreign calls))
+                               (lambda (outcome) (push (cons 'foreign outcome) outcomes)))
             (setq survivor (car sent))
             ;; The faulting page is selected first, before another active page
             ;; and a waiting timer.  Every callback faults independently.
             (dolist (id '(waiting active fault))
               (let ((query (jabber-mam--query
                             jc nil nil nil nil room nil nil
-                            (lambda () (push id calls) (signal failure nil)))))
+                            (lambda () (push id calls) (signal failure nil))
+                            (lambda (outcome)
+                              (push (cons id outcome) outcomes)
+                              (signal failure nil)))))
                 (push (jabber-test-mam--capture-page
                        query (car sent) (eq id 'waiting)) captures)))
             (jabber-db-store-message "me@example.com" room "in" "groupchat"
@@ -1372,7 +1404,8 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                            ('all (jabber-mam--cleanup-all)))))
               (cleanup)
               (dolist (id '(waiting active fault))
-                (should (= 1 (cl-count id calls))))
+                (should (= 1 (cl-count id calls)))
+                (should (= 1 (cl-count (cons id 'cancelled) outcomes :test #'equal))))
               (dolist (capture captures)
                 (jabber-test-mam--assert-retired capture)
                 (jabber-test-mam--deliver-late-page capture))
@@ -1392,6 +1425,9 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                                    (sqlite-select reader "SELECT body FROM message"))))
                 (sqlite-close reader)))
             (should (= 1 (cl-count 'foreign calls)))
+            (should (= 4 (length outcomes)))
+            (should (equal (if (eq ending 'all) 'cancelled 'success)
+                           (alist-get 'foreign outcomes)))
             (should-not jabber-mam--syncing)
             (should-not jabber-open-info-queries)
             (should (= 0 jabber-mam--tx-depth))))))))
@@ -1445,13 +1481,15 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
     (dolist (waiting '(nil t))
       (jabber-test-mam--with-native
         (jabber-test-mam--with-lifecycle
-          (let ((a-calls 0) (b-calls 0))
+          (let ((a-calls 0) (b-calls 0) a-outcomes b-outcomes)
             (jabber-mam--query other nil "foreign" nil nil nil nil nil
-                               (lambda () (cl-incf b-calls)))
+                               (lambda () (cl-incf b-calls))
+                               (lambda (outcome) (push outcome b-outcomes)))
             (let* ((survivor (car sent))
                    (query (jabber-mam--query
                            jc nil "personal" nil nil nil nil nil
-                           (lambda () (cl-incf a-calls))))
+                           (lambda () (cl-incf a-calls))
+                           (lambda (outcome) (push outcome a-outcomes))))
                    (capture (jabber-test-mam--capture-page query (car sent) waiting)))
               (jabber-db-store-message "me@example.com" "friend@example.com"
                                        "in" "chat" "accepted" 1 nil "row" "archive")
@@ -1468,6 +1506,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
               (jabber-test-mam--deliver-late-page capture)
               (jabber-mam--cleanup-connection jc)
               (should (= 1 a-calls))
+              (should (equal '(cancelled) a-outcomes))
               (let ((reader (sqlite-open jabber-db-path)))
                 (unwind-protect
                     (progn
@@ -1475,6 +1514,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                           (progn (should-not (get other :state))
                                  (should-not jabber-connections))
                         (should (= 0 b-calls))
+                        (should-not b-outcomes)
                         (should (eq :session-established (get other :state)))
                         (should (memq other jabber-connections))
                         (should (= 1 jabber-mam--tx-depth))
@@ -1486,8 +1526,168 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                   (sqlite-close reader)))
               (should (= 1 b-calls))
               (should (= 0 jabber-mam--tx-depth))
+              (should (equal (list (if (eq ending 'all) 'cancelled 'success))
+                             b-outcomes))
               (should-not jabber-mam--syncing)
               (should-not jabber-open-info-queries))))))))
+
+;;; Explicit terminal outcome contract
+
+(ert-deftest jabber-test-mam-native-terminal-outcomes ()
+  "Report query success, failure and cancellation without changing legacy arity."
+  (dolist (ending '(success bounded failed cancelled))
+    (jabber-test-mam--with-native
+      (let* ((calls 0) observations
+             (query (jabber-mam--query
+                     jc nil "outcome" nil nil "room@example.com"
+                     (eq ending 'bounded) 1
+                     (lambda () (cl-incf calls))
+                     (lambda (outcome)
+                       (push (list outcome calls (length jabber-mam--syncing)
+                                   jabber-mam--tx-depth
+                                   (length jabber-open-info-queries))
+                             observations))))
+             (request (car sent))
+             (jabber-test-mam-queryid "outcome")
+             (xml (jabber-test-mam--make-message 1))
+             (refreshes nil)
+             (jabber-mam-sync-complete-functions
+              (list (lambda (peers) (push peers refreshes)))))
+        (setf (cadr xml) '((from . "room@example.com")))
+        (jabber-mam--process-message jc xml)
+        (pcase ending
+          ('cancelled (jabber-mam--cancel-muc-query "room@example.com" jc))
+          (_ (jabber-test-mam--reply jc request "room@example.com"
+                                    (eq ending 'failed) (eq ending 'bounded))))
+        (jabber-test-mam--reply jc request "room@example.com")
+        (jabber-test-mam--reply jc request "room@example.com" t)
+        (should (equal (list (list (if (eq ending 'bounded) 'success ending)
+                                  1 0 0 0)) observations))
+        (should-not (memq query jabber-mam--syncing))
+        (should (= 1 calls))
+        (should (= 1 (length refreshes)))
+        (jabber-db-close)
+        (should (equal '(("Message 1"))
+                       (sqlite-select (jabber-db-ensure-open)
+                                      "SELECT body FROM message")))))))
+
+(ert-deftest jabber-test-mam-native-nonprogress-outcome ()
+  "An incomplete forward page without a new cursor fails, not succeeds."
+  (dolist (last '(nil "same"))
+    (jabber-test-mam--with-native
+      (let (outcomes)
+        ;; Opt in to results without a legacy settlement callback.
+        (jabber-mam--query jc "same" nil nil nil nil nil nil nil
+                           (lambda (outcome) (push outcome outcomes)))
+        (fsm-send-sync
+         jc `(:stanza
+              (iq ((type . "result")
+                   (id . ,(jabber-xml-get-attribute (car sent) 'id)))
+                  (fin ((xmlns . ,jabber-mam-xmlns) (complete . "false"))
+                       (set ((xmlns . ,jabber-mam-rsm-xmlns))
+                            ,@(when last `((last () ,last))))))))
+        (should (equal '(failed) outcomes))
+        (should-not jabber-mam--syncing)
+        (should-not jabber-open-info-queries)
+        (should (= 0 jabber-mam--tx-depth))
+        (should (= 1 (length sent)))))))
+
+(ert-deftest jabber-test-mam-native-cancel-then-new-query-outcomes ()
+  "Cancel a room, start unrelated work, then replay stale fin/error both ways."
+  (dolist (error-first '(nil t))
+    (jabber-test-mam--with-native
+      (let ((a 0) (b 0) a-outcomes b-outcomes
+            (jabber-test-mam-queryid "new-survivor"))
+        (jabber-mam--query jc nil "cancel-first" nil nil "room@example.com"
+                           nil nil (lambda () (cl-incf a))
+                           (lambda (outcome) (push outcome a-outcomes)))
+        (let ((captured (car jabber-open-info-queries)))
+          (jabber-mam--cancel-muc-query "room@example.com" jc)
+          (should (= 1 a))
+          (should (equal '(cancelled) a-outcomes))
+          (should (= 0 jabber-mam--tx-depth))
+          (let* ((survivor (jabber-mam--query
+                            jc nil jabber-test-mam-queryid nil nil nil nil nil
+                            (lambda () (cl-incf b))
+                            (lambda (outcome) (push outcome b-outcomes))))
+                 (request (car sent))
+                 (pending (car jabber-open-info-queries))
+                 (reader (sqlite-open jabber-db-path)))
+            (unwind-protect
+                (progn
+                  (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
+                  (dolist (index (if error-first '(2 1) '(1 2)))
+                    (let ((callback (nth index captured)))
+                      (funcall (car callback) jc
+                               '(iq ((from . "room@example.com"))
+                                    (fin ((xmlns . "urn:xmpp:mam:2")
+                                          (complete . "true"))))
+                               (cdr callback))))
+                  (should (= 1 a))
+                  (should (= 0 b))
+                  (should (equal '(cancelled) a-outcomes))
+                  (should-not b-outcomes)
+                  (should (= 1 jabber-mam--tx-depth))
+                  (should (equal (list survivor) jabber-mam--syncing))
+                  (should (equal (list pending) jabber-open-info-queries))
+                  (should-not (sqlite-select reader "SELECT body FROM message"))
+                  (jabber-test-mam--reply jc request)
+                  (should (= 1 a))
+                  (should (= 1 b))
+                  (should (equal '(success) b-outcomes))
+                  (should (= 0 jabber-mam--tx-depth))
+                  (should (equal '(("Message 1"))
+                                 (sqlite-select reader "SELECT body FROM message"))))
+              (sqlite-close reader))))))))
+
+(ert-deftest jabber-test-mam-native-outcome-callback-reentry ()
+  "Each consumer can reenter then error or quit without leaking query outcomes."
+  (dolist (consumer '(legacy result))
+    (dolist (failure '(error quit))
+      (jabber-test-mam--with-native
+        (let ((calls 0) outcomes nested-outcomes foreign-outcomes
+              observations capture)
+          (jabber-mam--query other nil "foreign" nil nil nil nil nil nil
+                             (lambda (outcome) (push outcome foreign-outcomes)))
+          (let ((foreign (car jabber-mam--syncing))
+                (foreign-iq (car jabber-open-info-queries))
+                (foreign-request (car sent)))
+            (cl-labels
+                ((reenter ()
+                   ;; Retirement is observable before either consumer.  Replay
+                   ;; the captured page and cleanup while the old stack exists.
+                   (push (list (memq (car capture) jabber-mam--syncing)
+                               (plist-get (car capture) :transaction)) observations)
+                   (jabber-test-mam--deliver-late-page capture)
+                   (jabber-mam--cleanup-connection jc)
+                   (jabber-mam--query
+                    jc nil "nested" nil nil nil nil nil nil
+                    (lambda (outcome) (push outcome nested-outcomes)))
+                   (jabber-test-mam--reply jc (car sent) nil t)
+                   (signal failure nil)))
+              (let ((query (jabber-mam--query
+                            jc nil "outer" nil nil nil nil nil
+                            (lambda ()
+                              (cl-incf calls)
+                              (when (eq consumer 'legacy) (reenter)))
+                            (lambda (outcome)
+                              (push outcome outcomes)
+                              (when (eq consumer 'result) (reenter))))))
+                (setq capture (jabber-test-mam--capture-page query (car sent)))
+                (jabber-test-mam--reply jc (car sent))))
+            (should (equal '((nil nil)) observations))
+            (should (= 1 calls))
+            (should (equal '(success) outcomes))
+            (should (equal '(failed) nested-outcomes))
+            (should-not foreign-outcomes)
+            (should (equal (list foreign) jabber-mam--syncing))
+            (should (equal (list foreign-iq) jabber-open-info-queries))
+            (should (= 1 jabber-mam--tx-depth))
+            (jabber-test-mam--deliver-late-page capture)
+            (should (= 1 (length outcomes)))
+            (jabber-test-mam--reply other foreign-request)
+            (should (equal '(success) foreign-outcomes))
+            (should (= 0 jabber-mam--tx-depth))))))))
 
 (provide 'jabber-test-mam)
 

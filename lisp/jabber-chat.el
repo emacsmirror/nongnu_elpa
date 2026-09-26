@@ -262,23 +262,33 @@ reply data) should stay inert instead of consuming it.")
 Lets late hooks (e.g. the DB store) read elements that earlier
 hooks attached, without changing the (BODY ID) hook signature.")
 
-(defun jabber-chat--run-send-hooks (stanza body id)
+(defvar jabber-chat--send-context-captured nil
+  "Non-nil while hooks run with already captured reply/thread extensions.
+Composition hooks must not read or consume the current one-shot state.")
+
+(defun jabber-chat--run-send-hooks (stanza body id &optional captured check)
   "Run `jabber-chat-send-hooks' and nconc results onto STANZA.
-BODY and ID are passed to each hook function.
-When STANZA is an XEP-0308 correction, the hooks run with
-`jabber-chat--sending-correction' bound non-nil so that hooks
-holding state for the next composed message stay inert."
+BODY and ID are passed to each hook function.  Non-nil CAPTURED means
+reply/thread extensions were captured before deferred discovery, so
+composition hooks must leave current input state untouched.  CHECK,
+when non-nil, must signal if ownership changed; call it around each hook.
+Correction stanzas likewise leave one-shot composition state untouched."
   (let ((jabber-chat--send-hook-stanza stanza)
+        (jabber-chat--send-context-captured captured)
         (jabber-chat--sending-correction
          (and (jabber-xml-child-with-xmlns
                stanza "urn:xmpp:message-correct:0")
               t)))
-    (dolist (hook jabber-chat-send-hooks)
-      (if (eq hook t)
-          (when (local-variable-p 'jabber-chat-send-hooks)
-            (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-              (nconc stanza (funcall global-hook body id))))
-        (nconc stanza (funcall hook body id))))))
+    (dolist (hook (seq-mapcat
+                  (lambda (hook)
+                    (if (eq hook t)
+                        (when (local-variable-p 'jabber-chat-send-hooks)
+                          (copy-sequence (default-value 'jabber-chat-send-hooks)))
+                      (list hook)))
+                  jabber-chat-send-hooks))
+      (when check (funcall check))
+      (nconc stanza (save-current-buffer (funcall hook body id)))
+      (when check (funcall check)))))
 
 (defun jabber-chat--root-reply-element (id jid)
   "Return a root reply element for ID and optional JID."
@@ -336,7 +346,8 @@ JC, when non-nil, identifies the account connection."
 
 (defun jabber-chat--session-send-hook (_body _id)
   "Attach the parent chat session when no explicit thread is present."
-  (unless (or (bound-and-true-p jabber-chat--sending-correction)
+  (unless (or jabber-chat--send-context-captured
+              (bound-and-true-p jabber-chat--sending-correction)
               (and (bound-and-true-p jabber-chat--send-hook-stanza)
                    (jabber-message-thread-protocol-has-core-p
                     jabber-chat--send-hook-stanza)))
@@ -374,9 +385,11 @@ live direct messages from archive traffic."
        (string-prefix-p jabber-message-reply--fallback-text body)
        (length jabber-message-reply--fallback-text)))
 
-(defun jabber-chat--captured-reply-elements (body correction-p)
-  "Return one pending reply extension for BODY unless CORRECTION-P."
-  (unless correction-p
+(defun jabber-chat--captured-reply-elements (body correction-p &optional stanza)
+  "Return the pending reply extension for BODY unless CORRECTION-P.
+An explicit reply in STANZA takes precedence over pending composition state."
+  (unless (or correction-p
+              (jabber-xml-child-with-xmlns stanza "urn:xmpp:reply:0"))
     (cond
      (jabber-message-reply--id
       (jabber-message-reply--elements
@@ -398,7 +411,7 @@ live direct messages from archive traffic."
           :root-reply-jid jabber-message-thread--root-reply-jid)))
 
 (defun jabber-chat--clear-send-context ()
-  "Clear one-shot reply state after capturing an asynchronous send."
+  "Consume the one-shot reply state of the composed message."
   (setq jabber-message-reply--id nil
         jabber-message-reply--jid nil
         jabber-message-reply--fallback-text nil
@@ -421,7 +434,7 @@ precedence over buffer-local thread state."
              (plist-get thread :thread-id)
              (plist-get thread :thread-parent-id))))
          (reply-elements
-          (jabber-chat--captured-reply-elements body correction-p))
+          (jabber-chat--captured-reply-elements body correction-p stanza))
          (state (jabber-chat--send-context-state correction-p)))
     (unless correction-p
       (jabber-chat--clear-send-context))
@@ -457,7 +470,9 @@ Do not overwrite a newer reply selection."
                   (jc body &optional extra-elements success-callback
                       failure-callback))
 (declare-function jabber-openpgp-legacy--send-chat
-                  "jabber-openpgp-legacy" (jc body &optional extra-elements))
+                  "jabber-openpgp-legacy"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (declare-function jabber-omemo-aesgcm-decrypt
                   "jabber-omemo" (key iv ciphertext))
 (declare-function jabber-muc-private-create-buffer
@@ -1053,7 +1068,11 @@ _XML-DATA is reserved for future use by OMEMO."
               (and (not error-p)
                    (not self-p)
                    (plist-get msg-plist :thread-id)
-                   (jabber-chat--find-buffer-on-connection jc from)))))
+                   (jabber-chat--find-buffer-on-connection jc from))))
+         (origin-peer (and (buffer-live-p alert-buffer)
+                           (buffer-local-value 'jabber-chatting-with alert-buffer)))
+         (origin-mode (and (buffer-live-p alert-buffer)
+                           (buffer-local-value 'major-mode alert-buffer))))
     (when chat-buffer
       (with-current-buffer chat-buffer
         (jabber-chat-buffer-with-scrolltobottom
@@ -1063,13 +1082,31 @@ _XML-DATA is reserved for future use by OMEMO."
            (list (if error-p :error :foreign) msg-plist))))))
     (when (and (not error-p) (not self-p))
       (let ((inhibit-message
-             (and chat-buffer
+             (and (buffer-live-p chat-buffer)
                   (buffer-local-value 'jabber-chat-mam-syncing chat-buffer))))
-        (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
-          (run-hook-with-args
-           hook from alert-buffer body-text
-           (funcall jabber-alert-message-function
-                    from alert-buffer body-text)))))))
+        (cl-labels
+            ((origin ()
+               ;; Retire the captured origin permanently if a callback
+               ;; changes its account, peer or mode, or kills it.
+               (unless (and (buffer-live-p alert-buffer)
+                            (eq (buffer-local-value
+                                 'jabber-buffer-connection alert-buffer) jc)
+                            (equal (buffer-local-value
+                                    'jabber-chatting-with alert-buffer) origin-peer)
+                            (eq (buffer-local-value 'major-mode alert-buffer)
+                                origin-mode))
+                 (setq alert-buffer nil))
+               alert-buffer))
+          (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
+            (let ((title (save-current-buffer
+                           (funcall jabber-alert-message-function
+                                    from (origin) body-text))))
+              (run-hook-wrapped
+               hook
+               (lambda (function)
+                 (save-current-buffer
+                   (funcall function from (origin) body-text title))
+                 nil)))))))))
 
 (defun jabber-chat--find-buffer (from)
   "Return an existing chat buffer for FROM, or nil; never create one."
@@ -1260,10 +1297,35 @@ JC is the Jabber connection."
 
 (defun jabber-chat-send
     (jc body &optional extra-elements success-callback failure-callback)
-  "Send BODY through connection JC, and display it in chat buffer.
-JC is the Jabber connection.
-EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
-splice into the stanza after the body (e.g. OOB, hints)."
+  "Send BODY through connection JC, and display it in the chat buffer.
+EXTRA-ELEMENTS are XML elements spliced after the body.  Optional
+SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion,
+not merely acceptance into the Stream Management queue."
+  (let ((buffer (current-buffer))
+        (owner-p (jabber-chat--capture-input-owner))
+        (context (list :state (jabber-chat--send-context-state
+                              (assq 'replace extra-elements))))
+        (completion (unless (assq 'replace extra-elements)
+                      jabber-chat--input-completion))
+        accepted)
+    (unwind-protect
+        (prog1
+            (jabber-chat--send
+             jc body extra-elements success-callback failure-callback)
+          (setq accepted t))
+      (when (and (not accepted)
+                 ;; A provider may already have settled failure or lost its
+                 ;; composer to a new edit before propagating quit.
+                 (or (not completion) (funcall completion nil))
+                 (buffer-live-p buffer))
+        (with-current-buffer buffer
+          (when (funcall owner-p)
+            (jabber-chat--restore-send-context context)))))))
+
+(defun jabber-chat--send
+    (jc body extra-elements success-callback failure-callback)
+  "Dispatch BODY on JC with EXTRA-ELEMENTS using the selected encryption.
+SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion."
   (pcase jabber-chat-encryption
     ('omemo
      (require 'jabber-omemo)
@@ -1272,28 +1334,51 @@ splice into the stanza after the body (e.g. OOB, hints)."
     ('openpgp (require 'jabber-openpgp)
               (jabber-openpgp--send-chat
                jc body extra-elements success-callback failure-callback))
-    ('openpgp-legacy (require 'jabber-openpgp-legacy)
-                     (jabber-openpgp-legacy--send-chat jc body extra-elements))
-    (_
-     ;; Build the stanza...
-     (let* ((id (format "emacs-msg-%.6f" (float-time)))
-	    (stanza-to-send `(message
-			      ((to . ,jabber-chatting-with)
-			       (type . "chat")
-			       (id . ,id))
-			      (body () ,body)
-			      ,@extra-elements)))
-       ;; ...add additional elements...
-       (jabber-chat--run-send-hooks stanza-to-send body id)
-       ;; ...display it (skip for corrections, caller handles display).
-       (unless (assq 'replace extra-elements)
-         (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
-           (plist-put msg-plist :status :sent)
-	   (jabber-chat--display-local-message jc msg-plist)))
-       ;; ...and send it...
-       (jabber-send-sexp jc stanza-to-send)
-       (when success-callback
-         (funcall success-callback))))))
+    ('openpgp-legacy
+     (require 'jabber-openpgp-legacy)
+     (jabber-openpgp-legacy--send-chat
+      jc body extra-elements success-callback failure-callback))
+    (_ (jabber-chat--send-plaintext
+        jc body extra-elements success-callback failure-callback))))
+
+(defun jabber-chat--send-plaintext (jc body extra-elements success failure)
+  "Send plaintext BODY on JC with EXTRA-ELEMENTS.
+Call SUCCESS or FAILURE on transport completion.  Settle input before
+fallible local publication, never merely on queue admission."
+  (let* ((buffer (current-buffer))
+         (owner-p (jabber-chat--capture-input-owner))
+         (correction-p (assq 'replace extra-elements))
+         (completion (unless correction-p jabber-chat--input-completion))
+         (context (list :state (jabber-chat--send-context-state correction-p)))
+         (id (format "emacs-msg-%.6f" (float-time)))
+         (stanza `(message ((to . ,jabber-chatting-with)
+                            (type . "chat") (id . ,id))
+                           (body () ,body) ,@extra-elements))
+         settled failure-reason)
+    (when completion (setq jabber-chat--input-deferred t))
+    (jabber-chat--run-send-hooks stanza body id)
+    (jabber-send-sexp
+     jc stanza
+     (lambda ()
+       (unless settled
+         (setq settled t)
+         (when completion (funcall completion t))
+         (when success (funcall success))
+         ;; Consumers can replace the owner, even during synchronous sends.
+         (when (and (not correction-p) (funcall owner-p))
+           (with-current-buffer buffer
+             (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+               (plist-put msg-plist :status :sent)
+               (jabber-chat--display-local-message jc msg-plist))))))
+     (lambda (reason)
+       (unless settled
+         (setq settled t failure-reason reason)
+         (let ((restore (if completion (funcall completion nil) t)))
+           (when (and restore (funcall owner-p))
+             (with-current-buffer buffer
+               (jabber-chat--restore-send-context context))))
+         (if failure (funcall failure reason) (message "%s" reason)))))
+    (when failure-reason (error "%s" failure-reason))))
 
 (defun jabber-find-previous-visible-node (node)
   "Return first visible EWOC node preceding NODE.
