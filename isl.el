@@ -231,10 +231,10 @@ You can toggle this at any time with \\<isl-map>\\[isl-toggle-multi-search-in-li
 
 (defcustom isl-use-region-when-at 'always
   "Decide when and how to use region.
-If the value is \\='end and point is at region end or if the value is
-\\='beginning and point is at region beginning, search in this region,
+If the value is \\+`end' and point is at region end or if the value is
+\\+`beginning' and point is at region beginning, search in this region,
 otherwise use the current region as default for searching.
-If the value is \\='always never use the region as default and always
+If the value is \\+`always' never use the region as default and always
 search in this region.
 According to the value used here you can decide if you want to search
 in region or use the region as default for searching by using
