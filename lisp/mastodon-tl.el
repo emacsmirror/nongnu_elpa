@@ -392,6 +392,7 @@ types of mastodon links and not just shr.el-generated ones.")
       (define-key map (kbd "<C-return>") #'mastodon-tl-mpv-play-video-from-byline)
       (define-key map (kbd "RET") #'mastodon-profile-get-toot-author)
       (define-key map (kbd "S") #'mastodon-tl-toggle-sensitive-image)
+      (define-key map (kbd "M-RET") #'mastodon-tl--jump-to-quoted-toot)
       map))
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl-goto-next-item.'")
@@ -2022,6 +2023,8 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
           (goto-char (prop-match-end prop)))))
     list))
 
+;;; quotes
+
 (defvar mastodon-tl--quote-states
   '(pending accepted rejected revoked deleted
             unauthorized blocked_account blocked_domain muted_account)
@@ -2178,6 +2181,16 @@ Toot must be on you own."
                   (set (or (car (map-nested-elt json '(quote_approval automatic)))
                            "nobody"))) ;; nil on the server = nobody
              (message "Quote policy for post updated to: %s!" set))))))))
+
+(defun mastodon-tl--jump-to-quoted-toot ()
+  "Load quoted toot in present item."
+  (interactive)
+  (let ((data (mastodon-tl--property 'item-json :no-move)))
+    (if-let* ((quote (alist-get 'quote data)))
+        (mastodon-url-lookup (map-nested-elt quote '(quoted_status uri)))
+      (user-error "No quote in this toot?"))))
+
+;;; INSERT TOOTS 2
 
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
