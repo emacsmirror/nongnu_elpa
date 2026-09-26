@@ -1,7 +1,7 @@
 #+title: Elfeed News
 #+language: en
 
-* Development
+* Version 4.2.1 (2026-09-26)
 
 - Bugfixes.
 - Bind =elfeed-search-copy-link= and =elfeed-show-copy-link= to the key =w=, which
