@@ -1137,7 +1137,11 @@ VM has renamed away is one a reader copies and then debugs."
   '((subr-native-elisp-p
      . "native-comp-function-p arrived in Emacs 30.1 and VM's floor is 28.1,
 so the old name has to serve the Emacsen that have only it.  Asked for
-second, after the new one."))
+second, after the new one.")
+    (icalendar-import-buffer
+     . "diary-icalendar-import-buffer arrived in Emacs 31.1, which is the
+release that obsoleted this one, and VM's floor is 28.1.  Asked for second,
+after the new one, in vm-icalendar-import-into-diary."))
   "Obsolete functions VM calls deliberately, and the reason for each.
 An entry is a promise that the call is guarded so that it runs only where
 the replacement does not exist.")
@@ -1303,7 +1307,12 @@ found by the difference."
 (ert-deftest vm-integration-test-what-is-called-on-purpose-is-obsolete ()
   "Every entry in the on-purpose list is still an obsolete function.
 An Emacs that un-obsoletes one, or a VM that stops calling it, should shrink
-the list rather than leave a name in it that means nothing."
+the list rather than leave a name in it that means nothing.
+
+`icalendar' is loaded first: `byte-obsolete-info' is a property its loading
+sets, so without it the entry for `icalendar-import-buffer' would read as a
+name that is not obsolete rather than one that is."
+  (require 'icalendar)
   (dolist (entry vm-integration-test--obsolete-on-purpose)
     (should (get (car entry) 'byte-obsolete-info))
     (should (stringp (cdr entry)))))

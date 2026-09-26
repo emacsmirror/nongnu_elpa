@@ -303,11 +303,35 @@ message, so that it can be called with one."
       (unwind-protect
           (with-current-buffer buffer
             (insert (vm-icalendar-part-text layout))
-            (if (icalendar-import-buffer (or file (bound-and-true-p diary-file))
-                                         t)
-                (vm-inform 5 "Calendar entry added to the diary")
-              (error "icalendar could not import this part")))
+            (vm-icalendar-import-into-diary
+             (or file (bound-and-true-p diary-file)))
+            (vm-inform 5 "Calendar entry added to the diary"))
         (kill-buffer buffer)))))
+
+(defun vm-icalendar-import-into-diary (diary)
+  "Import this buffer's iCalendar text into the diary file DIARY.
+Raises where it could not, so a caller that reaches the next line has had
+the entry filed.
+
+`diary-icalendar-import-buffer' where Emacs has it, and
+`icalendar-import-buffer' where it has not.  The new name arrived in Emacs
+31.1, which is the release that obsoleted the old one, and VM runs on 28.1,
+so both are needed and the new one is asked for first (emacs-vm/vm#858).
+
+They do not answer alike, which is why neither is simply called in the
+other's place.  The old one answers t when it imported and nil when it did
+not.  The new one ends in `save-buffer' and answers nil whatever happened,
+and raises when it cannot read the text; that is all there is to go on, and
+it is enough.  It also shows the diary buffer, which VM does not want over
+a folder, so nothing is displayed for the length of the call."
+  (if (fboundp 'diary-icalendar-import-buffer)
+      (let ((display-buffer-alist
+             (cons '("\\`" (display-buffer-no-window) (allow-no-window . t))
+                   display-buffer-alist)))
+        (diary-icalendar-import-buffer diary t))
+    (unless (with-suppressed-warnings ((obsolete icalendar-import-buffer))
+              (icalendar-import-buffer diary t))
+      (error "icalendar could not import this part"))))
 
 (defun vm-icalendar-part-of (layout)
   "The first text/calendar part of LAYOUT, at any depth, or nil."
