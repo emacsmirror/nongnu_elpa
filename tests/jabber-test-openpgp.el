@@ -205,5 +205,243 @@ WHERE body IN ('first', 'second') ORDER BY body")))))))))
           (should (jabber-xml-get-children sent 'probe)))
       (kill-buffer muc-buffer))))
 
+;;; Receive admission with real GnuPG
+
+(defun jabber-test-openpgp--gpg (input &rest args)
+  "Run isolated GnuPG with INPUT and ARGS, returning binary output."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert input)
+    (let ((coding-system-for-read 'binary)
+          (coding-system-for-write 'binary))
+      (unless (zerop
+               (apply #'call-process-region
+                      (point-min) (point-max) "gpg" t (list t nil) nil
+                      "--homedir" epg-gpg-home-directory
+                      "--batch" "--yes" "--no-tty" args))
+        (error "Fixture GnuPG operation failed")))
+    (buffer-string)))
+
+(defun jabber-test-openpgp--with-keys (function)
+  "Call FUNCTION with disposable sender, recipient and unrelated keys.
+All GnuPG and EasyPG operations use a private temporary home."
+  (unless (and (executable-find "gpg") (executable-find "gpgconf"))
+    (ert-skip "GnuPG with gpgconf is required"))
+  (let* ((home (make-temp-file "jabber-gpg-" t))
+         (epg-gpg-home-directory home)
+         (process-environment (copy-sequence process-environment))
+         (temporary-file-directory home))
+    (set-file-modes home #o700)
+    (setenv "GNUPGHOME" home)
+    (unwind-protect
+        (progn
+          ;; No configuration, network key retrieval or real user agent.
+          (with-temp-file (expand-file-name "gpg.conf" home)
+            (insert "no-auto-key-retrieve\nauto-key-locate clear\n"))
+          (dolist (uid '("xmpp:alice@example.org" "xmpp:bob@example.org"
+                         "Alice <alice@example.org>"))
+            (jabber-test-openpgp--gpg
+             "" "--pinentry-mode" "loopback" "--passphrase" ""
+             "--quick-generate-key" uid "ed25519" "sign" "0"))
+          (let* ((ctx (epg-make-context 'OpenPGP))
+                 (alice (car (epg-list-keys ctx "=xmpp:alice@example.org")))
+                 (bob (car (epg-list-keys ctx "=xmpp:bob@example.org")))
+                 (other (car (epg-list-keys ctx "=Alice <alice@example.org>"))))
+            (jabber-test-openpgp--gpg
+             "" "--pinentry-mode" "loopback" "--passphrase" ""
+             "--quick-add-key" (jabber-openpgp--key-fingerprint bob)
+             "cv25519" "encr" "0")
+            ;; Sign with a subkey, not the primary fingerprint in the pin.
+            (jabber-test-openpgp--gpg
+             "" "--pinentry-mode" "loopback" "--passphrase" ""
+             "--quick-add-key" (jabber-openpgp--key-fingerprint alice)
+             "ed25519" "sign" "0")
+            (funcall function alice bob other)))
+      (call-process "gpgconf" nil nil nil "--homedir" home "--kill" "all")
+      (delete-directory home t))))
+
+(defun jabber-test-openpgp--cipher (xml recipient &optional signer corrupt)
+  "Encrypt XML for RECIPIENT, optionally using SIGNER and CORRUPT signature."
+  (let* ((bytes (encode-coding-string xml 'utf-8))
+         (signed (if signer
+                     (jabber-test-openpgp--gpg
+                      bytes "--compress-algo" "none" "--local-user"
+                      (jabber-openpgp--key-fingerprint signer) "--sign")
+                   bytes))
+         (packet (if corrupt
+                     ;; Alter only literal XML, leaving its signature intact.
+                     (replace-regexp-in-string "secret body" "forged body"
+                                               signed t t)
+                   signed)))
+    (apply #'jabber-test-openpgp--gpg packet
+           (append (when signer '("--no-literal"))
+                   (list "--trust-model" "always" "--recipient"
+                         (jabber-openpgp--key-fingerprint recipient)
+                         "--encrypt")))))
+
+(defun jabber-test-openpgp--envelope (&optional kind)
+  "Return a fresh valid envelope of KIND, defaulting to signcrypt."
+  (copy-tree
+   `(,(or kind 'signcrypt) ((xmlns . ,jabber-openpgp-xmlns))
+     (to ((jid . "bob@example.org")))
+     (time ((stamp . "2026-09-26T10:00:00Z")))
+     (payload () (body ((xmlns . "jabber:client")) "secret body")))))
+
+(defun jabber-test-openpgp--receive (cipher &optional reject from to)
+  "Receive CIPHER from FROM to TO; expect refusal when REJECT is non-nil."
+  (let* ((element `(openpgp ((xmlns . ,jabber-openpgp-xmlns))
+                          ,(base64-encode-string cipher t)))
+         (stanza (copy-tree
+                  `(message ((from . ,(or from "alice@example.org/phone"))
+                             (to . ,(or to "bob@example.org/laptop")))
+                            (body () "fallback") ,element)))
+         (before (copy-tree stanza)))
+    (if reject
+        (progn
+          (should-error (jabber-openpgp--decrypt-stanza nil stanza element))
+          (should (equal stanza before))
+          ;; The real chat refusal boundary must not publish plaintext either.
+          (jabber-chat--try-decrypt
+           nil stanza element
+           '(:decrypt jabber-openpgp--decrypt-stanza :error-label "OpenPGP"))
+          (should (equal (caddr (car (jabber-xml-get-children stanza 'body)))
+                         "[OpenPGP: could not decrypt]")))
+      (jabber-openpgp--decrypt-stanza nil stanza element)
+      (should (equal (caddr (car (jabber-xml-get-children stanza 'body)))
+                     "secret body")))))
+
+(ert-deftest jabber-test-openpgp-real-signatures ()
+  "Require a valid sender signature and exact XMPP UID, including subkeys."
+  (jabber-test-openpgp--with-keys
+   (lambda (alice bob other)
+     (let* ((jabber-openpgp-key-alist
+             `(("alice@example.org" . ,(jabber-openpgp--key-fingerprint alice))))
+            (xml (jabber-sexp2xml (jabber-test-openpgp--envelope))))
+       (jabber-test-openpgp--receive (jabber-test-openpgp--cipher xml bob alice))
+       (jabber-test-openpgp--receive (jabber-test-openpgp--cipher xml bob) t)
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher xml bob alice t) t)
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher xml bob other) t)
+       ;; A configured key is not an exemption from the XMPP UID requirement.
+       (let ((jabber-openpgp-key-alist
+              `(("alice@example.org" . ,(jabber-openpgp--key-fingerprint other)))))
+         (jabber-test-openpgp--receive
+          (jabber-test-openpgp--cipher xml bob other) t))
+       (let ((jabber-openpgp-key-alist nil))
+         (jabber-test-openpgp--receive
+          (jabber-test-openpgp--cipher xml bob alice)))
+       ;; Ephemeral key lookup cannot turn a sender mismatch into authentication.
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher xml bob alice) t "mallory@example.org")
+       ;; A second key claiming the same UID cannot bypass the configured pin.
+       (jabber-test-openpgp--gpg
+        "" "--quick-add-uid" (jabber-openpgp--key-fingerprint other)
+        "xmpp:alice@example.org")
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher xml bob other) t)
+       (let ((jabber-openpgp-key-alist
+              `(("alice@example.org" . ,(jabber-openpgp--key-fingerprint other)))))
+         (jabber-test-openpgp--receive
+          (jabber-test-openpgp--cipher xml bob other))
+         (jabber-test-openpgp--gpg
+          "" "--quick-revoke-uid" (jabber-openpgp--key-fingerprint other)
+          "xmpp:alice@example.org")
+         (jabber-test-openpgp--receive
+          (jabber-test-openpgp--cipher xml bob other) t))
+       (jabber-test-openpgp--gpg
+        "" "--quick-add-uid" (jabber-openpgp--key-fingerprint other)
+        "xmpp:άλικη@example.org")
+       (let ((jabber-openpgp-key-alist
+              `(("άλικη@example.org" . ,(jabber-openpgp--key-fingerprint other)))))
+         (jabber-test-openpgp--receive
+          (jabber-test-openpgp--cipher xml bob other) nil
+          "άλικη@example.org/phone"))))))
+
+(ert-deftest jabber-test-openpgp-real-epg-evidence ()
+  "Prove EasyPG decrypts bad signatures and reports signing subkeys."
+  (jabber-test-openpgp--with-keys
+   (lambda (alice bob _other)
+     (let ((xml (jabber-sexp2xml (jabber-test-openpgp--envelope))))
+       (dolist (kind '(good bad unsigned))
+         (let* ((cipher (jabber-test-openpgp--cipher
+                         xml bob (unless (eq kind 'unsigned) alice)
+                         (eq kind 'bad)))
+                (context (epg-make-context 'OpenPGP))
+                (plain (epg-decrypt-string context cipher))
+                (signatures (epg-context-result-for context 'verify)))
+           (should (string-match-p
+                    (if (eq kind 'bad) "forged body" "secret body") plain))
+           (should (epg-context-result-for context 'decryption-okay))
+           (if (eq kind 'unsigned)
+               (should-not signatures)
+             (should (= (length signatures) 1))
+             (should (eq (epg-signature-status (car signatures)) kind))
+             (when (eq kind 'good)
+               (should-not
+                (equal (epg-signature-fingerprint (car signatures))
+                       (jabber-openpgp--key-fingerprint alice)))))))
+       ;; No public signing key: decryption still succeeds, verification does not.
+       (let ((cipher (jabber-test-openpgp--cipher xml bob alice))
+             (context (epg-make-context 'OpenPGP)))
+         (jabber-test-openpgp--gpg
+          "" "--delete-secret-and-public-key"
+          (jabber-openpgp--key-fingerprint alice))
+         (should (string-match-p "secret body" (epg-decrypt-string context cipher)))
+         (should-not
+          (eq (epg-signature-status
+               (car (epg-context-result-for context 'verify))) 'good))
+         (jabber-test-openpgp--receive cipher t))))))
+
+(ert-deftest jabber-test-openpgp-real-envelope ()
+  "Reject malformed signed envelopes before publishing their plaintext."
+  (jabber-test-openpgp--with-keys
+   (lambda (alice bob _other)
+     (let ((jabber-openpgp-key-alist
+            `(("alice@example.org" . ,(jabber-openpgp--key-fingerprint alice)))))
+       (dolist (change
+                (list (lambda (xml) (setcdr (assq 'xmlns (cadr xml)) "wrong:ns"))
+                      (lambda (xml) (setcdr (assq 'jid (cadr (nth 2 xml)))
+                                           "other@example.org"))
+                      (lambda (xml) (setcdr (assq 'jid (cadr (nth 2 xml)))
+                                           "bob@example.org/elsewhere"))
+                      (lambda (xml) (setcdr (assq 'stamp (cadr (nth 3 xml))) ""))
+                      (lambda (xml) (setcdr (assq 'stamp (cadr (nth 3 xml)))
+                                           "2026-02-31T10:00:00Z"))
+                      (lambda (xml) (setcdr (assq 'stamp (cadr (nth 3 xml)))
+                                           "2026-09-26T99:00:00Z"))
+                      (lambda (xml) (setcar (nthcdr 3 xml) '(unrelated ())))
+                      (lambda (xml) (nconc xml (list (copy-tree (nth 3 xml)))))
+                      (lambda (xml) (setcar (nthcdr 4 xml) '(unrelated ())))
+                      (lambda (xml) (nconc xml (list (copy-tree (nth 4 xml)))))
+                      (lambda (xml) (setcar (nthcdr 2 xml) '(unrelated ())))
+                      (lambda (xml) (setcar (cdr (nth 4 xml))
+                                           '((xmlns . "wrong:ns"))))))
+         (let ((xml (jabber-test-openpgp--envelope)))
+           (funcall change xml)
+           (jabber-test-openpgp--receive
+            (jabber-test-openpgp--cipher (jabber-sexp2xml xml) bob alice) t)))
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher
+         (concat (jabber-sexp2xml (jabber-test-openpgp--envelope))
+                 (jabber-sexp2xml (jabber-test-openpgp--envelope))) bob alice) t)
+       ;; Namespace prefixes, fractional seconds and numeric zones are legal.
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher
+         "<o:signcrypt xmlns:o='urn:xmpp:openpgp:0'><o:to jid='bob@example.org/laptop'/><o:time stamp='2026-09-26T10:00:00.123+03:00'/><o:payload><body xmlns='jabber:client'>secret body</body></o:payload></o:signcrypt>"
+         bob alice))))))
+
+(ert-deftest jabber-test-openpgp-real-crypt ()
+  "Preserve unsigned crypt, whose recipient list is optional."
+  (jabber-test-openpgp--with-keys
+   (lambda (alice bob _other)
+     (let* ((xml (jabber-test-openpgp--envelope 'crypt))
+            (text (jabber-sexp2xml xml)))
+       (jabber-test-openpgp--receive (jabber-test-openpgp--cipher text bob))
+       (jabber-test-openpgp--receive (jabber-test-openpgp--cipher text bob alice) t)
+       (setcdr (cdr xml) (cdddr xml))
+       (jabber-test-openpgp--receive
+        (jabber-test-openpgp--cipher (jabber-sexp2xml xml) bob))))))
+
 (provide 'jabber-test-openpgp)
 ;;; jabber-test-openpgp.el ends here

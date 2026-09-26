@@ -30,6 +30,7 @@
 (require 'cl-lib)
 (require 'jabber-util)
 (require 'epg)
+(require 'iso8601)
 (require 'jabber-pubsub)
 (require 'jabber-xml)
 (require 'jabber-hints)
@@ -37,7 +38,9 @@
 (require 'jabber-chat)
 (require 'jabber-disco)
 
-(eval-when-compile (require 'pcase))
+(eval-when-compile
+  (require 'pcase)
+  (require 'rx))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
@@ -169,12 +172,13 @@ All recipient keys must already be in the local keyring."
                         sign)))
 
 (defun jabber-openpgp--decrypt (ciphertext)
-  "Decrypt CIPHERTEXT (raw OpenPGP bytes).
-Returns the decrypted string."
-  (let ((context (epg-make-context 'OpenPGP)))
-    (decode-coding-string
-     (epg-decrypt-string context ciphertext)
-     'utf-8)))
+  "Decrypt CIPHERTEXT and return plaintext with verification evidence.
+The result is (PLAINTEXT . SIGNATURES).  Successful decryption does
+not authenticate a sender; callers must check SIGNATURES."
+  (let* ((context (epg-make-context 'OpenPGP))
+         (plaintext (epg-decrypt-string context ciphertext)))
+    (cons (decode-coding-string plaintext 'utf-8)
+          (epg-context-result-for context 'verify))))
 
 ;;; Key publishing
 
@@ -468,25 +472,155 @@ envelope."
   "Return the <openpgp> child element from XML-DATA, or nil."
   (jabber-xml-child-with-xmlns xml-data jabber-openpgp-xmlns))
 
+(defun jabber-openpgp--children (node namespace name)
+  "Return NODE's children with expanded NAME in NAMESPACE."
+  (cl-remove-if-not
+   (lambda (child) (and (consp child)
+                       (equal (car child) (cons namespace name))))
+   (cddr node)))
+
+(defun jabber-openpgp--recipient-p (recipient outer)
+  "Return non-nil if inner RECIPIENT corresponds to OUTER's JID.
+A bare inner JID admits any resource; a full inner JID admits only
+that resource.  As elsewhere in Jabber, JIDs are expected prepared."
+  (and (stringp recipient) (not (string-empty-p recipient))
+       (stringp outer) (not (string-empty-p outer))
+       (equal (jabber-jid-user recipient) (jabber-jid-user outer))
+       (or (null (jabber-jid-resource recipient))
+           (equal (jabber-jid-resource recipient)
+                  (jabber-jid-resource outer)))))
+
+(defun jabber-openpgp--xmpp-uid-p (key sender)
+  "Return non-nil if KEY has a non-revoked exact XMPP UID for SENDER.
+Read GnuPG's colon format directly: EasyPG versions using the Lisp
+reader for UID escapes misread `\\\\x3aalice' as one hexadecimal escape."
+  (let* ((context (epg-make-context 'OpenPGP))
+         (home (epg-context-home-directory context)))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (let ((coding-system-for-read 'binary))
+        (unless (zerop
+                 (apply #'call-process (epg-context-program context) nil
+                        (list t nil) nil
+                        (append (when home (list "--homedir" home))
+                                (list "--batch" "--with-colons" "--list-keys"
+                                      (jabber-openpgp--key-fingerprint key)))))
+          (error "OpenPGP: could not inspect sender key")))
+      (cl-some
+       (lambda (line)
+         (let ((fields (split-string line ":")))
+           (and (equal (car fields) "uid")
+                (not (member (nth 1 fields) '("r" "e" "d" "i")))
+                (equal
+                 (decode-coding-string
+                  (replace-regexp-in-string
+                   (rx "\\x" (= 2 xdigit))
+                   (lambda (escape)
+                     (unibyte-string (string-to-number (substring escape 2) 16)))
+                   (nth 9 fields) t t)
+                  'utf-8)
+                 (concat "xmpp:" sender)))))
+       (split-string (buffer-string) "\n" t)))))
+
+(defun jabber-openpgp--verify-sender (signatures from)
+  "Require SIGNATURES to authenticate the sender FROM.
+Honor the configured sender key and require an exact XMPP User ID.
+Signing subkeys are matched against that key's complete subkey list."
+  (let* ((sender (and (stringp from) (jabber-jid-user from)))
+         (key (and sender (jabber-openpgp--recipient-key sender))))
+    (unless
+        (and signatures key
+             (jabber-openpgp--xmpp-uid-p key sender)
+             (cl-every
+              (lambda (signature)
+                (and (eq (epg-signature-status signature) 'good)
+                     (not (eq (epg-signature-validity signature) 'never))
+                     (cl-some
+                      (lambda (subkey)
+                        (and (epg-signature-fingerprint signature)
+                             (equal (epg-signature-fingerprint signature)
+                                    (epg-sub-key-fingerprint subkey))))
+                      (epg-key-sub-key-list key))))
+              signatures))
+      (error "OpenPGP: sender signature or XMPP key identity is invalid"))))
+
+(defun jabber-openpgp--timestamp-p (stamp)
+  "Return non-nil if STAMP has the XEP-0082 DateTime form.
+Check the calendar date, but do not impose a freshness window on archives."
+  (and (stringp stamp)
+       (string-match-p
+        (rx string-start (= 4 digit) "-" (= 2 digit) "-" (= 2 digit)
+            "T" (or (seq (any "01") digit) (seq "2" (any "0123")))
+            ":" (any "012345") digit ":" (any "012345") digit
+            (optional "." (+ digit))
+            (or "Z" (seq (any "+-")
+                         (or (seq (any "01") digit) (seq "2" (any "0123")))
+                         ":" (any "012345") digit))
+            string-end)
+        stamp)
+       (condition-case nil
+           (let* ((date (cl-subseq (iso8601-parse stamp) 3 6))
+                  (time (encode-time 0 0 0 (nth 0 date) (nth 1 date)
+                                     (nth 2 date) t)))
+             (equal date (cl-subseq (decode-time time t) 3 6)))
+         (error nil))))
+
+(defun jabber-openpgp--validate-content (inner signatures xml-data)
+  "Validate INNER and SIGNATURES against the outer XML-DATA.
+Return the sole payload element, without changing XML-DATA."
+  (let* ((name (car inner))
+         (signcrypt (equal name (cons jabber-openpgp-xmlns "signcrypt")))
+         (times (jabber-openpgp--children inner jabber-openpgp-xmlns "time"))
+         (payloads (jabber-openpgp--children inner jabber-openpgp-xmlns "payload"))
+         (recipients (jabber-openpgp--children inner jabber-openpgp-xmlns "to"))
+         (stamp (cdr (assoc '("" . "stamp") (cadar times)))))
+    (unless (or signcrypt (equal name (cons jabber-openpgp-xmlns "crypt")))
+      (error "OpenPGP: unexpected content element"))
+    (unless (and (= (length times) 1) (= (length payloads) 1)
+                 (jabber-openpgp--timestamp-p stamp))
+      (error "OpenPGP: invalid time or payload structure"))
+    ;; XEP-0373 0.6+ makes `to' optional for crypt, not signcrypt.
+    (when (or signcrypt recipients)
+      (unless (and recipients
+                   (cl-every
+                    (lambda (to)
+                      (let ((jid (cdr (assoc '("" . "jid") (cadr to)))))
+                        (and (stringp jid) (not (string-empty-p jid)))))
+                    recipients)
+                   (cl-some
+                    (lambda (to)
+                      (jabber-openpgp--recipient-p
+                       (cdr (assoc '("" . "jid") (cadr to)))
+                       (jabber-xml-get-attribute xml-data 'to)))
+                    recipients))
+        (error "OpenPGP: intended recipient does not match stanza")))
+    (if signcrypt
+        (jabber-openpgp--verify-sender
+         signatures (jabber-xml-get-attribute xml-data 'from))
+      (when signatures
+        (error "OpenPGP: crypt content must not be signed")))
+    (car payloads)))
+
 (defun jabber-openpgp--decrypt-stanza (_jc xml-data openpgp-el)
-  "Decrypt the <openpgp> element and replace body in XML-DATA.
-OPENPGP-EL is the <openpgp> child element."
+  "Authenticate OPENPGP-EL before replacing the body in XML-DATA.
+Signcrypt requires a valid sender signature; crypt is encryption-only.
+Reject invalid envelopes without publishing any decrypted content."
   (let* ((b64 (car (jabber-xml-node-children openpgp-el)))
-         (ciphertext (base64-decode-string b64))
-         (inner-xml-str (jabber-openpgp--decrypt ciphertext))
-         (inner-xml (with-temp-buffer
-                      (insert inner-xml-str)
-                      (car (xml-parse-region (point-min) (point-max)))))
-         (inner-name (and inner-xml (jabber-xml-node-name inner-xml)))
-         (_ (unless (memq inner-name '(signcrypt crypt))
-              (error "OpenPGP: unexpected inner element <%s>" inner-name)))
-         (payload (car (jabber-xml-get-children inner-xml 'payload)))
-         (inner-body (and payload
-                          (car (jabber-xml-get-children payload 'body))))
-         (body-text (and inner-body
-                         (car (jabber-xml-node-children inner-body)))))
-    (jabber-chat--set-body xml-data
-                           (or body-text "[OpenPGP: empty payload]"))))
+         (result (jabber-openpgp--decrypt (base64-decode-string b64)))
+         (roots (with-temp-buffer
+                  (insert (car result))
+                  ;; Expanded QNames preserve inherited and prefixed namespaces.
+                  (xml-parse-region (point-min) (point-max) nil nil t)))
+         (_ (unless (= (length roots) 1)
+              (error "OpenPGP: expected exactly one content element")))
+         (payload (jabber-openpgp--validate-content
+                   (car roots) (cdr result) xml-data))
+         (body (car (jabber-openpgp--children payload "jabber:client" "body"))))
+    (unless (cl-every #'stringp (cddr body))
+      (error "OpenPGP: invalid body content"))
+    (jabber-chat--set-body
+     xml-data (if body (mapconcat #'identity (cddr body) "")
+                "[OpenPGP: empty payload]"))))
 
 ;;; Disco, PubSub registration, and hooks
 
