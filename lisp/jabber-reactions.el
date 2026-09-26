@@ -425,6 +425,11 @@ buffers with a known destination."
           (let ((sender-reactions (jabber-reactions--toggle-reaction
                                    reaction
                                    (jabber-reactions--sender-reactions sender msg))))
+            (when (eq (jabber-db-reaction-target-row
+                       (jabber-connection-bare-jid jabber-buffer-connection)
+                       (jabber-jid-user to) type target-id)
+                      'ambiguous)
+              (user-error "Reaction target is ambiguous"))
             (jabber-send-sexp
              jabber-buffer-connection
              (jabber-reactions--build-stanza to type target-id
@@ -450,6 +455,23 @@ buffers with a known destination."
             (jabber-reactions--update-message msg sender sender-reactions))
     (jabber-chat-ewoc-invalidate node)))
 
+(defun jabber-reactions--find-target-node (target-id muc-p &optional row-id)
+  "Return the unique visible reaction TARGET-ID node, or nil.
+MUC-P selects room IDs only.  Direct chat accepts origin and transport
+aliases.  When known, ROW-ID also limits restored database nodes."
+  (let ((node (and jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0)))
+        matches)
+    (while node
+      (let ((msg (cadr (ewoc-data node))))
+        (when (and (listp msg)
+                   (or (equal target-id (jabber-reactions--target-id msg muc-p))
+                       (and (not muc-p) (equal target-id (plist-get msg :id))))
+                   (or (null row-id) (null (plist-get msg :db-id))
+                       (equal row-id (plist-get msg :db-id))))
+          (push node matches)))
+      (setq node (ewoc-next jabber-chat-ewoc node)))
+    (when (= (length matches) 1) (car matches))))
+
 (defun jabber-reactions--handle-message (jc xml-data)
   "Handle incoming XEP-0444 reaction stanzas in XML-DATA on JC.
 Update stored and visible reaction state for the sending entity."
@@ -464,9 +486,14 @@ Update stored and visible reaction state for the sending entity."
                    jc message (car parsed) sender (cadr parsed))
                   :stale)
         (when-let* ((peer (jabber-reactions--storage-peer jc message type)))
-          (let* ((thread-targets
-                  (jabber-message-thread-update-targets
-                   jc peer type (car parsed) (string= type "groupchat")))
+          (let* ((row (jabber-db-reaction-target-row
+                       (jabber-connection-bare-jid jc) peer type (car parsed)))
+                 (thread-targets
+                  (cond
+                   ((eq row 'ambiguous) 'closed)
+                   (row (jabber-message-thread-update-targets-for-row jc peer type row))
+                   (t (jabber-message-thread-update-targets
+                       jc peer type (car parsed) (string= type "groupchat")))))
                  (buffers
                   (cond
                    ((eq thread-targets 'closed) nil)
@@ -479,7 +506,8 @@ Update stored and visible reaction state for the sending entity."
             (dolist (buffer buffers)
               (with-current-buffer buffer
                 (when-let* ((node
-                             (jabber-chat-ewoc-find-by-id (car parsed))))
+                             (jabber-reactions--find-target-node
+                              (car parsed) (string= type "groupchat") row)))
                   (jabber-reactions--apply-incoming-update
                    node sender (cadr parsed)))))))))))
 

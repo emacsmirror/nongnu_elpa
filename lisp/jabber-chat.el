@@ -812,7 +812,8 @@ updates the original row instead."
          nil (jabber-db--extract-occupant-id xml-data) nil
          encrypted
          (jabber-chat--reply-fields xml-data)
-         (jabber-message-thread--fields xml-data))))))
+         (jabber-message-thread--fields xml-data)
+         (jabber-db--message-identity xml-data))))))
 
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
   "Return the chat buffer for an incoming message from FROM.
@@ -1491,20 +1492,8 @@ attributes; a non-reply one must not mask the reply one."
    (jabber-xml-node-children xml-data)))
 
 (defun jabber-chat--reply-fallback-range (xml-data)
-  "Return the XEP-0461 fallback body range in XML-DATA.
-Return `all' when the fallback applies to the whole body: no <body/>
-child, or one without offsets (XEP-0428: missing start/end attributes
-mean the entire element; Dino emits bare <body/> for full quotes)."
-  (when-let* ((fallback (jabber-chat--reply-fallback-element xml-data)))
-    (if-let* ((body (car (jabber-xml-get-children fallback 'body))))
-        (let ((start (jabber-xml-get-attribute body 'start))
-              (end (jabber-xml-get-attribute body 'end)))
-          (if (or start end)
-              (when-let* ((from (jabber-chat--fallback-offset start))
-                          (to (jabber-chat--fallback-offset end)))
-                (list from to))
-            'all))
-      'all)))
+  "Return shared reply metadata from XML-DATA."
+  (jabber-xml-reply-fallback-range xml-data))
 
 (defconst jabber-chat--sid-xmlns "urn:xmpp:sid:0"
   "XEP-0359 unique and stable stanza IDs namespace.")
@@ -1559,12 +1548,8 @@ In groupchat, only the room itself may assign the stanza-id
     (and sid-el (jabber-xml-get-attribute sid-el 'id))))
 
 (defun jabber-chat--reply-fields (xml-data)
-  "Return XEP-0461 reply fields in XML-DATA as a plist, or nil."
-  (and-let* ((reply-el (jabber-xml-child-with-xmlns
-                        xml-data jabber-chat--reply-xmlns)))
-    (list :reply-to-id (jabber-xml-get-attribute reply-el 'id)
-          :reply-to-jid (jabber-xml-get-attribute reply-el 'to)
-          :fallback-range (jabber-chat--reply-fallback-range xml-data))))
+  "Return shared reply metadata from XML-DATA."
+  (jabber-xml-reply-fields xml-data))
 
 (defun jabber-chat--build-msg-plist (xml-data delayed)
   "Build a message plist from the fields in XML-DATA.
@@ -1704,7 +1689,8 @@ Looks the referenced message up in the local database."
              (body (jabber-db-reply-target-body
                     (jabber-connection-bare-jid jabber-buffer-connection)
                     (jabber-jid-user peer) reply-id
-                    (and (bound-and-true-p jabber-group) t))))
+                    (and (bound-and-true-p jabber-group) t)
+                    (plist-get msg :reply-to-jid))))
     (jabber-chat--first-line-snippet body 80)))
 
 (defun jabber-chat--insert-reply-context (msg)

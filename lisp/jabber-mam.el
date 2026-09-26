@@ -75,9 +75,9 @@
   :group 'jabber)
 
 (defcustom jabber-mam-catch-up-days 3
-  "Limit initial MAM catch-up to this many days back.
-Only used when no previous sync point exists (first sync).
-Set to nil to fetch the entire archive."
+  "Legacy initial catch-up window, retained for configuration compatibility.
+Automatic catch-up now scans unbounded when durable coverage is unknown;
+using a recent window after migration could silently omit older messages."
   :type '(choice integer (const :tag "Fetch all" nil))
   :group 'jabber)
 
@@ -106,6 +106,11 @@ transaction contribution, pagination timer and completion callbacks.")
 (defvar jabber-mam--tx-depth 0
   "Reference count for the shared MAM transaction.
 Each active page owns exactly one contribution; waiting timers own none.")
+
+(defvar jabber-mam--tx-progress nil
+  "Accepted page receipts awaiting the shared transaction's physical commit.")
+
+(defvar jabber-stanza-error-handler)
 
 (defvar jabber-mam--peer-syncing nil
   "Alist of active automatic peer catch-ups.
@@ -173,12 +178,18 @@ Return its unique token, or nil when one was already active."
 OUTCOME is `success', `failed' or `cancelled'; see `jabber-mam--query'.
 Contain callback errors and quits so other queries can finish cleanup."
   (when (memq query jabber-mam--syncing)
+    (unless (eq outcome 'success)
+      (plist-put query :failed t))
     (setq jabber-mam--syncing (delq query jabber-mam--syncing))
     (when-let* ((timer (plist-get query :timer)))
       (cancel-timer timer)
       (plist-put query :timer nil))
     (unwind-protect
-        (jabber-mam--release-page query)
+        (condition-case err
+            (jabber-mam--release-page query)
+          ((error quit)
+           (setq outcome 'failed)
+           (signal (car err) (cdr err))))
       (when-let* ((callback (plist-get query :callback)))
         (jabber-lifecycle--call-contained callback))
       (when-let* ((callback (plist-get query :result-callback)))
@@ -251,22 +262,29 @@ Return (ARCHIVE-ID DELAY-STAMP INNER-MESSAGE) or nil."
         (list archive-id stamp inner-msg)))))
 
 (defun jabber-mam--parse-fin (xml-data)
-  "Parse a MAM <fin> IQ result XML-DATA.
-Return plist (:complete BOOL :first ID :last ID)."
-  (let* ((fin-el (jabber-xml-child-with-xmlns xml-data jabber-mam-xmlns))
-         (complete (string= (or (jabber-xml-get-attribute fin-el 'complete) "")
-                            "true"))
-         (set-el (and fin-el
-                      (car (jabber-xml-get-children fin-el 'set))))
-         (first-el (and set-el
-                        (car (jabber-xml-get-children set-el 'first))))
-         (last-el (and set-el
-                       (car (jabber-xml-get-children set-el 'last))))
-         (first-id (and first-el
-                        (car (jabber-xml-node-children first-el))))
-         (last-id (and last-el
-                       (car (jabber-xml-node-children last-el)))))
-    (list :complete complete :first first-id :last last-id)))
+  "Return validated MAM fin metadata from XML-DATA, or nil."
+  (let* ((fins (seq-filter
+                (lambda (el) (and (eq (jabber-xml-node-name el) 'fin)
+                                  (equal (jabber-xml-get-xmlns el) jabber-mam-xmlns)))
+                (jabber-xml-node-children xml-data)))
+         (fin (car fins))
+         (complete (jabber-xml-get-attribute fin 'complete))
+         (sets (jabber-xml-get-children fin 'set))
+         (set (car sets))
+         (lasts (jabber-xml-get-children set 'last))
+         (firsts (jabber-xml-get-children set 'first))
+         (last (car (jabber-xml-node-children (car lasts))))
+         (first (car (jabber-xml-node-children (car firsts)))))
+    (when (and (= (length fins) 1)
+               (member complete '(nil "true" "false" "1" "0"))
+               (<= (length sets) 1)
+               (or (null set) (equal (jabber-xml-get-xmlns set) jabber-mam-rsm-xmlns))
+               (<= (length lasts) 1) (<= (length firsts) 1)
+               (or (null lasts) (and (stringp last) (not (string-empty-p last))
+                                            (= (length (cddar lasts)) 1)))
+               (or (null firsts) (and (stringp first) (not (string-empty-p first)))))
+      (list :complete (not (null (member complete '("true" "1"))))
+            :first first :last last))))
 
 ;;; Message chain handler
 
@@ -374,7 +392,34 @@ cannot be determined."
    ((jabber-mam--store-new-message-p jc inner-msg) :store)
    (t :unwrap)))
 
+(defun jabber-mam--page-failed (query)
+  "Prevent QUERY's current page from publishing a durable cursor."
+  (plist-put query :failed t))
+
 (defun jabber-mam--process-message (jc xml-data)
+  "Process JC's XML-DATA and retain failures until owned page settlement."
+  (let* ((result (jabber-xml-child-with-xmlns xml-data jabber-mam-xmlns))
+         (qid (jabber-xml-get-attribute result 'queryid))
+         (query (cl-find qid jabber-mam--syncing
+                         :key (lambda (entry) (plist-get entry :id))
+                         :test #'equal)))
+    (condition-case err
+        (progn
+          (when (and query (plist-get query :page)
+                     (jabber-mam--valid-sender-p
+                      jc (jabber-xml-get-attribute xml-data 'from) query)
+                     (or (not (eq (jabber-xml-node-name result) 'result))
+                         (not (jabber-mam--parse-result xml-data))
+                         (not (stringp (jabber-xml-get-attribute result 'id)))
+                         (string-empty-p (jabber-xml-get-attribute result 'id))))
+            (jabber-mam--page-failed query))
+          (jabber-mam--process-owned-message jc xml-data))
+      ((error quit)
+       (when (and query (jabber-mam--current-query-p jc query))
+         (jabber-mam--page-failed query))
+       (signal (car err) (cdr err))))))
+
+(defun jabber-mam--process-owned-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
   (when-let* ((result-el (jabber-xml-child-with-xmlns
@@ -387,6 +432,7 @@ JC is the Jabber connection.  XML-DATA is the stanza."
               ((jabber-mam--valid-sender-p
                 jc (jabber-xml-get-attribute xml-data 'from) query))
               (parsed (jabber-mam--parse-result xml-data)))
+    (plist-put query :received (1+ (or (plist-get query :received) 0)))
     (let* ((archive-id (nth 0 parsed))
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
@@ -401,6 +447,8 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (timestamp (and-let* ((time (plist-get fields :timestamp)))
                         (floor (float-time time))))
            (action (jabber-mam--message-action jc inner-msg fields)))
+      (when (jabber--decrypt-failure-body-p body)
+        (jabber-mam--page-failed query))
       (when (and (eq page (plist-get query :page))
                  (jabber-mam--current-query-p jc query))
         (pcase action
@@ -420,14 +468,22 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                  (plist-get fields :our-jid) peer
                  (plist-get fields :direction) (plist-get fields :type)
                  body timestamp (jabber-jid-resource (plist-get fields :from))
-                 (plist-get fields :stanza-id) archive-id
+                 (plist-get fields :stanza-id)
+                 (if (equal (plist-get fields :type) "groupchat")
+                     (plist-get (jabber-db--message-identity inner-msg) :room-id)
+                   archive-id)
                  (jabber-db--extract-occupant-id inner-msg)
                  (plist-get fields :oob-entries) encrypted
                  (jabber-db--extract-reply-fields inner-msg)
-                 (jabber-db--extract-thread-fields inner-msg)))))
+                 (jabber-db--extract-thread-fields inner-msg)
+                 (jabber-db--message-identity
+                  inner-msg (or (plist-get query :to)
+                                (plist-get fields :our-jid)) archive-id)))))
            (jabber-mam--mark-dirty jc peer (plist-get fields :type))
            (setcdr (cdr xml-data) nil))
           (:unwrap
+           (setq jabber-stanza-error-handler
+                 (lambda () (jabber-mam--page-failed query)))
            (jabber-mam--unwrap-into xml-data inner-msg archive-id)))))))
 
 (defun jabber-mam--our-muc-nick-p (room nick jc)
@@ -464,7 +520,13 @@ Drains `jabber-mam--dirty-peers' and runs
 BEGIN a SQLite transaction when transitioning from 0 to 1."
   (when (zerop jabber-mam--tx-depth)
     (when-let* ((db (jabber-db-ensure-open)))
-      (sqlite-execute db "BEGIN")))
+      (sqlite-execute db "BEGIN")
+      (condition-case err
+          (sqlite-execute db "SAVEPOINT jabber_mam_pages")
+        ((error quit)
+         (ignore-error sqlite-error (sqlite-execute db "ROLLBACK"))
+         (signal (car err) (cdr err)))))
+    (setq jabber-mam--tx-progress nil))
   (cl-incf jabber-mam--tx-depth))
 
 (defun jabber-mam--tx-end ()
@@ -474,7 +536,38 @@ COMMIT the SQLite transaction when transitioning from 1 to 0."
     (cl-decf jabber-mam--tx-depth)
     (when (zerop jabber-mam--tx-depth)
       (when-let* ((db (jabber-db-ensure-open)))
-        (sqlite-execute db "COMMIT")))))
+        (let ((committed nil)
+              (receipts (prog1 (reverse jabber-mam--tx-progress)
+                          (setq jabber-mam--tx-progress nil))))
+          (unwind-protect
+              (progn
+                ;; RELEASE proves our original transaction still contains its
+                ;; page effects.  SQLITE_FULL can roll it back without changing
+                ;; the Lisp refcount.  Never BEGIN anew to bless lost effects.
+                ;; This nested savepoint's release does not commit the BEGIN.
+                (sqlite-execute db "RELEASE SAVEPOINT jabber_mam_pages")
+                (dolist (receipt receipts)
+                  (pcase-let ((`(,query ,expected ,uid) receipt))
+                    (when (and (not (plist-get query :failed))
+                               (funcall (plist-get query :current-p)))
+                      (jabber-db--advance-mam-progress
+                       db (plist-get query :account) (plist-get query :archive)
+                       (plist-get query :with) expected uid
+                       (plist-get query :coverage-start)))))
+                (sqlite-execute db "COMMIT")
+                (setq committed t))
+            (unless committed
+              (unwind-protect
+                  ;; Automatic rollback also makes ROLLBACK report that no
+                  ;; transaction exists.  Preserve the original failure.
+                  (ignore-error sqlite-error (sqlite-execute db "ROLLBACK"))
+                (setq jabber-mam--dirty-peers nil)
+                (dolist (receipt receipts)
+                  (plist-put (car receipt) :failed t))
+                ;; Accepted incomplete pages may be waiting on timers.  They
+                ;; must not continue from a cursor whose effects were lost.
+                (dolist (receipt receipts)
+                  (jabber-mam--complete-query (car receipt) 'failed))))))))))
 
 ;;; Query and pagination
 
@@ -496,13 +589,26 @@ Retire ownership before attempting each callback independently; contain their
 errors and quits without changing the outcome.  Callbacks can run before this
 function returns, including on synchronous begin/send failure.
 Return the owned query record."
-  (let ((query (list :id (or queryid (jabber-mam--make-queryid)) :jc jc
+  (dolist (filter (list with to))
+    (unless (or (null filter) (and (stringp filter) (not (string-empty-p filter))))
+      (error "Invalid MAM archive or coverage filter")))
+  (let* ((account (jabber-connection-bare-jid jc))
+         (archive (or to account))
+         (progress (jabber-db-mam-progress account archive with))
+         (query (list :id (or queryid (jabber-mam--make-queryid)) :jc jc
                      :current-p (jabber-mam--session-predicate jc)
                      :with with :start start :to to :before before-id
                      :max (or max jabber-mam-page-size) :after after-id
                      :callback callback :result-callback result-callback
                      :page nil :timer nil :iq-id nil
-                     :transaction nil :retried nil)))
+                     :transaction nil :retried nil :failed nil :received 0
+                     :account account :archive archive
+                     :cursor-expected (car progress)
+                     :coverage-start (if progress (cadr progress) start)
+                     :forward (and (not before-id)
+                                   (equal after-id (car progress))
+                                   (or (null progress)
+                                       (equal start (cadr progress)))))))
     (push query jabber-mam--syncing)
     (jabber-mam--send-page query)
     query))
@@ -516,6 +622,7 @@ Return the owned query record."
         (jabber-mam--complete-query query 'cancelled)
       (let ((page (list nil)))
         (plist-put query :page page)
+        (plist-put query :received 0)
         (plist-put query :iq-id (jabber-mam--make-queryid))
         (condition-case err
             (progn
@@ -550,22 +657,39 @@ Return the owned query record."
                 jc (jabber-xml-get-attribute xml-data 'from) query))
       query)))
 
+(defun jabber-mam--accept-progress (query last-id)
+  "Retain QUERY's accepted LAST-ID until its actual transaction commits."
+  (when (and (plist-get query :transaction) (plist-get query :forward))
+    (let* ((expected (plist-get query :cursor-expected))
+           (uid (or last-id expected)))
+      (push (list query expected uid) jabber-mam--tx-progress)
+      (plist-put query :cursor-expected uid))))
+
 (defun jabber-mam--handle-fin (jc xml-data closure)
   "Settle or paginate JC's owned page from XML-DATA and CLOSURE."
   (when-let* ((query (jabber-mam--reply-query jc xml-data closure)))
-    (let* ((fin (jabber-mam--parse-fin xml-data))
-           (last-id (plist-get fin :last)))
-      (cond
-       ((or (plist-get fin :complete) (plist-get query :before))
-        (jabber-mam--complete-query query 'success))
-       ((or (null last-id) (equal last-id (plist-get query :after)))
-        (jabber-mam--complete-query query 'failed))
-       (t
-        (jabber-mam--release-page query)
-        (plist-put query :after last-id)
-        ;; Keep the query registered while waiting so teardown can retire it.
-        (plist-put query :timer
-                   (run-with-timer 0.1 nil #'jabber-mam--send-page query)))))))
+    (condition-case err
+        (let* ((fin (jabber-mam--parse-fin xml-data))
+               (last-id (plist-get fin :last)))
+          (cond
+           ((or (not fin) (plist-get query :failed)
+                (and (> (or (plist-get query :received) 0) 0) (null last-id))
+                (and (not (plist-get fin :complete))
+                     (not (plist-get query :before))
+                     (or (null last-id) (equal last-id (plist-get query :after)))))
+            (jabber-mam--complete-query query 'failed))
+           (t
+            (jabber-mam--accept-progress query last-id)
+            (if (or (plist-get fin :complete) (plist-get query :before))
+                (jabber-mam--complete-query query 'success)
+              (jabber-mam--release-page query)
+              (plist-put query :after last-id)
+              (plist-put query :timer
+                         (run-with-timer 0.1 nil #'jabber-mam--send-page query))))))
+      ((error quit)
+       (jabber-mam--page-failed query)
+       (jabber-mam--complete-query query 'failed)
+       (signal (car err) (cdr err))))))
 
 (defun jabber-mam--handle-error (jc xml-data closure)
   "Settle JC's failed page from XML-DATA and CLOSURE.
@@ -595,9 +719,9 @@ Retry a stale forward cursor once without that cursor, preserving filters."
 
 (defun jabber-mam--catch-up (jc)
   "Sync missed messages for JC via MAM."
-  (let ((last-id (jabber-db-last-server-id (jabber-connection-bare-jid jc))))
-    (jabber-mam--query jc last-id nil nil
-                       (unless last-id (jabber-mam--initial-start)))))
+  (let* ((account (jabber-connection-bare-jid jc))
+         (progress (jabber-db-mam-progress account account nil)))
+    (jabber-mam--query jc (car progress) nil nil (cadr progress))))
 
 (defun jabber-mam-maybe-catchup (jc)
   "Post-connect hook on JC: sync messages via MAM if enabled.
@@ -617,8 +741,9 @@ Added to `jabber-post-connect-hooks'."
 (defun jabber-mam--chat-catch-up (jc peer token)
   "Sync PEER's archive on JC for automatic catch-up TOKEN."
   (let* ((account (jabber-connection-bare-jid jc))
-         (last-id (jabber-db-last-server-id account peer))
-         (start (unless last-id (jabber-mam--initial-start))))
+         (progress (jabber-db-mam-progress account account peer))
+         (last-id (car progress))
+         (start (cadr progress)))
     (jabber-mam--query
      jc last-id nil peer start nil nil nil
      (lambda () (jabber-mam--finish-peer-sync jc peer token)))))
@@ -661,8 +786,9 @@ query completes (or when disco reveals MAM is not supported)."
 (defun jabber-mam--muc-catch-up (jc group)
   "Sync GROUP's archive on JC, then clear its syncing indicator."
   (let* ((account (jabber-connection-bare-jid jc))
-         (last-id (jabber-db-last-server-id account group))
-         (start (unless last-id (jabber-mam--initial-start))))
+         (progress (jabber-db-mam-progress account group nil))
+         (last-id (car progress))
+         (start (cadr progress)))
     (jabber-mam--query
      jc last-id nil nil start group nil nil
      (lambda ()
@@ -717,6 +843,9 @@ Refresh the buffer after settlement."
 
 (defun jabber-mam--cleanup-connection (jc)
   "Retire JC's queries and automatic catch-ups on disconnect."
+  (dolist (receipt jabber-mam--tx-progress)
+    (when (eq jc (plist-get (car receipt) :jc))
+      (plist-put (car receipt) :failed t)))
   (dolist (query (copy-sequence jabber-mam--syncing))
     (when (eq jc (plist-get query :jc))
       (jabber-mam--complete-query query 'cancelled)))
@@ -726,6 +855,8 @@ Refresh the buffer after settlement."
 
 (defun jabber-mam--cleanup-all ()
   "Retire all MAM queries and automatic catch-ups on disconnect."
+  (dolist (receipt jabber-mam--tx-progress)
+    (plist-put (car receipt) :failed t))
   (dolist (query (copy-sequence jabber-mam--syncing))
     (jabber-mam--complete-query query 'cancelled))
   (dolist (entry (copy-sequence jabber-mam--peer-syncing))
@@ -736,6 +867,11 @@ Refresh the buffer after settlement."
 (defun jabber-mam--cancel-muc-query (room &optional jc)
   "Retire MAM queries and pending pagination for ROOM on JC.
 When JC is nil, intentionally retire this room's queries on all accounts."
+  (dolist (receipt jabber-mam--tx-progress)
+    (let ((query (car receipt)))
+      (when (and (equal room (plist-get query :to))
+                 (or (null jc) (eq jc (plist-get query :jc))))
+        (plist-put query :failed t))))
   (dolist (query (copy-sequence jabber-mam--syncing))
     (when (and (equal room (plist-get query :to))
                (or (null jc) (eq jc (plist-get query :jc))))

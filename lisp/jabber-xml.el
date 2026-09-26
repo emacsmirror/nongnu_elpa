@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'xml)
+(require 'seq)
 (eval-when-compile
   (require 'cl-lib))
 
@@ -208,6 +209,51 @@ Return nil if the attribute was not found."
           (setq result child)))
       (setq children (cdr children)))
     result))
+
+(defun jabber-xml-reply-fallback-range (xml-data)
+  "Return the XEP-0428 reply fallback range in XML-DATA.
+Use the first exact <fallback/> in urn:xmpp:fallback:0 whose `for'
+is urn:xmpp:reply:0, and its first <body/> child.  Return `all' when
+that child is absent or has neither offset.  Partial or nonnumeric
+offsets yield nil; two non-negative decimal offsets yield (START END).
+Do not validate ordering or body bounds here: consumers must check
+those before using these code-point offsets to modify body text."
+  (when-let* ((fallback
+              (seq-find
+               (lambda (child)
+                 (and (eq (jabber-xml-node-name child) 'fallback)
+                      (equal (jabber-xml-get-xmlns child) "urn:xmpp:fallback:0")
+                      (equal (jabber-xml-get-attribute child 'for)
+                             "urn:xmpp:reply:0")))
+               (jabber-xml-node-children xml-data))))
+    (let* ((body (car (jabber-xml-get-children fallback 'body)))
+           (start (jabber-xml-get-attribute body 'start))
+           (end (jabber-xml-get-attribute body 'end)))
+      (if (or start end)
+          (and (stringp start) (stringp end)
+               (string-match-p "\\`[0-9]+\\'" start)
+               (string-match-p "\\`[0-9]+\\'" end)
+               (list (string-to-number start) (string-to-number end)))
+        'all))))
+
+(defun jabber-xml-reply-fields (xml-data)
+  "Return XEP-0461 reply fields in XML-DATA as a plist, or nil.
+Require the exact <reply/> name and urn:xmpp:reply:0 namespace.
+Use the first matching child, even when its ID is absent or empty;
+later duplicates do not replace it.  Preserve absent attributes as
+nil and empty attributes as empty strings without validating JIDs.
+Return :reply-to-id, :reply-to-jid and :fallback-range, where the
+range is nil, `all', or (START END); see `jabber-xml-reply-fallback-range'.
+Do not modify XML-DATA, encode SQL values, or strip body text."
+  (when-let* ((reply
+              (seq-find
+               (lambda (child)
+                 (and (eq (jabber-xml-node-name child) 'reply)
+                      (equal (jabber-xml-get-xmlns child) "urn:xmpp:reply:0")))
+               (jabber-xml-node-children xml-data))))
+    (list :reply-to-id (jabber-xml-get-attribute reply 'id)
+          :reply-to-jid (jabber-xml-get-attribute reply 'to)
+          :fallback-range (jabber-xml-reply-fallback-range xml-data))))
 
 (defun jabber-xml-encrypted-p (xml-data)
   "Return non-nil when XML-DATA carries an encryption child element.

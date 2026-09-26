@@ -1566,8 +1566,8 @@
                    (lambda (&rest _) "alice@example.com"))
                   ((symbol-function 'jabber-message-thread-update-targets)
                    (lambda (&rest _) (list parent thread)))
-                  ((symbol-function 'jabber-chat-ewoc-find-by-id)
-                   (lambda (_) 'node))
+                  ((symbol-function 'jabber-reactions--find-target-node)
+                   (lambda (&rest _) 'node))
                   ((symbol-function 'jabber-reactions--apply-incoming-update)
                    (lambda (&rest _) (push (current-buffer) seen))))
           (jabber-reactions--handle-message

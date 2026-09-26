@@ -498,7 +498,7 @@ FROM message ORDER BY id")))))
                                          (id . "same-actor"))))))
       (cl-letf (((symbol-function 'jabber-connection-bare-jid) (lambda (_) "me@x"))
                 ((symbol-function 'jabber-muc-nickname) (lambda (&rest _) nickname))
-                ((symbol-function 'jabber-muc-joined-p) (lambda (_) t))
+                ((symbol-function 'jabber-muc-joined-p) (lambda (_ &optional _jc) t))
                 ((symbol-function 'fsm-get-state-data) (lambda (_) '(:username "me"))))
         (jabber-db--message-handler 'jc inner)
         (let ((original (sqlite-select jabber-db--connection
@@ -3575,6 +3575,7 @@ CREATE TABLE message (
   type TEXT,
   body TEXT,
   timestamp INTEGER NOT NULL,
+  resource TEXT,
   stanza_id TEXT, retracted_by TEXT)")
             (sqlite-execute db "\
 CREATE TABLE message_reaction (
