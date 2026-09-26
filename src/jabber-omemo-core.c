@@ -758,6 +758,28 @@ F_initiate_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     return env->make_user_ptr(env, free_session, session);
 }
 
+/*  jabber-omemo--session-remote-identity  */
+
+static emacs_value
+F_session_remote_identity(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+                          void *data)
+{
+    (void)nargs; (void)data;
+
+    const struct native_session *native = extract_session(env, args[0]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    /* picomemo uses zero for SESSION_UNINIT.  Failed decryption restores
+       the whole session, including its identity and initialization state. */
+    if (!native->session.init)
+        return Qnil_v;
+
+    omemoSerializedKey identity;
+    omemoSerializeKey(identity, native->session.remoteidentity);
+    return make_unibyte(env, identity, sizeof identity);
+}
+
 /*  jabber-omemo--serialize-session  */
 
 static emacs_value
@@ -1521,6 +1543,18 @@ emacs_module_init(struct emacs_runtime *runtime)
           "SIGNED-PRE-KEY, IDENTITY-KEY, PRE-KEY are 33-byte unibyte strings.\n"
           "SPK-ID and PK-ID are integer key IDs.\n"
           "Returns a session user-ptr; freed automatically by GC.");
+
+    DEFUN("jabber-omemo--session-remote-identity",
+          F_session_remote_identity, 1, 1,
+          "Return SESSION-PTR's remote public identity key without mutation.\n"
+          "Return nil for an uninitialized session.  Otherwise return a fresh\n"
+          "33-byte unibyte string (0x05 followed by the 32 public key bytes),\n"
+          "in the same format as the bundle's :identity-key.\n"
+          "The identity comes from verified bundle initiation or successful\n"
+          "pre-key decryption, or is restored from serialized session state.\n"
+          "This does not establish user trust; callers must check pinned keys.\n"
+          "Signal jabber-omemo-error for another native pointer kind, or\n"
+          "wrong-type-argument for a non-pointer.");
 
     DEFUN("jabber-omemo--serialize-session", F_serialize_session, 1, 1,
           "Serialize SESSION-PTR to a unibyte string.");
