@@ -946,6 +946,18 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
       (image-type-available-p 'imagemagick)
     (image-transforms-p)))
 
+(defun mastodon-tl-format-timestamp (parsed-time)
+  "Format a human readble timestamp of PARSED-TIME."
+  (let ((ts (format-time-string
+             mastodon-toot-timestamp-format parsed-time)))
+    (propertize ts
+                'timestamp parsed-time
+                'display
+                (if mastodon-tl--enable-relative-timestamps
+                    (mastodon-tl--relative-time-description parsed-time)
+                  parsed-time)
+                'help-echo ts)))
+
 (defun mastodon-tl--byline (toot &optional detailed-p
                                  domain base-toot group ts)
   "Generate (bottom) byline for TOOT.
@@ -1023,15 +1035,7 @@ TS is a timestamp from the server, if any."
                           'help-echo visibility)))
        " "
        ;; timestamp:
-       (let ((ts (format-time-string
-                  mastodon-toot-timestamp-format parsed-time)))
-         (propertize ts
-                     'timestamp parsed-time
-                     'display
-                     (if mastodon-tl--enable-relative-timestamps
-                         (mastodon-tl--relative-time-description parsed-time)
-                       parsed-time)
-                     'help-echo ts))
+       (mastodon-tl-format-timestamp parsed-time)
        ;; detailed:
        (when detailed-p
          (let* ((app-name (map-nested-elt toot '(application name)))
