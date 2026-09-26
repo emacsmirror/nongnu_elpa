@@ -75,7 +75,10 @@ entries."
 
 (defcustom mastodon-auth-encrypt-tokens-plstore t
   "Whether to encrypt client and user tokens in the plstore.
-Disable this if you don't want to use GPG to encrypt mastodon.plstore."
+Disable this if you don't want to use GPG to encrypt mastodon.plstore.
+If you want this enalbed, set `plstore-encrypt-to' (and maybe also
+`epa-file-encrypt-to') to your key ID to avoid being asked for your
+passphrase everytime the plstore if loaded/saved."
   :type 'boolean)
 
 (defvar mastodon-auth-source-file nil
