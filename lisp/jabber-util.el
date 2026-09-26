@@ -148,13 +148,15 @@ Return nil if none found."
 (defun jabber-jid-username (jid)
   "Return the username portion of JID, or nil if none found.
 JID must be a string."
-  (when (string-match "\\(.*\\)@.*\\(/.*\\)?" jid)
-    (match-string 1 jid)))
+  (let ((bare (jabber-jid-user jid)))
+    (when (string-match "\\(.*\\)@" bare)
+      (match-string 1 bare))))
 
 (defun jabber-jid-server (jid)
   "Return the server portion of JID."
-  (string-match "^\\(.*@\\)?\\([^@/]+\\)\\(/.*\\)?$" jid)
-  (match-string 2 jid))
+  (let ((bare (jabber-jid-user jid)))
+    (when (string-match "\\`\\(?:.*@\\)?\\([^@]+\\)\\'" bare)
+      (match-string 1 bare))))
 
 (defun jabber-jid-rostername (user)
   "Return the name of USER if present in roster, or nil."
@@ -550,7 +552,7 @@ obtained from `xml-parse-region'."
 	(hour (string-to-number (substring timestamp 9 11)))
 	(minute (string-to-number (substring timestamp 12 14)))
 	(second (string-to-number (substring timestamp 15 17))))
-    (encode-time (list second minute hour day month year nil -1 nil))))
+    (encode-time (list second minute hour day month year nil -1 0))))
 
 (defun jabber-encode-legacy-time (timestamp)
   "Parse TIMESTAMP as internal time value and encode as ccyymmddThh:mm:ss (UTC)."

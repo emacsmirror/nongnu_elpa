@@ -8,6 +8,7 @@
 
 (require 'ert)
 (require 'jabber-xml)
+(require 'jabber-core)
 
 ;;; Group 1: jabber-escape-xml / jabber-unescape-xml
 
@@ -279,6 +280,43 @@
   "Return nil for empty buffer."
   (with-temp-buffer
     (should (null (jabber-xml-parse-next-stanza)))))
+
+(ert-deftest jabber-test-xml-end-tag-whitespace-stream ()
+  "Consume legal closing-tag whitespace, whole and fragmented, in order."
+  (dolist (space '(" " "\t" "\n" "\r\n"))
+    (dolist (fragmented '(nil t))
+      (let* ((jc (make-symbol "xml-stream"))
+             (buffer (generate-new-buffer " *jabber-test-xml*"))
+             (proc (make-pipe-process :name "jabber-test-xml"
+                                      :buffer buffer :noquery t))
+             (prefix (concat "<message><body>hello</body" space))
+             (suffix (concat "></message" space "><presence/>"))
+             events)
+        (unwind-protect
+            (progn
+              (put jc :state-data (list :connection proc))
+              (cl-letf (((symbol-function 'fsm-send)
+                         (lambda (_jc event) (push event events))))
+                (if fragmented
+                    (progn
+                      (jabber-pre-filter proc prefix jc)
+                      (should-not events)
+                      (should (equal (with-current-buffer buffer (buffer-string))
+                                     prefix))
+                      (jabber-pre-filter proc suffix jc))
+                  (jabber-pre-filter proc (concat prefix suffix) jc)))
+              (should (equal (nreverse events)
+                             '((:stanza (message nil (body nil "hello")))
+                               (:stanza (presence nil)))))
+              (should (zerop (buffer-size buffer))))
+          (delete-process proc)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-xml-end-tag-mismatch-not-consumed ()
+  "Do not accept a different closing name as a complete stanza."
+  (with-temp-buffer
+    (insert "<message><body>hello</bodyx ></message><presence/>")
+    (should-not (jabber-xml-parse-next-stanza))))
 
 (provide 'jabber-test-xml)
 ;;; jabber-test-xml.el ends here

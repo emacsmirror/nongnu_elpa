@@ -315,12 +315,21 @@ transport callbacks are never retained after handoff."
 
 (defun jabber-sm--should-queue-p (state-data sexp)
   "Return non-nil if SEXP must wait for owned work in STATE-DATA.
+Eligible pending work precedes new stanzas of equal or lower priority.
+IQ bypasses ordinary back-pressure to permit bootstrap progress.
 Fresh recovery allows bootstrap IQ and presence past blocked rooms.
 Required join presence bypasses a full SM window.
 Successful resumption preserves all recovered wire order."
   (and (jabber-sm--stanza-p sexp)
        (not (jabber-sm--recovery-join-p state-data sexp))
-       (or (and (plist-get state-data :sm-fresh-recovery)
+       (or (and (not (eq (jabber-xml-node-name sexp) 'iq))
+                (cl-some
+                 (lambda (entry)
+                   (and (not (jabber-sm--entry-blocked-p state-data entry))
+                        (<= (jabber-sm--pending-priority entry)
+                            (jabber-sm--stanza-priority sexp))))
+                 (plist-get state-data :sm-pending-queue)))
+           (and (plist-get state-data :sm-fresh-recovery)
                 (eq (jabber-xml-node-name sexp) 'message)
                 (plist-get state-data :sm-pending-queue))
            (and (jabber-sm--blocked-room-p state-data sexp)

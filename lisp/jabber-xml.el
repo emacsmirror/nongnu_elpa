@@ -136,7 +136,7 @@ Uses a custom parser instead of `sgml-skip-tag-forward'."
 	(unless (and dont-recurse-into-stream (equal node-name "stream:stream"))
 	  (cl-loop
 	   do (skip-chars-forward "^<")
-	   until (looking-at (regexp-quote (concat "</" node-name ">")))
+	   until (looking-at (concat "</" (regexp-quote node-name) "[ \t\r\n]*>"))
 	   do (jabber-xml-skip-tag-forward))
 	  (goto-char (match-end 0)))
 	t)

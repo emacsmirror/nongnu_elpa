@@ -9,6 +9,7 @@
 (require 'ert)
 (require 'jabber-util)
 (require 'jabber-uri)
+(require 'jabber-core)
 
 (defvar jabber-jid-obarray (make-vector 127 0))
 
@@ -103,11 +104,17 @@
 
 (ert-deftest jabber-test-util-parse-legacy-time ()
   "Parse legacy ccyymmddThh:mm:ss format."
-  (let ((result (jabber-parse-legacy-time "20240101T12:30:45")))
-    (should result)
-    ;; jabber-parse-legacy-time interprets as local time
-    (let ((expected (encode-time '(45 30 12 1 1 2024 nil -1 nil))))
-      (should (= (float-time result) (float-time expected))))))
+  (let ((old-zone (getenv "TZ"))
+        (process-environment (copy-sequence process-environment)))
+    (unwind-protect
+        (dolist (zone '("UTC0" "Etc/GMT-3"))
+          (set-time-zone-rule zone)
+          (let ((result (jabber-message-timestamp
+                         '(message nil (x ((xmlns . "jabber:x:delay")
+                                           (stamp . "20240101T12:30:45")))))))
+            (should (time-equal-p result (encode-time '(45 30 12 1 1 2024 nil -1 0))))
+            (should (equal (jabber-encode-legacy-time result) "20240101T12:30:45"))))
+      (set-time-zone-rule old-zone))))
 
 (ert-deftest jabber-test-util-encode-legacy-time ()
   "Encode a time value to legacy format in UTC."
@@ -384,6 +391,52 @@
 (ert-deftest jabber-test-uri-rejects-trailing-text ()
   "Reject text after a complete XMPP URI."
   (should-error (jabber-uri-parse "xmpp:alice@example.com?join trailing")))
+
+(ert-deftest jabber-test-util-jid-resource-does-not-change-bare-parts ()
+  "Ignore resource delimiters when extracting the account identity."
+  (dolist (bare '("alice@example.test" "example.test"))
+    (dolist (resource '("" "/desktop@host" "/desk/@host/other"))
+      (let ((jid (concat bare resource)))
+        (should (equal (jabber-jid-username jid)
+                       (and (string-prefix-p "alice@" bare) "alice")))
+        (should (equal (jabber-jid-server jid) "example.test"))
+        (should (equal (jabber-jid-user jid) bare))
+        (should (equal (jabber-jid-resource jid)
+                       (unless (equal resource "") (substring resource 1))))))))
+
+(ert-deftest jabber-test-util-bind-resource-at-sign ()
+  "Preserve all bound JID parts and the account key through the bind handler."
+  (let* ((jc (make-symbol "bind"))
+         (state (jabber-sm--reset
+                 (list :username "alice" :server "example.test"
+                       :resource "desktop@host" :stream-features '(features nil))))
+         (result (funcall (gethash :bind (get 'jabber-connection :fsm-event))
+                          jc state
+                          '(:bind-success
+                            (iq ((type . "result"))
+                                (bind ((xmlns . "urn:ietf:params:xml:ns:xmpp-bind"))
+                                      (jid nil "alice@example.test/desktop@host"))))
+                          #'ignore))
+         (bound (cadr result)))
+    (put jc :state-data bound)
+    (should (equal (plist-get bound :username) "alice"))
+    (should (equal (plist-get bound :server) "example.test"))
+    (should (equal (plist-get bound :resource) "desktop@host"))
+    (should (equal (jabber-connection-bare-jid jc) "alice@example.test"))))
+
+(ert-deftest jabber-test-util-parse-time-fractions-and-offsets ()
+  "Preserve fractional seconds and signed offsets in either time format."
+  ;; These semantic assertions replace the representation-specific cases
+  ;; from parse-date.el; the exact integer/cons/list layout is Emacs-owned.
+  (dolist (current-time-list '(nil t))
+    (dolist (fraction '("" ".500" ".550"))
+      (dolist (offset '(("" . 0) ("Z" . 0) ("+00:00" . 0) ("-00:00" . 0)
+                        ("+01:00" . 3600) ("-01:00" . -3600)))
+        (let* ((stamp (concat "2024-02-25T23:32:40" fraction (car offset)))
+               (expected (+ (- 1708903960 (cdr offset))
+                            (if (equal fraction "") 0 (string-to-number fraction)))))
+          (should (< (abs (- (float-time (jabber-parse-time stamp)) expected))
+                     0.000001)))))))
 
 (provide 'jabber-test-util)
 ;;; jabber-test-util.el ends here
