@@ -143,6 +143,7 @@
 ;;   treeview-get-label-keymap-function
 ;;   treeview-get-label-face-function
 ;;   treeview-get-label-mouse-face-function
+;;   treeview-add-more-node-components-function
 ;;   treeview-get-icon-keymap-function
 ;;   treeview-get-icon-face-function
 ;;   treeview-get-icon-mouse-face-function
@@ -565,6 +566,14 @@ The default implementation is `treeview-return-nil'.")
 
 (make-variable-buffer-local 'treeview-get-label-mouse-face-function)
 
+(defvar treeview-add-more-node-components-function 'treeview-do-nothing
+  "Function to add application-specific node components.
+Called from `treeview-render-node' after the last standard node component, the
+label, has been created.  The node under construction is passed as an argument.
+Intended to add additional node components.  Default is `treeview-do-nothing'.")
+
+(make-variable-buffer-local 'treeview-add-more-node-components-function)
+
 (defvar treeview-get-icon-keymap-function 'treeview-return-nil
   "Function to get the keymap of the icon of a node.
 Called with one argument, the node.  The return value is passed as the KEYMAP
@@ -883,6 +892,8 @@ This is an auxiliary function used in `treeview-display-node'."
     (setq label-overlay
           (treeview-make-node-component-overlay node label-content label-keymap label-face label-mouse-face))
     (treeview-set-node-prop node 'label-overlay label-overlay)
+    ;; Additional components, if any.
+    (funcall treeview-add-more-node-components-function node)
     ;; Node line:
     (setq node-line-overlay (treeview-make-node-line-overlay node start (point)))
     (treeview-set-node-prop node 'node-line-overlay node-line-overlay)
@@ -1471,7 +1482,7 @@ This function exists because it's not enough to move the point with `goto-char'.
 In addition, `set-window-point' must be called with the window of the current
 buffer and the new position POS.  Otherwise, Emacs might not scroll to the new
 position if the latter is outside the visible area of the window.  There may be
-multiple windows displaying the current buffer. This function uses the window
+multiple windows displaying the current buffer.  This function uses the window
 returned by `get-buffer-window'.  If that is nil, the call to `set-window-point'
 is suppressed."
   (let ( (window (get-buffer-window)) )
