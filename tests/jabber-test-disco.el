@@ -17,7 +17,7 @@
 
 (require 'jabber-disco)
 (require 'jabber-db)
-(require 'jabber-test-disco-owner)
+(require 'jabber-disco-test-helpers)
 
 ;;; Group 1: jabber-caps--store-hash
 

@@ -2,12 +2,14 @@
   description = "XMPP client for Emacs";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # Immutable 23.11 release: the exact declared minimum, not the final 29.x.
+  inputs.nixpkgs-emacs291.url = "github:NixOS/nixpkgs/057f9aecfb71c4437d2b27d3323df7f93c010b7e";
   inputs.keymap-popup = {
     url = "git+https://git.thanosapollo.org/emacs-keymap-popup.git";
     flake = false;
   };
 
-  outputs = { self, nixpkgs, keymap-popup }:
+  outputs = { self, nixpkgs, nixpkgs-emacs291, keymap-popup }:
     let
       systems = [
         # Note: Most of the testing I've done is x86_64-linux and
@@ -31,15 +33,18 @@
           lib = pkgs.lib;
           emacsPackages = pkgs.emacsPackagesFor emacs;
 
-          source = lib.cleanSourceWith {
-            src = ./.;
-            filter = path: type:
-              let name = baseNameOf path;
-              in !(name == ".test-results"
-                   || lib.hasSuffix ".elc" name
-                   || lib.hasSuffix ".so" name
-                   || lib.hasSuffix ".dylib" name
-                   || lib.hasSuffix "~" name);
+          # Closed-world release/build inputs shared with the Make matrix.
+          manifest = builtins.fromJSON (builtins.readFile ./admin/source-manifest.json);
+          # Git flakes expose only tracked files here, before the closed filter.
+          ordinaryTests = map (name: "tests/${name}") (builtins.filter
+            (name: builtins.match "jabber-test-.*\\.el" name != null)
+            (builtins.attrNames (builtins.readDir ./tests)));
+          missingTests = builtins.filter (name: !(builtins.elem name manifest)) ordinaryTests;
+          source = if missingTests != [] then
+            throw "Ordinary test manifest incomplete: ${builtins.concatStringsSep ", " missingTests}"
+          else lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions (map (name: ./. + "/${name}") manifest);
           };
 
           keymapPopup = emacsPackages.trivialBuild {
@@ -55,6 +60,14 @@
             epkgs.package-lint
             epkgs.relint
           ]);
+
+          # Only source dependencies: each matrix lane gets its own copy,
+          # never Elisp bytecode produced by a different Emacs.
+          testDependencies = pkgs.runCommand "jabber-test-dependency-sources" {} ''
+            mkdir -p $out/fsm $out/keymap-popup
+            tar -xf ${emacsPackages.fsm.src} --strip-components=1 -C $out/fsm --wildcards '*/fsm.el'
+            cp ${keymap-popup}/*.el $out/keymap-popup/
+          '';
 
           moduleCFlags = "-I${emacs}/include -fPIC -Wall -Wno-pointer-sign -Wno-unused-function -I.";
 
@@ -87,7 +100,7 @@
             inherit pname;
             version = "git";
             src = source;
-            nativeBuildInputs = [ emacsWithPackages pkgs.gnumake pkgs.pkg-config ];
+            nativeBuildInputs = [ emacsWithPackages pkgs.gnumake pkgs.pkg-config pkgs.gnupg ];
             buildInputs = [ pkgs.mbedtls ];
             dontConfigure = true;
 
@@ -115,7 +128,34 @@
             '';
           };
         in {
-          inherit emacs emacsWithPackages keymapPopup omemoModule;
+          inherit emacs emacsWithPackages keymapPopup omemoModule source testDependencies;
+          matrix = pkgs.stdenv.mkDerivation {
+            pname = "emacs-jabber-matrix-${emacs.version}";
+            version = "git";
+            src = source;
+            nativeBuildInputs = [ emacs pkgs.python3 pkgs.gnumake pkgs.pkg-config pkgs.gnupg ];
+            buildInputs = [ pkgs.mbedtls ];
+            dontConfigure = true;
+            buildPhase = ''
+              export JABBER_MATRIX_DEPS=${testDependencies}
+              export CFLAGS="${moduleCFlags}"
+              python3 admin/test-matrix --lane ${if emacs.version == "29.1" then "minimum" else "default"} \
+                --expected ${emacs.version} --root "$TMPDIR/lane"
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp "$TMPDIR/lane/runtime.json" "$TMPDIR/lane/passed" $out/
+            '';
+          };
+          matrixShell = pkgs.mkShell {
+            packages = [ emacs pkgs.python3 pkgs.gnumake pkgs.pkg-config pkgs.gnupg ];
+            buildInputs = [ pkgs.mbedtls ];
+            shellHook = ''
+              export JABBER_MATRIX_DEPS=${testDependencies}
+              export JABBER_MATRIX_VERSION=${emacs.version}
+              export CFLAGS="${moduleCFlags}"
+            '';
+          };
           compiler = mkTests { pname = "emacs-jabber-compiler"; target = "do-lint-byte-comp do-lint-native-comp lint-compile-check lint-package-lint"; };
           # Per-file: one Emacs per test file (fast, good isolation).
           tests = mkTests { pname = "emacs-jabber-tests"; target = "test"; };
@@ -127,9 +167,11 @@
       mkJabber = system:
         let
           pkgs = import nixpkgs { inherit system; };
+          pkgs291 = import nixpkgs-emacs291 { inherit system; };
         in {
           inherit pkgs;
-          full = mkVariant pkgs pkgs.emacs31-pgtk;
+          full = mkVariant pkgs pkgs.emacs;
+          minimum = mkVariant pkgs pkgs291.emacs29-nox;
           # emacs-nox has no image support and does not preload many
           # libraries (e.g. `image'); this is what Debian ships, so it
           # catches build-only-on-nox bugs the full build hides.
@@ -149,6 +191,14 @@
         in {
           omemo-module = jabber.full.omemoModule;
           compiler = jabber.full.compiler;
+          matrix-runner = jabber.pkgs.runCommand "jabber-matrix-runner" {
+            nativeBuildInputs = [ jabber.pkgs.python3 ];
+          } ''
+            python3 ${jabber.full.source}/admin/test-matrix-runner.py
+            touch $out
+          '';
+          matrix-minimum = jabber.minimum.matrix;
+          matrix-default = jabber.full.matrix;
           # Test matrix: {full, nox} x {per-file, combined-twice}.
           test = jabber.full.tests;
           test-nox = jabber.nox.tests;
@@ -159,12 +209,15 @@
       devShells = forAllSystems (system:
         let jabber = mkJabber system;
         in {
+          matrix-minimum = jabber.minimum.matrixShell;
+          matrix-default = jabber.full.matrixShell;
           default = jabber.pkgs.mkShell {
             packages = with jabber.pkgs; [
               cacert
               gcc
               git
               gnumake
+              gnupg
               jabber.full.emacsWithPackages
               mbedtls
               pkg-config

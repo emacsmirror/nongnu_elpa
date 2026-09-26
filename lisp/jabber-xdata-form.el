@@ -177,7 +177,7 @@
        (list (read-string (jabber-xdata-form--prompt field) current))))))
 
 (defun jabber-xdata-form--dirty-p ()
-  "Return non-nil when the current form has staged changes."
+  "Return non-nil for pending edits to the current form."
   (not (equal jabber-xdata-form--form
               jabber-xdata-form--original-form)))
 

@@ -537,8 +537,16 @@ accepted after an earlier retry claim out of late terminal settlement."
 		       ;; the XML parser will choke on.  Keep the attempt's canceller
                        ;; attached until change hooks finish: stop/replacement
                        ;; must still release this captured transport.
-		       (with-current-buffer (process-buffer connection)
-			 (erase-buffer)))
+		       (condition-case err
+                           (with-current-buffer (process-buffer connection)
+                             (erase-buffer))
+                         (error
+                          ;; Emacs 29 signals when a change hook kills the
+                          ;; buffer.  Ignore only a retired handoff's error;
+                          ;; a current owner's failure must still propagate.
+                          (when (and (eq owner (fsm-get-state-data fsm))
+                                     (eq attempt (get fsm :connect-attempt)))
+                            (signal (car err) (cdr err))))))
 
                      ;; A native change hook may stop or replace this attempt.
                      ;; A nil result leaves the authoritative FSM state and
@@ -845,7 +853,7 @@ STATE-DATA is the connection state to preserve."
 		 (jabber-core--active-disconnect-transition fsm state-data))))
 
 (defun jabber-core--bind-offered-p (state-data)
-  "Return non-nil if STATE-DATA offers exact resource binding."
+  "Return non-nil for an exact resource-binding offer in STATE-DATA."
   (cl-some (lambda (node)
              (equal (jabber-xml-get-xmlns node) jabber-bind-xmlns))
            (jabber-xml-get-children

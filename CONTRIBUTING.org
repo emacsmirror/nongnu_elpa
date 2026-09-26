@@ -6,6 +6,69 @@
 - Add or update tests for changed behavior.
 - Run =make dev= before submission.
 
+* Compatibility testing
+
+Run the complete compatibility matrix from the host shell, before entering
+=nix develop=:
+
+#+begin_src sh
+make test-matrix
+# Override the installed executable (a single program, not shell arguments):
+make test-matrix THANOS_EMACS=/path/to/emacs
+# Keep a focused selector and deterministic single-worker debugging:
+make test-matrix TESTS=tests/jabber-test-time.el JOBS=1
+make test-matrix-runner
+make test-matrix-public
+#+end_src
+
+The three required lanes are:
+
+1. The exact Emacs version in =lisp/jabber.el='s =Package-Requires= header:
+   currently *29.1*.  The immutable NixOS 23.11 release input supplies that
+   toolchain; a later 29.x patch release is not a substitute.  This older
+   closure is for isolated compatibility testing, not daily use.
+2. The default =pkgs.emacs= from the project's pinned nixpkgs input.  The
+   runtime version is reported, rather than assuming a particular major.
+3. *Thanos Emacs fork*.  Thanos uses his own Emacs fork.  This lane resolves
+   =THANOS_EMACS= (default =emacs=) in the host PATH before Nix runs, then
+   invokes that absolute executable inside the dependency/build environment.
+   Other contributors can point it at their installed Emacs.  It is never
+   silently replaced with Nix's Emacs.
+
+Every lane runs =make check=: the ordinary isolated-file ERT suite followed
+by two combined-suite runs, with the native OMEMO module rebuilt in that
+lane.  Each lane has its own source/build tree, dependency source copies,
+bytecode/native output, HOME, XDG directories and temporary test data.  The
+fork uses the pinned default's module header (Emacs' stable module API), not
+its executable or Elisp bytecode.  Existing =make test=, =make test-oneshot=,
+=make dev= and their =TESTS=/=JOBS= overrides remain available.
+
+Python 3 and Nix are required for the matrix.  It attempts every lane even
+if another fails or is unavailable.  Any missing runtime, version mismatch,
+nonzero exit or absent completion receipt fails the matrix.  Python validates
+per-file and both combined ERT inventories/counts, successful summaries and
+fresh autoload/native build outputs independently of the selected Emacs.
+Receipts and worker logs remain available even after a successful matrix.
+The public regression target exercises real positive and ERT-failure controls,
+version-only zero-exit runtimes, missing combined/summary completion and
+tracked-suite manifest drift.  It needs host Nix and the installed Emacs;
+the fast runner unit tests are also part of the pure Nix checks.  Output prints
+runtime versions and per-lane log locations; the reported temporary evidence
+directory is retained for inspection and can be removed after debugging.
+
+Pure Nix checks cannot execute an arbitrary host binary.  =nix flake check=
+includes =matrix-minimum= and =matrix-default=; the existing default/nox,
+per-file/combined and compiler checks remain.  Use =make test-matrix= for
+all three required versions, including *Thanos Emacs fork*.
+
+Build inputs are explicitly listed in =admin/source-manifest.json=.  Add new
+source/test fixtures to that list and stage new files before using Nix.
+Pure evaluation rejects tracked ordinary suites omitted from the manifest
+before filtering; this does not admit ignored or untracked private inputs.
+The Make wrapper uses a Git-aware flake reference, so ignored/private files
+are not copied into the Nix store; the manifest further restricts the build
+source.  Never put secrets in tracked files or this manifest.
+
 * Patches
 
 Create a patch series:

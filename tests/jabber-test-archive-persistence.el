@@ -1,50 +1,9 @@
 ;;; jabber-test-archive-persistence.el --- Durable archive proof -*- lexical-binding: t; -*-
 
 (require 'ert)
-(require 'jabber-test-mam)
+(require 'jabber-archive-test-helpers)
 (require 'jabber-message-reply)
 (require 'jabber-reactions)
-
-(defmacro jabber-test-archive--with-file (&rest body)
-  "Run BODY with a disposable native file database and MAM state."
-  (declare (indent 0) (debug t))
-  `(let* ((directory (make-temp-file "jabber-archive-" t))
-          (jabber-db-path (expand-file-name "history.sqlite" directory))
-          (jabber-db--connection nil)
-          (jabber-mam--syncing nil)
-          (jabber-mam--tx-depth 0)
-          (jabber-mam--dirty-peers nil)
-          (jabber-open-info-queries nil)
-          (jabber-db-message-thread-stored-functions nil)
-          (jabber-history-inhibit-received-message-functions nil)
-          (jabber-mam-sync-complete-functions nil)
-          (jc (jabber-test-mam--native-connection)))
-     (unwind-protect
-         (cl-letf (((symbol-function 'jabber-send-sexp) #'ignore))
-           (jabber-db-ensure-open)
-           ,@body)
-       (jabber-mam--cleanup-all)
-       (jabber-db-close)
-       (delete-directory directory t))))
-
-(defun jabber-test-archive--result (query uid inner)
-  "Wrap INNER in QUERY's result with UID."
-  `(message ((from . ,(or (plist-get query :to) "me@example.com")))
-            (result ((xmlns . "urn:xmpp:mam:2")
-                     (queryid . ,(plist-get query :id)) (id . ,uid))
-                    (forwarded ((xmlns . "urn:xmpp:forward:0"))
-                               (delay ((xmlns . "urn:xmpp:delay")
-                                       (stamp . "2025-01-01T00:00:00Z")))
-                               ,inner))))
-
-(defun jabber-test-archive--fin (jc query uid)
-  "Complete QUERY on JC with UID."
-  (jabber-mam--handle-fin
-   jc `(iq ((from . ,(or (plist-get query :to) "me@example.com")))
-           (fin ((xmlns . "urn:xmpp:mam:2") (complete . "true"))
-                (set ((xmlns . "http://jabber.org/protocol/rsm"))
-                     ,@(when uid `((last () ,uid))))))
-   (cons query (plist-get query :page))))
 
 (ert-deftest jabber-test-archive-origin-transport-reopen ()
   "Preserve distinct origin and transport IDs through real incoming storage."
@@ -96,11 +55,6 @@
                  (lambda (&rest args) (setq request args))))
         (jabber-mam--catch-up jc))
       (should (equal (cadr request) "bodyless")))))
-
-(defun jabber-test-archive--progress (&optional account archive with)
-  "Read native progress for ACCOUNT, ARCHIVE and WITH."
-  (jabber-db-mam-progress (or account "me@example.com")
-                          (or archive "me@example.com") with))
 
 (ert-deftest jabber-test-archive-commit-is-the-receipt ()
   "Independent SQLite readers see both effects and progress only at commit."
@@ -278,11 +232,17 @@
            (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed) (lambda (&rest _) (error "Decrypt fault"))))
              (should-error (jabber-mam--process-message jc xml))))
           ('downstream
-           (let ((jabber-message-chain
-                  (list #'jabber-mam--process-message (lambda (&rest _) (error "Downstream fault")))))
-             (jabber-process-input jc
-              (jabber-test-archive--result query "bad"
-               '(message ((from . "friend@example.com")))))))
+           (let ((called 0))
+             (let ((debug-on-error nil)
+                   (jabber-message-chain
+                    (list #'jabber-mam--process-message
+                          (cons 0 (lambda (&rest _)
+                                    (cl-incf called)
+                                    (error "Downstream fault"))))))
+               (jabber-process-input jc
+                (jabber-test-archive--result query "bad"
+                 '(message ((from . "friend@example.com"))))))
+             (should (= called 1))))
           ('malformed
            (jabber-mam--handle-fin jc '(iq () (wrong ((xmlns . "urn:xmpp:mam:2") (complete . "true"))))
                                    (cons query (plist-get query :page)))))

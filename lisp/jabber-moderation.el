@@ -81,7 +81,7 @@
     (and (null (cdr children)) (car children))))
 
 (defun jabber-moderation--muc-retraction-message-p (xml-data)
-  "Return non-nil when XML-DATA contains a MUC XEP-0424 retraction.
+  "Return non-nil for a MUC XEP-0424 retraction in XML-DATA.
 This intentionally does not require a valid target.  XEP-0424 forbids
 displaying sender-controlled fallback bodies even for unknown targets."
   (and (string= (or (jabber-xml-get-attribute xml-data 'type) "")
@@ -94,7 +94,7 @@ displaying sender-controlled fallback bodies even for unknown targets."
   (jabber-moderation--muc-retraction-message-p xml-data))
 
 (defun jabber-moderation--room-supports-occupant-id-p (room jc)
-  "Return non-nil when ROOM advertises XEP-0421 on connection JC."
+  "Return non-nil for cached XEP-0421 support in ROOM on connection JC."
   (member jabber-moderation-occupant-id-xmlns
           (nth 1 (jabber-disco-get-info-immediately room nil jc))))
 

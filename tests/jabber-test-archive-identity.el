@@ -5,7 +5,7 @@
 
 ;;; Code:
 
-(require 'jabber-test-archive-persistence)
+(require 'jabber-archive-test-helpers)
 
 (defun jabber-test-archive-identity--direct (&optional origin)
   "Return a direct message, optionally carrying ORIGIN."

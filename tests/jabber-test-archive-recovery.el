@@ -1,6 +1,6 @@
 ;;; jabber-test-archive-recovery.el --- Native rollback and reply proof -*- lexical-binding: t; -*-
 
-(require 'jabber-test-archive-persistence)
+(require 'jabber-archive-test-helpers)
 (require 'jabber-omemo-store)
 (require 'jabber-chat)
 

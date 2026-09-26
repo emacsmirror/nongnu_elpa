@@ -1305,6 +1305,7 @@
                    (unless fired
                      (setq fired t)
                      (pcase action
+                       ('error (error "Native handoff hook failed"))
                        ('stop (jabber-disconnect-one jc))
                        ('replace
                         (jabber-network-connect-async
@@ -1318,7 +1319,15 @@
                            retired-filter (process-filter old)
                            retired-sentinel (process-sentinel old))))
                  nil t))
-              (funcall (process-sentinel old) old "open\n")
+              (if (eq action 'error)
+                  ;; Inspect the real handler's condition before fsm.el's
+                  ;; debug/error adapter consumes it.
+                  (funcall (gethash :connecting
+                                    (get 'jabber-connection :fsm-event))
+                           jc (fsm-get-state-data jc)
+                           (list :connected old nil (get jc :connect-attempt))
+                           #'ignore)
+                (funcall (process-sentinel old) old "open\n"))
               (let ((deadline (+ (float-time) 2)))
                 (while (and (not fired) (< (float-time) deadline))
                   (accept-process-output nil 0.01)))
@@ -1416,6 +1425,14 @@
     (dolist (keep-buffer '(nil t))
       (jabber-conn-test--handoff-change
        'retry keep-buffer timeout 'before-change-functions))))
+
+(ert-deftest jabber-conn-test-handoff-change-current-error ()
+  "Propagate a native modification-hook error while the attempt is current."
+  (dolist (hook '(before-change-functions after-change-functions))
+    (should
+     (equal (should-error
+             (jabber-conn-test--handoff-change 'error nil nil hook))
+            '(error "Native handoff hook failed")))))
 
 (ert-deftest jabber-conn-test-handoff-change-normal ()
   "Complete normal handoff after harmless native modification hooks."

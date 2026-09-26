@@ -12,7 +12,7 @@ ENV_MAKE = $(MAKE) --no-print-directory
 ifeq ($(JABBER_ENV_WRAPPED)$(IN_NIX_SHELL),)
 ifneq ($(wildcard flake.nix),)
 ifneq ($(NIX),)
-ENV_MAKE = nix develop path:$(CURDIR) --command env JABBER_ENV_WRAPPED=1 $(MAKE) --no-print-directory
+ENV_MAKE = nix develop 'git+file://$(CURDIR)' --command env JABBER_ENV_WRAPPED=1 $(MAKE) --no-print-directory
 endif
 endif
 endif
@@ -137,6 +137,22 @@ lint:
 do-lint: do-lint-check-declare do-lint-checkdoc lint-package-lint lint-relint \
          lint-test-compile lint-test-autoloads do-lint-byte-comp do-lint-native-comp lint-compile-check do-lint-gate-check
 
+# Resolve Thanos' installed fork in the calling environment, never Nix's PATH.
+# Other contributors can supply their own installed executable.
+THANOS_EMACS ?= emacs
+
+.PHONY: test-matrix test-matrix-runner test-matrix-public
+test-matrix:
+	@THANOS_EMACS="$(THANOS_EMACS)" MATRIX_TESTS="$(TESTS)" MATRIX_JOBS="$(JOBS)" \
+	  python3 admin/test-matrix
+
+test-matrix-runner:
+	@python3 admin/test-matrix-runner.py
+
+# Real public-entrypoint controls; needs host Nix and an installed Emacs.
+test-matrix-public:
+	@python3 admin/test-matrix-public.py --emacs "$(THANOS_EMACS)"
+
 test:
 	@$(ENV_MAKE) -j$(JOBS) -Otarget do-test
 
@@ -170,11 +186,12 @@ do-test-oneshot: autoload do-module
 	@JABBER_TEST_RUNS=2 EMACS_CMD="$(EMACS_CMD)" EMACS_OPTS="$(EMACS_OPTS)" \
 	  ./admin/run-test "$(TEST_RESULTS)/oneshot.stamp" $(TESTS)
 	@$(EMACS_CMD) $(EMACS_OPTS) -l admin/test-summary "$(TEST_RESULTS)/oneshot.stamp"
-	@rm -f "$(TEST_RESULTS)/oneshot.stamp" "$(TEST_RESULTS)/oneshot.stamp.ert" "$(TEST_RESULTS)/oneshot.stamp.log"
+	@if [ -z "$$JABBER_MATRIX_EVIDENCE" ]; then \
+	  rm -f "$(TEST_RESULTS)/oneshot.stamp" "$(TEST_RESULTS)/oneshot.stamp.ert" "$(TEST_RESULTS)/oneshot.stamp.log"; fi
 
 do-test-summary: $(TEST_STAMPS)
 	@$(EMACS_CMD) $(EMACS_OPTS) -l admin/test-summary $(TEST_STAMPS)
-	@rm -rf $(TEST_RESULTS)
+	@if [ -z "$$JABBER_MATRIX_EVIDENCE" ]; then rm -rf $(TEST_RESULTS); fi
 
 load: clean-elc
 	@$(EMACSCLIENT) --eval "(progn \

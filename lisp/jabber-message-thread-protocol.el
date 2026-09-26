@@ -56,7 +56,7 @@
           (list :thread-id id :thread-parent-id parent))))))
 
 (defun jabber-message-thread-protocol-has-core-p (xml-data)
-  "Return non-nil when XML-DATA contains a core thread element."
+  "Return non-nil for a core thread element in XML-DATA."
   (seq-some #'jabber-message-thread-protocol--core-element-p
             (jabber-xml-node-children xml-data)))
 

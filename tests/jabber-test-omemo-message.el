@@ -1928,6 +1928,8 @@ Inject FAILURE after discovery starts, before the upload service replies."
          (file (make-temp-file "attachment-" nil nil "private bytes"))
          (chat (generate-new-buffer " *jabber-upload-chat*"))
          (dispatch (generate-new-buffer " *jabber-upload-dispatch*"))
+         (jc (make-symbol "upload"))
+         (jabber-connections (list jc))
          (jabber-httpupload-support nil)
          (jabber-httpupload-max-file-size nil)
          (jabber-disco-info-cache (make-hash-table :test #'equal))
@@ -1949,10 +1951,12 @@ Inject FAILURE after discovery starts, before the upload service replies."
                                    (buffer-string)))
             (funcall callback arg)
             t)))
+    (put jc :state :session-established)
+    (put jc :state-data
+         (list :server "example.com" :username "upload" :resource "test"
+               :connection (make-symbol "transport") :session-id "upload-stream"))
     (unwind-protect
-        (cl-letf (((symbol-function 'fsm-get-state-data)
-                   (lambda (_) '(:server "example.com")))
-                  ((symbol-function 'jabber-caps-get-cached) #'ignore)
+        (cl-letf (((symbol-function 'jabber-caps-get-cached) #'ignore)
                   ((symbol-function 'jabber-httpupload-ignore-certificate) #'ignore)
                   ((symbol-function 'jabber-send-sexp)
                    (lambda (_jc stanza &rest _) (push stanza sent))))
@@ -1965,7 +1969,7 @@ Inject FAILURE after discovery starts, before the upload service replies."
                           (cl-incf transforms)
                           (jabber-omemo--httpupload-transform path callback)))
             (jabber-httpupload--upload
-             'jc file (lambda (value) (setq url value))))
+             jc file (lambda (value) (setq url value))))
           (should (= (length sent) 1))
           (should (= transforms 0))
           (pcase change
@@ -1980,7 +1984,7 @@ Inject FAILURE after discovery starts, before the upload service replies."
             (cl-labels
                 ((reply (from payload)
                    (jabber-process-iq
-                    'jc `(iq ((type . "result") (from . ,from)
+                    jc `(iq ((type . "result") (from . ,from)
                               (id . ,(jabber-xml-get-attribute (car sent) 'id)))
                              ,payload))))
               (reply "example.com"
@@ -2112,6 +2116,7 @@ Inject FAILURE after discovery starts, before the upload service replies."
          (chat (generate-new-buffer " *jabber-test-omemo-attachment-chat*"))
          (dispatch (generate-new-buffer " *jabber-test-omemo-attachment-dispatch*"))
          (jc (make-symbol "attachment"))
+         (jabber-connections (list jc))
          (jabber-httpupload-support (unless cold (list (cons jc "upload.example.invalid"))))
          (jabber-httpupload-max-file-size nil)
          (jabber-httpupload--discoveries nil)
@@ -2137,7 +2142,10 @@ Inject FAILURE after discovery starts, before the upload service replies."
                                    (insert-file-contents-literally path)
                                    (buffer-string)))
             (funcall callback arg) t)))
-    (put jc :state-data '(:server "example.invalid" :username "attachment" :resource "test"))
+    (put jc :state :session-established)
+    (put jc :state-data
+         (list :server "example.invalid" :username "attachment" :resource "test"
+               :connection (make-symbol "transport") :session-id "attachment-stream"))
     (unwind-protect
         (cl-letf (((symbol-function 'read-file-name)
                    (lambda (&rest _) (cl-incf selections) file))

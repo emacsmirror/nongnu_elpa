@@ -2168,11 +2168,24 @@ and `url' to the URL; `display-graphic-p' is stubbed to t."
                :connection 'test-transport :send-function #'ignore))
     jc))
 
+(defun jabber-test-chat--owned-omemo-room (jc)
+  "Admit a room and peer presence owned by fixture connection JC."
+  (jabber-muc-add-groupchat "room@example.org" "self" jc)
+  (jabber-muc-process-presence
+   jc '(presence ((from . "room@example.org/peer"))
+                 (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                    (item ((jid . "peer@example.org/mobile")
+                           (role . "participant") (affiliation . "none"))))))
+  (should (equal '("peer@example.org")
+                 (jabber-muc--identity-jids jc "room@example.org"))))
+
 (defmacro jabber-test-chat--journey (&rest body)
   "Run BODY in a real rendered chat with an inert transport."
   (declare (indent 0) (debug t))
   `(with-temp-buffer
      (let ((jabber-db-path nil)
+           (jabber-muc--rooms (make-hash-table :test #'equal))
+           (jabber-muc--room-jids (make-hash-table :test #'equal))
            (jabber-chat-default-encryption 'plaintext)
            (jabber-chat-display-help-at-point nil)
            (jabber-chat-display-images nil)
@@ -2732,6 +2745,7 @@ and `url' to the URL; `display-graphic-p' is stubbed to t."
                '(("room@example.org" ("peer" jid "peer@example.org/mobile"))))
               (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
               callback sent)
+          (when group (jabber-test-chat--owned-omemo-room jc))
           (plist-put (get jc :state-data) :send-function
                      (lambda (&rest _) (setq sent t)))
           (insert "cancelled draft λ")
@@ -2786,6 +2800,7 @@ and `url' to the URL; `display-graphic-p' is stubbed to t."
                '(("room@example.org" ("peer" jid "peer@example.org/mobile"))))
               (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
               (failures 0) callback)
+          (when group (jabber-test-chat--owned-omemo-room jc))
           (insert "successor draft λ")
           (cl-labels ((discover (_jc _peer cb)
                         (setq callback cb)
@@ -3959,6 +3974,7 @@ Expose `publication-node', `publication-attempts', `publication-wire' and
          (let ((jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
                (jabber-muc-participants '(("room@example.org" ("peer" jid "peer@example.org"))))
                continuation)
+           (when group (jabber-test-chat--owned-omemo-room jc))
            (when group
              (setq-local jabber-group "room@example.org")
              (setq-local jabber-send-function #'jabber-muc-send))
@@ -4030,7 +4046,8 @@ Non-nil GROUP selects a MUC send through the same native discovery."
       (setq-local jabber-message-reply--thread '(:thread-id "old-thread"))
       (when group
         (setq-local jabber-group "room@example.org")
-        (setq-local jabber-send-function #'jabber-muc-send))
+        (setq-local jabber-send-function #'jabber-muc-send)
+        (jabber-test-chat--owned-omemo-room jc))
       (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
       (buffer-enable-undo)
       (jabber-test-chat--keyboard "old body")
@@ -4071,10 +4088,14 @@ Non-nil GROUP selects a MUC send through the same native discovery."
                               #'jabber-message-reply--send-hook
                               #'jabber-message-thread--send-hook))
           (funcall successor))
-        (let ((jabber-sm-max-in-flight (and (memq outcome '(queued discard)) 0)))
+        (let ((jabber-sm-max-in-flight (and (memq outcome '(queued discard)) 0))
+              (debug-on-quit nil)
+              quit-seen)
           (condition-case err
               (fsm-send-sync jc (list :stanza response))
-            (quit (unless (eq outcome 'quit) (signal (car err) (cdr err))))))
+            (quit (setq quit-seen t)
+                  (unless (eq outcome 'quit) (signal (car err) (cdr err)))))
+          (should (eq quit-seen (eq outcome 'quit))))
         (when (memq outcome '(queued discard))
           (should (= 1 (length (plist-get (get jc :state-data) :sm-pending-queue))))
           (should (car token))

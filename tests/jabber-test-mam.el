@@ -16,6 +16,7 @@
 (require 'jabber-message-correct)
 (require 'jabber-moderation)
 (require 'jabber-omemo-store)
+(require 'jabber-archive-test-helpers)
 
 ;;; Test infrastructure
 
@@ -650,7 +651,7 @@ WHERE stanza_id = 'stanza-000001'"))))))
        "target-server-id" "occupant-alice")
       (cl-letf (((symbol-function
                   'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room) t)))
+                 (lambda (_room owner) (eq owner jc))))
         (jabber-mam--process-message jc stanza)
         (should (jabber-moderation--handle-message jc stanza)))
       (should
@@ -822,18 +823,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
 
 
 ;;; Native admission and settlement regressions
-
-(defun jabber-test-mam--native-connection (&optional username)
-  "Return a disposable established native FSM for USERNAME, defaulting to me."
-  (let ((jc (make-symbol "mam-native")))
-    (put jc :name 'jabber-connection)
-    (put jc :state :session-established)
-    (put jc :state-data
-         (jabber-sm--reset
-          (list :username (or username "me") :server "example.com"
-                :connection (list 'transport) :session-id "stream"
-                :send-function #'ignore)))
-    jc))
 
 (defmacro jabber-test-mam--with-native (&rest body)
   "Run BODY with native IQ dispatch and isolated SQLite."
