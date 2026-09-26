@@ -41,7 +41,9 @@ SENT-VAR is bound to the stanza passed to `jabber-send-sexp'."
                ((symbol-function 'jabber-openpgp--encrypt)
                 (lambda (_jc _xml _jids &optional _sign) "cipher"))
                ((symbol-function 'jabber-send-sexp)
-                (lambda (_jc stanza) (setq ,sent-var stanza))))
+                (lambda (_jc stanza &optional success _failure)
+                  (setq ,sent-var stanza)
+                  (when success (funcall success)))))
        ,@body)))
 
 (ert-deftest jabber-test-openpgp-muc-send-hooks-run-in-buffer ()
@@ -55,6 +57,7 @@ SENT-VAR is bound to the stanza passed to `jabber-send-sexp'."
     (unwind-protect
         (jabber-test-openpgp--with-muc-send-stubs sent
           (with-current-buffer muc-buffer
+            (setq-local jabber-buffer-connection 'fake-jc)
             (setq-local jabber-group "room@conf.example.com")
             (jabber-openpgp--send-muc 'fake-jc "hello"))
           (should (eq hook-buffer muc-buffer))

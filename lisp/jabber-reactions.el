@@ -37,6 +37,9 @@
 (require 'jabber-muc-state)
 (require 'jabber-message-thread)
 
+;; Chat loads reactions, so the account-qualified lookup is a reverse call.
+(declare-function jabber-chat--find-buffer-on-connection "jabber-chat" (jc from))
+
 (defconst jabber-reactions-xmlns "urn:xmpp:reactions:0"
   "XEP-0444 Message Reactions namespace.")
 
@@ -292,7 +295,7 @@ as XEP-0428 fallback for reactions does not count as a real body."
   (when from
     (if (string= type "groupchat")
         (jabber-muc-find-buffer (jabber-jid-user from) jc)
-      (jabber-buffer-registry-find 'chat (jabber-jid-user from)))))
+      (jabber-chat--find-buffer-on-connection jc from))))
 
 (defun jabber-reactions--storage-peer (jc message type)
   "Return the DB peer for reaction-bearing MESSAGE on JC with TYPE."

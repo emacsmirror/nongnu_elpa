@@ -253,6 +253,17 @@ overwrite an earlier `<displayed/>' from another resource."
       (setq node (ewoc-prev jabber-chat-ewoc node)))
     node))
 
+(defun jabber-receipts--displayed-after-p (node)
+  "Return non-nil if an outgoing message after NODE is already displayed."
+  (let ((next (ewoc-next jabber-chat-ewoc node))
+        found)
+    (while (and next (not found))
+      (setq found (and (eq (car (ewoc-data next)) :local)
+                       (eq (plist-get (cadr (ewoc-data next)) :status)
+                           :displayed))
+            next (ewoc-next jabber-chat-ewoc next)))
+    found))
+
 (defun jabber-receipts--update-buffer-status
     (buffer ref-id column timestamp status)
   "Update REF-ID's visible status in BUFFER.
@@ -263,12 +274,13 @@ pair (ACCEPTED . CASCADE-EPOCH)."
       (let* ((msg (cadr (ewoc-data node)))
              (current-status (plist-get msg :status))
              (msg-ts (plist-get msg :timestamp))
-             (msg-epoch (and msg-ts (floor (float-time msg-ts))))
+             (msg-epoch (and msg-ts (float-time msg-ts)))
              (displayed-p (string= column "displayed_at"))
-             (forward-p (or (not displayed-p)
-                            (not msg-epoch)
-                            (> msg-epoch
-                               jabber-receipts--latest-displayed-ts)))
+             (forward-p
+              (or (not displayed-p)
+                  (and (or (not msg-epoch)
+                           (>= msg-epoch jabber-receipts--latest-displayed-ts))
+                       (not (jabber-receipts--displayed-after-p node)))))
              (inhibit-read-only t))
         (when (and forward-p
                    (or (null current-status)
@@ -312,7 +324,7 @@ visible message from `:displayed' to `:delivered'."
       (jabber-db-update-receipt account peer ref-id column timestamp))
     (when cascade-epoch
       (jabber-db-cascade-displayed
-       account peer timestamp cascade-epoch))))
+       account peer timestamp cascade-epoch ref-id))))
 
 (defun jabber-receipts--cascade-displayed (node)
   "Walk backward from NODE, promoting :delivered nodes to :displayed.

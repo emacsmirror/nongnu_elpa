@@ -547,10 +547,11 @@ jabber-correct-last-message must pick up the original id."
           (jabber-db--connection nil)
           sent-replace-id)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_jc stanza)
+                 (lambda (_jc stanza &optional success _failure)
                    (let* ((replace (car (jabber-xml-get-children stanza 'replace))))
                      (setq sent-replace-id
-                           (jabber-xml-get-attribute replace 'id)))))
+                           (jabber-xml-get-attribute replace 'id)))
+                   (when success (funcall success))))
                 ((symbol-function 'read-string)
                  (lambda (&rest _) "second correction"))
                 ((symbol-function 'jabber-db-correct-message) #'ignore))
@@ -803,7 +804,9 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
     (let ((jabber-db-path nil)
           sent)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_jc stanza) (setq sent stanza)))
+                 (lambda (_jc stanza &optional success _failure)
+                    (setq sent stanza)
+                    (when success (funcall success))))
                 ((symbol-function 'read-string)
                  (lambda (&rest _) "> alice:\n> hi\nbetter answer"))
                 ((symbol-function 'jabber-db-correct-message) #'ignore))
@@ -872,7 +875,9 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
     (let ((jabber-db-path nil)
           sent)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_jc stanza) (setq sent stanza)))
+                 (lambda (_jc stanza &optional success _failure)
+                    (setq sent stanza)
+                    (when success (funcall success))))
                 ((symbol-function 'read-string)
                  (lambda (&rest _) "answer without quote"))
                 ((symbol-function 'jabber-db-correct-message) #'ignore))
@@ -897,7 +902,9 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
     (let ((jabber-db-path nil)
           sent)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_jc stanza) (setq sent stanza)))
+                 (lambda (_jc stanza &optional success _failure)
+                    (setq sent stanza)
+                    (when success (funcall success))))
                 ((symbol-function 'read-string)
                  (lambda (&rest _) "plain fixed"))
                 ((symbol-function 'jabber-db-correct-message) #'ignore))
@@ -1068,8 +1075,8 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
       (should-not (plist-get msg :edited))
       (should (= 0 updates)))))
 
-(ert-deftest jabber-test-message-correct-omemo-success-after-buffer-kill-is-inert ()
-  "An OMEMO success callback cannot commit after its buffer is killed."
+(ert-deftest jabber-test-message-correct-omemo-success-after-buffer-kill-persists ()
+  "An OMEMO handoff commits its row even after its original view is killed."
   (jabber-test-message-correct-with-ewoc
     (setq-local jabber-group nil)
     (setq-local jabber-chatting-with "alice@example.com")
@@ -1100,7 +1107,7 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
         (funcall success))
       (should (equal "original" (plist-get msg :body)))
       (should-not (plist-get msg :edited))
-      (should (= 0 updates)))))
+      (should (= 1 updates)))))
 
 (ert-deftest jabber-test-message-correct-omemo-duplicate-success-is-inert ()
   "A duplicate OMEMO success callback commits only once."
@@ -1212,6 +1219,125 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
              'jc-a from "account-a-id"))
     (should-not (jabber-message-correct--muc-current-target-p
                  'jc-b from "account-a-id"))))
+
+(defun jabber-test-message-correct--r4-view (change outcome)
+  "Complete a native correction with view CHANGE and transport OUTCOME."
+  (require 'jabber-sm-runtime)
+  (let* ((a (make-symbol "account-a")) (b (make-symbol "account-b"))
+         (jabber-connections (list a b))
+         (jabber-db-path (make-temp-file "jabber-correction-" nil ".sqlite"))
+         (jabber-db--connection nil)
+         (jabber-chat-buffer-format " *jabber-correction-owner*")
+         (jabber-chat-default-encryption 'plaintext)
+         (jabber-chat-mode-hook nil)
+         (jabber-chat-display-help-at-point nil)
+         (jabber-chat-display-images nil)
+         (jabber-chat-display-link-previews nil)
+         (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+         wire successor-token)
+    (dolist (jc (list a b))
+      (put jc :state :session-established)
+      (put jc :state-data
+           (list :username (if (eq jc a) "a" "b") :server "example.test"
+                 :resource "test" :connection 'inert-transport
+                 :send-function (lambda (_connection xml) (push xml wire))
+                 :sm-enabled t :sm-outbound-count 0 :sm-last-acked 0
+                 :sm-pending-queue nil)))
+    (jabber-db-ensure-open)
+    (jabber-db-store-message "a@example.test" "peer@example.test" "out" "chat" "A original" 100 nil "same-id")
+    (jabber-db-store-message "b@example.test" "peer@example.test" "out" "chat" "B original" 100 nil "same-id")
+    (jabber-db-store-message "a@example.test" "other@example.test" "out" "chat" "other original" 100 nil "same-id")
+    (let* ((buffer (jabber-chat-create-buffer a "peer@example.test"))
+           (retarget
+            (lambda ()
+              (jabber-chat-create-buffer
+               (if (eq change 'peer) a b)
+               (if (eq change 'peer) "other@example.test" "peer@example.test"))
+              ;; The native constructor updates the account, not an existing
+              ;; peer.  Exercise peer reassignment separately without mode reset.
+              (when (eq change 'peer)
+                (setq-local jabber-chatting-with "other@example.test"))
+              (jabber-chat-buffer-refresh)))
+           (sql (symbol-function 'jabber-db-correct-message-row)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (let ((jabber-sm-max-in-flight 0))
+              (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "A correction")))
+                (jabber-correct-last-message)))
+            (let* ((token jabber-message-correct--pending-outgoing)
+                   (entry (car (plist-get (get a :state-data) :sm-pending-queue)))
+                   (ewoc jabber-chat-ewoc))
+              (should token)
+              (should entry)
+              (should-not wire)
+              (when (memq change '(account peer))
+                (funcall retarget)
+                ;; The native constructor did not rerun the mode or retire A.
+                (should (eq token jabber-message-correct--pending-outgoing))
+                (should (car token))
+                (should (eq ewoc jabber-chat-ewoc)))
+              (cl-letf (((symbol-function 'jabber-db-correct-message-row)
+                         (lambda (row body)
+                           (funcall sql row body)
+                           (when (eq change 'sql-reentry)
+                             (funcall retarget)
+                             ;; Native B admission replaces A's retired token;
+                             ;; no mode reset or manual pending-slot clearing.
+                             (let ((jabber-sm-max-in-flight 0))
+                               (cl-letf (((symbol-function 'read-string)
+                                          (lambda (&rest _) "B correction")))
+                                 (jabber-correct-last-message)))
+                             (setq successor-token jabber-message-correct--pending-outgoing)))))
+                (if (eq outcome 'discard)
+                    (jabber-sm--discard-pending (get a :state-data) "Test discard")
+                  (let ((jabber-sm-max-in-flight nil))
+                    (jabber-sm--drain-pending a (get a :state-data)))))
+              (should-not (car token))
+              (should (= (length wire) (if (eq outcome 'discard) 0 1)))
+              (should (equal
+                       (list (list "a@example.test" "other@example.test" "other original")
+                             (list "a@example.test" "peer@example.test"
+                                   (if (eq outcome 'discard) "A original" "A correction"))
+                             (list "b@example.test" "peer@example.test" "B original"))
+                       (sqlite-select jabber-db--connection
+                                      "SELECT account, peer, body FROM message ORDER BY account, peer")))
+              (should (equal
+                       (pcase change
+                         ('nil (if (eq outcome 'discard) "A original" "A correction"))
+                         ('peer "other original")
+                         (_ "B original"))
+                       (plist-get (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "same-id"))) :body)))
+              (if (null change)
+                  (should-not jabber-message-correct--pending-outgoing)
+                (should (eq (or successor-token token) jabber-message-correct--pending-outgoing)))
+              (when (memq change '(account peer))
+                (let ((jabber-sm-max-in-flight 0))
+                  (cl-letf (((symbol-function 'read-string)
+                             (lambda (&rest _) "successor correction")))
+                    (jabber-correct-last-message)))
+                (setq successor-token jabber-message-correct--pending-outgoing))
+              (when successor-token (should (car successor-token)))
+              (let ((text (buffer-string))
+                    (rows (sqlite-select jabber-db--connection "SELECT * FROM message")))
+                (funcall (plist-get entry :success))
+                (funcall (plist-get entry :failure) "late")
+                (should (equal text (buffer-string)))
+                (should (equal rows (sqlite-select jabber-db--connection "SELECT * FROM message")))
+                (when successor-token (should (car successor-token))))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))
+        (jabber-db-close)
+        (delete-file jabber-db-path)))))
+
+(ert-deftest jabber-test-message-correct-r4-native-retarget ()
+  "Same-mode account or peer replacement cannot publish a stale correction."
+  (dolist (change '(nil account peer))
+    (dolist (outcome '(success discard))
+      (ert-info ((format "change=%S outcome=%S" change outcome))
+        (jabber-test-message-correct--r4-view change outcome)))))
+
+(ert-deftest jabber-test-message-correct-r4-native-sql-reentry ()
+  "After native SQL, revalidate the view and preserve B's new pending token."
+  (jabber-test-message-correct--r4-view 'sql-reentry 'success))
 
 (provide 'jabber-test-message-correct)
 

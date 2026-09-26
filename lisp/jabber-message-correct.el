@@ -287,8 +287,7 @@ dropped.  Returns non-nil when the correction was accepted."
     (setq msg (plist-put msg :body new-body))
     (setq msg (plist-put msg :edited t))
     (setcar (cdr data) msg)
-    (let ((buffer-undo-list t))
-      (ewoc-invalidate ewoc node))))
+    (jabber-chat-buffer--call-with-transcript #'ewoc-invalidate ewoc node)))
 
 (defun jabber-message-correct--outgoing-candidates
     (account peer id stored-from)
@@ -314,8 +313,7 @@ the stored fallback range."
                    :fallback-range
                    (and fallback-length (list 0 fallback-length)))
         (jabber-message-correct--update-ewoc
-         jabber-chat-ewoc node new-body))
-      (setq jabber-message-correct--pending-outgoing nil))))
+         jabber-chat-ewoc node new-body)))))
 
 (defun jabber-message-correct--send
     (jc group body extra &optional success failure)
@@ -338,12 +336,17 @@ Prompts with the existing body pre-filled.  When the corrected
 message is a reply, re-attach its <reply> element: per XEP-0308 the
 correction replaces the whole message, XEP-0461 linkage included."
   (interactive)
-  (when jabber-message-correct--pending-outgoing
+  (when (car-safe jabber-message-correct--pending-outgoing)
     (user-error "A correction is still waiting to be sent"))
   (pcase (jabber-message-correct--find-last-sent jabber-chat-ewoc)
     ('nil (user-error "No sent message found to correct"))
     (`(,_node ,id ,body ,msg)
-     (let ((new-body (read-string "Correction: " body)))
+     (let* ((owner-p (jabber-chat--capture-input-owner))
+            (ewoc jabber-chat-ewoc)
+            (new-body (read-string "Correction: " body)))
+       (unless (and (funcall owner-p) (eq ewoc jabber-chat-ewoc)
+                    (not (car-safe jabber-message-correct--pending-outgoing)))
+         (user-error "Correction buffer changed"))
        (when (string= new-body body)
          (user-error "No change"))
        (let* ((fb-len (jabber-message-reply--correction-fallback-length
@@ -365,52 +368,59 @@ correction replaces the whole message, XEP-0461 linkage included."
                 (stored-from (if group (plist-get msg :from) account))
                 (db-matches (jabber-message-correct--outgoing-candidates
                              account peer id stored-from))
+                (db jabber-db--connection)
+                (db-path jabber-db-path)
                 (row-id (and (= (length db-matches) 1)
                              (plist-get (car db-matches) :row-id)))
                 (extra (append
                         (list (jabber-message-correct--replace-element id))
                         reply-els thread-els))
-                (omemo-p (eq jabber-chat-encryption 'omemo))
                 (token (list t id))
+                (view-p
+                 (lambda ()
+                   (and (funcall owner-p)
+                        (with-current-buffer buffer
+                          (and (eq ewoc jabber-chat-ewoc)
+                               (eq token jabber-message-correct--pending-outgoing))))))
                 (commit
                  (lambda ()
-                   (when (and (car token)
-                              (or (not omemo-p)
-                                  (and (buffer-live-p buffer)
-                                       (with-current-buffer buffer
-                                         (eq token
-                                             jabber-message-correct--pending-outgoing)))))
+                   (when (car token)
+                     ;; Retire before SQL or rendering can reenter.  Durable
+                     ;; success belongs to the captured row, not the live view.
                      (setcar token nil)
-                     (when row-id
-                       (jabber-db-correct-message-row row-id new-body))
-                     (jabber-message-correct--update-outgoing-buffer
-                      buffer group id (plist-get msg :from)
-                      new-body fb-len))))
+                     (condition-case err
+                         (progn
+                           (when (and row-id (eq db jabber-db--connection)
+                                      (equal db-path jabber-db-path))
+                             (jabber-db-correct-message-row row-id new-body))
+                           (when (funcall view-p)
+                             (with-current-buffer buffer
+                               (setq jabber-message-correct--pending-outgoing nil)
+                               (jabber-message-correct--update-outgoing-buffer
+                                buffer group id (plist-get msg :from)
+                                new-body fb-len))))
+                       ((error quit)
+                        (when (funcall view-p)
+                          (with-current-buffer buffer
+                            (setq jabber-message-correct--pending-outgoing nil)))
+                        (message "Correction sent but local update failed: %s"
+                                 (error-message-string err)))))))
                 (failure
                  (lambda (_reason)
                    (when (car token)
                      (setcar token nil)
-                     (when (buffer-live-p buffer)
+                     (when (funcall view-p)
                        (with-current-buffer buffer
-                         (when (eq token
-                                   jabber-message-correct--pending-outgoing)
-                           (setq jabber-message-correct--pending-outgoing
-                                 nil))))))))
+                         (setq jabber-message-correct--pending-outgoing nil)))))))
            (when (and jabber-db-path (/= (length db-matches) 1))
              (user-error "Stored correction target is missing or ambiguous"))
-           (if omemo-p
-               (progn
-                 (setq jabber-message-correct--pending-outgoing token)
-                 (condition-case err
-                     (jabber-message-correct--send
-                      jabber-buffer-connection group new-body extra
-                      commit failure)
-                   (error
-                    (funcall failure (error-message-string err))
-                    (signal (car err) (cdr err)))))
-             (funcall commit)
-             (jabber-message-correct--send
-              jabber-buffer-connection group new-body extra))))))))
+           (setq jabber-message-correct--pending-outgoing token)
+           (condition-case err
+               (jabber-message-correct--send
+                jabber-buffer-connection group new-body extra commit failure)
+             ((error quit)
+              (funcall failure (error-message-string err))
+              (signal (car err) (cdr err))))))))))
 
 (provide 'jabber-message-correct)
 ;;; jabber-message-correct.el ends here

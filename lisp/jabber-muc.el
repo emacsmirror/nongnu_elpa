@@ -467,7 +467,9 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (jc body &optional extra-elements success-callback
                       failure-callback))
 (declare-function jabber-openpgp-legacy--send-muc
-                  "jabber-openpgp-legacy" (jc body &optional extra-elements))
+                  "jabber-openpgp-legacy"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (declare-function jabber-mam-muc-joined "jabber-mam" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam" (group))
 (autoload 'jabber-mam-muc-joined "jabber-mam")
@@ -692,7 +694,37 @@ JC is the Jabber connection."
 
 JC is the Jabber connection.
 EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
-splice into the stanza after the body (e.g. XEP-0308 replace)."
+splice into the stanza after the body (e.g. XEP-0308 replace).
+SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion,
+not acceptance into the Stream Management queue."
+  (let ((buffer (current-buffer))
+        (input jabber-point-insert)
+        (mode major-mode)
+        (context (list :state (jabber-chat--send-context-state
+                              (assq 'replace extra-elements))))
+        (completion (unless (assq 'replace extra-elements)
+                      jabber-chat--input-completion))
+        accepted)
+    (unwind-protect
+        (prog1
+            (jabber-muc--send
+             jc body extra-elements success-callback failure-callback)
+          (setq accepted t))
+      (when (and (not accepted)
+                 ;; A provider may already have settled failure or lost its
+                 ;; composer to a new edit before propagating quit.
+                 (or (not completion) (funcall completion nil))
+                 (buffer-live-p buffer))
+        (with-current-buffer buffer
+          (when (and (eq input jabber-point-insert)
+                     (eq mode major-mode)
+                     (eq jc jabber-buffer-connection))
+            (jabber-chat--restore-send-context context)))))))
+
+(defun jabber-muc--send
+    (jc body extra-elements success-callback failure-callback)
+  "Dispatch BODY on JC with EXTRA-ELEMENTS using the selected encryption.
+SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion."
   ;; There is no need to display the sent message in the buffer, as
   ;; we will get it back from the MUC server.
   (pcase jabber-chat-encryption
@@ -706,7 +738,8 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
       jc body extra-elements success-callback failure-callback))
     ('openpgp-legacy
      (require 'jabber-openpgp-legacy)
-     (jabber-openpgp-legacy--send-muc jc body extra-elements))
+     (jabber-openpgp-legacy--send-muc
+      jc body extra-elements success-callback failure-callback))
     (_
      (let* ((id (format "emacs-msg-%.6f" (float-time)))
             (stanza `(message
@@ -716,9 +749,9 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
                       (body () ,body)
                       ,@extra-elements)))
        (jabber-chat--run-send-hooks stanza body id)
-       (jabber-send-sexp jc stanza)
-       (when success-callback
-         (funcall success-callback))))))
+       (if (or success-callback failure-callback)
+           (jabber-send-sexp jc stanza success-callback failure-callback)
+         (jabber-send-sexp jc stanza))))))
 
 (defun jabber-muc-add-groupchat (group nickname &optional jc)
   "Remember participating in GROUP under NICKNAME via JC."

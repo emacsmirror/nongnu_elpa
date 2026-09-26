@@ -2151,6 +2151,2033 @@ and `url' to the URL; `display-graphic-p' is stubbed to t."
         (should (eq (get-text-property 1 'jabber-chat-image-fetching)
                     'failed))))))
 
+;;; Native chat regression journeys
+
+(require 'jabber-message-correct)
+(require 'jabber-receipts)
+(require 'jabber-console)
+
+(defvar jabber-omemo--pending-send-operations)
+
+(defun jabber-test-chat--journey-connection (user)
+  "Return an inert established connection for USER."
+  (let ((jc (make-symbol user)))
+    (put jc :state :session-established)
+    (put jc :state-data
+         (list :username user :server "example.org" :resource "test"
+               :connection 'test-transport :send-function #'ignore))
+    jc))
+
+(defmacro jabber-test-chat--journey (&rest body)
+  "Run BODY in a real rendered chat with an inert transport."
+  (declare (indent 0) (debug t))
+  `(with-temp-buffer
+     (let ((jabber-db-path nil)
+           (jabber-chat-default-encryption 'plaintext)
+           (jabber-chat-display-help-at-point nil)
+           (jabber-chat-display-images nil)
+           (jabber-chat-display-link-previews nil)
+           (jabber-print-rare-time nil)
+           (jabber-chat-mode-hook nil)
+           (jc (jabber-test-chat--journey-connection "me")))
+       (jabber-chat-mode)
+       (setq-local jabber-chatting-with "peer@example.org")
+       (jabber-chat-mode-setup jc #'jabber-chat-pp)
+       (setq-local jabber-send-function #'jabber-chat-send)
+       (let ((jabber-connections (list jc))) ,@body))))
+
+(ert-deftest jabber-test-chat-journey-send-failure-keeps-reply ()
+  "Real transport rejection preserves Unicode input and one-shot metadata."
+  (dolist (outcome '(error quit success))
+    (jabber-test-chat--journey
+      (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
+      (setq-local jabber-message-reply--id "reply")
+      (setq-local jabber-message-reply--jid "peer@example.org")
+      (setq-local jabber-message-reply--thread '(:thread-id "thread"))
+      (setq-local jabber-message-reply--fallback-text "> λ\n")
+      (insert "> λ\nanswer")
+      (backward-char 2)
+      (let ((offset (- (point) jabber-point-insert)))
+        (pcase outcome
+          ('error (plist-put (get jc :state-data) :connection nil))
+          ('quit (plist-put (get jc :state-data) :send-function
+                            (lambda (&rest _) (signal 'quit nil)))))
+        (pcase outcome
+          ('error (should-error (call-interactively (key-binding (kbd "RET")))))
+          ('quit (should (eq 'quit
+                             (condition-case nil
+                                 (call-interactively (key-binding (kbd "RET")))
+                               (quit 'quit)))))
+          ('success (call-interactively (key-binding (kbd "RET")))))
+        (if (eq outcome 'success)
+            (progn
+              (should (equal "" (jabber-chat--input-string)))
+              (should (equal jabber-chat--input-history '("> λ\nanswer")))
+              (should-not jabber-message-reply--id))
+          (should (equal "> λ\nanswer" (jabber-chat--input-string)))
+          (should (= offset (- (point) jabber-point-insert)))
+          (should-not jabber-chat--input-history)
+          (should (equal "reply" jabber-message-reply--id))
+          (should (equal '(:thread-id "thread") jabber-message-reply--thread))
+          (should (equal "> λ\n" jabber-message-reply--fallback-text))
+          (should-not (ewoc-nth jabber-chat-ewoc 0)))))))
+
+(ert-deftest jabber-test-chat-journey-console-ret-failure ()
+  "The actual console RET command preserves rejected and cancelled XML."
+  (dolist (outcome '(error quit success))
+    (let* ((jc (jabber-test-chat--journey-connection "console"))
+           (jabber-db-path nil)
+           (jabber-debug-log-xml nil)
+           (jabber-console-truncate-lines 0)
+           (jabber-console-name-format " *test-console-%s*")
+           (jabber-connections (list jc))
+           (buffer (jabber-console-create-buffer jc))
+           (body "<message><body>λ draft</body></message>"))
+      (unwind-protect
+          (with-current-buffer buffer
+            (insert body)
+            (cl-letf (((symbol-function 'jabber-send-string)
+                       (lambda (_jc text)
+                         (should (equal body text))
+                         (pcase outcome
+                           ('error (error "Rejected"))
+                           ('quit (signal 'quit nil))))))
+              (pcase outcome
+                ('error (should-error (call-interactively (key-binding (kbd "RET")))))
+                ('quit (should (eq 'quit
+                                   (condition-case nil
+                                       (call-interactively (key-binding (kbd "RET")))
+                                     (quit 'quit)))))
+                ('success (call-interactively (key-binding (kbd "RET"))))))
+            (should (equal (jabber-chat--input-string)
+                           (if (eq outcome 'success) "" body)))
+            (should (equal jabber-chat--input-history
+                           (and (eq outcome 'success) (list body)))))
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-chat-journey-correction-draft-undo ()
+  "Length-changing corrections preserve the draft, point and undo/redo."
+  (dolist (new-body '("a substantially longer corrected message" "x"))
+    (jabber-test-chat--journey
+      (jabber-chat-ewoc-enter
+       (list :local (list :id "original" :body "original message"
+                          :timestamp (current-time))))
+      (goto-char (point-max))
+      (buffer-enable-undo)
+      (setq buffer-undo-list nil)
+      (insert "draft λ")
+      (undo-boundary)
+      (backward-char 2)
+      (let ((offset (- (point) jabber-point-insert)))
+        (cl-letf (((symbol-function 'read-string) (lambda (&rest _) new-body)))
+          (call-interactively #'jabber-correct-last-message))
+        (should (= offset (- (point) jabber-point-insert)))
+        (should (equal "draft λ" (jabber-chat--input-string)))
+        (let ((transcript (buffer-substring-no-properties (point-min) jabber-point-insert)))
+          (let ((last-command nil)) (undo-only 1))
+          (should (equal "" (jabber-chat--input-string)))
+          (undo-boundary)
+          (undo-redo)
+          (should (equal "draft λ" (jabber-chat--input-string)))
+          (should (equal transcript
+                         (buffer-substring-no-properties (point-min) jabber-point-insert))))))))
+
+(ert-deftest jabber-test-chat-journey-correction-storage ()
+  "A correction changes SQLite and the rendered message only after handoff."
+  (dolist (outcome '(error quit success))
+    (jabber-test-chat--journey
+      (jabber-test-chat--with-db
+        (jabber-db-store-message "me@example.org" "peer@example.org"
+                                 "out" "chat" "original" 100 nil "original")
+        (jabber-chat-ewoc-enter
+         (list :local (list :id "original" :body "original" :timestamp '(0 100))))
+        (pcase outcome
+          ('error (plist-put (get jc :state-data) :connection nil))
+          ('quit (plist-put (get jc :state-data) :send-function
+                            (lambda (&rest _) (signal 'quit nil)))))
+        (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "corrected λ")))
+          (pcase outcome
+            ('error (should-error (call-interactively #'jabber-correct-last-message)))
+            ('quit (should (eq 'quit (condition-case nil
+                                        (call-interactively #'jabber-correct-last-message)
+                                      (quit 'quit)))))
+            ('success (call-interactively #'jabber-correct-last-message))))
+        (should-not jabber-message-correct--pending-outgoing)
+        (let* ((expected (if (eq outcome 'success) "corrected λ" "original"))
+               (msg (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "original")))))
+          (should (equal expected (plist-get msg :body)))
+          (should (eq (eq outcome 'success) (plist-get msg :edited)))
+          (should (equal (list (list expected))
+                         (sqlite-select jabber-db--connection "SELECT body FROM message"))))))))
+
+(ert-deftest jabber-test-chat-journey-reaction-account-routing ()
+  "Direct and received-carbon reactions update only their account, even renamed."
+  (dolist (carbon '(nil t))
+    (let* ((jabber-db-path nil)
+           (jabber-chat-default-encryption 'plaintext)
+           (jabber-chat-display-help-at-point nil)
+           (jabber-chat-display-images nil)
+           (jabber-chat-display-link-previews nil)
+           (jabber-chat-mode-hook nil)
+           (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+           (a-jc (jabber-test-chat--journey-connection "a"))
+           (b-jc (jabber-test-chat--journey-connection "b"))
+           (a (jabber-chat-create-buffer a-jc "peer@example.org"))
+           (b (jabber-chat-create-buffer b-jc "peer@example.org")))
+      (unwind-protect
+          (progn
+            (dolist (buffer (list a b))
+              (with-current-buffer buffer
+                (jabber-chat-ewoc-enter
+                 (list :foreign (list :id "same-id" :from "peer@example.org"
+                                      :body "peer message" :timestamp (current-time))))))
+            (with-current-buffer a (rename-buffer " *renamed-chat-test*" t))
+            (dolist (id '("same-id" "missing"))
+              (let ((stanza `(message ((from . "peer@example.org/mobile") (type . "chat"))
+                                     (reactions ((xmlns . "urn:xmpp:reactions:0") (id . ,id))
+                                                (reaction nil "👍")))))
+                (jabber-reactions--handle-message
+                 a-jc (if carbon
+                          `(message ((from . "a@example.org"))
+                                    (received ((xmlns . "urn:xmpp:carbons:2"))
+                                              (forwarded ((xmlns . "urn:xmpp:forward:0")) ,stanza)))
+                        stanza))))
+            (with-current-buffer a
+              (should (equal '(("peer@example.org" "👍"))
+                             (plist-get (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "same-id")))
+                                        :reactions))))
+            (with-current-buffer b
+              (should-not (plist-get (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "same-id")))
+                                     :reactions))))
+        (kill-buffer a)
+        (kill-buffer b)))))
+
+(ert-deftest jabber-test-chat-journey-receipts-same-second ()
+  "Public marker handling advances equal-second display state and SQLite."
+  (dolist (times '(((0 100 100000) (0 100 900000)) ((0 100) (0 100))))
+    (jabber-test-chat--journey
+      (jabber-test-chat--with-db
+        (let ((jabber-buffer-registry--buffers (make-hash-table :test #'equal)))
+          (rename-buffer (jabber-chat-get-buffer "peer@example.org" jc))
+          (jabber-buffer-registry-register 'chat "peer@example.org")
+          (cl-loop for id in '("first" "second") for time in times do
+                   (jabber-db-store-message "me@example.org" "peer@example.org"
+                                            "out" "chat" id 100 nil id)
+                   (jabber-db-update-receipt "me@example.org" "peer@example.org" id "delivered_at" 101)
+                   (jabber-chat-ewoc-enter
+                    (list :local (list :id id :body id :status :delivered :timestamp time))))
+          (dolist (id '("first" "second" "first" "missing" "second"))
+            (jabber-receipts--handle-message
+             jc `(message ((from . "peer@example.org/mobile") (type . "chat"))
+                          (displayed ((xmlns . "urn:xmpp:chat-markers:0") (id . ,id))))))
+          (dolist (id '("first" "second"))
+            (should (eq :displayed (plist-get (cadr (ewoc-data (jabber-chat-ewoc-find-by-id id))) :status))))
+          (should (= 2 (caar (sqlite-select jabber-db--connection
+                                           "SELECT count(*) FROM message WHERE displayed_at IS NOT NULL")))))))))
+
+(ert-deftest jabber-test-chat-journey-explicit-thread-reply ()
+  "The native thread hook and global hooks emit one reply with Unicode fallback."
+  (jabber-test-chat--journey
+    (let* ((jabber-message-thread-use-buffers t)
+           (thread (jabber-message-thread-create-buffer
+                    jc "peer@example.org" "chat" "thread-1" nil (current-buffer)
+                    '(:id "root-link" :from "peer@example.org" :body "root")))
+           sent)
+      (unwind-protect
+          (with-current-buffer thread
+            (plist-put (get jc :state-data) :send-function
+                       (lambda (_connection text) (setq sent text)))
+            (let ((node (jabber-chat-ewoc-enter
+                         '(:foreign (:id "explicit" :from "peer@example.org"
+                                     :body "λ quoted" :thread-id "thread-1")))))
+              (goto-char (ewoc-location node))
+              (call-interactively #'jabber-chat-reply))
+            (goto-char (point-max))
+            (insert "answer")
+            (let ((fallback jabber-message-reply--fallback-text))
+              (call-interactively (key-binding (kbd "RET")))
+              (should-not jabber-message-reply--id)
+              (should-not jabber-message-thread--root-reply-id)
+              (should (equal "" (jabber-chat--input-string)))
+              (with-temp-buffer
+                (insert sent)
+                (let* ((stanza (car (xml-parse-region (point-min) (point-max))))
+                       (replies (jabber-xml-get-children stanza 'reply))
+                       (fb (jabber-xml-child-with-xmlns stanza "urn:xmpp:fallback:0")))
+                  (should (= 1 (length replies)))
+                  (should (equal "explicit" (jabber-xml-get-attribute (car replies) 'id)))
+                  (should (equal (number-to-string (length fallback))
+                                 (jabber-xml-get-attribute (car (jabber-xml-get-children fb 'body)) 'end)))))))
+        (kill-buffer thread)))))
+
+(ert-deftest jabber-test-chat-journey-correction-queued-handoff ()
+  "A queued correction commits on native SM handoff, not queue acceptance."
+  (require 'jabber-sm-runtime)
+  (dolist (outcome '(success failure retired))
+    (jabber-test-chat--journey
+      (jabber-test-chat--with-db
+        (jabber-db-store-message "me@example.org" "peer@example.org"
+                                 "out" "chat" "original" 100 nil "original")
+        (jabber-chat-ewoc-enter
+         (list :local (list :id "original" :body "original" :timestamp '(0 100))))
+        (put jc :state-data (append (get jc :state-data)
+                                   (list :sm-enabled t :sm-outbound-count 0
+                                         :sm-last-acked 0 :sm-pending-queue nil)))
+        (let ((jabber-sm-max-in-flight 0))
+          (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "queued correction")))
+            (call-interactively #'jabber-correct-last-message)))
+        (should jabber-message-correct--pending-outgoing)
+        (should (equal '(("original"))
+                       (sqlite-select jabber-db--connection "SELECT body FROM message")))
+        (let* ((entry (car (plist-get (get jc :state-data) :sm-pending-queue)))
+               (callback (plist-get entry :success)))
+          (should (functionp callback))
+          (pcase outcome
+            ('failure (jabber-sm--discard-pending (get jc :state-data) "discarded"))
+            ('retired
+             (fundamental-mode)
+             (let ((jabber-sm-max-in-flight nil))
+               (jabber-sm--drain-pending jc (get jc :state-data))))
+            ('success (let ((jabber-sm-max-in-flight nil))
+                        (jabber-sm--drain-pending jc (get jc :state-data)))))
+          ;; Repeated/stale deliveries must not commit or reapply.
+          (funcall callback)
+          (funcall callback))
+        (should-not jabber-message-correct--pending-outgoing)
+        (should (equal (list (list (if (eq outcome 'failure) "original" "queued correction")))
+                       (sqlite-select jabber-db--connection "SELECT body FROM message")))))))
+
+(ert-deftest jabber-test-chat-journey-omemo-input-restored-once ()
+  "Native OMEMO immediate and delayed session failure restores the draft once."
+  (require 'jabber-omemo)
+  (dolist (outcome '(immediate delayed quit))
+    (jabber-test-chat--journey
+      (setq-local jabber-chat-encryption 'omemo)
+      (setq-local jabber-message-reply--id "reply")
+      (setq-local jabber-message-reply--jid "peer@example.org")
+      (let ((jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+            callback)
+        (insert "encrypted draft λ")
+        (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions)
+                   (lambda (_jc _peer on-result)
+                     (pcase outcome
+                       ('immediate (funcall on-result nil))
+                       ('delayed (setq callback on-result))
+                       ('quit (signal 'quit nil))))))
+          (if (eq outcome 'quit)
+              (should (eq 'quit (condition-case nil
+                                    (call-interactively (key-binding (kbd "RET")))
+                                  (quit 'quit))))
+            (call-interactively (key-binding (kbd "RET")))))
+        (when callback
+          (should (equal "" (jabber-chat--input-string)))
+          (should-not jabber-message-reply--id)
+          (funcall callback nil)
+          (funcall callback nil))
+        (should (equal "encrypted draft λ" (jabber-chat--input-string)))
+        (should (equal "reply" jabber-message-reply--id))
+        (when (eq outcome 'quit) (should-not jabber-chat--input-history))))))
+
+(ert-deftest jabber-test-chat-journey-input-successor-preserved ()
+  "A synchronous sender cannot restore its draft over a replacement input."
+  (jabber-test-chat--journey
+    (insert "old draft")
+    (setq-local jabber-send-function
+                (lambda (&rest _)
+                  (fundamental-mode)
+                  (let ((inhibit-read-only t)) (erase-buffer))
+                  (insert "successor draft")
+                  (error "Retired input")))
+    (should-error (jabber-chat-buffer-send))
+    (should (equal "successor draft" (buffer-string)))
+    (should-not jabber-chat--input-history)))
+
+(ert-deftest jabber-test-chat-journey-alert-origin ()
+  "Incoming hook chains cannot retarget automatic replies or current buffer."
+  (dolist (mutation '(unchanged rename account peer mode killed title))
+    (jabber-test-chat--journey
+      (rename-buffer (jabber-chat-get-buffer "peer@example.org" jc) t)
+      (let* ((origin (current-buffer))
+             (other (generate-new-buffer " *jabber-alert-other*"))
+             (second (jabber-test-chat--journey-connection "other"))
+             (jabber-connections (list jc second))
+             (jabber-autoanswer-alist '(("ping" . "pong")))
+             (jabber-alert-message-function
+              (lambda (&rest _)
+                (when (eq mutation 'title)
+                  (with-current-buffer origin
+                    (setq-local jabber-buffer-connection second)))
+                "Peer"))
+             (jabber-message-hooks
+              (list (lambda (&rest _)
+                      (with-current-buffer origin
+                        (pcase mutation
+                          ('rename (rename-buffer " *renamed-alert-origin*" t))
+                          ('account (setq-local jabber-buffer-connection second))
+                          ('peer (setq-local jabber-chatting-with "other@example.org"))
+                          ('mode (fundamental-mode))
+                          ('killed (kill-buffer origin))))
+                      (set-buffer other)
+                      ;; Hook truth values must not stop ordinary hook chains.
+                      t)))
+             seen sent
+             (jabber-alert-message-hooks
+              (list (lambda (_from buffer _text _title)
+                      (push (list buffer (current-buffer)) seen))
+                    #'jabber-autoanswer-answer)))
+        (unwind-protect
+            (progn
+              (plist-put (get jc :state-data) :send-function
+                         (lambda (&rest args) (push args sent)))
+              (plist-put (get second :state-data) :send-function
+                         (lambda (&rest args) (push args sent)))
+              (jabber-process-chat
+               jc '(message ((from . "peer@example.org") (type . "chat")
+                              (id . "incoming")) (body () "ping")))
+              (should (= 1 (length seen)))
+              (if (memq mutation '(unchanged rename))
+                  (progn
+                    (should (eq origin (caar seen)))
+                    (should (eq origin (current-buffer)))
+                    (should (= 1 (length sent))))
+                (should-not (caar seen))
+                (should-not sent))
+              (unless (eq mutation 'killed)
+                (should (eq origin (cadar seen)))
+                (should (eq origin (current-buffer)))))
+          (kill-buffer other))))))
+
+(require 'jabber-core)
+(require 'jabber-openpgp)
+(require 'jabber-omemo)
+(require 'jabber-openpgp-legacy)
+
+(defun jabber-test-chat--send-key-fixture (function)
+  "Call FUNCTION with an isolated send-capable GnuPG keyring."
+  (unless (and (executable-find "gpg") (executable-find "gpgconf"))
+    (ert-skip "GnuPG and gpgconf are required"))
+  (let* ((home (make-temp-file "jabber-send-gpg-" t))
+         (epg-gpg-home-directory home)
+         (process-environment (copy-sequence process-environment))
+         (jabber-openpgp-key-alist nil))
+    (set-file-modes home #o700)
+    (setenv "GNUPGHOME" home)
+    (unwind-protect
+        (progn
+          (with-temp-file (expand-file-name "gpg.conf" home)
+            (insert "no-auto-key-retrieve\nauto-key-locate clear\n"))
+          (dolist (jid '("me@example.org" "peer@example.org"))
+            (should (zerop (call-process
+                            "gpg" nil nil nil "--homedir" home "--batch"
+                            "--pinentry-mode" "loopback" "--passphrase" ""
+                            "--quick-generate-key" (concat "xmpp:" jid)
+                            "ed25519" "sign" "0")))
+            (let* ((key (car (epg-list-keys (epg-make-context 'OpenPGP)
+                                            (concat "=xmpp:" jid))))
+                   (fingerprint (jabber-openpgp--key-fingerprint key)))
+              (should (zerop (call-process
+                              "gpg" nil nil nil "--homedir" home "--batch"
+                              "--pinentry-mode" "loopback" "--passphrase" ""
+                              "--quick-add-key" fingerprint "cv25519" "encr" "0")))
+              (push (cons jid fingerprint) jabber-openpgp-key-alist)))
+          (funcall function))
+      (call-process "gpgconf" nil nil nil "--homedir" home "--kill" "all")
+      (delete-directory home t))))
+
+(defun jabber-test-chat--correction-wire (wire encryption group)
+  "Check captured WIRE for ENCRYPTION and GROUP, decrypting real ciphertext."
+  (let* ((stanza (with-temp-buffer
+                   (insert "<stream>" wire "</stream>")
+                   (car (jabber-xml-get-children
+                         (car (xml-parse-region (point-min) (point-max))) 'message))))
+         (replace (jabber-xml-get-children stanza 'replace)))
+    (should (equal (jabber-xml-get-attribute stanza 'to)
+                   (if group "room@example.org" "peer@example.org")))
+    (should (equal (jabber-xml-get-attribute stanza 'type)
+                   (if group "groupchat" "chat")))
+    (should (= 1 (length replace)))
+    (should (equal "original" (jabber-xml-get-attribute (car replace) 'id)))
+    (pcase encryption
+      ('openpgp
+       (let* ((cipher (base64-decode-string
+                       (caddr (jabber-xml-child-with-xmlns stanza jabber-openpgp-xmlns))))
+              ;; Inspect the wire directly: the receive provider's internal
+              ;; return value also carries authentication evidence.
+              (plain (decode-coding-string
+                      (epg-decrypt-string (epg-make-context 'OpenPGP) cipher)
+                      'utf-8))
+              (inner (with-temp-buffer
+                       (insert plain)
+                       (car (xml-parse-region (point-min) (point-max)))))
+              (payload (car (jabber-xml-get-children inner 'payload))))
+         (should (eq (car inner) (if group 'crypt 'signcrypt)))
+         (should (equal "corrected λ" (caddr (car (jabber-xml-get-children payload 'body)))))))
+      ('openpgp-legacy
+       (let ((cipher (jabber-openpgp-legacy--rearmor-message
+                      (jabber-openpgp-legacy--detect-encrypted stanza))))
+         (should (equal "corrected λ"
+                        (decode-coding-string
+                         (epg-decrypt-string (epg-make-context 'OpenPGP) cipher)
+                         'utf-8)))))
+      (_ (should (equal "corrected λ" (caddr (car (jabber-xml-get-children stanza 'body)))))))))
+
+(defun jabber-test-chat--provider-correction (encryption group)
+  "Exercise ENCRYPTION and GROUP correction through native SM and SQLite."
+  (dolist (outcome '(immediate drained discarded error quit))
+    (ert-info ((format "%S %S %S" encryption group outcome))
+      (jabber-test-chat--journey
+        (jabber-test-chat--with-db
+          (setq-local jabber-chat-encryption encryption)
+          (when group (setq-local jabber-group "room@example.org"))
+          (let* ((jabber-muc-participants
+                  '(("room@example.org" ("peer" jid "peer@example.org/mobile"))))
+                 (queued (memq outcome '(drained discarded)))
+                 (jabber-sm-max-in-flight (and queued 0))
+                 (peer (if group "room@example.org" "peer@example.org"))
+                 (node (jabber-chat-ewoc-enter
+                        (list (if group :muc-local :local)
+                              (list :id "original" :body "original"
+                                    :from (if group "room@example.org/me" "me@example.org")
+                                    :timestamp '(0 100)))))
+                 wire)
+            (jabber-db-store-message "me@example.org" peer "out"
+                                     (if group "groupchat" "chat")
+                                     "original" 100 (and group "me") "original")
+            (put jc :name 'jabber-connection)
+            (put jc :state-data
+                 (append (get jc :state-data)
+                         (list :sm-enabled t :sm-outbound-count 0
+                               :sm-last-acked 0 :sm-pending-queue nil)))
+            (plist-put (get jc :state-data) :send-function
+                       (lambda (_transport text)
+                         (pcase outcome
+                           ('error (error "Fixture write failed"))
+                           ('quit (signal 'quit nil))
+                           (_ (push text wire)))))
+            (goto-char (point-max))
+            (insert "successor draft λ")
+            (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "corrected λ")))
+              (condition-case err
+                  (call-interactively #'jabber-correct-last-message)
+                ((error quit)
+                 (unless (memq outcome '(error quit))
+                   (signal (car err) (cdr err))))))
+            (when queued
+              (should jabber-message-correct--pending-outgoing)
+              (should-not wire)
+              (should (equal "original" (plist-get (cadr (ewoc-data node)) :body)))
+              (should (equal '(("original"))
+                             (sqlite-select jabber-db--connection "SELECT body FROM message")))
+              (let* ((entry (car (plist-get (get jc :state-data) :sm-pending-queue)))
+                     (success (plist-get entry :success))
+                     (failure (plist-get entry :failure)))
+                (should (functionp success))
+                (should (functionp failure))
+                (if (eq outcome 'discarded)
+                    (put jc :state-data
+                         (jabber-sm--discard-pending (get jc :state-data) "Discarded"))
+                  (let ((jabber-sm-max-in-flight nil)
+                        (deadline (+ (float-time) 2)))
+                    ;; Real FSM acknowledgement publishes state before its native timer.
+                    (fsm-send-sync jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
+                    (while (and jabber-message-correct--pending-outgoing
+                                (< (float-time) deadline))
+                      (accept-process-output nil 0.01))))
+                (should-not jabber-message-correct--pending-outgoing)
+                (should (equal (if (eq outcome 'drained) "corrected λ" "original")
+                               (plist-get (cadr (ewoc-data node)) :body)))
+                (funcall success)
+                (funcall failure "Late failure")
+                (funcall success)))
+            (let ((expected (if (memq outcome '(immediate drained)) "corrected λ" "original")))
+              (should-not jabber-message-correct--pending-outgoing)
+              (should (equal expected (plist-get (cadr (ewoc-data node)) :body)))
+              (should (equal (list (list expected))
+                             (sqlite-select jabber-db--connection "SELECT body FROM message")))
+              (should (equal "successor draft λ" (jabber-chat--input-string)))
+              (if (memq outcome '(immediate drained))
+                  (progn
+                    (should (= 1 (length wire)))
+                    (jabber-test-chat--correction-wire (car wire) encryption group))
+                (should-not wire)))))))))
+
+(ert-deftest jabber-test-chat-provider-plaintext-muc-completion ()
+  "Plaintext MUC corrections wait for native handoff."
+  (jabber-test-chat--provider-correction 'plaintext t))
+
+(ert-deftest jabber-test-chat-provider-modern-completion ()
+  "Real modern OpenPGP direct and MUC corrections wait for native handoff."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (group '(nil t))
+       (jabber-test-chat--provider-correction 'openpgp group)))))
+
+(ert-deftest jabber-test-chat-provider-legacy-completion ()
+  "Real legacy OpenPGP direct and MUC corrections wait for native handoff."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (group '(nil t))
+       (jabber-test-chat--provider-correction 'openpgp-legacy group)))))
+
+(ert-deftest jabber-test-chat-provider-omemo-quit-retirement ()
+  "Retained discovery callbacks cannot resend or duplicate cancelled drafts."
+  (dolist (group '(nil t))
+    (dolist (own '(nil t))
+      (jabber-test-chat--journey
+        (setq-local jabber-chat-encryption 'omemo)
+        (when group
+          (setq-local jabber-group "room@example.org")
+          (setq-local jabber-send-function #'jabber-muc-send))
+        (let ((jabber-muc-participants
+               '(("room@example.org" ("peer" jid "peer@example.org/mobile"))))
+              (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+              callback sent)
+          (plist-put (get jc :state-data) :send-function
+                     (lambda (&rest _) (setq sent t)))
+          (insert "cancelled draft λ")
+          (cl-labels ((discover (_jc peer cb)
+                        (if (and own (not (equal peer "me@example.org")))
+                            (funcall cb '((1 . session)))
+                          (setq callback cb)
+                          (signal 'quit nil))))
+            (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions) #'discover)
+                      ((symbol-function 'jabber-omemo--ensure-sessions-multi) #'discover))
+              (should (eq 'quit (condition-case nil
+                                   (call-interactively (key-binding (kbd "RET")))
+                                 (quit 'quit))))))
+          (should callback)
+          (should (equal "cancelled draft λ" (jabber-chat--input-string)))
+          (should-not (gethash jc jabber-omemo--pending-send-operations))
+          (jabber-chat--replace-input "successor draft")
+          (funcall callback nil)
+          (funcall callback '((1 . session)))
+          (should-not sent)
+          (should (equal "successor draft" (jabber-chat--input-string))))))))
+
+(ert-deftest jabber-test-chat-provider-muc-ret-failure-context ()
+  "MUC RET restores consumed reply metadata on synchronous error and quit."
+  (dolist (outcome '(error quit))
+    (jabber-test-chat--journey
+      (setq-local jabber-group "room@example.org")
+      (setq-local jabber-send-function #'jabber-muc-send)
+      (setq-local jabber-message-reply--id "reply")
+      (setq-local jabber-message-reply--jid "room@example.org/peer")
+      (setq-local jabber-message-reply--fallback-text "> λ\n")
+      (insert "> λ\nanswer")
+      (plist-put (get jc :state-data) :send-function
+                 (lambda (&rest _) (signal outcome '("Fixture refused"))))
+      (should (eq outcome
+                  (condition-case err
+                      (call-interactively (key-binding (kbd "RET")))
+                    ((error quit) (car err)))))
+      (should (equal "> λ\nanswer" (jabber-chat--input-string)))
+      (should (equal "reply" jabber-message-reply--id))
+      (should (equal "> λ\n" jabber-message-reply--fallback-text))
+      (should-not jabber-chat--input-history))))
+
+(ert-deftest jabber-test-chat-provider-omemo-correction-failure ()
+  "An OMEMO correction failure never inserts correction text into a draft."
+  (dolist (group '(nil t))
+    (dolist (cancel '(nil t))
+      (jabber-test-chat--journey
+        (setq-local jabber-chat-encryption 'omemo)
+        (when group (setq-local jabber-group "room@example.org"))
+        (let ((jabber-muc-participants
+               '(("room@example.org" ("peer" jid "peer@example.org/mobile"))))
+              (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+              (failures 0) callback)
+          (insert "successor draft λ")
+          (cl-labels ((discover (_jc _peer cb)
+                        (setq callback cb)
+                        (when cancel (signal 'quit nil))))
+            (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions) #'discover)
+                      ((symbol-function 'jabber-omemo--ensure-sessions-multi) #'discover))
+              (condition-case nil
+                  (funcall (if group #'jabber-muc-send #'jabber-chat-send)
+                           jc "corrected λ"
+                           '((replace ((id . "original"))))
+                           #'ignore (lambda (_reason) (cl-incf failures)))
+                (quit nil))))
+          (funcall callback nil)
+          (funcall callback nil)
+          (should (= failures 1))
+          (should-not (gethash jc jabber-omemo--pending-send-operations))
+          (should (equal "successor draft λ" (jabber-chat--input-string))))))))
+
+(ert-deftest jabber-test-chat-journey-receipt-inbound-boundaries ()
+  "Native markers persist exact equal-second boundaries across reopen."
+  (dolist (reverse '(nil t))
+    (jabber-test-chat--journey
+      (jabber-test-chat--with-db
+        (rename-buffer (jabber-chat-get-buffer "peer@example.org" jc))
+        (dolist (entry '(("older" . 99.75) ("first" . 100.125)
+                         ("second" . 100.875) ("future" . 100.875)))
+          (jabber-db-store-message "me@example.org" "peer@example.org"
+                                   "out" "chat" (car entry) (floor (cdr entry)) nil (car entry))
+          (jabber-db-update-receipt "me@example.org" "peer@example.org"
+                                    (car entry) "delivered_at" 101)
+          (jabber-chat-ewoc-enter
+           (list :local (list :id (car entry) :body (car entry) :status :delivered
+                              :timestamp (seconds-to-time (cdr entry))))))
+        (dolist (scope '(("other@example.org" "peer@example.org")
+                         ("me@example.org" "other@example.org")))
+          (jabber-db-store-message (car scope) (cadr scope)
+                                   "out" "chat" "first" 99 nil "first")
+          (jabber-db-update-receipt (car scope) (cadr scope) "first" "delivered_at" 101))
+        (cl-labels ((marker (id)
+                      (jabber-receipts--handle-message
+                       jc `(message ((from . "peer@example.org/mobile") (type . "chat"))
+                                    (displayed ((xmlns . "urn:xmpp:chat-markers:0") (id . ,id))))))
+                    (marked ()
+                      (sqlite-select jabber-db--connection
+                                     "SELECT account, peer, stanza_id FROM message WHERE displayed_at IS NOT NULL ORDER BY id")))
+          (marker "missing")
+          (should-not (marked))
+          (unless reverse
+            (marker "first")
+            (let ((expected '(("me@example.org" "peer@example.org" "older")
+                              ("me@example.org" "peer@example.org" "first"))))
+              (should (equal expected (marked)))
+              (should (eq :delivered
+                          (plist-get (cadr (ewoc-data (jabber-chat-ewoc-find-by-id "second"))) :status)))
+              (jabber-db-close)
+              (jabber-db-ensure-open)
+              (should (equal expected (marked)))))
+          (marker "second")
+          (let ((expected '(("me@example.org" "peer@example.org" "older")
+                            ("me@example.org" "peer@example.org" "first")
+                            ("me@example.org" "peer@example.org" "second")))
+                (state (sqlite-select jabber-db--connection
+                                      "SELECT id, delivered_at, displayed_at FROM message ORDER BY id")))
+            (should (equal expected (marked)))
+            (dolist (id '("first" "second" "older" "missing"))
+              (marker id)
+              (should (equal state (sqlite-select jabber-db--connection
+                                                   "SELECT id, delivered_at, displayed_at FROM message ORDER BY id"))))
+            (jabber-db-close)
+            (jabber-db-ensure-open)
+            (should (equal expected (marked)))))))))
+
+(defmacro jabber-test-chat--publication-fixture (&rest body)
+  "Run BODY with native chat/SQLite fixtures and observed correction sends.
+Expose `publication-node', `publication-attempts', `publication-wire' and
+`publication-messages'.  The journey fixture also binds the inert `jc'."
+  (declare (indent 0) (debug t))
+  `(jabber-test-chat--journey
+     (jabber-test-chat--with-db
+       (setq-local jabber-chat-send-hooks nil)
+       (let* ((jabber-debug-log-xml nil)
+              (jabber-sm-max-in-flight nil)
+              (original-send (symbol-function 'jabber-message-correct--send))
+              (publication-attempts nil)
+              (publication-wire nil)
+              (publication-messages nil)
+              (publication-node
+               (jabber-chat-ewoc-enter
+                (list :local (list :id "original" :body "original"
+                                   :from "me@example.org"
+                                   :timestamp (list 0 100))))))
+         (jabber-db-store-message "me@example.org" "peer@example.org"
+                                  "out" "chat" "original" 100 nil "original")
+         (put jc :name 'jabber-connection)
+         (put jc :state-data
+              (append (get jc :state-data)
+                      (list :sm-enabled t :sm-outbound-count 0
+                            :sm-last-acked 0 :sm-pending-queue nil)))
+         (plist-put (get jc :state-data) :send-function
+                    (lambda (_transport text) (push text publication-wire)))
+         (goto-char (point-max))
+         (insert "unrelated draft λ")
+         (cl-letf (((symbol-function 'jabber-message-correct--send)
+                    (lambda (connection group text extra
+                             &optional success failure)
+                      (push (list :token jabber-message-correct--pending-outgoing
+                                  :success success :failure failure :body text)
+                            publication-attempts)
+                      (funcall original-send connection group text extra
+                               success failure)))
+                   ((symbol-function 'message)
+                    (lambda (format-string &rest arguments)
+                      (let ((text (and format-string
+                                       (apply #'format format-string arguments))))
+                        (when text (push text publication-messages))
+                        text))))
+           ,@body)))))
+
+(defun jabber-test-chat--publication-correct (body)
+  "Submit a correction with BODY through the interactive command."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) body)))
+    (call-interactively #'jabber-correct-last-message)))
+
+(defun jabber-test-chat--publication-drain (jc)
+  "Drain JC through a real FSM acknowledgement and its native timer."
+  (let ((jabber-sm-max-in-flight nil)
+        (deadline (+ (float-time) 2)))
+    (fsm-send-sync
+     jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
+    ;; Wait for native queue removal, NOT a pending token a broken commit can
+    ;; strand.  Return from accept-process-output also returns from its timer.
+    (while (and (plist-get (get jc :state-data) :sm-pending-queue)
+                (< (float-time) deadline))
+      (accept-process-output nil 0.01))
+    (should-not (plist-get (get jc :state-data) :sm-pending-queue))
+    (should (eq :session-established (get jc :state)))))
+
+(defun jabber-test-chat--publication-rows ()
+  "Return complete fixture message rows, including edited metadata."
+  (sqlite-select jabber-db--connection "SELECT * FROM message ORDER BY id"))
+
+(defun jabber-test-chat--publication-replay (attempt node)
+  "Check late callbacks from ATTEMPT leave NODE and all local state intact."
+  (let ((pending jabber-message-correct--pending-outgoing)
+        (pending-active (car-safe jabber-message-correct--pending-outgoing))
+        (rows (jabber-test-chat--publication-rows))
+        (data (copy-tree (ewoc-data node)))
+        (text (buffer-string)))
+    (should (functionp (plist-get attempt :success)))
+    (should (functionp (plist-get attempt :failure)))
+    (funcall (plist-get attempt :success))
+    (funcall (plist-get attempt :failure) "Late publication failure")
+    (funcall (plist-get attempt :success))
+    (should (eq pending jabber-message-correct--pending-outgoing))
+    (should (eq pending-active (car-safe pending)))
+    (should (equal rows (jabber-test-chat--publication-rows)))
+    (should (equal data (ewoc-data node)))
+    (should (equal text (buffer-string)))))
+
+(defun jabber-test-chat--publication-check-committed (node body)
+  "Check NODE, rendered text and reopened SQLite agree on BODY."
+  (should-not jabber-message-correct--pending-outgoing)
+  (should (equal body (plist-get (cadr (ewoc-data node)) :body)))
+  (should (plist-get (cadr (ewoc-data node)) :edited))
+  (should (string-search body
+                         (buffer-substring-no-properties
+                          (point-min) jabber-point-insert)))
+  (should (equal "unrelated draft λ" (jabber-chat--input-string)))
+  (should (equal (list (list body 1))
+                 (sqlite-select jabber-db--connection
+                                "SELECT body, edited FROM message")))
+  (let ((rows (jabber-test-chat--publication-rows)))
+    (jabber-db-close)
+    (jabber-db-ensure-open)
+    (should (equal rows (jabber-test-chat--publication-rows)))))
+
+(defun jabber-test-chat--publication-sqlite-abort (queued)
+  "Exercise a real SQLite abort after handoff, optionally QUEUED."
+  (jabber-test-chat--publication-fixture
+    (let ((rows (jabber-test-chat--publication-rows))
+          (text (buffer-string)))
+      (sqlite-execute
+       jabber-db--connection
+       "CREATE TRIGGER publication_abort BEFORE UPDATE OF body ON message BEGIN SELECT RAISE(ABORT, 'publication sqlite abort'); END")
+      (let ((jabber-sm-max-in-flight (and queued 0)))
+        (jabber-test-chat--publication-correct "corrected λ"))
+      (let* ((attempt (car publication-attempts))
+             (token (plist-get attempt :token)))
+        (should token)
+        (when queued
+          (should (eq token jabber-message-correct--pending-outgoing))
+          (should (car token))
+          (should-not publication-wire)
+          (should (equal rows (jabber-test-chat--publication-rows)))
+          (should (equal text (buffer-string)))
+          (jabber-test-chat--publication-drain jc))
+        ;; Establish native handoff and terminal settlement BEFORE any replay.
+        (should (= 1 (length publication-wire)))
+        (should-not (car token))
+        (should-not jabber-message-correct--pending-outgoing)
+        (should (equal text (buffer-string)))
+        (should (equal "original"
+                       (plist-get (cadr (ewoc-data publication-node)) :body)))
+        (should-not (plist-get (cadr (ewoc-data publication-node)) :edited))
+        (should (equal rows (jabber-test-chat--publication-rows)))
+        (should (cl-some (lambda (text)
+                           (string-match-p "publication sqlite abort" text))
+                         publication-messages))
+        (jabber-db-close)
+        (jabber-db-ensure-open)
+        (should (equal rows (jabber-test-chat--publication-rows)))
+        ;; Remove the failure first: stale success must be inert even when an
+        ;; accidental second publication would now succeed.
+        (sqlite-execute jabber-db--connection "DROP TRIGGER publication_abort")
+        (jabber-test-chat--publication-replay attempt publication-node)
+        (should (= 1 (length publication-wire)))
+        (let ((jabber-sm-max-in-flight 0))
+          (jabber-test-chat--publication-correct "retry λ"))
+        (let ((retry-token jabber-message-correct--pending-outgoing))
+          (should retry-token)
+          (should-not (eq token retry-token))
+          (should (car retry-token))
+          (should (= 2 (length publication-attempts)))
+          (jabber-test-chat--publication-replay attempt publication-node)
+          (should (= 1 (length publication-wire)))
+          (jabber-test-chat--publication-drain jc)
+          (should-not (car retry-token)))
+        (should (= 2 (length publication-wire)))
+        (jabber-test-chat--publication-check-committed publication-node "retry λ")
+        (jabber-test-chat--publication-replay attempt publication-node)
+        (should (= 2 (length publication-wire)))))))
+
+(ert-deftest jabber-test-chat-repair-publication-sqlite-immediate ()
+  "Release an immediate handed-off correction after a real SQLite abort."
+  (jabber-test-chat--publication-sqlite-abort nil))
+
+(ert-deftest jabber-test-chat-repair-publication-sqlite-queued ()
+  "Release a native FSM-drained correction after a real SQLite abort."
+  (jabber-test-chat--publication-sqlite-abort t))
+
+(defun jabber-test-chat--publication-render-fault (queued fault)
+  "Exercise printer FAULT after handoff, optionally QUEUED."
+  (jabber-test-chat--publication-fixture
+    (let* ((render-calls 0)
+           (pending-at-render 'not-called)
+           (jabber-chat-printers
+            (cons (lambda (msg _who mode)
+                    (when (and (eq mode :insert)
+                               (equal "corrected λ" (plist-get msg :body)))
+                      (cl-incf render-calls)
+                      (setq pending-at-render
+                            jabber-message-correct--pending-outgoing)
+                      (signal fault (and (eq fault 'error)
+                                         (list "publication render fault")))))
+                  jabber-chat-printers)))
+      (let ((jabber-sm-max-in-flight (and queued 0)))
+        (jabber-test-chat--publication-correct "corrected λ"))
+      (let* ((attempt (car publication-attempts))
+             (token (plist-get attempt :token)))
+        (when queued
+          (should (eq token jabber-message-correct--pending-outgoing))
+          (should (car token))
+          (should-not publication-wire)
+          (should (zerop render-calls))
+          (should (equal '(("original"))
+                         (sqlite-select jabber-db--connection
+                                        "SELECT body FROM message")))
+          (jabber-test-chat--publication-drain jc))
+        (should (= 1 (length publication-wire)))
+        (should (= 1 render-calls))
+        (should-not pending-at-render)
+        (should-not (car token))
+        (should-not jabber-message-correct--pending-outgoing)
+        (should (equal "unrelated draft λ" (jabber-chat--input-string)))
+        ;; SQLite precedes rendering: do not demand a fictitious rollback of
+        ;; an already handed-off stanza or of the successful local SQL write.
+        (should (equal '(("corrected λ" 1))
+                       (sqlite-select jabber-db--connection
+                                      "SELECT body, edited FROM message")))
+        (should (cl-some (lambda (text)
+                           (string-match-p
+                            (if (eq fault 'quit) "[Qq]uit" "publication render fault")
+                            text))
+                         publication-messages))
+        (jabber-db-close)
+        (jabber-db-ensure-open)
+        (should (equal '(("corrected λ" 1))
+                       (sqlite-select jabber-db--connection
+                                      "SELECT body, edited FROM message")))
+        (jabber-test-chat--publication-replay attempt publication-node)
+        (should (= 1 render-calls))
+        (should (= 1 (length publication-wire)))
+        (let ((jabber-sm-max-in-flight 0))
+          (jabber-test-chat--publication-correct "retry λ"))
+        (let ((retry-token jabber-message-correct--pending-outgoing))
+          (should retry-token)
+          (should (car retry-token))
+          (should-not (eq token retry-token))
+          (jabber-test-chat--publication-replay attempt publication-node)
+          (jabber-test-chat--publication-drain jc)
+          (should-not (car retry-token)))
+        (should (= 2 (length publication-attempts)))
+        (should (= 2 (length publication-wire)))
+        (should (= 1 render-calls))
+        (jabber-test-chat--publication-check-committed publication-node "retry λ")))))
+
+(ert-deftest jabber-test-chat-repair-publication-render-error-immediate ()
+  "Settle an immediate correction before a native printer raises error."
+  (jabber-test-chat--publication-render-fault nil 'error))
+
+(ert-deftest jabber-test-chat-repair-publication-render-quit-immediate ()
+  "Settle an immediate correction before a native printer raises quit."
+  (jabber-test-chat--publication-render-fault nil 'quit))
+
+(ert-deftest jabber-test-chat-repair-publication-render-error-queued ()
+  "Settle a native FSM-drained correction before a printer raises error."
+  (jabber-test-chat--publication-render-fault t 'error))
+
+(ert-deftest jabber-test-chat-repair-publication-render-quit-queued ()
+  "Settle a native FSM-drained correction before a printer raises quit."
+  (jabber-test-chat--publication-render-fault t 'quit))
+
+(defun jabber-test-chat--publication-successor (fault)
+  "Preserve a printer-admitted successor through optional publication FAULT."
+  (dolist (queued '(nil t))
+    (ert-info ((format "queued=%S fault=%S" queued fault))
+      (jabber-test-chat--publication-fixture
+        (let* ((hook-runs 0)
+               (hook-error nil)
+               (pending-at-hook 'not-called)
+               (successor-token nil)
+               (jabber-chat-printers
+                (cons (lambda (msg _who mode)
+                        (when (and (zerop hook-runs) (eq mode :insert)
+                                   (equal "corrected λ" (plist-get msg :body)))
+                          (cl-incf hook-runs)
+                          (setq pending-at-hook
+                                jabber-message-correct--pending-outgoing)
+                          ;; Native rendering is a reentry boundary.  Admit a
+                          ;; real new correction, not an invented pending list.
+                          ;; Queue it so the old renderer resumes while the new
+                          ;; occurrence still owns the same buffer's slot.
+                          ;; Keep back-pressure active until the surrounding
+                          ;; drain returns, or it would immediately consume the
+                          ;; new entry too.  The caller binds this option, so
+                          ;; changing it here cannot escape the test phase.
+                          (setq jabber-sm-max-in-flight 0)
+                          (condition-case err
+                              (let ((jabber-sm-max-in-flight 0))
+                                (jabber-test-chat--publication-correct "successor λ")
+                                (setq successor-token
+                                      jabber-message-correct--pending-outgoing))
+                            ((error quit) (setq hook-error err)))
+                          (when fault
+                            (signal fault (and (eq fault 'error)
+                                               (list "publication successor fault"))))))
+                      jabber-chat-printers)))
+          (let ((jabber-sm-max-in-flight (and queued 0)))
+            (jabber-test-chat--publication-correct "corrected λ"))
+          (let* ((attempt (car (last publication-attempts)))
+                 (token (plist-get attempt :token)))
+            (when queued
+              (should-not publication-wire)
+              ;; This drain intentionally leaves a reentrantly queued successor.
+              ;; Wait for the hook, rather than draining every generation.
+              (let ((jabber-sm-max-in-flight nil)
+                    (deadline (+ (float-time) 2)))
+                (fsm-send-sync
+                 jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
+                (while (and (zerop hook-runs) (< (float-time) deadline))
+                  (accept-process-output nil 0.01))))
+            ;; Assertions stay outside callbacks production can demote.
+            (should (= 1 hook-runs))
+            (should-not hook-error)
+            (should-not pending-at-hook)
+            (should-not (car token))
+            (should successor-token)
+            (should-not (eq token successor-token))
+            (should (car successor-token))
+            (should (eq successor-token jabber-message-correct--pending-outgoing))
+            (should (= 2 (length publication-attempts)))
+            (should (= 1 (length publication-wire)))
+            (should (= 1 (length (plist-get (get jc :state-data) :sm-pending-queue))))
+            (should (equal "unrelated draft λ" (jabber-chat--input-string)))
+            (should (equal '(("corrected λ" 1))
+                           (sqlite-select jabber-db--connection
+                                          "SELECT body, edited FROM message")))
+            (jabber-test-chat--publication-replay attempt publication-node)
+            (should (= 1 (length publication-wire)))
+            (jabber-test-chat--publication-drain jc)
+            (should-not (car successor-token))
+            (should (= 2 (length publication-wire)))
+            (jabber-test-chat--publication-check-committed publication-node "successor λ")
+            (jabber-test-chat--publication-replay attempt publication-node)
+            (should (= 2 (length publication-wire)))))))))
+
+(ert-deftest jabber-test-chat-repair-publication-successor-render-return ()
+  "Keep a native printer's new pending correction after old rendering returns."
+  (jabber-test-chat--publication-successor nil))
+
+(ert-deftest jabber-test-chat-repair-publication-successor-render-error ()
+  "Keep a native printer's new pending correction after old rendering errors."
+  (jabber-test-chat--publication-successor 'error))
+
+(ert-deftest jabber-test-chat-repair-publication-successor-render-quit ()
+  "Keep a native printer's new pending correction after old rendering quits."
+  (jabber-test-chat--publication-successor 'quit))
+
+
+(defmacro jabber-test-chat--modern-fixture (group &rest body)
+  "Run BODY in a modern OpenPGP chat, with optional GROUP routing."
+  (declare (indent 1) (debug (form body)))
+  `(jabber-test-chat--journey
+     (setq-local jabber-chat-encryption 'openpgp)
+     (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
+     (when ,group
+       (setq-local jabber-group "room@example.org")
+       (setq-local jabber-send-function #'jabber-muc-send))
+     (let ((jabber-muc-participants
+            '(("room@example.org" ("peer" jid "peer@example.org/mobile")))))
+       ,@body)))
+
+(defmacro jabber-test-chat--delayed-keys (&rest body)
+  "Run BODY with native IQ discovery and captured peer-key continuations."
+  (declare (indent 0) (debug t))
+  `(let ((jabber-open-info-queries nil)
+         (jabber-debug-log-xml nil)
+         (lookup (symbol-function 'jabber-openpgp--recipient-key))
+         (missing t) continuations request-ids)
+     (cl-letf (((symbol-function 'jabber-openpgp--recipient-key)
+                (lambda (jid)
+                  (unless (and missing (equal jid "peer@example.org"))
+                    (funcall lookup jid))))
+               ((symbol-function 'jabber-openpgp--fetch-key)
+                (lambda (connection jid callback)
+                  (push callback continuations)
+                  (jabber-send-iq
+                   connection jid "get" '(query ((xmlns . "test:key")))
+                   (lambda (_jc _xml _closure)
+                     (funcall callback (funcall lookup jid)))
+                   nil nil nil)
+                  (push (caar jabber-open-info-queries) request-ids))))
+       ,@body)))
+
+(defun jabber-test-chat--keyboard (keys)
+  "Dispatch KEYS in the current chat using the actual command loop."
+  (save-window-excursion
+    (switch-to-buffer (current-buffer))
+    (execute-kbd-macro keys)))
+
+(ert-deftest jabber-test-chat-repair-modern-immediate-input ()
+  "Real GPG RET preserves rejected input, metadata, point and native undo."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (group '(nil t))
+       (dolist (outcome '(transport crypto key quit success queued))
+         (ert-info ((format "group=%S outcome=%S" group outcome))
+           (jabber-test-chat--modern-fixture group
+             (setq-local jabber-message-reply--id "reply")
+             (setq-local jabber-message-reply--jid "peer@example.org")
+             (setq-local jabber-message-reply--thread '(:thread-id "thread"))
+             (setq-local jabber-message-reply--fallback-text "> λ\n")
+             (buffer-enable-undo)
+             (setq buffer-undo-list nil)
+             (jabber-test-chat--keyboard "draft λ")
+             (jabber-test-chat--keyboard (kbd "C-b C-b"))
+             (undo-boundary)
+             (let* ((offset (- (point) jabber-point-insert))
+                    (undo buffer-undo-list)
+                    (transcript (buffer-substring (point-min) jabber-point-insert))
+                    (encrypt (symbol-function 'epg-encrypt-string))
+                    (jabber-sm-max-in-flight (and (eq outcome 'queued) 0))
+                    wire)
+               (put jc :name 'jabber-connection)
+               (put jc :state-data
+                    (append (get jc :state-data)
+                            (list :sm-enabled t :sm-outbound-count 0 :sm-last-acked 0)))
+               (plist-put (get jc :state-data) :send-function
+                          (lambda (_transport text)
+                            (if (eq outcome 'transport)
+                                (error "Rejected native wire")
+                              (push text wire))))
+               (cl-letf (((symbol-function 'jabber-openpgp--fetch-key)
+                          (lambda (_jc _jid callback) (funcall callback nil)))
+                         ((symbol-function 'epg-encrypt-string)
+                          (lambda (&rest args)
+                            (pcase outcome
+                              ('crypto (error "Rejected encryption"))
+                              ('quit (signal 'quit nil))
+                              (_ (apply encrypt args))))))
+                 (let ((jabber-openpgp-key-alist
+                        (if (eq outcome 'key)
+                            (cons '("me@example.org" . "missing-key")
+                                  jabber-openpgp-key-alist)
+                          jabber-openpgp-key-alist)))
+                   (condition-case nil
+                       (jabber-test-chat--keyboard (kbd "RET"))
+                     ((error quit) nil))))
+               (if (memq outcome '(success queued))
+                   (progn
+                     (should (equal "" (jabber-chat--input-string)))
+                     (when (eq outcome 'queued)
+                       (should-not wire)
+                       (should-not jabber-chat--input-history)
+                       (jabber-test-chat--publication-drain jc))
+                     (should (= 1 (length wire)))
+                     (should (equal '("draft λ") jabber-chat--input-history))
+                     (should-not jabber-message-reply--id))
+                 (should-not wire)
+                 (should (equal "draft λ" (jabber-chat--input-string)))
+                 (should (= offset (- (point) jabber-point-insert)))
+                 (should (equal undo buffer-undo-list))
+                 (should-not jabber-chat--input-history)
+                 (should (equal "reply" jabber-message-reply--id))
+                 (should (equal '(:thread-id "thread") jabber-message-reply--thread))
+                 (should (equal "> λ\n" jabber-message-reply--fallback-text))
+                 (should (equal transcript (buffer-substring (point-min) jabber-point-insert)))
+                 (jabber-test-chat--keyboard (kbd "C-/"))
+                 (should (equal "" (jabber-chat--input-string)))
+                 (jabber-test-chat--keyboard (kbd "C-?"))
+                 (should (equal "draft λ" (jabber-chat--input-string)))
+                 (should (equal transcript (buffer-substring (point-min) jabber-point-insert))))))))))))
+
+(ert-deftest jabber-test-chat-repair-modern-delayed-input ()
+  "Native key results settle failed drafts once without stealing successors."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (group '(nil t))
+       (dolist (outcome '(error quit missing discard success))
+         (dolist (successor '(nil t))
+           (ert-info ((format "group=%S outcome=%S successor=%S" group outcome successor))
+             (jabber-test-chat--modern-fixture group
+               (setq-local jabber-message-reply--id "reply")
+               (buffer-enable-undo)
+               (setq buffer-undo-list nil)
+               (insert "old draft λ")
+               (backward-char 2)
+               (let ((offset (- (point) jabber-point-insert)) wire)
+                 (plist-put (get jc :state-data) :send-function
+                            (lambda (_transport text) (push text wire)))
+                 (put jc :name 'jabber-connection)
+                 (put jc :state-data
+                      (append (get jc :state-data)
+                              (list :sm-enabled t :sm-outbound-count 0 :sm-last-acked 0)))
+                 (jabber-test-chat--delayed-keys
+                   (jabber-test-chat--keyboard (kbd "RET"))
+                   (should request-ids)
+                   (should-not jabber-chat--input-history)
+                   (should (equal "" (jabber-chat--input-string)))
+                   (setq wire nil missing nil)
+                   (when successor
+                     (insert "successor λ")
+                     (setq-local jabber-message-reply--id "successor-reply"))
+                   (plist-put (get jc :state-data) :send-function
+                              (lambda (_transport text)
+                                (pcase outcome
+                                  ('error (error "Delayed wire error"))
+                                  ('quit (signal 'quit nil))
+                                  (_ (push text wire)))))
+                   (let ((jabber-sm-max-in-flight (and (eq outcome 'discard) 0)))
+                     (if (eq outcome 'missing)
+                         (funcall (car continuations) nil)
+                       (condition-case nil
+                           (jabber-process-iq jc `(iq ((type . "result") (id . ,(car request-ids)))))
+                         ((error quit) nil))))
+                   (when (eq outcome 'discard)
+                     (should (plist-get (get jc :state-data) :sm-pending-queue))
+                     (put jc :state-data
+                          (jabber-sm--discard-pending (get jc :state-data) "Queue discarded")))
+                   (should (equal (if successor "successor λ"
+                                    (if (eq outcome 'success) "" "old draft λ"))
+                                  (jabber-chat--input-string)))
+                   (should (equal (and (eq outcome 'success) '("old draft λ"))
+                                  jabber-chat--input-history))
+                   (unless (or successor (eq outcome 'success))
+                     (should (= offset (- (point) jabber-point-insert)))
+                     (should (equal "reply" jabber-message-reply--id)))
+                   (when successor (should (equal "successor-reply" jabber-message-reply--id)))
+                   (should (= (if (eq outcome 'success) 1 0) (length wire)))
+                   (let ((text (buffer-string))
+                         (history (copy-sequence jabber-chat--input-history)))
+                     (funcall (car continuations) nil)
+                     (funcall (car continuations) (funcall lookup "peer@example.org"))
+                     (should (equal text (buffer-string)))
+                     (should (equal history jabber-chat--input-history)))
+                   ;; A fresh explicit RET remains usable after a failed operation.
+                   (unless (eq outcome 'success)
+                     (plist-put (get jc :state-data) :send-function
+                                (lambda (_transport text) (push text wire)))
+                     (jabber-test-chat--keyboard (kbd "RET"))
+                     (should (= 1 (length wire)))
+                     (should (equal "" (jabber-chat--input-string))))))))))))))
+
+(ert-deftest jabber-test-chat-repair-modern-delayed-correction-quit ()
+  "Native discovery followed by encryption/wire quit releases exact correction."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (group '(nil t))
+       (dolist (boundary '(encryption transport))
+         (jabber-test-chat--modern-fixture group
+           (setq-local jabber-chat-send-hooks nil)
+           (jabber-chat-ewoc-enter
+            (list (if group :muc-local :local)
+                  (list :id "original" :body "original" :timestamp '(0 100)
+                        :from (if group "room@example.org/me" "me@example.org"))))
+           (insert "successor composer")
+           (let ((encrypt (symbol-function 'epg-encrypt-string)) wire)
+             (plist-put (get jc :state-data) :send-function
+                        (lambda (_transport text) (push text wire)))
+             (jabber-test-chat--delayed-keys
+               (jabber-test-chat--publication-correct "corrected λ")
+               (let ((token jabber-message-correct--pending-outgoing))
+                 (should token)
+                 (setq missing nil wire nil)
+                 (plist-put (get jc :state-data) :send-function
+                            (lambda (_transport _text) (signal 'quit nil)))
+                 (cl-letf (((symbol-function 'epg-encrypt-string)
+                            (lambda (&rest args)
+                              (if (eq boundary 'encryption) (signal 'quit nil)
+                                (apply encrypt args)))))
+                   (should (eq 'quit
+                               (condition-case nil
+                                   (jabber-process-iq jc `(iq ((type . "result") (id . ,(car request-ids)))))
+                                 (quit 'quit)))))
+                 (should-not (car token))
+                 (should-not jabber-message-correct--pending-outgoing)
+                 (plist-put (get jc :state-data) :send-function
+                            (lambda (_transport text) (push text wire)))
+                 (funcall (car continuations) nil)
+                 (funcall (car continuations) (funcall lookup "peer@example.org"))
+                 (should-not wire)
+                 (should (equal "successor composer" (jabber-chat--input-string)))
+                 (jabber-test-chat--publication-correct "corrected λ")
+                 (should-not jabber-message-correct--pending-outgoing)
+                 (should (= 1 (length wire)))
+                 (jabber-test-chat--correction-wire (car wire) 'openpgp group))))))))))
+
+(ert-deftest jabber-test-chat-repair-modern-draft-ownership ()
+  "Incoming transcript preserves a failed draft; edited or retargeted input does not."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (change '(incoming empty-successor retarget mode))
+       (jabber-test-chat--modern-fixture nil
+         (buffer-enable-undo)
+         (setq buffer-undo-list nil)
+         (jabber-test-chat--keyboard "old draft λ")
+         (undo-boundary)
+         (jabber-test-chat--delayed-keys
+           (jabber-test-chat--keyboard (kbd "RET"))
+           (pcase change
+             ('incoming
+              (jabber-chat-ewoc-enter
+               '(:foreign (:id "incoming" :body "Incoming message λ"
+                           :from "peer@example.org" :timestamp (0 100)))))
+             ('empty-successor
+              (insert "new draft")
+              (delete-region jabber-point-insert (point-max)))
+             ('retarget (setq-local jabber-chatting-with "other@example.org"))
+             ('mode (fundamental-mode)))
+           (let ((text (buffer-string)))
+             (funcall (car continuations) nil)
+             (if (eq change 'incoming)
+                 (progn
+                   (should (equal "old draft λ" (jabber-chat--input-string)))
+                   (jabber-test-chat--keyboard (kbd "C-/"))
+                   (should (equal "" (jabber-chat--input-string)))
+                   (should (equal text (buffer-string))))
+               (should (equal text (buffer-string)))))
+           (should-not jabber-chat--input-history)))))))
+
+(ert-deftest jabber-test-chat-repair-modern-encryption-owner ()
+  "Revalidate the destination after real encryption without touching a successor."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (group '(nil t))
+       (jabber-test-chat--modern-fixture group
+         (insert "old draft")
+         (let ((encrypt (symbol-function 'epg-encrypt-string)) wire)
+           (plist-put (get jc :state-data) :send-function
+                      (lambda (_transport text) (push text wire)))
+           (cl-letf (((symbol-function 'epg-encrypt-string)
+                      (lambda (&rest args)
+                        (prog1 (apply encrypt args)
+                          (if group (setq-local jabber-group "other@example.org")
+                            (setq-local jabber-chatting-with "other@example.org"))
+                          (insert "new owner draft")
+                          (setq-local jabber-message-reply--id "new-reply")))))
+             (jabber-test-chat--keyboard (kbd "RET")))
+           (should-not wire)
+           (should-not jabber-chat--input-history)
+           (should (equal "new owner draft" (jabber-chat--input-string)))
+           (should (equal "new-reply" jabber-message-reply--id))))))))
+
+(ert-deftest jabber-test-chat-repair-modern-correction-input-isolation ()
+  "A nested correction cannot acquire another submission's completion owner."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (jabber-test-chat--modern-fixture nil
+       (jabber-chat-ewoc-enter
+        (list :local (list :id "original" :body "original"
+                           :timestamp (list 0 100))))
+       (let ((calls 0)
+             (jabber-chat--input-deferred nil))
+         (let ((jabber-chat--input-completion (lambda (&rest _) (cl-incf calls))))
+           (jabber-test-chat--publication-correct "corrected λ"))
+         (should-not jabber-message-correct--pending-outgoing)
+         (should-not jabber-chat--input-deferred)
+         (should (zerop calls)))))))
+
+(defun jabber-test-chat--r2-enable-sm (jc wire)
+  "Enable native SM on JC and use WIRE at its transport boundary."
+  (put jc :name 'jabber-connection)
+  (put jc :state-data
+       (append (get jc :state-data)
+               (list :sm-enabled t :sm-outbound-count 0 :sm-last-acked 0)))
+  (plist-put (get jc :state-data) :send-function wire))
+
+(ert-deftest jabber-test-chat-r2-post-handoff-publication ()
+  "Settle real RET before printer or local-message error/quit on either provider."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (provider '(plaintext openpgp))
+       (dolist (queued '(nil t))
+         (dolist (site '(printp insert hook success))
+           (dolist (fault (if (eq site 'success) '(nil) '(error quit)))
+             (ert-info ((format "%S queued=%S site=%S fault=%S"
+                                provider queued site fault))
+               (jabber-test-chat--modern-fixture nil
+                 (setq-local jabber-chat-encryption provider)
+                 (setq-local jabber-message-reply--id "r2-reply")
+                 (setq-local jabber-message-reply--jid "peer@example.org")
+                 (let* (wire reports at-publication
+                        (trip
+                         (lambda ()
+                           (push (list (jabber-chat--input-string)
+                                       (copy-sequence jabber-chat--input-history)
+                                       jabber-message-reply--id
+                                       (car jabber-chat--input-submission))
+                                 at-publication)
+                           (signal fault (and (eq fault 'error)
+                                              '("R2 publication fault")))))
+                        (jabber-chat-printers
+                         (cons (lambda (_msg who mode)
+                                 (when (and (eq who :local)
+                                            (eq mode (if (eq site 'insert)
+                                                         :insert :printp))
+                                            (memq site '(insert printp)))
+                                   (funcall trip)))
+                               jabber-chat-printers))
+                        (jabber-chat-local-message-functions
+                         (and (eq site 'hook)
+                              (list (lambda (_msg) (funcall trip))))))
+                   (jabber-test-chat--r2-enable-sm
+                    jc (lambda (_transport text) (push text wire)))
+                   (insert "r2 sent λ")
+                   (cl-letf (((symbol-function 'message)
+                              (lambda (format-string &rest args)
+                                (when format-string
+                                  (push (apply #'format format-string args) reports)))))
+                     (let ((jabber-sm-max-in-flight (and queued 0)))
+                       (jabber-test-chat--keyboard (kbd "RET")))
+                     (let* ((token jabber-chat--input-submission)
+                            (entry (car (plist-get (get jc :state-data)
+                                                   :sm-pending-queue))))
+                       (when queued
+                         (should (car token))
+                         (should-not wire)
+                         (should-not jabber-chat--input-history)
+                         (should-not (ewoc-nth jabber-chat-ewoc 0))
+                         (jabber-test-chat--publication-drain jc))
+                       (should (= 1 (length wire)))
+                       (should-not (car token))
+                       (should (equal "" (jabber-chat--input-string)))
+                       (should (equal '("r2 sent λ") jabber-chat--input-history))
+                       (should-not jabber-message-reply--id)
+                       (if fault
+                           (progn
+                             (should (equal '(("" ("r2 sent λ") nil nil))
+                                            at-publication))
+                             (should (cl-some
+                                      (lambda (report)
+                                        (string-match-p
+                                         (if (eq fault 'quit) "[Qq]uit"
+                                           "R2 publication fault") report))
+                                      reports)))
+                         (should (equal "r2 sent λ"
+                                        (plist-get
+                                         (cadr (ewoc-data (ewoc-nth jabber-chat-ewoc 0)))
+                                         :body)))
+                         (should-not (ewoc-nth jabber-chat-ewoc 1)))
+                       ;; No implicit retry, even after the local fault is gone.
+                       (let ((jabber-chat-printers (cdr jabber-chat-printers))
+                             (jabber-chat-local-message-functions nil)
+                             (before (buffer-string)))
+                         (jabber-test-chat--keyboard (kbd "RET"))
+                         (when entry
+                           (funcall (plist-get entry :success))
+                           (funcall (plist-get entry :failure) "Late failure"))
+                         (should (equal before (buffer-string)))
+                         (should (= 1 (length wire))))))))))))))))
+
+(defun jabber-test-chat--r2-replace-owner (change)
+  "Apply owner CHANGE using native mode/setup for a replacement lifetime."
+  (pcase change
+    ('account
+     (setq-local jabber-buffer-connection
+                 (jabber-test-chat--journey-connection "new-account")))
+    ('account-data
+     (plist-put (get jabber-buffer-connection :state-data) :username "new-account"))
+    ('peer (setq-local jabber-chatting-with "new-peer@example.org"))
+    ('marker (setq-local jabber-point-insert (copy-marker jabber-point-insert)))
+    ('detached (set-marker jabber-point-insert nil))
+    ('mode (fundamental-mode))
+    ('setup
+     (let ((inhibit-read-only t)) (erase-buffer))
+     (jabber-chat-mode)
+     (setq-local jabber-chatting-with "new-peer@example.org")
+     (jabber-chat-mode-setup
+      (jabber-test-chat--journey-connection "new-account") #'jabber-chat-pp))
+    ('rename (rename-buffer (generate-new-buffer-name "r2-renamed"))))
+  (goto-char (point-max))
+  (insert "successor draft λ")
+  (setq-local jabber-chat--input-history (list "successor history")))
+
+(ert-deftest jabber-test-chat-r2-queued-owner ()
+  "Fence both providers' queued echoes after all captured owner replacements."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (provider '(plaintext openpgp))
+       (dolist (change '(account account-data peer marker detached mode setup rename))
+         (ert-info ((format "%S owner=%S" provider change))
+           (jabber-test-chat--modern-fixture nil
+             (setq-local jabber-chat-encryption provider)
+             (setq-local jabber-chat-send-hooks nil)
+             (let (wire)
+               (jabber-test-chat--r2-enable-sm
+                jc (lambda (_transport text) (push text wire)))
+               (insert "old secret λ")
+               (let ((jabber-sm-max-in-flight 0))
+                 (jabber-test-chat--keyboard (kbd "RET")))
+               (let* ((token jabber-chat--input-submission)
+                      (entry (car (plist-get (get jc :state-data) :sm-pending-queue))))
+                 (should (car token))
+                 (should entry)
+                 (jabber-test-chat--r2-replace-owner change)
+                 (let ((before (buffer-string)))
+                   (jabber-test-chat--publication-drain jc)
+                   (should (= 1 (length wire)))
+                   (should-not (car token))
+                   (if (eq change 'rename)
+                       (progn
+                         (should (equal '("old secret λ" "successor history")
+                                        jabber-chat--input-history))
+                         (should (equal "successor draft λ" (jabber-chat--input-string)))
+                         (should (equal "old secret λ"
+                                        (plist-get (cadr (ewoc-data
+                                                          (ewoc-nth jabber-chat-ewoc 0)))
+                                                   :body))))
+                     (should (equal before (buffer-string)))
+                     (should (equal '("successor history") jabber-chat--input-history)))
+                   (let ((settled (buffer-string))
+                         (history (copy-sequence jabber-chat--input-history)))
+                     (funcall (plist-get entry :success))
+                     (funcall (plist-get entry :failure) "Late failure")
+                     (should (equal settled (buffer-string)))
+                     (should (equal history jabber-chat--input-history))
+                     (should (= 1 (length wire))))))))))))))
+
+(ert-deftest jabber-test-chat-r2-completion-replaces-owner ()
+  "Revalidate after completion and caller callbacks, not just before settlement."
+  (jabber-test-chat--send-key-fixture
+   (lambda ()
+     (dolist (provider '(plaintext openpgp))
+       (dolist (queued '(nil t))
+         (dolist (boundary '(completion success))
+           (ert-info ((format "%S queued=%S boundary=%S" provider queued boundary))
+             (jabber-test-chat--modern-fixture nil
+               (setq-local jabber-chat-encryption provider)
+               (setq-local jabber-chat-send-hooks nil)
+               (let (wire before token (calls 0))
+                 (jabber-test-chat--r2-enable-sm
+                  jc (lambda (_transport text) (push text wire)))
+                 (setq-local
+                  jabber-send-function
+                  (lambda (connection body)
+                    (setq token jabber-chat--input-submission)
+                    (let* ((completion jabber-chat--input-completion)
+                           (replace
+                            (lambda ()
+                              (cl-incf calls)
+                              (jabber-test-chat--r2-replace-owner 'setup)
+                              (setq before (buffer-string))))
+                           (jabber-chat--input-completion
+                            (if (eq boundary 'completion)
+                                (lambda (success)
+                                  (prog1 (funcall completion success)
+                                    (when success (funcall replace))))
+                              completion)))
+                      (jabber-chat-send connection body nil
+                                        (and (eq boundary 'success) replace)))))
+                 (insert "old secret λ")
+                 (let ((jabber-sm-max-in-flight (and queued 0)))
+                   (jabber-test-chat--keyboard (kbd "RET")))
+                 (let ((entry (car (plist-get (get jc :state-data) :sm-pending-queue))))
+                   (when queued
+                     (should (car token))
+                     (should-not wire)
+                     (should (zerop calls))
+                     (jabber-test-chat--publication-drain jc))
+                   (should (= 1 calls))
+                   (should (= 1 (length wire)))
+                   (should-not (car token))
+                   (should (equal before (buffer-string)))
+                   (should (equal '("successor history") jabber-chat--input-history))
+                   (should (equal "successor draft λ" (jabber-chat--input-string)))
+                   (when entry
+                     (funcall (plist-get entry :success))
+                     (funcall (plist-get entry :failure) "Late failure")
+                     (should (= 1 calls))
+                     (should (equal before (buffer-string))))))))))))))
+
+(ert-deftest jabber-test-chat-r2-plaintext-queue-rejection ()
+  "Recover definite queue failure only into its untouched composer."
+  (dolist (outcome '(drain discard))
+    (dolist (successor '(nil t))
+      (jabber-test-chat--journey
+        (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
+        (setq-local jabber-message-reply--id "old-reply")
+        (setq-local jabber-message-reply--jid "peer@example.org")
+        (let ((attempts 0))
+          (jabber-test-chat--r2-enable-sm
+           jc (lambda (_transport _text)
+                (cl-incf attempts) (error "R2 wire refusal")))
+          (insert "rejected λ")
+          (let ((jabber-sm-max-in-flight 0))
+            (jabber-test-chat--keyboard (kbd "RET")))
+          (let ((token jabber-chat--input-submission)
+                (entry (car (plist-get (get jc :state-data) :sm-pending-queue))))
+            (should (car token))
+            (should-not jabber-message-reply--id)
+            (should-not jabber-chat--input-history)
+            (when successor (insert "new draft"))
+            (pcase outcome
+              ('drain
+               (let ((jabber-sm-max-in-flight nil)
+                     (deadline (+ (float-time) 2)))
+                 (fsm-send-sync
+                  jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
+                 (while (and (car token) (< (float-time) deadline))
+                   (accept-process-output nil 0.01)))
+               (should-not (get jc :state)))
+              ('discard (jabber-sm--discard-pending (get jc :state-data) "Discarded")))
+            (should-not (car token))
+            (should (= attempts (if (eq outcome 'drain) 1 0)))
+            (should (equal (if successor "new draft" "rejected λ")
+                           (jabber-chat--input-string)))
+            (should (equal (unless successor "old-reply") jabber-message-reply--id))
+            (should-not jabber-chat--input-history)
+            (should-not (ewoc-nth jabber-chat-ewoc 0))
+            (let ((before (buffer-string)))
+              (funcall (plist-get entry :success))
+              (funcall (plist-get entry :failure) "Late failure")
+              (should (equal before (buffer-string)))
+              (should-not jabber-chat--input-history))))))))
+
+;;; OMEMO native discovery ownership
+
+(defun jabber-test-chat--omemo-iq-error (id)
+  "Return a device discovery error for query ID."
+  `(iq ((type . "error") (id . ,id) (from . "peer@example.org"))
+       (error ((type . "cancel"))
+              (item-not-found ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+
+(defun jabber-test-chat--omemo-input-state ()
+  "Return exact composer text, reply, history and undo state."
+  (list (if (and (markerp jabber-point-insert)
+                 (eq (marker-buffer jabber-point-insert) (current-buffer)))
+            (jabber-chat--input-string)
+          (buffer-string))
+        (jabber-chat--send-context-state nil)
+        (copy-tree jabber-chat--input-history)
+        (copy-tree buffer-undo-list)))
+
+(ert-deftest jabber-test-chat-r3-omemo-native-discovery-failure ()
+  "Native RET, PubSub and FSM failure preserve each successor composer."
+  (require 'jabber-omemo)
+  (dolist (change '(nil draft cleared submission mode setup ewoc deleted))
+    (ert-info ((format "OMEMO discovery failure change=%S" change))
+      (jabber-test-chat--journey
+       (jabber-test-chat--with-db
+        (let ((jabber-open-info-queries nil)
+              (jabber-debug-log-xml nil)
+              (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+              (jabber-omemo--device-lists (make-hash-table :test #'equal))
+              (jabber-omemo--sessions (make-hash-table :test #'equal))
+              wire)
+          (put jc :name 'jabber-connection)
+          (plist-put (get jc :state-data) :blocking-status 'ready)
+          (plist-put (get jc :state-data) :send-function
+                     (lambda (_transport text) (push text wire)))
+          (setq-local jabber-chat-encryption 'omemo)
+          (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
+          (setq-local jabber-message-reply--id "old-reply")
+          (setq-local jabber-message-reply--jid "peer@example.org")
+          (buffer-enable-undo)
+          (insert "old secret λ")
+          (jabber-test-chat--keyboard (kbd "RET"))
+          (should (= (length wire) 1))
+          (should (string-match-p "<iq" (car wire)))
+          (should (string-match-p "eu.siacs.conversations.axolotl.devicelist" (car wire)))
+          (should (= (length jabber-open-info-queries) 1))
+          (should-not jabber-message-reply--id)
+          (should (equal "" (jabber-chat--input-string)))
+          (let* ((response (jabber-test-chat--omemo-iq-error (caar jabber-open-info-queries)))
+                 (operation (car (gethash jc jabber-omemo--pending-send-operations)))
+                 (token jabber-chat--input-submission)
+                 (node (ewoc-nth jabber-chat-ewoc -1)))
+            (pcase change
+              ((or 'draft 'cleared)
+               (insert "successor draft λ")
+               (when (eq change 'cleared)
+                 (delete-region jabber-point-insert (point-max))))
+              ('submission
+               ;; A later successful RET owns even the empty composer.
+               (setq-local jabber-chat-encryption 'plaintext)
+               (insert "second submission λ")
+               (jabber-test-chat--keyboard (kbd "RET")))
+              ((or 'mode 'setup)
+               (jabber-test-chat--r2-replace-owner change))
+              ('ewoc
+               (let ((inhibit-read-only t))
+                 (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+               (goto-char (point-max))
+               (insert "successor draft λ"))
+              ('deleted (jabber-chat-ewoc-delete node)))
+            (when (memq change '(draft mode setup ewoc))
+              (setq-local jabber-message-reply--id "successor-reply")
+              (setq-local jabber-message-reply--jid "successor@example.org"))
+            (let ((before (jabber-test-chat--omemo-input-state))
+                  (wire-count (length wire)))
+              (fsm-send-sync jc (list :stanza response))
+              (should-not (car token))
+              (should-not jabber-open-info-queries)
+              (should-not (gethash jc jabber-omemo--pending-send-operations))
+              (should (= wire-count (length wire)))
+              (if (memq change '(nil deleted))
+                  (progn
+                    (should (equal "old secret λ" (jabber-chat--input-string)))
+                    (should (equal "old-reply" jabber-message-reply--id))
+                    (should-not jabber-chat--input-history)
+                    (when (null change)
+                      (let ((transcript (buffer-substring (point-min) jabber-point-insert)))
+                        (undo-boundary)
+                        (jabber-test-chat--keyboard (kbd "C-/"))
+                        (should (equal "" (jabber-chat--input-string)))
+                        (should (equal transcript
+                                       (buffer-substring (point-min) jabber-point-insert))))))
+                (should (equal before (jabber-test-chat--omemo-input-state))))
+              (unless (memq change '(mode setup ewoc deleted))
+                (should (eq :undelivered (plist-get (cadr (ewoc-data node)) :status))))
+              ;; Native duplicate IQ and both retained provider completions are inert.
+              (let ((settled (buffer-string))
+                    (state (jabber-test-chat--omemo-input-state))
+                    (wire-count (length wire)))
+                (fsm-send-sync jc (list :stanza response))
+                (jabber-omemo--send-operation-finish operation 'failure "late")
+                (jabber-omemo--send-operation-finish operation 'success)
+                (should (equal settled (buffer-string)))
+                (should (equal state (jabber-test-chat--omemo-input-state)))
+                (should (= wire-count (length wire))))))))))))
+
+(ert-deftest jabber-test-chat-r3-omemo-native-handoff ()
+  "Native discovery, crypto and immediate/queued handoff settle input once."
+  (require 'jabber-omemo)
+  (dolist (queued '(nil t))
+    (jabber-test-chat--journey
+     (jabber-test-chat--with-db
+      (let* ((jabber-omemo--device-ids (make-hash-table :test #'equal))
+             (jabber-omemo--stores (make-hash-table :test #'equal))
+             (jabber-omemo--device-lists (make-hash-table :test #'equal))
+             (jabber-omemo--sessions (make-hash-table :test #'equal))
+             (jabber-open-info-queries nil)
+             (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+             (peer-store (jabber-omemo-deserialize-store (jabber-omemo-setup-store)))
+             (bundle (jabber-omemo-get-bundle peer-store))
+             wire)
+        (put jc :name 'jabber-connection)
+        (plist-put (get jc :state-data) :blocking-status 'ready)
+        (jabber-test-chat--r2-enable-sm
+         jc (lambda (_transport text) (push text wire)))
+        (plist-put (get jc :state-data) :sm-inbound-count 0)
+        (jabber-omemo--establish-session jc "peer@example.org" 23 bundle)
+        (puthash (jabber-omemo--device-list-key "me@example.org" "me@example.org")
+                 (list (jabber-omemo--get-device-id jc)) jabber-omemo--device-lists)
+        (setq-local jabber-chat-encryption 'omemo)
+        (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
+        (setq-local jabber-message-reply--id "old-reply")
+        (setq-local jabber-message-reply--jid "peer@example.org")
+        (insert "old secret λ")
+        (jabber-test-chat--keyboard (kbd "RET"))
+        (should (= (length wire) 1))
+        (should (string-match-p "<iq" (car wire)))
+        (should (= (length jabber-open-info-queries) 1))
+        (should-not jabber-chat--input-history)
+        (let ((operation (car (gethash jc jabber-omemo--pending-send-operations)))
+              (token jabber-chat--input-submission)
+              (id (caar jabber-open-info-queries)))
+          (let ((jabber-sm-max-in-flight (and queued 0)))
+            (fsm-send-sync
+             jc `( :stanza
+                   (iq ((type . "result") (id . ,id) (from . "peer@example.org"))
+                       (pubsub ((xmlns . "http://jabber.org/protocol/pubsub"))
+                               (items ((node . "eu.siacs.conversations.axolotl.devicelist"))
+                                      (item ((id . "current"))
+                                            (list ((xmlns . "eu.siacs.conversations.axolotl"))
+                                                  (device ((id . "23")))))))))))
+          (when queued
+            (should (car token))
+            (should-not jabber-chat--input-history)
+            (should (= (length wire) 1))
+            (jabber-test-chat--publication-drain jc))
+          (should-not (car token))
+          (should-not jabber-open-info-queries)
+          (should-not (gethash jc jabber-omemo--pending-send-operations))
+          (let* ((messages (seq-filter (lambda (text) (string-match-p "<message" text)) wire))
+                 (stanza (with-temp-buffer
+                           (insert "<stream>" (car messages) "</stream>")
+                           (car (jabber-xml-get-children
+                                 (car (xml-parse-region (point-min) (point-max)))
+                                 'message))))
+                 (encrypted (jabber-xml-child-with-xmlns stanza jabber-omemo-xmlns))
+                 (header (car (jabber-xml-get-children encrypted 'header)))
+                 (key (car (jabber-xml-get-children header 'key)))
+                 (iv (car (jabber-xml-get-children header 'iv)))
+                 (payload (car (jabber-xml-get-children encrypted 'payload)))
+                 (decrypted-key
+                  (jabber-omemo-decrypt-key
+                   (jabber-omemo-make-session) peer-store t
+                   (base64-decode-string (car (jabber-xml-node-children key))))))
+            (should (= (length messages) 1))
+            (should (equal "old-reply"
+                           (jabber-xml-get-attribute
+                            (jabber-xml-child-with-xmlns stanza "urn:xmpp:reply:0") 'id)))
+            (should (equal "old secret λ"
+                           (decode-coding-string
+                            (jabber-omemo-decrypt-message
+                             decrypted-key
+                             (base64-decode-string (car (jabber-xml-node-children iv)))
+                             (base64-decode-string (car (jabber-xml-node-children payload))))
+                            'utf-8))))
+          (should (equal '("old secret λ") jabber-chat--input-history))
+          (should (equal "" (jabber-chat--input-string)))
+          (should-not jabber-message-reply--id)
+          (should (eq :sent (plist-get (cadr (ewoc-data (ewoc-nth jabber-chat-ewoc -1))) :status)))
+          (let ((state (jabber-test-chat--omemo-input-state))
+                (count (length wire)))
+            (jabber-omemo--send-operation-finish operation 'success)
+            (jabber-omemo--send-operation-finish operation 'failure "late")
+            (jabber-test-chat--keyboard (kbd "RET"))
+            (should (= count (length wire)))
+            (should (equal state (jabber-test-chat--omemo-input-state))))))))))
+
+(ert-deftest jabber-test-chat-r3-omemo-quit-successor ()
+  "A discovery quit and its retained callbacks cannot recover over an edit."
+  (require 'jabber-omemo)
+  (require 'jabber-muc)
+  (dolist (group '(nil t))
+    (dolist (fault '(error quit))
+      (dolist (successor '(nil draft cleared))
+        (jabber-test-chat--journey
+         (let ((jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+               (jabber-muc-participants '(("room@example.org" ("peer" jid "peer@example.org"))))
+               continuation)
+           (when group
+             (setq-local jabber-group "room@example.org")
+             (setq-local jabber-send-function #'jabber-muc-send))
+           (setq-local jabber-chat-encryption 'omemo)
+           (setq-local jabber-message-reply--id "old-reply")
+           (setq-local jabber-message-reply--jid "peer@example.org")
+           (insert "old secret λ")
+           (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions)
+                      (lambda (_jc _peer callback)
+                        (setq continuation callback)
+                        (when successor
+                          (insert "successor")
+                          (when (eq successor 'cleared)
+                            (delete-region jabber-point-insert (point-max))))
+                        (signal fault '("discovery interruption")))))
+             (if (eq fault 'quit)
+                 (should (eq 'quit (condition-case nil
+                                       (call-interactively (key-binding (kbd "RET")))
+                                     (quit 'quit))))
+               (jabber-test-chat--keyboard (kbd "RET"))))
+           (should-not (gethash jc jabber-omemo--pending-send-operations))
+           (should (equal (pcase successor ('draft "successor") ('cleared "") (_ "old secret λ"))
+                          (jabber-chat--input-string)))
+           (should (equal (unless successor "old-reply") jabber-message-reply--id))
+           (should-not jabber-chat--input-history)
+           (let ((state (jabber-test-chat--omemo-input-state)))
+             (funcall continuation nil)
+             (funcall continuation '((23 . stale-session)))
+             (should (equal state (jabber-test-chat--omemo-input-state))))))))))
+
+(defun jabber-test-chat--r4-deferred-omemo (outcome change &optional group)
+  "Exercise native delayed OMEMO OUTCOME across composer CHANGE.
+Non-nil GROUP selects a MUC send through the same native discovery."
+  (require 'jabber-omemo)
+  (jabber-test-chat--journey
+   (jabber-test-chat--with-db
+    (let* ((jabber-omemo--device-ids (make-hash-table :test #'equal))
+           (jabber-omemo--stores (make-hash-table :test #'equal))
+           (jabber-omemo--device-lists (make-hash-table :test #'equal))
+           (jabber-omemo--sessions (make-hash-table :test #'equal))
+           (jabber-open-info-queries nil)
+           (jabber-omemo--pending-send-operations (make-hash-table :test #'eq))
+           (peer-store (jabber-omemo-deserialize-store (jabber-omemo-setup-store)))
+           (bundle (jabber-omemo-get-bundle peer-store))
+           (other (make-symbol "other-account"))
+           (origin (current-buffer))
+           (jabber-chat-buffer-format (buffer-name))
+           (jabber-chat-default-encryption 'plaintext)
+           (jabber-chat-mode-hook nil)
+           (jabber-muc-participants
+            '(("room@example.org" ("peer" jid "peer@example.org"))))
+           (next-hooks 0)
+           before wire)
+      (put other :state-data (list :username "other" :server "example.org"))
+      (put jc :name 'jabber-connection)
+      (plist-put (get jc :state-data) :blocking-status 'ready)
+      (jabber-test-chat--r2-enable-sm
+       jc (lambda (_transport text)
+            (when (and (eq outcome 'refuse) (string-match-p "<message" text))
+              (error "Test transport refusal"))
+            (push text wire)))
+      (plist-put (get jc :state-data) :sm-inbound-count 0)
+      (jabber-omemo--establish-session jc "peer@example.org" 23 bundle)
+      (puthash (jabber-omemo--device-list-key "me@example.org" "me@example.org")
+               (list (jabber-omemo--get-device-id jc)) jabber-omemo--device-lists)
+      (setq-local jabber-chat-encryption 'omemo)
+      (setq-local jabber-message-reply--id "old-reply")
+      (setq-local jabber-message-reply--jid "peer@example.org")
+      (setq-local jabber-message-reply--thread '(:thread-id "old-thread"))
+      (when group
+        (setq-local jabber-group "room@example.org")
+        (setq-local jabber-send-function #'jabber-muc-send))
+      (setq-local jabber-chat-send-hooks '(jabber-message-reply--send-hook))
+      (buffer-enable-undo)
+      (jabber-test-chat--keyboard "old body")
+      (jabber-test-chat--keyboard (kbd "RET"))
+      (should (= 1 (length wire)))
+      (should-not jabber-chat--input-history)
+      (let* ((id (caar jabber-open-info-queries))
+             (response
+              `(iq ((type . "result") (id . ,id) (from . "peer@example.org"))
+                   (pubsub ((xmlns . "http://jabber.org/protocol/pubsub"))
+                           (items ((node . "eu.siacs.conversations.axolotl.devicelist"))
+                                  (item ((id . "current"))
+                                        (list ((xmlns . "eu.siacs.conversations.axolotl"))
+                                              (device ((id . "23")))))))))
+             (operation (car (gethash jc jabber-omemo--pending-send-operations)))
+             (token jabber-chat--input-submission)
+             (successor
+              (lambda ()
+                (when (memq change '(retarget hook-retarget))
+                  (jabber-chat-create-buffer other "other-peer@example.org"))
+                (goto-char (point-max))
+                (insert "successor body")
+                (setq-local jabber-message-reply--id "successor-reply")
+                (setq-local jabber-message-reply--jid "successor@example.org")
+                (setq-local jabber-message-reply--thread '(:thread-id "successor-thread"))
+                (setq-local jabber-message-thread--root-reply-id "successor-root")
+                ;; Native queue draining yields to the command loop; establish
+                ;; its undo boundary now instead of racing the undo timer.
+                (undo-boundary)
+                (setq before (jabber-test-chat--omemo-input-state)))))
+        (if (memq change '(hook-draft hook-retarget))
+            (setq-local jabber-chat-send-hooks
+                        (list (lambda (&rest _)
+                                (funcall successor)
+                                (when (memq outcome '(error quit))
+                                  (signal outcome '("Test hook interruption"))))
+                              (lambda (&rest _) (cl-incf next-hooks) nil)
+                              #'jabber-message-reply--send-hook
+                              #'jabber-message-thread--send-hook))
+          (funcall successor))
+        (let ((jabber-sm-max-in-flight (and (memq outcome '(queued discard)) 0)))
+          (condition-case err
+              (fsm-send-sync jc (list :stanza response))
+            (quit (unless (eq outcome 'quit) (signal (car err) (cdr err))))))
+        (when (memq outcome '(queued discard))
+          (should (= 1 (length (plist-get (get jc :state-data) :sm-pending-queue))))
+          (should (car token))
+          (should-not jabber-chat--input-history)
+          (if (eq outcome 'discard)
+              (jabber-sm--discard-pending (get jc :state-data) "Test discard")
+            (jabber-test-chat--publication-drain jc)))
+        (with-current-buffer origin
+          (should-not (car token))
+          (should-not (gethash jc jabber-omemo--pending-send-operations))
+          (let ((sent (and (memq outcome '(success queued))
+                           (not (memq change '(retarget hook-retarget))))))
+            (should (= (length wire) (if sent 2 1)))
+            (should (equal (nth 0 before) (jabber-chat--input-string)))
+            (should (equal (nth 1 before) (jabber-chat--send-context-state nil)))
+            (should (equal (nth 3 before) buffer-undo-list))
+            (should (equal (and sent '("old body")) jabber-chat--input-history))
+            (when sent
+              (let* ((stanza (with-temp-buffer
+                               (insert "<stream>" (car wire) "</stream>")
+                               (car (jabber-xml-get-children
+                                     (car (xml-parse-region (point-min) (point-max)))
+                                     'message))))
+                     (encrypted (jabber-xml-child-with-xmlns stanza jabber-omemo-xmlns))
+                     (header (car (jabber-xml-get-children encrypted 'header)))
+                     (key (car (jabber-xml-get-children header 'key)))
+                     (iv (car (jabber-xml-get-children header 'iv)))
+                     (payload (car (jabber-xml-get-children encrypted 'payload)))
+                     (decrypted-key
+                      (jabber-omemo-decrypt-key
+                       (jabber-omemo-make-session) peer-store t
+                       (base64-decode-string (car (jabber-xml-node-children key))))))
+                (should (equal "old-reply"
+                               (jabber-xml-get-attribute
+                                (jabber-xml-child-with-xmlns stanza "urn:xmpp:reply:0") 'id)))
+                (should (equal "old-thread"
+                               (plist-get (jabber-message-thread-protocol-fields stanza) :thread-id)))
+                (should (equal "old body"
+                               (decode-coding-string
+                                (jabber-omemo-decrypt-message
+                                 decrypted-key
+                                 (base64-decode-string (car (jabber-xml-node-children iv)))
+                                 (base64-decode-string (car (jabber-xml-node-children payload))))
+                                'utf-8)))))))
+          (when (eq change 'hook-retarget) (should (zerop next-hooks)))
+          (let ((state (jabber-test-chat--omemo-input-state))
+                (transcript (buffer-string))
+                (count (length wire)))
+            (fsm-send-sync jc (list :stanza response))
+            (jabber-omemo--send-operation-finish operation 'success)
+            (jabber-omemo--send-operation-finish operation 'failure "duplicate")
+            (should (= count (length wire)))
+            (should (equal transcript (buffer-string)))
+            (should (equal state (jabber-test-chat--omemo-input-state)))))))))
+
+(ert-deftest jabber-test-chat-r4-omemo-captured-context ()
+  "Deferred success, queue discard and refusal preserve successor state."
+  (dolist (outcome '(success queued discard refuse))
+    (ert-info ((format "outcome=%S" outcome))
+      (jabber-test-chat--r4-deferred-omemo outcome 'draft))))
+
+(ert-deftest jabber-test-chat-r4-omemo-muc-captured-context ()
+  "Native MUC discovery likewise uses captured reply and thread extensions."
+  (dolist (outcome '(success queued discard refuse))
+    (ert-info ((format "MUC outcome=%S" outcome))
+      (jabber-test-chat--r4-deferred-omemo outcome 'draft t))))
+
+(ert-deftest jabber-test-chat-r4-omemo-hook-reentry ()
+  "Callback edits survive success, error and quit without dynamic shadowing."
+  (dolist (outcome '(success error quit))
+    (ert-info ((format "outcome=%S" outcome))
+      (jabber-test-chat--r4-deferred-omemo outcome 'hook-draft))))
+
+(ert-deftest jabber-test-chat-r4-omemo-same-mode-retarget ()
+  "Native same-mode replacement fences hooks, publication and handoff."
+  (dolist (change '(retarget hook-retarget))
+    (ert-info ((format "change=%S" change))
+      (jabber-test-chat--r4-deferred-omemo 'success change))))
+
+(ert-deftest jabber-test-chat-r4-captured-hook-nested-submit ()
+  "An ordinary RET reentered from a captured hook consumes its own reply."
+  (jabber-test-chat--journey
+   (let (nested)
+     (setq-local jabber-message-reply--id "nested-reply")
+     (setq-local jabber-message-reply--jid "peer@example.org")
+     (setq-local jabber-chat-send-hooks
+                 (list (lambda (&rest _)
+                         (let ((jabber-chat-send-hooks '(jabber-message-reply--send-hook)))
+                           (insert "nested body")
+                           (jabber-chat-buffer-send))
+                         nil)
+                       #'jabber-message-reply--send-hook))
+     (cl-letf (((symbol-function 'jabber-send-sexp)
+                (lambda (_jc stanza &optional success _failure)
+                  (setq nested stanza)
+                  (when success (funcall success)))))
+       (jabber-chat--run-send-hooks (list 'message nil) "old body" "old-id" t))
+     (should (equal "nested-reply"
+                    (jabber-xml-get-attribute
+                     (jabber-xml-child-with-xmlns nested "urn:xmpp:reply:0") 'id)))
+     (should-not jabber-message-reply--id)
+     (should (equal '("nested body") jabber-chat--input-history)))))
+
 (provide 'jabber-test-chat)
 
 ;;; jabber-test-chat.el ends here

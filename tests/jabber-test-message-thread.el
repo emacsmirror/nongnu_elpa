@@ -1129,7 +1129,9 @@
                       '(:thread-id "thread-1" :root nil)))
                    ((symbol-function 'jabber-message-thread-find-buffer)
                     (lambda (&rest _) thread))
-                   ((symbol-function 'jabber-send-sexp) #'ignore))
+                   ((symbol-function 'jabber-send-sexp)
+                    (lambda (_jc _stanza &optional success _failure)
+                      (when success (funcall success)))))
                 (jabber-chat-send 'connection "reply"))))
           (should-not
            (with-current-buffer parent (ewoc-nth jabber-chat-ewoc 0)))
@@ -1158,7 +1160,9 @@
             (lambda (&rest _) '(:thread-id "thread-1" :root nil)))
            ((symbol-function 'jabber-message-thread-find-buffer)
             (lambda (&rest _) nil))
-           ((symbol-function 'jabber-send-sexp) #'ignore))
+           ((symbol-function 'jabber-send-sexp)
+                    (lambda (_jc _stanza &optional success _failure)
+                      (when success (funcall success)))))
         (jabber-chat-send 'connection "reply")))
     (should-not (ewoc-nth jabber-chat-ewoc 0))))
 
@@ -1178,7 +1182,9 @@
             (lambda (&rest _) '(:thread-id "thread-1" :root t)))
            ((symbol-function 'jabber-message-thread-find-buffer)
             (lambda (&rest _) (ert-fail "Looked up a root as a reply")))
-           ((symbol-function 'jabber-send-sexp) #'ignore))
+           ((symbol-function 'jabber-send-sexp)
+                    (lambda (_jc _stanza &optional success _failure)
+                      (when success (funcall success)))))
         (jabber-chat-send
          'connection "root" '((thread () "thread-1")))))
     (should
@@ -1365,9 +1371,15 @@
       (should (= 7 resolved-row)))))
 
 (ert-deftest jabber-test-message-thread-closed-chat-alert-has-parent-buffer ()
-  "A closed reply alerts with the parent buffer without inserting there."
+  "A closed reply alerts with the owned parent without inserting there."
   (let ((parent (generate-new-buffer " *jabber-thread-alert-parent*"))
+        (jabber-chat-mode-hook nil)
         seen)
+    (with-current-buffer parent
+      (jabber-chat-mode)
+      (setq-local jabber-buffer-connection 'jc
+                  jabber-chatting-with "alice@example.com")
+      (insert "draft λ"))
     (unwind-protect
         (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                    (lambda (_jc) "me@example.com"))
@@ -1386,8 +1398,10 @@
              'jc nil nil nil "alice@example.com"
              '(:body "reply" :thread-id "thread-1"))
             (should (eq parent seen))
-            (should (equal "" (with-current-buffer parent
-                                (buffer-string))))))
+            (with-current-buffer parent
+              (should (eq jabber-buffer-connection 'jc))
+              (should (equal jabber-chatting-with "alice@example.com"))
+              (should (equal "draft λ" (buffer-string))))))
       (kill-buffer parent))))
 
 (ert-deftest jabber-test-message-thread-closed-alert-finds-buffer-by-account ()

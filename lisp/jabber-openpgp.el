@@ -317,6 +317,67 @@ Used for MUC where signing is optional."
            (payload ()
                     (body ((xmlns . "jabber:client")) ,body)))))
 
+;;; Send completion
+
+(defun jabber-openpgp--send
+    (jc recipients body extra-elements sender success failure)
+  "Resolve RECIPIENTS and invoke SENDER once for BODY on JC.
+Capture EXTRA-ELEMENTS before discovery.  SENDER receives the captured
+extensions, two transport callbacks and an ownership check.  SUCCESS and
+FAILURE report completion, not queue admission."
+  (let* ((buffer (current-buffer))
+         (owner-p (jabber-chat--capture-input-owner))
+         (context (jabber-chat--capture-send-context body extra-elements))
+         (completion (unless (assq 'replace extra-elements)
+                       jabber-chat--input-completion))
+         (state 'discovering)
+         (failed
+          (lambda (reason)
+            (unless (eq state 'done)
+              ;; Retire every retained continuation before calling consumers.
+              (setq state 'done)
+              (let ((restore (if completion (funcall completion nil) t)))
+                (when (and restore (funcall owner-p))
+                  (with-current-buffer buffer
+                    (jabber-chat--restore-send-context context))))
+              (if failure (funcall failure reason) (message "%s" reason)))))
+         (sent
+          (lambda ()
+            (when (eq state 'sending)
+              (setq state 'done)
+              (when completion (funcall completion t))
+              (when success (funcall success))
+              ;; Completion can run user code and replace the buffer owner.
+              ;; Settlement survives replacement; publication does not.
+              (funcall owner-p))))
+         returned)
+    (when completion (setq jabber-chat--input-deferred t))
+    (unwind-protect
+        (prog1
+            (jabber-openpgp--ensure-recipient-keys
+             jc recipients
+             (lambda ()
+               (when (eq state 'discovering)
+                 (setq state 'sending)
+                 (condition-case err
+                     (if (not (funcall owner-p))
+                         (funcall failed "OpenPGP: send buffer changed")
+                       (with-current-buffer buffer
+                         (funcall sender (plist-get context :extra-elements)
+                                  sent failed
+                                  (lambda ()
+                                    (unless (and (eq state 'sending)
+                                                 (funcall owner-p))
+                                      (error "OpenPGP: send buffer changed"))))))
+                   ((error quit)
+                    (funcall failed (error-message-string err))
+                    (when (eq (car err) 'quit)
+                      (signal (car err) (cdr err)))))))
+             failed)
+          (setq returned t))
+      (unless returned
+        (funcall failed "OpenPGP: send cancelled")))))
+
 ;;; Send path: 1:1 chat
 
 (defun jabber-openpgp--send-chat
@@ -326,39 +387,21 @@ Must be called from a chat buffer with `jabber-chatting-with' set.
 Fetches missing recipient keys via PubSub before encrypting.
 EXTRA-ELEMENTS are spliced into the stanza outside the encryption
 envelope."
-  (let* ((recipient (jabber-jid-user jabber-chatting-with))
-         (chat-with jabber-chatting-with)
-         (buffer (current-buffer))
-         (id (format "emacs-msg-%.6f" (float-time)))
-         (send-context
-          (jabber-chat--capture-send-context body extra-elements))
-         (extra-elements (plist-get send-context :extra-elements))
-         (failed
-          (lambda (reason)
-            (when (buffer-live-p buffer)
-              (with-current-buffer buffer
-                (jabber-chat--restore-send-context send-context)))
-            (if failure-callback
-                (funcall failure-callback reason)
-              (message "%s" reason)))))
-    (jabber-openpgp--ensure-recipient-keys
-     jc (list recipient)
-     (lambda ()
-       (if (not (buffer-live-p buffer))
-           (funcall failed "OpenPGP: chat buffer closed before send")
-         (with-current-buffer buffer
-           (condition-case err
-               (jabber-openpgp--send-chat-1
-                jc body recipient chat-with id extra-elements success-callback
-                failed)
-             (error (funcall failed (error-message-string err)))))))
-     failed)))
+  (let ((recipient (jabber-jid-user jabber-chatting-with))
+        (chat-with jabber-chatting-with)
+        (id (format "emacs-msg-%.6f" (float-time))))
+    (jabber-openpgp--send
+     jc (list recipient) body extra-elements
+     (lambda (extra success failure check)
+       (jabber-openpgp--send-chat-1
+        jc body recipient chat-with id extra success failure check))
+     success-callback failure-callback)))
 
 (defun jabber-openpgp--send-chat-1
-    (jc body recipient chat-with id &optional extra-elements success failure)
-  "Internal: encrypt and send BODY to RECIPIENT via JC.
-EXTRA-ELEMENTS are spliced into the stanza outside the encryption
-envelope."
+    (jc body recipient chat-with id &optional extra-elements success failure check)
+  "Encrypt and send BODY to RECIPIENT at CHAT-WITH via JC with ID.
+EXTRA-ELEMENTS are outside the encryption envelope.  SUCCESS and FAILURE
+report transport completion.  CHECK validates ownership before handoff."
   (let* ((inner-xml (jabber-openpgp--build-signcrypt-xml
                      (list recipient) body))
          (encrypted (jabber-openpgp--encrypt
@@ -372,15 +415,21 @@ envelope."
                            ,(jabber-hints-store)
                            ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP")
                            ,@extra-elements)))
-    (jabber-chat--run-send-hooks stanza body id)
-    (unless (assq 'replace extra-elements)
-      (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
-        (plist-put msg-plist :body body)
-        (plist-put msg-plist :status :sent)
-        (jabber-chat--display-local-message jc msg-plist)))
-    (if (or success failure)
-        (jabber-send-sexp jc stanza success failure)
-      (jabber-send-sexp jc stanza))))
+    (when check (funcall check))
+    (jabber-chat--run-send-hooks stanza body id t check)
+    (when check (funcall check))
+    (let ((buffer (current-buffer)))
+      (jabber-send-sexp
+       jc stanza
+       (lambda ()
+         (when (and (if success (funcall success) t)
+                    (buffer-live-p buffer) (not (assq 'replace extra-elements)))
+           (with-current-buffer buffer
+             (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+               (plist-put msg-plist :body body)
+               (plist-put msg-plist :status :sent)
+               (jabber-chat--display-local-message jc msg-plist)))))
+       failure))))
 
 ;;; Send path: MUC
 
@@ -417,28 +466,13 @@ Must be called from a MUC buffer with `jabber-group' set.
 Fetches missing recipient keys via PubSub before encrypting.
 EXTRA-ELEMENTS are spliced into the stanza outside the encryption
 envelope."
-  (let* ((group jabber-group)
-         (all-jids (jabber-openpgp--muc-recipient-jids jc group))
-         (buffer (current-buffer))
-         (id (format "emacs-msg-%.6f" (float-time)))
-         (send-context
-          (jabber-chat--capture-send-context body extra-elements))
-         (extra-elements (plist-get send-context :extra-elements))
-         (failed
-          (lambda (reason)
-            (when (buffer-live-p buffer)
-              (with-current-buffer buffer
-                (jabber-chat--restore-send-context send-context)))
-            (if failure-callback
-                (funcall failure-callback reason)
-              (message "%s" reason)))))
-    (jabber-openpgp--ensure-recipient-keys
-     jc all-jids
-     (lambda ()
-       (if (not (buffer-live-p buffer))
-           (funcall failed "OpenPGP: MUC buffer closed before send")
-         (condition-case err
-             (let* ((inner-xml (jabber-openpgp--build-crypt-xml all-jids body))
+  (let ((group jabber-group)
+        (all-jids (jabber-openpgp--muc-recipient-jids jc jabber-group))
+        (id (format "emacs-msg-%.6f" (float-time))))
+    (jabber-openpgp--send
+     jc all-jids body extra-elements
+     (lambda (extra success failure check)
+       (let* ((inner-xml (jabber-openpgp--build-crypt-xml all-jids body))
               (encrypted (jabber-openpgp--encrypt jc inner-xml all-jids))
               (stanza `(message ((to . ,group)
                                  (type . "groupchat")
@@ -448,19 +482,12 @@ envelope."
                                 (body () ,jabber-openpgp-fallback-body)
                                 ,(jabber-hints-store)
                                 ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP")
-                                ,@extra-elements)))
-         (when (buffer-live-p buffer)
-           (with-current-buffer buffer
-             ;; This runs from the async key-fetch callback where the
-             ;; current buffer is not the MUC buffer; the send hooks
-             ;; read buffer-local state, so restore the buffer first.
-             (jabber-chat--run-send-hooks stanza body id)))
-             (if (or success-callback failure-callback)
-                 (jabber-send-sexp
-                  jc stanza success-callback failure-callback)
-               (jabber-send-sexp jc stanza)))
-           (error (funcall failed (error-message-string err))))))
-     failed)))
+                                ,@extra)))
+         (funcall check)
+         (jabber-chat--run-send-hooks stanza body id t check)
+         (funcall check)
+         (jabber-send-sexp jc stanza success failure)))
+     success-callback failure-callback)))
 
 ;;; Receive path
 
