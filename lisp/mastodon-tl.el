@@ -2039,6 +2039,38 @@ See https://docs.joinmastodon.org/entities/Quote/#state for details.")
                    :weight bold
                    :height 1.8))))
 
+(defun mastodon-tl-quote-props-list (url)
+  "Return a text properties plist for quoted toot bodies.
+We render a link to the original toot, with URL.
+And mouseover organe with help-echo to suggest it's a link"
+  `( button t
+     quote-url ,url
+     keymap ,mastodon-tl--link-keymap
+     help-echo "Load quoted toot"
+     mouse-face '(:inherit (highlight link) :underline nil)))
+
+(defun mastodon-tl-prop-quote (str url &optional no-match)
+  "Propertize STR, an already reandered quoted toot body.
+We leave existing links alone, but make any plain (rendered) text into a
+link to the quoted toot itself.
+URL is the location of the quoted toot.
+NO-MATCH means don't do a text-prop search, just propertize the (whole)
+STR."
+  (let ((props (mastodon-tl-quote-props-list url)))
+    (if no-match
+        (apply #'propertize str props))
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (insert str)
+      (goto-char (point-min))
+      (let (match)
+        (while (setq match (text-property-search-forward 'follow-link t))
+          (add-text-properties
+           (prop-match-beginning match)
+           (prop-match-end match)
+           props))
+        (buffer-string)))))
+
 (defun mastodon-tl--insert-quoted (data toot)
   "Propertize quoted status DATA for insertion.
 TOOT is the data for the quoting toot."
@@ -2052,8 +2084,12 @@ TOOT is the data for the quoting toot."
          (foldable (and mastodon-tl--fold-toots-at-length
                         (length> rendered mastodon-tl--fold-toots-at-length))))
     (let-alist quoted
-      (let ((filters (when .filtered
-                       (mastodon-tl--current-filters .filtered))))
+      (let* ((created-time (or (mastodon-tl--field 'created_at
+                                        (mastodon-tl--field 'status quoted))
+                               (mastodon-tl--field 'created_at quoted)))
+             (parsed-time (when created-time (date-to-time created-time)))
+             (filters (when .filtered
+                        (mastodon-tl--current-filters .filtered))))
         ;; TODO: tailor non-disply of quote based on quote 'state'
         ;; `mastodon-tl--quote-states':
         (propertize
@@ -2078,23 +2114,22 @@ TOOT is the data for the quoting toot."
           ((string= state "pending")
            (mastodon-tl--format-quote-non-display "quote pending" .url))
           (t
-           (concat
-            "\n" (mastodon-tl--quote-symbol-str) "\n"
-            ;; author byline without horiz bar/stats:
-            (concat
-             (mastodon-tl--byline-author quoted nil nil :base)
-             "\n"
-             (propertize ;; buttonize quoted toot body
-              ;; quoted text:
-              (if foldable
-                  (mastodon-tl--fold-body rendered
-                                          (mastodon-search--format-heading "click for full toot"))
-                rendered)
-              'quote-url .uri
-              'button t
-              'keymap mastodon-tl--link-keymap
-              'help-echo "Load quoted toot"
-              'mouse-face '(:inherit (highlight link) :underline nil))))))
+           (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri)))
+             (concat
+              "\n" (mastodon-tl--quote-symbol-str) "\n"
+              ;; author byline without horiz bar/stats:
+              (concat
+               (mastodon-tl--byline-author quoted nil nil :base)
+               " "
+               ;; byline date as link to original:
+               (mastodon-tl-prop-quote (mastodon-tl-format-timestamp parsed-time)
+                                       .uri :nomatch)
+               "\n"
+               ;; quoted text:
+               (if foldable
+                   (mastodon-tl--fold-body quote-rendered
+                                           (mastodon-search--format-heading "click for full toot"))
+                 quote-rendered))))))
          'line-prefix bar
          'wrap-prefix bar
          'mastodon-content-warning-body (when cw t)
@@ -2104,19 +2139,16 @@ TOOT is the data for the quoting toot."
 
 (defun mastodon-tl--format-quote-non-display (str &optional url no-prop)
   "Return a non-displaying quote string for STR.
-Propertize STR as a button link loading the quoted toot, unless NO-PROP."
+Propertize STR as a button link loading the quoted toot, at URL.
+When NO-PROP, don't add properties, just format the string."
   (concat
    "\n\n"
    (mastodon-tl--quote-symbol-str)
    "\n["
    (if no-prop
        str
-     (propertize str
-                 'button t
-                 'quote-url url
-                 'keymap mastodon-tl--link-keymap
-                 'help-echo "Load quoted toot"
-                 'mouse-face '(:inherit (highlight link) :underline nil)))
+     (apply #'propertize str
+            (mastodon-tl-quote-props-list url)))
    "]"))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
