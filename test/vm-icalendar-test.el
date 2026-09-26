@@ -235,6 +235,51 @@ gives it the part and that the event arrives."
                       (vm-icalendar-import-message (car vm-message-pointer)))
                      '(error "This message has no calendar part"))))))
 
+;;; Which importer is called, and what its answer means (emacs-vm/vm#858)
+;;
+;; `icalendar-import-buffer' is obsolete from Emacs 31.1, the release
+;; `diary-icalendar-import-buffer' arrived in, and VM runs on 28.1, so both
+;; are called and the new one first.  They report differently: the old one
+;; answers t when it imported, the new one ends in `save-buffer' and answers
+;; nil whatever happened, raising instead when it cannot read the text.
+
+(ert-deftest vm-icalendar-test-import-asks-for-the-name-emacs-still-has ()
+  "REGRESSION: the new name where Emacs has it, the old one where it has not."
+  (require 'icalendar)
+  (let ((called nil))
+    (cl-letf (((symbol-function 'icalendar-import-buffer)
+               (lambda (&rest _) (push 'old called) t)))
+      (if (fboundp 'diary-icalendar-import-buffer)
+          (cl-letf (((symbol-function 'diary-icalendar-import-buffer)
+                     (lambda (&rest _) (push 'new called) nil)))
+            (with-temp-buffer (vm-icalendar-import-into-diary "/dev/null"))
+            (should (equal called '(new))))
+        (with-temp-buffer (vm-icalendar-import-into-diary "/dev/null"))
+        (should (equal called '(old)))))))
+
+(ert-deftest vm-icalendar-test-a-nil-answer-from-the-new-name-is-not-a-failure ()
+  "REGRESSION: `diary-icalendar-import-buffer' answers nil when it worked.
+Reading that as failure reported `icalendar could not import this part' on
+every successful import."
+  (skip-unless (fboundp 'diary-icalendar-import-buffer))
+  (let ((called nil))
+    (cl-letf (((symbol-function 'diary-icalendar-import-buffer)
+               (lambda (&rest _) (setq called t) nil)))
+      (with-temp-buffer (vm-icalendar-import-into-diary "/dev/null"))
+      (should called))))
+
+(ert-deftest vm-icalendar-test-a-nil-answer-from-the-old-name-is-a-failure ()
+  "Where only the old name exists, nil still means it did not import."
+  (require 'icalendar)
+  (let ((text-quoting-style 'grave))
+    (cl-letf (((symbol-function 'diary-icalendar-import-buffer) nil)
+              ((symbol-function 'icalendar-import-buffer) (lambda (&rest _) nil)))
+      (should-not (fboundp 'diary-icalendar-import-buffer))
+      (should (equal (should-error
+                      (with-temp-buffer
+                        (vm-icalendar-import-into-diary "/dev/null")))
+                     '(error "icalendar could not import this part"))))))
+
 (provide 'vm-icalendar-test)
 
 ;;; vm-icalendar-test.el ends here
