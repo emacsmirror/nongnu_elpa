@@ -342,6 +342,7 @@ Optionally make the request SILENT."
    url
    params silent
    (lambda (status)
+     ;; status can be nil if no GnuTLS, so can't just (when status ...)
      (if-let ((err (plist-get status :error)))
          (message "Error fetching %s: %s" url (car err))
        (apply callback (mastodon-http--process-response) cbargs)))))
@@ -355,6 +356,7 @@ Optionally make the request SILENT."
    url
    params silent
    (lambda (status)
+     ;; status can be nil if no GnuTLS, so can't just (when status ...)
      (if-let ((err (plist-get status :error)))
          (message "Error fetching %s: %s" url (car err))
        (apply callback (mastodon-http--process-json) cbargs)))))
