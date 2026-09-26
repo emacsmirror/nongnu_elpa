@@ -561,6 +561,53 @@ into a VM folder is not VM\\='s business."
     (should-not (vm-composition-worth-keeping-p composition))
     (should-not (memq composition (vm-unfinished-compositions)))))
 
+(ert-deftest vm-postpone-test-a-header-the-writer-typed-is-writing ()
+  "REGRESSION: a subject typed with the body still empty is worth keeping.
+
+`vm-composition-worth-keeping-p' looked only at what followed
+`mail-header-separator', so a composition with recipients and a subject and
+no body yet was neither kept as a draft nor asked about; it was killed
+silently (emacs-vm/vm#856).
+
+VM writes the headers itself, which is why they could not simply be counted.
+What counts is a header differing from the one VM wrote, recorded in
+`vm-composition-headers-vm-wrote' once the composition is the writer's."
+  (vm-postpone-test-with-composition
+    ;; take the body away, leaving the headers as VM wrote them
+    (goto-char (point-min))
+    (re-search-forward (concat "^" (regexp-quote mail-header-separator) "$"))
+    (delete-region (point) (point-max))
+    (set-buffer-modified-p t)
+    (should-not (vm-composition-worth-keeping-p composition))
+    ;; now type a subject, and nothing else
+    (goto-char (point-min))
+    (re-search-forward "^Subject:")
+    (insert " a subject and no body")
+    (set-buffer-modified-p t)
+    (should (vm-composition-worth-keeping-p composition))
+    (should (memq composition (vm-unfinished-compositions)))))
+
+(ert-deftest vm-postpone-test-such-a-composition-is-kept-when-killed ()
+  "Killing it files the draft, rather than dropping what was typed.
+The end of the same path: `vm-save-killed-message-hook' asks
+`vm-composition-worth-keeping-p' before it keeps anything (emacs-vm/vm#856)."
+  (vm-postpone-test-with-composition
+    (goto-char (point-min))
+    (re-search-forward (concat "^" (regexp-quote mail-header-separator) "$"))
+    (delete-region (point) (point-max))
+    (goto-char (point-min))
+    (re-search-forward "^Subject:")
+    (insert " kept by its subject alone")
+    (set-buffer-modified-p t)
+    (let ((vm-save-killed-message 'always)
+          (vm-save-killed-messages-folder drafts))
+      (kill-buffer composition))
+    (should-not (buffer-live-p composition))
+    (should (file-exists-p drafts))
+    (with-temp-buffer
+      (insert-file-contents drafts)
+      (should (string-match-p "kept by its subject alone" (buffer-string))))))
+
 (ert-deftest vm-postpone-test-exit-postpones-without-asking ()
   "With `vm-save-killed-message' `always', leaving Emacs writes the draft."
   (vm-postpone-test-with-composition
