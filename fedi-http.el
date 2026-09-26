@@ -377,6 +377,7 @@ PARAMS is an alist of any extra parameters to send with the request."
    url
    params
    (lambda (status)
+     ;; status can be nil if no GnuTLS, so can't just (when status ...)
      (if-let ((err (plist-get status :error)))
          (message "Error fetching %s: %s" url (car err))
        (apply callback (fedi-http--process-response) cbargs)))))
@@ -388,6 +389,7 @@ PARAMS is an alist of any extra parameters to send with the request."
    url
    params
    (lambda (status)
+     ;; status can be nil if no GnuTLS, so can't just (when status ...)
      (if-let ((err (plist-get status :error)))
          (message "Error fetching %s: %s" url (car err))
        (apply callback (fedi-http--process-json) cbargs)))))
