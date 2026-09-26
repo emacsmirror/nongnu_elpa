@@ -141,6 +141,9 @@ a correct description or commit.
 
 * push and test install once available in nongnu ELPA
 
+
+* make gitlab release from tag
+
 * tell the distribution packagers
 
 Most distributions still ship 8.2.0b from 2011, because their automatic
