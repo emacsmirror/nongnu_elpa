@@ -98,7 +98,7 @@ Each function receives one argument: a list of (ACCOUNT PEER TYPE) entries.")
 (defvar jabber-mam--syncing nil
   "Active query plists, including queries waiting for their next page.
 Each owns its connection/session predicate, archive target, page token,
-transaction contribution, pagination timer and completion callback.")
+transaction contribution, pagination timer and completion callbacks.")
 
 (defvar jabber-mam--dirty-peers nil
   "Peers awaiting refresh after COMMIT, as (ACCOUNT PEER TYPE) entries.")
@@ -168,9 +168,9 @@ Return its unique token, or nil when one was already active."
     (plist-put query :transaction nil)
     (jabber-mam--tx-end)))
 
-(defun jabber-mam--complete-query (query)
-  "Retire QUERY before releasing resources and calling its completion hook.
-Completion means settlement, not successful or complete archive coverage.
+(defun jabber-mam--complete-query (query outcome)
+  "Retire QUERY with OUTCOME before releasing resources and calling consumers.
+OUTCOME is `success', `failed' or `cancelled'; see `jabber-mam--query'.
 Contain callback errors and quits so other queries can finish cleanup."
   (when (memq query jabber-mam--syncing)
     (setq jabber-mam--syncing (delq query jabber-mam--syncing))
@@ -180,7 +180,9 @@ Contain callback errors and quits so other queries can finish cleanup."
     (unwind-protect
         (jabber-mam--release-page query)
       (when-let* ((callback (plist-get query :callback)))
-        (jabber-lifecycle--call-contained callback)))
+        (jabber-lifecycle--call-contained callback))
+      (when-let* ((callback (plist-get query :result-callback)))
+        (jabber-lifecycle--call-contained callback outcome)))
     (when (zerop jabber-mam--tx-depth)
       (jabber-mam--redraw-dirty))))
 
@@ -477,18 +479,29 @@ COMMIT the SQLite transaction when transitioning from 1 to 0."
 ;;; Query and pagination
 
 (defun jabber-mam--query (jc &optional after-id queryid with start to
-                             before-id max callback)
+                             before-id max callback result-callback)
   "Start a MAM query on JC, paginating from AFTER-ID.
 QUERYID correlates results; generate it if nil.  WITH and START are filters.
 TO is nil for the personal archive, or a room bare JID.
 BEFORE-ID requests one backward page of MAX messages.
 Call CALLBACK without arguments once on settlement, including failure.
-Contain errors and quits signaled by CALLBACK."
+Then call RESULT-CALLBACK once with `success', `failed' or `cancelled'.
+Success means accepted query completion, including a bounded backward page,
+not complete archive coverage or physical COMMIT while other pages remain.
+Failure means a permanent IQ error, local begin/send error, or incomplete
+forward pagination without cursor progress.  Cancellation means retirement
+of the room, connection or session, or caller quit (which is re-signaled).
+Intermediate pages and the first stale-cursor retry do not settle the query.
+Retire ownership before attempting each callback independently; contain their
+errors and quits without changing the outcome.  Callbacks can run before this
+function returns, including on synchronous begin/send failure.
+Return the owned query record."
   (let ((query (list :id (or queryid (jabber-mam--make-queryid)) :jc jc
                      :current-p (jabber-mam--session-predicate jc)
                      :with with :start start :to to :before before-id
                      :max (or max jabber-mam-page-size) :after after-id
-                     :callback callback :page nil :timer nil :iq-id nil
+                     :callback callback :result-callback result-callback
+                     :page nil :timer nil :iq-id nil
                      :transaction nil :retried nil)))
     (push query jabber-mam--syncing)
     (jabber-mam--send-page query)
@@ -500,7 +513,7 @@ Contain errors and quits signaled by CALLBACK."
              (not (plist-get query :page)))
     (plist-put query :timer nil)
     (if (not (jabber-mam--current-query-p (plist-get query :jc) query))
-        (jabber-mam--complete-query query)
+        (jabber-mam--complete-query query 'cancelled)
       (let ((page (list nil)))
         (plist-put query :page page)
         (plist-put query :iq-id (jabber-mam--make-queryid))
@@ -522,7 +535,8 @@ Contain errors and quits signaled by CALLBACK."
                       (jabber-mam--valid-sender-p
                        jc (jabber-xml-get-attribute xml 'from) query)))))
           ((error quit)
-           (jabber-mam--complete-query query)
+           (jabber-mam--complete-query
+            query (if (eq (car err) 'quit) 'cancelled 'failed))
            (if (eq (car err) 'quit)
                (signal (car err) (cdr err))
              (message "MAM: query failed to send: %s"
@@ -541,15 +555,17 @@ Contain errors and quits signaled by CALLBACK."
   (when-let* ((query (jabber-mam--reply-query jc xml-data closure)))
     (let* ((fin (jabber-mam--parse-fin xml-data))
            (last-id (plist-get fin :last)))
-      (if (or (plist-get fin :complete) (null last-id)
-              (plist-get query :before)
-              (equal last-id (plist-get query :after)))
-          (jabber-mam--complete-query query)
+      (cond
+       ((or (plist-get fin :complete) (plist-get query :before))
+        (jabber-mam--complete-query query 'success))
+       ((or (null last-id) (equal last-id (plist-get query :after)))
+        (jabber-mam--complete-query query 'failed))
+       (t
         (jabber-mam--release-page query)
         (plist-put query :after last-id)
         ;; Keep the query registered while waiting so teardown can retire it.
         (plist-put query :timer
-                   (run-with-timer 0.1 nil #'jabber-mam--send-page query))))))
+                   (run-with-timer 0.1 nil #'jabber-mam--send-page query)))))))
 
 (defun jabber-mam--handle-error (jc xml-data closure)
   "Settle JC's failed page from XML-DATA and CLOSURE.
@@ -565,7 +581,7 @@ Retry a stale forward cursor once without that cursor, preserving filters."
             (plist-put query :after nil)
             (plist-put query :retried t)
             (jabber-mam--send-page query))
-        (jabber-mam--complete-query query)
+        (jabber-mam--complete-query query 'failed)
         (message "MAM: query failed: %s" (jabber-sexp2xml xml-data))))))
 
 ;;; Post-connect catch-up
@@ -703,7 +719,7 @@ Refresh the buffer after settlement."
   "Retire JC's queries and automatic catch-ups on disconnect."
   (dolist (query (copy-sequence jabber-mam--syncing))
     (when (eq jc (plist-get query :jc))
-      (jabber-mam--complete-query query)))
+      (jabber-mam--complete-query query 'cancelled)))
   (dolist (entry (copy-sequence jabber-mam--peer-syncing))
     (when (eq (caar entry) jc)
       (jabber-mam--finish-peer-sync jc (cadar entry) (cdr entry)))))
@@ -711,7 +727,7 @@ Refresh the buffer after settlement."
 (defun jabber-mam--cleanup-all ()
   "Retire all MAM queries and automatic catch-ups on disconnect."
   (dolist (query (copy-sequence jabber-mam--syncing))
-    (jabber-mam--complete-query query))
+    (jabber-mam--complete-query query 'cancelled))
   (dolist (entry (copy-sequence jabber-mam--peer-syncing))
     (jabber-mam--finish-peer-sync (caar entry) (cadar entry) (cdr entry))))
 
@@ -723,7 +739,7 @@ When JC is nil, intentionally retire this room's queries on all accounts."
   (dolist (query (copy-sequence jabber-mam--syncing))
     (when (and (equal room (plist-get query :to))
                (or (null jc) (eq jc (plist-get query :jc))))
-      (jabber-mam--complete-query query))))
+      (jabber-mam--complete-query query 'cancelled))))
 
 ;;; Registration
 
