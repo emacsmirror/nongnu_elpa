@@ -35,6 +35,9 @@
 (require 'jabber-muc-protocol)
 (require 'jabber-muc-state)
 
+(declare-function jabber-chat--buffer-peer-p "jabber-chat"
+                  (buffer from muc-private-p))
+
 (defgroup jabber-alerts nil
   "Auditory and visual alerts for Jabber events."
   :group 'jabber)
@@ -315,13 +318,16 @@ Examples:
 (defun jabber-message-default-message (from buffer _text)
   "Return the default alert string for a message from FROM in BUFFER."
   (when (or jabber-message-alert-same-buffer
-	    (not (and (buffer-live-p buffer)
-	              (memq (selected-window) (get-buffer-window-list buffer)))))
-    (if (jabber-muc-sender-p from)
-	(format "Private message from %s in %s"
-		(jabber-jid-resource from)
-		(jabber-jid-displayname (jabber-jid-user from)))
-      (format "%s:" (jabber-jid-displayname from)))))
+            (not (and (buffer-live-p buffer)
+                      (memq (selected-window) (get-buffer-window-list buffer)))))
+    (let ((jc (and (buffer-live-p buffer)
+                   (buffer-local-value 'jabber-buffer-connection buffer))))
+      (if (and jc (jabber-jid-resource from)
+               (jabber-muc-joined-p (jabber-jid-user from) jc))
+          (format "Private message from %s in %s"
+                  (jabber-jid-resource from)
+                  (jabber-jid-displayname (jabber-jid-user from) jc))
+        (format "%s:" (jabber-jid-displayname from jc))))))
 
 (defun jabber-message-wave (from _buffer _text title)
   "Play the wave file specified in `jabber-alert-message-wave'.
@@ -374,13 +380,14 @@ This hook is opt-in; it is not enabled by default."
   "Return the default alert string for a MUC message from NICK in GROUP.
 BUFFER is the MUC buffer."
   (when (or jabber-message-alert-same-buffer
-	    (not (and (buffer-live-p buffer)
-		      (memq (selected-window) (get-buffer-window-list buffer)))))
-    (if nick
-	(unless (jabber-muc-our-nick-p group nick)
-	  (format "Message from %s in %s" nick (jabber-jid-displayname
-						group)))
-      (format "Message in %s" (jabber-jid-displayname group)))))
+            (not (and (buffer-live-p buffer)
+                      (memq (selected-window) (get-buffer-window-list buffer)))))
+    (let ((jc (and (buffer-live-p buffer)
+                   (buffer-local-value 'jabber-buffer-connection buffer))))
+      (if nick
+          (unless (jabber-muc-our-nick-p group nick)
+            (format "Message from %s in %s" nick (jabber-jid-displayname group jc)))
+        (format "Message in %s" (jabber-jid-displayname group jc))))))
 
 (defun jabber-muc-wave (_nick _group _buffer _text title)
   "Play the wave file specified in `jabber-alert-muc-wave' (when TITLE non-nil)."
@@ -443,9 +450,13 @@ OLDSTATUS, NEWSTATUS and STATUSTEXT match the parent function's signature.
 
 This function is not called directly, but can be used as the value for
 `jabber-alert-presence-message-function'."
-  (when (jabber-buffer-registry-find
-         'chat
-         (jabber-jid-user (jabber-xml-get-attribute jabber-xml-data 'from)))
+  (when-let* ((jc (jabber-jid-owner who))
+              ((memq jc jabber-connections))
+              ((seq-find
+                (lambda (buffer)
+                  (and (eq (buffer-local-value 'jabber-buffer-connection buffer) jc)
+                       (jabber-chat--buffer-peer-p buffer (symbol-name who) nil)))
+                (buffer-list))))
     (jabber-presence-default-message who oldstatus newstatus statustext)))
 
 (defun jabber-presence-wave (who _oldstatus _newstatus _statustext proposed-alert)

@@ -101,15 +101,15 @@ inherited bindings from parent mode keymaps."
   "Return a disposable connection NAME with CONTACTS."
   (let ((jc (make-symbol name)))
     (put jc :state-data (list :username name :server "example.test"
-                              :roster contacts))
+                              :roster (mapcar (lambda (jid) (jabber-jid-symbol jid jc)) contacts)))
     jc))
 
 (ert-deftest jabber-test-menu-scoped-contact-actions ()
   "Every action uses the selected account when peers overlap."
   (let* ((jabber-jid-obarray (make-vector 31 0))
-         (peer (jabber-jid-symbol "peer@example.test"))
-         (a (jabber-test-menu--connection "a" (list peer)))
-         (b (jabber-test-menu--connection "b" (list peer)))
+         (a (jabber-test-menu--connection "a" '("peer@example.test")))
+         (b (jabber-test-menu--connection "b" '("peer@example.test")))
+
          (jabber-connections (list a b))
          (jabber-roster--scoped-connection b)
          (jabber-roster--selected-jid "peer@example.test")
@@ -132,9 +132,9 @@ inherited bindings from parent mode keymaps."
 (ert-deftest jabber-test-menu-selection-survives-scope-change ()
   "A selected contact retains its owner even after scope changes."
   (let* ((jabber-jid-obarray (make-vector 31 0))
-         (peer (jabber-jid-symbol "peer@example.test"))
-         (a (jabber-test-menu--connection "a" (list peer)))
-         (b (jabber-test-menu--connection "b" (list peer)))
+         (a (jabber-test-menu--connection "a" '("peer@example.test")))
+         (b (jabber-test-menu--connection "b" '("peer@example.test")))
+         (peer (jabber-jid-symbol "peer@example.test" b))
          (jabber-connections (list a b))
          (jabber-roster--scoped-connection b)
          (jabber-roster--selected-jid nil)
@@ -158,9 +158,9 @@ inherited bindings from parent mode keymaps."
 (ert-deftest jabber-test-menu-delete-retains-selection-through-prompt ()
   "Confirmation cannot retarget the selected contact or retired account."
   (let* ((jabber-jid-obarray (make-vector 31 0))
-         (peer (jabber-jid-symbol "peer@example.test"))
-         (a (jabber-test-menu--connection "a" (list peer)))
-         (b (jabber-test-menu--connection "b" (list peer)))
+         (a (jabber-test-menu--connection "a" '("peer@example.test")))
+         (b (jabber-test-menu--connection "b" '("peer@example.test")))
+
          (jabber-connections (list a b))
          (jabber-roster--scoped-connection b)
          (jabber-roster--selected-jid "peer@example.test")
@@ -178,9 +178,9 @@ inherited bindings from parent mode keymaps."
 (ert-deftest jabber-test-menu-online-scoped-and-empty ()
   "Online completion stays scoped, including when its subset is empty."
   (let* ((jabber-jid-obarray (make-vector 31 0))
-         (peer (jabber-jid-symbol "peer@example.test"))
-         (a (jabber-test-menu--connection "a" (list peer)))
-         (b (jabber-test-menu--connection "b" (list peer)))
+         (a (jabber-test-menu--connection "a" '("peer@example.test")))
+         (b (jabber-test-menu--connection "b" '("peer@example.test")))
+         (peer (jabber-jid-symbol "peer@example.test" b))
          (jabber-connections (list a b))
          (jabber-roster--scoped-connection b)
          sent)
@@ -201,9 +201,9 @@ inherited bindings from parent mode keymaps."
 (ert-deftest jabber-test-menu-ambiguous-contact-asks-and-retains-account ()
   "Unscoped duplicate peers require an account choice, retained by actions."
   (let* ((jabber-jid-obarray (make-vector 31 0))
-         (peer (jabber-jid-symbol "peer@example.test"))
-         (a (jabber-test-menu--connection "a" (list peer)))
-         (b (jabber-test-menu--connection "b" (list peer)))
+         (a (jabber-test-menu--connection "a" '("peer@example.test")))
+         (b (jabber-test-menu--connection "b" '("peer@example.test")))
+
          (jabber-connections (list a b))
          (jabber-roster--scoped-connection nil)
          (jabber-roster--selected-jid nil)
@@ -229,8 +229,8 @@ inherited bindings from parent mode keymaps."
   (dolist (command '(jabber-roster-change jabber-roster--action-edit))
     (dolist (groups '(("friends") ("work" "family") ("") nil))
       (let* ((jabber-jid-obarray (make-vector 31 0))
-             (peer (jabber-jid-symbol "peer@example.test"))
-             (jc (jabber-test-menu--connection "a" (list peer)))
+             (jc (jabber-test-menu--connection "a" '("peer@example.test")))
+             (peer (jabber-jid-symbol "peer@example.test" jc))
              (jabber-connections (list jc))
              (jabber-roster--scoped-connection jc)
              (jabber-roster--selected-jid "peer@example.test")
@@ -267,8 +267,8 @@ inherited bindings from parent mode keymaps."
   (dolist (command '(jabber-roster-change jabber-roster--action-edit))
     (dolist (failure '(quit disconnect))
       (let* ((jabber-jid-obarray (make-vector 31 0))
-             (peer (jabber-jid-symbol "peer@example.test"))
-             (jc (jabber-test-menu--connection "a" (list peer)))
+             (jc (jabber-test-menu--connection "a" '("peer@example.test")))
+
              (jabber-connections (list jc))
              (jabber-roster--scoped-connection jc)
              (jabber-roster--selected-jid "peer@example.test")

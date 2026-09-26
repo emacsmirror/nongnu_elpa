@@ -791,12 +791,16 @@
 
 (ert-deftest jabber-test-subscription-removes-stale-prompts-from-chat ()
   "Ordinary presence removes old subscription prompts for its sender."
-  (let ((jabber-buffer-registry--buffers (make-hash-table :test #'equal)))
+  (let ((jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+        (jabber-connections '(test-connection)))
     (jabber-test-chatbuffer-with-ewoc
+      (setq-local major-mode 'jabber-chat-mode
+                  jabber-buffer-connection 'test-connection
+                  jabber-chatting-with "alice@example.com")
       (jabber-buffer-registry-register 'chat "alice@example.com")
       (jabber-chat-ewoc-enter '(:subscription-request "hello"))
       (jabber-chat-ewoc-enter '(:notice "keep me"))
-      (jabber-subscription--remove-stale nil "alice@example.com/phone")
+      (jabber-subscription--remove-stale 'test-connection "alice@example.com/phone")
       (should (equal (ewoc-collect jabber-chat-ewoc #'identity)
                      '((:notice "keep me")))))))
 

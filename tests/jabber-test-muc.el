@@ -61,18 +61,20 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-message-p-error-from-room ()
   "Error from a pending groupchat is a MUC message."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
-    (puthash (intern "room@conference.example.com" jabber-jid-obarray)
+    (puthash (list 'fake-jc "room@conference.example.com")
              "mynick" jabber-pending-groupchats)
     (let ((msg '(message ((from . "room@conference.example.com")
                           (type . "error"))
                  (error ((type . "cancel"))))))
-      (should (jabber-muc-message-p msg)))))
+      (should (jabber-muc-message-p msg 'fake-jc))
+      (should-not (jabber-muc-message-p msg 'other-jc))
+      (should-not (jabber-muc-message-p msg)))))
 
 (ert-deftest jabber-test-muc-message-p-chat ()
   "Normal chat message is not a MUC message."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
     (let ((msg '(message ((from . "alice@example.com/home")
                           (type . "chat"))
@@ -81,7 +83,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-message-p-invite ()
   "MUC invite is a MUC message."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
     (let ((msg '(message ((from . "room@conference.example.com"))
                  (x ((xmlns . "http://jabber.org/protocol/muc#user"))
@@ -132,7 +134,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-presence-p-with-marker ()
   "Presence with muc#user namespace is MUC presence."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
     (let ((pres '(presence ((from . "room@conference.example.com/nick"))
                   (x ((xmlns . "http://jabber.org/protocol/muc#user"))
@@ -141,21 +143,23 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-presence-p-without-marker ()
   "Presence without muc#user namespace is not MUC presence."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
     (let ((pres '(presence ((from . "alice@example.com/home")))))
       (should-not (jabber-muc-presence-p pres)))))
 
 (ert-deftest jabber-test-muc-presence-p-error-pending ()
   "Error presence from pending groupchat is MUC presence."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
-    (puthash (intern "room@conference.example.com" jabber-jid-obarray)
+    (puthash (list 'fake-jc "room@conference.example.com")
              "mynick" jabber-pending-groupchats)
     (let ((pres '(presence ((from . "room@conference.example.com/mynick")
                             (type . "error"))
                   (error ((type . "cancel"))))))
-      (should (jabber-muc-presence-p pres)))))
+      (should (jabber-muc-presence-p pres 'fake-jc))
+      (should-not (jabber-muc-presence-p pres 'other-jc))
+      (should-not (jabber-muc-presence-p pres)))))
 
 ;;; Group 5: jabber-muc accessor functions
 
@@ -739,7 +743,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-message-p-direct-invite ()
   "XEP-0249 direct invite stanza is detected as a MUC message."
-  (let ((jabber-pending-groupchats (make-hash-table))
+  (let ((jabber-pending-groupchats (make-hash-table :test #'equal))
         (jabber-jid-obarray (make-vector 127 0)))
     (let ((msg '(message ((from . "alice@example.com/home"))
                (x ((xmlns . "jabber:x:conference")
@@ -879,7 +883,7 @@ entry with JC=nil."
   "A prompted room password is retained for forced self-ping rejoin."
   (jabber-test-muc-with-active-jc 'jc
     (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
-          (jabber-pending-groupchats (make-hash-table :test #'eq))
+          (jabber-pending-groupchats (make-hash-table :test #'equal))
           (jabber-jid-obarray (make-vector 127 0))
           sent)
       (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
@@ -1416,7 +1420,7 @@ entry with JC=nil."
          (jabber-muc--autojoin-timer nil)
          (jabber-muc--rooms (make-hash-table :test #'equal))
          (jabber-muc--generation 0)
-         (jabber-pending-groupchats (make-hash-table))
+         (jabber-pending-groupchats (make-hash-table :test #'equal))
          (jabber-jid-obarray (make-vector 127 0))
          (timer-scheduled nil))
     (cl-letf (((symbol-function 'run-with-timer)
@@ -1515,7 +1519,7 @@ entry with JC=nil."
     (setq-local jabber-chat-ewoc 'ewoc)
     (let (refreshed)
       (cl-letf (((symbol-function 'buffer-list)
-                 (lambda () (list (current-buffer))))
+                 (lambda (&optional _frame) (list (current-buffer))))
                 ((symbol-function 'ewoc-refresh)
                  (lambda (ewoc) (setq refreshed ewoc))))
         (jabber-muc--refresh-nick-faces)
@@ -1547,7 +1551,7 @@ entry with JC=nil."
         (set-window-point window position)
         (redisplay t)
         (cl-letf (((symbol-function 'buffer-list)
-                   (lambda () (list (current-buffer)))))
+                   (lambda (&optional _frame) (list (current-buffer)))))
           (jabber-muc--refresh-nick-faces))
         (setq anchor (jabber-chat-ewoc-find-by-id anchor-id)
               position (ewoc-location anchor))
@@ -1741,7 +1745,7 @@ entry with JC=nil."
     (cl-letf (((symbol-function 'jabber-chat--format-time)
                (lambda (&rest _args) "12:34"))
               ((symbol-function 'jabber-jid-rostername)
-               (lambda (_jid) "Room"))
+               (lambda (_jid &optional _jc) "Room"))
               ((symbol-function 'jabber-chat--insert-prompt)
                (lambda (&rest args)
                  (setq prompt-args args))))
@@ -1902,7 +1906,7 @@ entry with JC=nil."
          (jabber-muc--session-passwords (make-hash-table :test #'equal))
          (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
          (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
-         (jabber-pending-groupchats (make-hash-table :test #'eq))
+         (jabber-pending-groupchats (make-hash-table :test #'equal))
          (jabber-jid-obarray (make-vector 127 0))
          (jabber-bookmarks-auto-add nil)
          replies sent)
@@ -2096,7 +2100,7 @@ entry with JC=nil."
                 (let ((jabber-presence-element-functions nil))
                   (funcall (car (last replies)) nil)))))
           (should (equal sent (list (list jc "room@example.org/new" nil))))
-          (should (equal (gethash (jabber-jid-symbol room)
+          (should (equal (gethash (list jc room)
                                   jabber-pending-groupchats) "new"))
           (should-not (jabber-muc--session-password jc room))
           (should-not (get jc 'jabber-muc--join-intents)))))))
@@ -2129,7 +2133,7 @@ entry with JC=nil."
                    (jabber-muc-join jc room "old" t)))
                 ('direct (jabber-muc-join-3 jc room "old" "old-secret" nil)))))
           (should-not (seq-find (lambda (send) (null (nth 2 send))) sent))
-          (should-not (gethash (jabber-jid-symbol room) jabber-pending-groupchats))
+          (should-not (gethash (list jc room) jabber-pending-groupchats))
           (should-not (jabber-muc--session-password jc room))
           (should-not (get jc 'jabber-muc--join-intents)))))))
 
@@ -2198,11 +2202,11 @@ entry with JC=nil."
                   (dolist (reply replies) (funcall reply nil)))
                 (cond
                  ((or (eq action 'join) (memq action '(error quit)))
-                  (should (equal (gethash (jabber-jid-symbol room)
+                  (should (equal (gethash (list jc room)
                                           jabber-pending-groupchats) "new"))
                   (should (equal (car sent) (list jc "room@example.org/new" nil))))
                  ((null phase)
-                  (should (equal (gethash (jabber-jid-symbol room)
+                  (should (equal (gethash (list jc room)
                                           jabber-pending-groupchats) "old")))
                  ((eq phase 'presence)
                   (should-not (seq-find (lambda (send) (null (nth 2 send))) sent)))))
@@ -2244,7 +2248,7 @@ entry with JC=nil."
           (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
           (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
           (jabber-muc-participants nil)
-          (jabber-pending-groupchats (make-hash-table :test #'eq))
+          (jabber-pending-groupchats (make-hash-table :test #'equal))
           (jabber-jid-obarray (make-vector 127 0))
           (jabber-bookmarks-auto-add nil)
           (jabber-presence-element-functions nil)
@@ -2776,7 +2780,7 @@ entry with JC=nil."
         (should-not (get jc 'jabber-muc--join-intents))
         (funcall (car replies) nil)
         (should-not sent)
-        (should-not (gethash (jabber-jid-symbol room) jabber-pending-groupchats))))))
+        (should-not (gethash (list jc room) jabber-pending-groupchats))))))
 
 (ert-deftest jabber-test-muc-native-repeated-discovery ()
   "A completed native closure stays inert even after a new reservation."
@@ -2827,7 +2831,7 @@ entry with JC=nil."
           (should-not (get jc 'jabber-muc--join-intents))
           (should-not (gethash room jabber-muc--nonanonymous-rooms))
           (should-not (jabber-muc--session-password jc room))
-          (should-not (gethash (jabber-jid-symbol room) jabber-pending-groupchats)))))))
+          (should-not (gethash (list jc room) jabber-pending-groupchats)))))))
 
 (ert-deftest jabber-test-muc-native-create-prompt-outcomes ()
   "Silent creation bypasses prompting; decline and quit never hand off."
@@ -2923,7 +2927,7 @@ entry with JC=nil."
           (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
           (jabber-muc--session-passwords (make-hash-table :test #'equal))
           (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
-          (jabber-pending-groupchats (make-hash-table))
+          (jabber-pending-groupchats (make-hash-table :test #'equal))
           (jabber-muc-participants nil)
           (jabber-muc--autojoin-queue nil)
           (jabber-muc--autojoin-pending nil)
@@ -5287,3 +5291,141 @@ entry with JC=nil."
     (should (functionp (caar timers)))
     (apply (caar timers) (cdar timers))
     (should (equal sent (list (list jc "other@example.org/queued" nil))))))
+
+(ert-deftest jabber-test-muc-pending-owner-key-is-not-contact-metadata ()
+  "Room matching preserves case folding without retaining contact symbols."
+  (jabber-test-ms-with-lifecycle
+    (jabber-muc-join-3 jc (upcase room) "Alice" nil nil)
+    (let* ((jabber-jid-obarray (make-vector 127 0))
+           (message `(message ((from . ,(concat room "/Occupant"))
+                               (type . "error"))))
+           (presence `(presence ((from . ,(concat room "/Alice"))
+                                 (type . "error")))))
+      (should (jabber-muc-message-p message jc))
+      (should (jabber-muc-presence-p presence jc))
+      (should-not (jabber-muc-message-p message other))
+      (should-not (jabber-muc-presence-p presence other))
+      (should-not (jabber-muc-message-p message))
+      (should-not (jabber-muc-presence-p presence))
+      (should-not (jabber-muc-message-p '(message ((type . "error"))) jc))
+      (should-not (jabber-muc-presence-p '(presence ((type . "error"))) jc))
+      (should (equal (plist-get (jabber-muc--parse-presence presence jc)
+                                :our-nickname)
+                     "Alice"))
+      (should-not (plist-get (jabber-muc--parse-presence presence other)
+                             :our-nickname)))))
+
+(ert-deftest jabber-test-muc-pending-owner-presence-dispatch ()
+  "An unmarked error uses the receiving connection, not ambient room state."
+  (jabber-test-ms-with-lifecycle
+    (jabber-muc-join-3 jc room "alice" nil nil)
+    (let* ((error-stanza `(presence ((from . ,(concat room "/alice"))
+                                    (type . "error"))))
+           events
+           (jabber-presence-muc-functions
+            (list (lambda (owner _stanza) (push (list 'muc owner) events))))
+           (jabber-presence-contact-functions
+            (list (lambda (owner _from) (push (list 'direct owner) events)))))
+      (jabber-process-presence other error-stanza)
+      (jabber-process-presence jc error-stanza)
+      (should (equal (reverse events) (list (list 'direct other) (list 'muc jc))))
+      (setq events nil)
+      ;; An explicit marker needs no pending join on the receiving account.
+      (jabber-process-presence
+       other `(presence ((from . ,(concat room "/someone")))
+                        (x ((xmlns . "http://jabber.org/protocol/muc#user")))))
+      (should (equal events (list (list 'muc other)))))))
+
+(ert-deftest jabber-test-muc-pending-owner-message-dispatch ()
+  "A's remembered room never diverts B's direct error into the MUC handler."
+  (jabber-test-ms-with-lifecycle
+    (jabber-muc-join-3 jc room "alice" nil nil)
+    (let ((stanza `(message ((from . ,room) (type . "error"))
+                           (error ((type . "cancel"))
+                                  (forbidden ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+          events)
+      (cl-letf (((symbol-function 'jabber-chat--display-error)
+                 (lambda (owner _from _message) (push (list 'direct owner) events)))
+                ((symbol-function 'jabber-muc--display-message)
+                 (lambda (owner &rest _) (push (list 'muc owner) events))))
+        (dolist (owner (list other jc))
+          (jabber-process-chat owner stanza)
+          (jabber-muc-process-message owner stanza))
+        (should (equal (reverse events) (list (list 'direct other) (list 'muc jc))))
+        (setq events nil)
+        (jabber-process-chat other `(message ((from . ,room) (type . "groupchat"))))
+        (jabber-muc-process-message other `(message ((from . ,room) (type . "groupchat"))))
+        (should (equal events (list (list 'muc other))))))))
+
+(ert-deftest jabber-test-muc-pending-owner-legacy-self-presence ()
+  "Servers omitting 110 use only the receiving connection's last nickname."
+  (dolist (reverse-order '(nil t))
+    (jabber-test-ms-with-lifecycle
+      (let ((jabber-presence-muc-functions '(jabber-muc-process-presence)))
+        (jabber-muc-join-3 jc room "alice" nil nil)
+        ;; Before B joins, A's nickname cannot manufacture B's membership.
+        (jabber-process-presence
+         other `(presence ((from . ,(concat room "/alice")))
+                          (x ((xmlns . "http://jabber.org/protocol/muc#user")))))
+        (should-not (jabber-muc-joined-p room other))
+        (jabber-muc-join-3 other room "bob" nil nil)
+        (dolist (owner (if reverse-order (list other jc) (list jc other)))
+          (jabber-process-presence
+           owner `(presence ((from . ,(concat room (if (eq owner jc) "/alice" "/bob"))))
+                            (x ((xmlns . "http://jabber.org/protocol/muc#user"))))))
+        (should (equal (jabber-muc-nickname room jc) "alice"))
+        (should (equal (jabber-muc-nickname room other) "bob"))))))
+
+(ert-deftest jabber-test-muc-pending-owner-failure-leave-rejoin-reconnect ()
+  "Failure, leave and reconnect keep remembered nicknames connection-owned."
+  (jabber-test-ms-with-lifecycle
+    (let ((jabber-presence-muc-functions '(jabber-muc-process-presence))
+          (jabber-presence-contact-functions nil))
+      (jabber-muc-join-3 jc room "alice" nil nil)
+      (jabber-muc-join-3 other room "bob" nil nil)
+      ;; No 110 marker: a later join on B must not hide A's join failure.
+      (let (failures)
+        (cl-letf (((symbol-function 'jabber-muc--process-self-leave)
+                   (lambda (owner &rest _) (push owner failures))))
+          (jabber-process-presence
+           jc `(presence ((from . ,(concat room "/alice")) (type . "error"))
+                         (error ((code . "403"))))))
+        (should (equal failures (list jc))))
+      ;; Deliver the real failure path, then join both owners successfully.
+      (jabber-process-presence
+       jc `(presence ((from . ,(concat room "/alice")) (type . "error"))
+                     (error ((code . "403")))))
+      (should-not (jabber-muc-joined-p room jc))
+      (jabber-muc-join-3 jc room "retry" nil nil)
+      (dolist (pair (list (cons jc "retry") (cons other "bob")))
+        (jabber-process-presence
+         (car pair) `(presence ((from . ,(concat room "/" (cdr pair))))
+                              (x ((xmlns . "http://jabber.org/protocol/muc#user"))))))
+      (jabber-muc-leave jc room)
+      (should-not (jabber-muc-joined-p room jc))
+      (should (equal (jabber-muc-nickname room other) "bob"))
+      (jabber-muc-join-3 jc room "rejoined" nil nil)
+      (jabber-process-presence
+       jc `(presence ((from . ,(concat room "/rejoined")))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user")))))
+      (should (equal (jabber-muc-nickname room jc) "rejoined"))
+      (jabber-muc--session-reset jc)
+      (put jc :state-data (plist-put (fsm-get-state-data jc) :connection
+                                    (make-symbol "replacement-transport")))
+      (jabber-muc-join-3 jc room "reconnected" nil nil)
+      (jabber-process-presence
+       jc `(presence ((from . ,(concat room "/reconnected")))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user")))))
+      (should (equal (jabber-muc-nickname room jc) "reconnected"))
+      (should (equal (jabber-muc-nickname room other) "bob"))
+      ;; A replacement FSM (even for the same account) starts without a nick.
+      (let* ((replacement (make-symbol "replacement-jc"))
+             (jabber-connections (cons replacement jabber-connections))
+             contacts)
+        (put replacement :state :session-established)
+        (put replacement :state-data (copy-sequence (fsm-get-state-data jc)))
+        (let ((jabber-presence-contact-functions
+               (list (lambda (owner _from) (push owner contacts)))))
+          (jabber-process-presence
+           replacement `(presence ((from . ,room) (type . "error")))))
+        (should (equal contacts (list replacement)))))))

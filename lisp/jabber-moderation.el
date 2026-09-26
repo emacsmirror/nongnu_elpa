@@ -93,10 +93,10 @@ displaying sender-controlled fallback bodies even for unknown targets."
   "Return non-nil when XML-DATA is a MUC retraction action stanza."
   (jabber-moderation--muc-retraction-message-p xml-data))
 
-(defun jabber-moderation--room-supports-occupant-id-p (room)
-  "Return non-nil when cached disco info says ROOM supports XEP-0421."
+(defun jabber-moderation--room-supports-occupant-id-p (room jc)
+  "Return non-nil when ROOM advertises XEP-0421 on connection JC."
   (member jabber-moderation-occupant-id-xmlns
-          (nth 1 (jabber-disco-get-info-immediately room nil))))
+          (nth 1 (jabber-disco-get-info-immediately room nil jc))))
 
 (defun jabber-moderation--single-occupant-id (xml-data)
   "Return XML-DATA's one valid XEP-0421 occupant ID, or nil."
@@ -260,7 +260,7 @@ authorizes the sender."
   (when-let* ((from (jabber-xml-get-attribute xml-data 'from))
               ((jabber-jid-resource from))
               (room (jabber-jid-user from))
-              ((jabber-moderation--room-supports-occupant-id-p room))
+              ((jabber-moderation--room-supports-occupant-id-p room jc))
               (occupant-id (jabber-moderation--single-occupant-id xml-data))
               (server-id (jabber-xml-get-attribute retraction 'id))
               ((not (string-empty-p server-id)))

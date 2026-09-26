@@ -345,19 +345,21 @@
                           :blocking-status 'pending
                           :blocking-list '("peer@example.net")))
              (other (list :username "other" :server "example.org"))
+             (jabber-connections (list 'account 'other))
              (jabber-open-info-queries nil)
              (jabber-disco-info-cache (make-hash-table :test #'equal))
              (ready 0)
              (jabber-blocking-ready-hook (list (lambda (_) (cl-incf ready))))
              sent messages)
         ;; A cached unsupported answer must not bypass wire admission.
-        (puthash '("example.org" . nil) '(nil nil) jabber-disco-info-cache)
         (cl-letf (((symbol-function 'fsm-get-state-data)
                    (lambda (jc) (if (eq jc 'account) state other)))
                   ((symbol-function 'jabber-send-sexp)
                    (lambda (_jc xml &rest _) (push xml sent)))
                   ((symbol-function 'message)
                    (lambda (&rest args) (push args messages))))
+          (puthash (jabber-disco--cache-key 'account "example.org" nil)
+                   '(nil nil) jabber-disco-info-cache)
           (pcase kind
             ('disco (jabber-blocking--on-connect 'account))
             ('snapshot (jabber-blocking--fetch 'account))

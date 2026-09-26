@@ -51,9 +51,10 @@ jabber:iq:version query response, when `jabber-version-show` is non
   "Request software version of TO.
 
 JC is the Jabber connection."
-  (interactive (list
-		(jabber-read-account)
-		(jabber-read-jid-completing "Request version of: " nil nil nil 'full t)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Request version of: " nil nil nil 'full t jc))))
   (jabber-send-iq jc to
 		  "get"
 		  `(query ((xmlns . ,jabber-version-xmlns)))

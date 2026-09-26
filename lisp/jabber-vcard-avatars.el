@@ -67,20 +67,20 @@ obtained from `xml-parse-region'."
   ;; fetches, and a large room would flood the connection with IQs.
   (when (and jabber-vcard-avatars-retrieve
 	     (null (jabber-xml-get-attribute xml-data 'type))
-	     (not (jabber-muc-presence-p xml-data)))
+	     (not (jabber-muc-presence-p xml-data jc)))
     (let* ((from (jabber-jid-user (jabber-xml-get-attribute xml-data 'from)))
 	   (photo (jabber-xml-path xml-data `((,jabber-vcard-update-xmlns . "x") photo)))
 	   (sha1-hash (car (jabber-xml-node-children photo))))
       (cond
        ((null sha1-hash)
 	;; User has removed avatar
-	(jabber-avatar-set from nil))
-       ((string= sha1-hash (get (jabber-jid-symbol from) 'avatar-hash))
+	(jabber-avatar-set from nil jc))
+       ((string= sha1-hash (get (jabber-jid-symbol from jc) 'avatar-hash))
 	;; Same avatar as before; do nothing
 	)
        ((jabber-avatar-find-cached sha1-hash)
 	;; Avatar is cached
-	(jabber-avatar-set from sha1-hash))
+	(jabber-avatar-set from sha1-hash jc))
        (t
 	;; Avatar is not cached; retrieve it
 	(jabber-vcard-avatars-fetch jc from sha1-hash))))))
@@ -89,16 +89,19 @@ obtained from `xml-parse-region'."
   "Fetch vCard for JID and extract the avatar.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Fetch whose vCard avatar: ")
-		     nil))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Fetch whose vCard avatar: " nil nil nil nil nil jc)
+	   nil)))
   (jabber-send-iq jc jid "get" `(vCard ((xmlns . ,jabber-vcard-xmlns)))
 		  #'jabber-vcard-avatars-vcard (cons jid sha1-hash)
 		  #'ignore nil))
 
-(defun jabber-vcard-avatars-vcard (_jc iq closure)
+(defun jabber-vcard-avatars-vcard (jc iq closure)
   "Get the photo from the vCard, and set the avatar.
-IQ is the vCard result stanza.  CLOSURE is (FROM-JID . SHA1-HASH)."
+JC is the receiving connection.  IQ is the vCard result stanza.
+CLOSURE is (FROM-JID . SHA1-HASH)."
   (let ((from (car closure))
 	(sha1-hash (cdr closure))
 	(photo (assq 'PHOTO (jabber-vcard-parse (jabber-iq-query iq)))))
@@ -109,12 +112,12 @@ IQ is the vCard result stanza.  CLOSURE is (FROM-JID . SHA1-HASH)."
 		      (string= sha1-hash (jabber-avatar-sha1-sum avatar)))
 	    (when jabber-avatar-verbose
 	      (message "%s's avatar should have SHA1 sum %s, but has %s"
-		       (jabber-jid-displayname from)
+		       (jabber-jid-displayname from jc)
 		       sha1-hash
 		       (jabber-avatar-sha1-sum avatar))))
 	  (jabber-avatar-cache avatar)
-	  (jabber-avatar-set from avatar))
-      (jabber-avatar-set from nil))))
+	  (jabber-avatar-set from avatar jc))
+      (jabber-avatar-set from nil jc))))
 
 (defun jabber-vcard-avatars-find-current (jc)
   "Request our own vCard, to find hash of avatar.

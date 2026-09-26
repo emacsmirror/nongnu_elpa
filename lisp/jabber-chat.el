@@ -76,11 +76,11 @@ These fields are about your account:
 (defvar jabber-chat-header-line-format
   '("" (jabber-chat-buffer-show-avatar
 	(:eval
-	 (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
+	 (let ((buddy (jabber-jid-symbol jabber-chatting-with jabber-buffer-connection)))
 	   (propertize " "
 		       'display (get buddy 'avatar)))))
-    (:eval (jabber-jid-displayname jabber-chatting-with))
-    " " (:eval (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
+    (:eval (jabber-jid-displayname jabber-chatting-with jabber-buffer-connection))
+    " " (:eval (let ((buddy (jabber-jid-symbol jabber-chatting-with jabber-buffer-connection)))
 		 (propertize
 		  (or
 		   (cdr (assoc (get buddy 'show) jabber-presence-strings))
@@ -88,7 +88,7 @@ These fields are about your account:
 		  'face
 		  (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
 		      'jabber-roster-user-online))))
-    " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
+    " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with jabber-buffer-connection) 'status)))
     " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
     (:eval jabber-chat-receipt-message)	;see jabber-receipts.el
     (:eval (when jabber-chat-mam-syncing
@@ -568,7 +568,7 @@ expanded.  Either a string or a buffer is returned, so use `get-buffer'
 or `get-buffer-create'."
   (format-spec jabber-chat-buffer-format
 	       (list
-		(cons ?n (jabber-jid-displayname chat-with))
+		(cons ?n (jabber-jid-displayname chat-with jc))
 		(cons ?j (jabber-jid-user chat-with))
 		(cons ?r (or (jabber-jid-resource chat-with) ""))
 		(cons ?a (if jc (jabber-connection-bare-jid jc) ""))
@@ -1051,6 +1051,8 @@ When KEY is non-nil and a handler ran, record the outcome in
                     result)
            finally return xml-data))
 
+(defvar jabber-activity--event-owner)
+
 (defun jabber-chat--display-message (jc _xml-data chat-buffer
 					error-p from msg-plist)
   "Display an incoming message and run alert hooks.
@@ -1105,7 +1107,8 @@ _XML-DATA is reserved for future use by OMEMO."
                hook
                (lambda (function)
                  (save-current-buffer
-                   (funcall function from (origin) body-text title))
+                   (let ((jabber-activity--event-owner jc))
+                     (funcall function from (origin) body-text title)))
                  nil)))))))))
 
 (defun jabber-chat--find-buffer (from)
@@ -1142,10 +1145,10 @@ _XML-DATA is reserved for future use by OMEMO."
               (jabber-chat--buffer-peer-p buffer from muc-private-p)))
        (buffer-list)))))
 
-(defun jabber-chat--log-error (from msg-plist)
-  "Log the error in MSG-PLIST from FROM to the echo area when no buffer is open."
+(defun jabber-chat--log-error (from msg-plist &optional jc)
+  "Log MSG-PLIST's error from FROM on JC when no buffer is open."
   (message "jabber: error from %s: %s"
-           (jabber-jid-displayname from)
+           (jabber-jid-displayname from jc)
            (or (plist-get msg-plist :error-text) "Unknown error")))
 
 (defun jabber-chat--error-node-matches-p (node from text)
@@ -1180,12 +1183,12 @@ repeat of the previous identical error.  Otherwise log to the echo area."
       (with-current-buffer buffer
         (jabber-chat-buffer-with-scrolltobottom
          (jabber-chat--enter-error-collapsed msg-plist)))
-    (jabber-chat--log-error from msg-plist)))
+    (jabber-chat--log-error from msg-plist jc)))
 
 (defun jabber-process-chat (jc xml-data)
   "If XML-DATA is a one-to-one chat message, handle it as such.
 JC is the Jabber connection."
-  (when (and (not (jabber-muc-message-p xml-data))
+  (when (and (not (jabber-muc-message-p xml-data jc))
              (jabber-xml-get-attribute xml-data 'from))
     (let* ((unwrapped (jabber-chat--unwrap-carbon jc xml-data))
            (is-carbon (not (eq xml-data (car unwrapped))))
@@ -1637,7 +1640,7 @@ mouse hover and reachable from the keyboard with \\[display-local-help]."
               'face (if (plist-get entry :chosen)
                         'jabber-reaction-chosen
                       'jabber-reaction)
-              'help-echo (jabber-reactions--entry-help-echo entry)))
+              'help-echo (jabber-reactions--entry-help-echo entry jabber-buffer-connection)))
 
 (defun jabber-chat--insert-reactions (msg)
   "Insert compact reaction summaries for MSG."
@@ -1682,7 +1685,7 @@ is in the body the reply context is already visible inline."
        (let ((who (and-let* ((jid (plist-get msg :reply-to-jid)))
                     (if (jabber-muc-sender-p jid)
                         (jabber-jid-resource jid)
-                      (jabber-jid-displayname jid)))))
+                      (jabber-jid-displayname jid jabber-buffer-connection)))))
          (if (and who (not (string-empty-p who)))
              (format "reply to %s" who)
            "reply"))))
@@ -2035,7 +2038,7 @@ When DONT-PRINT-NICK-P is non-nil, omit the nickname."
          (nick (if dont-print-nick-p ""
                  (if (jabber-muc-sender-p from)
                      (jabber-jid-resource from)
-                   (jabber-jid-displayname from)))))
+                   (jabber-jid-displayname from jabber-buffer-connection)))))
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      nick
@@ -2110,7 +2113,7 @@ WHO and MODE follow the `jabber-body-printers' contract."
 			 ((memq who '(:muc-local :muc-foreign))
 			  (jabber-jid-resource (plist-get msg :from)))
 			 (t
-			  (jabber-jid-displayname (plist-get msg :from))))))
+			  (jabber-jid-displayname (plist-get msg :from) jabber-buffer-connection)))))
 	      (insert (propertize
 		       (concat nick
 			       " "
@@ -2934,11 +2937,13 @@ Skips URLs already handled by the image scanner."
 (defun jabber-send-message (jc to subject body type)
   "Send a message stanza to TO with SUBJECT, BODY and TYPE.
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "to: ")
-		     (jabber-read-with-input-method "subject: ")
-		     (jabber-read-with-input-method "body: ")
-		     (read-string "type: ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "to: " nil nil nil nil nil jc)
+	   (jabber-read-with-input-method "subject: ")
+	   (jabber-read-with-input-method "body: ")
+	   (read-string "type: "))))
   (jabber-send-sexp jc
 		    `(message ((to . ,to)
                                ,(if (> (length type) 0)

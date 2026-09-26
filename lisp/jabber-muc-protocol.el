@@ -37,22 +37,34 @@
 (defconst jabber-muc-xmlns-direct-invite "jabber:x:conference"
   "XEP-0249 Direct MUC Invitations namespace.")
 
-(defvar jabber-pending-groupchats (make-hash-table)
-  "Hash table of groupchats and nicknames.
-Keys are JID symbols; values are strings.
-This table records the last nickname used to join the particular
-chat room.  Items are thus never removed.")
+(defvar jabber-pending-groupchats (make-hash-table :test #'equal)
+  "Hash table of connection-owned groupchats and nicknames.
+Keys are (CONNECTION LOWERCASE-BARE-ROOM-JID) lists; values are nicknames.
+Remember the last nickname used on that connection, including after
+failure or departure.  Never use contact symbols as room identities.")
+
+(defun jabber-muc--pending-key (jc jid)
+  "Return a connection-owned pending room key for JC and JID.
+Keep the historical lowercase bare-JID matching without contact symbols."
+  (list jc (downcase (jabber-jid-user jid))))
+
+(defun jabber-muc--pending-nickname (jc jid)
+  "Return JC's last join nickname for JID, or nil without an owner.
+JID may be a bare room JID or a full occupant JID."
+  (and jc jid
+       (gethash (jabber-muc--pending-key jc jid) jabber-pending-groupchats)))
 
 ;;;###autoload
-(defun jabber-muc-message-p (message)
+(defun jabber-muc-message-p (message &optional jc)
   "Return non-nil if MESSAGE is a groupchat message.
 That does not include private messages in a groupchat, but does
-include groupchat invites."
+include groupchat invites.  JC is the receiving connection; without
+it, only explicit groupchat types and invitation markers qualify."
   (let ((from (jabber-xml-get-attribute message 'from))
         (type (jabber-xml-get-attribute message 'type)))
     (or (string= type "groupchat")
         (and (string= type "error")
-             (gethash (jabber-jid-symbol from) jabber-pending-groupchats))
+             (jabber-muc--pending-nickname jc from))
         (jabber-xml-path message `((,jabber-muc-xmlns-user . "x") invite))
         (jabber-xml-path
          message `((,jabber-muc-xmlns-direct-invite . "x"))))))
@@ -71,8 +83,9 @@ include groupchat invites."
     (and (not (string= type "groupchat"))
          (jabber-muc-sender-p from))))
 
-(defun jabber-muc-presence-p (presence)
-  "Return non-nil if PRESENCE is presence from groupchat."
+(defun jabber-muc-presence-p (presence &optional jc)
+  "Return non-nil if PRESENCE is presence from groupchat on JC.
+Without the receiving connection JC, require an explicit MUC marker."
   (let ((from (jabber-xml-get-attribute presence 'from))
         (type (jabber-xml-get-attribute presence 'type))
         (muc-marker
@@ -83,8 +96,7 @@ include groupchat invites."
           (jabber-xml-get-children presence 'x))))
     (or muc-marker
         (and (string= type "error")
-             (gethash (jabber-jid-symbol from)
-                      jabber-pending-groupchats)))))
+             (jabber-muc--pending-nickname jc from)))))
 
 (provide 'jabber-muc-protocol)
 

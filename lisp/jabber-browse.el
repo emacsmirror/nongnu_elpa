@@ -43,8 +43,10 @@
   "Send a browse infoquery request to TO.
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "browse: " nil nil nil nil t)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "browse: " nil nil nil nil t jc))))
   (jabber-send-iq jc to
                   "get"
                   `(query ((xmlns . ,jabber-browse-xmlns)))

@@ -1,5 +1,37 @@
 #+TITLE: Changelog
 
+* Unreleased
+
+** Fixes
+- Keep contact names, presence, subscriptions, avatars and resource capabilities
+  separate for each connection, including completion and background chat alerts.
+- Keep unread activity and subscription prompts attached to their originating
+  account when several accounts share a contact or room.
+- Scope service-discovery observations and pending room errors to their
+  connection; capability retries retain the advertising account and node.
+- Keep named resources independently selectable, preserving resource case.
+- Reclaim retired discovery observations when storing new observations, without
+  clearing other live accounts or globally verified capabilities.
+
+** Extension compatibility
+- Restart Emacs disconnected before first using this version.  Existing live
+  global-symbol rosters and pending-room tables are not migrated by reloading
+  Lisp files.
+- =jabber-jid-symbol=, the roster/display/bookmark name helpers and
+  =jabber-avatar-set= accept a final optional connection argument.  Pass it
+  when reading or writing automatic roster metadata.  Without it, these APIs
+  use only supplied symbols or legacy accountless data, never a guessed account.
+- Presence hooks and title callbacks keep their existing arities.  Their WHO
+  argument is an account-scoped symbol; =jabber-jid-owner= returns its connection.
+  Direct symbol-property reads on WHO remain supported.
+- =jabber-read-jid-completing= accepts the connection as its seventh argument.
+  An explicitly selected empty account does not fall back to other rosters.
+- Activity entries now retain connection/JID pairs internally.  Existing custom
+  activity formatters and visibility predicates still receive JID strings.
+  Legacy JID-only navigation refuses ambiguous owners instead of choosing one.
+  Legacy JID widgets can carry their owner in the =:jabber-connection= property.
+
+
 * [0.14.0]
 #+date: 2026-09-05
 

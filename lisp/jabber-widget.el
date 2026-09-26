@@ -36,8 +36,8 @@
 (define-widget 'jabber-widget-jid 'string
   "JID widget retained for legacy callers of this adapter."
   :value-to-internal
-  (lambda (_widget value)
-    (if-let* ((displayname (jabber-jid-rostername value)))
+  (lambda (widget value)
+    (if-let* ((displayname (jabber-jid-rostername value (widget-get widget :jabber-connection))))
         (format "%s <%s>" displayname value)
       value))
   :value-to-external
@@ -50,12 +50,15 @@
 (defun jabber-widget-jid-complete (widget)
   "Complete the JID preceding point in legacy WIDGET."
   (require 'wid-edit)
-  (let* ((prefix (buffer-substring-no-properties
+  (let* ((jc (widget-get widget :jabber-connection))
+         (roster (if jc (plist-get (fsm-get-state-data jc) :roster)
+                   jabber-roster-list))
+         (prefix (buffer-substring-no-properties
                   (funcall (symbol-function 'widget-field-start) widget)
                   (point)))
          (candidates
-          (append (mapcar #'symbol-name jabber-roster-list)
-                  (cl-loop for item in jabber-roster-list
+          (append (mapcar #'symbol-name roster)
+                  (cl-loop for item in roster
                            for name = (jabber-jid-rostername item)
                            when name
                            collect (format "%s <%s>" name item))))

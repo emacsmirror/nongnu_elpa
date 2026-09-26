@@ -29,7 +29,7 @@
   "The roster list.")
 
 (defvar jabber-jid-obarray (make-vector 127 0)
-  "Obarray for interned JIDs.")
+  "Legacy accountless JID namespace; connected contacts are private to each FSM.")
 
 (define-obsolete-variable-alias '*jabber-disconnecting*
   'jabber-disconnecting "0.11.0")
@@ -60,12 +60,19 @@ accepted when checking for an existing handler."
                    (< (funcall entry-depth a)
                       (funcall entry-depth b))))))))
 
-(defun jabber-clear-roster ()
-  "Clear all interned roster state."
-  (mapatoms (lambda (jid)
-              (unintern jid jabber-jid-obarray))
-            jabber-jid-obarray)
-  (setq jabber-roster-list nil))
+(defun jabber-clear-roster (&optional jc)
+  "Clear contact metadata belonging to JC.
+Without JC, clear every currently registered connection and legacy state.
+Retain scoped symbol identities and their owner for existing hook arguments."
+  (if jc
+      (when-let* ((table (get jc 'jabber--jid-obarray)))
+        (mapatoms (lambda (jid)
+                    (setplist jid (list 'jabber--jid-owner jc)))
+                  table))
+    (mapc #'jabber-clear-roster jabber-connections)
+    (mapatoms (lambda (jid) (unintern jid jabber-jid-obarray))
+              jabber-jid-obarray)
+    (setq jabber-roster-list nil)))
 
 (provide 'jabber-state)
 

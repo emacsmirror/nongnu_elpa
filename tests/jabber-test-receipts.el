@@ -138,7 +138,7 @@
 (ert-deftest jabber-test-receipts-send-received-on-request ()
   "Incoming message with <request/> triggers <received/> response."
   (let ((sent-sexp nil)
-        (contact (jabber-jid-symbol "them@example.com")))
+        (contact (jabber-jid-symbol "them@example.com" 'fake-jc)))
     (unwind-protect
         (progn
           (put contact 'subscription "from")

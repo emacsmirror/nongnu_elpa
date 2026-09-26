@@ -213,7 +213,7 @@ In 1:1 chat, use the username part of the JID."
   (cond
    ((bound-and-true-p jabber-group)
     (or (jabber-jid-resource jid)
-        (jabber-jid-displayname jid)))
+        (jabber-jid-displayname jid jabber-buffer-connection)))
    ((jabber-muc-sender-p jid)
     (jabber-jid-resource jid))
    (t

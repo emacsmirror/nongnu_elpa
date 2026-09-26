@@ -50,7 +50,31 @@
 
 (jabber-chain-add 'jabber-presence-chain #'jabber-process-caps 10)
 
-(defvar jabber-caps-cache (make-hash-table :test 'equal))
+(defvar jabber-caps-cache (make-hash-table :test 'equal)
+  "Globally reusable, verified capabilities keyed by (HASH . VER).")
+
+(defvar jabber-caps--pending (make-hash-table :test 'equal)
+  "Pending capabilities requests keyed by (HASH . VER).
+Each value contains :active, :queue and :timer.  Candidates retain a
+session owner, full JID and advertised node; they are not verified data.")
+
+(defun jabber-disco--owner (jc)
+  "Return a session-qualified observation owner for connection JC.
+Ordinary FSM state copies preserve ownership; a new transport or stream
+retires it.  Never derive an owner from the current buffer."
+  (when jc
+    (let ((state (fsm-get-state-data jc)))
+      (list jc (plist-get state :connection) (plist-get state :session-id)
+            (plist-get state :username) (plist-get state :server)))))
+
+(defun jabber-disco--owner-current-p (owner)
+  "Return non-nil if OWNER still identifies a connected session."
+  (and owner (memq (car owner) jabber-connections)
+       (equal owner (jabber-disco--owner (car owner)))))
+
+(defun jabber-disco--cache-key (jc jid node)
+  "Return JC's session-qualified observation key for JID and NODE."
+  (list (jabber-disco--owner jc) jid node))
 
 (defconst jabber-caps-hash-names
   '(("sha-1" . sha1)
@@ -64,14 +88,26 @@ to symbols accepted by `secure-hash'.
 
 XEP-0115 currently recommends SHA-1, but let's be future-proof.")
 
-;; Keys are ("jid" . "node"), where "node" is nil if appropriate.
+;; Keys are (OWNER JID NODE), where NODE may be nil.
 ;; Values are (identities features), where each identity is ["name"
 ;; "category" "type"], and each feature is a string.
 (defvar jabber-disco-info-cache (make-hash-table :test 'equal))
 
-;; Keys are ("jid" . "node").  Values are (items), where each
+;; Keys are (OWNER JID NODE).  Values are items, where each
 ;; item is ["name" "jid" "node"] (some values may be nil).
 (defvar jabber-disco-items-cache (make-hash-table :test 'equal))
+
+(defun jabber-disco--cache-observation (key value cache)
+  "Store observation VALUE under KEY in CACHE, reclaiming retired owners.
+Before each insertion, prune both observation tables against current session
+ownership.  Thus retired generations cannot accumulate as observations arrive.
+Leave other live owners and the global verified capabilities cache untouched."
+  (dolist (table (list jabber-disco-info-cache jabber-disco-items-cache))
+    (maphash (lambda (observation _value)
+               (unless (jabber-disco--owner-current-p (car observation))
+                 (remhash observation table)))
+             table))
+  (puthash key value cache))
 
 (defvar jabber-advertised-features
   (list jabber-disco-xmlns-info
@@ -135,18 +171,18 @@ nil, access is always granted.")
 (add-to-list 'jabber-iq-get-xmlns-alist
 	     (cons jabber-disco-xmlns-items 'jabber-return-disco-info))
 
-(defun jabber-caps-get-cached (jid)
-  "Get disco info from Entity Capabilities cache.
-JID should be a string containing a full JID.
-Return (IDENTITIES FEATURES), or nil if not in cache."
-  (let* ((symbol (jabber-jid-symbol jid))
-	 (resource (or (jabber-jid-resource jid) ""))
-	 (resource-plist (cdr (assoc resource (get symbol 'resources))))
-	 (key (plist-get resource-plist 'caps)))
-    (when key
-      (let ((cache-entry (gethash key jabber-caps-cache)))
-	(when (and (consp cache-entry) (not (floatp (car cache-entry))))
-	  cache-entry)))))
+(defun jabber-caps-get-cached (jid &optional jc)
+  "Get verified capabilities for full JID observed on connection JC.
+Return (IDENTITIES FEATURES), or nil if no owned observation is known.
+An omitted JC never selects an ambient account."
+  (when (jabber-disco--owner-current-p (jabber-disco--owner jc))
+    (let* ((symbol (jabber-jid-symbol jid jc))
+           (resource (or (jabber-jid-resource jid) ""))
+           (resource-plist (cdr (assoc resource (get symbol 'resources))))
+           (key (plist-get resource-plist 'caps))
+           (owner (plist-get resource-plist 'caps-owner)))
+      (when (and key (equal owner (jabber-disco--owner jc)))
+        (gethash key jabber-caps-cache)))))
 
 ;;;###autoload
 (defun jabber-process-caps (jc xml-data)
@@ -171,143 +207,137 @@ obtained from `xml-parse-region'."
 	  ;; TODO: do something clever here.
 	  ))))))
 
-(defun jabber-caps--store-hash (jid key)
-  "Store caps hash KEY in the resource plist for JID.
-KEY is a cons cell (HASH . VER) identifying the entity capabilities.
-JID is a full JID string; the resource portion is used as the
-key in the symbol's `resources' property."
-  (let* ((symbol (jabber-jid-symbol jid))
-	 (resource (or (jabber-jid-resource jid) ""))
-	 (resource-entry (assoc resource (get symbol 'resources)))
-	 (new-resource-plist (plist-put (cdr resource-entry) 'caps key)))
+(defun jabber-caps--store-hash (jid key jc)
+  "Store caps hash KEY for full JID observed on connection JC.
+KEY is (HASH . VER).  Retain the session owner with the resource mapping."
+  (let* ((symbol (jabber-jid-symbol jid jc))
+         (resource (or (jabber-jid-resource jid) ""))
+         (resource-entry (assoc resource (get symbol 'resources)))
+         (properties (plist-put (plist-put (cdr resource-entry) 'caps key)
+                                'caps-owner (jabber-disco--owner jc))))
     (if resource-entry
-	(setf (cdr resource-entry) new-resource-plist)
-      (push (cons resource new-resource-plist) (get symbol 'resources)))))
+        (setcdr resource-entry properties)
+      (push (cons resource properties) (get symbol 'resources)))
+    (remhash (jabber-disco--cache-key jc jid nil) jabber-disco-info-cache)))
 
 (defun jabber-caps--query-if-needed (jc jid hash node ver key cache-entry)
-  "Decide whether to send a disco#info query for entity capabilities.
-JC is the Jabber connection.  JID is the full JID of the entity.
-HASH, NODE, and VER are the XEP-0115 capability fields.
-KEY is (HASH . VER), the cache key.  CACHE-ENTRY is the current
-value in `jabber-caps-cache' for KEY.
-
-When CACHE-ENTRY is a pending query (timestamp float), either
-add JID to the fallback list or re-query if the timeout (10s)
-has elapsed.  When CACHE-ENTRY is nil, record a pending query
-and send a disco#info request.  Otherwise, copy the cached
-capabilities into `jabber-disco-info-cache' for JID."
-  (cl-flet ((request-disco-info
-	      ()
-	      (jabber-send-iq
-	       jc jid
-	       "get"
-	       `(query ((xmlns . ,jabber-disco-xmlns-info)
-			(node . ,(concat node "#" ver))))
-	       #'jabber-process-caps-info-result (list hash node ver)
-	       #'jabber-process-caps-info-error (list hash node ver))))
-    (cond
-     ((and (consp cache-entry)
-	   (floatp (car cache-entry)))
-      ;; We have a record of asking someone about this hash.
-      (if (< (- (float-time) (car cache-entry)) 10.0)
-	  ;; We asked someone about this hash less than 10 seconds ago.
-	  ;; Let's add the new JID to the entry, just in case that
-	  ;; doesn't work out.
-	  (cl-pushnew jid (cdr cache-entry) :test #'string=)
-	;; We asked someone about it more than 10 seconds ago.
-	;; They're probably not going to answer.  Let's ask
-	;; this contact about it instead.
-	(setf (car cache-entry) (float-time))
-	(request-disco-info)))
-     ((null cache-entry)
-      ;; Check persistent storage before querying the network.
-      (let ((db-entry (jabber-db-caps-lookup hash ver)))
-        (if db-entry
-            (progn
-              (puthash key db-entry jabber-caps-cache)
-              (puthash (cons jid nil) db-entry jabber-disco-info-cache))
-          (puthash key (list (float-time)) jabber-caps-cache)
-          (request-disco-info))))
-     (t
-      ;; We already know what this hash represents, so we
-      ;; can cache info for this contact.
-      (puthash (cons jid nil) cache-entry jabber-disco-info-cache)))))
+  "Resolve capabilities advertised by JID on JC as HASH, NODE and VER.
+KEY is (HASH . VER); CACHE-ENTRY contains only verified capabilities.
+Keep unverified candidates, including their owners, in a separate table."
+  (let* ((owner (jabber-disco--owner jc))
+         (info (or cache-entry (jabber-db-caps-lookup hash ver))))
+    (when (jabber-disco--owner-current-p owner)
+      (if info
+          (progn
+            (puthash key info jabber-caps-cache)
+            (jabber-disco--cache-observation
+             (list owner jid nil) info jabber-disco-info-cache))
+        (let* ((candidate (list owner jid node))
+               (pending (gethash key jabber-caps--pending)))
+          (if pending
+              (unless (equal candidate (plist-get pending :active))
+                (cl-pushnew candidate (plist-get pending :queue) :test #'equal))
+            (setq pending (list :active nil :queue (list candidate) :timer nil))
+            (puthash key pending jabber-caps--pending)
+            (jabber-caps-try-next key pending)))))))
 
 (defun jabber-process-caps-modern (jc jid hash node ver)
-  "Processes the capabilities of a contact which supports XEP-0115 v1.5 or later.
+  "Process capabilities advertised by JID on connection JC.
+HASH, NODE and VER are the XEP-0115 advertisement fields."
+  (when (and (assoc hash jabber-caps-hash-names)
+             (stringp node) (stringp ver)
+             (jabber-disco--owner-current-p (jabber-disco--owner jc)))
+    (let ((key (cons hash ver)))
+      (jabber-caps--store-hash jid key jc)
+      (jabber-caps--query-if-needed
+       jc jid hash node ver key (gethash key jabber-caps-cache)))))
 
-JC is the jabber connection of the sender,
-JID is the Jabber ID of the entity sending the capabilities information.
-HASH is the generated hash representing the sender's capabilities.
-NODE is the namespace of the format.
-and VER is the entity's version number."
-  (when (assoc hash jabber-caps-hash-names)
-    ;; We support the hash function used.
-    (let* ((key (cons hash ver))
-	   (cache-entry (gethash key jabber-caps-cache)))
-      (jabber-caps--store-hash jid key)
-      (jabber-caps--query-if-needed jc jid hash node ver key cache-entry))))
+(defun jabber-caps--active-p (key pending candidate)
+  "Return non-nil if KEY still owns PENDING and its active CANDIDATE."
+  (and (eq pending (gethash key jabber-caps--pending))
+       (eq candidate (plist-get pending :active))))
+
+(defun jabber-caps--cancel-attempt (pending)
+  "Retire PENDING's active timer and exact IQ continuations."
+  (when-let* ((timer (plist-get pending :timer)))
+    (cancel-timer timer))
+  (let ((candidate (plist-get pending :active)))
+    (setq jabber-open-info-queries
+          (cl-delete-if
+           (lambda (query)
+             (let ((callback (nth 1 query)))
+               (and (eq (car-safe callback) #'jabber-process-caps-info-result)
+                    (eq (nth 2 callback) pending)
+                    (eq (nth 3 callback) candidate))))
+           jabber-open-info-queries)))
+  (setf (plist-get pending :active) nil
+        (plist-get pending :timer) nil))
+
+(defun jabber-caps--settle (key pending)
+  "Remove the pending request for KEY if it still owns PENDING."
+  (when (eq pending (gethash key jabber-caps--pending))
+    (jabber-caps--cancel-attempt pending)
+    (remhash key jabber-caps--pending)))
 
 (defun jabber-process-caps-info-result (jc xml-data closure-data)
-  "Process the result of a jabber server's caps info request.
-
-JC is the jabber connection.
-XML-DATA is the XML data received from the server.
-CLOSURE-DATA is in the format of (HASH NODE VER), where HASH is the
-verification hash received from the server.
-NODE represents the software identification, and VER is the software version.
-
-If the verification string matches with VER, the software's discovery
-/disco/ information will be stored in the jabber-caps-cache,
-otherwise, it will try the next available option."
-  (pcase-let* ((`(,hash ,node ,ver) closure-data)
-	       (key (cons hash ver))
-	       (query (jabber-iq-query xml-data))
-	       (verification-string (jabber-caps-ver-string query hash)))
-    (if (string= ver verification-string)
-	;; The hash is correct; save info.
-	(let ((info (jabber-disco-parse-info xml-data)))
-	  (puthash key info jabber-caps-cache)
-	  (jabber-db-caps-store hash ver (car info) (cadr info)))
-      ;; The hash is incorrect.
-      (jabber-caps-try-next jc hash node ver))))
+  "Verify caps XML-DATA received on JC for CLOSURE-DATA.
+CLOSURE-DATA retains the hash key, pending request and owned candidate."
+  (pcase-let ((`(,key ,pending ,candidate) closure-data))
+    (when (and (jabber-caps--active-p key pending candidate)
+               (eq jc (caar candidate)))
+      (if (and (jabber-disco--owner-current-p (car candidate))
+               (equal (cdr key)
+                      (jabber-caps-ver-string (jabber-iq-query xml-data)
+                                              (car key))))
+          (let ((info (jabber-disco-parse-info xml-data)))
+            (jabber-caps--settle key pending)
+            (puthash key info jabber-caps-cache)
+            (jabber-db-caps-store (car key) (cdr key) (car info) (cadr info)))
+        (jabber-caps-try-next key pending)))))
 
 (defun jabber-process-caps-info-error (jc _xml-data closure-data)
-  "Process error in caps info for Jabber.
+  "Advance the owned caps request in CLOSURE-DATA after an error on JC."
+  (pcase-let ((`(,key ,pending ,candidate) closure-data))
+    (when (and (jabber-caps--active-p key pending candidate)
+               (eq jc (caar candidate)))
+      (jabber-caps-try-next key pending))))
 
-JC is the Jabber connection.
+(defun jabber-caps--timeout (key pending candidate)
+  "Advance KEY's PENDING request only if CANDIDATE still owns its timer."
+  (when (jabber-caps--active-p key pending candidate)
+    (jabber-caps-try-next key pending)))
 
-CLOSURE-DATA is a list of three parameters: hash, node, and version.
-
-This function makes another attempt to process the caps info when an
-error occurs."
-  (pcase-let ((`(,hash ,node ,ver) closure-data))
-    (jabber-caps-try-next jc hash node ver)))
-
-(defun jabber-caps-try-next (jc hash node ver)
-  "Try the next JID for a cached entry in Jabber CAPS Cache.
-
-JC is the Jabber connection.
-HASH is the hash value of the CAPS.
-NODE is the node identifier in the XEP-0115 specification.
-VER is the version string of the CAPS."
-  (let* ((key (cons hash ver))
-	 (cache-entry (gethash key jabber-caps-cache)))
-    (when (floatp (car-safe cache-entry))
-      (let ((next-jid (pop (cdr cache-entry))))
-	;; Do we know someone else we could ask about this hash?
-	(if next-jid
-	    (progn
-	      (setf (car cache-entry) (float-time))
-	      (jabber-send-iq
-	       jc next-jid
-	       "get"
-	       `(query ((xmlns . ,jabber-disco-xmlns-info)
-			(node . ,(concat node "#" ver))))
-	       #'jabber-process-caps-info-result (list hash node ver)
-	       #'jabber-process-caps-info-error (list hash node ver)))
-	  ;; No, forget about it for now.
-	  (remhash key jabber-caps-cache))))))
+(defun jabber-caps-try-next (key pending)
+  "Query the next live candidate for KEY in the owned PENDING request.
+Discard retired candidates.  Never reuse a failed candidate's connection
+or advertised node, and expire each attempt after ten seconds."
+  (when (eq pending (gethash key jabber-caps--pending))
+    (jabber-caps--cancel-attempt pending)
+    (let ((candidate (pop (plist-get pending :queue))))
+      (while (and candidate
+                  (not (jabber-disco--owner-current-p (car candidate))))
+        (setq candidate (pop (plist-get pending :queue))))
+      (if (null candidate)
+          (jabber-caps--settle key pending)
+        (setf (plist-get pending :active) candidate
+              (plist-get pending :timer)
+              (run-at-time 10 nil #'jabber-caps--timeout key pending candidate))
+        (pcase-let ((`(,owner ,jid ,node) candidate))
+          (condition-case err
+              (jabber-send-iq
+               (car owner) jid "get"
+               `(query ((xmlns . ,jabber-disco-xmlns-info)
+                        (node . ,(concat node "#" (cdr key)))))
+               #'jabber-process-caps-info-result (list key pending candidate)
+               #'jabber-process-caps-info-error (list key pending candidate))
+            (error
+             (when (jabber-caps--active-p key pending candidate)
+               (jabber-caps-try-next key pending))
+             (message "Capabilities query failed: %s" (error-message-string err)))
+            (quit
+             (when (jabber-caps--active-p key pending candidate)
+               (jabber-caps--settle key pending))
+             (signal (car err) (cdr err)))))))))
 
 (defun jabber-caps--identity-string (identities)
   "Build the identity portion of a caps verification string.
@@ -508,9 +538,11 @@ is classified as pc, otherwise console."
 JC, the Jabber connection, is typically required to be active.
 TO is the JID (Jabber ID) of the entity to request items from.
 NODE is an optional parameter specifying a particular node to request items for."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Send items disco request to: " nil nil nil 'full t)
-		     (jabber-read-node "Node (or leave empty): ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Send items disco request to: " nil nil nil 'full t jc)
+	   (jabber-read-node "Node (or leave empty): "))))
   (jabber-send-iq jc to
 		  "get"
 		  (list 'query (append (list (cons 'xmlns jabber-disco-xmlns-items))
@@ -526,9 +558,11 @@ JC is the Jabber connection.
 TO is the JID (Jabber ID) of the entity to request items from.
 NODE is an optional parameter specifying a particular node to request
 items for."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Send info disco request to: " nil nil nil 'full t)
-		     (jabber-read-node "Node (or leave empty): ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Send info disco request to: " nil nil nil 'full t jc)
+	   (jabber-read-node "Node (or leave empty): "))))
   (jabber-send-iq jc to
 		  "get"
 		  (list 'query (append (list (cons 'xmlns jabber-disco-xmlns-info))
@@ -592,6 +626,19 @@ obtained from `xml-parse-region'."
 	      'jabber-node node))))
       (insert "No items found.\n"))))
 
+(defun jabber-disco--owned-callback (jc callback)
+  "Return CALLBACK guarded by JC's captured session and receiving owner."
+  (let ((owner (jabber-disco--owner jc)))
+    (lambda (received-jc arg1 arg2)
+      (when (and (eq received-jc jc) (jabber-disco--owner-current-p owner))
+        (funcall callback jc arg1 arg2)))))
+
+(defun jabber-disco--got-error (jc xml-data callback-data)
+  "Deliver the error in XML-DATA on JC to CALLBACK-DATA."
+  (when (car callback-data)
+    (funcall (car callback-data) jc (cdr callback-data)
+             (jabber-iq-error xml-data))))
+
 (defun jabber-disco-get-info (jc jid node callback closure-data &optional force
                                  response-predicate)
   "Get disco info for JID and NODE, using connection JC.
@@ -603,23 +650,25 @@ On success, result is (IDENTITIES FEATURES), where each identity is [\"name\"
 On error, result is the error node, recognizable by (eq (car result) \\='error).
 
 If CALLBACK is nil, just fetch data.  If FORCE is non-nil,
-invalidate cache and get fresh data.
+invalidate only this session's cache and get fresh data.
+Discard callbacks after JC is removed or its transport or stream changes.
 RESPONSE-PREDICATE is passed to `jabber-send-iq'; when supplied, bypass
 the shared cache so that only an admitted wire response supplies the result."
   (when force
-    (remhash (cons jid node) jabber-disco-info-cache))
+    (remhash (jabber-disco--cache-key jc jid node) jabber-disco-info-cache))
   (let ((result (unless (or force response-predicate)
-                  (jabber-disco-get-info-immediately jid node))))
+                  (jabber-disco-get-info-immediately jid node jc))))
     (if result
-	(and callback (run-with-timer 0 nil callback jc closure-data result))
+	(and callback
+             (run-with-timer 0 nil (jabber-disco--owned-callback jc callback)
+                             jc closure-data result))
       (jabber-send-iq jc jid
 		      "get"
 		      `(query ((xmlns . ,jabber-disco-xmlns-info)
 			       ,@(when node `((node . ,node)))))
-		      #'jabber-disco-got-info (cons callback closure-data)
-		      (lambda (jc xml-data callback-data)
-			(when (car callback-data)
-			  (funcall (car callback-data) jc (cdr callback-data) (jabber-iq-error xml-data))))
+		      (jabber-disco--owned-callback jc #'jabber-disco-got-info)
+                      (cons callback closure-data)
+		      (jabber-disco--owned-callback jc #'jabber-disco--got-error)
 		      (cons callback closure-data) nil response-predicate))))
 
 (defun jabber-disco-got-info (jc xml-data callback-data)
@@ -637,7 +686,8 @@ query response."
 	(node (jabber-xml-get-attribute (jabber-iq-query xml-data)
 					'node))
 	(result (jabber-disco-parse-info xml-data)))
-    (puthash (cons jid node) result jabber-disco-info-cache)
+    (jabber-disco--cache-observation (jabber-disco--cache-key jc jid node)
+                                   result jabber-disco-info-cache)
     (when (car callback-data)
       (funcall (car callback-data) jc (cdr callback-data) result))))
 
@@ -663,16 +713,13 @@ obtained from `xml-parse-region'."
       (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns))
     (jabber-xml-get-children (jabber-iq-query xml-data) 'x))))
 
-(defun jabber-disco-get-info-immediately (jid node)
-  "Get cached disco info for JID and NODE.
-Return nil if no info available.
-
+(defun jabber-disco-get-info-immediately (jid node &optional jc)
+  "Get cached disco info for JID and NODE observed on connection JC.
+Return nil if no owned info is available; never select an ambient account.
 Fill the cache with `jabber-disco-get-info'."
-  (or
-   ;; Check "normal" cache...
-   (gethash (cons jid node) jabber-disco-info-cache)
-   ;; And then check Entity Capabilities.
-   (and (null node) (jabber-caps-get-cached jid))))
+  (when (jabber-disco--owner-current-p (jabber-disco--owner jc))
+    (or (gethash (jabber-disco--cache-key jc jid node) jabber-disco-info-cache)
+        (and (null node) (jabber-caps-get-cached jid jc)))))
 
 (defun jabber-disco-get-items (jc jid node callback closure-data &optional force)
   "Get disco items for JID and NODE, using connection JC.
@@ -685,20 +732,23 @@ item is [\"name\" \"jid\" \"node\"] (some values may be nil).
 On error, result is the error node, recognizable by (eq (car result) \\='error).
 
 If CALLBACK is nil, just fetch data.  If FORCE is non-nil,
-invalidate cache and get fresh data."
+invalidate only this session's cache and get fresh data.
+Discard callbacks after JC is removed or its transport or stream changes."
   (when force
-    (remhash (cons jid node) jabber-disco-items-cache))
-  (let ((result (gethash (cons jid node) jabber-disco-items-cache)))
+    (remhash (jabber-disco--cache-key jc jid node) jabber-disco-items-cache))
+  (let ((result (gethash (jabber-disco--cache-key jc jid node)
+                         jabber-disco-items-cache)))
     (if result
-	(and callback (run-with-timer 0 nil callback jc closure-data result))
+	(and callback
+             (run-with-timer 0 nil (jabber-disco--owned-callback jc callback)
+                             jc closure-data result))
       (jabber-send-iq jc jid
 		      "get"
 		      `(query ((xmlns . ,jabber-disco-xmlns-items)
 			       ,@(when node `((node . ,node)))))
-		      #'jabber-disco-got-items (cons callback closure-data)
-		      (lambda (jc xml-data callback-data)
-			(when (car callback-data)
-			  (funcall (car callback-data) jc (cdr callback-data) (jabber-iq-error xml-data))))
+		      (jabber-disco--owned-callback jc #'jabber-disco-got-items)
+                      (cons callback closure-data)
+		      (jabber-disco--owned-callback jc #'jabber-disco--got-error)
 		      (cons callback closure-data)))))
 
 (defun jabber-disco-got-items (jc xml-data callback-data)
@@ -720,7 +770,8 @@ called with JC, the remaining CALLBACK-DATA, and the obtained RESULT."
 	       (jabber-xml-get-attribute item 'jid)
 	       (jabber-xml-get-attribute item 'node)))
 	  (jabber-xml-get-children (jabber-iq-query xml-data) 'item))))
-    (puthash (cons jid node) result jabber-disco-items-cache)
+    (jabber-disco--cache-observation (jabber-disco--cache-key jc jid node)
+                                   result jabber-disco-items-cache)
     (when (car callback-data)
       (funcall (car callback-data) jc (cdr callback-data) result))))
 

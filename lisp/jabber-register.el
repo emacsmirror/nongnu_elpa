@@ -66,8 +66,10 @@
   "Send IQ get request to TO in namespace \"jabber:iq:register\".
 
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Register with: ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Register with: " nil nil nil nil nil jc))))
   (jabber-send-iq jc to
 		  "get"
 		  `(query ((xmlns . ,jabber-register-xmlns)))

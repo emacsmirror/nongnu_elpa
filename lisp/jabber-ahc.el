@@ -170,8 +170,10 @@ XML-DATA is the IQ stanza."
 
 See XEP-0050.
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Request command list from: " nil nil nil nil nil)))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Request command list from: " nil nil nil nil nil jc))))
   (jabber-disco-get-items
    jc to jabber-ahc-xmlns
    #'jabber-ahc--command-list-result
@@ -297,9 +299,11 @@ CONTEXT contains the originating buffer and queried JID."
 
 See XEP-0050.
 JC is the Jabber connection."
-  (interactive (list (jabber-read-account)
-		     (jabber-read-jid-completing "Execute command of: " nil nil nil nil nil)
-		     (jabber-read-node "Node of command: ")))
+  (interactive
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing "Execute command of: " nil nil nil nil nil jc)
+	   (jabber-read-node "Node of command: "))))
   (jabber-send-iq jc to
 		  "set"
 		  `(command ((xmlns . ,jabber-ahc-xmlns)

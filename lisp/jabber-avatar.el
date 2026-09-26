@@ -162,16 +162,16 @@ If there is no cached image, return nil."
 	  (write-region (point-min) (point-max) filename nil 'silent))))))
 
 ;;;; Set avatar for contact
-(defun jabber-avatar-set (jid avatar)
+(defun jabber-avatar-set (jid avatar &optional jc)
   "Set the avatar of JID to be AVATAR.
-JID is a string containing a bare JID.
+JID is a string containing a bare JID.  JC selects the contact owner.
 AVATAR may be one of:
  * An avatar structure.
  * The SHA1 sum of a cached avatar.
  * nil, meaning no avatar."
   ;; We want to optimize for the case of same avatar.
   ;; Loading an image is expensive, so do it lazily.
-  (let ((jid-symbol (jabber-jid-symbol jid))
+  (let ((jid-symbol (jabber-jid-symbol jid jc))
 	image hash)
     (cond
      ((jabber-avatar-p avatar)

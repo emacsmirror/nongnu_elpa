@@ -417,7 +417,7 @@ default %a separates distinct accounts, not connections to one account."
 
 
 (defcustom jabber-muc-header-line-format
-  '(" " (:eval (propertize (jabber-jid-displayname jabber-group) 'face 'shadow))
+  '(" " (:eval (propertize (jabber-jid-displayname jabber-group jabber-buffer-connection) 'face 'shadow))
     " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
     (:eval (when jabber-chat-mam-syncing
 	     (propertize " [syncing]" 'face 'shadow))))
@@ -445,7 +445,7 @@ These fields are about your account:
 
 (defcustom jabber-muc-private-header-line-format
   '(" " (:eval (jabber-jid-resource jabber-chatting-with))
-    " in " (:eval (jabber-jid-displayname (jabber-jid-user jabber-chatting-with)))
+    " in " (:eval (jabber-jid-displayname (jabber-jid-user jabber-chatting-with) jabber-buffer-connection))
     " " (:eval jabber-chat-encryption-message))	;see jabber-chatbuffer.el
   "The specification for the header line of private MUC chat buffers.
 
@@ -537,8 +537,8 @@ expanded.  Either a string or a buffer is returned, so use `get-buffer'
 or `get-buffer-create'."
   (format-spec jabber-groupchat-buffer-format
 	       (list
-		(cons ?n (jabber-jid-displayname group))
-                (cons ?b (jabber-jid-bookmarkname group))
+		(cons ?n (jabber-jid-displayname group jc))
+                (cons ?b (jabber-jid-bookmarkname group jc))
 		(cons ?j (jabber-jid-user group))
 		(cons ?a (if jc (jabber-connection-bare-jid jc) ""))
 		(cons ?u (if jc (plist-get (fsm-get-state-data jc) :username) ""))
@@ -632,7 +632,7 @@ expanded.  Either a string or a buffer is returned, so use `get-buffer'
 or `get-buffer-create'."
   (format-spec jabber-muc-private-buffer-format
 	       (list
-		(cons ?g (jabber-jid-displayname group))
+		(cons ?g (jabber-jid-displayname group jc))
 		(cons ?n nickname)
 		(cons ?a (if jc (jabber-connection-bare-jid jc) ""))
 		(cons ?u (if jc (plist-get (fsm-get-state-data jc) :username) ""))
@@ -1576,12 +1576,12 @@ RESULT is the disco#info result."
           ('not-found
            (unless (or jabber-silent-mode
                        (y-or-n-p (format "%s doesn't exist.  Create it? "
-					 (jabber-jid-displayname group))))
+					 (jabber-jid-displayname group jc))))
              (error "Non-existent groupchat")))
           ('error
            (message "Couldn't query groupchat: %s" (plist-get v :error-msg)))
           ('not-conference
-           (message "%s is not a conference service" (jabber-jid-displayname group))))
+           (message "%s is not a conference service" (jabber-jid-displayname group jc))))
 	(unless (eq status 'not-conference)
           (let* ((features (plist-get v :features))
 		 (password (jabber-muc--session-password jc group))
@@ -1591,7 +1591,7 @@ RESULT is the disco#info result."
                            (and popup rejected-p)))
               (setq password
                     (read-passwd (format "Password for %s: "
-					 (jabber-jid-displayname group)))))
+					 (jabber-jid-displayname group jc)))))
             (jabber-muc--check-intent request)
             (when (member "muc_nonanonymous" features)
               (puthash group t jabber-muc--nonanonymous-rooms))
@@ -1648,7 +1648,7 @@ Return t after synchronous completion, or :cancelled when superseded."
         (setq attempt (jabber-muc--start-attempt jc group nickname)))
       ;; Publish bookkeeping before handoff, but never roll it back afterward.
       (puthash (list jc group) password jabber-muc--session-passwords)
-      (puthash (jabber-jid-symbol group) nickname jabber-pending-groupchats)
+      (puthash (jabber-muc--pending-key jc group) nickname jabber-pending-groupchats)
       (jabber-muc--check-intent request)
       (if attempt
           (jabber-send-sexp jc stanza nil
@@ -1774,7 +1774,7 @@ JC is the Jabber connection."
   (interactive)
   (let* ((group jabber-group)
          (buf (get-buffer-create (format "*MUC Participants: %s*"
-                                         (jabber-jid-displayname group)))))
+                                         (jabber-jid-displayname group jabber-buffer-connection)))))
     (with-current-buffer buf
       (jabber-muc-names-mode)
       (setq jabber-muc-names--group group)
@@ -1872,13 +1872,15 @@ a XEP-0249 direct invitation.
 
 JC is the Jabber connection."
   (interactive
-   (list (jabber-read-account)
-	 (jabber-read-jid-completing
-          "Invite whom: "
-          ;; The current room is _not_ a good default for whom to invite.
-          (remq (jabber-jid-symbol jabber-group) (jabber-concat-rosters)))
-	 (jabber-muc-read-completing "To group: ")
-	 (jabber-read-with-input-method "Reason: ")))
+   (let ((jc (jabber-read-account)))
+     (list jc
+	   (jabber-read-jid-completing
+            "Invite whom: "
+            ;; The current room is _not_ a good default for whom to invite.
+            (cl-remove jabber-group (plist-get (fsm-get-state-data jc) :roster)
+                       :key #'symbol-name :test #'equal) nil nil nil nil jc)
+	   (jabber-muc-read-completing "To group: ")
+	   (jabber-read-with-input-method "Reason: "))))
   ;; Grant membership so the invite works in members-only rooms.
   (jabber-send-iq jc group "set"
                   `(query ((xmlns . ,jabber-muc-xmlns-admin))
@@ -1928,9 +1930,9 @@ Return (GROUP INVITER REASON PASSWORD) or nil."
 When MEDIATED-P is non-nil, include a Decline button.
 PASSWORD is the optional direct-invite room password."
   (insert "You have been invited to MUC room "
-          (jabber-jid-displayname group))
+          (jabber-jid-displayname group jabber-buffer-connection))
   (when inviter
-    (insert " by " (jabber-jid-displayname inviter)))
+    (insert " by " (jabber-jid-displayname inviter jabber-buffer-connection)))
   (insert ".")
   (when (and reason (not (zerop (length reason))))
     (insert "  Reason: " reason))
@@ -2232,7 +2234,7 @@ When DONT-PRINT-NICK-P is non-nil, omit the nickname."
 	 (delayed (plist-get msg :delayed))
 	 (nick (jabber-jid-resource from))
 	 (group (jabber-jid-user from))
-	 (group-name (or (jabber-jid-rostername group)
+	 (group-name (or (jabber-jid-rostername group jabber-buffer-connection)
 			 (jabber-jid-username group))))
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
@@ -2271,10 +2273,12 @@ live messages with extra metadata, not history."
               (msg-from (jabber-xml-get-attribute xml-data 'from)))
     (string= delay-from (jabber-jid-user msg-from))))
 
+(defvar jabber-activity--event-owner)
+
 (defun jabber-muc--display-message
     (jc xml-data group nick type msg-plist &optional target-buffer)
   "Display a MUC message and conditionally run alert hooks.
-Insert an EWOC entry into the MUC buffer for GROUP.  _JC is the Jabber
+Insert an EWOC entry into the MUC buffer for GROUP.  JC is the Jabber
 connection, XML-DATA the parsed stanza, NICK the sender nickname, TYPE
 one of `:muc-local', `:muc-foreign', or `:muc-error', and MSG-PLIST
 the message property list.  Alert hooks are skipped for history
@@ -2323,6 +2327,7 @@ messages."
                  ;; Bind the receiver afresh for each hook, even when a
                  ;; previous hook switched buffers or changed its locals.
                  (let ((jabber-buffer-connection jc)
+                       (jabber-activity--event-owner jc)
                        (origin (and (buffer-live-p alert-buffer)
                                     (eq (buffer-local-value
                                          'jabber-buffer-connection alert-buffer) jc)
@@ -2338,7 +2343,7 @@ messages."
   "If XML-DATA is a groupchat message, handle it as such.
 
 JC is the Jabber connection."
-  (when (jabber-muc-message-p xml-data)
+  (when (jabber-muc-message-p xml-data jc)
     (let ((xml-data (jabber-chat--decrypt-if-needed jc xml-data)))
       (unless (or (jabber-reactions--reaction-only-p xml-data)
                   (jabber-moderation--muc-retraction-message-p xml-data))
@@ -2457,7 +2462,7 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                                         message :time (current-time)))))
                        (when request (jabber-muc--check-intent request))
                        (jabber-maybe-print-rare-time node))))
-               (let ((name (jabber-jid-displayname group)))
+               (let ((name (jabber-jid-displayname group jc)))
                  (when request (jabber-muc--check-intent request))
                  (message "%s: %s" name message))))))
       (if leavingp
@@ -2619,10 +2624,10 @@ XML-DATA is the IQ result.  GROUP is the room JID."
 Silently ignore; the user may lack permissions."
   nil)
 
-(defun jabber-muc--process-enter (jc group nickname symbol status-codes
+(defun jabber-muc--process-enter (jc group nickname _symbol status-codes
                                      x-muc actor reason our-nickname)
   "On JC, handle a participant entering or updating presence in GROUP.
-NICKNAME is the user.  SYMBOL is their JID symbol.  STATUS-CODES,
+NICKNAME is the user.  _SYMBOL is unused.  STATUS-CODES,
 X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
   (let* ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group))
          (our-nickname (if attempt (plist-get attempt :nick) our-nickname)))
@@ -2638,7 +2643,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                       (string= nickname our-nickname))))
     (let ((was-joined (jabber-muc-joined-p group jc)))
       (jabber-muc-add-groupchat group nickname jc)
-      (puthash symbol nickname jabber-pending-groupchats)
+      (puthash (jabber-muc--pending-key jc group) nickname jabber-pending-groupchats)
       (when attempt
         (when (timerp (plist-get attempt :timer))
           (cancel-timer (plist-get attempt :timer)))
@@ -2701,11 +2706,11 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                          (gethash group jabber-muc--nonanonymous-rooms)))
             (jabber-muc--query-affiliations jc group))))))))))
 
-(defun jabber-muc--parse-presence (presence)
+(defun jabber-muc--parse-presence (presence &optional jc)
   "Extract fields from a MUC PRESENCE stanza.
 Return a plist with keys :from, :type, :group, :nickname, :symbol,
 :our-nickname, :x-muc, :item, :actor, :reason, :error-node, :status-codes.
-Accesses `jabber-pending-groupchats' to determine our nickname."
+Use receiving connection JC to determine our remembered nickname."
   (let* ((from (jabber-xml-get-attribute presence 'from))
 	 (type (jabber-xml-get-attribute presence 'type))
 	 (x-muc (cl-find-if
@@ -2714,8 +2719,8 @@ Accesses `jabber-pending-groupchats' to determine our nickname."
 		 (jabber-xml-get-children presence 'x)))
 	 (group (jabber-jid-user from))
 	 (nickname (jabber-jid-resource from))
-	 (symbol (jabber-jid-symbol from))
-	 (our-nickname (gethash symbol jabber-pending-groupchats))
+	 (symbol (jabber-jid-symbol from jc))
+	 (our-nickname (jabber-muc--pending-nickname jc group))
 	 (item (car (jabber-xml-get-children x-muc 'item)))
 	 (actor (jabber-xml-get-attribute
 		 (car (jabber-xml-get-children item 'actor)) 'jid))
@@ -2735,7 +2740,7 @@ Accesses `jabber-pending-groupchats' to determine our nickname."
 
 (defun jabber-muc-process-presence (jc presence)
   "On JC, dispatch the MUC PRESENCE stanza to the appropriate handler."
-  (let* ((p (jabber-muc--parse-presence presence))
+  (let* ((p (jabber-muc--parse-presence presence jc))
 	 (type (plist-get p :type))
 	 (group (plist-get p :group))
 	 (nickname (plist-get p :nickname))

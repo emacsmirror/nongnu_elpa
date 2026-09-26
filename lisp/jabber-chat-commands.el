@@ -150,7 +150,7 @@ before sending with RET."
   (unless (bound-and-true-p jabber-chatting-with)
     (user-error "Not in a chat buffer"))
   (let* ((jid (jabber-jid-user jabber-chatting-with))
-         (symbol (jabber-jid-symbol jid)))
+         (symbol (jabber-jid-symbol jid jabber-buffer-connection)))
     (jabber-roster-change
      jabber-buffer-connection symbol
      (read-string (format "Name for %s: " jid))

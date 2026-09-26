@@ -193,7 +193,8 @@
              a '(message nil) "room@example.test" "sender" :muc-foreign
              '(:body "alice: hello")))
           (should (= (length calls) 1))
-          (should (equal jabber-activity-personal-jids '("room@example.test"))))
+          (should (equal jabber-activity-personal-jids
+                         (list (cons a "room@example.test")))))
       (kill-buffer foreign))))
 
 (provide 'jabber-test-alert)

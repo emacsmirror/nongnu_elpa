@@ -54,7 +54,6 @@
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-presence-element-functions) ; jabber-presence.el
 (defvar jabber-current-status)        ; jabber.el
-(defvar jabber-jid-obarray)             ; jabber-util.el
 
 ;;; Constants
 
@@ -178,7 +177,7 @@ Caches the result and guards against re-entrant GPG calls."
 
 ;;; Signed presence (incoming)
 
-(defun jabber-openpgp-legacy--process-presence (_jc xml-data)
+(defun jabber-openpgp-legacy--process-presence (jc xml-data)
   "Process incoming presence for XEP-0027 signed element.
 JC is the connection.  XML-DATA is the presence stanza.
 Verifies the signature and optionally fetches missing keys."
@@ -203,7 +202,7 @@ Verifies the signature and optionally fetches missing keys."
                        (fpr (epg-signature-fingerprint sig)))
                   (when fpr
                     (let ((bare (jabber-jid-user from)))
-                      (put (intern bare jabber-jid-obarray)
+                      (put (jabber-jid-symbol bare jc)
                            'pgp-key-id fpr)))))))
         (error
          (let ((msg (error-message-string err)))

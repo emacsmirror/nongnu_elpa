@@ -1856,7 +1856,7 @@ JC is a fake connection from `jabber-test-chat--make-fake-jc'."
 (defun jabber-test-chat--make-jc-with-roster (&rest jids)
   "Create a fake connection whose roster contains JIDS."
   (let ((jc (gensym "jabber-test-chat-jc-")))
-    (put jc :state-data (list :roster (mapcar #'jabber-jid-symbol jids)))
+    (put jc :state-data (list :roster (mapcar (lambda (jid) (jabber-jid-symbol jid jc)) jids)))
     jc))
 
 (defmacro jabber-test-chat--with-policy-buffer (peer &rest body)

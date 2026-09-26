@@ -62,7 +62,7 @@
 (defun jabber-rtt-handle-message (jc xml-data)
   "Process an inbound message XML-DATA on JC for XEP-0301 RTT events."
   ;; We could support this for MUC as well, if useful.
-  (when-let* (((not (jabber-muc-message-p xml-data)))
+  (when-let* (((not (jabber-muc-message-p xml-data jc)))
               (from (jabber-xml-get-attribute xml-data 'from))
               (buffer (get-buffer (jabber-chat-get-buffer from jc))))
     (with-current-buffer buffer

@@ -78,7 +78,7 @@ COLLECTION and REQUIRE-MATCH are passed to `completing-read-multiple'."
 (defun jabber-roster-contact-p (jc jid)
   "Return non-nil when JID's bare JID is on connection JC's roster."
   (and jc jid
-       (memq (jabber-jid-symbol jid)
+       (memq (jabber-jid-symbol jid jc)
              (plist-get (fsm-get-state-data jc) :roster))))
 
 (defun jabber-concat-rosters ()
@@ -89,19 +89,22 @@ COLLECTION and REQUIRE-MATCH are passed to `completing-read-multiple'."
 	    (plist-get (fsm-get-state-data jc) :roster))
 	  jabber-connections)))
 
+(defun jabber--roster-full-jids (roster)
+  "Return full-JID completion symbols for scoped contacts in ROSTER.
+Preserve resource spelling and the contact owner without interning full JIDs."
+  (apply #'append
+         (mapcar
+          (lambda (jid)
+            (mapcar (lambda (resource)
+                      (let ((full (make-symbol (format "%s/%s" jid (car resource)))))
+                        (setplist full (copy-sequence (symbol-plist jid)))
+                        full))
+                    (get jid 'resources)))
+          roster)))
+
 (defun jabber-concat-rosters-full ()
-  "Concatenate the rosters of all connected accounts.
-Show full JIDs, with resources."
-  (let ((jids (apply #'append
-                     (mapcar
-                      (lambda (jc)
-                        (plist-get (fsm-get-state-data jc) :roster))
-                      jabber-connections))))
-    (apply #'append
-           (mapcar (lambda (jid)
-                     (mapcar (lambda (res) (intern (format "%s/%s" jid (car res))))
-                             (get (jabber-jid-symbol jid) 'resources)))
-                   jids))))
+  "Concatenate the rosters of all connected accounts with resources."
+  (jabber--roster-full-jids (jabber-concat-rosters)))
 
 (defun jabber-connection-jid (jc)
   "Return the full JID of connection JC."
@@ -158,40 +161,56 @@ JID must be a string."
     (when (string-match "\\`\\(?:.*@\\)?\\([^@]+\\)\\'" bare)
       (match-string 1 bare))))
 
-(defun jabber-jid-rostername (user)
-  "Return the name of USER if present in roster, or nil."
-  (let ((user (jabber-jid-symbol user)))
-    (if (> (length (get user 'name)) 0)
-	(get user 'name))))
+(defun jabber-jid-rostername (user &optional jc)
+  "Return USER's roster name on JC, or nil.
+Without JC, use only a supplied symbol or legacy accountless metadata."
+  (let* ((user (jabber-jid-symbol user jc))
+         (name (get user 'name)))
+    (and name (> (length name) 0) name)))
 
-(defun jabber-jid-displayname (string)
-  "Return the name of the user from STRING as in roster, else username@server."
-  (or (jabber-jid-rostername string)
-      (jabber-jid-user (if (symbolp string)
-			   (symbol-name string)
-			 string))))
+(defun jabber-jid-displayname (jid &optional jc)
+  "Return JID's roster name on JC, or its bare JID.
+Without JC, never borrow metadata from a connected account."
+  (or (jabber-jid-rostername jid jc)
+      (jabber-jid-user (if (symbolp jid) (symbol-name jid) jid))))
 
 (defvar jabber-bookmarks)
-(defun jabber-jid-bookmarkname (string)
-  "Return from STRING the conference name from bookmarks or displayname.
-Use the name according to roster or else the JID if none set."
+(defun jabber-jid-bookmarkname (jid &optional jc)
+  "Return JID's conference bookmark name on JC, or its display name.
+A supplied scoped symbol retains its owner when JC is omitted."
   (require 'jabber-bookmarks)
-  (or (cl-block nil
-        (maphash (lambda (_account bookmarks)
-                   (dolist (bm bookmarks)
-                     (when (string= (plist-get bm :jid) string)
-                       (cl-return (plist-get bm :name)))))
-                 jabber-bookmarks))
-      (jabber-jid-displayname string)))
+  (let* ((owner (or jc (jabber-jid-owner jid)))
+         (bare (jabber-jid-user (if (symbolp jid) (symbol-name jid) jid)))
+         (bookmarks (and owner (gethash (jabber-connection-bare-jid owner)
+                                        jabber-bookmarks)))
+         (bookmark (and (listp bookmarks)
+                        (cl-find bare bookmarks
+                                 :key (lambda (bm) (plist-get bm :jid))
+                                 :test #'equal))))
+    (or (plist-get bookmark :name) (jabber-jid-displayname jid owner))))
+
+(defun jabber-jid-owner (jid)
+  "Return the connection owning supplied JID symbol, or nil."
+  (and (symbolp jid) (get jid 'jabber--jid-owner)))
 
 (defvar jabber-jid-obarray)
-(defun jabber-jid-symbol (jid)
-  "Return the symbol for JID, which must be a symbol or a string."
-  ;; If it's already a symbol, just return it.
-  (if (symbolp jid)
+(defun jabber-jid-symbol (jid &optional jc)
+  "Return the contact symbol for JID, a symbol or string, on JC.
+Explicit JC always resolves JID in that connection's private namespace,
+even if JID is a foreign symbol.  Without JC, retain supplied symbols
+or use the legacy accountless namespace.  Never infer an account.
+The namespace survives FSM state replacement and stream resumption."
+  (if (and (symbolp jid) (null jc))
       jid
-    ;; XXX: "downcase" is a poor man's nodeprep.  See XMPP CORE.
-    (intern (downcase (jabber-jid-user jid)) jabber-jid-obarray)))
+    (let* ((table (if jc
+                      (or (get jc 'jabber--jid-obarray)
+                          (put jc 'jabber--jid-obarray (make-vector 127 0)))
+                    jabber-jid-obarray))
+           (symbol (intern (downcase (jabber-jid-user
+                                     (if (symbolp jid) (symbol-name jid) jid)))
+                           table)))
+      (when jc (put symbol 'jabber--jid-owner jc))
+      symbol)))
 
 (defvar jabber-account-list)
 (defun jabber-my-jid-p (jc jid)
@@ -210,20 +229,26 @@ which is shown as the candidate and which as the annotation.
 
 `jid'  shows JIDs with display names as annotations.
 `name' shows display names with JIDs as annotations.
-Contacts without a display name always show as bare JIDs."
+Full-JID candidates include their exact JID even in name mode, so resources
+remain independently selectable.  Unnamed contacts show as JIDs."
   :type '(choice (const :tag "JID (annotated with name)" jid)
 		 (const :tag "Display name (annotated with JID)" name))
   :group 'jabber)
 
 (defun jabber--jid-completion-table (roster-items)
   "Build a completion table from ROSTER-ITEMS.
-Returns an alist of (CANDIDATE . SYMBOL) pairs, where CANDIDATE
-is either a JID or display name depending on `jabber-jid-completion-display'."
+Return an alist of (CANDIDATE . SYMBOL) pairs following
+`jabber-jid-completion-display'.  Named full JIDs include both name and JID."
   (let ((use-names (eq jabber-jid-completion-display 'name)))
     (mapcar (lambda (item)
               (let ((jid (symbol-name item))
                     (name (get item 'name)))
-                (cons (if (and use-names name) name jid) item)))
+                (cons (if (and use-names name)
+                          (if (jabber-jid-resource jid)
+                              (format "%s <%s>" name jid)
+                            name)
+                        jid)
+                      item)))
             roster-items)))
 
 (defconst jabber--presence-sort-order '("chat" "" "away" "dnd" "xa")
@@ -240,8 +265,10 @@ Offline contacts (nil show) sort last.")
 (defun jabber--jid-candidate-lessp (a b table)
   "Order completion candidates A and B by availability, then name.
 TABLE maps candidate strings to roster symbols."
-  (let ((rank-a (jabber--presence-rank (cdr (assoc-string a table t))))
-        (rank-b (jabber--presence-rank (cdr (assoc-string b table t)))))
+  (let ((rank-a (jabber--presence-rank
+                 (cdr (or (assoc-string a table) (assoc-string a table t)))))
+        (rank-b (jabber--presence-rank
+                 (cdr (or (assoc-string b table) (assoc-string b table t))))))
     (if (= rank-a rank-b)
         (string-lessp (downcase a) (downcase b))
       (< rank-a rank-b))))
@@ -265,7 +292,7 @@ Candidates display sorted by availability, then name."
              (name (get sym 'name))
              (alt (if use-names jid name)))
         (when (and alt (not (string= alt candidate)))
-          (puthash (downcase alt) candidate alt-to-candidate))))
+          (puthash alt candidate alt-to-candidate))))
     (lambda (string pred action)
       (cond
        ((eq action 'metadata)
@@ -274,7 +301,8 @@ Candidates display sorted by availability, then name."
           (cycle-sort-function . ,sort-candidates)
           (annotation-function
            . ,(lambda (candidate)
-                (when-let* ((sym (cdr (assoc-string candidate table t))))
+                (when-let* ((sym (cdr (or (assoc-string candidate table)
+                                         (assoc-string candidate table t)))))
                   (let* ((jid (symbol-name sym))
                          (name (get sym 'name))
                          (alt (if use-names jid name))
@@ -293,7 +321,7 @@ Candidates display sorted by availability, then name."
         (let ((matches (all-completions string table pred))
               (down (downcase string)))
           (maphash (lambda (alt candidate)
-                     (when (and (string-prefix-p down alt)
+                     (when (and (string-prefix-p down (downcase alt))
                                 (not (member candidate matches))
                                 (or (null pred) (funcall pred candidate)))
                        (push candidate matches)))
@@ -302,11 +330,12 @@ Candidates display sorted by availability, then name."
        ;; test-completion: accept exact alternate form matches.
        ((eq action 'lambda)
         (or (test-completion string table pred)
-            (and (gethash (downcase string) alt-to-candidate) t)))
+            (cl-loop for alt being the hash-keys of alt-to-candidate
+                     thereis (string-equal-ignore-case string alt))))
        (t
         (complete-with-action action table string pred))))))
 
-(defun jabber-read-jid-completing (prompt &optional subset require-match default resource fulljids)
+(defun jabber-read-jid-completing (prompt &optional subset require-match default resource fulljids jc)
   "Read a JID out of the current roster from the minibuffer, with PROMPT.
 If SUBSET is non-nil, it should be a list of symbols from which
 the JID is to be selected, instead of using the entire roster.
@@ -319,10 +348,27 @@ nil         Accept full or bare JID, as entered
 full        Turn bare JIDs to full ones with highest-priority resource
 bare-or-muc Turn full JIDs to bare ones, except for in MUC
 
-If FULLJIDS is non-nil, complete jids with resources."
-  (let* ((roster-items (or subset (funcall (if fulljids
-                                               'jabber-concat-rosters-full
-                                             'jabber-concat-rosters))))
+If FULLJIDS is non-nil, complete jids with resources.
+Optional JC restricts lookup and completion to that owner, even if empty."
+  (let* ((roster-items
+          (cond
+           ((and jc subset)
+            (mapcar
+             (lambda (jid)
+               (let ((contact (jabber-jid-symbol jid jc))
+                     (text (if (symbolp jid) (symbol-name jid) jid)))
+                 (if (jabber-jid-resource text)
+                     (let ((full (make-symbol text)))
+                       (setplist full (copy-sequence (symbol-plist contact)))
+                       full)
+                   contact)))
+             subset))
+           (jc
+            (let ((items (plist-get (fsm-get-state-data jc) :roster)))
+              (if fulljids (jabber--roster-full-jids items) items)))
+           (subset subset)
+           (fulljids (jabber-concat-rosters-full))
+           (t (jabber-concat-rosters))))
          (jid-completion-table (jabber--jid-completion-table roster-items))
          (completion-ignore-case t)
          (jid-at-point (or
@@ -331,7 +377,7 @@ If FULLJIDS is non-nil, complete jids with resources."
                                  (symbol-name default)
                                default))
                         (let* ((jid (get-text-property (point) 'jabber-jid))
-                               (res (get (jabber-jid-symbol jid) 'resource)))
+                               (res (and jid (get (jabber-jid-symbol jid jc) 'resource))))
                           (when jid
                             (if (and fulljids res (not (jabber-jid-resource jid)))
                                 (format "%s/%s" jid res)
@@ -341,14 +387,12 @@ If FULLJIDS is non-nil, complete jids with resources."
          chosen)
     ;; Convert default to display form when using name mode.
     (when (and jid-at-point (eq jabber-jid-completion-display 'name))
-      (let ((sym (cdr (assoc-string jid-at-point jid-completion-table t))))
-        (unless sym
-          ;; Default is a JID but table has names; find by symbol.
-          (setq sym (jabber-jid-symbol jid-at-point)))
-        (when (and sym (get sym 'name))
-          (setq jid-at-point (get sym 'name)))))
+      (when-let* ((entry (cl-find jid-at-point jid-completion-table
+                                 :key (lambda (entry) (symbol-name (cdr entry)))
+                                 :test #'equal)))
+        (setq jid-at-point (car entry))))
     ;; If the default is not in the allowed subset, it's not a good default.
-    (when (and subset (not (assoc jid-at-point jid-completion-table)))
+    (when (and (or subset jc) (not (assoc jid-at-point jid-completion-table)))
       (setq jid-at-point nil))
     (let ((input
 	   (completing-read (concat prompt
@@ -357,11 +401,12 @@ If FULLJIDS is non-nil, complete jids with resources."
 			    (jabber--jid-completion-with-metadata
 			     jid-completion-table)
 			    nil require-match nil 'jabber-jid-history jid-at-point)))
-      (setq chosen
-	    (if (and input (assoc-string input jid-completion-table t))
-		(symbol-name (cdr (assoc-string input jid-completion-table t)))
-	      (and (not (zerop (length input)))
-		   input))))
+      ;; Resourceparts are case-sensitive.  Prefer the exact selection even
+      ;; when completion itself matches names and JIDs case-insensitively.
+      (let ((entry (or (assoc-string input jid-completion-table)
+                       (assoc-string input jid-completion-table t))))
+        (setq chosen (if entry (symbol-name (cdr entry))
+                       (and (not (zerop (length input))) input)))))
 
     (when chosen
       (pcase resource
@@ -369,7 +414,13 @@ If FULLJIDS is non-nil, complete jids with resources."
 	 ;; If JID is bare, add the highest-priority resource.
 	 (if (jabber-jid-resource chosen)
 	     chosen
-	   (let ((highest-resource (get (jabber-jid-symbol chosen) 'resource)))
+	   (let* ((matches (cl-remove-if-not
+                            (lambda (entry) (equal chosen (symbol-name (cdr entry))))
+                            jid-completion-table))
+                  (contact (if jc (jabber-jid-symbol chosen jc)
+                             (if (= (length matches) 1) (cdar matches)
+                               (jabber-jid-symbol chosen))))
+                  (highest-resource (get contact 'resource)))
 	     (if highest-resource
 		 (concat chosen "/" highest-resource)
 	       chosen))))
@@ -378,7 +429,7 @@ If FULLJIDS is non-nil, complete jids with resources."
 	 (if (null (jabber-jid-resource chosen))
 	     chosen
 	   (let ((bare (jabber-jid-user chosen)))
-	     (if (jabber-muc-joined-p bare)
+	     (if (jabber-muc-joined-p bare jc)
 		 chosen
 	       bare))))
 	(_

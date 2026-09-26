@@ -256,7 +256,7 @@ PARENT-BUFFER is the ordinary conversation view.  The result is
                  (string-replace "%" "%%" label)
                  " · ")
               "")
-            (jabber-jid-displayname jabber-message-thread-peer))))
+            (jabber-jid-displayname jabber-message-thread-peer jabber-buffer-connection))))
 
 (defun jabber-message-thread--setup-kind (peer type)
   "Set conversation variables and send function for PEER and TYPE."
