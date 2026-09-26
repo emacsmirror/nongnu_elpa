@@ -469,7 +469,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-openpgp-legacy--send-muc
                   "jabber-openpgp-legacy" (jc body &optional extra-elements))
 (declare-function jabber-mam-muc-joined "jabber-mam" (jc group))
-(declare-function jabber-mam--cancel-muc-query "jabber-mam" (group))
+(declare-function jabber-mam--cancel-muc-query "jabber-mam" (group &optional jc))
 (autoload 'jabber-mam-muc-joined "jabber-mam")
 (autoload 'jabber-mam--cancel-muc-query "jabber-mam")
 (declare-function jabber-message-correct--replace-id
@@ -740,7 +740,7 @@ REQUEST, when non-nil, guards the terminal caller's remaining effects."
              (fboundp 'jabber-message-correct--muc-room-leave))
     (jabber-message-correct--muc-room-leave jc group))
   (when request (jabber-muc--check-intent request))
-  (jabber-mam--cancel-muc-query group)
+  (jabber-mam--cancel-muc-query group jc)
   (when request (jabber-muc--check-intent request)))
 
 (cl-defun jabber-muc-connection-closed
