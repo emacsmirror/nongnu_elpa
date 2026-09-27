@@ -53,11 +53,10 @@ instead of indenting anything."
 
 (ert-deftest vm-ps-print-test-tokenized-summary-agrees-with-the-summary-buffer ()
   "The printed summary indents a thread as the summary buffer does.
-`vm-ps-print-tokenized-summary' is a copy of `vm-tokenized-summary-insert'
-that builds a string instead of inserting, and is only right while the two
-answer alike.  The `number' and `mark' tokens are left out: their accessors
-are defsubsts, so a stub cannot reach the compiled caller, and both arms
-are unchanged here anyway."
+It is the same renderer now: `vm-ps-print-tokenized-summary' runs
+`vm-tokenized-summary-insert' in a buffer of its own and answers with what it
+wrote (emacs-vm/vm#862).  This holds the two together, which is what it was
+written for when they were separate."
   (cl-letf (((symbol-function 'vm-thread-indentation) (lambda (_m) 4)))
     (let ((vm-summary-show-threads t)
           (vm-summary-thread-indent-level 2)
@@ -68,6 +67,38 @@ are unchanged here anyway."
                      (with-temp-buffer
                        (vm-tokenized-summary-insert nil tokens)
                        (buffer-string)))))))
+
+(ert-deftest vm-ps-print-test-a-printed-group-is-padded-and-cut ()
+  "REGRESSION: a group carries its width and its maximum onto paper.
+
+`vm-ps-print-tokenized-summary' was a copy of the buffer renderer with no
+`group-begin\' or `group-end\' branch, and unknown tokens fall through its
+`cond\', so a printed summary ignored every group: `%20.4(%s%)\' printed the
+whole subject where the format asked for four columns of it, and a
+`vm-summary-format\' written to line up did not line up on paper
+(emacs-vm/vm#862).  The width and the maximum after a `group-begin\' are
+numbers rather than strings, so they fell through as well."
+  (let ((vm-display-using-mime nil))
+    (dolist (case '(((group-begin 20 4 "Test Message" group-end)
+                     . "                Test")
+                    ((group-begin -20 4 "Test Message" group-end)
+                     . "Test                ")
+                    ((group-begin nil 4 "Test Message" group-end) . "Test")
+                    ((group-begin 6 nil "ab" group-end) . "    ab")))
+      (should (equal (list (car case)
+                           (vm-ps-print-tokenized-summary nil (car case)))
+                     (list (car case) (cdr case)))))))
+
+(ert-deftest vm-ps-print-test-a-printed-group-matches-the-summary-buffer ()
+  "And it is padded and cut the same way the summary buffer does it."
+  (let ((vm-display-using-mime nil))
+    (dolist (tokens '((group-begin 20 4 "Test Message" group-end)
+                      (group-begin -20 4 "Test Message" group-end)
+                      ("[" group-begin 6 nil "ab" group-end "]")))
+      (should (equal (list tokens (vm-ps-print-tokenized-summary nil tokens))
+                     (list tokens (with-temp-buffer
+                                    (vm-tokenized-summary-insert nil tokens)
+                                    (buffer-string))))))))
 
 ;;; vm-ps-print-message-internal
 
