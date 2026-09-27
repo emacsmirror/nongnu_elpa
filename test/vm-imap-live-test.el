@@ -1595,6 +1595,91 @@ on."
             (ignore-errors (vm-quit-no-change))))
         (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" target))))))
 
+;;; ------------------------------------------------------------------
+;;; Gmail, whose IMAP is not like the others (emacs-vm/vm#601, #604)
+;;; ------------------------------------------------------------------
+
+;; Gmail is a server nothing else imitates, and emacs-vm/vm#607 asks for it to
+;; be tried by hand.  What can be characterised is characterised here, so what
+;; a person looks for is what these do not reach.
+;;
+;; Configure a server named "gmail"; see test/vm-live-config.el.template.
+;; Without one every test below skips.
+
+(defvar vm-imap-live-test--gmail-serial 0
+  "Counter behind `vm-imap-live-test--gmail-message'.")
+
+(defun vm-imap-live-test--gmail-message ()
+  "A message with a Message-ID no other has had.
+
+Gmail keeps one copy of a message and hangs its mailboxes on that copy, and it
+decides what is the same message by `Message-ID'.  A fixture with a fixed one
+is therefore the *same message* on a second run, keywords and all, so a test
+using one reads flags an earlier run set."
+  (setq vm-imap-live-test--gmail-serial (1+ vm-imap-live-test--gmail-serial))
+  (format (concat "From: alice@example.com\r\nTo: vmtest@example.com\r\n"
+                  "Subject: gmail characterisation\r\n"
+                  "Date: Mon, 01 Jan 2024 00:00:00 +0000\r\n"
+                  "Message-ID: <gmail-%d-%d-%d@example.com>\r\n\r\n"
+                  "Body.\r\n")
+          (emacs-pid) (car (time-convert nil 1000))
+          vm-imap-live-test--gmail-serial))
+
+(ert-deftest vm-imap-live-test-gmail-takes-a-keyword-it-has-not-seen ()
+  "Gmail says `\\*' in PERMANENTFLAGS, so VM sends a label rather than dropping it.
+
+`vm-imap-net-flags-a-mailbox-takes' asks the destination what it keeps before
+an APPEND, because a server may answer NO to the whole APPEND over one flag
+it will not have (emacs-vm/vm#828).  A Gmail mailbox answers that it takes
+anything, which is what makes saving a labelled message to Gmail work."
+  (vm-imap-live-skip-unless-server "gmail")
+  (vm-imap-live-with-mailbox (conn mailbox "gmail")
+    (let ((select (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)))
+      (should (string-match "PERMANENTFLAGS (\\([^)]*\\))" select))
+      (let ((permanent (split-string (match-string 1 select) "[ \r\n]+" t)))
+        (should (member "\\*" permanent))
+        (should (vm-imap-net-flags-a-mailbox-takes '("alabel") permanent))))))
+
+(ert-deftest vm-imap-live-test-gmail-keeps-a-keyword-given-at-append ()
+  "A label sent with the message is there when the message is read back.
+The other half of emacs-vm/vm#828 against a server that is not dovecot."
+  (vm-imap-live-skip-unless-server "gmail")
+  (vm-imap-live-with-mailbox (conn mailbox "gmail")
+    (vm-imap-live-append conn mailbox (vm-imap-live-test--gmail-message)
+                         "\\Seen vmkeyword")
+    (let ((flags (vm-imap-live-flags-of conn mailbox 1)))
+      (should (member "\\Seen" flags))
+      (should (member "vmkeyword" flags)))))
+
+(ert-deftest vm-imap-live-test-gmail-has-no-second-copy-to-flag-separately ()
+  "REGRESSION-ish: on Gmail a message in two mailboxes is one message.
+
+Put the same `Message-ID' in two mailboxes with a different keyword each, and
+both mailboxes answer with both keywords.  A Gmail mailbox is a label on a
+single stored message, so there is no second copy to carry flags of its own.
+
+This is what emacs-vm/vm#601 reports as labels not sticking.  They stick; what
+they do not do is stay with one copy, because there is only ever one.  Saving
+a message to another Gmail mailbox is a label added to the message the reader
+already has, and a label put on either is on both."
+  (vm-imap-live-skip-unless-server "gmail")
+  (vm-imap-live-with-mailbox (conn one "gmail")
+    (let ((message (vm-imap-live-test--gmail-message))
+          (two nil))
+      (unwind-protect
+          (progn
+            (setq two (vm-imap-live-mailbox-name conn))
+            (vm-imap-live-cmd-ok conn "CREATE \"%s\"" two)
+            (vm-imap-live-append conn one message "labelone")
+            (vm-imap-live-append conn two message "labeltwo")
+            (dolist (mailbox (list one two))
+              (let ((flags (vm-imap-live-flags-of conn mailbox 1)))
+                (should (equal (list mailbox t t)
+                               (list mailbox
+                                     (and (member "labelone" flags) t)
+                                     (and (member "labeltwo" flags) t)))))))
+        (when two (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" two)))))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
