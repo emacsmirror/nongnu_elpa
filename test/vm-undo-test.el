@@ -1,6 +1,6 @@
 ;;; vm-undo-test.el --- Tests for vm-undo.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
