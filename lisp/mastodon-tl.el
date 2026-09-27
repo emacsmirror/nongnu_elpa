@@ -228,7 +228,8 @@ re-evaluate `mastodon-tl--symbols' (navigate to it then call
       (bot                   . ("🤖" . "[bot]"))
       (quote                 . (,(propertize "“" 'face
                                              '(t :inherit success :weight bold
-                                                 :height 1.8))))
+                                                 :height 1.8))
+                                . "[\"]"))
       (quoted_update         . ("✍" . "[edited]"))
       (added_to_collection   . ("⊆"  . "[coll]"))
       (collection_update     . ("⊆"  . "[coll]"))))
