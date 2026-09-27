@@ -13792,6 +13792,11 @@ and rewritten each time, and no message is changed.
 
 Which folder a message would go to is @code{vm-virtual-auto-select-folder}’s
 answer, from @code{vm-virtual-auto-folder-alist}.
+
+A folder visited without a summary has nowhere to write them and is left
+alone.  Sorting by auto-folder calls this, and it used to reach
+@code{with-current-buffer} with a nil summary buffer: @code{G auto-folder} answered
+"Wrong type argument: stringp, nil" rather than sorting (emacs-vm/vm#851).
 @end deffn
 
 @end macro

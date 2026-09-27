@@ -937,6 +937,54 @@ What is quoted and is not a symbol is listed in
                                  missing)
                          #'string<)))))
 
+;;; The committed files are the ones the generator would write
+
+;; info/vm-reference.texinfo and info/vm-docstrings.texinfo are generated from
+;; the docstrings and committed, because vm.texinfo @includes the reference and
+;; makeinfo writes no manual at all when it is missing (#589).  So a checkout
+;; that never runs `make' still has a manual -- and a docstring changed without
+;; running it leaves that manual saying the old thing.  Which is what happened:
+;; the docstring emacs-vm/vm#851 added reached lisp/vm-avirtual.el and not the
+;; committed reference, and nothing noticed.
+
+(defconst vm-reference-test--generated
+  '(("vm-reference.texinfo"  . "vm-reference-batch")
+    ("vm-docstrings.texinfo" . "vm-reference-macros-batch"))
+  "Each committed generated file, and the function info/Makefile.in writes it with.")
+
+(defun vm-reference-test--regenerate (batch-function)
+  "Run BATCH-FUNCTION in an Emacs of its own and answer with what it wrote.
+A subprocess for the reason test/vm-custom-check.el uses one: generating
+means loading every VM module, and those loads add hooks and rewrite menus,
+which would be left behind for the tests that follow."
+  (let ((emacs (expand-file-name invocation-name invocation-directory))
+        (generator (expand-file-name "../info/gen-reference.el" vm-test-dir))
+        (out (make-temp-file "vm-reference-")))
+    (unwind-protect
+        (progn
+          (should (= 0 (call-process emacs nil nil nil
+                                     "-batch" "-q" "-no-site-file"
+                                     "-L" vm-test-lisp-dir
+                                     "-l" generator "-f" batch-function out)))
+          (with-temp-buffer (insert-file-contents out) (buffer-string)))
+      (delete-file out))))
+
+(ert-deftest vm-reference-test-the-committed-manual-is-current ()
+  "REGRESSION: each generated file in info/ is what the generator writes today.
+
+A docstring edited without `make' leaves the committed manual describing the
+old behaviour, and no lint or test saw it: `vm-custom-test-generated-files-name-no-machine'
+reads those files but does not ask whether they are current."
+  (dolist (entry vm-reference-test--generated)
+    (let* ((file (expand-file-name (concat "../info/" (car entry)) vm-test-dir))
+           (committed (with-temp-buffer (insert-file-contents file)
+                                        (buffer-string)))
+           (fresh (vm-reference-test--regenerate (cdr entry))))
+      (should (equal (list (car entry) (length committed))
+                     (list (car entry) (length fresh))))
+      (should (equal (list (car entry) t)
+                     (list (car entry) (equal committed fresh)))))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
