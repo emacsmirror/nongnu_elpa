@@ -1195,43 +1195,59 @@ folder\'s name above each run.  The names are display only: they are removed
 and rewritten each time, and no message is changed.
 
 Which folder a message would go to is `vm-virtual-auto-select-folder\''s
-answer, from `vm-virtual-auto-folder-alist\'."
+answer, from `vm-virtual-auto-folder-alist\'.
+
+A folder visited without a summary has nowhere to write them and is left
+alone.  Sorting by auto-folder calls this, and it used to reach
+`with-current-buffer\' with a nil summary buffer: `G auto-folder\' answered
+\"Wrong type argument: stringp, nil\" rather than sorting (emacs-vm/vm#851)."
   (interactive)
   (if (vm-interactive-p)
       (vm-sort-messages "auto-folder"))
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-    ;; remove old descriptions
-    (with-current-buffer vm-summary-buffer
-      (goto-char (point-min))
-      (let ((buffer-read-only nil)
-            (s (point-min))
-            (p (point-min)))
-        (while (setq p (next-single-property-change p 'vm-auto-folder))
-          (if (get-text-property (1+ p) 'vm-auto-folder)
-              (setq s p)
-            (delete-region s p))
-          (setq p (1+ p)))))
-    ;; add new descriptions
-    (let ((ml vm-message-list)
-          (oldf "")
-          m f)
-      (while ml
-        (setq m (car ml)
-              f (cdr (assoc m vm-sort-compare-auto-folder-cache)))
-        (when (not (equal oldf f))
-          (setq m (vm-su-start-of m))
-          (with-current-buffer (marker-buffer m)
-            (let ((buffer-read-only nil))
-              (goto-char m)
-              (insert (format "%s\n" (or f "no default folder")))
-              (put-text-property m (point) 'vm-auto-folder t)
-              (put-text-property m (point) 'face 'blue)
-              ;; fix messages summary mark 
-              (set-marker m (point))))
-          (setq oldf f))
-        (setq ml (cdr ml))))))
-        
+    (if (null vm-summary-buffer)
+	(vm-inform 5 "Sorted; %s makes the summary the folder names go in"
+		   (substitute-command-keys "\\[vm-summarize]"))
+      (vm-sort-clear-auto-folder-names)
+      (vm-sort-write-auto-folder-names))))
+
+(defun vm-sort-clear-auto-folder-names ()
+  "Take the folder names `vm-sort-insert-auto-folder-names\' wrote out again.
+They are display only, so each pass removes what the last one wrote rather
+than writing a second set."
+  (with-current-buffer vm-summary-buffer
+    (goto-char (point-min))
+    (let ((buffer-read-only nil)
+          (s (point-min))
+          (p (point-min)))
+      (while (setq p (next-single-property-change p 'vm-auto-folder))
+        (if (get-text-property (1+ p) 'vm-auto-folder)
+            (setq s p)
+          (delete-region s p))
+        (setq p (1+ p))))))
+
+(defun vm-sort-write-auto-folder-names ()
+  "Write above each run of messages the folder they would be filed to."
+  (let ((ml vm-message-list)
+        (oldf "")
+        m f)
+    (while ml
+      (setq m (car ml)
+            f (cdr (assoc m vm-sort-compare-auto-folder-cache)))
+      (when (not (equal oldf f))
+        (setq m (vm-su-start-of m))
+        (with-current-buffer (marker-buffer m)
+          (let ((buffer-read-only nil))
+            (goto-char m)
+            (insert (format "%s\n" (or f "no default folder")))
+            (put-text-property m (point) 'vm-auto-folder t)
+            (put-text-property m (point) 'face 'blue)
+            ;; fix messages summary mark
+            (set-marker m (point))))
+        (setq oldf f))
+      (setq ml (cdr ml)))))
+
 ;;----------------------------------------------------------------------------
 ;;;###autoload
 (defun vm-virtual-save-message (&optional folder count)
