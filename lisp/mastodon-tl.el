@@ -2109,7 +2109,7 @@ TOOT is the data for the quoting toot."
           ((string= state "muted_account")
            (mastodon-tl--format-quote-non-display
             "Quote hidden, account muted" .url))
-          ((member state '("rejected" "revoked" "deleted"))
+          ((member state '("rejected" "revoked" "deleted" "unauthorized"))
            (mastodon-tl--format-quote-non-display
             (format "Quote %s" state) nil :noprop))
           ((member state '("blocked_account" "blocked_domain"))
