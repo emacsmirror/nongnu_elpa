@@ -6509,26 +6509,6 @@ Default value: @code{("application" "x-unknown" "application/x-gzip")}
 
 @end macro
 
-@macro vmdocvmmimetexthtmlblocker
-@defopt vm-mime-text/html-blocker
-@vindex vm-mime-text/html-blocker
-Regexp after which a "blocked:" will be inserted.
-This is done in order to prevent loading of embedded images used to check if
-and when you read an email.
-
-Default value: @code{"<img[^>]*\\\\s-src=."}
-@end defopt
-
-@end macro
-
-@macro vmdocvmmimetexthtmlblockerexceptions
-@defopt vm-mime-text/html-blocker-exceptions
-@vindex vm-mime-text/html-blocker-exceptions
-Regexp matching URL which should not be blocked.
-@end defopt
-
-@end macro
-
 @macro vmdocvmmimetexthtmlhandler
 @defopt vm-mime-text/html-handler
 @vindex vm-mime-text/html-handler

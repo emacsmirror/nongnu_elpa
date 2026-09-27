@@ -2542,19 +2542,14 @@ does not come out as wide as the window the message was read in."
 	    (setq end (point-marker))
 	    (vm-mime-transfer-decode-region layout start end)
 	    (vm-mime-charset-decode-region charset start end)
-	    ;; block remote images by prefixing the link
-	    (goto-char start)
-	    (let ((case-fold-search t))
-	      (while (re-search-forward vm-mime-text/html-blocker end t)
-		(goto-char (match-end 0))
-		(if (or t 
-			(and vm-mime-text/html-blocker-exceptions
-			     (looking-at vm-mime-text/html-blocker-exceptions))
-			(looking-at "cid:"))
-		    (progn
-		      ;; TODO: write the image to a file and replace the link
-		      )
-		  (insert "blocked:"))))
+	    ;; Nothing blocks a remote image here.  A loop stood here that
+	    ;; searched for `vm-mime-text/html-blocker' and then tested
+	    ;; (or t ...), so it always took the branch holding a TODO and
+	    ;; the `blocked:' it meant to insert was unreachable
+	    ;; (emacs-vm/vm#845).  What does the blocking is
+	    ;; `vm-w3m-safe-url-regexp', which vm-w3m.el binds emacs-w3m's
+	    ;; own `w3m-safe-url-regexp' to while it renders; the w3m and
+	    ;; lynx handlers convert outside Emacs and fetch nothing.
 	    ;; A renderer that replaces the region deletes all of the
 	    ;; text first, which makes end == start.  The fix is to move
 	    ;; the end marker forward with a placeholder character so

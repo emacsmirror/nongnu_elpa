@@ -4997,6 +4997,74 @@ number, so none of them moves."
     ;; what the shipped formats do, unchanged
     (should (equal (vm-mime-sprintf "%-10.10(%t%)" layout) "HTML      "))))
 
+;;; The HTML image blocker that never blocked anything (emacs-vm/vm#845)
+;;
+;; `vm-mime-text/html-blocker' and `vm-mime-text/html-blocker-exceptions' were
+;; documented as stopping an HTML part from loading the remote image a sender
+;; uses to learn that you read the message.  The loop that would have done it
+;; tested `(or t ...)', so it always took the branch holding a TODO comment and
+;; the `blocked:' it meant to insert was unreachable.  Both options are
+;; obsolete now and the loop is gone.  What blocks such an image is
+;; `vm-w3m-safe-url-regexp'.
+
+(defconst vm-mime-test--blocker-options
+  '(vm-mime-text/html-blocker vm-mime-text/html-blocker-exceptions)
+  "The two options that claimed to block a remote image and never did.")
+
+(defun vm-mime-test--form-names-p (form symbol)
+  "Whether SYMBOL appears anywhere in FORM.
+Walked with a stack rather than recursion, as vm-integration-test.el walks
+for the same reason: VM\='s lists are long enough to run the depth out."
+  (let ((pending (list form)) (found nil))
+    (while (and pending (not found))
+      (let ((this (pop pending)))
+        (cond ((eq this symbol) (setq found t))
+              ((consp this)
+               (let ((tail this))
+                 (while (consp tail)
+                   (push (car tail) pending)
+                   (setq tail (cdr tail)))
+                 (when tail (push tail pending)))))))
+    found))
+
+(defun vm-mime-test--files-naming (symbol)
+  "Every file in lisp/ whose code names SYMBOL.
+Read as forms, so the symbol in a comment or a docstring is not a hit.  Its
+own `defcustom' and `make-obsolete-variable' are not a reading of it either,
+so vm-vars.el is left out."
+  (let ((found nil))
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'") (nreverse found))
+      (unless (string-match-p "vm-\\(vars\\|autoloads\\|cus-load\\)\\.el\\'" file)
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (condition-case nil
+              (while t
+                (when (vm-mime-test--form-names-p (read (current-buffer)) symbol)
+                  (push (file-name-nondirectory file) found)
+                  (goto-char (point-max))))
+            (end-of-file nil)))))))
+
+(ert-deftest vm-mime-test-the-html-blocker-options-are-obsolete ()
+  "REGRESSION: both say so, so setting one warns instead of being believed.
+Neither has a replacement in VM itself, so each carries the message rather
+than a name: `vm-w3m-safe-url-regexp' is vm-w3m.el\='s, loaded only where
+emacs-w3m is installed."
+  (require 'vm-vars)
+  (dolist (option vm-mime-test--blocker-options)
+    (let ((notice (get option 'byte-obsolete-variable)))
+      (should (equal (list option (and notice t)) (list option t)))
+      (should (string-match-p "vm-w3m-safe-url-regexp" (car notice)))
+      (should (equal (nth 2 notice) "9.0.0")))))
+
+(ert-deftest vm-mime-test-nothing-reads-the-html-blocker-options ()
+  "REGRESSION: the dead loop is gone, so no file but vm-vars.el names them.
+An obsolete option that the code still reads is worse than one it does not:
+the warning says to stop setting it while the setting still does something."
+  (dolist (option vm-mime-test--blocker-options)
+    (should (equal (list option nil)
+                   (list option (vm-mime-test--files-naming option))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
