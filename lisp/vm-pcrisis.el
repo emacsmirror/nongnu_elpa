@@ -5,7 +5,7 @@
 ;; Copyright (C) 1999 Rob Hodges,
 ;; Copyright (C) 2006 Robert Widhopf, Robert P. Goldman
 ;; Copyright (C) 2011-2012 Uday S. Reddy
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Original Author: Rob Hodges (Personality Crisis)
 ;;

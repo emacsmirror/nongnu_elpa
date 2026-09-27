@@ -4,7 +4,7 @@
 
 # Copyright (C) 2006-2007  Robert Widhopf-Fenk <hack@robf.de>
 # Copyright (C) 2010       Uday S Reddy <reddyuday@launchpad.net>
-# Copyright (C) 2024-2025  The VM Developers
+# Copyright (C) 2024-2026  The VM Developers
 
 # VM is free software; you can redistribute it and/or modify it under the
 # terms of the GNU Library General Public License as published by the Free
@@ -24,7 +24,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([VM],[9.0.0snapshot],[viewmail-info@nongnu.org])
-AC_COPYRIGHT([Copyright (C) 2024-2025 The VM Developers])
+AC_COPYRIGHT([Copyright (C) 2024-2026 The VM Developers])
 AC_CONFIG_SRCDIR([configure.ac])
 
 # Find a (g)tar program and make sure it is GNU one. A failure is not fatal

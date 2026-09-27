@@ -1,6 +1,6 @@
 ;;; vm-pcrisis-test.el --- Tests for vm-pcrisis.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
