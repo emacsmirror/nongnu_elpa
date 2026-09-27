@@ -70,7 +70,11 @@ If you change the value of this variable, call
 If for some reason you generate a new token, you'll have to update your
 auth souce file manually, or at least remove the entry and authenticate
 again, as auth-source.el only provides unreliable tools for updating
-entries."
+entries.
+If you do not have access to a JS-capable browser, or just want to avoid
+the auth flow, you can manually create an entry in authinfo containing
+your existing token as the password entry, and mastodon.el should pick
+it up and work."
   :type 'boolean)
 
 (defcustom mastodon-auth-encrypt-tokens-plstore t
@@ -234,7 +238,11 @@ If AUTH-SOURCE, also check if it contains :secret-access_token."
 
 (defun mastodon-auth--access-token ()
   "Return the access token to use with `mastodon-instance-url'.
-Generate/save token if none known yet."
+Generate/save token if none known yet.
+Also try to fetch token from `mastodon-auth-use-auth-source' if it is enabled.
+Note that this means it should be possible for a user to copy an
+existing token to their authinfo file manually, and mastodon.el will
+work, with no need for auth flow/JS-capable browser."
   (cond
    (mastodon-auth--token-alist
     ;; user variables are known and initialised.
@@ -257,6 +265,21 @@ Generate/save token if none known yet."
     (mastodon-auth--show-notice mastodon-auth--user-unaware
                                 "*mastodon-notice*")
     (user-error "Variables not set properly"))
+   ;; Check auth-source for a token:
+   ((and mastodon-auth-use-auth-source
+         ;; nil if we have no entry (i.e. if we fail, don't error out, but
+         ;; continue to auth flow):
+         (mastodon-auth-source-get
+          mastodon-active-user
+          (url-domain
+           (url-generic-parse-url mastodon-instance-url))))
+    ;; if entry token is incorrect, we error in
+    ;; `mastodon-return-account-credentials'
+    (cadr
+     (mastodon-auth-source-get
+      mastodon-active-user
+      (url-domain
+       (url-generic-parse-url mastodon-instance-url)))))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
