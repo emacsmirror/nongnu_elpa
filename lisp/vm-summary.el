@@ -883,6 +883,29 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 		 token)))
    summary))
 
+(defun vm-summary-token-with-width (token format)
+  "TOKEN, in a group carrying the width and maximum of the last match.
+
+`%n', `%*' and `%I' become tokens rather than substitutions, and a token is
+inserted with no width of its own, so a width or a maximum written on one of
+them reached the summary as nothing at all while the untokenized path
+justified and truncated it (emacs-vm/vm#849).
+
+A group is what the tokenized path already has for applying a width to what
+it wrote, so one is put around the token.  Answers a list to splice in, which
+is the bare token where neither was asked for.
+
+Spaces whatever the width says: `%05n' fills with zeros on the untokenized
+path, which `group-end' has no way to be told."
+  (let ((width (and (match-beginning 2)
+		    (string-to-number (concat (match-string 1 format)
+					      (match-string 2 format)))))
+	(maximum (and (match-beginning 3)
+		      (string-to-number (match-string 4 format)))))
+    (if (or width maximum)
+	(list ''group-begin width maximum token ''group-end)
+      (list token))))
+
 (defun vm-summary-compile-format-1 (format &optional tokenize start-index)
   (or start-index (setq start-index 0))
   (let ((case-fold-search nil)
@@ -975,7 +998,9 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					    'vm-su-message) sexp)))
 		    ((= conv-spec ?I)
 		     (if tokenize
-			 (setq token ''thread-indent)
+			 (setq token (vm-summary-token-with-width
+				      ''thread-indent format)
+			       splice t)
 		       (setq sexp (cons (list 'vm-su-thread-indent
 					      'vm-su-message) sexp))))
 		    ((= conv-spec ?l)
@@ -992,7 +1017,9 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					    'vm-su-message) sexp)))
 		    ((= conv-spec ?n)
 		     (if tokenize
-			 (setq token ''number)
+			 (setq token (vm-summary-token-with-width
+				      ''number format)
+			       splice t)
 		       (setq sexp (cons (list 'vm-padded-number-of
 					      'vm-su-message) sexp))))
 		    ((= conv-spec ?s)
@@ -1033,7 +1060,9 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					    'vm-su-message) sexp)))
 		    ((= conv-spec ?*)
 		     (if tokenize
-			 (setq token ''mark)
+			 (setq token (vm-summary-token-with-width
+				      ''mark format)
+			       splice t)
 		       (setq sexp (cons (list 'vm-su-mark
 					      'vm-su-message) sexp)))))
 	      (cond ((and (not token) vm-display-using-mime)

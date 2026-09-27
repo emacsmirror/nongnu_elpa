@@ -512,6 +512,41 @@ of which is a column twenty wide (emacs-vm/vm#848)."
           (should (equal (buffer-substring-no-properties (point-min) (point-max))
                          (cdr case))))))))
 
+(ert-deftest vm-summary-test-a-token-takes-a-width-too ()
+  "REGRESSION: a width or a maximum on `%n\', `%*\' or `%I\' reaches the summary.
+
+Those three become tokens rather than substitutions, and a token was inserted
+with no width of its own, so `%5n\' came out as the bare number in a folder
+while the compiled path answered a column five wide (emacs-vm/vm#849).  The
+tokenized path is where a folder\='s own summary lines come from, so what a
+reader who wrote `%3n\' saw was no column at all.
+
+Each token is wrapped in a group now, which is the mechanism the tokenized
+path already had for applying a width to what it wrote, so the two paths
+answer alike."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((message (car vm-message-list)))
+      ;; `vm-test-with-folder' does not number, and `%n' is nil until
+      ;; something does; an unnumbered message compares nil against nil
+      (vm-number-messages)
+      (dolist (format '("%5n" "%-5n" "%n" "%5*" "%-3*" "%5I" "%3.2n"))
+        (with-temp-buffer
+          (vm-tokenized-summary-insert
+           message (vm-summary-sprintf format message t))
+          (should (equal (list format (buffer-substring-no-properties
+                                       (point-min) (point-max)))
+                         (list format (vm-summary-sprintf format message))))))
+      ;; and the columns themselves, so the two paths cannot agree on
+      ;; something neither of them should answer
+      (dolist (case '(("%5n" . "    1") ("%-5n" . "  1  ") ("%n" . "  1")
+                      ("%5*" . "     ") ("%5I" . "     ") ("%3.2n" . "   ")))
+        (with-temp-buffer
+          (vm-tokenized-summary-insert
+           message (vm-summary-sprintf (car case) message t))
+          (should (equal (list (car case) (buffer-substring-no-properties
+                                          (point-min) (point-max)))
+                         (list (car case) (cdr case)))))))))
+
 (defconst vm-summary-test--with-attachments
   (concat "From a@b.c Mon Jan  1 00:00:00 2024\n"
           "From: a@b.c\nSubject: two parts\nMIME-Version: 1.0\n"
