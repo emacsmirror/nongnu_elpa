@@ -276,22 +276,11 @@ cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
 
 =test/vm-live-config.el= is gitignored -- it holds passwords, so keep it that
-way.  The template is checked in and describes both protocols, IMAP and POP;
-drop any server you have not set up and its tests skip.
+way.  The template describes both protocols and every key; read it there.
 
-The template says all this, but the two that bite:
-
-- The =:name= values are load-bearing.  Tests ask for servers by name --
-  ="plain"= and ="tls"= for IMAP, ="pop"= and ="pop-tls"= for POP -- so a
-  server under another name is never used and the tests wanting it skip
-  without saying why.
-- A password cannot contain a colon.  VM's maildrop specifications are
-  colon-delimited (=imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD= and
-  =pop:HOST:PORT:AUTH:USER:PASSWORD=) and cannot express one.
-
-=:trustfile= is the self-signed certificate itself, which is its own trust
-anchor.  Without it Emacs either rejects the certificate or prompts, and a
-prompt under batch ert is a hang.
+What it cannot tell you is what to put in =:trustfile= here: the self-signed
+certificate itself, which is its own trust anchor.  Without it Emacs either
+rejects the certificate or prompts, and a prompt under batch ert is a hang.
 
 *** running them
 #+begin_src sh
@@ -349,10 +338,9 @@ sudo port reload dovecot          # or the reload for your install
 doveconf -n protocols
 #+end_src
 
-Then add the POP servers.  They live in the same
-=test/vm-live-config.el=, and =test/vm-live-config.el.template= already has
-them: uncomment or copy the =vm-pop-test-servers= form out of it and put your
-own passwords in.  The names =pop= and =pop-tls= are what the tests look for.
+Then add the POP servers.  They live in the same =test/vm-live-config.el=,
+whose template carries the =vm-pop-test-servers= form; fill in your own
+passwords.
 
 The live POP tests also need the IMAP server called =plain= for the same
 account, and skip without it: POP3 has no =APPEND=, so a fixture cannot be

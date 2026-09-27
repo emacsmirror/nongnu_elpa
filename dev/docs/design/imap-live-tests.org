@@ -75,16 +75,13 @@ cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
 
 It sets =vm-imap-test-servers= and =vm-pop-test-servers=, so one file describes
-both protocols. The template is the reference for their structure; do not copy a
-second copy of it into this document, which is how the two drift apart.
+both protocols. The template is the reference for their structure and for what
+each key means; do not copy a second copy of it into this document, which is
+how the two drift apart.
 
-- Two accounts are required for the cross-account tests (#38, FCC/save);
-  single-account tests use the first.
 - The harness builds the maildrop spec and populates
   =vm-imap-account-alist=, so tests exercise the nickname path real users
   take rather than raw specs.
-- Passwords must not contain =:=. VM's spec is colon-delimited
-  (=imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD=) and cannot express one.
 - =test/vm-live-config.el= goes in =.gitignore=; the =.template= must not,
   which the exact-name pattern takes care of. Check it against the
   narrowed =*.ind*= pattern, not the old =*.in*=.
@@ -165,11 +162,7 @@ convincingly:
   =pop3= added to =protocols=.  Skips unless =vm-pop-test-servers= is set.
 
 Config, in the same gitignored =test/vm-live-config.el=; the template has the
-=vm-pop-test-servers= form ready to fill in.
-
-Names are load-bearing: the tests look for =pop= and =pop-tls=, as the IMAP
-ones look for =plain= and =tls=.  =:auth= is =pass= or =apop=; VM's POP spec
-is =pop:HOST:PORT:AUTH:USER:PASSWORD=, so passwords again cannot contain =:=.
+=vm-pop-test-servers= form ready to fill in, and says what each key takes.
 
 Run with =./test-runner --pop= (mock plus live), or the default run, which includes both
 and skips the live half when no POP server is configured.
