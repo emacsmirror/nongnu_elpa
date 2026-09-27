@@ -122,10 +122,10 @@
 	    "echo hello &gt;README\n"
 	    "dodoc README\n"
 	    "</codesample>\n")
+    (devbook-mode-test-run-silently
+     (devbook-mode))
     (let ((devbook-fontify-codesamples-natively t))
-      (devbook-mode-test-run-silently
-       (devbook-mode)
-       (font-lock-ensure)))
+      (font-lock-ensure))
     (goto-char (point-min))
     (search-forward "codesample")
     (should (equal (get-text-property (match-beginning 0) 'face)
@@ -140,9 +140,7 @@
     (should (equal (get-text-property (match-beginning 0) 'face)
 		   '(nxml-tag-delimiter)))
     (let ((devbook-fontify-codesamples-natively nil))
-      (devbook-mode-test-run-silently
-       (devbook-mode)
-       (font-lock-ensure)))
+      (font-lock-ensure))
     (goto-char (point-min))
     (search-forward "dodoc")
     (should (equal (get-text-property (match-beginning 0) 'face)

@@ -1,5 +1,11 @@
 2026-09-27  Ulrich Müller  <ulm@gentoo.org>
 
+	* devbook-mode.el (devbook-fontify-codesample): Move the
+	devbook-fontify-codesamples-natively check here.
+	(devbook-add-font-lock): Remove it accordingly.
+	* test/devbook-mode-tests.el (devbook-mode-test-font-lock):
+	Update.
+
 	* ebuild-mode.el (ebuild-mode-enable-bug-reference): Not useful
 	as a file-local variable, therefore drop :safe.
 

@@ -147,7 +147,8 @@ and the element's text, respectively.")
   (let* ((beg (match-beginning 2))
 	 (end (match-end 2))
 	 (lang (match-string-no-properties 1))
-	 (mode (cdr (assoc lang devbook-codesample-lang-modes)))
+	 (mode (and devbook-fontify-codesamples-natively
+		    (cdr (assoc lang devbook-codesample-lang-modes))))
 	 (buf (current-buffer)))
     ;; mark the whole codesample element as multiline construct
     (put-text-property (match-beginning 0) (match-end 0)
@@ -204,10 +205,9 @@ if either variable was changed."
 
 (defun devbook-add-font-lock ()
   "Add `devbook-mode' font-lock keywords for the current buffer."
-  (when devbook-fontify-codesamples-natively
-    (font-lock-add-keywords nil devbook-font-lock-keywords)
-    (add-hook 'font-lock-extend-region-functions
-	      #'devbook-font-lock-extend-region)))
+  (font-lock-add-keywords nil devbook-font-lock-keywords)
+  (add-hook 'font-lock-extend-region-functions
+	    #'devbook-font-lock-extend-region))
 
 (add-hook 'devbook-mode-hook #'devbook-add-font-lock)
 
