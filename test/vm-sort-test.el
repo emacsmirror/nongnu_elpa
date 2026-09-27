@@ -1012,6 +1012,50 @@ which is what makes a run of them worth filing at once."
       (should headed))
     (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))))
 
+(ert-deftest vm-sort-test-auto-folder-without-a-summary-does-not-error ()
+  "REGRESSION: `G auto-folder' works in a folder visited without a summary.
+
+The key sorts and then heads each run of messages with the folder it would be
+filed to, which is written into the summary.  There is none to write into
+when the folder was visited without one, and
+`vm-sort-insert-auto-folder-names' reached `with-current-buffer' with a nil
+buffer: the sort answered \"Wrong type argument: stringp, nil\" and left the
+folder unsorted (emacs-vm/vm#851).
+
+Nothing is stubbed here but the folder machinery: the real
+`vm-sort-insert-auto-folder-names' runs, which is what used to signal."
+  (vm-sort-test--sorting
+    (let ((vm-sort-compare-auto-folder-cache nil))
+      (cl-letf (((symbol-function 'vm-virtual-auto-select-folder)
+                 (lambda (m &rest _)
+                   (cond ((string-match-p "alice" (vm-su-from m)) "aye")
+                         ((string-match-p "bob" (vm-su-from m)) "bee")
+                         (t "cee")))))
+        (should-not vm-summary-buffer)
+        (vm-sort-messages "auto-folder")))
+    (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))))
+
+(ert-deftest vm-sort-test-auto-folder-names-are-written-in-the-summary ()
+  "With a summary there is somewhere to write them, and they are written.
+The other half of emacs-vm/vm#851: the guard must skip the writing where
+there is no summary and not where there is one.  A real folder, so the
+summary is a real one."
+  (vm-sort-test--with-real-folder 3
+    (let ((vm-sort-compare-auto-folder-cache nil))
+      (cl-letf (((symbol-function 'vm-virtual-auto-select-folder)
+                 (lambda (m &rest _)
+                   (if (string-match-p "01" (vm-su-subject m)) "aye" "bee"))))
+        (should vm-summary-buffer)
+        (vm-sort-messages "auto-folder")
+        (let ((written (with-current-buffer vm-summary-buffer
+                         (buffer-substring-no-properties (point-min)
+                                                         (point-max)))))
+          (should (string-match-p "^aye$" written))
+          (should (string-match-p "^bee$" written))
+          ;; written once each, not once per message
+          (should (= 1 (cl-count "aye" (split-string written "\n")
+                                 :test #'equal))))))))
+
 (ert-deftest vm-sort-test-sorting-by-thread ()
   "The thread key orders by the thread each message belongs to, and builds
 the threads first if they are not built."
