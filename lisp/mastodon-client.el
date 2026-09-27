@@ -167,6 +167,11 @@ If `mastodon-auth-use-auth-source', encrypt it in auth source file."
          (username (mastodon-client--form-user-from-vars))
          (key (concat "user-" username))
          (plstore-value
+          ;; NB: with this unless, plstore-value is nil if no encryption!
+          ;; FIXME: we should only add token if using auth-source
+          ;; but i tried that and login flow breaks...:
+          ;; i think this function was not returning properly, meaning
+          ;; saving of user details also broke
           (unless mastodon-auth-encrypt-tokens-plstore
             (setq user-details
                   (plist-put user-details :access_token token))))
