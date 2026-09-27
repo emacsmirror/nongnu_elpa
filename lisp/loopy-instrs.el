@@ -31,8 +31,7 @@
 
 (require 'loopy-misc)
 
-;;;; Variable binding for instructions
-;; TODO: Check not using `pcase' in github errors.
+;;;; Loop Instructions
 
 (eval-when-compile
   ;; Emacs 27 complains about `ftype' and `important-return-value' not

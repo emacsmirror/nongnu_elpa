@@ -2,7 +2,7 @@
 
 ;; Copyright (c) 2020 Earl Hyatt
 
-;; LocalWords:  PLIST
+;; LocalWords:  PLIST nconc Nconc
 
 ;;; Disclaimer:
 ;; This file is not part of GNU Emacs.
@@ -101,11 +101,6 @@
 
 ;;;; Helpful Functions
 
-;;;;; Manipulating Instructions
-
-;; If Emacs Lisp ever gets support for true multiple values (via `cl-values'),
-;; this function might be a good candidate for use.
-
 ;;;;; Working with Plists and Keyword Arguments
 
 (cl-defun loopy--only-valid-keywords-p (correct list)
@@ -158,7 +153,7 @@ what to do with the values."
 ;;;;; Sub-Loops
 ;;;;;; At
 (cl-defun loopy--parse-at-command ((_ target-loop &rest commands))
-  "Parse the `at' command as (at &rest COMMANDS).
+  "Parse the `at' command as (at LOOP-NAME &rest COMMANDS).
 
 These commands affect other loops higher up in the call list."
   (declare (important-return-value t)
@@ -187,7 +182,7 @@ handled by `loopy-iter'."
 ;;;;; Genereric Evaluation
 ;;;;;; Set
 (cl-defun loopy--parse-set-command ((&whole cmd name var &rest vals))
-  "Parse the `set' command.
+  "Parse the `set' command as `(set VAR VAL [EXPR...])'.
 
 - VAR is the variable to assign.
 - VALS are the values to assign to VAR."
@@ -199,6 +194,7 @@ handled by `loopy-iter'."
          (arg-length (length vals)))
     (cl-case arg-length
       ;; If no values, repeatedly set to `nil'.
+      ;; TODO: Turn this warning into an error.
       (0 (warn "`loopy': `%s' will require at least 1 value in the future: `%s'"
                name
                cmd)
@@ -222,7 +218,7 @@ handled by `loopy-iter'."
          ;; efficiency, we want to check for the last expression first,
          ;; since it will probably be true the most times.  To enable
          ;; that, the condition is whether the counter is greater than
-         ;; the index of EXPR in REST minus one.
+         ;; the index of VAL in REST minus one.
          ;;
          ;; E.g., for '(a b c),
          ;; use '(cond ((> cnt 1) c) ((> cnt 0) b) ((> cnt -1) a))
@@ -317,7 +313,7 @@ This command does not wait for VAL to change before updating VAR."
 
 ;;;;;; Group
 (cl-defun loopy--parse-command-do-command ((_ &rest body))
-  "Parse the `command-do' loop command.
+  "Parse the `command-do' loop command as `(command-do COMMANDS)'.
 
 BODY is one or more commands to be grouped by a `progn' form.
 This command is suitable for using as the first sub-command in an
@@ -335,7 +331,7 @@ This command is suitable for using as the first sub-command in an
 
 ;;;;;; Do
 (cl-defun loopy--parse-do-command ((_ &rest expressions))
-  "Parse the `do' loop command.
+  "Parse the `do' loop command as `(do EXPRS)'.
 
 Expressions are normal Lisp expressions, which are inserted into
 the loop literally (not even in a `progn')."
@@ -351,7 +347,9 @@ the loop literally (not even in a `progn')."
 ;;;;;; If
 (cl-defun loopy--parse-if-command
     ((_ condition &optional if-true &rest if-false))
-  "Parse the `if' loop command.  This takes the entire command.
+  "Parse the `if' loop command as `(if COND COMMAND [COMMANDS])'.
+
+This takes the entire command.
 
 - CONDITION is a Lisp expression.
 - IF-TRUE is the first sub-command of the `if' command.
@@ -374,7 +372,9 @@ the loop literally (not even in a `progn')."
 
 ;;;;;; Cond
 (cl-defun loopy--parse-cond-command ((_ &rest clauses))
-  "Parse the `cond' command.  This works like the `cond' special form.
+  "Parse the `cond' command as `(cond (COND COMMANDS) [(COND COMMANDS)...])'.
+
+This works like the `cond' special form.
 
 CLAUSES are lists of a Lisp expression followed by one or more
 loop commands.
@@ -1171,7 +1171,7 @@ This is for decreasing indices.
 ;;;;;; Cycle/repeat
 (cl-defun loopy--parse-cycle-command
     ((name var-or-count &optional (count nil count-given)))
-  "Parse the `cycle' loop command as (repeat [VAR] VAL).
+  "Parse the `cycle' loop command as (cycle [VAR] VAL).
 
 VAR-OR-COUNT is a variable name or an integer.  Optional COUNT is
 an integer, to be used if a variable name is provided.
@@ -1224,10 +1224,10 @@ For example, [1 2] and (3 4) give [(1 3) (1 4) (2 3) (2 4)]."
                                (vconcat (nreverse ,result-sym))))))
 
 (loopy--defiteration seq
-  "Parse the `seq' command as (seq VAR EXPR [EXPRS] &key KEYS).
+  "Parse the `seq' command as (seq VAR VAL [EXPRS] &key KEYS).
 
 Because some packages implement custom sequences as lists internally, no
-special consideration is given to whether EXPR is a list.  See, for
+special consideration is given to whether VAL is a list.  See, for
 example, the previous implementation of the Stream package on ELPA.
 
 KEYS is one or several of `:index', `:by', `:from', `:downfrom',
@@ -1303,7 +1303,7 @@ For example, [1 2] and (3 4) give [(1 3) (1 4) (2 3) (2 4)]."
                                (vconcat (nreverse result))))))
 
 (loopy--defiteration sequence
-  "Parse the `sequence' command as (sequence VAR EXPR [EXPRS] &key KEYS).
+  "Parse the `sequence' command as (sequence VAR VAL [EXPRS] &key KEYS).
 
 KEYS is one or several of `:index', `:by', `:from', `:downfrom',
 `:upfrom', `:to', `:downto', `:upto', `:above', `:below', and
@@ -1445,10 +1445,10 @@ KEYS is one or several of `:by', `:from', `:downfrom', `:upfrom',
 
 ;;;;;; Seq Ref
 (loopy--defiteration seq-ref
-  "Parse the `seq-ref' command as (seq-ref VAR EXPR &key KEYS).
+  "Parse the `seq-ref' command as (seq-ref VAR VAL &key KEYS).
 
 Because some packages implement custom sequences as lists internally, no
-special consideration is given to whether EXPR is a list.  See, for
+special consideration is given to whether VAL is a list.  See, for
 example, the previous implementation of the Stream package on ELPA.
 
 KEYS is one or several of `:index', `:by', `:from', `:downfrom',
@@ -1498,7 +1498,7 @@ KEYS is one or several of `:index', `:by', `:from', `:downfrom',
 
 ;;;;;; Sequence Ref
 (loopy--defiteration sequence-ref
-  "Parse the `sequence-ref' command as (sequence-ref VAR EXPR &key KEYS).
+  "Parse the `sequence-ref' command as (sequence-ref VAR VAL &key KEYS).
 
 KEYS is one or several of `:index', `:by', `:from', `:downfrom',
 `:upfrom', `:to', `:downto', `:upto', `:above', or `:below'.
@@ -1783,7 +1783,7 @@ more efficient than repeatedly traversing the list."
                 `(cond
                   ((loopy--member-p ,var ,adjoin-value :test ,test-val :key ,key-val)
                    nil)
-                  ;; If `last-link' is know, set it's cdr.
+                  ;; If `last-link' is known, set it's cdr.
                   (,last-link
                    (setcdr ,last-link (list ,adjoin-value))
                    (setq ,last-link (cdr ,last-link)))
@@ -2474,7 +2474,7 @@ This function is called by `loopy--expand-optimized-accum'."
 
 ;;;;;;; Find
 (loopy--defaccumulation find
-  "Parse a command of the form `(finding VAR EXPR TEST &key ON-FAILURE)'.
+  "Parse a command of the form `(find VAR VAL TEST &key ON-FAILURE)'.
 
 ON-FAILURE is evaluated at the beginning of the loop, even though
 it is only meaningful at the end."
@@ -2535,9 +2535,9 @@ it is only meaningful at the end."
 
 ;;;;;;; Set Accum
 (loopy--defaccumulation set-accum
-  "Parse the `set-accum' command as (set-accum VAR EXPR).
+  "Parse the `set-accum' command as (set-accum VAR VAL).
 
-EXPR is the value to bind to VAR."
+VAL is the value to bind to VAR."
   :num-args 2
   :category generic
   :implicit `((loopy--accumulation-vars (,var nil))

@@ -14,7 +14,7 @@
 #+export_file_name: loopy
 
 # Make sure to export all headings as such.  Otherwise, some links to
-# sub-headings won’t work.
+# sub-headings won't work.
 #+options: H:6
 # Some parsers require this option to export footnotes.
 #+options: f:t
@@ -141,7 +141,7 @@ described thoroughly later in this document.
 
   #+begin_src emacs-lisp
     ;; => ((1 2 3) (-3 -2 -1) (0))
-    (loopy-iter (numbering i -3 3)
+    (loopy-iter (numbering i :from -3 :to 3)
                 ;; Normal `pcase' macro, not a `loopy' feature:
                 (pcase i
                   ;; `collecting' is a `loopy' feature:
@@ -282,7 +282,7 @@ Some other things to note are:
 
 
 All that being said, Loopy is not yet feature complete.  Please request features
-or report problems in this project’s [[https://codeberg.org/okamsn/loopy/issues][issues tracker]].
+or report problems in this project's [[https://codeberg.org/okamsn/loopy/issues][issues tracker]].
 
 * Basic Concepts
 :PROPERTIES:
@@ -362,9 +362,9 @@ argument =with= is used to initialized variables.
                     (return-from outer j))))
   #+end_src
 
-#+pindex: with
-#+pindex: let*
-#+pindex: init
+  #+pindex: with
+  #+pindex: let*
+  #+pindex: init
 - =with=, =let*=, =init= :: Declare variables before the loop, in order.  This
   can also be used to initialize variables referenced by loop commands.  =with=
   can use destructuring ([[#basic-destructuring]]).
@@ -378,12 +378,12 @@ argument =with= is used to initialized variables.
      (collect (+ i a b))) ; Collect sum of `a', `b', and each `i' into a list.
   #+end_src
 
-#+pindex: without
-#+pindex: no-with
-#+pindex: no-init
+  #+pindex: without
+  #+pindex: no-with
+  #+pindex: no-init
 - =without=, =no-with=, =no-init= :: Variables that ~loopy~ should not try to
   initialize.  ~loopy~ tries to initialize all of the variables that it uses
-  in a ~let~-like form, but that isn’t always desired.
+  in a ~let~-like form, but that isn't always desired.
 
   #+begin_src emacs-lisp
     ;; Without `without', `loopy' would try to initialize `a' to nil, which would
@@ -397,10 +397,10 @@ argument =with= is used to initialized variables.
              (set a (1- a))))   ; Set `a' to the value of `(1- a)'.
   #+end_src
 
-#+pindex: before
-#+pindex: before-do
-#+pindex: initially-do
-#+pindex: initially
+  #+pindex: before
+  #+pindex: before-do
+  #+pindex: initially-do
+  #+pindex: initially
 - =before-do=, =before=, =initially-do=, =initially= :: Run Lisp expressions
   before the loop starts, after variables are initialized.
 
@@ -413,12 +413,12 @@ argument =with= is used to initialized variables.
            (collect (+ i a b)))    ; Collect each sum into a list.
   #+end_src
 
-#+pindex: after-do
-#+pindex: after
-#+pindex: else-do
-#+pindex: else
+  #+pindex: after-do
+  #+pindex: after
+  #+pindex: else-do
+  #+pindex: else
 - =after-do=, =after=, =else-do=, =else= :: Run Lisp expressions after the loop
-  successfully completes.  This is similar to Python’s ~else~ statement
+  successfully completes.  This is similar to Python's ~else~ statement
   following a ~for~ or ~while~ loop.  Unlike ~progn~, the return values of the
   expressions _do not_ affect the return value of the macro.
 
@@ -432,8 +432,8 @@ argument =with= is used to initialized variables.
            (after-do (message "No odd number found.")))
   #+end_src
 
-#+pindex: finally-do
-#+pindex: finally
+  #+pindex: finally-do
+  #+pindex: finally
 - =finally-do=, =finally= :: Run Lisp expressions after the loop exits, always.
   Unlike ~progn~, the return values of the expressions _do not_ affect the
   return value of the macro.
@@ -478,7 +478,7 @@ argument =with= is used to initialized variables.
            (finally-do (push 0 loopy-result)))
   #+end_src
 
-#+pindex: finally-return
+  #+pindex: finally-return
 - =finally-return= :: Return a value, regardless of how the loop completes.
   These arguments override any explicit return values given in commands like
   =return= and =return-from=, as well as any implicit return values that can
@@ -507,9 +507,8 @@ argument =with= is used to initialized variables.
            (finally-return (cons -1 collection)))
   #+end_src
 
-
-#+pindex: finally-protect
-#+pindex: finally-protected
+  #+pindex: finally-protect
+  #+pindex: finally-protected
 - =finally-protect=, =finally-protected= :: Wrap the loop in ~unwind-protect~
   (not to be confused with ~condition-case~).  The arguments to this special
   macro argument (which are Lisp expressions) can access the variables used by
@@ -525,7 +524,7 @@ argument =with= is used to initialized variables.
     ;;
     ;; Example var is: 1
     ;; Last used element in list is: 4
-    ;; Then current value of ‘my-collection’: (1 2 3 4)
+    ;; Then current value of `my-collection': (1 2 3 4)
     (loopy (with (example-var 1))
            (list i '(1 2 3 4 5))
            (collect my-collection i)
@@ -538,8 +537,8 @@ argument =with= is used to initialized variables.
                      my-collection)))
   #+end_src
 
-#+pindex: flag
-#+pindex: flags
+  #+pindex: flag
+  #+pindex: flags
 - =flag=, =flags= :: Options that change the behavior of ~loopy~ ([[#flags]]).
   For example, one can opt to use a different destructuring system, such as
   what is provided by the Dash library.  See that linked section for more
@@ -565,8 +564,8 @@ argument =with= is used to initialized variables.
            (return a b))
   #+end_src
 
-#+pindex: accum-opt
-#+pindex: opt-accum
+  #+pindex: accum-opt
+  #+pindex: opt-accum
 - =accum-opt=, =opt-accum= :: Accumulation variables whose use should be
   optimized ([[#optimized-accums]]).  Implicit accumulation variables are always
   optimized, but explicit variables are unoptimized by default
@@ -593,8 +592,7 @@ argument =with= is used to initialized variables.
            (finally-return evens odds))
   #+end_src
 
-
-#+pindex: wrap
+  #+pindex: wrap
 - =wrap= :: A list of forms in which to wrap the loop itself (that is, not
   =before-do=, =after-do=, or anything else).  Each form can be either a list
   or a symbol.  If a list, the loop is inserted into the end of the list.  If
@@ -613,18 +611,22 @@ argument =with= is used to initialized variables.
                  save-match-data)
            ...)
 
-    ;; Similar to
+    ;; Similar to the below, only the loop itself is wrapped,
+    ;; not any variables created by other macro arguments.
     (let ((a 1))
       (save-match-data
         (loopy ...)))
 
-    ;; => 6
+    ;; => 6 from ((1 + 2) * 2)
     (loopy (with (a 1))
            (before-do (cl-incf a 2))
            (wrap (progn (setq a (* 2 a))))
            (return a))
   #+end_src
 
+- =override= :: Certain macro variables whose values should be temporarily
+  overridden during macro expansion.  This is a niche option discussed more in
+  [[#override]].
 
 As stated above, all other expressions will be considered loop commands
 ([[#loop-commands][Loop Commands]]).
@@ -5513,8 +5515,8 @@ concerned with what happens after the loop exits/completes.
 Some commands might depend on the name of the loop.  The symbol which names the
 loop is stored in the variable ~loopy--loop-name~.  The default name is ~nil~.
 
-The structure of the macro’s expanded code depends on the features used (for
-example, ~loopy~ won’t try to declare variables if none exist), but the result
+The structure of the macro's expanded code depends on the features used (for
+example, ~loopy~ won't try to declare variables if none exist), but the result
 will work similar to the below example.
 
 #+BEGIN_SRC emacs-lisp

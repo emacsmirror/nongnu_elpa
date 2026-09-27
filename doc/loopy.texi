@@ -159,7 +159,7 @@ not a port of @code{iterate} to Emacs Lisp.
 
 @lisp
 ;; => ((1 2 3) (-3 -2 -1) (0))
-(loopy-iter (numbering i -3 3)
+(loopy-iter (numbering i :from -3 :to 3)
             ;; Normal `pcase' macro@comma{} not a `loopy' feature:
             (pcase i
               ;; `collecting' is a `loopy' feature:
@@ -311,7 +311,7 @@ optimize for at-start accumulations or at-end accumulations.
 
 
 All that being said@comma{} Loopy is not yet feature complete.  Please request features
-or report problems in this project’s @uref{https://codeberg.org/okamsn/loopy/issues, issues tracker}.
+or report problems in this project's @uref{https://codeberg.org/okamsn/loopy/issues, issues tracker}.
 
 @node Basic Concepts
 @chapter Basic Concepts
@@ -386,12 +386,10 @@ which contains the loop.  This can be of the form @samp{(named NAME)} or just
               (when (> j 2)
                 (return-from outer j))))
 @end lisp
-@end table
 
 @pindex with
 @pindex let*
 @pindex init
-@table @asis
 @item @samp{with}@comma{} @samp{let*}@comma{} @samp{init}
 Declare variables before the loop@comma{} in order.  This
 can also be used to initialize variables referenced by loop commands.  @samp{with}
@@ -405,16 +403,14 @@ can use destructuring (@ref{Basic Destructuring}).
  (list i '(1 2 3))    ; Bind `i' to elements of the list.
  (collect (+ i a b))) ; Collect sum of `a'@comma{} `b'@comma{} and each `i' into a list.
 @end lisp
-@end table
 
 @pindex without
 @pindex no-with
 @pindex no-init
-@table @asis
 @item @samp{without}@comma{} @samp{no-with}@comma{} @samp{no-init}
 Variables that @code{loopy} should not try to
 initialize.  @code{loopy} tries to initialize all of the variables that it uses
-in a @code{let}-like form@comma{} but that isn’t always desired.
+in a @code{let}-like form@comma{} but that isn't always desired.
 
 @lisp
 ;; Without `without'@comma{} `loopy' would try to initialize `a' to nil@comma{} which would
@@ -427,13 +423,11 @@ in a @code{let}-like form@comma{} but that isn’t always desired.
          (collect a)        ; Collect the value of `a' into a list.
          (set a (1- a))))   ; Set `a' to the value of `(1- a)'.
 @end lisp
-@end table
 
 @pindex before
 @pindex before-do
 @pindex initially-do
 @pindex initially
-@table @asis
 @item @samp{before-do}@comma{} @samp{before}@comma{} @samp{initially-do}@comma{} @samp{initially}
 Run Lisp expressions
 before the loop starts@comma{} after variables are initialized.
@@ -446,16 +440,14 @@ before the loop starts@comma{} after variables are initialized.
        (list i '(1 2 3))       ; Set `i' to each element in the list.
        (collect (+ i a b)))    ; Collect each sum into a list.
 @end lisp
-@end table
 
 @pindex after-do
 @pindex after
 @pindex else-do
 @pindex else
-@table @asis
 @item @samp{after-do}@comma{} @samp{after}@comma{} @samp{else-do}@comma{} @samp{else}
 Run Lisp expressions after the loop
-successfully completes.  This is similar to Python’s @code{else} statement
+successfully completes.  This is similar to Python's @code{else} statement
 following a @code{for} or @code{while} loop.  Unlike @code{progn}@comma{} the return values of the
 expressions do not affect the return value of the macro.
 
@@ -468,11 +460,9 @@ expressions do not affect the return value of the macro.
          (return t))
        (after-do (message "No odd number found.")))
 @end lisp
-@end table
 
 @pindex finally-do
 @pindex finally
-@table @asis
 @item @samp{finally-do}@comma{} @samp{finally}
 Run Lisp expressions after the loop exits@comma{} always.
 Unlike @code{progn}@comma{} the return values of the expressions do not affect the
@@ -517,10 +507,8 @@ as an implied accumulation variable.
        (collect i)
        (finally-do (push 0 loopy-result)))
 @end lisp
-@end table
 
 @pindex finally-return
-@table @asis
 @item @samp{finally-return}
 Return a value@comma{} regardless of how the loop completes.
 These arguments override any explicit return values given in commands like
@@ -549,12 +537,9 @@ When used with @samp{finally-do}@comma{} code in @samp{finally-return} is run af
        (finally-do (push 0 collection))
        (finally-return (cons -1 collection)))
 @end lisp
-@end table
-
 
 @pindex finally-protect
 @pindex finally-protected
-@table @asis
 @item @samp{finally-protect}@comma{} @samp{finally-protected}
 Wrap the loop in @code{unwind-protect}
 (not to be confused with @code{condition-case}).  The arguments to this special
@@ -571,7 +556,7 @@ unplanned stops of the loop's execution.
 ;;
 ;; Example var is: 1
 ;; Last used element in list is: 4
-;; Then current value of ‘my-collection’: (1 2 3 4)
+;; Then current value of `my-collection': (1 2 3 4)
 (loopy (with (example-var 1))
        (list i '(1 2 3 4 5))
        (collect my-collection i)
@@ -583,11 +568,9 @@ unplanned stops of the loop's execution.
         (message "Then current value of `my-collection': %s"
                  my-collection)))
 @end lisp
-@end table
 
 @pindex flag
 @pindex flags
-@table @asis
 @item @samp{flag}@comma{} @samp{flags}
 Options that change the behavior of @code{loopy} (@ref{Using Flags}).
 For example@comma{} one can opt to use a different destructuring system@comma{} such as
@@ -613,11 +596,9 @@ information.
        (with ([a &rest b] [1 2 3]))
        (return a b))
 @end lisp
-@end table
 
 @pindex accum-opt
 @pindex opt-accum
-@table @asis
 @item @samp{accum-opt}@comma{} @samp{opt-accum}
 Accumulation variables whose use should be
 optimized (@ref{Optimizing Accumulations}).  Implicit accumulation variables are always
@@ -644,11 +625,8 @@ accumulations.
          (collect odds i))
        (finally-return evens odds))
 @end lisp
-@end table
-
 
 @pindex wrap
-@table @asis
 @item @samp{wrap}
 A list of forms in which to wrap the loop itself (that is@comma{} not
 @samp{before-do}@comma{} @samp{after-do}@comma{} or anything else).  Each form can be either a list
@@ -668,19 +646,24 @@ is run.
              save-match-data)
        ...)
 
-;; Similar to
+;; Similar to the below@comma{} only the loop itself is wrapped@comma{}
+;; not any variables created by other macro arguments.
 (let ((a 1))
   (save-match-data
     (loopy ...)))
 
-;; => 6
+;; => 6 from ((1 + 2) * 2)
 (loopy (with (a 1))
        (before-do (cl-incf a 2))
        (wrap (progn (setq a (* 2 a))))
        (return a))
 @end lisp
-@end table
 
+@item @samp{override}
+Certain macro variables whose values should be temporarily
+overridden during macro expansion.  This is a niche option discussed more in
+@ref{Locally Overriding Behavior}.
+@end table
 
 As stated above@comma{} all other expressions will be considered loop commands
 (@ref{Loop Commands, , Loop Commands}).
@@ -6123,8 +6106,8 @@ regardless of any early returns in the loop body.  This is derived from the
 Some commands might depend on the name of the loop.  The symbol which names the
 loop is stored in the variable @code{loopy--loop-name}.  The default name is @code{nil}.
 
-The structure of the macro’s expanded code depends on the features used (for
-example@comma{} @code{loopy} won’t try to declare variables if none exist)@comma{} but the result
+The structure of the macro's expanded code depends on the features used (for
+example@comma{} @code{loopy} won't try to declare variables if none exist)@comma{} but the result
 will work similar to the below example.
 
 @lisp

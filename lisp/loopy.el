@@ -40,7 +40,7 @@
 ;;
 ;; How it could be done using `loopy':
 ;;
-;;     (loopy (numbers i 1 10)
+;;     (loopy (numbers i :from 1 :to 10)
 ;;            (if (cl-evenp i)
 ;;                (collect evens i)
 ;;              (collect odds i))
@@ -654,7 +654,7 @@ macro `loopy' itself."
            ;; TODO: `ftype' for `cl-defun'
            ;; (ftype (function (cons) t))
            )
-  ;; Do it this way instead of with `set', cause was getting errors
+  ;; Do it this way instead of with `set', because we were getting errors
   ;; about void variables.
   (let ((instruction-type (cl-first instruction))
         (instruction-value (cl-second instruction)))
@@ -715,7 +715,7 @@ macro `loopy' itself."
          (push instruction-value loopy--implicit-return)))
 
       (loopy--vars-final-updates
-       ;; These instructions are of the form `(l--a-f-u (var . update))'
+       ;; These instructions are of the form `(loopy--vars-final-updates (var . update))'
        (let ((var-to-update (car instruction-value))
              (update-code (cdr instruction-value)))
          (if (map-contains-key loopy--vars-final-updates var-to-update)
@@ -904,8 +904,6 @@ When EXCLUDE-MAIN-BODY is non-nil, don't reverse `loopy--main-body'."
     (setq loopy--main-body (nreverse loopy--main-body)))
   (setq loopy--iteration-vars (nreverse loopy--iteration-vars)
         loopy--accumulation-vars (nreverse loopy--accumulation-vars)
-        ;; This one technically isn't needed yet, but it might be in the
-        ;; future.
         loopy--other-vars (nreverse loopy--other-vars)
         ;; Correct conditions for things like `iter', which generates
         ;; values to check whether all values are yielded.
@@ -944,11 +942,24 @@ name a loop, pass in an unquoted symbol as an argument.
 - `finally-do', `finally': Always run Lisp expressions after the
   loop exits.
 
-- `finally-return', `return': Return a value, regardless of how
-  the loop completes.  Accumulation commands have an implicit
-  return value, but this overrides them.
+- `finally-return': Return a value, regardless of how the loop
+  completes.  Accumulation commands have an implicit return value, but
+  this overrides them.
+
+- `finally-protect', `finally-protected': Wrap the loop in
+  `unwind-protect'.
+
+- `accum-opt', `opt-accum': Control how accumulation variables are
+  optimized.
+
+- `wrap': A list of forms to wrap around the loop body itself (and not
+  around any other forms created by other macro features), similar to
+  `thread-first'.
 
 - `flag', `flags': Options that change the behavior of `loopy'.
+
+- `override': Certain macro variables whose values should be temporarily
+  overridden during macro expansion.
 
 The loop body and any expressions that are part of the
 `before-do' and `after-do' arguments are contained in a single
@@ -970,8 +981,7 @@ see the Info node `(loopy)' distributed with this package."
   ;; Bind variables in `loopy--variables' around code to build the expanded
   ;; loop.
   (loopy--wrap-variables-around-body
-;;;;; Process obsolete variables
-   ;; Don't copy unless we have to.
+;;;;; Make copy of global parsers.
    (setq loopy--parsers-internal loopy-parsers)
 
 ;;;;; Process the special macro arguments.
@@ -997,7 +1007,6 @@ see the Info node `(loopy)' distributed with this package."
    (loopy--with-protected-stack
     (loopy--process-instructions (loopy--parse-loop-commands body))
 
-    ;; (cl-callf2 mapcar #'loopy--accum-code-expansion loopy--main-body)
     ;; Expand any uses of `loopy--optimized-accum' as if it were a macro,
     ;; using the function `loopy--expand-optimized-accum'.
     ;;

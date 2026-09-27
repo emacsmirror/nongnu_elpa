@@ -25,8 +25,8 @@
 ;; commands" that define a loop body and it's surrounding environment, as well
 ;; as exit conditions.
 ;;
-;; This library provides features for destructuring for the features provided in
-;; the main file.  This separation exists for better organization.
+;; This library provides features for the destructuring used by the features
+;; provided in the main file.  This separation exists for better organization.
 
 ;;; Code:
 
@@ -49,6 +49,9 @@
 (require 'seq)
 (require 'subr-x)
 
+;; We cannot require `loopy-commands' in this file (this file is already
+;; required by `loopy-commands'), so we need to declare this function
+;; from `loopy-commands' instead.
 (declare-function loopy--parse-loop-command "ext:loopy-commands" (command))
 
 ;; This better allows for things to change in the future.
@@ -399,7 +402,10 @@ Type is one of `list' or `array'."
 ;;;; Pcase pattern
 
 (defmacro loopy--pcase-flip-1 (fn arg2 arg1)
-  "Copied from now obsolete `pcase--flip' for older versions of Emacs."
+  "Copied from now obsolete `pcase--flip' for older versions of Emacs.
+
+FN is the function being called.  ARG1 and ARG2 are the function
+arguments."
   `(,fn ,arg1 ,arg2))
 
 (defun loopy--pcase-flip (fn arg2)
@@ -706,8 +712,7 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
   "Build a `pcase' pattern for the `&key' variables.
 
 KEY-VARS are the forms of the key variables.  ALLOW-OTHER-KEYS is
-whether `&allow-other-keys' was used.  PLIST-VAR is the variable
-holding the property list."
+whether `&allow-other-keys' was used."
   (declare (important-return-value t)
            (ftype (function (cons boolean) cons)))
   ;; If we aren't checking whether all keys in EXPVAL were given,
@@ -1321,7 +1326,7 @@ IDX to a large value for the super-seq."
 ;;;;;; Macros that expansion that simplifies code for arrays
 
 (defmacro loopy--destructure-gv-array-rest-simplifier (val start)
-  "Get the array sub-sequence in VAL from START to END exclusive.
+  "Get the array sub-sequence in VAL from START.
 
 This macro is used when `&rest' is followed by destructuring the
 sub-array as a complete array.  Instead of producing a sub-array and then
@@ -1376,9 +1381,8 @@ IDX to a large value for the super-array."
 
 ;;;;;; Macros that expansion that simplifies code for lists
 
-
 (defmacro loopy--destructure-gv-list-rest-simplifier (val start)
-  "Get the list sub-sequence in VAL from START to END exclusive.
+  "Get the list sub-sequence in VAL from START.
 
 This macro is used when `&rest' is followed by destructuring the
 sub-list as a complete list.  Instead of producing a sub-list and then
