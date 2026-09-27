@@ -193,39 +193,17 @@ See:	`vm-ps-print-message-function'"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-ps-print-tokenized-summary (message tokens)
-  "Return the summary string for MESSAGE according to the format in TOKENS.
-Like `vm-tokenized-summary-insert'."
-  (if (stringp tokens)
-      tokens
-    (let (token summary)
-      (while tokens
-	(setq token (car tokens))
-	(cond ((stringp token)
-	       (if vm-display-using-mime
-		   (setq summary 
-			 (concat summary
-				 (vm-decode-mime-encoded-words-in-string token)))
-		 (setq summary (concat summary token))))
-	      ((eq token 'number)
-	       (setq summary (concat summary (vm-padded-number-of message))))
-	      ((eq token 'mark)
-	       (setq summary (concat summary (vm-su-mark message))))
-	      ((eq token 'thread-indent)
-	       ;; As `vm-tokenized-summary-insert' indents it: a string of
-	       ;; spaces, capped by `vm-summary-maximum-thread-indentation'.
-	       ;; `concat' over a character and a count took neither, so the
-	       ;; token signalled rather than indenting (#778).
-	       (if (and vm-summary-show-threads
-			(natnump vm-summary-thread-indent-level))
-		   (setq summary
-			 (concat summary
-				 (make-string
-				  (* vm-summary-thread-indent-level
-				     (min vm-summary-maximum-thread-indentation
-					  (vm-thread-indentation message)))
-				  ?\s))))))
-	(setq tokens (cdr tokens)))
-      summary)))
+  "The summary line for MESSAGE built from TOKENS, as a string.
+
+`vm-tokenized-summary-insert' writes it, in a buffer of its own.  This was a
+copy of that function once, and the copy drifted: it dropped the width and
+the maximum of every group, so a format written to line up in the summary did
+not line up on paper (emacs-vm/vm#862), and before that it signalled on a
+thread indent rather than indenting (emacs-vm/vm#778).  One renderer is the
+answer to both."
+  (with-temp-buffer
+    (vm-tokenized-summary-insert message tokens)
+    (buffer-string)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-ps-print-message-folder-name ()
