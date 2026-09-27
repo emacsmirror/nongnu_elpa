@@ -2046,17 +2046,38 @@ values are:
                  (const lynx)))
 
 (defcustom vm-mime-text/html-blocker "<img[^>]*\\s-src=."
-  "*Regexp after which a \"blocked:\" will be inserted.
-This is done in order to prevent loading of embedded images used to check if
-and when you read an email."
+  "Obsolete.  Nothing reads this.
+It was to have been a regexp after which \"blocked:\" was inserted, to stop an
+HTML part loading the image a sender uses to learn that you read the message.
+The loop that would have done it always took the branch that did nothing, so
+no VM ever inserted anything (emacs-vm/vm#845).
+
+What blocks such an image is `vm-w3m-safe-url-regexp', which belongs to
+emacs-w3m and by default matches a cid: URL and nothing else, so only the
+images carried in the message itself are fetched.  The w3m and lynx handlers
+render outside Emacs and fetch nothing at all.
+nothing at all."
   :group 'vm-mime
   :type 'regexp)
+;; The message rather than a name: what replaces it is
+;; `vm-w3m-safe-url-regexp', which is vm-w3m.el's, and that file is loaded only
+;; where emacs-w3m is installed.
+(make-obsolete-variable
+ 'vm-mime-text/html-blocker
+ "nothing reads it.  `vm-w3m-safe-url-regexp' is what blocks a remote image"
+ "9.0.0")
 
 (defcustom vm-mime-text/html-blocker-exceptions nil
-  "*Regexp matching URL which should not be blocked."
+  "Obsolete.  Nothing reads this.
+It was to have named the URLs `vm-mime-text/html-blocker' should let through,
+and that never blocked anything."
   :group 'vm-mime
   :type '(choice (const :tag "None" nil)
 		 regexp))
+(make-obsolete-variable
+ 'vm-mime-text/html-blocker-exceptions
+ "nothing reads it.  `vm-w3m-safe-url-regexp' is what blocks a remote image"
+ "9.0.0")
 
 (defcustom vm-mime-default-face-charsets
   (if (eq window-system nil)

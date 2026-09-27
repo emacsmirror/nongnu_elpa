@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`vm-mime-text/html-blocker` and `vm-mime-text/html-blocker-exceptions`
+    are obsolete** (emacs-vm/vm#845).  Both were documented as stopping an
+    HTML part from loading the remote image a sender uses to learn that you
+    read the message, and neither ever did: the loop that would have inserted
+    the `blocked:` prefix tested `(or t ...)` and so always took the branch
+    that did nothing.  Setting either changed nothing, and the loop is gone.
+
+    What does block such an image is `vm-w3m-safe-url-regexp`, which belongs
+    to emacs-w3m and by default matches a `cid:` URL and nothing else, so only
+    the images carried in the message itself are fetched.  The `w3m` and
+    `lynx` handlers render outside Emacs and fetch nothing at all.  If you had
+    set either of the obsolete options for the protection they describe, you
+    already had it from somewhere else.
+
   * **`G` sorts by `reversed-addressees`** (emacs-vm/vm#850).  It offered
     the key in completion and then refused it with "Unknown key:
     reversed-addressees".  `addressees`, sorting by the `To` header where
