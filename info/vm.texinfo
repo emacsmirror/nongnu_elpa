@@ -9318,11 +9318,10 @@ agreed to hand over the maintenance of VM to Robert Fenk in February,
 series. 
 
 @cindex Savannah
-All these releases are available from the new project page of VM hosted
-by Savannah, at the @acronym{URL}
-@uref{http://savannah.nongnu.org/projects/viewmail/}. 
-According to the project page, ``this site exists to continue VM development
-after version 7.19 as a community project.''
+Those releases were made from the project page VM had at Savannah,
+@uref{https://savannah.nongnu.org/projects/viewmail/}, which said that
+``this site exists to continue VM development after version 7.19 as a
+community project.''  It still carries the mailing lists; the code moved.
 
 @cindex Ulrich Müller
 @cindex Uday S Reddy
@@ -9337,50 +9336,40 @@ In 2024, the project code development was moved to GitLab
 @uref{https://gitlab.com/emacs-vm/vm/} by a small team of
 new developers.
 
-@unnumberedsec Savannah project site
+@unnumberedsec The source, and what changed in each release
 
-The changes made in each of the releases are described in numbered NEWS
-files, which can be found in the source code repository.  The newest is
-@samp{NEWS-3.md}, covering 8.3.0 onwards; @samp{NEWS-2.md} covers 8.0.0
-through 8.2.0b1, and @samp{NEWS-1.md} the releases up to 7.19.  A file is
-never renamed, so the newest entries are always at the front of the
+The code is at @uref{https://gitlab.com/emacs-vm/vm/}, and releases are on
+its tags page.
+
+Each release's changes are in numbered NEWS files in the repository.
+@samp{NEWS-3.md} covers 8.3.0 onwards, @samp{NEWS-2.md} 8.0.0 through
+8.2.0b1, and @samp{NEWS-1.md} the releases up to 7.19.  A file is never
+renamed, so the newest entries are always at the front of the
 highest-numbered one.
-
-The @code{Download} link on the Savannah project page, takes you to the
-downloads area where all the recent releases are available.  Under the
-@code{Source Code} menu, the @code{Browse Sources Repository} takes you
-to the source files, which include, among others, the NEWS files
-mentioned above.
-
-If you have obtained VM through a secondary distribution that does not
-include all the sources, you can browse and download the sources from
-the @code{Source Code} menu.  The @code{Use Bazaar} entry in the menu
-takes you to a page that lists various version of VM source code, and
-gives instructions for downloading it via @samp{Bazaar} (@code{bzr}).
 
 @unnumberedsec Technical support
 
-VM has a dedicated usenet newsgroup @code{gnu.emacs.vm.info} and a
-gmane newsgroup @code{gmane.emacs.viewmail}, in which the developers
-and the active users participate.  This is the first port of call for
-getting help with VM.  The archives of the newsgroup dating back to
-the very beginning can be found at the Google Groups site
-@uref{http://groups.google.com/group/gnu.emacs.vm.info/topics}.  The
-discussions can also be accessed by email via a mailing list
-@uref{viewmail-info}.  Please go to the Savannah home page to
-subscribe to it.
+@cindex mailing lists
+@cindex bug reports
+Two mailing lists, hosted at Savannah:
 
-The easiest way to report bugs that need fixing is to use the command
-@code{M-x vm-submit-bug-report} within VM.  This prepares an email
-message by including a state of your VM program which will allow the
-developers to reproduce your problem.  (Potentially sensitive information
-such as passwords are not included in this state.)  Please include a
-detailed description of the problem and how it arose.  The developers
-may need to ask you for further information or ask you to try
-alternative approaches to narrow down the problem.
+@table @code
+@item viewmail-info@@nongnu.org
+Questions and discussion.
+@item viewmail-bugs@@nongnu.org
+Bug reports.
+@end table
 
-The best way to report bugs at GitLab site:
-@uref{https://gitlab.com/emacs-vm/vm/-/issues}.
+Subscribe to either from @uref{https://savannah.nongnu.org/projects/viewmail/}.
+
+Report a bug at @uref{https://gitlab.com/emacs-vm/vm/-/issues}, which is where
+the developers work and where a report is acted on.
+
+@code{M-x vm-submit-bug-report} prepares a message to
+@code{viewmail-bugs@@nongnu.org} carrying the state of your VM, which is what
+lets a developer reproduce the problem.  Passwords and other sensitive values
+are left out.  Say what you did and what happened; you may be asked for more,
+or asked to try something that narrows it down.
 
 @unnumberedsec Get Involved
 
