@@ -110,17 +110,16 @@ If nil, don't update."
   :safe #'booleanp
   :group 'ebuild)
 
-(defcustom ebuild-mode-enable-bug-reference t
-  "If non-nil, enable `bug-reference-prog-mode' in `ebuild-repo-mode'."
-  :type 'boolean
-  :safe #'booleanp
-  :group 'ebuild)
-
 (defcustom ebuild-mode-xml-indent-tabs nil
   "If non-nil, use tab characters for indenting of XML.
 If nil, use two spaces."
   :type 'boolean
   :safe #'booleanp
+  :group 'ebuild)
+
+(defcustom ebuild-mode-enable-bug-reference t
+  "If non-nil, enable `bug-reference-prog-mode' in `ebuild-repo-mode'."
+  :type 'boolean
   :group 'ebuild)
 
 (defcustom ebuild-mode-process-environment

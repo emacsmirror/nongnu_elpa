@@ -1,3 +1,8 @@
+2026-09-27  Ulrich Müller  <ulm@gentoo.org>
+
+	* ebuild-mode.el (ebuild-mode-enable-bug-reference): Not useful
+	as a file-local variable, therefore drop :safe.
+
 2026-09-26  Ulrich Müller  <ulm@gentoo.org>
 
 	* Version 1.86 released.
