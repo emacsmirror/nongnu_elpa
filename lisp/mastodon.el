@@ -455,7 +455,14 @@ Prority in switching is given to timeline views."
         (pop-to-buffer buffer '(display-buffer-same-window))
       ;; we need to update credential-account in case setting have been changed
       ;; outside mastodon.el in the meantime:
-      (mastodon-return-credential-account :force)
+      (if-let* ((creds (mastodon-return-credential-account :force))
+                (err (alist-get 'error creds)))
+          ;; error explicitly if creds check fails:
+          ;; FIXME: here we might commuincate status of variables such as;
+          ;; - user
+          ;; - instance
+          ;; - use-auth-source
+          (user-error "Error: %s" err))
       (mastodon-tl-get-home-timeline)
       (message "Loading fediverse account %s on %s..."
                (mastodon-auth--user-acct)
