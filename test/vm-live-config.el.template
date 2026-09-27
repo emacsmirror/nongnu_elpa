@@ -23,7 +23,8 @@
 ;;   - The :name values are load-bearing.  Tests ask for servers by name:
 ;;     "plain" and "tls" for IMAP, "pop" and "pop-tls" for POP.  A server
 ;;     under any other name is simply never used, and the tests that wanted
-;;     it skip without saying why.
+;;     it skip without saying why.  "gmail" is reserved for the entry at the
+;;     end of the IMAP section and nothing asks for it yet.
 ;;
 ;;   - A password cannot contain a colon.  VM's maildrop specifications are
 ;;     colon-delimited (imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD and
@@ -58,7 +59,40 @@
 	 :tls      t
 	 :auth     "login"
 	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
-	 :accounts (("vmtest1" . "PASSWORD1")))))
+	 :accounts (("vmtest1" . "PASSWORD1")))
+	;; Gmail, for the checks nothing else can stand in for: its IMAP is
+	;; the odd one, and emacs-vm/vm#601 and #604 are both about how it
+	;; differs.  Uncomment and fill in to have it tested.
+	;;
+	;; Nothing asks for the name "gmail" yet, so an entry here is inert
+	;; until the tests that want it exist (emacs-vm/vm#607).  It is
+	;; written down now so the account can be made and filled in.
+	;;
+	;; What it needs on Gmail's side:
+	;;
+	;;   - IMAP switched on, in Gmail's own settings.
+	;;   - 2-Step Verification on the account, which is what allows an app
+	;;     password to be made at all.
+	;;   - An app password, not the account password.  Gmail stopped
+	;;     accepting the account password over IMAP in 2022.  VM does
+	;;     "login", "cram-md5" and "preauth" and has no OAuth, so an app
+	;;     password is the only way in.  Google shows one as four groups
+	;;     of four; write the sixteen letters with the spaces taken out.
+	;;     No colon in it, which is what a maildrop specification needs.
+	;;   - A throwaway account.  The tests make mailboxes, write to them
+	;;     and delete them, and on Gmail a mailbox is a label, so they
+	;;     will appear in the web interface while a run is going on.
+	;;
+	;; No :trustfile: Gmail's certificate chains to a public authority, so
+	;; the system trust store has it.
+	;;
+	;; (:name     "gmail"
+	;;  :host     "imap.gmail.com"
+	;;  :port     993
+	;;  :tls      t
+	;;  :auth     "login"
+	;;  :accounts (("you@gmail.com" . "APP PASSWORD")))
+	))
 
 ;; POP.  Needs pop3 in dovecot's protocols; it ships with imap only, so
 ;; nothing listens on 110 until that is changed.  The live POP tests also use
