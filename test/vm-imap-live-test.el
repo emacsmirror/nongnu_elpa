@@ -1680,6 +1680,98 @@ already has, and a label put on either is on both."
                                      (and (member "labeltwo" flags) t)))))))
         (when two (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" two)))))))
 
+(ert-deftest vm-imap-live-test-gmail-save-carries-the-label ()
+  "A label VM put on a message is on it in the mailbox it was saved to.
+
+The Gmail end of `vm-imap-live-test-save-to-imap-keeps-attributes', which
+holds the same against dovecot.  Both mailboxes are on one account, so
+`vm-save-message-to-imap-folder' takes its server-to-server branch and VM
+issues UID COPY after flushing the pending flags.
+
+On Gmail the copy is not a copy: COPY adds a label to the one stored message,
+so what is read back is that message and the flags are the ones VM stored
+(emacs-vm/vm#601).  The assertion is the same either way -- the label is
+there -- and the reason it holds is not."
+  (vm-imap-live-skip-unless-server "gmail")
+  (require 'vm)
+  (vm-imap-live-with-two-mailboxes (conn src dst "gmail")
+    (vm-imap-live-append conn src (vm-imap-live-test--gmail-message))
+    (let ((vm-imap-server-timeout vm-imap-live-timeout))
+      (unwind-protect
+          (progn
+            (vm-visit-imap-folder (vm-imap-live-spec server account src))
+            (vm-imap-net-wait nil 60)
+            (let ((m (car vm-message-list)))
+              (should m)
+              (vm-set-new-flag m nil)
+              (vm-set-unread-flag m nil)
+              (vm-add-message-labels "vmgmaillabel" 1)
+              (should (member "vmgmaillabel" (vm-labels-of m)))
+              (vm-save-message-to-imap-folder
+               (vm-imap-live-spec server account dst) 1)
+              (vm-imap-net-wait nil 60)))
+        (when (eq major-mode 'vm-mode)
+          (let ((vm-confirm-quit nil))
+            (ignore-errors (vm-quit-no-change))))))
+    (let ((flags (vm-imap-live-flags-of conn dst 1)))
+      (should (member "\\Seen" flags))
+      (should (member "vmgmaillabel" flags)))))
+
+(ert-deftest vm-imap-live-test-gmail-append-from-elsewhere-carries-the-label ()
+  "A label reaches Gmail on the path that has to ask what the mailbox keeps.
+
+The test above saves within one account, so VM issues UID COPY and the flags
+come along because the server already holds them.  This one saves from
+dovecot to Gmail, which is two servers, so VM uploads with APPEND and
+`vm-imap-net-flags-a-mailbox-takes' decides what goes with it
+(emacs-vm/vm#828).  Gmail says `\\*' in PERMANENTFLAGS, so everything does.
+
+Needs both servers; skips without either."
+  (vm-imap-live-skip-unless-server "plain")
+  (vm-imap-live-skip-unless-server "gmail")
+  (require 'vm)
+  (let* ((gmail (vm-imap-live-server "gmail"))
+         (gmail-account (car (plist-get gmail :accounts)))
+         (gmail-conn (vm-imap-live--open gmail))
+         (destination nil))
+    (unwind-protect
+        (progn
+          (vm-imap-live-login gmail-conn gmail gmail-account)
+          (vm-imap-live-namespace gmail-conn)
+          (setq destination (vm-imap-live-mailbox-name gmail-conn))
+          (vm-imap-live-cmd-ok gmail-conn "CREATE \"%s\"" destination)
+          (vm-imap-live-with-mailbox (conn source "plain")
+            (vm-imap-live-append conn source
+                                 (vm-imap-live-test--gmail-message))
+            (let ((vm-imap-server-timeout vm-imap-live-timeout))
+              (unwind-protect
+                  (progn
+                    ;; `vm-imap-live-with-mailbox' binds `server', not the
+                    ;; account; the two-mailbox macro is the one that binds both
+                    (vm-visit-imap-folder
+                     (vm-imap-live-spec server
+                                        (car (plist-get server :accounts))
+                                        source))
+                    (vm-imap-net-wait nil 60)
+                    (let ((m (car vm-message-list)))
+                      (should m)
+                      (vm-set-new-flag m nil)
+                      (vm-set-unread-flag m nil)
+                      (vm-add-message-labels "vmcrosslabel" 1)
+                      (vm-save-message-to-imap-folder
+                       (vm-imap-live-spec gmail gmail-account destination) 1)
+                      (vm-imap-net-wait nil 60)))
+                (when (eq major-mode 'vm-mode)
+                  (let ((vm-confirm-quit nil))
+                    (ignore-errors (vm-quit-no-change)))))))
+          (let ((flags (vm-imap-live-flags-of gmail-conn destination 1)))
+            (should (member "\\Seen" flags))
+            (should (member "vmcrosslabel" flags))))
+      (when destination
+        (ignore-errors
+          (vm-imap-live-cmd gmail-conn "DELETE \"%s\"" destination)))
+      (vm-imap-live-close gmail-conn))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
