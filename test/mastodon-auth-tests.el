@@ -7,6 +7,9 @@
 ;; NB: since switching to encrypted (client) plstore, some tests fail if
 ;; `plistore-encrypt-to' is not set to a working gpg key
 
+;; NB: since adding `mastodon-auth-encrypt-tokens-plstore', we just nil it everywhere
+;; and don't test encrypted plstore at all.
+
 (ert-deftest mastodon-auth--handle-token-response--good ()
   "Should extract the access token from a good response."
   (let ((mastodon-auth-encrypt-tokens-plstore nil)
