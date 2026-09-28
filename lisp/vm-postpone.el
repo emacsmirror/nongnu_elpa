@@ -526,7 +526,12 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
   "Delete the source message belonging to the continued composition."
   (interactive)
   (when vm-message-pointer
-    (condition-case nil
+    ;; A warning, not an error.  By the time this runs the draft is already
+    ;; in the folder, and this is on `mail-send-hook' too, so signalling
+    ;; would abandon a send over a failure that has already been survived.
+    ;; The handler used to be the bare string below, which `condition-case'
+    ;; returns rather than signals, so every failure here was silent.
+    (condition-case err
 	(let* ((msg (car vm-message-pointer))
 	       (buffer (vm-buffer-of msg)))
 	  ;; only delete messages which have been postponed by us before
@@ -544,7 +549,9 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
                 (when (not vm-message-list)
                   (let ((this-command 'vm-quit))
                     (vm-quit)))))))
-      (error "Folder buffer closed before deletion of source message."))))
+      (error
+       (vm-warn 0 2 "Source message not deleted, its folder is gone: %s"
+		(error-message-string err))))))
 
 ;;-----------------------------------------------------------------------------
 
