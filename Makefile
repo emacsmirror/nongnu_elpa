@@ -27,6 +27,12 @@ tests:
 testsclean:
 	cask clean-elc && rm -f stubfile.plstore~ && rm -f .caskmastodon.plstore && rm -f .caskmastodon.plstore~
 
+build:
+	cask build
+
+buildclean:
+	cask clean-elc
+
 ## ################################################################
 
 # May look at this in the future
