@@ -159,29 +159,34 @@ Return plist without the KEY."
 
 (defun mastodon-client--store-access-token (token)
   "Save TOKEN as :access_token encrypted in the plstore.
-Return the plist after the operation.
-If `mastodon-auth-use-auth-source', encrypt it in auth source file."
+If `mastodon-auth-use-auth-source', encrypt it in auth source file.
+If `mastodon-auth-encrypt-tokens-plstore' is nil, don't encrypt the plstore.'
+Return the plist after the operation."
   (let* ((user-details (mastodon-client--make-user-details-plist))
          (plstore (plstore-open (mastodon-client--token-file)))
          (username (mastodon-client--form-user-from-vars))
          (key (concat "user-" username))
-         (plstore-value
-          ;; NB: with this unless, plstore-value is nil if no encryption!
+         (user-and-token
           ;; FIXME: we should only add token if using auth-source
           ;; but i tried that and login flow breaks...:
           ;; i think this function was not returning properly, meaning
           ;; saving of user details also broke
+
+          ;; if encrypting, user-and-token is nil (instead we use
+          ;; secrets/sans-secrets):
           (unless mastodon-auth-encrypt-tokens-plstore
-            (setq user-details
-                  (plist-put user-details :access_token token))))
+            ;; if not encrypting, add token to omnibus value:
+            (plist-put user-details :access_token token)))
          (secrets
           (when mastodon-auth-encrypt-tokens-plstore
             `( :client_id ,(plist-get user-details :client_id)
                :client_secret ,(plist-get user-details :client_secret))))
          (sans-secrets
           (when mastodon-auth-encrypt-tokens-plstore
-            (dolist (x '(:client_id :client_secret) user-details)
-              (cl-remf user-details x))))
+            ;; XXX: `cl-remf' "consumes" its place arg
+            (let ((deets (copy-sequence user-details)))
+              (dolist (x '(:client_id :client_secret) deets)
+                (cl-remf deets x)))))
          (print-length nil)
          (print-level nil))
     (if mastodon-auth-use-auth-source
@@ -189,22 +194,26 @@ If `mastodon-auth-use-auth-source', encrypt it in auth source file."
         (progn
           (mastodon-auth-source-token
            mastodon-instance-url username token :create)
-          (mastodon-client-plstore-put plstore key plstore-value secrets sans-secrets token))
+          (mastodon-client-plstore-put plstore key user-and-token ; nil if encrypting
+                        secrets sans-secrets token))
       ;; plstore only:
-      (mastodon-client-plstore-put plstore key plstore-value secrets sans-secrets token))
-    (plstore-save plstore)
-    (plstore-close plstore)
-    (if mastodon-auth-encrypt-tokens-plstore
-        (cdr (plstore-get plstore key))
-      plstore-value)))
+      (mastodon-client-plstore-put plstore key user-and-token ; nil if encrypting
+                    secrets sans-secrets token))
+    (prog1 ;; return plist for our vars:
+        (cdr (plstore-get plstore key)) ;; updated value
+      (plstore-save plstore)
+      (plstore-close plstore))))
 
-(defun mastodon-client-plstore-put (plstore key plstore-value secrets sans-secrets token)
-  ""
-  (plstore-put plstore key
+(defun mastodon-client-plstore-put (plstore name keys secrets sans-secrets token)
+  "Save to PLSTORE with NAME, conditionally encrypted.
+If `mastodon-auth-encrypt-tokens-plstore', save SANS-SECRETS, and
+SECRETS with TOKEN appended.
+Else, just store KEYS, unencrypted."
+  (plstore-put plstore name
                ;; KEYS:
                (if mastodon-auth-encrypt-tokens-plstore
                    sans-secrets
-                 plstore-value)
+                 keys)
                ;; SECRET-KEYS:
                (when mastodon-auth-encrypt-tokens-plstore
                  (append secrets `(:access_token ,token)))))
