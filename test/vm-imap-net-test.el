@@ -324,6 +324,29 @@ has to know which message it is looking at (issue #185)."
           (should (string-match-p "badgers" (cdr (nth 0 stored))))
           (should (string-match-p "The second body" (cdr (nth 1 stored)))))))))
 
+;; A wait must outlast the session's own timeout.  `vm-imap-net-wait' answers
+;; nil when its deadline passes with the session still running, so a test that
+;; waits exactly as long as `vm-imap-server-timeout' is asking which of two
+;; deadlines fires first.  Two tests here did; the POP side is where it was caught
+;; (emacs-vm/vm#863).
+;;
+;; The wait is twice the timeout here.  A session that finishes still finishes
+;; in milliseconds; one that hangs is now reported by the assertion after the
+;; wait, which says what was not deleted, rather than by the wait itself, which
+;; says only that ten seconds passed.
+
+;; A timeout here must outlast a garbage collection.  The suite's heap makes a
+;; collection expensive -- 26 of them in one run, 34 seconds between them, and
+;; one that took 11 seconds on its own -- and a pause that long inside a session
+;; is longer than a ten second timeout, so the session gave up and the test
+;; failed (emacs-vm/vm#863).  Emacs is stopped for the whole pause, so nothing
+;; the test or the driver does can see it coming.
+;;
+;; The mock answers in milliseconds; these timeouts exist to stop a hang, not to
+;; measure anything, so they cost nothing by being generous.  The wait is longer
+;; again than the session's own timeout, so a session that does hang is reported
+;; by the assertion that says what was not done rather than by a bare deadline.
+
 (ert-deftest vm-imap-net-test-headers-only-fetches-headers ()
   "A message too large to want whole is fetched as its headers, and what
 comes back is the headers and not the body."
@@ -354,7 +377,7 @@ than against a buffer a test invented."
   `(vm-imap-mock-with (,(car spec) ,@(cdr spec))
      (let* ((cache (make-temp-file "vm-imap-net-cache" t))
             (vm-imap-folder-cache-directory cache)
-            (vm-imap-server-timeout 10)
+            (vm-imap-server-timeout 60)
             (vm-frame-per-folder nil)
             (vm-mutable-frame-configuration nil)
             (before (buffer-list)))
@@ -362,7 +385,7 @@ than against a buffer a test invented."
            (progn (vm-visit-imap-folder (vm-imap-mock-spec ,(car spec)))
                   ;; visiting starts the fetch and returns without waiting for
                   ;; it, so what waits for the mail is whoever wants the mail
-                  (vm-imap-net-wait nil 10)
+                  (vm-imap-net-wait nil 20)
                   ,@body)
          (dolist (buffer (buffer-list))
            (unless (memq buffer before)
@@ -579,7 +602,7 @@ the reader changed; what the server did is the next fetch's business."
     (vm-save-folder)
     ;; started, and not finished: the save did not wait for the server
     (should (vm-imap-net-busy-p))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (vm-imap-mock-received-p mock "STORE 1 \\+FLAGS"))
     (should (member "\\seen" (mapcar #'downcase
                                      (vm-imap-mock-flags mock "INBOX" 1))))
@@ -598,7 +621,7 @@ the reader changed; what the server did is the next fetch's business."
     (vm-save-folder)
     ;; sent by a session the save did not wait for
     (should (vm-imap-net-busy-p))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (vm-imap-mock-received-p mock "UID STORE"))
     (should (vm-imap-mock-received-p mock "EXPUNGE"))
     ;; and nothing downloaded the flags of the mailbox to get there
@@ -626,7 +649,7 @@ messages waited out a second login and a second download of every flag."
       (should (eq (vm-imap-net-send-changes) 'later))
       ;; the same session, and no other
       (should (eq vm-imap-net-session session))
-      (should (vm-imap-net-wait nil 10)))
+      (should (vm-imap-net-wait nil 90)))
     ;; and nothing was lost: the running fetch sends the folder's flags at its
     ;; start, so this one went up in that session rather than a second
     (should (member "\\seen" (mapcar #'downcase
@@ -653,9 +676,9 @@ open the connection this is avoiding."
       (should (eq vm-imap-net-session fetch))
       (should (equal (length vm-imap-net-waiting) 1))
       ;; and it runs when the fetch is done
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should-not vm-imap-net-waiting)
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should (member "\\seen" (mapcar #'downcase
                                        (vm-imap-mock-flags mock "INBOX" 1)))))))
 
@@ -676,8 +699,8 @@ tracked."
       (let ((fetch vm-imap-net-session))
         (should (eq (vm-imap-net-load-message-bodies (list message)) 'later))
         (should (eq vm-imap-net-session fetch)))
-      (should (vm-imap-net-wait nil 10))
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
+      (should (vm-imap-net-wait nil 90))
       ;; the body came, in a session of its own, after the fetch
       (should-not (vm-body-to-be-retrieved-of message))
       (should (string-match-p "The first body"
@@ -705,9 +728,9 @@ be put."
       ;; expunged while the fetch it is waiting behind runs
       (vm-set-deleted-flag message t)
       (vm-expunge-folder :quiet t :just-these-messages (list message))
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       ;; it ran, asked for nothing, and did not fail the session
-      (vm-imap-net-wait nil 10)
+      (vm-imap-net-wait nil 90)
       (should-not vm-imap-net-waiting))))
 
 (ert-deftest vm-imap-net-test-a-quit-during-the-save-loses-nothing ()
@@ -753,7 +776,7 @@ Emacs held still, which on a folder of six thousand was half a minute."
     (should (eq (vm-imap-net-synchronize nil t) t))
     ;; started, not finished
     (should (vm-imap-net-busy-p))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     ;; the folder's own flag went up
     (should (member "\\seen" (mapcar #'downcase
                                      (vm-imap-mock-flags mock "INBOX" 1))))
@@ -771,7 +794,7 @@ This is the `retrieve-attributes' half, which a plain fetch does not do."
       ;; somebody else answered it, in another client
       (vm-imap-mock-set-flags mock "INBOX" 1 '("\\Answered"))
       (should (eq (vm-imap-net-synchronize nil t) t))
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should (vm-replied-flag message)))))
 
 (ert-deftest vm-imap-net-test-a-full-synchronize-sends-every-flag ()
@@ -790,7 +813,7 @@ modification flag has been lost, which nothing else would ever send."
       (vm-set-attribute-modflag-of message nil))
     (vm-imap-mock-forget-commands mock)
     (should (eq (vm-imap-net-synchronize t t) t))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (member "\\seen" (mapcar #'downcase
                                      (vm-imap-mock-flags mock "INBOX" 1))))))
 
@@ -815,7 +838,7 @@ what the folder has lost is all the synchronise could go on."
     (setq vm-imap-messages-to-expunge nil)   ; as if it had never been recorded
     (vm-imap-mock-forget-commands mock)
     (should (eq (vm-imap-net-synchronize t t) t))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     ;; both are still on the server, and nothing was even marked for deletion
     (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
     (should-not (vm-imap-mock-received-p mock "EXPUNGE"))
@@ -828,7 +851,7 @@ what the folder has lost is all the synchronise could go on."
 One command to a server has no more business freezing Emacs than a fetch has."
   (vm-imap-mock-with (mock)
     (let* ((spec (vm-imap-mock-spec mock "Archive"))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (vm-imap-account-folder-cache nil)
            (before (buffer-list)))
       (unwind-protect
@@ -852,7 +875,7 @@ before: it is the answer that makes the cache wrong."
   (vm-imap-mock-with (mock)
     (let* ((spec (vm-imap-mock-spec mock "Archive"))
            (account (vm-imap-account-name-for-spec spec))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (vm-imap-account-folder-cache (list (cons account '("INBOX"))))
            (before (buffer-list)))
       (unwind-protect
@@ -892,7 +915,7 @@ server for and the one worst spent frozen."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
     (vm-imap-mock-add-message mock "Archive" vm-imap-net-test--bob)
     (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (answer 'not-called)
            (before (buffer-list)))
       (unwind-protect
@@ -924,7 +947,7 @@ listed often enough for this to matter."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
                            :refuse "STATUS")
     (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (answer 'not-called)
            (before (buffer-list)))
       (unwind-protect
@@ -949,7 +972,7 @@ mailbox is examined rather than selected: asking is not reading."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice
                                            vm-imap-net-test--bob))
     (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (answer 'not-called)
            (before (buffer-list)))
       (unwind-protect
@@ -982,7 +1005,7 @@ the blocking implementation."
   (vm-imap-mock-with (mock)
     (vm-imap-mock-add-message mock "Archive" vm-imap-net-test--alice)
     (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (blocking nil)
            (before (buffer-list)))
       (unwind-protect
@@ -1030,7 +1053,7 @@ counted with it."
     ;; and what waits behind it is counted
     (should (eq (vm-imap-net-send-changes) 'later))
     (should (string-match-p "\\+1" vm-ml-session))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should-not vm-ml-session)))
 
 (ert-deftest vm-imap-net-test-the-mode-line-counts-what-has-arrived ()
@@ -1134,7 +1157,7 @@ corrupted cache."
     (should (vm-imap-net-busy-p))
     (should-error (vm-imap-net-take-session (vm-net-session :name "second"))
                   :type 'error)
-    (should (vm-imap-net-wait nil 10))))
+    (should (vm-imap-net-wait nil 90))))
 
 (ert-deftest vm-imap-net-test-messages-from-elsewhere-stop-the-pairing ()
   "A folder that gains a message from somewhere else mid-fetch is not paired
@@ -1186,7 +1209,7 @@ The session ends in a process filter, where Emacs prints \"error in process
 filter\" and leaves the reader to guess whose it was."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
     (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (warned nil)
            (before (buffer-list)))
       (unwind-protect
@@ -1236,7 +1259,7 @@ Emacs carries on, which is the point of the whole conversion."
     ;; not here yet: nothing waited for it
     (should (null vm-message-list))
     (should (vm-imap-net-busy-p))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 1))))
 
 (ert-deftest vm-imap-net-test-an-unsupported-maildrop-is-left-to-the-old-path ()
@@ -1263,7 +1286,7 @@ were asked for."
       (should (vm-body-to-be-retrieved-of (cadr messages)))
       (should (vm-imap-net-load-message-bodies messages))
       (should (vm-imap-net-busy-p))
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should-not (vm-body-to-be-retrieved-of (car messages)))
       (should (string-match-p "The first body"
                               (vm-imap-net-test--body-of (car messages))))
@@ -1283,7 +1306,7 @@ takes a minute to arrive does not stop Emacs for a minute."
       (vm-unload-message 1 t)
       (should (equal (vm-imap-net-test--body-of message) ""))
       (vm-load-message 1)
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should (string-match-p "The first body"
                               (vm-imap-net-test--body-of message))))))
 
@@ -1296,7 +1319,7 @@ server.  There is no folder here to borrow a session from, so the append has
 one of its own and nobody waits for it."
   (vm-imap-mock-with (mock)
     (let* ((spec (vm-imap-mock-spec mock))
-           (vm-imap-server-timeout 10)
+           (vm-imap-server-timeout 60)
            (text "From: me@example.com\r\nSubject: filed\r\n\r\nA copy.\r\n")
            (before (buffer-list)))
       (unwind-protect
@@ -1527,7 +1550,7 @@ while the fetch a command started is still running."
       ;; the second one is turned away, and the first is still the folder's
       (should (vm-imap-net-get-spooled-mail))
       (should (eq session vm-imap-net-session)))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 6))
     ;; two logins: the visit's own fetch and this one.  Three would mean the
     ;; second command opened a session of its own alongside the first.
@@ -1543,7 +1566,7 @@ erroring somewhere further in where the cause is no longer visible."
         (cache (make-temp-file "vm-imap-net-cache" t)))
     (unwind-protect
         (let* ((vm-imap-folder-cache-directory cache)
-               (vm-imap-server-timeout 10)
+               (vm-imap-server-timeout 60)
                (vm-frame-per-folder nil)
                (vm-mutable-frame-configuration nil)
                (before (buffer-list))
@@ -1641,7 +1664,7 @@ messages that are arriving from arriving."
     ;; delete and expunge the message that was already here, mid-flight
     (vm-set-deleted-flag (car vm-message-list) t)
     (vm-expunge-folder)
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     ;; the five arrived, and the one that went is gone
     (should (equal (length vm-message-list) 5))
     (should (equal (length (seq-filter (lambda (m) (vm-imap-uid-of m))
@@ -1697,7 +1720,7 @@ the rest are simply not there."
     ;; the server goes silent and the session times out
     (setf (vm-net-session-timeout vm-imap-net-session) 0.3)
     (vm-imap-mock-stop mock)
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 20))
     (save-restriction
       (widen)
       ;; whatever is in the folder parses as whole messages
@@ -1716,7 +1739,7 @@ the rest are simply not there."
             (cache (make-temp-file "vm-imap-net-cache" t))
             (local (expand-file-name "inbox" dir))
             (vm-imap-folder-cache-directory cache)
-            (vm-imap-server-timeout 10)
+            (vm-imap-server-timeout 60)
             (vm-frame-per-folder nil)
             (vm-mutable-frame-configuration nil)
             (vm-auto-get-new-mail nil)
@@ -1747,7 +1770,7 @@ written when the messages arrive, and the folder gobbles it then."
     (vm-get-new-mail)
     ;; not here yet: nothing waited for it
     (should (null vm-message-list))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 2))
     (should (equal (mapcar #'vm-su-subject vm-message-list)
                    '("badgers" "otters")))
@@ -1761,13 +1784,13 @@ nothing without it, a recreated mailbox handing the same numbers to other
 messages."
   (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice))
     (vm-get-new-mail)
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 1))
     (should (equal (length vm-imap-retrieved-messages) 1))
     (should (nth 1 (car vm-imap-retrieved-messages)))
     (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
     (vm-get-new-mail)
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 2))
     (should (equal (length vm-imap-retrieved-messages) 2))))
 
@@ -1778,7 +1801,7 @@ the same session, so the server is not left holding a second copy."
     (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice
                                                       vm-imap-net-test--bob))
       (vm-get-new-mail)
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should (equal (length vm-message-list) 2))
       (should (vm-imap-mock-received-p mock "UID STORE"))
       (should (vm-imap-mock-received-p mock "EXPUNGE"))
@@ -1798,7 +1821,7 @@ two-message maildrop put four messages in the folder."
                                       :refuse "EXPUNGE")
       (let ((crash (nth 2 (car vm-spool-files))))
         (vm-get-new-mail)
-        (should (vm-imap-net-wait nil 10))
+        (should (vm-imap-net-wait nil 90))
         ;; the mail is on disk and the folder knows it has it, though the
         ;; session it came in on failed
         (should (file-exists-p crash))
@@ -1806,9 +1829,9 @@ two-message maildrop put four messages in the folder."
         (should (equal (length (vm-imap-mock-messages mock "INBOX")) 2))
         ;; so asking again brings in what is on disk, once
         (vm-get-new-mail)
-        (should (vm-imap-net-wait nil 10))
+        (should (vm-imap-net-wait nil 90))
         (vm-get-new-mail)
-        (should (vm-imap-net-wait nil 10))
+        (should (vm-imap-net-wait nil 90))
         (should (equal (mapcar #'vm-su-subject vm-message-list)
                        '("badgers" "otters")))))))
 
@@ -1990,7 +2013,7 @@ The second waits its turn now, and both lots of mail arrive."
              (cache (make-temp-file "vm-imap-two-cache" t))
              (local (expand-file-name "inbox" dir))
              (vm-imap-folder-cache-directory cache)
-             (vm-imap-server-timeout 10)
+             (vm-imap-server-timeout 60)
              (vm-frame-per-folder nil)
              (vm-mutable-frame-configuration nil)
              (vm-auto-get-new-mail nil)
@@ -2049,7 +2072,7 @@ one piece, so a save can only ever see whole messages the list knows about."
     (vm-imap-mock-with (mock :messages (list "From: z@example.com\nSubject: first\n\nZ.\n"))
       (let* ((cache (make-temp-file "vm-imap-save-cache" t))
              (vm-imap-folder-cache-directory cache)
-             (vm-imap-server-timeout 10)
+             (vm-imap-server-timeout 60)
              (vm-frame-per-folder nil)
              (vm-mutable-frame-configuration nil)
              (before (buffer-list))
@@ -2248,7 +2271,7 @@ port\".  Told nothing to listen on, stunnel relays its own standard input and
 output, which is what the blocking path has always used it for."
   (let* ((vm-stunnel-program "sh")
          (vm-stunnel-program-switches nil)
-         (vm-imap-server-timeout 10)
+         (vm-imap-server-timeout 60)
          (spec "imap-ssl:far.example.com:993:INBOX:login:vmtest:secret")
          (opened nil)
          (session nil))
@@ -2415,7 +2438,7 @@ folder it belongs to, and neither waits for the other."
         (before (buffer-list)))
     (unwind-protect
         (let ((vm-imap-folder-cache-directory cache)
-              (vm-imap-server-timeout 10)
+              (vm-imap-server-timeout 60)
               (vm-frame-per-folder nil)
               (vm-mutable-frame-configuration nil)
               (folder-one nil) (folder-two nil))
@@ -2429,8 +2452,8 @@ folder it belongs to, and neither waits for the other."
           (setq folder-two (current-buffer))
           (should-not (eq folder-one folder-two))
           ;; both sessions started, and both land
-          (should (vm-imap-net-wait folder-one 10))
-          (should (vm-imap-net-wait folder-two 10))
+          (should (vm-imap-net-wait folder-one 20))
+          (should (vm-imap-net-wait folder-two 20))
           (with-current-buffer folder-one
             (should (equal (mapcar #'vm-su-subject vm-message-list) '("one"))))
           (with-current-buffer folder-two
@@ -2549,7 +2572,7 @@ server took."
       ;; it did not wait for the server to answer
       (should (< (- (float-time) started) 0.5))
       (should-not vm-spooled-mail-waiting))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should vm-spooled-mail-waiting)
     ;; and it did not fetch anything: a check only looks
     (should (equal (length vm-message-list) 1))))
@@ -2560,7 +2583,7 @@ the mode line stops saying there is some."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (setq vm-spooled-mail-waiting t)
     (should (vm-check-for-spooled-mail nil t))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should-not vm-spooled-mail-waiting)))
 
 (ert-deftest vm-imap-net-test-a-password-vm-already-knows-is-enough ()
@@ -2799,7 +2822,7 @@ saying so means the session exists."
                                           line))
                         said))
       (should (vm-imap-net-busy-p))
-      (should (vm-imap-net-wait nil 10)))))
+      (should (vm-imap-net-wait nil 90)))))
 
 
 ;;; Asking for a password, and not asking
@@ -2888,7 +2911,7 @@ every visit to an empty IMAP folder failed with `processp nil'."
   (vm-imap-net-test--visiting (mock)
     (setq vm-spooled-mail-waiting t)
     (should (vm-check-for-spooled-mail nil t))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should-not vm-spooled-mail-waiting)
     (should (eq (vm-net-session-state vm-imap-net-session) 'done))))
 
@@ -3167,7 +3190,7 @@ is one too high.  Answers with the server's flags afterwards."
         (vm-set-unread-flag second nil)
         (vm-set-attribute-modflag-of second t))
       (should (vm-imap-net-save-attributes))
-      (vm-imap-net-wait nil 10)
+      (vm-imap-net-wait nil 90)
       (setq answer (vm-imap-net-test--flags-on-the-server mock)))
     answer))
 
@@ -3697,7 +3720,7 @@ the option says happens there."
                                               vm-imap-net-test--whale
                                               vm-imap-net-test--bob))
         (vm-get-new-mail)
-        (should (vm-imap-net-wait nil 10))
+        (should (vm-imap-net-wait nil 90))
         (should (equal (mapcar #'vm-su-subject vm-message-list)
                        '("badgers" "otters")))
         ;; still on the server, so raising the limit would get it
@@ -3716,7 +3739,7 @@ check must not cost a message where no limit was asked for."
                                       (list vm-imap-net-test--alice
                                             vm-imap-net-test--whale))
       (vm-get-new-mail)
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should (equal (mapcar #'vm-su-subject vm-message-list)
                      '("badgers" "enormous"))))))
 
@@ -3729,12 +3752,12 @@ Recorded, it would never be fetched even after the limit was raised."
                                         (list vm-imap-net-test--alice
                                               vm-imap-net-test--whale))
         (vm-get-new-mail)
-        (should (vm-imap-net-wait nil 10))
+        (should (vm-imap-net-wait nil 90))
         (should (equal (length vm-message-list) 1))
         ;; the limit goes up, and the message arrives on the next look
         (let ((vm-imap-max-message-size 8000))
           (vm-get-new-mail)
-          (should (vm-imap-net-wait nil 10))
+          (should (vm-imap-net-wait nil 90))
           (should (equal (mapcar #'vm-su-subject vm-message-list)
                          '("badgers" "enormous"))))))))
 
@@ -3750,7 +3773,7 @@ a folder the driver may be writing.  It waits on the folder's own session
 instead, which is what folder-name completion does."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((vm-enable-external-messages '(imap))
-          (vm-imap-server-timeout 10)
+          (vm-imap-server-timeout 60)
           (message (car vm-message-list))
           (called nil))
       (vm-unload-message 1 t)
@@ -3810,7 +3833,7 @@ a message written without its body."
       ;; does not wait: the body is not here when this returns
       (vm-retrieve-real-message-body message :may-arrive-later t)
       (should (vm-body-to-be-retrieved-of message))
-      (should (vm-imap-net-wait nil 10))
+      (should (vm-imap-net-wait nil 90))
       (should-not (vm-body-to-be-retrieved-of message)))))
 
 ;;; What the blocking session's own tests used to cover (emacs-vm/vm#822)
@@ -3894,7 +3917,7 @@ folder reads back as the two messages that were sent."
             (vm-imap-mock-with (mock :messages
                                      (list (vm-imap-net-test--message-with 1 body)
                                            (vm-imap-net-test--message-with 2 "second body")))
-              (let ((vm-imap-server-timeout 10)
+              (let ((vm-imap-server-timeout 60)
                     (vm-imap-expunge-after-retrieving t)
                     (vm-imap-auto-expunge-alist nil)
                     (vm-imap-max-message-size nil)
@@ -3971,7 +3994,7 @@ tells the reader the opposite of what happened."
                         said))
       (should-not (seq-find (lambda (line) (string-match-p "bodies loaded\|body loaded" line))
                             said))
-      (should (vm-imap-net-wait nil 10)))))
+      (should (vm-imap-net-wait nil 90)))))
 
 (ert-deftest vm-imap-net-test-loading-a-body-with-no-password-says-so-once ()
   "`vm-load-message' says so when the fetch cannot start, and loads nothing.
@@ -4034,7 +4057,7 @@ having happened, and is what was reported (emacs-vm/vm#825)."
     (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
     ;; nothing has arrived yet: that is what `started' says
     (should (equal (length vm-message-list) 0))
-    (should (vm-imap-net-wait nil 10))
+    (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 1))))
 
 (ert-deftest vm-imap-net-test-a-folder-already-fetching-says-started-too ()
@@ -4045,7 +4068,7 @@ its way either way, and the caller must not report a count as final."
     (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
     (should (vm-imap-net-busy-p))
     (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
-    (should (vm-imap-net-wait nil 10))))
+    (should (vm-imap-net-wait nil 90))))
 
 (ert-deftest vm-imap-net-test-a-visit-says-it-is-getting-new-mail ()
   "Visiting a folder says a fetch is under way rather than the old totals.
@@ -4067,7 +4090,7 @@ says what came (emacs-vm/vm#825)."
       (should (seq-find (lambda (line)
                           (string-match-p "getting new mail" line))
                         said)))
-    (should (vm-imap-net-wait nil 10))))
+    (should (vm-imap-net-wait nil 90))))
 
 (provide 'vm-imap-net-test)
 

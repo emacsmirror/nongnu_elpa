@@ -447,7 +447,7 @@ folder file, so the next save offers them again."
                                                     vm-pop-net-test--bob))
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-pop-mock-spec mock))
-          (vm-pop-server-timeout 10))
+          (vm-pop-server-timeout 60))
       (unwind-protect
           (with-current-buffer folder
             (setq vm-folder-access-method 'pop)
@@ -464,6 +464,18 @@ folder file, so the next save offers them again."
           (with-current-buffer folder (set-buffer-modified-p nil))
           (kill-buffer folder))))))
 
+;; A timeout here must outlast a garbage collection.  The suite's heap makes a
+;; collection expensive -- 26 of them in one run, 34 seconds between them, and
+;; one that took 11 seconds on its own -- and a pause that long inside a session
+;; is longer than a ten second timeout, so the session gave up and the test
+;; failed (emacs-vm/vm#863).  Emacs is stopped for the whole pause, so nothing
+;; the test or the driver does can see it coming.
+;;
+;; The mock answers in milliseconds; these timeouts exist to stop a hang, not to
+;; measure anything, so they cost nothing by being generous.  The wait is longer
+;; again than the session's own timeout, so a session that does hang is reported
+;; by the assertion that says what was not done rather than by a bare deadline.
+
 (ert-deftest vm-pop-net-test-a-quit-that-fails-keeps-the-deletions ()
   "A server that will not commit the deletions leaves them to be asked again.
 
@@ -475,7 +487,7 @@ never read that answer, so it struck the messages off
                                     :refuse "\\`QUIT")
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-pop-mock-spec mock))
-          (vm-pop-server-timeout 10))
+          (vm-pop-server-timeout 60))
       (unwind-protect
           (with-current-buffer folder
             (setq vm-folder-access-method 'pop)
@@ -483,7 +495,7 @@ never read that answer, so it struck the messages off
             (vm-set-folder-pop-maildrop-spec spec)
             (setq vm-pop-messages-to-expunge (list "uid1"))
             (should (eq (vm-pop-net-send-changes) t))
-            (should (vm-pop-net-wait nil 10))
+            (should (vm-pop-net-wait nil 90))
             ;; the DELE went out, the server would not commit it, and the
             ;; request is still there for the next save
             (should (vm-pop-mock-received-p mock "\\`DELE"))
@@ -503,7 +515,7 @@ stays, so the next save offers that again."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-pop-mock-spec mock))
-          (vm-pop-server-timeout 10))
+          (vm-pop-server-timeout 60))
       (unwind-protect
           (with-current-buffer folder
             (setq vm-folder-access-method 'pop)
@@ -511,7 +523,7 @@ stays, so the next save offers that again."
             (vm-set-folder-pop-maildrop-spec spec)
             (setq vm-pop-messages-to-expunge (list "uid1" "went-away"))
             (should (eq (vm-pop-net-send-changes) t))
-            (should (vm-pop-net-wait nil 10))
+            (should (vm-pop-net-wait nil 90))
             (should (equal (vm-pop-mock-deleted mock) '(1)))
             (should-not vm-pop-messages-to-expunge)
             ;; and a second save has nothing to ask for
@@ -530,7 +542,7 @@ refusing -- is offered by the next save."
                                     :refuse "DELE")
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-pop-mock-spec mock))
-          (vm-pop-server-timeout 10))
+          (vm-pop-server-timeout 60))
       (unwind-protect
           (with-current-buffer folder
             (setq vm-folder-access-method 'pop)
@@ -538,14 +550,14 @@ refusing -- is offered by the next save."
             (vm-set-folder-pop-maildrop-spec spec)
             (setq vm-pop-messages-to-expunge (list "uid1"))
             (should (eq (vm-pop-net-send-changes) t))
-            (should (vm-pop-net-wait nil 10))
+            (should (vm-pop-net-wait nil 90))
             ;; nothing deleted, and the request kept
             (should-not (vm-pop-mock-deleted mock))
             (should (equal vm-pop-messages-to-expunge (list "uid1")))
             ;; the next save asks again, and this time the server takes it
             (setf (vm-pop-mock-refuse mock) nil)
             (should (eq (vm-pop-net-send-changes) t))
-            (should (vm-pop-net-wait nil 10))
+            (should (vm-pop-net-wait nil 90))
             (should (equal (vm-pop-mock-deleted mock) '(1)))
             (should-not vm-pop-messages-to-expunge))
         (when (buffer-live-p folder)
@@ -640,7 +652,7 @@ that fails half way leaves the rest to be offered again."
                                                     vm-pop-net-test--bob))
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-popdrop-sans-password (vm-pop-mock-spec mock)))
-          (vm-pop-server-timeout 10)
+          (vm-pop-server-timeout 60)
           ;; what the folder holds is the maildrop without its password, as
           ;; `vm-pop-retrieved-messages' does; the password is the one VM
           ;; learned when it fetched
@@ -671,7 +683,7 @@ offers them again rather than forgetting messages that are still there."
                                     :refuse "DELE")
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-popdrop-sans-password (vm-pop-mock-spec mock)))
-          (vm-pop-server-timeout 10)
+          (vm-pop-server-timeout 60)
           (vm-pop-passwords (list (list (vm-popdrop-sans-password
                                          (vm-pop-mock-spec mock))
                                         (vm-pop-mock-password mock))))
@@ -1034,7 +1046,7 @@ unowned -- invisible to `vm-pop-net-busy-p', to the mode line and to
     (vm-pop-mock-with (two :messages (list "From: b@example.com\nSubject: from-two\n\nB.\n"))
       (let* ((dir (file-name-as-directory (make-temp-file "vm-pop-two" t)))
              (local (expand-file-name "inbox" dir))
-             (vm-pop-server-timeout 10)
+             (vm-pop-server-timeout 60)
              (vm-frame-per-folder nil)
              (vm-mutable-frame-configuration nil)
              (vm-auto-get-new-mail nil)
@@ -1247,7 +1259,7 @@ port, which stunnel has no such option for, so the session failed after the
 whole server timeout with \"did not start listening on port\"."
   (let* ((vm-stunnel-program "sh")
          (vm-stunnel-program-switches nil)
-         (vm-pop-server-timeout 10)
+         (vm-pop-server-timeout 60)
          (spec "pop-ssl:far.example.com:995:pass:vmtest:secret")
          (opened nil)
          (session nil))
