@@ -104,3 +104,19 @@
 ;;       sendmail-program "/opt/local/bin/msmtp"
 ;;       mail-specify-envelope-from t
 ;;       mail-envelope-from 'header)
+
+;; msmtp with the account named rather than left to a `default' account.
+;; `sendmail-send-it' has nowhere to put the -a, so this uses the message.el
+;; sender, which is not autoloaded.
+;;
+;; (require 'message)
+;; (setq send-mail-function 'message-send-mail-with-sendmail
+;;       message-sendmail-extra-arguments '("-a" "ACCOUNT")
+;;       sendmail-program "/opt/local/bin/msmtp"
+;;       mail-specify-envelope-from t
+;;       mail-envelope-from 'header)
+;;
+;; Whatever sends has to do it without being asked anything: batch Emacs has
+;; nobody to answer a password prompt, and msmtp exits 69 with "authentication
+;; method PLAIN needs a password" rather than hanging.  A `password' or a
+;; `passwordeval' that works with no terminal is what that takes.
