@@ -74,10 +74,15 @@ Sending itself is not described here: the config file sets
        (vm-send-live-config :from)
        (vm-send-live-config :to)
        (vm-send-live-config :verify-server)
-       ;; and a way to send: the config was supposed to arrange one
-       (or (memq send-mail-function '(smtpmail-send-it sendmail-send-it
-                                      mailclient-send-it feedmail-send-it))
-           (functionp send-mail-function))
+       ;; and a way to send.  Any named function will do: how this machine
+       ;; sends mail is the config's business, and a list of the four the
+       ;; harness happened to know left a valid one reading as no
+       ;; configuration at all.  `functionp' is no test either -- it answers
+       ;; nil for a function in a library not loaded yet, which is what
+       ;; `message-send-mail-with-sendmail' is until message.el arrives, so
+       ;; the send tests skipped in silence for a config that worked.
+       (or (functionp send-mail-function)
+           (and send-mail-function (symbolp send-mail-function)))
        t))
 
 (defun vm-send-live-skip-unless-configured ()
