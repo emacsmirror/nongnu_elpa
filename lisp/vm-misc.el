@@ -200,26 +200,6 @@ Returns non-nil if output was received, nil on timeout."
 (unless (boundp 'interprogram-cut-function)
   (defvar interprogram-cut-function nil))
 
-(defun vm-substring (string from &optional to)
-  (let ((work-buffer nil))
-    (set-buffer work-buffer)
-    (unwind-protect
-	(with-current-buffer work-buffer
-	  (insert string)
-	  (if (null to)
-	      (setq to (length string))
-	    (if (< to 0)
-		(setq to (+ (length string) to))))
-	  ;; string indices start at 0, buffers start at 1.
-	  (setq from (1+ from)
-		to (1+ to))
-	  (if (> from (point-min))
-	      (delete-region (point-min) from))
-	  (if (< to (point-max))
-	      (delete-region to (point-max)))
-	  (buffer-string))
-      (when work-buffer (kill-buffer work-buffer)))))
-
 ;; Taken from XEmacs as GNU Emacs is missing `replace-in-string' and defining
 ;; it may cause clashes with other packages defining it differently, in fact
 ;; we could also call the function `replace-regexp-in-string' as Roland
@@ -711,16 +691,6 @@ the function for < comparison."
       (setq list (cdr list))
       (setq n (1+ n)))
     (nreverse res)))
-
-(defun vm-find2 (list1 list2 pred)
-  "Find the first corresponding pair of elements of LIST1 and
-LIST2 satisfying PRED and return the position"
-  (let ((n 0))
-    (while (and list1 list2 (not (apply pred (car list1) (car list2) nil)))
-      (setq list1 (cdr list2)
-	    list2 (cdr list2))
-      (setq n (1+ n)))
-    (if (and list1 list2) n nil)))
 
 (defun vm-elems-of (list)
   "Return the set of elements of LIST as a list."
