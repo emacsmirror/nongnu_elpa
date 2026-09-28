@@ -2191,6 +2191,16 @@ Toot must be on you own."
         (mastodon-url-lookup (map-nested-elt quote '(quoted_status uri)))
       (user-error "No quote in this toot?"))))
 
+
+(defun mastodon-tl-view-toot-quotes ()
+  "View the toots that quote the toot at point."
+  (interactive)
+  (mastodon-tl--do-if-item
+   (let ((id (mastodon-tl--property 'base-item-id :no-move)))
+     (mastodon-tl--init "toot-quotes"
+             (format "/statuses/%s/quotes" id)
+             'mastodon-tl--timeline nil))))
+
 ;;; INSERT TOOTS 2
 
 (defun mastodon-tl--insert-status
@@ -2763,7 +2773,9 @@ call this function after it is set or use something else."
            'followed-hashtags)
           ;; collections:
           ((mastodon-tl--endpoint-str-= "collection" :prefix)
-           'collection))))
+           'collection)
+          ((mastodon-tl--endpoint-str-= "quotes" :suffix)
+           'toot-quotes))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."
