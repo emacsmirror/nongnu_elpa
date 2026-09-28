@@ -629,6 +629,12 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
       (or (string-match "^/@[^/]+$" query)
           (string-match "^/@[^/]+/[[:digit:]]+$" query)
           (string-match "^/user[s]?/@?[[:alnum:]_]+$" query) ; @: pleroma or soapbox
+          ;; URI is used for quote posts, due to flipboard formats, so we
+          ;; need to match some ap/ URIs?
+          ;; e.g. "/ap/users/116739186617842944/statuses/117224123424001867"
+          ;; maybe in the long run we would just rather regex the flipboard format though?
+          (string-match "^/ap/user[s]?/@?[[:alnum:]_]+$" query)
+          (string-match "^/ap/user[s]?/@?[[:alnum:]_]+/statuses/[[:alnum:]_]+$" query)
           (string-match "^/notice/[[:alnum:]]+$" query)
           (string-match "^/objects/[-a-f0-9]+$" query)
           (string-match "^/notes/[a-z0-9]+$" query)
@@ -644,6 +650,7 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           ;; (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
+          ;; (string-match "^/@[[:alpha:]-_]/" query) ;; flipboard post
           ;; fliboard post (works with modified hometown below):
           ;; either uri: https://flipboard.com/users/Gizmodo/statuses/UQ_TmLCbShiYB55LrrrzWQ:a:1876139665
           ;; or url: https://flipboard.com/@gizmodo/tech-fknh6odjz/-/a-UQ_TmLCbShiYB55LrrrzWQ%3Aa%3A1876139665-%2F0
