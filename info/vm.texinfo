@@ -138,7 +138,6 @@ Rights:
 @cindex Rmail
 @cindex Gnus
 @cindex GNU Emacs
-@cindex XEmacs
 @cindex Emacs
 VM, short for ``View Mail,'' is a mail reader that runs within the
 Emacs editor.  If you are already an Emacs-user, you will be working
@@ -9301,12 +9300,11 @@ The original development environment was GNU Emacs 18.52.
 The copyright for the code was retained by Kyle Jones.  Hence, the
 package was never included in GNU releases, which only contain code
 copyrighted by the Free Software Foundation.  However, Lucid/XEmacs
-shipped VM starting with version 19.9.  The other users obtained VM from
-the Wonderworks web site, which hosted Kyle Jones's work.  The home page
-of VM at this site is @uref{http://www.wonderworks.com/vm}.
+shipped VM starting with version 19.9.  Everyone else took VM from the
+Wonderworks web site, which hosted Kyle Jones's work at
+@uref{http://www.wonderworks.com/vm}.
 
-The last version released by Kyle Jones was 7.19, in September 2004,
-which can be found on the Wonderworks web site and its mirror sites.
+The last version he released was 7.19, in September 2004.
 
 @cindex Robert Widhopf-Fenk
 After this release, Robert Widhopf-Fenk picked up the maintenance of
@@ -9325,16 +9323,14 @@ community project.''  It still carries the mailing lists; the code moved.
 
 @cindex Ulrich Müller
 @cindex Uday S Reddy
-VM wwas  maintained by a ``VM Development Team,'' consisting of
-Robert Widhopf-Fenk, Ulrich Müller and Uday S Reddy.  Other potential members
-are warmly welcomed.  Robert Fenk has been inactive since November, 2008
-but he continues to be an official member of the team.  The new
-releases made by the team are numbered @code{8.1.0} and up.
+VM was then maintained by a ``VM Development Team'' of Robert Widhopf-Fenk,
+Ulrich Müller and Uday S Reddy, who made the releases numbered @code{8.1.0}
+and up.  Robert Fenk had been inactive since November 2008 and remained an
+official member of the team.
 
 @cindex GitLab
-In 2024, the project code development was moved to GitLab
-@uref{https://gitlab.com/emacs-vm/vm/} by a small team of
-new developers.
+In 2024 a small team of new developers moved development to GitLab,
+@uref{https://gitlab.com/emacs-vm/vm/}, where it is now.
 
 @unnumberedsec The source, and what changed in each release
 
