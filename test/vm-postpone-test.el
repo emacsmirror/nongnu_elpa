@@ -1421,6 +1421,77 @@ to see a residue nobody thought to look for."
           (should (equal before vm-mail-mode-map)))
       (when was (vm-postpone-mode 1)))))
 
+(ert-deftest vm-postpone-test-postponing-does-not-ask ()
+  "REGRESSION: postponing a composition with writing in it asks nothing.
+
+The guard on `kill-buffer-query-functions' asks whether killing will keep the
+writing, and `vm-postpone-message-hook' takes `vm-save-killed-message-hook'
+off before the kill -- rightly, the draft being in the folder by then.  So the
+guard saw a composition with writing that nothing would save, and postponing
+asked \"has writing in it and has not been sent; kill it?\" over a composition
+it had just filed."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-ask" t)))
+         (drafts (expand-file-name "drafts" dir))
+         (asked nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (let ((vm-folder-directory dir)
+              (vm-postponed-folder "drafts")
+              (vm-default-folder-type 'From_)
+              (vm-confirm-killing-a-composition t)
+              (vm-postponed-message-folder-buffer nil))
+          (cl-letf (((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-delete-postponed-message) #'ignore)
+                    ((symbol-function 'yes-or-no-p)
+                     (lambda (prompt) (push prompt asked) t))
+                    ((symbol-function 'y-or-n-p)
+                     (lambda (prompt) (push prompt asked) t)))
+            (vm-mail)
+            (goto-char (point-max))
+            (insert "Writing worth keeping.\n")
+            (vm-postpone-message))
+          (should (equal nil asked))
+          (should (file-exists-p drafts)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-postpone-test-the-after-hook-runs-with-the-draft-filed ()
+  "`vm-postponed-message-hook' runs after the draft is in the folder.
+In the composition buffer, so a function there can still read what was
+postponed, and after the file exists, which is what \"postponed\" means."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-hook" t)))
+         (drafts (expand-file-name "drafts" dir))
+         (saw nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (let ((vm-folder-directory dir)
+              (vm-postponed-folder "drafts")
+              (vm-default-folder-type 'From_)
+              (vm-postponed-message-folder-buffer nil)
+              (vm-postponed-message-hook
+               (list (lambda ()
+                       (setq saw (list :filed (file-exists-p drafts)
+                                       :mode major-mode
+                                       :live (buffer-live-p
+                                              (current-buffer))))))))
+          (cl-letf (((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-delete-postponed-message) #'ignore))
+            (vm-mail)
+            (goto-char (point-max))
+            (insert "Body.\n")
+            (vm-postpone-message))
+          (should (equal saw (list :filed t :mode 'mail-mode :live t))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
+      (delete-directory dir t))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here

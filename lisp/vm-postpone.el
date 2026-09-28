@@ -260,7 +260,22 @@ when continuing a postponed message."
 
 ;;;###autoload
 (defcustom vm-postpone-message-hook nil
-  "List of hook functions to be run before postponing a message."
+  "List of hook functions to be run before postponing a message.
+They run in the composition buffer, before it is written to the folder, so a
+function here can still change what is filed.  See `vm-postponed-message-hook'
+for after it is filed."
+  :type 'hook
+  :group 'vm-postpone)
+
+(defcustom vm-postponed-message-hook nil
+  "List of hook functions to be run after a message has been postponed.
+They run in the composition buffer, after the draft is in the folder and the
+source message has been dealt with, and before the composition is killed.  So
+the buffer is still there to be read, and changing it changes nothing: what
+was filed is already filed.
+
+`vm-postpone-message-hook' is the one that runs before, where a change still
+reaches the folder."
   :type 'hook
   :group 'vm-postpone)
 
@@ -708,6 +723,10 @@ Optional argument DONT-KILL is positive, then do not kill source message."
     ;; delete source message
     (vm-delete-postponed-message)
 
+    ;; the draft is filed and the source is dealt with, so this is what
+    ;; "postponed" means; the composition is still here to be read
+    (run-hooks 'vm-postponed-message-hook)
+
     ;; mess around with the window configuration 
     (let ((b (current-buffer))
           (this-command 'vm-mail-send-and-exit))
@@ -734,9 +753,17 @@ Optional argument DONT-KILL is positive, then do not kill source message."
       ;; composition left one behind, in `vm-folder-directory', which is
       ;; where VM points them.
       (delete-auto-save-file-if-necessary t)
+      ;; Nothing to confirm: the composition is in the folder.  The guard on
+      ;; `kill-buffer-query-functions' cannot see that, because it asks whether
+      ;; killing will keep the writing and `vm-postpone-message-hook' has just
+      ;; taken `vm-save-killed-message-hook' off -- rightly, the draft being
+      ;; filed already.  So postponing asked "has writing in it and has not
+      ;; been sent; kill it?" over a composition it had just saved.
+      ;;
       ;; `kill-current-buffer', not `kill-this-buffer': that one signals
-      ;; unless a menu or a tool bar invoked it (#855).
-      (kill-current-buffer))
+      ;; unless a menu or a tool bar invoked it (emacs-vm/vm#855).
+      (let ((vm-confirm-killing-a-composition nil))
+        (kill-current-buffer)))
 
     (if (vm-interactive-p)
         (message "Message postponed to folder `%s'" folder))))
