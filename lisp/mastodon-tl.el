@@ -2198,7 +2198,7 @@ Also works if a quote toot is at point."
   (interactive)
   (mastodon-tl--do-if-item
    (let ((id ;; quote:
-          (if-let ((data (alist-get 'quote (mastodon-tl--property 'item-json))))
+          (if-let* ((data (alist-get 'quote (mastodon-tl--property 'item-json))))
               (map-nested-elt data '(quoted_status id))
             ;; boost or toot:
             (mastodon-tl--property 'base-item-id :no-move))))
