@@ -121,7 +121,6 @@ Return a plist of secret and non-secret key/val pairs."
                      sans-secrets
                    client)
                  (when mastodon-auth-encrypt-tokens-plstore secrets))
-    ;; FIXME: breaks tests: prompts for gpg passphrase
     (plstore-save plstore)
     (plstore-close plstore)
     (if mastodon-auth-encrypt-tokens-plstore

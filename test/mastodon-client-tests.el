@@ -7,6 +7,9 @@
 ;; NB: since switching to encrypted (client) plstore, some tests fail if
 ;; `plistore-encrypt-to' is not set to a working gpg key
 
+;; NB: since adding `mastodon-auth-encrypt-tokens-plstore', we just nil it
+;; everywhere and don't test encrypted plstore at all.
+
 (ert-deftest mastodon-client--register ()
   "Should POST to /apps."
   (with-mock
@@ -29,9 +32,6 @@
                                              (current-buffer)))
       (should (equal (mastodon-client--fetch) '(:foo "bar"))))))
 
-;; FIXME: broken by new encrypted plstore flow
-;; (asks for gpg passphrase)
-;; otherwise test passes
 (ert-deftest mastodon-client--store ()
   "Test the value `mastodon-client--store' returns/stores."
   (let ((mastodon-instance-url "http://mastodon.example")
@@ -150,9 +150,6 @@
       (mock (mastodon-client--general-read "active-user") => '(:username "user@other.example" :client_id "id1"))
       (should (null (mastodon-client--current-user-active-p))))))
 
-;; FIXME: broken by new encrypted plstore flow
-;; (asks for gpg passphrase)
-;; otherwise test passes
 (ert-deftest mastodon-client--store-access-token ()
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
@@ -185,9 +182,6 @@
                     user-details)))
     (delete-file "stubfile.plstore")))
 
-;; FIXME: broken by new encrypted plstore flow
-;; (asks for gpg passphrase)
-;; otherwise test passes
 (ert-deftest mastodon-client--make-user-active ()
   ;; match new encrypted plstore return value:
   (let ((user-details '( :access_token nil
