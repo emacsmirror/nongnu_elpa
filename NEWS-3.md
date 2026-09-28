@@ -8,6 +8,19 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`vm-postponed-message-hook` runs after a message is postponed.**  The
+    existing `vm-postpone-message-hook` runs before the composition is written
+    to the folder, where a function can still change what is filed; this one
+    runs after the draft is there and the source message has been dealt with,
+    in the composition buffer, before it is killed.
+
+  * **Postponing no longer asks whether to kill the composition.**  The guard
+    added for emacs-vm/vm#824 asks before killing a composition with writing
+    in it that nothing will keep, and it could not tell that postponing had
+    just filed the draft, so `vm-postpone-message` asked "has writing in it
+    and has not been sent; kill it?" over a composition it had saved a moment
+    earlier.
+
   * **`vm-mime-text/html-blocker` and `vm-mime-text/html-blocker-exceptions`
     are obsolete** (emacs-vm/vm#845).  Both were documented as stopping an
     HTML part from loading the remote image a sender uses to learn that you
