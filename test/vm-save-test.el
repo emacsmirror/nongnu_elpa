@@ -466,9 +466,16 @@ asked from the summary as often as not."
           "The second body.\n\n")
   "Two messages, so a command run over marks can be told from one message.")
 
-(defmacro vm-save-test--with-pipe-folder (&rest body)
-  "Visit the piping fixture and run BODY in the folder buffer."
-  (declare (indent 0) (debug t))
+(defconst vm-save-test--pipe-folder-one-newline
+  (substring vm-save-test--pipe-folder 0 -1)
+  "The same two messages, with one newline at the end of the file.
+An mbox whose last body is not followed by a blank line.  The text of that
+last message then ends in a full stop, so a pipe run with the trailing
+separator off ends mid-line, which is what issue #881 hangs on.")
+
+(defmacro vm-save-test--with-this-pipe-folder (text &rest body)
+  "Visit a folder holding TEXT and run BODY in the folder buffer."
+  (declare (indent 1) (debug t))
   `(let ((dir (file-name-as-directory (make-temp-file "vm-pipe" t)))
          (before (buffer-list)))
      (unwind-protect
@@ -476,7 +483,7 @@ asked from the summary as often as not."
                (vm-frame-per-folder nil)
                (vm-mutable-frame-configuration nil)
                (vm-last-pipe-command nil))
-           (write-region vm-save-test--pipe-folder nil folder nil 'quiet)
+           (write-region ,text nil folder nil 'quiet)
            (cl-letf (((symbol-function 'vm-display) #'ignore))
              (vm-visit-folder folder)
              (setq vm-message-pointer vm-message-list)
@@ -487,6 +494,11 @@ asked from the summary as often as not."
              (with-current-buffer buffer (set-buffer-modified-p nil))
              (kill-buffer buffer))))
        (delete-directory dir t))))
+
+(defmacro vm-save-test--with-pipe-folder (&rest body)
+  "Visit the piping fixture and run BODY in the folder buffer."
+  (declare (indent 0) (debug t))
+  `(vm-save-test--with-this-pipe-folder vm-save-test--pipe-folder ,@body))
 
 (defun vm-save-test--piped-to-file (file)
   "What a pipe wrote to FILE."
@@ -600,6 +612,81 @@ makes the command usable for collecting bodies into one file."
             (let ((saved (vm-save-test--piped-to-file target)))
               (should (string-match-p "The body to be piped" saved))
               (should (string-match-p "The second body" saved))))
+        (ignore-errors (delete-file target))))))
+
+;;; Piping every marked message in one run (issue #881)
+
+(defun vm-save-test--pipe-all-marked (command)
+  "Run COMMAND over every message of the folder, as `|s' does over marks."
+  (vm-mark-all-messages)
+  (let ((last-command 'vm-next-command-uses-marks))
+    (vm-pipe-messages-to-command command)))
+
+(defun vm-save-test--kill-the-pipe ()
+  "Kill whatever is still running in the pipe's output buffer.
+A test that fails here fails by timing out with the command still reading, and
+the folder buffers are killed straight afterwards -- which would stop for
+\"Buffer has a running process\" and read the answer from an empty stdin."
+  (let ((process (get-buffer-process "*Shell Command Output*")))
+    (when process (delete-process process))))
+
+(ert-deftest vm-save-test-piping-all-returns-with-the-end-separator-off ()
+  "REGRESSION: `|s' froze Emacs when the text it sent last had no newline.
+Issue #881.  `start-process' gives the command a pty unless told otherwise,
+and `process-send-eof' on a pty sends ^D, which the terminal driver turns
+into end of file only at the start of a line.  The command never saw end of
+file, never exited, and the wait loop at the end of the function span on
+`vm-accept-process-output' until the reader typed C-g.
+
+Here `vm-pipe-messages-to-command-end' is nil, so the last thing sent is the
+message text, which ends in a full stop.  The timeout is the assertion:
+unfixed, this does not fail, it hangs."
+  (vm-save-test--with-this-pipe-folder vm-save-test--pipe-folder-one-newline
+    (let ((target (expand-file-name "piped-all" temporary-file-directory))
+          (vm-pipe-messages-to-command-end nil))
+      (unwind-protect
+          (with-timeout (30 (ert-fail "the command was still reading"))
+            (vm-save-test--pipe-all-marked (format "cat > %s" target))
+            (let ((piped (vm-save-test--piped-to-file target)))
+              (should (string-match-p "The body to be piped" piped))
+              (should (string-match-p "The second body" piped))))
+        (vm-save-test--kill-the-pipe)
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-piping-all-returns-for-a-folder-with-no-final-newline ()
+  "REGRESSION: the same hang with nothing set, on a folder file ending mid-line.
+Issue #881.  The separators are the default here, so the last thing sent is the
+folder's trailing separator, and for a file that ends without a newline that
+separator is empty: the message text is again the last thing the command
+reads.  Such a folder is legal and VM reads it."
+  (vm-save-test--with-this-pipe-folder (substring vm-save-test--pipe-folder 0 -2)
+    (let ((target (expand-file-name "piped-unterminated" temporary-file-directory)))
+      (unwind-protect
+          (with-timeout (30 (ert-fail "the command was still reading"))
+            (vm-save-test--pipe-all-marked (format "cat > %s" target))
+            (should (string-match-p "The second body"
+                                    (vm-save-test--piped-to-file target))))
+        (vm-save-test--kill-the-pipe)
+        (ignore-errors (delete-file target))))))
+
+(ert-deftest vm-save-test-piping-all-sends-every-message-with-its-separators ()
+  "One run of the command gets every marked message, each between separators.
+`vm-pipe-messages-to-command-start' and `vm-pipe-messages-to-command-end'
+default to t, which means the folder's own leading and trailing separator, so
+what the command reads is an mbox it can take apart again."
+  (vm-save-test--with-pipe-folder
+    (let ((target (expand-file-name "piped-marked" temporary-file-directory)))
+      (unwind-protect
+          (with-timeout (30 (ert-fail "the command was still reading"))
+            (vm-save-test--pipe-all-marked (format "cat > %s" target))
+            (let ((piped (vm-save-test--piped-to-file target)))
+              (should (string-match-p "The body to be piped" piped))
+              (should (string-match-p "The second body" piped))
+              ;; one From_ line per message, the folder's own
+              (should (= 2 (cl-count-if (lambda (line)
+                                          (string-prefix-p "From " line))
+                                        (split-string piped "\n"))))))
+        (vm-save-test--kill-the-pipe)
         (ignore-errors (delete-file target))))))
 
 ;;; Saving a message to a folder (emacs-vm/vm#672)
