@@ -770,6 +770,38 @@ Off by default because it changes how every message looks."
     (should (equal nil (seq-filter (lambda (o) (overlay-get o 'vm-highlight))
                                    (overlays-in (point-min) (point-max)))))))
 
+(ert-deftest vm-page-test-an-unrunnable-xface-converter-warns-and-gives-up ()
+  "A configured but unrunnable uncompface loses the face, not the message.
+`call-process-region' signals for a program that is missing or not
+executable, and this runs inside message display, so the signal used to take
+the whole presentation with it."
+  (let ((warnings nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (push (apply #'format args) warnings))))
+      (let ((vm-uncompface-program "vm-no-such-program-xyz")
+            (vm-uncompface-accepts-dash-x nil)
+            (vm-icontopbm-program nil))
+        (should (eq nil (vm-convert-xface-to-fsfemacs-image-instantiator
+                         "whatever")))))
+    (should (= 1 (length warnings)))
+    (should (string-match-p "X-Face not shown" (car warnings)))
+    ;; and it says what to do about it
+    (should (string-match-p "vm-display-xfaces" (car warnings)))))
+
+(ert-deftest vm-page-test-a-non-executable-xface-converter-warns-too ()
+  "The other way a converter fails to run: present, but not executable."
+  (let ((warnings nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (push (apply #'format args) warnings))))
+      (let ((vm-uncompface-program "/etc/hosts")
+            (vm-uncompface-accepts-dash-x nil)
+            (vm-icontopbm-program nil))
+        (should (eq nil (vm-convert-xface-to-fsfemacs-image-instantiator
+                         "whatever")))))
+    (should (= 1 (length warnings)))))
+
 (provide 'vm-page-test)
 
 ;;; vm-page-test.el ends here

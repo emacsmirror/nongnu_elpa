@@ -448,46 +448,52 @@ Negative arg means scroll forward."
 			   (char-to-string (char-after pos)))
 	      (overlay-put o 'display g)))))))
 
+(defun vm-xface-run-converter (program &rest args)
+  "Run PROGRAM with ARGS over the current buffer, replacing it with the output.
+Return t when it ran and succeeded.
+
+A program that cannot be run is not an error here.  An X-Face is decoration,
+and `uncompface' is a 1990 utility that a machine may not have, or may have
+in a state that does not run; failing the whole message display over one is
+out of proportion.  So this warns and gives up on the face instead."
+  (condition-case err
+      (eq 0 (apply #'call-process-region (point-min) (point-max)
+		   program t t nil args))
+    (error
+     (vm-warn 0 2 "X-Face not shown: %s could not be run (%s).  \
+Set vm-display-xfaces to nil to stop trying"
+	      program (error-message-string err))
+     nil)))
+
+(defun vm-xface-image (type)
+  "An image instantiator of TYPE holding the current buffer's contents."
+  (list 'image ':type type
+	':ascent 80
+	':foreground "black"
+	':background "white"
+	':data (buffer-string)))
+
 (defun vm-convert-xface-to-fsfemacs-image-instantiator (data)
-  (let ((work-buffer nil)
-	retval)
+  (let ((work-buffer nil))
     (catch 'done
       (unwind-protect
 	  (save-excursion
-	    (if (not (stringp vm-uncompface-program))
-		(throw 'done nil))
+	    (unless (stringp vm-uncompface-program)
+	      (throw 'done nil))
 	    (setq work-buffer (vm-make-work-buffer))
 	    (set-buffer work-buffer)
 	    (insert data)
-	    (setq retval
-		  (apply 'call-process-region
-			 (point-min) (point-max)
-			 vm-uncompface-program t t nil
-			 (if vm-uncompface-accepts-dash-x '("-X") nil)))
-	    (if (not (eq retval 0))
-		(throw 'done nil))
-	    (if vm-uncompface-accepts-dash-x
-		(throw 'done
-		       (list 'image ':type 'xbm
-			     ':ascent 80
-			     ':foreground "black"
-			     ':background "white"
-			     ':data (buffer-string))))
-	    (if (not (stringp vm-icontopbm-program))
-		(throw 'done nil))
+	    (unless (apply #'vm-xface-run-converter vm-uncompface-program
+			   (if vm-uncompface-accepts-dash-x '("-X") nil))
+	      (throw 'done nil))
+	    (when vm-uncompface-accepts-dash-x
+	      (throw 'done (vm-xface-image 'xbm)))
+	    (unless (stringp vm-icontopbm-program)
+	      (throw 'done nil))
 	    (goto-char (point-min))
-	    (insert "/* Width=48, Height=48 */\n");
-	    (setq retval
-		  (call-process-region
-		   (point-min) (point-max)
-		   vm-icontopbm-program t t nil))
-	    (if (not (eq retval 0))
-		nil
-	      (list 'image ':type 'pbm
-		    ':ascent 80
-		    ':foreground "black"
-		    ':background "white"
-		    ':data (buffer-string))))
+	    (insert "/* Width=48, Height=48 */\n")
+	    (and (vm-xface-run-converter vm-icontopbm-program)
+		 (vm-xface-image 'pbm)))
 	(and work-buffer (kill-buffer work-buffer))))))
 
 (defun vm-url-help (_object)
