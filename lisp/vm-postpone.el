@@ -262,12 +262,12 @@ when continuing a postponed message."
 (defcustom vm-postpone-message-hook nil
   "List of hook functions to be run before postponing a message.
 They run in the composition buffer, before it is written to the folder, so a
-function here can still change what is filed.  See `vm-postponed-message-hook'
-for after it is filed."
+function here can still change what is filed.  See
+`vm-after-postpone-message-hook' for after it is filed."
   :type 'hook
   :group 'vm-postpone)
 
-(defcustom vm-postponed-message-hook nil
+(defcustom vm-after-postpone-message-hook nil
   "List of hook functions to be run after a message has been postponed.
 They run in the composition buffer, after the draft is in the folder and the
 source message has been dealt with, and before the composition is killed.  So
@@ -732,7 +732,7 @@ Optional argument DONT-KILL is positive, then do not kill source message."
 
     ;; the draft is filed and the source is dealt with, so this is what
     ;; "postponed" means; the composition is still here to be read
-    (run-hooks 'vm-postponed-message-hook)
+    (run-hooks 'vm-after-postpone-message-hook)
 
     ;; mess around with the window configuration 
     (let ((b (current-buffer))
