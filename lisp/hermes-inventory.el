@@ -291,9 +291,10 @@ REST is unavailable."
               (hermes-dashboard-transport--redact-secret reason))
      (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec)))))
 
-(defun hermes-inventory--run-read (generation make-promise on-success)
+(defun hermes-inventory--run-read (generation make-promise on-success &optional owner-p)
   "Run read GENERATION through MAKE-PROMISE, then call ON-SUCCESS.
 Capture the current buffer, mode and instance for every settlement.
+OWNER-P, when non-nil, additionally fences domain ownership.
 Acquisition errors settle the view before propagating; shared browser code
 still owns client release and promise errors."
   (let* ((buffer (current-buffer))
@@ -301,7 +302,8 @@ still owns client release and promise errors."
          (instance hermes-instance)
          (current-p
           (lambda ()
-            (and (hermes-browser--request-current-p buffer generation)
+            (and (or (null owner-p) (funcall owner-p))
+                 (hermes-browser--request-current-p buffer generation)
                  (eq (buffer-local-value 'major-mode buffer) mode)
                  (equal (buffer-local-value 'hermes-instance buffer) instance))))
          (on-error
@@ -552,12 +554,18 @@ after a reset/restart."
                 (hermes-transport--get status 'builtin_files) key)))
     (if (numberp value) value 0)))
 
+(defvar-local hermes-memory--status-owner nil
+  "Owner of the accepted profile-qualified memory snapshot.")
+(defvar-local hermes-memory--profile nil
+  "Exact backend profile that owns the displayed memory status.")
+
 (defun hermes-inventory--memory-status-text (status)
   "Return redacted display text for memory STATUS.
 The text intentionally omits memory contents, provider lists, paths, and
 unknown backend fields so secrets cannot leak through this buffer."
   (string-join
    (list "Hermes Memory"
+         (format "Profile: %s" (or hermes-memory--profile "unselected"))
          ""
          (format "Active provider: %s"
                  (hermes-inventory--safe-memory-name
@@ -572,19 +580,24 @@ unknown backend fields so secrets cannot leak through this buffer."
          "Keys: p provider, c configure, g refresh, D reset built-in memory.")
    "\n"))
 
-(defun hermes-inventory--render-memory-status (status target &optional display)
+(defun hermes-inventory--render-memory-status (status target &optional display profile)
   "Render memory STATUS in the memory buffer.
-TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
+TARGET is the existing memory buffer.  DISPLAY pops it when non-nil.
+PROFILE, when non-nil, replaces the selected profile only after publication."
   (with-current-buffer target
-    (unless (derived-mode-p 'hermes-memory-status-mode)
-      (hermes-memory-status-mode))
-    (setq hermes-memory--status status)
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert (hermes-inventory--memory-status-text status))
-      (goto-char (point-min)))
-    (setq hermes-browser--status "Ready")
-    (when display (pop-to-buffer (current-buffer)))))
+    (let* ((owner (hermes-browser--owner '(hermes-memory--profile)))
+           (profile (or profile hermes-memory--profile))
+           (text (let ((hermes-memory--profile profile))
+                   (hermes-inventory--memory-status-text status))))
+      (when (hermes-browser--publish-text owner text)
+        (setf (alist-get 'hermes-memory--profile (nth 6 owner))
+              (hermes-browser--copy-identity profile))
+        (setq hermes-memory--status status
+              hermes-memory--profile profile
+              hermes-memory--status-owner owner
+              hermes-browser--status "Ready")
+        (goto-char (point-min))
+        (when display (pop-to-buffer target))))))
 
 (defvar-keymap hermes-memory-status-mode-map
   :doc "Keymap for `hermes-memory-status-mode'."
@@ -610,7 +623,8 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
 (define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
   "Major mode for redacted Hermes memory provider status."
   :interactive nil
-  (setq-local hermes-browser--snapshot-variables '(hermes-memory--status))
+  (setq-local hermes-browser--snapshot-variables
+              '(hermes-memory--status hermes-memory--profile))
   (hermes-browser--setup-status))
 
 (defun hermes-memory--provider-name-p (name)
@@ -662,12 +676,15 @@ TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
 (defun hermes-memory--run-owned
     (buffer generation token make-promise on-success &optional secrets)
   "Run MAKE-PROMISE while BUFFER owns GENERATION and TOKEN.
-MAKE-PROMISE receives a dashboard client.  ON-SUCCESS and errors apply only
-while the originating memory buffer remains current.  SECRETS are redacted."
+MAKE-PROMISE receives a dashboard client and profile.  ON-SUCCESS and errors
+apply only while the originating memory buffer remains current.
+SECRETS are redacted."
   (with-current-buffer buffer
-    (let ((view (hermes-browser--dispatch-guard nil)))
+    (let ((view (hermes-browser--dispatch-guard
+                 nil (hermes-browser--owned-predicate '(hermes-memory--profile))))
+          (profile hermes-memory--profile))
       (hermes-browser--run-owned
-       (lambda (client _active) (funcall make-promise client))
+       (lambda (client _active) (funcall make-promise client profile))
        (lambda ()
          (and (funcall view)
               (hermes-memory--operation-current-p buffer generation)
@@ -678,20 +695,22 @@ while the originating memory buffer remains current.  SECRETS are redacted."
                   (hermes-dashboard-transport--redact-secret reason secrets)))
        (lambda () (hermes-memory--clear-operation buffer token))))))
 
-(defun hermes-memory--api (client method path &optional body secrets current-p)
-  "Send memory METHOD PATH through CLIENT with BODY, SECRETS and CURRENT-P."
+(defun hermes-memory--api (client method path &optional body secrets current-p profile)
+  "Send memory METHOD PATH through CLIENT.
+Use BODY, SECRETS, CURRENT-P and explicit PROFILE for the request."
   (hermes-dashboard-transport-api-request-async
    method (concat "/api/memory" path)
    :body body :secrets secrets :client client
+   :query (when profile `((profile . ,profile)))
    :current-p (or current-p hermes-dashboard-transport--api-dispatch-guard)))
 
 (defun hermes-memory--provider-path (provider)
   "Return PROVIDER's configuration path."
   (format "/providers/%s/config" (url-hexify-string provider)))
 
-(defun hermes-memory--status-promise (client &optional current-p)
-  "Return a memory status promise through CLIENT guarded by CURRENT-P."
-  (hermes-memory--api client "GET" "" nil nil current-p))
+(defun hermes-memory--status-promise (client &optional current-p profile)
+  "Read PROFILE memory status through CLIENT guarded by CURRENT-P."
+  (hermes-memory--api client "GET" "" nil nil current-p profile))
 
 (defun hermes-memory--comparable-value (value)
   "Return VALUE's stable string form for schema dependency comparison."
@@ -790,13 +809,14 @@ while the originating memory buffer remains current.  SECRETS are redacted."
                     (hermes-memory--comparable-value current))))))
 
 (defun hermes-memory--configuration-promise
-    (client buffer generation provider redactions)
+    (client buffer generation provider redactions profile)
   "Return PROVIDER configuration flow promise through CLIENT.
 BUFFER and GENERATION own prompts and writes.  REDACTIONS is updated when a
-secret is read."
+secret is read.  PROFILE retains the displayed backend scope."
   (let ((active hermes-dashboard-transport--api-dispatch-guard))
     (hermes--promise-then
-     (hermes-memory--api client "GET" (hermes-memory--provider-path provider))
+     (hermes-memory--api client "GET" (hermes-memory--provider-path provider)
+                         nil nil active profile)
      (lambda (schema)
        (when (and (funcall active)
                   (hermes-memory--operation-current-p buffer generation))
@@ -815,10 +835,10 @@ secret is read."
                       (hermes-memory--api
                        client "PUT" (hermes-memory--provider-path provider)
                        `((values . ((,(intern key) . ,value))))
-                       (and secret-p (list value)) active)
+                       (and secret-p (list value)) active profile)
                       (lambda (_result)
                         (when (funcall active)
-                          (hermes-memory--status-promise client active)))))))))))))))
+                          (hermes-memory--status-promise client active profile)))))))))))))))
 
 ;;;###autoload
 (defun hermes-memory-select-provider (&optional provider)
@@ -826,7 +846,8 @@ secret is read."
   (interactive nil hermes-memory-status-mode)
   (hermes-memory--require-idle)
   (let* ((buffer (current-buffer))
-         (current-p (hermes-browser--dispatch-guard nil))
+         (current-p (hermes-browser--dispatch-guard
+                     nil (hermes-browser--owned-predicate '(hermes-memory--profile))))
          (provider (or provider (hermes-memory--read-provider "activate"))))
     (when (funcall current-p)
       (with-current-buffer buffer
@@ -836,13 +857,14 @@ secret is read."
           (setq hermes-memory--operation token)
           (hermes-memory--run-owned
            buffer generation token
-           (lambda (client)
+           (lambda (client profile)
              (let ((active hermes-dashboard-transport--api-dispatch-guard))
                (hermes--promise-then
-                (hermes-memory--api client "PUT" "/provider" `((provider . ,provider)))
+                (hermes-memory--api client "PUT" "/provider" `((provider . ,provider))
+                                    nil active profile)
                 (lambda (_result)
                   (when (funcall active)
-                    (hermes-memory--status-promise client active))))))
+                    (hermes-memory--status-promise client active profile))))))
            (lambda (status)
              (hermes-inventory--render-memory-status status buffer)
              (message "Hermes: active memory provider is %s" provider))))))))
@@ -853,7 +875,8 @@ secret is read."
   (interactive nil hermes-memory-status-mode)
   (hermes-memory--require-idle)
   (let* ((buffer (current-buffer))
-         (current-p (hermes-browser--dispatch-guard nil))
+         (current-p (hermes-browser--dispatch-guard
+                     nil (hermes-browser--owned-predicate '(hermes-memory--profile))))
          (provider (or provider (hermes-memory--read-provider "configure"))))
     (when (funcall current-p)
       (with-current-buffer buffer
@@ -864,9 +887,9 @@ secret is read."
           (setq hermes-memory--operation token)
           (hermes-memory--run-owned
            buffer generation token
-           (lambda (client)
+           (lambda (client profile)
              (hermes-memory--configuration-promise
-              client buffer generation provider redactions))
+              client buffer generation provider redactions profile))
            (lambda (result)
              (pcase result
                (:hermes-memory-no-fields
@@ -881,7 +904,9 @@ secret is read."
 ;;;###autoload
 (defun hermes-memory-status ()
   "Show Hermes memory provider and built-in store sizes.
-The buffer never displays memory contents or secret material."
+Choose a backend profile on first opening; refresh retains that exact scope.
+Kill the view and reopen to choose another profile.  The buffer never displays
+memory contents or secret material."
   (interactive)
   (let* ((instance (hermes-instance-resolve))
          (display (not (eq (current-buffer)
@@ -899,23 +924,29 @@ The buffer never displays memory contents or secret material."
     (when display (pop-to-buffer target))
     (with-current-buffer target
       (setq hermes-browser--status "Loading")
-      (hermes-inventory--run-read
-       generation
-       (lambda (client)
-         (hermes-dashboard-transport-api-request-async
-          "GET" "/api/memory" :client client))
-       (lambda (status)
-         (hermes-inventory--render-memory-status status target))))))
+      (let ((current-p (hermes-browser--owned-predicate '(hermes-memory--profile)))
+            (profile hermes-memory--profile))
+        (hermes-inventory--run-read
+         generation
+         (lambda (client)
+           (hermes-browser--profiled-read
+            client "/api/memory" profile (hermes-browser--dispatch-guard client current-p)))
+         (lambda (scoped)
+           (when scoped
+             (with-current-buffer target
+               (hermes-inventory--render-memory-status
+                (cdr scoped) target nil (car scoped)))))
+         current-p)))))
 
-(defun hermes-memory--reset-promise (client target)
-  "Reset TARGET through CLIENT and read back status under the same guard."
+(defun hermes-memory--reset-promise (client target profile)
+  "Reset TARGET through CLIENT in PROFILE and read back under the same guard."
   (let ((active hermes-dashboard-transport--api-dispatch-guard))
     (hermes--promise-then
-     (hermes-memory--api client "POST" "/reset" `((target . ,target)))
+     (hermes-memory--api client "POST" "/reset" `((target . ,target)) nil active profile)
      (lambda (result)
        (when (funcall active)
          (hermes--promise-map
-          (hermes-memory--status-promise client active)
+          (hermes-memory--status-promise client active profile)
           (lambda (status) (list result status))))))))
 
 ;;;###autoload
@@ -924,16 +955,22 @@ The buffer never displays memory contents or secret material."
 TARGET is one of all, memory, or user.  External providers are not reset."
   (interactive (list nil) hermes-memory-status-mode)
   (hermes-memory--require-idle)
+  (unless (and (derived-mode-p 'hermes-memory-status-mode) hermes-memory--profile
+               hermes-memory--status-owner
+               (hermes-browser--owner-current-p hermes-memory--status-owner))
+    (user-error "Refresh memory status and select a backend profile first"))
   (let* ((origin (current-buffer))
-         (current-p (hermes-browser--dispatch-guard nil))
+         (current-p (hermes-browser--dispatch-guard
+                     nil (hermes-browser--owned-predicate '(hermes-memory--profile))))
+         (profile hermes-memory--profile)
          (target (or target (completing-read "Reset built-in memory store: "
                                             '("all" "memory" "user") nil t nil nil "all"))))
     (unless (member target '("all" "memory" "user"))
       (user-error "Memory reset target must be all, memory, or user"))
     (when (and (funcall current-p)
                (yes-or-no-p
-                (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
-                        target))
+                (format "Erase built-in Hermes %s memory in profile %s?  This deletes only MEMORY.md/USER.md data.  Continue?"
+                        target profile))
                (funcall current-p))
       (with-current-buffer origin
         (let ((generation (hermes-browser--next-request-generation))
@@ -941,7 +978,7 @@ TARGET is one of all, memory, or user.  External providers are not reset."
           (setq hermes-memory--operation token)
           (hermes-memory--run-owned
            origin generation token
-           (lambda (client) (hermes-memory--reset-promise client target))
+           (lambda (client profile) (hermes-memory--reset-promise client target profile))
            (lambda (result)
              (hermes-inventory--render-memory-status (cadr result) origin)
              (message "Hermes: reset %s memory (%s)"

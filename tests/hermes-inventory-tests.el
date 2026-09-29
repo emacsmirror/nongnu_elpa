@@ -395,7 +395,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
 
 (ert-deftest hermes-memory-status-fetches-rest-with-client ()
   "Memory status passes the live dashboard client to REST."
-  (let (method path requested-client rendered done-called)
+  (let ((hermes-memory--profile "fixture") method path requested-client rendered selected-profile done-called)
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
@@ -407,10 +407,11 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                  (hermes--promise-resolved
                   '((active . "built-in") (builtin_files . ((memory . 1)))))))
               ((symbol-function 'hermes-inventory--render-memory-status)
-               (lambda (status _target &optional _display)
-                 (setq rendered status))))
+               (lambda (status _target &optional _display profile)
+                 (setq rendered status selected-profile profile))))
       (hermes-memory-status)
       (should done-called)
+      (should (equal selected-profile "fixture"))
       (should (equal method "GET"))
       (should (equal path "/api/memory"))
       (should (eq requested-client 'fake-client))
@@ -436,7 +437,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
   "An older memory response cannot replace a newer response."
   (let ((first (hermes--promise-make))
         (second (hermes--promise-make))
-        (requests 0))
+        (requests 0) (hermes-memory--profile "fixture"))
     (cl-letf (((symbol-function 'hermes-browser--run-on-client)
                (lambda (make-promise &optional on-success _on-error)
                  (hermes--promise-then (funcall make-promise 'client) on-success)))
@@ -462,6 +463,11 @@ Toolset toggles are global configuration: no `:session-id' is sent."
         (when (get-buffer "*Hermes Memory*")
           (kill-buffer "*Hermes Memory*"))))))
 
+(defun hermes-inventory-test--memory-scope ()
+  "Install a fixture's already-read profile ownership."
+  (setq hermes-memory--profile "fixture"
+        hermes-memory--status-owner (hermes-browser--owner '(hermes-memory--profile))))
+
 (ert-deftest hermes-memory-reset-confirms-and-posts-target ()
   "Memory reset is gated by yes-or-no-p and posts the chosen target to REST."
   (let (prompt method path body requested-client done-called refreshed)
@@ -483,6 +489,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               ((symbol-function 'message) #'ignore))
       (with-temp-buffer
         (hermes-memory-status-mode)
+        (hermes-inventory-test--memory-scope)
         (hermes-memory-reset "user"))
       (should (string-match-p "Erase built-in Hermes user memory" prompt))
       (should (equal method "POST"))
@@ -506,6 +513,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
       (let ((origin (generate-new-buffer " *Hermes memory reset origin*")))
         (with-current-buffer origin
           (hermes-memory-status-mode)
+          (hermes-inventory-test--memory-scope)
           (hermes-memory-reset "all"))
         (kill-buffer origin)
         (hermes--promise-resolve promise '((ok . t) (deleted . nil)))
@@ -524,6 +532,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               ((symbol-function 'message) #'ignore))
       (with-temp-buffer
         (hermes-memory-status-mode)
+        (hermes-inventory-test--memory-scope)
         (hermes-memory-reset "all")
         (fundamental-mode)
         (hermes--promise-resolve promise '((ok . t) (deleted . nil)))
@@ -540,7 +549,10 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                (lambda (&rest _)
                  (setq request-called t)
                  (hermes--promise-resolved nil))))
-      (hermes-memory-reset "all")
+      (with-temp-buffer
+        (hermes-memory-status-mode)
+        (hermes-inventory-test--memory-scope)
+        (hermes-memory-reset "all"))
       (should-not with-client-called)
       (should-not request-called))))
 
@@ -829,6 +841,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
              (cleanup (symbol-function 'hermes-dashboard-transport--cleanup-start-failure))
              (client (make-hermes-dashboard-transport-client :callback #'ignore))
              (response (hermes--promise-make))
+             (hermes-memory--profile "fixture")
              (draft (generate-new-buffer " *cold-start draft*"))
              (processes (process-list))
              (timers (copy-sequence timer-list))
@@ -859,6 +872,9 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                          (lambda (&rest _) response))
                         ((symbol-function 'hermes-dashboard-transport-api-request-async)
                          (lambda (&rest _) response)))
+                ;; This fixture already selected its backend profile.
+                (when (eq command 'hermes-memory-status)
+                  (setq-local hermes-memory--profile "fixture"))
                 ;; Invoke the advertised key, retaining real acquire/release.
                 (call-interactively (key-binding (kbd "g")))
                 (should (string-match-p "Loading" hermes-browser--status))
@@ -1022,6 +1038,7 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                   (progn
                     (with-current-buffer buffer
                       (hermes-browser--own-instance '("a" . "https://a.invalid"))
+                      (hermes-inventory-test--memory-scope)
                       (call-interactively #'hermes-memory-reset))
                     (should (= (cl-count "POST" requests :key #'cadr :test #'equal)
                                (if (eq boundary 'current) 1 0))))

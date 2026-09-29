@@ -365,6 +365,46 @@ constructor claim to an unclaimed origin."
                                (equal (cdr entry) (symbol-value (car entry))))
                              values))))))
 
+(defun hermes-browser--publish-text (owner text)
+  "Replace OWNER's text with TEXT while retaining native hook boundaries.
+Return non-nil only when both hook phases leave the same owner and text.
+Roll back errors and quits only while OWNER still owns the buffer; never
+undo a hook's transfer to a successor.  Prepare TEXT before calling this."
+  (when (hermes-browser--owner-current-p owner)
+    (with-current-buffer (car owner)
+      (let ((handle (prepare-change-group))
+            (tick (buffer-chars-modified-tick))
+            (retired (make-symbol "retired-publication"))
+            (undo-outer-limit nil)
+            (undo-limit most-positive-fixnum)
+            (undo-strong-limit most-positive-fixnum)
+            finished obsolete)
+        (unwind-protect
+            (progn
+              (activate-change-group handle)
+              ;; Emacs 29's combiner needs a nonempty undo tail to splice.
+              (unless buffer-undo-list (push nil buffer-undo-list))
+              (catch retired
+                (let ((inhibit-read-only t))
+                  (combine-change-calls (point-min) (point-max)
+                    (unless (and (eq (current-buffer) (car owner))
+                                 (hermes-browser--owner-current-p owner)
+                                 (= tick (buffer-chars-modified-tick)))
+                      (setq obsolete t)
+                      (throw retired nil))
+                    (let ((inhibit-modification-hooks t) (inhibit-quit t))
+                      (erase-buffer)
+                      (insert text)
+                      (setq tick (buffer-chars-modified-tick)))))
+                (setq finished
+                      (and (hermes-browser--owner-current-p owner)
+                           (= tick (buffer-chars-modified-tick))))))
+          (let ((inhibit-modification-hooks t) (inhibit-quit t))
+            (if (or finished obsolete
+                    (not (hermes-browser--owner-current-p owner)))
+                (accept-change-group handle)
+              (cancel-change-group handle))))))))
+
 (defun hermes-browser--owned-predicate (&optional variables mode)
   "Capture a current-owner predicate for optional VARIABLES and MODE.
 See `hermes-browser--owner' for the captured ownership contract."
@@ -422,6 +462,37 @@ Browser REST mutations retain their owner through authentication."
       ((error quit)
        (unless entered (funcall failure (error-message-string err)))
        (signal (car err) (cdr err))))))
+
+(defun hermes-browser--profiled-read (client path profile current-p)
+  "Read PATH from CLIENT in an explicit backend PROFILE under CURRENT-P.
+When PROFILE is nil, ask for an exact name from the backend catalogue.
+Return a promise of (PROFILE . RESULT); never guess the launch profile."
+  (let ((buffer (current-buffer)))
+    (hermes--promise-then
+     (if profile (hermes--promise-resolved profile)
+       (hermes--promise-then
+        (hermes-dashboard-transport-api-request-async
+         "GET" "/api/profiles" :client client :current-p current-p)
+        (lambda (catalog)
+          (when (funcall current-p)
+            (with-current-buffer buffer
+              (let* ((names (seq-filter
+                             (lambda (name)
+                               (and (stringp name)
+                                    (string-match-p "\\`[A-Za-z0-9][A-Za-z0-9_-]*\\'" name)
+                                    (not (equal (downcase name) "current"))))
+                             (mapcar (lambda (row) (hermes-transport--get row 'name))
+                                     (hermes-transport--get catalog 'profiles))))
+                     (name (and names (completing-read "Backend profile: " names nil t))))
+                (unless (member name names) (user-error "No backend profile selected"))
+                (copy-sequence name)))))))
+     (lambda (selected)
+       (when (and selected (funcall current-p))
+         (hermes--promise-map
+          (hermes-dashboard-transport-api-request-async
+           "GET" path :client client :query `((profile . ,selected)) :current-p current-p)
+          (lambda (result)
+            (when (funcall current-p) (cons selected result)))))))))
 
 (defun hermes-browser--mutation-context (&optional selection)
   "Start an operation and capture its owner and optional SELECTION thunk.
