@@ -8934,6 +8934,21 @@ See also:    @code{vm-summary-uninteresting-senders}
 
 @end macro
 
+@macro vmdocvmafterpostponemessagehook
+@defopt vm-after-postpone-message-hook
+@vindex vm-after-postpone-message-hook
+List of hook functions to be run after a message has been postponed.
+They run in the composition buffer, after the draft is in the folder and the
+source message has been dealt with, and before the composition is killed.  So
+the buffer is still there to be read, and changing it changes nothing: what
+was filed is already filed.
+
+@code{vm-postpone-message-hook} is the one that runs before, where a change still
+reaches the folder.
+@end defopt
+
+@end macro
+
 @macro vmdocvmautoexpungepostponedfolder
 @defopt vm-auto-expunge-postponed-folder
 @vindex vm-auto-expunge-postponed-folder
@@ -9004,8 +9019,8 @@ Default value: @code{"\\\\([^<\\11\\n ]+\\\\)@@"}
 @vindex vm-postpone-message-hook
 List of hook functions to be run before postponing a message.
 They run in the composition buffer, before it is written to the folder, so a
-function here can still change what is filed.  See @code{vm-postponed-message-hook}
-for after it is filed.
+function here can still change what is filed.  See
+@code{vm-after-postpone-message-hook} for after it is filed.
 @end defopt
 
 @end macro
@@ -9072,21 +9087,6 @@ Default value:
  "FCC:" "In-Reply-To:" "References:" "Subject:" "X-Priority:"
  "Priority:")
 @end example
-@end defopt
-
-@end macro
-
-@macro vmdocvmpostponedmessagehook
-@defopt vm-postponed-message-hook
-@vindex vm-postponed-message-hook
-List of hook functions to be run after a message has been postponed.
-They run in the composition buffer, after the draft is in the folder and the
-source message has been dealt with, and before the composition is killed.  So
-the buffer is still there to be read, and changing it changes nothing: what
-was filed is already filed.
-
-@code{vm-postpone-message-hook} is the one that runs before, where a change still
-reaches the folder.
 @end defopt
 
 @end macro

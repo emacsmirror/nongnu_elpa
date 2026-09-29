@@ -1460,7 +1460,7 @@ it had just filed."
       (delete-directory dir t))))
 
 (ert-deftest vm-postpone-test-the-after-hook-runs-with-the-draft-filed ()
-  "`vm-postponed-message-hook' runs after the draft is in the folder.
+  "`vm-after-postpone-message-hook' runs after the draft is in the folder.
 In the composition buffer, so a function there can still read what was
 postponed, and after the file exists, which is what \"postponed\" means."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-hook" t)))
@@ -1472,7 +1472,7 @@ postponed, and after the file exists, which is what \"postponed\" means."
               (vm-postponed-folder "drafts")
               (vm-default-folder-type 'From_)
               (vm-postponed-message-folder-buffer nil)
-              (vm-postponed-message-hook
+              (vm-after-postpone-message-hook
                (list (lambda ()
                        (setq saw (list :filed (file-exists-p drafts)
                                        :mode major-mode

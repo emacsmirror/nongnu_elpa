@@ -8,7 +8,7 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
-  * **`vm-postponed-message-hook` runs after a message is postponed.**  The
+  * **`vm-after-postpone-message-hook` runs after a message is postponed.**  The
     existing `vm-postpone-message-hook` runs before the composition is written
     to the folder, where a function can still change what is filed; this one
     runs after the draft is there and the source message has been dealt with,
