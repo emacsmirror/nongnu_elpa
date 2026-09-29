@@ -235,11 +235,11 @@ Return a plist of secret and non-secret key/val pairs."
             `( :access_token ,token
                :client_id ,(plist-get user-details :client_id)
                :client_secret ,(plist-get user-details :client_secret))))
-         (deets (copy-sequence user-details))
          (sans-secrets
           (when mastodon-auth-encrypt-tokens-plstore
-            (dolist (x '(:client_id :client_secret :access_token) deets)
-              (cl-remf deets x))))
+            (let ((deets (copy-sequence user-details)))
+              (dolist (x '(:client_id :client_secret :access_token) deets)
+                (cl-remf deets x)))))
          (print-length nil)
          (print-level nil))
     (plstore-put plstore "active-user"
