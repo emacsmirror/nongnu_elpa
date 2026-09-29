@@ -6,6 +6,26 @@
 (require 'hermes-test-helpers)
 (require 'url-parse)
 
+(ert-deftest hermes-test-chat-notifications-retain-policy-and-actions ()
+  "The chat fixture captures real policy output, not a disabled notification."
+  (require 'notifications)
+  (let ((native (symbol-function 'notifications-notify)) opened)
+    (hermes-test-with-chat-buffer
+      (cl-letf (((symbol-function 'frame-focus-state) (lambda () nil)))
+        (should (= 1 (hermes-notifications-notify
+                      'chat-reply "Reply" "Literal body"
+                      :buffer (current-buffer)
+                      :open (lambda () (setq opened t)))))
+        (should-not (hermes-notifications-notify
+                     'kanban-done "Disabled" "Not delivered"))
+        (let ((arguments (car hermes-test-notifications)))
+          (should (= 1 (length hermes-test-notifications)))
+          (should (equal "Reply" (plist-get arguments :title)))
+          (should (equal "Literal body" (plist-get arguments :body)))
+          (funcall (plist-get arguments :on-action) 1 "default")
+          (should opened))))
+    (should (eq native (symbol-function 'notifications-notify)))))
+
 (ert-deftest hermes-test-wait-until-immediate-and-real-timer ()
   (should (eq (hermes-test--wait-until (lambda () 'ready) 0) 'ready))
   (let* (ready

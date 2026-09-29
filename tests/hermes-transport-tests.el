@@ -4882,20 +4882,30 @@ This is the contract that replaces hand-mirroring every event name: an invented
   "A failing legacy callback cannot strand remote startup before socket open."
   :tags '(candidate-4a)
   (let ((hermes-dashboard-transport-ready-timeout nil)
-        client opened)
+        client opened (callback-count 0))
     (let ((hermes-dashboard-transport-websocket-open-function
            (lambda (_url _client) (setq opened t) 'fake-websocket)))
-      (setq client
-            (hermes-dashboard-transport--start-remote
-             :host "dash.example" :port 443 :remote-url "https://dash.example"
-             :remote-auth-method 'token :token "secret"
-             :callback (lambda (_event) (error "consumer failed"))))
+      ;; `with-demoted-errors' deliberately honors `debug-on-error'.  ERT
+      ;; 29.1 enables that debugger even for handled errors; exercise normal
+      ;; callback containment, leaving the assertions outside this binding.
+      (let ((debug-on-error nil))
+        (setq client
+              (hermes-dashboard-transport--start-remote
+               :host "dash.example" :port 443 :remote-url "https://dash.example"
+               :remote-auth-method 'token :token "secret"
+               :callback (lambda (_event)
+                           (cl-incf callback-count)
+                           (error "consumer failed")))))
+      (should (> callback-count 0))
       (should opened)
       (should (eq (hermes-dashboard-transport-client-websocket client)
                   'fake-websocket))
-      (hermes-dashboard-transport--handle-frame
-       client '((jsonrpc . "2.0") (method . "event")
-                (params . ((type . "gateway.ready")))))
+      (let ((before callback-count))
+        (let ((debug-on-error nil))
+          (hermes-dashboard-transport--handle-frame
+           client '((jsonrpc . "2.0") (method . "event")
+                    (params . ((type . "gateway.ready"))))))
+        (should (> callback-count before)))
       (should (eq (hermes--promise-state
                    (hermes-dashboard-transport-client-ready-promise client))
                   'resolved))

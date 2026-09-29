@@ -152,5 +152,34 @@
        (hermes-notifications-notify 'chat-error "Hermes error" "Failed"))
       (should (equal text "Hermes error: Failed")))))
 
+(ert-deftest hermes-notifications-native-unavailable-bus-falls-back ()
+  "A real native notification with an unavailable bus reaches the echo fallback."
+  ;; A fresh process preserves the optional-load assertion and cannot inherit
+  ;; integration fixtures.  Use an owned nonexistent socket, never a live bus.
+  (let* ((directory (make-temp-file "hermes-notification-bus-" t))
+         (process-environment (copy-sequence process-environment))
+         (library-directory
+          (file-name-directory (locate-library "hermes-notifications"))))
+    (unwind-protect
+        (progn
+          (setenv "DBUS_SESSION_BUS_ADDRESS"
+                  (concat "unix:path=" (expand-file-name "absent" directory)))
+          (with-temp-buffer
+            (should
+             (zerop
+              (call-process
+               (expand-file-name invocation-name invocation-directory)
+               nil (list (current-buffer) t) nil "-Q" "--batch"
+               "-L" library-directory "--eval"
+               (prin1-to-string
+                '(progn
+                   (require 'hermes-notifications)
+                   (princ (format "RESULT=%S\n"
+                                  (hermes-notifications-notify
+                                   'chat-error "Native fallback" "Literal body"))))))))
+            (should (string-match-p "Native fallback: Literal body" (buffer-string)))
+            (should (string-match-p "RESULT=nil" (buffer-string)))))
+      (delete-directory directory t))))
+
 (provide 'hermes-notifications-tests)
 ;;; hermes-notifications-tests.el ends here
