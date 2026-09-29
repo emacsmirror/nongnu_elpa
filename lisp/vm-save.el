@@ -821,9 +821,15 @@ arguments after the command finished."
 	m process)
     (vm-retrieve-operable-messages 1 mlist :fail t)
     (with-current-buffer buffer      (erase-buffer))
-    (setq process (start-process command buffer 
-				 (or shell-file-name "sh")
-				 shell-command-switch command))
+    ;; A pipe, not a pty.  `process-send-eof' on a pty sends ^D, which the
+    ;; terminal driver turns into end of file only at the start of a line, so
+    ;; text not ending in a newline left the command reading for ever and VM
+    ;; waiting on it (#881).  A pty would also echo the message back into the
+    ;; output buffer and translate its line endings.
+    (setq process (let ((process-connection-type nil))
+		    (start-process command buffer
+				   (or shell-file-name "sh")
+				   shell-command-switch command)))
     (set-process-sentinel 
      process 
      `(lambda (process status) 
