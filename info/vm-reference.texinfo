@@ -5120,6 +5120,18 @@ List of MIME types which should be saved.
 Default value: @code{("application" "x-unknown" "application/x-gzip")}
 @end defopt
 
+@defopt vm-mime-shr-inhibit-images
+@vindex vm-mime-shr-inhibit-images
+Non-nil means the @code{shr} HTML handler displays no images.
+
+A remote image in a message is fetched from the sender's server, which then
+knows the message was opened and when.  That is why this is on by default,
+and why VM binds it while rendering rather than leaving it to the shr
+settings a reader has chosen for the web.
+
+Default value: @code{t}
+@end defopt
+
 @defopt vm-mime-text/html-handler
 @vindex vm-mime-text/html-handler
 The library used for displaying HTML messages.  The possible
@@ -5128,10 +5140,13 @@ values are:
   emacs-w3m  The emacs interface to the w3m viewer,
   w3m        The w3m viewer used externally to convert to plain text,
   lynx       The lynx viewer used externally to convert to plain text,
+  shr        Emacs's own renderer, which needs nothing installed,
   auto-select Automatic selection among these alternatives, and
   nil        No internal display of HTML messages.
 
 @end example
+Only @code{shr} is always available; the others need a package or a program.
+@code{auto-select} takes the first this machine has and falls back to @code{shr}.
 
 Default value: @code{auto-select}
 @end defopt

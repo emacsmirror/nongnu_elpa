@@ -5109,6 +5109,62 @@ Content-type and Content-length in front of the file, without binding
           (should-not (vm-mime-fetch-url "http://example.invalid/x" target)))
       (kill-buffer target))))
 
+(ert-deftest vm-mime-test-shr-handler-renders-html ()
+  "The shr handler turns HTML into text in place, needing nothing installed."
+  (skip-unless (and (fboundp 'libxml-available-p) (libxml-available-p)))
+  (with-temp-buffer
+    (insert "<html><body><p>Hello <b>world</b>.</p></body></html>")
+    ;; the dispatcher hands over [start, end-1), with a placeholder at end-1
+    (goto-char (point-max))
+    (insert "z")
+    (vm-mime-display-internal-shr-text/html (point-min) (point-max) nil)
+    (let ((text (buffer-string)))
+      (should (string-match-p "Hello world" text))
+      (should-not (string-match-p "<b>" text)))))
+
+(ert-deftest vm-mime-test-shr-handler-inhibits-images-while-rendering ()
+  "The handler binds shr's image settings, and binds them where shr sees them.
+A remote image in mail tells the sender it was opened, so this must not
+depend on the shr settings a reader chose for the web: the outer binding
+here says images are fine and the handler must still inhibit them.
+
+It also pins the dynamic binding.  This file is lexical-binding, so a
+`let' of a variable whose defvar the compiler has not seen binds lexically
+and shr would never see it; that is why vm-mime.el requires shr at compile
+time as well as at run time."
+  (skip-unless (and (fboundp 'libxml-available-p) (libxml-available-p)))
+  ;; before binding any of shr's variables: defcustom on a let-bound symbol
+  ;; raises, and the handler requires shr itself
+  (require 'shr)
+  (let ((seen nil))
+    (cl-letf (((symbol-function 'shr-insert-document)
+               (lambda (&rest _)
+                 (setq seen (list :inhibit shr-inhibit-images
+                                  :blocked shr-blocked-images)))))
+      (with-temp-buffer
+        (insert "<html><body><p>hi</p>"
+                "<img src=\"http://tracker.invalid/beacon.gif\">"
+                "</body></html>")
+        (goto-char (point-max))
+        (insert "z")
+        (let ((vm-mime-shr-inhibit-images t)
+              ;; what a reader might have set for browsing the web
+              (shr-inhibit-images nil)
+              (shr-blocked-images nil))
+          (vm-mime-display-internal-shr-text/html
+           (point-min) (point-max) nil))))
+    (should (plist-get seen :inhibit))
+    (should (equal "." (plist-get seen :blocked)))))
+
+(ert-deftest vm-mime-test-auto-select-falls-back-to-shr ()
+  "With no w3m and no lynx, `auto-select' answers shr rather than nil.
+It used to answer nil, and VM then said it had no handler for text/html."
+  (skip-unless (and (fboundp 'libxml-available-p) (libxml-available-p)))
+  (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
+            ((symbol-function 'locate-library) (lambda (&rest _) nil)))
+    (let ((vm-mime-text/html-handler 'auto-select))
+      (should (eq 'shr (vm-mime-text/html-handler))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

@@ -29,6 +29,11 @@
 (require 'sendmail)
 (require 'smime)
 (eval-when-compile (require 'cl-lib))
+;; For the shr handler.  At compile time so that the let-bindings of shr's
+;; variables are compiled as dynamic: binding a variable whose defvar the
+;; compiler has not seen makes a lexical binding in this file, and shr would
+;; never see it.  The handler requires it again at run time.
+(eval-when-compile (require 'shr))
 
 ;; Say so if this file's compiled form outlives the VM it was built
 ;; against; see `vm-assert-version' (#791).
@@ -1754,7 +1759,13 @@ means to that function that the region is encoded already.")
                   ((executable-find "w3m")
                    'w3m)
                   ((executable-find "lynx")
-                   'lynx)))
+                   'lynx)
+                  ;; shr needs nothing installed, so it is last and it is
+                  ;; always there: a reader with none of the above used to
+                  ;; get no HTML display at all.  It wants a libxml2-enabled
+                  ;; Emacs, which is the usual build but not guaranteed.
+                  ((and (fboundp 'libxml-available-p) (libxml-available-p))
+                   'shr)))
     vm-mime-text/html-handler))
 
 (defun vm-mime-can-display-internal (layout &optional deep)
@@ -2517,6 +2528,25 @@ does not come out as wide as the window the message was read in."
    (format "%s -force_html -dump -pseudo_inlines -stdin -width=%d"
 	   vm-lynx-program (vm-mime-html-columns))
    nil t))
+
+(defun vm-mime-display-internal-shr-text/html (start end _layout)
+  "Render the HTML between START and END with shr, which Emacs ships.
+Unlike the other handlers this needs nothing installed, so it is what makes
+HTML display work on a stock Emacs.
+
+No image is fetched.  A remote image in mail reports back to whoever sent
+the message that it was opened, so `vm-mime-shr-inhibit-images' is bound
+here rather than left to the reader's shr settings, which are for the web."
+  (require 'shr)
+  (let ((document (libxml-parse-html-region start (1- end)))
+	(shr-width (vm-mime-html-columns))
+	(shr-inhibit-images vm-mime-shr-inhibit-images)
+	(shr-blocked-images (if vm-mime-shr-inhibit-images "." nil))
+	;; the presentation buffer is VM's to lay out, not shr's
+	(shr-use-fonts nil))
+    (delete-region start (1- end))
+    (goto-char start)
+    (shr-insert-document document)))
 
 (defun vm-mime-display-internal-text/html (layout)
   "Dispatch handling of html to the actual html handler."

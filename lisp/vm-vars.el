@@ -2035,15 +2035,30 @@ values are:
   emacs-w3m  The emacs interface to the w3m viewer,
   w3m        The w3m viewer used externally to convert to plain text,
   lynx       The lynx viewer used externally to convert to plain text,
+  shr        Emacs\\='s own renderer, which needs nothing installed,
   auto-select Automatic selection among these alternatives, and
   nil        No internal display of HTML messages.
+
+Only `shr' is always available; the others need a package or a program.
+`auto-select' takes the first this machine has and falls back to `shr'.
 "
   :group 'vm-mime
   :type '(choice (const :tag "Do not display HTML messages." nil)
                  (const :tag "Autoselect best method" auto-select)
+                 (const shr)
                  (const emacs-w3m)
                  (const w3m)
                  (const lynx)))
+
+(defcustom vm-mime-shr-inhibit-images t
+  "*Non-nil means the `shr' HTML handler displays no images.
+
+A remote image in a message is fetched from the sender\\='s server, which then
+knows the message was opened and when.  That is why this is on by default,
+and why VM binds it while rendering rather than leaving it to the shr
+settings a reader has chosen for the web."
+  :group 'vm-mime
+  :type 'boolean)
 
 (defcustom vm-mime-text/html-blocker "<img[^>]*\\s-src=."
   "Obsolete.  Nothing reads this.

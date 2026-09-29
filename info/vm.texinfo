@@ -3701,6 +3701,7 @@ displayed in Emacs using a variety of packages.  VM knows about:
 @cindex lynx
 @cindex w3m
 @cindex Emacs-w3m
+@cindex shr
 @table @code
 @item emacs-w3m
 The @command{w3m} browser driven from inside Emacs, which renders into the
@@ -3710,12 +3711,23 @@ presentation buffer and can show images.  @xref{@acronym{HTML} display}.
 The same program run outside Emacs, converting the part to plain text.
 @item lynx
 The @command{lynx} browser run the same way.
+@item shr
+Emacs's own renderer, the one @command{eww} uses.  It needs nothing
+installed, only an Emacs built with libxml2, so it is the one that is always
+available.
 @end table
+
+@vindex vm-mime-shr-inhibit-images
+@code{shr} fetches no image while VM renders.  A remote image in a message
+is fetched from the sender's server, which then learns that the message was
+opened and when; @code{vm-mime-shr-inhibit-images} is bound while rendering
+so that this does not depend on the @code{shr} settings chosen for the web.
 
 @code{vm-mime-text/html-handler} names which of them is used.
 @code{auto-select}, the default, takes the first this machine has, in the
 order above: @code{emacs-w3m} needs both the library and the @command{w3m}
-program, so a library without the program falls through to the next.
+program, so a library without the program falls through to the next, and
+@code{shr} is last because it is the one that is always there.
 @code{nil} asks VM not to display @acronym{HTML} content internally at all.
 
 @cindex no handler for @acronym{HTML}
