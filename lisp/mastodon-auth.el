@@ -280,7 +280,7 @@ work, with no need for auth flow/JS-capable browser."
                    mastodon-active-user
                    (url-domain
                     (url-generic-parse-url mastodon-instance-url))))))
-      (push `(,mastodon-instance-url ,token) mastodon-auth--token-alist)
+      (push `(,mastodon-instance-url . ,token) mastodon-auth--token-alist)
       token))
    (t
     ;; user access-token needs to fetched from the server and
