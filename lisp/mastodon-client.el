@@ -194,6 +194,7 @@ Return the plist after the operation."
         (progn
           (mastodon-auth-source-token
            mastodon-instance-url username token :create)
+          ;; FIXME: we store token even if auth-source:
           (mastodon-client-plstore-put plstore key user-and-token ; nil if encrypting
                         secrets sans-secrets token))
       ;; plstore only:
