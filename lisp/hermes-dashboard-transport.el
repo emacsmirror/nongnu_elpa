@@ -1603,8 +1603,10 @@ base URL."
   "Return a shared dashboard client for the resolved endpoint, refcounted.
 A live client already serving the endpoint is reused and its reference count
 incremented; otherwise a fresh client is started, registered under the endpoint
-key, and returned with a reference count of 1.  CALLBACK, HOST, PORT, COMMAND,
-TOKEN, BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD match
+key, and returned with a reference count of 1.  If startup reenters acquisition,
+reuse the registered successor and stop the redundant startup client.
+CALLBACK, HOST, PORT, COMMAND, TOKEN, BASE-ENVIRONMENT, START-MODE, REMOTE-URL,
+and REMOTE-AUTH-METHOD match
 `hermes-dashboard-transport-start'; CALLBACK is ignored when an existing client
 is reused, since attached buffers subscribe rather than seize the callback."
   (let* ((key (hermes-dashboard-transport--endpoint-key
@@ -1626,13 +1628,26 @@ is reused, since attached buffers subscribe rather than seize the callback."
                      :token token :base-environment base-environment
                      :start-mode start-mode :remote-url remote-url
                      :remote-auth-method remote-auth-method)))
-        (unless (hermes-dashboard-transport--client-viable-p client)
-          (signal 'user-error
-                  '("Hermes dashboard transport failed during startup")))
-        (setf (hermes-dashboard-transport-client-refcount client) 1
-              (hermes-dashboard-transport-client-endpoint-key client) key)
-        (puthash key client hermes-dashboard-transport--clients)
-        client))))
+        ;; Credential readers can recursively acquire this endpoint.  Do not
+        ;; replace their registered owner with our now redundant startup.
+        (setq existing (gethash key hermes-dashboard-transport--clients))
+        (if (hermes-dashboard-transport--client-viable-p existing)
+            (progn
+              (hermes-dashboard-transport-stop client)
+              ;; Stop runs callbacks: do not resurrect a retired successor.
+              (unless (and (hermes-dashboard-transport--client-viable-p existing)
+                           (eq existing (gethash key hermes-dashboard-transport--clients)))
+                (user-error "Hermes dashboard acquisition was superseded"))
+              (hermes-dashboard-transport--cancel-idle-timer existing)
+              (cl-incf (hermes-dashboard-transport-client-refcount existing))
+              existing)
+          (unless (hermes-dashboard-transport--client-viable-p client)
+            (signal 'user-error
+                    '("Hermes dashboard transport failed during startup")))
+          (setf (hermes-dashboard-transport-client-refcount client) 1
+                (hermes-dashboard-transport-client-endpoint-key client) key)
+          (puthash key client hermes-dashboard-transport--clients)
+          client)))))
 
 ;;; Idle close and release
 

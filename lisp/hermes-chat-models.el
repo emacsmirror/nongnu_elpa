@@ -41,6 +41,9 @@
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
 
+(defvar-local hermes-chat--model-picker-invocation nil
+  "Token of the latest model picker admitted in this chat.")
+
 (defun hermes-chat--model-id (model)
   "Return the model id string from a `model.options' MODEL entry."
   (or (hermes-transport--scalar-string model)
@@ -189,9 +192,10 @@ identity is part of the selection."
               hermes-chat--dashboard-create-fast-p)
     (setq hermes-chat--create-overrides-retry-session-id nil)))
 
-(defun hermes-chat--model-switch-context ()
-  "Return the current chat identity for an asynchronous model switch."
+(defun hermes-chat--model-switch-context (&optional invocation)
+  "Return the current chat identity, optionally owned by picker INVOCATION."
   (list :buffer (current-buffer)
+        :invocation invocation
         :client hermes-chat--dashboard-client
         :session-id hermes-chat--dashboard-active-session-id
         :lifecycle-generation hermes-chat--lifecycle-generation
@@ -205,6 +209,9 @@ identity is part of the selection."
         (with-current-buffer buffer
           (and (hermes-chat--current-lifetime-p
                 (plist-get context :lifecycle-generation))
+               (or (null (plist-get context :invocation))
+                   (eq hermes-chat--model-picker-invocation
+                       (plist-get context :invocation)))
                (eq hermes-chat--dashboard-client
                    (plist-get context :client))
                (equal hermes-chat--dashboard-active-session-id
@@ -275,8 +282,10 @@ confirmation prompt."
                       (hermes-transport--get result 'confirm_message))
                      "Confirm switching to this model? "))
                 (hermes-chat--apply-model buffer client candidate t context)
-              (hermes-chat--insert-local-status
-               "Model switch cancelled" 'ready)))
+              (when (hermes-chat--model-switch-current-p context)
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--insert-local-status
+                   "Model switch cancelled" 'ready)))))
         (when (hermes-chat--dashboard-session-attached-p)
           (hermes-chat--clear-pending-model-override))
         (hermes-chat--insert-local-status
@@ -297,7 +306,8 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
       (hermes-chat--connect-provider-candidate
        buffer client provider
        (lambda ()
-         (hermes-chat--apply-model buffer client candidate nil context))))
+         (hermes-chat--apply-model buffer client candidate nil context))
+       context))
      (t
       (message
        "Hermes: %s requires %s authentication; authenticate it before switching models"
@@ -331,10 +341,10 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
                 (hermes-chat--apply-selected-model
                  buffer client candidate provider context)))))))))
 
-(defun hermes-chat--request-model-switch (client)
-  "Fetch fresh model choices through CLIENT and prompt for a selection."
+(defun hermes-chat--request-model-switch (client invocation)
+  "Fetch fresh model choices through CLIENT for picker INVOCATION."
   (let ((buffer (current-buffer))
-        (context (hermes-chat--model-switch-context)))
+        (context (hermes-chat--model-switch-context invocation)))
     (hermes-dashboard-transport-model-options-cached
      client
      :session-id hermes-chat--dashboard-active-session-id
@@ -351,6 +361,7 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
   "Switch the model used by the current Hermes chat session.
 Always fetch the model list from the owning dashboard, also updating the
 completion cache.  REFRESH is retained for compatibility and has no effect.
+Only the latest picker invocation in this chat may apply its selection.
 Before the first session, this may open the shared dashboard socket but does
 not create a session; the choice is stored locally.  Detached sessions must
 reconnect or resume first, except for an owned failed-create retry."
@@ -359,10 +370,17 @@ reconnect or resume first, except for an owned failed-create retry."
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before switching models"))
   (hermes-chat--require-setting-session)
-  (hermes-chat--request-model-switch
-   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-       hermes-chat--dashboard-client
-     (hermes-chat--dashboard-control-client))))
+  (let* ((buffer (current-buffer))
+         (lifetime hermes-chat--lifecycle-generation)
+         (invocation (setq hermes-chat--model-picker-invocation
+                           (make-symbol "model-picker")))
+         (client
+          (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+              hermes-chat--dashboard-client
+            (hermes-chat--dashboard-control-client))))
+    (hermes-chat--in-lifetime buffer lifetime
+      (when (eq invocation hermes-chat--model-picker-invocation)
+        (hermes-chat--request-model-switch client invocation)))))
 
 ;; Reused from `hermes-onboarding'.  That module requires `hermes-browser',
 ;; which requires this file, so it is loaded lazily inside the commands below to
@@ -378,20 +396,21 @@ reconnect or resume first, except for an owned failed-create retry."
                    (hermes-transport--get provider 'slug)))
            :test #'equal))
 
-(defun hermes-chat--connect-provider-candidate (buffer client provider
-                                                       &optional on-connected)
+(defun hermes-chat--connect-provider-candidate
+    (buffer client provider &optional on-connected context)
   "Read a key for PROVIDER and save it on CLIENT scoped to BUFFER's session.
 ON-CONNECTED, when given, runs after a successful save -- the model picker uses
-it to apply the model the user originally chose."
+it to apply the model the user originally chose.  CONTEXT retains its owner."
   (require 'hermes-onboarding)
-  (let* ((context (with-current-buffer buffer
-                    (hermes-chat--model-switch-context)))
+  (let* ((context (or context (with-current-buffer buffer
+                               (hermes-chat--model-switch-context))))
          (slug (hermes-transport--scalar-string
                 (hermes-transport--get provider 'slug)))
          (name (or (hermes-transport--scalar-string
                     (hermes-transport--get provider 'name))
                    slug))
-         (key (hermes-onboarding--read-key provider)))
+         (key (and (hermes-chat--model-switch-current-p context)
+                   (hermes-onboarding--read-key provider))))
     (unless (hermes-chat--model-switch-current-p context)
       (user-error "Hermes provider request is no longer current"))
     (with-current-buffer buffer

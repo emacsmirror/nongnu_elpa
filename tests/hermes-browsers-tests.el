@@ -534,6 +534,62 @@
               (when (buffer-live-p buffer) (kill-buffer buffer)))
             buffers))))
 
+(ert-deftest hermes-browser-passive-client-lookup-preserves-caller-lifecycles ()
+  "Both passive callers agree without borrowing each other's cleanup policy."
+  (let* ((local '("local" . "http://local.invalid"))
+         (remote '("remote" . "http://remote.invalid"))
+         (hermes-instances (list remote))
+         (hermes-dashboard-transport--profile-cache nil)
+         (pending (hermes--promise-make))
+         (client (hermes-test--dashboard-client))
+         (other (hermes-test--dashboard-client))
+         (acquires 0) (releases 0) (prompts 0) fetched)
+    (hermes-test-with-chat-buffer
+     (setq hermes-instance remote hermes-chat--dashboard-client client)
+     (hermes-test-with-chat-buffer
+      (setq hermes-instance local hermes-chat--dashboard-client other
+            hermes-instances (list local remote))
+      (with-temp-buffer
+        ;; An unrelated buffer's client slot never grants chat ownership.
+        (setq-local hermes-instance remote)
+        (setq-local hermes-chat--dashboard-client other)
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (&rest _) (cl-incf prompts) ""))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _) (cl-incf acquires) other))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (_client) (cl-incf releases)))
+                  ((symbol-function 'hermes-dashboard-transport-profile-list-async)
+                   (lambda (owner) (setq fetched owner) pending)))
+          (dolist (lookup '(hermes-browser--existing-client
+                            hermes-chat--existing-dashboard-client))
+            (should (eq (funcall lookup) client)))
+          (hermes-browser--with-client
+           (lambda (owner done)
+             (should (eq owner client))
+             (funcall done) (funcall done)))
+          (should-not (hermes-chat--profile-list-payload))
+          (should (eq fetched client))
+          (should (eq (hermes--promise-state pending) 'pending))
+          (should (= acquires 0))
+          (should (= releases 0))
+          (setf (hermes-dashboard-transport-client-websocket client) nil)
+          (dolist (instance (list remote nil))
+            (setq hermes-instance instance)
+            (dolist (lookup '(hermes-browser--existing-client
+                              hermes-chat--existing-dashboard-client))
+              (should-not (funcall lookup))))
+          (should (= acquires 0))
+          (should (= prompts 0))
+          ;; Missing local reuse still belongs to the browser's once-only lease.
+          (setq hermes-instance remote)
+          (hermes-browser--with-client
+           (lambda (owner done)
+             (should (eq owner other))
+             (funcall done) (funcall done)))
+          (should (= acquires 1))
+          (should (= releases 1))))))))
+
 (ert-deftest hermes-browser-existing-client-does-not-prompt-without-context ()
   "Passive client lookup returns nil when several instances are ambiguous."
   (let ((hermes-instances '(("local" . "http://127.0.0.1:9119")

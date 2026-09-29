@@ -1656,14 +1656,32 @@ no buffer is attached."
            (start-mode (hermes-chat--ensure-resolved-start-mode instance))
            (hermes-dashboard-transport-url (hermes-instance-url instance)))
       (hermes-chat--stop-dashboard-client)
-      (setq hermes-chat--dashboard-session-ready-p nil
-            hermes-chat--dashboard-active-session-id nil
-            hermes-chat--dashboard-client
-            (hermes-dashboard-transport-acquire
-             :callback (or callback #'ignore)
-             :start-mode start-mode))
-      (hermes-chat--warm-model-options hermes-chat--dashboard-client)
-      hermes-chat--dashboard-client)))
+      (hermes-chat--dashboard-acquire-client start-mode callback))))
+
+(defun hermes-chat--dashboard-acquire-client (start-mode callback)
+  "Acquire and adopt a client for START-MODE with fallback CALLBACK.
+Credential input may attach a successor in this buffer.  Release only this
+acquisition's lease if the buffer already owns a client or retires meanwhile."
+  (let ((buffer (current-buffer))
+        (lifetime hermes-chat--lifecycle-generation)
+        (generation hermes-chat--transport-generation)
+        client adopted)
+    (unwind-protect
+        (progn
+          (setq client (hermes-dashboard-transport-acquire
+                        :callback (or callback #'ignore)
+                        :start-mode start-mode))
+          (hermes-chat--in-lifetime buffer lifetime
+            (when (= generation hermes-chat--transport-generation)
+              (unless hermes-chat--dashboard-client
+                (setq hermes-chat--dashboard-client client
+                      adopted t
+                      hermes-chat--dashboard-session-ready-p nil
+                      hermes-chat--dashboard-active-session-id nil)
+                (hermes-chat--warm-model-options client))
+              hermes-chat--dashboard-client)))
+      (when (and client (not adopted))
+        (hermes-dashboard-transport-release client)))))
 
 (defun hermes-chat--dashboard-set-subscriber (client callback)
   "Bind CALLBACK as this buffer's subscriber function on shared CLIENT.

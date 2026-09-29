@@ -297,15 +297,7 @@ Invalidate the previous instance's rows and registered caches first."
 
 (defun hermes-browser--existing-client ()
   "Return a live dashboard client for the current Hermes instance, or nil."
-  (when-let* ((instance (hermes-instance-context)))
-    (cl-some (lambda (buffer)
-               (with-current-buffer buffer
-                 (and (derived-mode-p 'hermes-chat-mode)
-                      (equal hermes-instance instance)
-                      (hermes-chat--dashboard-client-live-p
-                       hermes-chat--dashboard-client)
-                      hermes-chat--dashboard-client)))
-             (buffer-list))))
+  (hermes-chat--existing-dashboard-client))
 
 (defvar hermes-browser--request-error-owner nil
   "Optional (BUFFER GENERATION MODE) owner for a browser request error.")
