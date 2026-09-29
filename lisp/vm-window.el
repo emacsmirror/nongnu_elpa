@@ -573,12 +573,6 @@ FORCE deletes it even when it is the last frame on its terminal."
   "Iconify FRAME, which defaults to the selected frame."
   (iconify-frame frame))
 
-(defun vm-deiconify-frame (frame)
-  "Deiconify FRAME."
-  (when (eq (frame-visible-p frame) 'icon)
-    (select-frame frame)
-    (iconify-or-deiconify-frame)))
-
 (defun vm-raise-frame (&optional frame)
   "Raise FRAME, which defaults to the selected frame."
   (raise-frame frame))

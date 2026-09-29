@@ -333,10 +333,6 @@ unique objects.")
 ;; VM folders in the world already have nil's written in this field.
 (defsubst vm-headers-to-be-retrieved-of (message)
   (aref (aref message 3) 26))
-;; whether the headers of the message are temporarily stored in folder
-(defsubst vm-headers-to-be-discarded-of (message)
-  (aref (aref message 3) 27))
-;; subject string of the message for summary purposes
 (defsubst vm-decoded-summary-subject-of (message)
   (aref (aref message 3) 28))
 (defalias 'vm-summary-subject-of 'vm-decoded-summary-subject-of)
@@ -773,21 +769,6 @@ the headers/body of M."
 		(vm-build-threads (list v-m)))
 	      ))
 	  (vm-virtual-messages-of m))))
-
-(defun vm-pp-message (m)
-  (pp
-   (vector
-     ':location-data
-     (vm-zip-vectors vm-location-data-fields (vm-location-data-of m))
-     ':softdata
-     (vm-zip-vectors vm-softdata-fields (vm-softdata-of m))
-     ':attributes
-     (vm-zip-vectors vm-attributes-fields (vm-attributes-of m))
-     ':cached-data
-     (vm-zip-vectors vm-cached-data-fields (vm-cached-data-of m))
-     ':mirror-data
-     (vm-zip-vectors vm-mirror-data-fields (vm-mirror-data-of m))))
-  nil)
 
 (provide 'vm-message)
 ;;; vm-message.el ends here

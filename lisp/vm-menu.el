@@ -782,9 +782,6 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 (put 'vm-menu-mail-to 'vm-called-by-vm t)
 
 
-(defun vm-menu--global-menubar ()
-  (lookup-key (current-global-map) [menu-bar]))
-
 (defun vm-menu-initialize-vm-mode-menu-map ()
   (if (null vm-mode-menu-map)
       (let ((map (make-sparse-keymap))
