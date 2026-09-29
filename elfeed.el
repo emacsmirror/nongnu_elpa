@@ -50,7 +50,7 @@
   :group 'web
   :group 'comm)
 
-(defconst elfeed-version "4.0.1"
+(defconst elfeed-version "4.2.1"
   "The Elfeed version, used for example by `elfeed-user-agent'.")
 
 (defcustom elfeed-entry-point 'elfeed-search
