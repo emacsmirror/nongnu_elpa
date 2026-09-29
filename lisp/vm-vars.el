@@ -4681,29 +4681,25 @@ use any URL retrieval methods."
 
 (defcustom vm-url-browser 'browse-url
   "*The default web browser to be used for following URLs (hyperlinks)
-in messages.  
+in messages.
 
 Clicking mouse-2 on a URL will send it to the default browser.
 Moving point to a character within the URL and pressing RETURN
 will also send the URL to the default browser.
 
-If the value of `vm-url-browser' is a string, it should specify
-name of an external browser to run.  The URL will be passed to
-the program as its first argument after the program switches
-specified by `vm-url-browser-switches', if any.
+If the value is a symbol, it should name a Lisp function, which is
+called with the URL as its only argument.  `browse-url' is the default
+and the setting to want: which browser it opens is decided by
+`browse-url-browser-function', not by VM.
 
-If the value of `vm-url-browser' is a symbol, it should specify a
-Lisp function to call.  The URL will be passed to the function as
-its first and only argument.  The Emacs `browse-url' function is
-an excellent choice.  It is the default value of the variable.
-VM also defines a number of browser functions of the form
-`vm-mouse-send-url-to-xxx', where xxx is the name of a browser.
-The `xxx' can be netscape, mmosaic, mosaic, opera, mozilla,
-konqueror, firefox, window-system or clipboard.  If it is
-window-system then the URL is passed to the window system's
-\"copy\" mechanism so that it can be pasted somewhere else.  If it
-is clipboard, the URL is sent to the X clipboard.
+Two other handlers VM defines are not browsers:
+`vm-mouse-send-url-to-window-system' passes the URL to the window
+system's \"copy\" mechanism so it can be pasted elsewhere, and
+`vm-mouse-send-url-to-clipboard' sends it to the X clipboard.
 
+If the value is a string, it names an external browser to run.  The URL
+is passed as its first argument, after the switches in
+`vm-url-browser-switches'.
 
 A nil value means VM should not enable URL passing to browsers."
   :group 'vm-url
@@ -5626,125 +5622,6 @@ movemail implementations offer is of no use here."
 named by `vm-movemail-program'."
   :group 'vm-helpers
   :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-netscape-program "netscape"
-  "*Name of program to use to run Netscape.
-`vm-mouse-send-url-to-netscape' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-netscape-program-switches nil
-  "*List of command line switches to pass to Netscape."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-opera-program "opera"
-  "*Name of program to use to run Opera.
-`vm-mouse-send-url-to-opera' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-opera-program-switches nil
-  "*List of command line switches to pass to Opera."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mozilla-program nil
-  "*Name of program to use to run Mozilla.
-`vm-mouse-send-url-to-mozilla' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mozilla-program-switches nil
-  "*List of command line switches to pass to Mozilla."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mosaic-program nil
-  "*Name of program to use to run Mosaic.
-`vm-mouse-send-url-to-mosaic' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mosaic-program-switches nil
-  "*List of command line switches to pass to Mosaic."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mmosaic-program nil
-  "*Name of program to use to run mMosaic.
-`vm-mouse-send-url-to-mosaic' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mmosaic-program-switches nil
-  "*List of command line switches to pass to mMosaic."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-konqueror-program "konqueror"
-  "*Name of program to use to run Konqueror.
-`vm-mouse-send-url-to-konqueror' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-konqueror-program-switches nil
-  "*List of command line switches to pass to Konqueror."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-konqueror-client-program "kfmclient"
-  "*Name of program to use to issue requests to Konqueror.
-`vm-mouse-send-url-to-konqueror' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-konqueror-client-program-switches nil
-  "*List of command line switches to pass to Konqueror client."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-firefox-program "firefox"
-  "*Name of program to use to run Mozilla Firefox.
-`vm-mouse-send-url-to-firefox' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-firefox-program-switches nil
-  "*List of command line switches to pass to Mozilla Firefox."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-firefox-client-program "firefox"
-  "*Name of program to use to issue requests to Mozilla Firefox.
-`vm-mouse-send-url-to-firefox' uses this."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-firefox-client-program-switches nil
-  "*List of command line switches to pass to Mozilla Firefox client."
-  ;; -remote is obsolete
-  ;; https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options#Remote_Control
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil) 
 		 (repeat string)))
 
 (defcustom vm-wget-program "wget"

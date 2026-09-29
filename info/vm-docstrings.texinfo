@@ -2968,44 +2968,6 @@ Default value: @code{"fetch"}
 
 @end macro
 
-@macro vmdocvmfirefoxclientprogram
-@defopt vm-firefox-client-program
-@vindex vm-firefox-client-program
-Name of program to use to issue requests to Mozilla Firefox.
-@code{vm-mouse-send-url-to-firefox} uses this.
-
-Default value: @code{"firefox"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmfirefoxclientprogramswitches
-@defopt vm-firefox-client-program-switches
-@vindex vm-firefox-client-program-switches
-List of command line switches to pass to Mozilla Firefox client.
-@end defopt
-
-@end macro
-
-@macro vmdocvmfirefoxprogram
-@defopt vm-firefox-program
-@vindex vm-firefox-program
-Name of program to use to run Mozilla Firefox.
-@code{vm-mouse-send-url-to-firefox} uses this.
-
-Default value: @code{"firefox"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmfirefoxprogramswitches
-@defopt vm-firefox-program-switches
-@vindex vm-firefox-program-switches
-List of command line switches to pass to Mozilla Firefox.
-@end defopt
-
-@end macro
-
 @macro vmdocvmgrepprogram
 @defopt vm-grep-program
 @vindex vm-grep-program
@@ -3045,44 +3007,6 @@ Default value: worked out when VM is loaded, from this system.
 
 @end macro
 
-@macro vmdocvmkonquerorclientprogram
-@defopt vm-konqueror-client-program
-@vindex vm-konqueror-client-program
-Name of program to use to issue requests to Konqueror.
-@code{vm-mouse-send-url-to-konqueror} uses this.
-
-Default value: @code{"kfmclient"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmkonquerorclientprogramswitches
-@defopt vm-konqueror-client-program-switches
-@vindex vm-konqueror-client-program-switches
-List of command line switches to pass to Konqueror client.
-@end defopt
-
-@end macro
-
-@macro vmdocvmkonquerorprogram
-@defopt vm-konqueror-program
-@vindex vm-konqueror-program
-Name of program to use to run Konqueror.
-@code{vm-mouse-send-url-to-konqueror} uses this.
-
-Default value: @code{"konqueror"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmkonquerorprogramswitches
-@defopt vm-konqueror-program-switches
-@vindex vm-konqueror-program-switches
-List of command line switches to pass to Konqueror.
-@end defopt
-
-@end macro
-
 @macro vmdocvmlynxprogram
 @defopt vm-lynx-program
 @vindex vm-lynx-program
@@ -3090,40 +3014,6 @@ Name of program to use to run lynx.
 This is used to retrieve URLs.
 
 Default value: @code{"lynx"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmmmosaicprogram
-@defopt vm-mmosaic-program
-@vindex vm-mmosaic-program
-Name of program to use to run mMosaic.
-@code{vm-mouse-send-url-to-mosaic} uses this.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmmosaicprogramswitches
-@defopt vm-mmosaic-program-switches
-@vindex vm-mmosaic-program-switches
-List of command line switches to pass to mMosaic.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmosaicprogram
-@defopt vm-mosaic-program
-@vindex vm-mosaic-program
-Name of program to use to run Mosaic.
-@code{vm-mouse-send-url-to-mosaic} uses this.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmosaicprogramswitches
-@defopt vm-mosaic-program-switches
-@vindex vm-mosaic-program-switches
-List of command line switches to pass to Mosaic.
 @end defopt
 
 @end macro
@@ -3168,61 +3058,6 @@ movemail implementations offer is of no use here.
 @vindex vm-movemail-program-switches
 List of command line flags to pass to the movemail program
 named by @code{vm-movemail-program}.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmozillaprogram
-@defopt vm-mozilla-program
-@vindex vm-mozilla-program
-Name of program to use to run Mozilla.
-@code{vm-mouse-send-url-to-mozilla} uses this.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmozillaprogramswitches
-@defopt vm-mozilla-program-switches
-@vindex vm-mozilla-program-switches
-List of command line switches to pass to Mozilla.
-@end defopt
-
-@end macro
-
-@macro vmdocvmnetscapeprogram
-@defopt vm-netscape-program
-@vindex vm-netscape-program
-Name of program to use to run Netscape.
-@code{vm-mouse-send-url-to-netscape} uses this.
-
-Default value: @code{"netscape"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmnetscapeprogramswitches
-@defopt vm-netscape-program-switches
-@vindex vm-netscape-program-switches
-List of command line switches to pass to Netscape.
-@end defopt
-
-@end macro
-
-@macro vmdocvmoperaprogram
-@defopt vm-opera-program
-@vindex vm-opera-program
-Name of program to use to run Opera.
-@code{vm-mouse-send-url-to-opera} uses this.
-
-Default value: @code{"opera"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmoperaprogramswitches
-@defopt vm-opera-program-switches
-@vindex vm-opera-program-switches
-List of command line switches to pass to Opera.
 @end defopt
 
 @end macro
@@ -13175,29 +13010,25 @@ the undos themselves become undoable.
 @defopt vm-url-browser
 @vindex vm-url-browser
 The default web browser to be used for following URLs (hyperlinks)
-in messages.  
+in messages.
 
 Clicking mouse-2 on a URL will send it to the default browser.
 Moving point to a character within the URL and pressing RETURN
 will also send the URL to the default browser.
 
-If the value of @code{vm-url-browser} is a string, it should specify
-name of an external browser to run.  The URL will be passed to
-the program as its first argument after the program switches
-specified by @code{vm-url-browser-switches}, if any.
+If the value is a symbol, it should name a Lisp function, which is
+called with the URL as its only argument.  @code{browse-url} is the default
+and the setting to want: which browser it opens is decided by
+@code{browse-url-browser-function}, not by VM.
 
-If the value of @code{vm-url-browser} is a symbol, it should specify a
-Lisp function to call.  The URL will be passed to the function as
-its first and only argument.  The Emacs @code{browse-url} function is
-an excellent choice.  It is the default value of the variable.
-VM also defines a number of browser functions of the form
-@code{vm-mouse-send-url-to-xxx}, where xxx is the name of a browser.
-The @code{xxx} can be netscape, mmosaic, mosaic, opera, mozilla,
-konqueror, firefox, window-system or clipboard.  If it is
-window-system then the URL is passed to the window system’s
-"copy" mechanism so that it can be pasted somewhere else.  If it
-is clipboard, the URL is sent to the X clipboard.
+Two other handlers VM defines are not browsers:
+@code{vm-mouse-send-url-to-window-system} passes the URL to the window
+system’s "copy" mechanism so it can be pasted elsewhere, and
+@code{vm-mouse-send-url-to-clipboard} sends it to the X clipboard.
 
+If the value is a string, it names an external browser to run.  The URL
+is passed as its first argument, after the switches in
+@code{vm-url-browser-switches}.
 
 A nil value means VM should not enable URL passing to browsers.
 
