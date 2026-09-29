@@ -3336,6 +3336,61 @@ is noise they cannot act on."
         (vm-pcrisis-actions '(("an action" (ignore)))))
     (should-not (vm-configuration-problem-pcrisis))))
 
+(defconst vm-reply-test--two-messages
+  "From one@example.com Mon Jan  1 00:00:00 2024
+From: one@example.com
+Subject: First
+
+First body.
+
+From two@example.com Mon Jan  1 00:01:00 2024
+From: two@example.com
+Subject: Second
+
+Second body.
+"
+  "Two messages, so a test can flag one and check the other is untouched.")
+
+(ert-deftest vm-reply-test-marking-replied-sets-the-flag-on-the-source ()
+  "`vm-mail-mark-replied' flags every message on `vm-reply-list'.
+This is the R a reader sees in the summary after replying.  Only the
+outermost forms of this function were ever evaluated by the suite."
+  (vm-test-with-folder vm-reply-test--two-messages
+    (let* ((first (nth 0 vm-message-list))
+           (second (nth 1 vm-message-list))
+           (vm-reply-list (list first)))
+      (cl-letf (((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+        (should-not (vm-replied-flag first))
+        (vm-mail-mark-replied)
+        (should (vm-replied-flag first))
+        ;; and nothing else was touched
+        (should-not (vm-replied-flag second))))))
+
+(ert-deftest vm-reply-test-marking-replied-skips-a-message-out-of-the-folder ()
+  "A message no longer in `vm-message-list' is left alone.
+It has been expunged from under the composition, so there is nothing to flag."
+  (vm-test-with-folder vm-reply-test--two-messages
+    (let* ((first (nth 0 vm-message-list))
+           (second (nth 1 vm-message-list))
+           (vm-reply-list (list first))
+           (vm-message-list (list second)))
+      (cl-letf (((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+        (vm-mail-mark-replied)
+        (should-not (vm-replied-flag first))))))
+
+(ert-deftest vm-reply-test-marking-forwarded-sets-the-flag-on-the-source ()
+  "`vm-mail-mark-forwarded' flags every message on `vm-forward-list'.
+The forwarded flag is a separate flag from replied, and setting one must not
+set the other."
+  (vm-test-with-folder vm-reply-test--two-messages
+    (let* ((first (nth 0 vm-message-list))
+           (vm-forward-list (list first)))
+      (cl-letf (((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+        (should-not (vm-forwarded-flag first))
+        (vm-mail-mark-forwarded)
+        (should (vm-forwarded-flag first))
+        (should-not (vm-replied-flag first))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
