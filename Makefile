@@ -128,13 +128,15 @@ test-load:
 	  mkdir -p "$$home" || exit 1; \
 	  printf '%s\n' "(setq hermes-review-before 'loaded)" \
 	    '(defvar hermes-review-activations 0)' \
+	    "(require 'keymap-popup)" \
+	    '(keymap-popup-define hermes-review-mode-map "Reload fixture" :popup-key "h" "m" ("Move" ignore))' \
 	    '(defun hermes-chat--work-activate () (cl-incf hermes-review-activations))' \
 	    "(with-current-buffer (get-buffer-create \" *load chat*\") (setq major-mode 'hermes-chat-mode))" \
 	    > "$$before" || exit 1; \
 	  printf '%s\n' '(error "intentional load failure")' > "$$fail" || exit 1; \
 	  printf '%s\n' "(setq hermes-review-after 'loaded)" > "$$after" || exit 1; \
 	  printf '%s\n' 'EMACSCLIENT := false' > "$$conflict" || exit 1; \
-	  HOME="$$home" $(EMACS_CMD) -Q --daemon="$$server" \
+	  HOME="$$home" $(EMACS_CMD) -Q $(if $(KEYMAP_POPUP),-L "$(KEYMAP_POPUP)") --daemon="$$server" \
 	    > "$$test_root/daemon-output" 2>&1 || exit 1; \
 	  HOME="$$home" emacsclient -s "$$server" --eval \
 	    "(progn (add-to-list 'load-path \"$(CURDIR)/lisp\") \
@@ -146,12 +148,39 @@ test-load:
 	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
 	    '(list hermes-review-before hermes-review-after hermes-review-activations)') || exit 1; \
 	  test "$$state" = '(loaded loaded 1)' || exit 1; \
-	  MAKEFILES="$$conflict" $(MAKE) --no-print-directory do-load \
-	    EMACSCLIENT="$$client" SRCS="$$api_src $$before_src $$after_src" \
-	    > "$$test_root/repeat-output" 2>&1 || exit 1; \
-	  state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
-	    '(list hermes-review-before hermes-review-after hermes-review-activations)') || exit 1; \
-	  test "$$state" = '(loaded loaded 2)' || exit 1; \
+	  HOME="$$home" emacsclient -s "$$server" --eval \
+	    "(progn \
+	       (keymap-set hermes-review-mode-map \"m\" (function forward-char)) \
+	       (keymap-set hermes-review-mode-map \"z\" (function backward-char)) \
+	       (setq load-test-original-map hermes-review-mode-map) \
+	       (with-current-buffer (get-buffer-create \" *load local map*\") \
+	         (setq major-mode (quote hermes-review-mode)) \
+	         (use-local-map (copy-keymap hermes-review-mode-map)) \
+	         (keymap-local-set \"m\" (function beginning-of-line)) \
+	         (setq load-test-local-map (current-local-map))))" \
+	    > /dev/null || exit 1; \
+	  for activation in 2 3; do \
+	    MAKEFILES="$$conflict" $(MAKE) --no-print-directory do-load \
+	      EMACSCLIENT="$$client" SRCS="$$api_src $$before_src $$after_src" \
+	      > "$$test_root/repeat-output" 2>&1 || exit 1; \
+	    state=$$(HOME="$$home" emacsclient -s "$$server" --eval \
+	      '(list hermes-review-before hermes-review-after hermes-review-activations)') || exit 1; \
+	    test "$$state" = "(loaded loaded $$activation)" || exit 1; \
+	    HOME="$$home" emacsclient -s "$$server" --eval \
+	      "(progn \
+	         (cl-assert (eq load-test-original-map hermes-review-mode-map) \
+	                    nil \"Reload replaced the initialized mode map\") \
+	         (cl-assert (eq (keymap-lookup hermes-review-mode-map \"m\") \
+	                        (quote forward-char))) \
+	         (cl-assert (eq (keymap-lookup hermes-review-mode-map \"z\") \
+	                        (quote backward-char))) \
+	         (with-current-buffer \" *load local map*\" \
+	           (cl-assert (eq (current-local-map) load-test-local-map) \
+	                      nil \"Reload replaced a buffer-local map\") \
+	           (cl-assert (eq (key-binding (kbd \"m\")) (quote beginning-of-line))) \
+	           (cl-assert (eq (key-binding (kbd \"z\")) (quote backward-char)))))" \
+	      > /dev/null || exit 1; \
+	  done; \
 	  HOME="$$home" emacsclient -s "$$server" --eval \
 	    "(mapc (lambda (symbol) (when (boundp symbol) (makunbound symbol))) \
 	           '(hermes-review-before hermes-review-after))" > /dev/null || exit 1; \
@@ -227,6 +256,8 @@ pre-handoff-check:
 load: clean
 	@$(ENV_MAKE) do-load
 
+# Retain initialized keymaps and buffer-local maps; reload is not a reset.
+# Any binding migration belongs beside its definition, not in this loader.
 do-load:
 	@source_abis=$$($(BATCH) $(foreach file,$(SRCS),-l $(file)) \
 	    --eval "(prin1 (list $(HERMES_CLIENT_LIVE_ABI) \
@@ -243,19 +274,11 @@ do-load:
 	               (not (equal (cadr source-abis) events-abi))) \
 	      (error \"Hermes event-tail layout changed; restart Emacs before make load\")) \
 	    (add-to-list 'load-path \"$(CURDIR)/lisp\") \
-	    (mapatoms (lambda (symbol) \
-	      (when (and (string-prefix-p \"hermes-\" (symbol-name symbol)) \
-	                 (boundp symbol) (keymapp (symbol-value symbol))) \
-	        (makunbound symbol)))) \
 	    (mapc (lambda (file) \
 	            (load-file (expand-file-name file \"$(CURDIR)\"))) \
 	          '($(foreach file,$(SRCS),\"$(file)\"))) \
 	    (dolist (buf (buffer-list)) \
 	      (with-current-buffer buf \
-	        (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
-	          (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
-	                     map (boundp map) (keymapp (symbol-value map))) \
-	            (use-local-map (symbol-value map)))) \
 	        (when (and (derived-mode-p 'hermes-chat-mode) \
 	                   (fboundp 'hermes-chat--work-activate)) \
 	          (hermes-chat--work-activate)) \
