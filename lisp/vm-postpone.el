@@ -596,7 +596,15 @@ Before saving the composition the `vm-postpone-message-hook' functions
 are executed and it is written into the FOLDER `vm-postponed-folder'.
 When called with a prefix argument you will be asked for
 the folder.
-Optional argument DONT-KILL is positive, then do not kill source message."
+
+With DONT-KILL, keep the composition buffer rather than killing it, and
+insert an FCC header naming FOLDER so that sending it later files it there
+again.  The source message is deleted either way.
+
+With NO-POSTPONE-HEADER, leave out the `vm-postponed-header' line that
+records the reply, forward and redistribute lists.  The draft is then an
+ordinary message, and `vm-continue-what-message' offers to continue only a
+message carrying that header."
   (interactive "P")
   
   (let ((message-buffer (current-buffer))

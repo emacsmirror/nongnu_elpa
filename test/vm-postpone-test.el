@@ -1510,6 +1510,43 @@ draft is in the folder by then, and this runs on `mail-send-hook' too."
     (should (string-match-p "Source message not deleted" (car warnings)))
     ;; the underlying error is carried, not thrown away
     (should (string-match-p "arrayp\\|wrong-type" (car warnings)))))
+(ert-deftest vm-postpone-test-dont-kill-keeps-the-buffer-and-still-deletes-the-source ()
+  "DONT-KILL decides the composition buffer, not the source message.
+The docstring said it spared the source; it does not.  `vm-postpone-message'
+deletes the source either way, and DONT-KILL keeps the composition and gives
+it an FCC header naming the folder."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-dk" t)))
+         (drafts (expand-file-name "drafts" dir))
+         (deleted 0)
+         (before (buffer-list))
+         (composition nil))
+    (unwind-protect
+        (let ((vm-folder-directory dir)
+              (vm-postponed-folder "drafts")
+              (vm-default-folder-type 'From_)
+              (vm-postponed-message-folder-buffer nil)
+              (vm-postpone-message-hook nil))
+          (cl-letf (((symbol-function 'vm-display) #'ignore)
+                    ((symbol-function 'vm-delete-postponed-message)
+                     (lambda () (setq deleted (1+ deleted)))))
+            (vm-mail)
+            (setq composition (current-buffer))
+            (goto-char (point-max))
+            (insert "Body.\n")
+            (vm-postpone-message drafts t))
+          ;; the source was dealt with despite DONT-KILL
+          (should (= deleted 1))
+          ;; and the composition is still here, carrying the FCC
+          (should (buffer-live-p composition))
+          (should (string-match-p (concat "FCC: " (regexp-quote drafts))
+                                  (with-current-buffer composition
+                                    (buffer-string)))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
+      (delete-directory dir t))))
 
 (provide 'vm-postpone-test)
 
