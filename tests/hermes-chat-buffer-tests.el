@@ -492,6 +492,7 @@
      (undo-boundary)
      (hermes-chat--insert-entry
       (hermes-chat--make-entry 'assistant "streamed" 'streaming "reply"))
+     (hermes-chat--append-assistant-content "reply" " λ appended" 'streaming)
      (let ((transcript (buffer-substring (point-min) hermes-chat--input-marker)))
        (hermes-test--draft-undo-command #'undo-only)
        (should (equal (hermes-chat-input-string) ""))

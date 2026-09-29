@@ -307,67 +307,58 @@ line."
       (append (list (cons 'set-dashboard-running running))
               (unless running '((drain)))))))
 
+(defun hermes-chat--turn-terminal-suffix (status)
+  "Return the ordered terminal settlement effects for STATUS."
+  (list (cons 'settle status) '(finish) '(clear-pending)
+        '(set-dashboard-running) '(drain)))
+
 (defun hermes-chat--turn-done-effects (event status)
   "Return the ordered effect list for a `done' EVENT with header STATUS.
 `refresh-header' precedes the lifecycle so the header settles before `drain'
 re-submits any queued turn."
-  (delq nil
-        (list '(clear-tools)
-              (cons 'refresh-header status)
-              (cons 'clear-prompts event)
-              (cons (if (plist-get event :response-previewed)
-                        'mark-previewed
-                      'mark-done)
-                    (plist-get event :content))
-              (and-let* ((warning (plist-get event :warning)))
-                (cons 'warning warning))
-              '(drop-thinking)
-              '(settle . done)
-              '(finish)
-              '(clear-pending)
-              '(set-dashboard-running)
-              '(drain))))
+  (append
+   (delq nil
+         (list '(clear-tools)
+               (cons 'refresh-header status)
+               (cons 'clear-prompts event)
+               (cons (if (plist-get event :response-previewed)
+                         'mark-previewed
+                       'mark-done)
+                     (plist-get event :content))
+               (and-let* ((warning (plist-get event :warning)))
+                 (cons 'warning warning))
+               '(drop-thinking)))
+   (hermes-chat--turn-terminal-suffix 'done)))
 
 (defun hermes-chat--turn-suppressed-effects (event status)
   "Return the ordered effect list for a `suppressed-terminal' EVENT.
 STATUS is the merged header state.  Mirrors `hermes-chat--turn-done-effects'
 minus content copying: the turn was resumed in flight without a local
 assistant entry, so the reply placeholder keeps its text."
-  (list '(clear-tools)
-        (cons 'refresh-header status)
-        (cons 'clear-prompts (plist-get event :original))
-        (cons 'mark-status (plist-get event :settle-status))
-        '(drop-thinking)
-        (cons 'settle (plist-get event :settle-status))
-        '(finish)
-        '(clear-pending)
-        '(set-dashboard-running)
-        '(drain)))
+  (append
+   (list '(clear-tools)
+         (cons 'refresh-header status)
+         (cons 'clear-prompts (plist-get event :original))
+         (cons 'mark-status (plist-get event :settle-status))
+         '(drop-thinking))
+   (hermes-chat--turn-terminal-suffix (plist-get event :settle-status))))
 
 (defun hermes-chat--turn-error-effects (event status)
   "Return the ordered effect list for an `error' EVENT with header STATUS."
   (let ((estatus (hermes-chat--error-status event)))
-    (if (hermes-chat--interrupted-status-p estatus)
-        (list '(clear-tools)
-              (cons 'refresh-header status)
-              (cons 'clear-prompts event)
-              (cons 'mark-status estatus)
-              (cons 'settle estatus)
-              '(finish)
-              '(clear-pending)
-              '(set-dashboard-running)
-              '(drain))
-      (let ((content (let ((value (or (plist-get event :content) "")))
-                       (if (string-empty-p value) "Transport error" value))))
-        (list '(clear-tools)
-              (cons 'refresh-header status)
-              (cons 'clear-prompts event)
-              (cons 'append-error (cons content estatus))
-              (cons 'settle estatus)
-              '(finish)
-              '(clear-pending)
-              '(set-dashboard-running)
-              '(drain))))))
+    (append
+     (if (hermes-chat--interrupted-status-p estatus)
+         (list '(clear-tools)
+               (cons 'refresh-header status)
+               (cons 'clear-prompts event)
+               (cons 'mark-status estatus))
+       (let ((content (let ((value (or (plist-get event :content) "")))
+                        (if (string-empty-p value) "Transport error" value))))
+         (list '(clear-tools)
+               (cons 'refresh-header status)
+               (cons 'clear-prompts event)
+               (cons 'append-error (cons content estatus)))))
+     (hermes-chat--turn-terminal-suffix estatus))))
 
 (defun hermes-chat--turn-reduce-status (state event now)
   "Return (NEW-STATE . EFFECTS) for a status EVENT on STATE at time NOW.
@@ -451,6 +442,10 @@ and `upsert-entry'.  Other types return (STATE)."
   "Rotate ASSISTANT-ID's presentation without starting another backend turn."
   (hermes-chat--reasoning-row assistant-id nil)
   (hermes-chat--mark-assistant assistant-id 'done nil t)
+  (hermes-chat--continue-assistant assistant-id))
+
+(defun hermes-chat--continue-assistant (assistant-id)
+  "Create a streaming successor for the already settled ASSISTANT-ID."
   (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
          (next-id (plist-get entry :id)))
     (hermes-chat--insert-entry entry)
@@ -463,11 +458,17 @@ and `upsert-entry'.  Other types return (STATE)."
 
 (defun hermes-chat--seal-interim-assistant (assistant-id content)
   "Seal ASSISTANT-ID with interim CONTENT and rotate the live stream entry."
-  (hermes-chat--mark-assistant
-   assistant-id 'done (hermes-chat--assistant-segment-content assistant-id content) t)
-  (hermes-chat--update-entry
-   assistant-id (lambda (entry) (hermes-chat--entry-with entry :interim-content content)))
-  (hermes-chat--rotate-assistant assistant-id)
+  (hermes-chat--clear-ansi-fragment
+   (hermes-chat--assistant-ansi-key assistant-id))
+  (let ((text (hermes-chat--sanitize-assistant-content
+               (hermes-chat--assistant-segment-content assistant-id content) t)))
+    (hermes-chat--update-entry
+     assistant-id
+     (lambda (entry)
+       (hermes-chat--entry-with entry :status 'done :content text
+                                :interim-content content))))
+  (hermes-chat--reasoning-row assistant-id nil)
+  (hermes-chat--continue-assistant assistant-id)
   (setq hermes-chat--dashboard-interim-assistant-id assistant-id))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
