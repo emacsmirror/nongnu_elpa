@@ -950,6 +950,121 @@ checked to exclude session-id-bearing slots."
         (let ((metadata (alist-get 'metadata res)))
           (should (eq (alist-get 'truncated metadata) t)))))))
 
+(defun hermes-capabilities-test--read-frame (params)
+  "Return the serialized provider response to a `buffer.read' with PARAMS."
+  (let* (frames
+         (provider (hermes-capabilities--provider-create
+                    :active t :socket 'test-socket :buffer (current-buffer)))
+         (hermes-capabilities--send-function
+          (lambda (_socket text)
+            (push (json-parse-string text :object-type 'alist
+                                     :false-object :false)
+                  frames))))
+    (hermes-capabilities--handle-message
+     provider (json-serialize
+               `((jsonrpc . "2.0") (id . "bounded-read")
+                 (method . "emacs.request")
+                 (params . ((method . "buffer.read") (params . ,params))))))
+    (should (= (length frames) 1))
+    (should (equal (alist-get 'id (car frames)) "bounded-read"))
+    (car frames)))
+
+(ert-deftest hermes-capabilities-buffer-read-bounds-extraction ()
+  "The registered provider extracts only the cap from a multi-megabyte line."
+  (with-temp-buffer
+    (insert (make-string 4000000 ?λ))
+    (dolist (cap '(20000 nil))
+      (let* ((hermes-capabilities-buffer-read-max-chars cap)
+             (source (current-buffer))
+             (native-substring (symbol-function 'buffer-substring-no-properties))
+             (expected-length (or cap 4000000))
+             lengths frame)
+        (cl-letf (((symbol-function 'buffer-substring-no-properties)
+                   (lambda (beg end)
+                     (when (eq source (current-buffer))
+                       (push (abs (- end beg)) lengths))
+                     (funcall native-substring beg end))))
+          (setq frame (hermes-capabilities-test--read-frame
+                       `((buffer . ,(buffer-name))))))
+        (should (equal lengths (list expected-length)))
+        (should (equal (alist-get 'result frame)
+                       `((ok . t) (content . ,(make-string expected-length ?λ))
+                         (metadata . ((buffer . ,(buffer-name))
+                                      (truncated . ,(if cap t :false))
+                                      (line_count . 1) (total_lines . 1)
+                                      (start_line . 1) (end_line . 1))))))))))
+
+(ert-deftest hermes-capabilities-buffer-read-preserves-capped-envelope ()
+  "Character bounds preserve literal text, line metadata and editor state."
+  ;; TEXT CHAR-CAP LINE-CAP PARAMS CONTENT START END TOTAL TRUNCATED.
+  (dolist (case '(("ab" 3 1000 nil "ab" 1 1 1 :false)
+                  ("abc" 3 1000 nil "abc" 1 1 1 :false)
+                  ("abcd" 3 1000 nil "abc" 1 1 1 t)
+                  ("αλ😀z" 3 1000 nil "αλ😀" 1 1 1 t)
+                  ("αλ😀z" nil 1000 nil "αλ😀z" 1 1 1 :false)
+                  ("abc" 0 1000 nil "" 1 1 1 t)
+                  ("" 0 1000 nil "" 1 1 1 :false)
+                  ("" nil 1000 nil "" 1 1 1 :false)
+                  ("a\nb\n" 4 1000 nil "a\nb\n" 1 3 3 :false)
+                  ("a\nb\n" 3 1000 nil "a\nb" 1 3 3 t)
+                  ("a\nb\n" 3 1000 ((start . 3)) "" 3 3 3 :false)
+                  ("a\nb\n" 3 1000 ((start . 9)) "" 9 8 3 :false)
+                  ("a\nb\n" 3 1000 ((end . 9)) "a\nb" 1 3 3 t)
+                  ("a\nb\nc" 3 2 nil "a\nb" 1 2 3 t)
+                  ("a\nb\nc" 2 2 nil "a\n" 1 2 3 t)
+                  ("a\nb\nc" nil 2 nil "a\nb" 1 2 3 t)
+                  ("a\nbb\nc" 1 1000 ((start_line . 2) (end_line . 2))
+                   "b" 2 2 3 t)
+                  ("a\nbb\nc" 1 1000 ((start . 2) (end . 2)
+                                       (start_line . 1) (end_line . 3))
+                   "b" 2 2 3 t)))
+    (pcase-let ((`(,text ,cap ,line-cap ,params ,content ,start ,end ,total
+                        ,truncated) case))
+      (with-temp-buffer
+        (insert (propertize text 'face 'bold))
+        ;; Force a whole-buffer read from a zero-width restriction.
+        (narrow-to-region (point-max) (point-max))
+        (let* ((before (list (point) (point-min) (point-max)))
+               (hermes-capabilities-buffer-read-max-chars cap)
+               (hermes-capabilities-buffer-read-max-lines line-cap)
+               (result (alist-get 'result
+                                  (hermes-capabilities-test--read-frame
+                                   (cons (cons 'buffer (buffer-name)) params)))))
+          (should (equal result
+                         `((ok . t) (content . ,content)
+                           (metadata . ((buffer . ,(buffer-name))
+                                        (truncated . ,truncated)
+                                        (line_count . ,(1+ (- end start)))
+                                        (total_lines . ,total)
+                                        (start_line . ,start) (end_line . ,end))))))
+          (should (equal before (list (point) (point-min) (point-max)))))))))
+
+(ert-deftest hermes-capabilities-buffer-read-refuses-before-extraction ()
+  "Denied, remote and unknown names never reach content extraction."
+  (dolist (kind '(denied remote-file remote-directory unknown))
+    (with-temp-buffer
+      (insert "synthetic canary")
+      (pcase kind
+        ('denied (setq buffer-file-name "/fixture/.authinfo"))
+        ('remote-file (setq buffer-file-name "/ssh:fixture:/note"))
+        ('remote-directory (setq default-directory "/ssh:fixture:/")))
+      (unwind-protect
+          (let* ((source (current-buffer))
+                 (native-substring
+                  (symbol-function 'buffer-substring-no-properties))
+                 extracted frame)
+            (cl-letf (((symbol-function 'buffer-substring-no-properties)
+                       (lambda (beg end)
+                         (when (eq source (current-buffer)) (setq extracted t))
+                         (funcall native-substring beg end))))
+              (setq frame (hermes-capabilities-test--read-frame
+                           `((buffer . ,(if (eq kind 'unknown)
+                                            "cap-unknown-fixture"
+                                          (buffer-name)))))))
+            (should (= (alist-get 'code (alist-get 'error frame)) -32602))
+            (should-not extracted))
+        (setq buffer-file-name nil)))))
+
 (ert-deftest hermes-capabilities-buffer-read-missing-param ()
   "`buffer.read' errors when the `buffer' parameter is absent."
   (should-error (hermes-capabilities--handle-buffer-read nil)
