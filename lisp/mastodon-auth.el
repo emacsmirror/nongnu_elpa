@@ -275,11 +275,13 @@ work, with no need for auth flow/JS-capable browser."
            (url-generic-parse-url mastodon-instance-url))))
     ;; if entry token is incorrect, we error in
     ;; `mastodon-return-account-credentials'
-    (cadr
-     (mastodon-auth-source-get
-      mastodon-active-user
-      (url-domain
-       (url-generic-parse-url mastodon-instance-url)))))
+    (let ((token (cadr
+                  (mastodon-auth-source-get
+                   mastodon-active-user
+                   (url-domain
+                    (url-generic-parse-url mastodon-instance-url))))))
+      (push `(,mastodon-instance-url ,token) mastodon-auth--token-alist)
+      token))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
