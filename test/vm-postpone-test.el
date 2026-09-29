@@ -1492,6 +1492,25 @@ postponed, and after the file exists, which is what \"postponed\" means."
             (let ((kill-buffer-query-functions nil)) (kill-buffer buffer)))))
       (delete-directory dir t))))
 
+(ert-deftest vm-postpone-test-a-failed-source-deletion-is-reported ()
+  "A source message that cannot be deleted is warned about, not swallowed.
+The handler was a bare string, which `condition-case' returns rather than
+signals, so every failure here was silent.  It still must not signal: the
+draft is in the folder by then, and this runs on `mail-send-hook' too."
+  (let ((warnings nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (push (apply #'format args) warnings))))
+      (let ((vm-message-pointer (list 'not-a-message)))
+        (should (eq :returned
+                    (condition-case nil
+                        (progn (vm-delete-postponed-message) :returned)
+                      (error :signalled))))))
+    (should (= 1 (length warnings)))
+    (should (string-match-p "Source message not deleted" (car warnings)))
+    ;; the underlying error is carried, not thrown away
+    (should (string-match-p "arrayp\\|wrong-type" (car warnings)))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
