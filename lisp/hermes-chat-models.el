@@ -331,14 +331,14 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
                 (hermes-chat--apply-selected-model
                  buffer client candidate provider context)))))))))
 
-(defun hermes-chat--request-model-switch (client refresh)
-  "Fetch model choices through CLIENT, bypassing the cache when REFRESH is non-nil."
+(defun hermes-chat--request-model-switch (client)
+  "Fetch fresh model choices through CLIENT and prompt for a selection."
   (let ((buffer (current-buffer))
         (context (hermes-chat--model-switch-context)))
     (hermes-dashboard-transport-model-options-cached
      client
      :session-id hermes-chat--dashboard-active-session-id
-     :force refresh
+     :force t
      :resolve (lambda (result)
                 (hermes-chat--prompt-and-set-model
                  buffer client result context))
@@ -349,25 +349,20 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
 
 (defun hermes-chat-switch-model (&optional refresh)
   "Switch the model used by the current Hermes chat session.
-The model list is served from the shared cache; with a prefix argument REFRESH,
-refetch it from the dashboard instead.  Before the first session, a cached pick
-is stored locally without connecting; a cold or refreshed catalog may open the
-shared dashboard socket but does not create a session.  Detached sessions
-must reconnect or resume first, except for an owned failed-create retry."
+Always fetch the model list from the owning dashboard, also updating the
+completion cache.  REFRESH is retained for compatibility and has no effect.
+Before the first session, this may open the shared dashboard socket but does
+not create a session; the choice is stored locally.  Detached sessions must
+reconnect or resume first, except for an owned failed-create retry."
   (interactive "P" hermes-chat-mode)
+  (ignore refresh)
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before switching models"))
   (hermes-chat--require-setting-session)
-  (let ((client (and (hermes-chat--dashboard-client-live-p
-                      hermes-chat--dashboard-client)
-                     hermes-chat--dashboard-client))
-        (cached (and (not refresh)
-                     (hermes-dashboard-transport-cached-model-options))))
-    (if cached
-        (hermes-chat--prompt-and-set-model
-         (current-buffer) client cached (hermes-chat--model-switch-context))
-      (hermes-chat--request-model-switch
-       (or client (hermes-chat--dashboard-control-client)) refresh))))
+  (hermes-chat--request-model-switch
+   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+       hermes-chat--dashboard-client
+     (hermes-chat--dashboard-control-client))))
 
 ;; Reused from `hermes-onboarding'.  That module requires `hermes-browser',
 ;; which requires this file, so it is loaded lazily inside the commands below to

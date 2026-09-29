@@ -154,14 +154,20 @@ cache immediately after starting a client."
                       (hermes-dashboard-transport-cached-model-options client))))
     (if cached
         (when resolve (funcall resolve cached))
-      (hermes-dashboard-transport-model-options
-       client
-       :session-id session-id
-       :resolve (lambda (result)
-                  (hermes-dashboard-transport--store-model-options
-                   result base-url)
-                  (when resolve (funcall resolve result)))
-       :reject (or reject #'ignore)))))
+      (let ((token (cons nil nil)))
+        (setf (alist-get base-url hermes-dashboard-transport--model-options-requests
+                         nil nil #'equal) token)
+        (hermes-dashboard-transport-model-options
+         client
+         :session-id session-id
+         :resolve (lambda (result)
+                    (when (eq token
+                              (alist-get
+                               base-url hermes-dashboard-transport--model-options-requests
+                               nil nil #'equal))
+                      (hermes-dashboard-transport--store-model-options result base-url))
+                    (when resolve (funcall resolve result)))
+         :reject (or reject #'ignore))))))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-config-set "config.set"

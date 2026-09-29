@@ -2125,9 +2125,14 @@ The cache is warmed by `hermes-dashboard-transport-profile-list-async'."
 (defvar hermes-dashboard-transport--model-options-cache nil
   "Cached `model.options' payloads as an alist of (BASE-URL . PAYLOAD).
 The provider/model catalog is dashboard-global -- disk config plus the curated
-model list -- so it is shared across sessions for the same endpoint.  A saved
-API key invalidates it;
+model list -- so it is shared across sessions for the same endpoint.
+Explicit model pickers refresh it; completion uses the last accepted payload.
+Saving an API key or closing Hermes invalidates it;
 see `hermes-dashboard-transport-invalidate-model-options'.")
+
+(defvar hermes-dashboard-transport--model-options-requests nil
+  "Latest model catalog request tokens as an alist of (BASE-URL . TOKEN).
+Only the latest fetch for an endpoint may update its completion cache.")
 
 (defun hermes-dashboard-transport--store-model-options (payload &optional base-url)
   "Cache PAYLOAD for BASE-URL and return it.
@@ -2149,8 +2154,10 @@ discarded when `hermes-dashboard-transport-invalidate-model-options' is called."
 (defun hermes-dashboard-transport-invalidate-model-options ()
   "Discard any cached `model.options' payload.
 Callers that change provider authentication -- for example after saving an API
-key -- call this so the next picker refetches the full list."
-  (setq hermes-dashboard-transport--model-options-cache nil))
+key -- call this so completion refetches the full list.  Pending fetches
+lose permission to cache their replies, but still settle their callers."
+  (setq hermes-dashboard-transport--model-options-cache nil
+        hermes-dashboard-transport--model-options-requests nil))
 
 (defun hermes-dashboard-transport-profile-list-async (&optional client)
   "Return a promise of `/api/profiles', warming the profile cache on success.

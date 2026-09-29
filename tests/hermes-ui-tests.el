@@ -81,6 +81,50 @@
       (when (buffer-live-p chat)
         (kill-buffer chat)))))
 
+(ert-deftest hermes-close-discards-model-catalog-before-reopen ()
+  "Confirmed close retires model data and pending warmups before a new chat."
+  (let* ((hermes-dashboard-transport--model-options-cache nil)
+         (hermes-dashboard-transport--model-options-requests nil)
+         (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (client (make-hermes-dashboard-transport-client
+                  :base-url "http://models.example"))
+         (old '((providers . (((slug . "local") (authenticated . t)
+                              (models . ("Devstral")))))))
+         (fresh '((providers . (((slug . "local") (authenticated . t)
+                                (models . ("Qwen")))))))
+         (confirm nil)
+         late reopened)
+    (unwind-protect
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) confirm))
+                  ((symbol-function 'hermes-capabilities-stop) #'ignore)
+                  ((symbol-function 'hermes-exec-stop) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-model-options)
+                   (lambda (_client &rest args)
+                     (setq late (plist-get args :resolve)))))
+          (hermes-dashboard-transport-model-options-cached client)
+          (hermes-dashboard-transport--store-model-options
+           old "http://models.example")
+          (call-interactively #'hermes-close)
+          (should (equal (hermes-dashboard-transport-cached-model-options client)
+                         old))
+          (setq confirm t)
+          (call-interactively #'hermes-close)
+          (should-not (hermes-dashboard-transport-cached-model-options client))
+          (funcall late old)
+          (should-not (hermes-dashboard-transport-cached-model-options client))
+          (setq reopened (hermes-chat))
+          (with-current-buffer reopened
+            (setq hermes-chat--dashboard-client
+                  (make-hermes-dashboard-transport-client
+                   :base-url "http://models.example"))
+            (goto-char (point-max))
+            (insert "/model Q")
+            (should-not (hermes-chat--model-capf))
+            (funcall late fresh)
+            (should (equal (nth 2 (hermes-chat--model-capf))
+                           '("Qwen --provider local")))))
+      (when (buffer-live-p reopened) (kill-buffer reopened)))))
+
 (ert-deftest hermes-close-stops-pending-browser-client ()
   "Closing Hermes stops a browser client whose request has not settled."
   (let* ((buffer (let ((hermes-dashboard-stale-refresh-interval nil))

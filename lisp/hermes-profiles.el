@@ -338,7 +338,9 @@ Keep edits made during a save modified."
            #'hermes-browser--read-error))))))
 
 (defun hermes-profiles-set-model ()
-  "Set the model of the profile at point, persisted in its configuration."
+  "Set the profile model using fresh choices from its owning dashboard.
+Persist the provider and model in the profile configuration, then read it back.
+If the catalogue fetch fails, do not offer stale cached choices."
   (interactive nil hermes-profiles-mode)
   (let ((name (tabulated-list-get-id))
         (origin (current-buffer)))
@@ -348,7 +350,7 @@ Keep edits made during a save modified."
        (hermes--promise-then
         (hermes--promise-then
          (hermes-dashboard-transport-call-fn
-          #'hermes-dashboard-transport-model-options-cached client)
+          #'hermes-dashboard-transport-model-options-cached client :force t)
          (lambda (catalog)
            (when (funcall guard)
              (with-current-buffer origin

@@ -1186,6 +1186,7 @@
 (ert-deftest hermes-transport-cached-model-options-serves-current-url ()
   "A stored model-options payload is served only while the dashboard URL matches."
   (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil)
         (payload '((providers . (((slug . "p1")))))))
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
                (lambda () "http://dash.example")))
@@ -1197,7 +1198,8 @@
 
 (ert-deftest hermes-transport-invalidate-model-options-clears-cache ()
   "Invalidation discards a stored model-options payload."
-  (let ((hermes-dashboard-transport--model-options-cache nil))
+  (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil))
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
                (lambda () "http://dash.example")))
       (hermes-dashboard-transport--store-model-options '((providers . nil)))
@@ -1208,6 +1210,7 @@
 (ert-deftest hermes-transport-model-options-cached-serves-cache-without-fetch ()
   "A cache hit resolves from the cache and never calls the RPC."
   (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil)
         (payload '((providers . (((slug . "cached"))))))
         fetched resolved)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
@@ -1223,6 +1226,7 @@
 (ert-deftest hermes-transport-model-options-cached-force-refetches ()
   "FORCE bypasses a populated cache, refetches, and stores the fresh payload."
   (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil)
         (fresh '((providers . (((slug . "fresh"))))))
         fetched)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
@@ -1239,6 +1243,7 @@
 (ert-deftest hermes-transport-model-options-cached-stores-on-fetch ()
   "A cache miss fetches over the RPC and stores the resolved payload."
   (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil)
         (payload '((providers . (((slug . "p1"))))))
         resolved)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
@@ -1251,21 +1256,98 @@
       (should (equal resolved payload))
       (should (equal (hermes-dashboard-transport-cached-model-options) payload)))))
 
+(ert-deftest hermes-transport-model-cache-keeps-newer-refresh ()
+  "An older warmup cannot overwrite a newer accepted forced refresh."
+  (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil)
+        (client (make-hermes-dashboard-transport-client
+                 :base-url "http://models.example"))
+        (fresh '((providers . (((slug . "Qwen"))))))
+        callbacks)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+               (lambda (_client &rest args)
+                 (push (plist-get args :resolve) callbacks))))
+      (hermes-dashboard-transport-model-options-cached client)
+      (hermes-dashboard-transport-model-options-cached client :force t)
+      (funcall (car callbacks) fresh)
+      (funcall (cadr callbacks) '((providers . (((slug . "Devstral"))))))
+      (should (equal (hermes-dashboard-transport-cached-model-options client)
+                     fresh)))))
+
+(ert-deftest hermes-transport-model-cache-invalidation-retires-pending-fetch ()
+  "A late reply cannot repopulate the cache after explicit invalidation."
+  (let ((hermes-dashboard-transport--model-options-cache nil)
+        (hermes-dashboard-transport--model-options-requests nil)
+        (client (make-hermes-dashboard-transport-client
+                 :base-url "http://models.example"))
+        resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+               (lambda (_client &rest args)
+                 (setq resolve (plist-get args :resolve)))))
+      (hermes-dashboard-transport-model-options-cached client)
+      (hermes-dashboard-transport-invalidate-model-options)
+      (funcall resolve '((providers . (((slug . "Devstral"))))))
+      (should-not (hermes-dashboard-transport-cached-model-options client)))))
+
+(ert-deftest hermes-transport-model-cache-retires-wire-replies ()
+  "Stop and reconnect reject old catalog replies without changing successors."
+  (dolist (reconnect '(nil t))
+    (let* ((hermes-dashboard-transport--model-options-cache nil)
+           (hermes-dashboard-transport--model-options-requests nil)
+           (hermes-dashboard-transport-request-timeout nil)
+           (hermes-dashboard-transport-websocket-send-function #'ignore)
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "http://models.example" :refcount 1))
+           (old '((model . "Devstral")))
+           (fresh '((model . "Qwen")))
+           rejected)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-dashboard-transport--reconnect-attempt)
+                     #'ignore))
+            (hermes-dashboard-transport--store-model-options old "http://models.example")
+            (let ((id (hermes-dashboard-transport-model-options-cached
+                       client :force t :reject (lambda (_) (setq rejected t)))))
+              (if reconnect
+                  (hermes-dashboard-transport-reconnect client)
+                (hermes-dashboard-transport-stop client))
+              (should rejected)
+              (should (equal (hermes-dashboard-transport-cached-model-options client) old))
+              (let* ((successor (if reconnect client
+                                  (make-hermes-dashboard-transport-client
+                                   :base-url "http://models.example")))
+                     (next (hermes-dashboard-transport-model-options-cached
+                            successor :force t)))
+                (when reconnect
+                  (hermes--promise-resolve
+                   (hermes-dashboard-transport-client-ready-promise client) client))
+                (hermes-dashboard-transport--handle-frame
+                 successor (hermes-dashboard-transport--encode-frame
+                            `((jsonrpc . "2.0") (id . ,next) (result . ,fresh))))
+                (hermes-dashboard-transport--handle-frame
+                 client (hermes-dashboard-transport--encode-frame
+                         `((jsonrpc . "2.0") (id . ,id) (result . ,old))))
+                (should (equal (hermes-dashboard-transport-cached-model-options successor)
+                               fresh)))))
+        (hermes-dashboard-transport-stop client)))))
+
 (ert-deftest hermes-transport-model-cache-is-independent-per-client ()
   "Two clients retain independent model catalogs under their own endpoints."
   (let* ((hermes-dashboard-transport--model-options-cache nil)
+         (hermes-dashboard-transport--model-options-requests nil)
          (client-a (make-hermes-dashboard-transport-client
                     :base-url "http://a.example:9119" :token "a"))
          (client-b (make-hermes-dashboard-transport-client
                     :base-url "http://b.example:9119" :token "b"))
          (payload-a '((providers . (((slug . "a"))))))
-         (payload-b '((providers . (((slug . "b")))))))
+         (payload-b '((providers . (((slug . "b"))))))
+         callbacks)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
                (lambda (client &rest args)
-                 (funcall (plist-get args :resolve)
-                          (if (eq client client-a) payload-a payload-b)))))
+                 (push (cons client (plist-get args :resolve)) callbacks))))
       (hermes-dashboard-transport-model-options-cached client-a)
       (hermes-dashboard-transport-model-options-cached client-b)
+      (funcall (alist-get client-a callbacks) payload-a)
+      (funcall (alist-get client-b callbacks) payload-b)
       (should (equal (hermes-dashboard-transport-cached-model-options client-a)
                      payload-a))
       (should (equal (hermes-dashboard-transport-cached-model-options client-b)
