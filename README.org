@@ -170,8 +170,18 @@ session browsing remains available.
 
 =hermes-dashboard-transport-remote-auth-method= defaults to =auto=:
 
-- Loopback dashboards (=127.0.0.1= / =localhost=) can spawn or attach without extra credentials when the dashboard is not gated.
-- Remote or gated dashboards probe =/api/status=.  Auto mode uses valid stored basic credentials first, otherwise native PKCE when advertised, and finally reports missing basic credentials for a basic-only dashboard.
+- With =auto= start mode, loopback dashboards spawn without extra credentials.
+- With =remote= start mode, an ungated dashboard at =127.0.0.1= can supply its session token automatically. Emacs reads the dashboard's HTML asynchronously; no shell command or environment change is needed.
+- Remote or gated dashboards probe =/api/status=. Auto authentication uses valid stored basic credentials first, otherwise native PKCE when advertised, and reports missing basic credentials for a basic-only dashboard.
+
+Automatic discovery accepts only =127.0.0.1=, never DNS names
+(including =localhost=), other addresses, or redirects. Use =127.0.0.1= rather than
+=localhost= for credential-free attach. Explicit token arguments, auth-source
+entries, and =HERMES_DASHBOARD_SESSION_TOKEN= take precedence, in that order.
+Discovered tokens stay in memory for their dashboard endpoint. Reconnect reads
+a fresh token after a backend restart; a REST GET rejected with HTTP 401 may
+retry once. Writes are never replayed automatically. Failed basic/native login
+never falls back to discovery.
 
 Supported gated attach paths:
 

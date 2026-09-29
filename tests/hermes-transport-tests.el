@@ -6,6 +6,439 @@
 (require 'hermes-test-helpers)
 (require 'url-http)
 
+(defun hermes-test--bootstrap-reply (peer token &optional status headers body)
+  "Send PEER a bootstrap containing TOKEN with optional STATUS, HEADERS, BODY."
+  (let ((body (or body (format "<script>window.__HERMES_SESSION_TOKEN__=%s;window.__HERMES_AUTH_REQUIRED__=false;</script>"
+                              (json-encode token)))))
+    (process-send-string
+     peer (format "HTTP/1.1 %d Test\r\nContent-Type: text/html\r\nContent-Length: %d\r\nConnection: close\r\n%s\r\n%s"
+                  (or status 200) (string-bytes body) (or headers "") body))))
+
+(ert-deftest hermes-transport-discovery-public-attach ()
+  "Attach without configured credentials using the released root handshake."
+  (let ((process-environment nil)
+        (url-proxy-services nil)
+        (hermes-dashboard-transport-ready-timeout nil)
+        opened events client)
+    (hermes-test--with-http-server
+     (lambda (peer request)
+       (if (string-prefix-p "GET /api/status " request)
+           (hermes-test--http-reply peer 200 "{\"auth_required\":false}")
+         (hermes-test--bootstrap-reply peer "fixture-auto-token")))
+     (lambda (base)
+       (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+         (let ((hermes-dashboard-transport-websocket-open-function
+                (lambda (url _client) (setq opened url) 'fixture-socket)))
+           (unwind-protect
+               (progn
+                 (setq client (hermes-dashboard-transport-start
+                               :start-mode 'remote :remote-url base
+                               :remote-auth-method 'auto
+                               :callback (lambda (event) (push event events))))
+                 (hermes-test--http-wait
+                  (lambda () (or opened
+                                 (eq (hermes--promise-state
+                                      (hermes-dashboard-transport-client-ready-promise client))
+                                     'rejected))))
+                 (ert-info ((format "Readiness: %S"
+                                    (hermes--promise-value
+                                     (hermes-dashboard-transport-client-ready-promise client))))
+                   (should (equal opened (concat "ws" (substring base 4)
+                                                 "/api/ws?token=fixture-auto-token"))))
+                 (should-not (getenv "HERMES_DASHBOARD_SESSION_TOKEN"))
+                 (should-not (string-match-p "fixture-auto-token" (format "%S" events))))
+             (when client (hermes-dashboard-transport-stop client)))))))))
+
+(defun hermes-test--discovery-cache-lifetime (inside-call)
+  "Check bootstrap disk isolation when delivery is INSIDE-CALL or deferred."
+  (require 'url-cache)
+  (let ((process-environment nil)
+        (url-proxy-services nil)
+        (url-automatic-caching t)
+        (url-cache-directory (make-temp-file "hermes-bootstrap-cache-" t))
+        (retrieve (symbol-function 'url-retrieve))
+        peer)
+    (unwind-protect
+        (hermes-test--with-http-server
+         (lambda (connection request)
+           (if (string-prefix-p "GET /ordinary " request)
+               (hermes-test--http-reply connection 200 "{\"ordinary\":true}")
+             (setq peer connection)
+             (when inside-call
+               (hermes-test--bootstrap-reply
+                peer "synthetic-cache-token" 200 "Cache-Control: no-store\r\n"))))
+         (lambda (base)
+           (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil))
+                     ((symbol-function 'url-retrieve)
+                      (lambda (&rest args)
+                        (let ((buffer (apply retrieve args)))
+                          ;; Run the real socket callback before retrieval returns
+                          ;; to cover the dynamic binding, not just buffer locals.
+                          (when inside-call
+                            (hermes-test--http-wait
+                             (lambda () (not (buffer-live-p buffer)))))
+                          buffer))))
+             (let* ((promise (hermes-dashboard-transport--remote-token-auth-async
+                              nil nil base))
+                    (file (url-cache-create-filename (concat base "/"))))
+               (should url-automatic-caching)
+               (if inside-call
+                   (should (eq (hermes--promise-state promise) 'resolved))
+                 (should (eq (hermes--promise-state promise) 'pending))
+                 (hermes-test--http-wait (lambda () peer))
+                 ;; The caller's dynamic bindings have unwound before delivery.
+                 (hermes-test--bootstrap-reply
+                  peer "synthetic-cache-token" 200 "Cache-Control: no-store\r\n")
+                 (hermes-test--http-wait
+                  (lambda () (not (eq (hermes--promise-state promise) 'pending)))))
+               (should (eq (hermes--promise-state promise) 'resolved))
+               (should (equal (plist-get (hermes--promise-value promise) :token)
+                              "synthetic-cache-token"))
+               (should-not (file-exists-p file))
+               (should-not (and (file-directory-p url-cache-directory)
+                                (directory-files-recursively url-cache-directory ".")))
+               (should url-automatic-caching)))
+           ;; Ordinary requests still honor the ambient caching customization.
+           (let ((promise (hermes-dashboard-transport--default-http-request-async
+                           (concat base "/ordinary"))))
+             (hermes-test--http-wait
+              (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+             (should (eq (hermes--promise-state promise) 'resolved))
+             (should (file-exists-p
+                      (url-cache-create-filename (concat base "/ordinary"))))
+             (should url-automatic-caching))))
+      (delete-directory url-cache-directory t))))
+
+(ert-deftest hermes-transport-discovery-cache-immediate ()
+  "Bootstrap never caches an HTTP response delivered inside retrieval."
+  (hermes-test--discovery-cache-lifetime t))
+
+(ert-deftest hermes-transport-discovery-cache-deferred ()
+  "Bootstrap never caches an HTTP response delivered after retrieval returns."
+  (hermes-test--discovery-cache-lifetime nil))
+
+(ert-deftest hermes-transport-discovery-rest-rotation ()
+  "Retry a stale discovered GET once, but never replay mutations."
+  (dolist (method '("GET" "POST"))
+    (let ((process-environment nil)
+          (url-proxy-services nil)
+          (hermes-dashboard-transport--api-auth nil)
+          (hermes-dashboard-transport-remote-auth-method 'auto)
+          (roots 0) (writes 0) requests)
+      (hermes-test--with-http-server
+       (lambda (peer request)
+         (push request requests)
+         (cond
+          ((string-prefix-p "GET /api/status " request)
+           (hermes-test--http-reply peer 200 "{\"auth_required\":false}"))
+          ((string-prefix-p "GET / " request)
+           (cl-incf roots)
+           (hermes-test--bootstrap-reply peer "fresh-token"))
+          (t
+           (cl-incf writes)
+           (hermes-test--http-reply
+            peer (if (string-match-p "X-Hermes-Session-Token: fresh-token" request) 200 401)
+            "{\"ok\":true}"))))
+       (lambda (base)
+         (let ((client (make-hermes-dashboard-transport-client
+                        :base-url base :token "old-token"
+                        :credential-kind 'discovered-token)))
+           (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+             (let ((promise (hermes-dashboard-transport-api-request-async
+                             method "/api/profiles" :client client)))
+               (hermes-test--http-wait
+                (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+               (should (eq (hermes--promise-state promise)
+                           (if (equal method "GET") 'resolved 'rejected)))
+               (should (= writes (if (equal method "GET") 2 1)))
+               (should (= roots (if (equal method "GET") 1 0)))
+               (should-not (hermes-dashboard-transport-client-token client))))))))))
+
+(ert-deftest hermes-transport-discovery-reconnect ()
+  "Manual and automatic reconnect rediscover the rotated token."
+  (dolist (automatic '(nil t))
+    (let ((process-environment nil)
+        (url-proxy-services nil)
+        (hermes-dashboard-transport-ready-timeout nil)
+        (hermes-dashboard-transport-reconnect-base-delay 0.01)
+        (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (roots 0) opened client)
+    (hermes-test--with-http-server
+     (lambda (peer request)
+       (if (string-prefix-p "GET /api/status " request)
+           (hermes-test--http-reply peer 200 "{\"auth_required\":false}")
+         (hermes-test--bootstrap-reply
+          peer (format "token-%s" (cl-incf roots)))))
+     (lambda (base)
+       (let ((hermes-dashboard-transport-websocket-open-function
+              (lambda (url _client) (push url opened) nil)))
+         (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+           (unwind-protect
+               (progn
+                 (setq client (hermes-dashboard-transport-acquire
+                               :start-mode 'remote :remote-url base))
+                 (hermes-test--http-wait (lambda () opened))
+                 (should (eq (hermes-dashboard-transport-client-credential-kind client)
+                             'discovered-token))
+                 (should-not (hermes-dashboard-transport-client-credential-reusable-p client))
+                 (if automatic
+                     (progn
+                       (setf (hermes-dashboard-transport-client-ready-p client) t)
+                       (hermes-dashboard-transport--handle-socket-down client "Fixture restart"))
+                   (hermes-dashboard-transport-reconnect client))
+                 (hermes-test--http-wait (lambda () (= (length opened) 2)))
+                 (should (= roots 2))
+                 (should (string-suffix-p "?token=token-2" (car opened)))
+                 (should (string-suffix-p "?token=token-1" (cadr opened))))
+             (when client (hermes-dashboard-transport-stop client))))))))))
+
+(ert-deftest hermes-transport-discovery-no-unsafe-destinations ()
+  "Missing credentials never trigger HTTP discovery on nonliteral hosts."
+  (let ((process-environment nil) requests)
+    (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+      (let ((hermes-dashboard-transport-http-request-async-function
+             (lambda (&rest args) (push args requests) (hermes--promise-resolved nil))))
+        (dolist (base '("http://example.test" "http://localhost" "http://127.1"
+                        "http://2130706433" "http://127.0.0.1.example.test" "http://[::1]"
+                        "http://127.0.0.1@evil.test" "http://[::ffff:127.0.0.1]"
+                        "http://127.0.0.1?x" "http://127.0.0.1/#fragment"))
+          (should (eq (hermes--promise-state
+                       (hermes-dashboard-transport--remote-token-auth-async
+                        nil nil base)) 'rejected)))
+        (should-not requests)))))
+
+(ert-deftest hermes-transport-discovery-explicit-precedence ()
+  "Argument, auth-source, and environment tokens never trigger discovery."
+  (dolist (source '(argument auth-source environment))
+    (let ((process-environment (list "HERMES_DASHBOARD_SESSION_TOKEN=env-token"))
+          requests)
+      (cl-letf (((symbol-function 'auth-source-search)
+                 (lambda (&rest _) (unless (eq source 'environment)
+                                    (list (list :secret "stored-token"))))))
+        (let* ((hermes-dashboard-transport-http-request-async-function
+                (lambda (&rest args) (push args requests) (hermes--promise-resolved nil)))
+               (promise (hermes-dashboard-transport--remote-token-auth-async
+                         nil nil "http://127.0.0.1:9119"
+                         (and (eq source 'argument) "argument-token"))))
+          (should (eq (hermes--promise-state promise) 'resolved))
+          (should (equal (plist-get (hermes--promise-value promise) :token)
+                         (pcase source ('argument "argument-token")
+                                ('auth-source "stored-token") (_ "env-token"))))
+          (should (eq (plist-get (hermes--promise-value promise) :kind) 'legacy-token))
+          (should-not requests))))))
+
+(ert-deftest hermes-transport-discovery-redirects-and-malformed ()
+  "Reject root/status redirects and malformed HTML without following or echoes."
+  (dolist (case '(redirect status-redirect status-error missing gated duplicate malformed))
+    (let ((process-environment nil) (url-proxy-services nil)
+          requests promise)
+      (hermes-test--with-http-server
+       (lambda (peer request)
+         (push request requests)
+         (cond
+          ((and (eq case 'status-redirect) (string-prefix-p "GET /api/status " request))
+           (hermes-test--bootstrap-reply peer "hidden-secret" 302 "Location: /stolen\r\n"))
+          ((and (eq case 'status-error) (string-prefix-p "GET /api/status " request))
+           (hermes-test--bootstrap-reply peer "hidden-secret" 500))
+          (t
+           (hermes-test--bootstrap-reply
+            peer "hidden-secret" (if (eq case 'redirect) 302 200)
+            (and (eq case 'redirect) "Location: /stolen\r\n")
+            (pcase case
+              ('missing "<html>hidden-secret</html>")
+              ('gated "<script>window.__HERMES_SESSION_TOKEN__=\"hidden-secret\";window.__HERMES_AUTH_REQUIRED__=true;</script>")
+              ('duplicate "window.__HERMES_SESSION_TOKEN__=\"hidden-secret\";window.__HERMES_SESSION_TOKEN__=\"other\";window.__HERMES_AUTH_REQUIRED__=false;")
+              ('malformed "window.__HERMES_SESSION_TOKEN__=\"hidden-secret\\q\";window.__HERMES_AUTH_REQUIRED__=false;"))))))
+       (lambda (base)
+         (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+           (setq promise
+                 (hermes-dashboard-transport--remote-auth-async
+                  nil nil base (if (memq case '(status-redirect status-error)) 'auto 'token)))
+           (hermes-test--http-wait
+            (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+           (should (eq (hermes--promise-state promise) 'rejected))
+           (should-not (string-match-p "hidden-secret" (format "%S" (hermes--promise-value promise))))
+           (should (= (length requests) 1))))))))
+
+(ert-deftest hermes-transport-discovery-gated-no-downgrade ()
+  "Auto, basic, and native failures never fall back to the HTML token."
+  (dolist (method '(auto basic native))
+    (let ((process-environment nil) (url-proxy-services nil) requests)
+      (hermes-test--with-http-server
+       (lambda (peer request)
+         (push request requests)
+         (hermes-test--http-reply
+          peer 200 "{\"auth_required\":true,\"auth_providers\":[\"basic\"]}"))
+       (lambda (base)
+         (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil))
+                   ((symbol-function 'hermes-dashboard-transport--native-token-load) (lambda (&rest _) nil)))
+           (let ((promise (hermes-dashboard-transport--remote-auth-async
+                           nil nil base method)))
+             (hermes-test--http-wait
+              (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+             (should (eq (hermes--promise-state promise) 'rejected))
+             (should (= (length requests) 1))
+             (should (string-prefix-p "GET /api/status " (car requests))))))))))
+
+(ert-deftest hermes-transport-discovery-startup-retirement ()
+  "Stop or endpoint replacement retires the pending real HTTP bootstrap."
+  (dolist (retirement '(stop endpoint))
+    (let ((process-environment nil) (url-proxy-services nil)
+          (hermes-dashboard-transport-ready-timeout nil)
+          peer opened client)
+      (hermes-test--with-http-server
+       (lambda (connection _request) (setq peer connection))
+       (lambda (base)
+         (let ((hermes-dashboard-transport-websocket-open-function
+                (lambda (&rest _) (setq opened t) nil)))
+           (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+             (unwind-protect
+                 (progn
+                   (setq client (hermes-dashboard-transport-start
+                                 :start-mode 'remote :remote-url base
+                                 :remote-auth-method 'token))
+                   (hermes-test--http-wait (lambda () peer))
+                   (should (functionp (hermes-dashboard-transport-client-startup-cancel client)))
+                   (if (eq retirement 'stop)
+                       (hermes-dashboard-transport-stop client)
+                     (setf (hermes-dashboard-transport-client-base-url client) "http://127.0.0.1:1"))
+                   (when (process-live-p peer)
+                     (hermes-test--bootstrap-reply peer "retired-token"))
+                   (hermes-test--http-wait
+                    (lambda () (not (hermes-dashboard-transport-client-startup-cancel client))))
+                   (should-not opened)
+                   (should-not (hermes-dashboard-transport-client-token client)))
+               (when client (hermes-dashboard-transport-stop client))))))))))
+
+(ert-deftest hermes-transport-discovery-rest-retired-owner ()
+  "A retired REST reader cannot publish the late credential or dispatch."
+  (let ((process-environment nil) (url-proxy-services nil)
+        (hermes-dashboard-transport-remote-auth-method 'token)
+        (hermes-dashboard-transport--api-auth nil)
+        (current t) peer requests)
+    (hermes-test--with-http-server
+     (lambda (connection request) (setq peer connection) (push request requests))
+     (lambda (base)
+       (let ((hermes-dashboard-transport-url base))
+         (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+           (let ((promise (hermes-dashboard-transport-api-request-async
+                           "POST" "/mutation" :current-p (lambda () current))))
+             (hermes-test--http-wait (lambda () peer))
+             (setq current nil)
+             (hermes-test--bootstrap-reply peer "retired-token")
+             (hermes-test--http-wait
+              (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+             (should (eq (hermes--promise-state promise) 'rejected))
+             (should (= (length requests) 1))
+             (should-not hermes-dashboard-transport--api-auth))))))))
+
+(ert-deftest hermes-transport-discovery-rest-endpoint-scope ()
+  "REST cache changes endpoints without forwarding the other endpoint's token."
+  (let ((process-environment nil) (url-proxy-services nil)
+        (hermes-dashboard-transport--api-auth nil)
+        (hermes-dashboard-transport-remote-auth-method 'token)
+        requests)
+    (cl-labels ((handler (token peer request)
+                  (push (cons token request) requests)
+                  (if (string-prefix-p "GET / " request)
+                      (hermes-test--bootstrap-reply peer token)
+                    (hermes-test--http-reply peer 200 "{\"ok\":true}"))))
+      (hermes-test--with-http-server
+       (lambda (peer request) (handler "token-a" peer request))
+       (lambda (a)
+         (hermes-test--with-http-server
+          (lambda (peer request) (handler "token-b" peer request))
+          (lambda (b)
+            (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+              (dolist (base (list a b a))
+                (let* ((hermes-dashboard-transport-url base)
+                       (promise (hermes-dashboard-transport-api-request-async "GET" "/api/profiles")))
+                  (hermes-test--http-wait
+                   (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+                  (should (eq (hermes--promise-state promise) 'resolved))))))))))
+    (should (= (length requests) 6))
+    (dolist (entry requests)
+      (unless (string-prefix-p "GET / " (cdr entry))
+        (should (string-match-p
+                 (concat "X-Hermes-Session-Token: " (car entry) "\r\n") (cdr entry)))))))
+
+(ert-deftest hermes-transport-discovery-proxy-and-timeout ()
+  "Bootstrap bypasses proxies; an unanswered request releases its owner."
+  (let ((process-environment nil) proxy-requests)
+    (hermes-test--with-http-server
+     (lambda (peer request)
+       (push request proxy-requests)
+       (hermes-test--bootstrap-reply peer "proxy-token"))
+     (lambda (proxy)
+       (dolist (respond '(t nil))
+         (let ((url-proxy-services `(("http" . ,(substring proxy 7))))
+               (owner (make-hermes-dashboard-transport-client))
+               (hermes-dashboard-transport-http-timeout 0.05))
+           (hermes-test--with-http-server
+            (lambda (peer _request)
+              (when respond (hermes-test--bootstrap-reply peer "direct-token")))
+            (lambda (base)
+              (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+                (let ((promise
+                       (hermes-dashboard-transport--remote-token-auth-async
+                        nil nil base nil
+                        (lambda (expected next)
+                          (hermes-dashboard-transport--startup-cancel-setter owner expected next)))))
+                  (hermes-test--http-wait
+                   (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+                  (should (eq (hermes--promise-state promise) (if respond 'resolved 'rejected)))
+                  (when respond
+                    (should (equal (plist-get (hermes--promise-value promise) :token) "direct-token")))
+                  (should-not (hermes-dashboard-transport-client-startup-cancel owner))))))))))
+    (should-not proxy-requests)))
+
+(ert-deftest hermes-transport-discovery-rest-client-retirement ()
+  "A tokenless discovered client still fences authentication after retirement."
+  (let ((process-environment nil) (url-proxy-services nil)
+        (hermes-dashboard-transport-remote-auth-method 'token)
+        (hermes-dashboard-transport--api-auth nil)
+        peer requests)
+    (hermes-test--with-http-server
+     (lambda (connection request) (setq peer connection) (push request requests))
+     (lambda (base)
+       (let ((client (make-hermes-dashboard-transport-client
+                      :base-url base :credential-kind 'discovered-token)))
+         (cl-letf (((symbol-function 'auth-source-search) (lambda (&rest _) nil)))
+           (let ((promise (hermes-dashboard-transport-api-request-async
+                           "GET" "/api/profiles" :client client)))
+             (hermes-test--http-wait (lambda () peer))
+             (hermes-dashboard-transport-stop client)
+             (hermes-test--bootstrap-reply peer "retired-token")
+             (hermes-test--http-wait
+              (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+             (should (eq (hermes--promise-state promise) 'rejected))
+             (should (= (length requests) 1))
+             (should-not hermes-dashboard-transport--api-auth))))))))
+
+(ert-deftest hermes-transport-discovery-rest-no-recovery-for-other-owners ()
+  "403, explicit tokens, and stale 401 callbacks never bootstrap or clear successors."
+  (dolist (case '(forbidden explicit successor))
+    (let ((url-proxy-services nil) peer requests)
+      (hermes-test--with-http-server
+       (lambda (connection request) (setq peer connection) (push request requests))
+       (lambda (base)
+         (let* ((client (make-hermes-dashboard-transport-client
+                         :base-url base :token "original-token"
+                         :credential-kind (if (eq case 'explicit) 'legacy-token 'discovered-token)))
+                (promise (hermes-dashboard-transport-api-request-async "GET" "/api/profiles" :client client)))
+           (hermes-test--http-wait (lambda () peer))
+           (when (eq case 'successor)
+             (setf (hermes-dashboard-transport-client-token client) "successor-token"))
+           (hermes-test--http-reply peer (if (eq case 'forbidden) 403 401)
+                                    "{\"detail\":\"original-token denied\"}")
+           (hermes-test--http-wait
+            (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+           (should (eq (hermes--promise-state promise) 'rejected))
+           (should-not (string-match-p "original-token" (hermes--promise-value promise)))
+           (should (equal (hermes-dashboard-transport-client-token client)
+                          (if (eq case 'successor) "successor-token" "original-token")))
+           (should (= (length requests) 1))))))))
+
 (defun hermes-test--http-explicit-auth ()
   "Exercise explicit-only asynchronous authentication using real HTTP."
   (dolist (challenge '(nil "WWW-Authenticate: Basic realm=\"fixture\"\r\n"))

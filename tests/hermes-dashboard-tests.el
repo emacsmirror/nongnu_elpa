@@ -705,9 +705,9 @@
                   (nth 2 case))))))
 
 (ert-deftest hermes-dashboard-nonreusable-auxiliary-auth-resolves-fresh ()
-  "Nil-kind and ticket clients resolve from stored inputs, never active auth."
+  "Nonreusable clients resolve from stored inputs under their own lifetime."
   :tags '(candidate-4a)
-  (dolist (kind '(nil ticket))
+  (dolist (kind '(nil ticket discovered-token))
     (let ((client (make-hermes-dashboard-transport-client
                    :host "dash.example" :port 443
                    :base-url "https://dash.example"
@@ -727,9 +727,12 @@
         (hermes--promise-then
          (hermes-dashboard-transport-capability-url-async :client client)
          (lambda (value) (setq result value))))
-      (should (equal call
+      (should (equal (cl-subseq call 0 7)
                      '("dash.example" 443 "https://dash.example"
-                       token "resolver" nil)))
+                       token "resolver" nil nil)))
+      (should (funcall (nth 7 call)))
+      (hermes-dashboard-transport-stop client)
+      (should-not (funcall (nth 7 call)))
       (should (string-suffix-p "token=fresh" (plist-get result :url)))
       (should-not (string-match-p "consumed" (format "%S" result))))))
 
