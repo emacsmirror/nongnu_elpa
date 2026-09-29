@@ -610,6 +610,8 @@ SINGLE-EVENT-P omits request-derived error events."
   (let ((pending (hermes-dashboard-transport-client-pending client))
         (subscribers (hermes-dashboard-transport-client-subscribers client))
         (session-index (hermes-dashboard-transport-client-session-index client)))
+    (clrhash (hermes-dashboard-transport-client-server-requests client))
+    (setf (hermes-dashboard-transport-client-server-requests-capability client) nil)
     (cl-incf (hermes-dashboard-transport-client-generation client))
     (cl-incf (hermes-dashboard-transport-client-process-generation client))
     (setf (hermes-dashboard-transport-client-stopping-p client) t
@@ -727,6 +729,8 @@ Return captured resources, never a lease on later client state."
       (hermes-dashboard-transport--clear-table
        (hermes-dashboard-transport-client-pending client))
       (hermes-dashboard-transport--reset-readiness client))
+    (clrhash (hermes-dashboard-transport-client-server-requests client))
+    (setf (hermes-dashboard-transport-client-server-requests-capability client) nil)
     (setf (hermes-dashboard-transport-client-websocket client) nil
           (hermes-dashboard-transport-client-startup-cancel client) nil
           (hermes-dashboard-transport-client-idle-timer client) nil
@@ -1160,7 +1164,9 @@ A retired request is rejected and its pending timer is cancelled.")
 (defun hermes-dashboard-transport-request (client method &optional params resolve reject)
   "Send METHOD with PARAMS for CLIENT and correlate response callbacks.
 RESOLVE is called with the JSON-RPC result.  REJECT is called with the error
-message when provided.  The frame is deferred until CLIENT becomes ready, so
+message when provided.  Server errors retain numeric `hermes-rpc-code' and
+`hermes-rpc-method' text properties for routing decisions; local failures have
+neither.  The frame is deferred until CLIENT becomes ready, so
 callers never wait on the connection handshake themselves.  Return the request
 id."
   (let* ((guard hermes-dashboard-transport-dispatch-guard)
@@ -1220,6 +1226,140 @@ FN must accept trailing :resolve/:reject keywords, as the typed
                             (lambda (message)
                               (hermes--promise-reject promise message)))))
     promise))
+
+;;; Server-originated requests
+
+(defun hermes-dashboard-transport-server-request-current-p (request)
+  "Return non-nil while REQUEST owns its connection and session recipient."
+  (let ((client (plist-get request :client)))
+    (and (plist-get request :active)
+         (hermes-dashboard-transport-client-p client)
+         (not (hermes-dashboard-transport-client-stopping-p client))
+         (eq (plist-get request :socket)
+             (hermes-dashboard-transport-client-websocket client))
+         (eql (plist-get request :generation)
+              (hermes-dashboard-transport-client-generation client))
+         (eq request (gethash (plist-get request :id)
+                             (hermes-dashboard-transport-client-server-requests client)))
+         (eq (plist-get request :subscriber)
+             (gethash (plist-get request :session-id)
+                      (hermes-dashboard-transport-client-session-index client))))))
+
+(defun hermes-dashboard-transport-answer-request
+    (request result &optional resolve reject error-code)
+  "Answer server REQUEST once with RESULT on its originating socket.
+RESOLVE receives a local send receipt, not backend acceptance.  REJECT receives
+a fixed safe diagnostic.  ERROR-CODE sends a refusal instead of RESULT.
+Secret values are never placed in the outgoing RPC correlation table."
+  (if (not (hermes-dashboard-transport-server-request-current-p request))
+      (when reject (funcall reject "Hermes request no longer pending"))
+    ;; Retire before sending: a partial write is uncertain, never retry it.
+    (setf (plist-get request :active) nil)
+    (let ((sent
+           (condition-case nil
+               (progn
+                 (funcall hermes-dashboard-transport-websocket-send-function
+                          (plist-get request :socket)
+                          (hermes-dashboard-transport--encode-frame
+                           `((jsonrpc . "2.0") (id . ,(plist-get request :id))
+                             ,(if error-code
+                                  `(error . ((code . ,error-code)
+                                             (message . "Request unsupported by this client")))
+                                `(result . ,result)))))
+                 t)
+             ((error quit) nil))))
+      (if sent
+          (when resolve (funcall resolve '((status . "sent"))))
+        (when reject (funcall reject "Hermes response send failed; delivery uncertain"))))))
+
+(defun hermes-dashboard-transport--server-request-event (request params)
+  "Return a native prompt event for REQUEST with safe PARAMS fields."
+  (let* ((method (plist-get request :method))
+         (event (hermes-dashboard-transport--prompt-request-event
+                 (concat method ".request")
+                 `((session_id . ,(plist-get request :session-id))) params)))
+    (append (list :server-request request :server-request-required-p t)
+            (plist-put event :request-id (format "server:%S" (plist-get request :id))))))
+
+(defun hermes-dashboard-transport--handle-server-request (client frame)
+  "Admit server FRAME only to CLIENT's exact session owner, or refuse it."
+  (let* ((id (hermes-transport--get frame 'id))
+         (method (hermes-transport--get frame 'method))
+         (params (hermes-transport--get frame 'params))
+         (sid (hermes-transport--get params 'session_id))
+         (subscriber (gethash sid (hermes-dashboard-transport-client-session-index client)))
+         (table (hermes-dashboard-transport-client-server-requests client))
+         (previous (gethash id table)))
+    ;; A replay can contain locks accepted by another surface.  Reuse the
+    ;; exact handle; admission deduplication must not discard those answers.
+    (when (and previous
+               (hermes-dashboard-transport-server-request-current-p previous)
+               (equal method "clarify")
+               (equal method (plist-get previous :method))
+               (equal sid (plist-get previous :session-id))
+               (hermes-transport--field-present-p params 'answers))
+      (hermes-dashboard-transport--dispatch-event
+       client (hermes-dashboard-transport--server-request-event previous params)))
+    (when (and (or (stringp id) (integerp id))
+               (hermes-dashboard-transport-client-websocket client)
+               (not (hermes-dashboard-transport-client-stopping-p client))
+               (or subscriber (null sid) (equal sid ""))
+               (or (not previous)
+                   (and (plist-get previous :active)
+                        (not (hermes-dashboard-transport-server-request-current-p previous)))))
+      (let* ((request (list :id id :method method :session-id sid :subscriber subscriber
+                            :client client :socket (hermes-dashboard-transport-client-websocket client)
+                            :generation (hermes-dashboard-transport-client-generation client)
+                            :active t))
+             (supported (and subscriber (member method '("clarify" "approval" "sudo" "secret")))))
+        (puthash id request table)
+        (if supported
+            (hermes-dashboard-transport--dispatch-event
+             client (hermes-dashboard-transport--server-request-event request params))
+          ;; Notify the owner first so headless completion is barred even if a
+          ;; terminal event arrives while the refusal is being sent.
+          (when subscriber
+            (hermes-dashboard-transport--dispatch-event
+             client (list :type 'status :event "request.unsupported"
+                          :session-id sid :server-request request
+                          :server-request-required-p t
+                          :content "Unsupported backend request declined")))
+          (hermes-dashboard-transport-answer-request request nil nil nil -32601))))))
+
+(defun hermes-dashboard-transport--cancel-server-request (client params)
+  "Retire only the request named by CLIENT's cancellation PARAMS."
+  (let* ((payload (hermes-transport--get params 'payload))
+         (request (gethash (hermes-transport--get payload 'id)
+                           (hermes-dashboard-transport-client-server-requests client))))
+    (when (and (hermes-dashboard-transport-server-request-current-p request)
+               (equal (plist-get request :method) (hermes-transport--get payload 'method))
+               (equal (plist-get request :session-id) (hermes-transport--get params 'session_id)))
+      (setf (plist-get request :active) nil)
+      (hermes-dashboard-transport--dispatch-event
+       client (list :type 'status :event "request.cancel" :prompt-expire-p t
+                    :prompt-type (plist-get request :method)
+                    :request-id (format "server:%S" (plist-get request :id))
+                    :session-id (plist-get request :session-id)
+                    :content "Backend request no longer pending")))))
+
+(defun hermes-dashboard-transport--negotiate-server-requests (client current)
+  "Advertise CLIENT's dispatcher once while CURRENT owns this connection."
+  (unless (hermes-dashboard-transport-client-server-requests-capability client)
+    (setf (hermes-dashboard-transport-client-server-requests-capability client) 'pending)
+    (hermes-dashboard-transport-request
+     client "client.capabilities" '((server_requests . t))
+     (lambda (_result)
+       (when (funcall current)
+         (setf (hermes-dashboard-transport-client-server-requests-capability client) t)))
+     (lambda (message)
+       (when (funcall current)
+         (setf (hermes-dashboard-transport-client-server-requests-capability client) 'unavailable)
+         (hermes-dashboard-transport--dispatch-event
+          client (list :type 'status :event "client.capabilities"
+                       :content (if (and (stringp message) (> (length message) 0)
+                                         (eql (get-text-property 0 'hermes-rpc-code message) -32601))
+                                    "Gateway lacks server-request negotiation; legacy events only"
+                                  "Server-request negotiation failed; interaction support unavailable"))))))))
 
 ;;; Connection startup and readiness
 
@@ -1759,7 +1899,9 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
   (let* ((id (hermes-dashboard-transport--frame-id frame))
          (table (hermes-dashboard-transport-client-pending client))
          (pending (and id table (gethash id table)))
-         (method (plist-get pending :method)))
+         (method (plist-get pending :method))
+         (generation (hermes-dashboard-transport-client-generation client))
+         (socket (hermes-dashboard-transport-client-websocket client)))
     (when pending
       (let ((decoded (hermes-dashboard-transport--response-result frame text pending))
             (resolve (plist-get pending :resolve)))
@@ -1769,7 +1911,12 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
               (hermes-dashboard-transport--store-session-result client method (cdr decoded))
               (when resolve
                 (hermes-dashboard-transport--call-request-callback
-                 client method resolve (cdr decoded))))
+                 client method resolve (cdr decoded)))
+              (when (member method '("session.resume" "session.activate" "session.events.since"))
+                (dolist (request (append (hermes-transport--get (cdr decoded) 'open_requests) nil))
+                  (when (and (eql generation (hermes-dashboard-transport-client-generation client))
+                             (eq socket (hermes-dashboard-transport-client-websocket client)))
+                    (hermes-dashboard-transport--handle-server-request client request)))))
           (hermes-dashboard-transport--reject-pending-request client pending (cdr decoded)))))))
 
 (defun hermes-dashboard-transport--reject-response (client frame)
@@ -1777,8 +1924,12 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
   (let* ((id (hermes-dashboard-transport--frame-id frame))
          (pending (and id (hermes-dashboard-transport--take-pending client id)))
          (method (plist-get pending :method))
-         (message (hermes-dashboard-transport--response-error-message frame))
          (code (hermes-dashboard-transport--response-error-code frame))
+         (message
+          (propertize
+           (hermes-dashboard-transport--normalized-error-message
+            client (hermes-dashboard-transport--response-error-message frame))
+           'hermes-rpc-code code 'hermes-rpc-method method))
          handled)
     (when pending
       (when-let* ((reject (plist-get pending :reject)))
@@ -1860,6 +2011,8 @@ Cancel the new timer if scheduling retires the captured readiness owner."
         (when (funcall current)
           (hermes-dashboard-transport--attempt
            fn '(:type status :status "reconnected" :content "Hermes dashboard reconnected")))))
+    (when (and socket (funcall current))
+      (hermes-dashboard-transport--negotiate-server-requests client current))
     (when (and (funcall current) ready)
       (hermes-dashboard-transport--attempt #'hermes--promise-resolve ready client))
     (dolist (event (hermes-dashboard-transport--normalize-event-frame frame))
@@ -1872,17 +2025,20 @@ Cancel the new timer if scheduling retires the captured readiness owner."
 
 (defun hermes-dashboard-transport--handle-event-frame (client frame)
   "Dispatch JSON-RPC event FRAME to CLIENT's callback."
-  (if (equal (hermes-transport--get (hermes-transport--get frame 'params) 'type)
-             "gateway.ready")
-      (hermes-dashboard-transport--complete-ready client frame)
-    (dolist (event (hermes-dashboard-transport--normalize-event-frame frame))
-      (hermes-dashboard-transport--dispatch-event client event))))
+  (pcase (hermes-transport--get (hermes-transport--get frame 'params) 'type)
+    ("gateway.ready" (hermes-dashboard-transport--complete-ready client frame))
+    ("request.cancel"
+     (hermes-dashboard-transport--cancel-server-request
+      client (hermes-transport--get frame 'params)))
+    (_ (dolist (event (hermes-dashboard-transport--normalize-event-frame frame))
+         (hermes-dashboard-transport--dispatch-event client event)))))
 
 (defun hermes-dashboard-transport--handle-frame (client text)
   "Handle inbound JSON-RPC TEXT or frame alist for CLIENT."
   (condition-case err
       (let ((frame (hermes-dashboard-transport--decode-frame text)))
         (pcase (hermes-dashboard-transport--frame-kind frame)
+          ('request (hermes-dashboard-transport--handle-server-request client frame))
           ('response (hermes-dashboard-transport--resolve-response client frame text))
           ('error-response (hermes-dashboard-transport--reject-response client frame))
           ('event (hermes-dashboard-transport--handle-event-frame client frame))

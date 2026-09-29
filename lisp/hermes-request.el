@@ -96,7 +96,7 @@
 (defun hermes-request--finish (op)
   "Resolve OP only after both admission and a valid terminal response."
   (when (and (hermes-request--live-p op) (plist-get op :accepted)
-             (plist-get op :terminal))
+             (not (plist-get op :interaction)) (plist-get op :terminal))
     (hermes-request--settle op t (plist-get op :terminal))))
 
 (defun hermes-request--event (op event)
@@ -110,7 +110,11 @@
         (cond
          ((or (eq (plist-get event :type) 'error)
               (plist-get event :prompt-request-p)
+              (plist-get event :server-request-required-p)
               (equal (plist-get event :event) "session.reclaimed"))
+          (setf (plist-get op :interaction) t)
+          (when-let* ((request (plist-get event :server-request)))
+            (hermes-dashboard-transport-answer-request request nil nil nil -32601))
           (hermes-request--fail op "Hermes turn failed or requires interaction"))
          ((and (plist-get op :submitted)
                (equal (plist-get event :event) "message.complete")
@@ -259,7 +263,9 @@ context guarantee.  Invalid arguments signal before starting a request.
 Use `hermes-request-timeout' for the overall deadline.  Session closure is
 best effort, including late creation after cancellation; lost creation replies
 cannot be cleaned up by handle.  Backend history retention still applies.
-The selected profile controls tools and instructions; this is not a sandbox."
+Profile/model selection does not isolate tools or filesystem access, and the
+client does not verify the effective tool set.  This is not a sandbox; use an
+independently isolated backend when evaluation must not affect the host."
   (let ((prompt (plist-get request :prompt))
         (profile (plist-get request :profile))
         (case-fold-search nil))
@@ -272,7 +278,7 @@ The selected profile controls tools and instructions; this is not a sandbox."
                     :profile (substring-no-properties profile)
                     :resolve resolve :reject reject :settled nil :timer nil
                     :client nil :generation nil :subscription nil :creating nil :closing nil
-                    :session nil :submitted nil :accepted nil :terminal nil)))
+                    :session nil :submitted nil :accepted nil :terminal nil :interaction nil)))
       (setf (plist-get op :timer)
             (run-at-time hermes-request-timeout nil
                          #'hermes-request--fail op "Hermes request timed out"))

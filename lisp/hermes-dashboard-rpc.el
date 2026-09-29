@@ -410,6 +410,25 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
    client "clarify.respond" `((request_id . ,request-id) (answer . ,answer))
    resolve reject))
 
+(defun hermes-dashboard-transport-clarify-lock
+    (client request question-id answer &optional resolve reject)
+  "Lock QUESTION-ID's ANSWER for server REQUEST on CLIENT.
+RESOLVE and REJECT receive the backend lock receipt or safe failure."
+  (let ((hermes-dashboard-transport-dispatch-guard
+         (lambda () (hermes-dashboard-transport-server-request-current-p request))))
+    (hermes-dashboard-transport-request
+     client "clarify.lock"
+     `((request_id . ,(plist-get request :id)) (question_id . ,question-id)
+       (answer . ,(if (listp answer) (vconcat answer) answer)))
+     (lambda (result)
+       (when (or (equal (hermes-transport--get result 'status) "expired")
+                 (and (equal (hermes-transport--get result 'status) "ok")
+                      (hermes-transport--field-present-p result 'remaining)
+                      (not (hermes-transport--get result 'remaining))))
+         (setf (plist-get request :active) nil))
+       (when resolve (funcall resolve result)))
+     reject)))
+
 (defun hermes-dashboard-transport-clarify-question-respond
     (client request-id question-id answer &optional resolve reject)
   "Send ANSWER for QUESTION-ID in clarify REQUEST-ID on CLIENT."

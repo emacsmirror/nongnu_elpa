@@ -569,8 +569,11 @@ names a structured event type."
   (hermes-transport--scalar-string (hermes-transport--get frame 'id)))
 
 (defun hermes-dashboard-transport--frame-kind (frame)
-  "Return FRAME kind: response, error-response, event, or unknown."
+  "Return FRAME kind: request, response, error-response, event, or unknown."
   (cond
+   ((and (hermes-transport--field-present-p frame 'id)
+         (stringp (hermes-transport--get frame 'method)))
+    'request)
    ((and (hermes-dashboard-transport--frame-id frame)
          (hermes-transport--get frame 'error))
     'error-response)

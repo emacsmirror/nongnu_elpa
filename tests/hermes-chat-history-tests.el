@@ -802,7 +802,12 @@
                   ;; Connection readiness alone must not replay the resume or input.
                   (when (eq loss 'reconnect)
                     (hermes-dashboard-transport--complete-ready client '((method . "ready"))))
-                  (should (= 1 (length frames)))
+                  (should (= (if (eq loss 'reconnect) 2 1) (length frames)))
+                  (when (eq loss 'reconnect)
+                    (should (equal (hermes-transport--get (car frames) 'method)
+                                   "client.capabilities"))
+                    (should (equal (hermes-transport--get (car frames) 'params)
+                                   '((server_requests . t)))))
                   (let ((before (buffer-string)))
                     (funcall (plist-get old-request :resolve)
                              '((session_id . "stale") (messages . (((role . "user") (text . "stale history"))))))
@@ -812,7 +817,7 @@
                   (should (= (if (eq loss 'stop) 2 1) starts))
                   (should (eq hermes-chat--dashboard-client
                               (if (eq loss 'stop) replacement client)))
-                  (should (= 2 (length frames)))
+                  (should (= (if (eq loss 'reconnect) 3 2) (length frames)))
                   (should (equal (hermes-transport--get (car frames) 'method) "session.resume"))
                   (should (equal (hermes-transport--get (hermes-transport--get (car frames) 'params) 'session_id)
                                  "stored"))

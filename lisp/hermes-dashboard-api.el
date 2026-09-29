@@ -658,6 +658,9 @@ Return a promise of the response plist.  CANCEL-SETTER owns cancellation."
   ready-promise
   (next-id 0)
   (pending (make-hash-table :test #'equal))
+  ;; Server-originated requests have separate correlation and connection scope.
+  (server-requests (make-hash-table :test #'equal))
+  server-requests-capability
   ;; Deprecated: session identity is buffer-local.  These slots are retained
   ;; for incremental source compatibility only; chat and control paths no
   ;; longer read or write them.  Do not add new dependencies on them.

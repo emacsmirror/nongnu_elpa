@@ -136,7 +136,10 @@
                 (lambda (&rest _) (setq handoff-requested t))))
        (hermes-chat--dashboard-slash-exec "foo" "" "foo")
        (should hermes-chat--command-owner)
-       (should-error (funcall slash-reject "unsupported"))
+       (should-error
+         (funcall slash-reject
+                  (propertize "skill command: use command.dispatch for /foo"
+                              'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec")))
        (should-not hermes-chat--command-owner)
        (should-not (hermes-chat--submit-inhibit-reason))
        (hermes-chat-handoff "telegram")

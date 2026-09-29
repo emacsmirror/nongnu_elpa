@@ -3359,7 +3359,7 @@
                                   :buffer nil
                                   :host "127.0.0.1"
                                   :service 4567)))
-                       (websocket-inner-create :conn conn :url token-url))))
+                       (funcall (symbol-function 'websocket-inner-create) :conn conn :url token-url))))
                   'fake-websocket)))
     (should (equal process-name (format "websocket to %s" safe-url)))
     (should (equal websocket-url safe-url))
@@ -3387,7 +3387,7 @@
                                   :buffer nil
                                   :host "dash.example"
                                   :service 443)))
-                       (websocket-inner-create :conn conn :url ticket-url))))
+                       (funcall (symbol-function 'websocket-inner-create) :conn conn :url ticket-url))))
                   'fake-websocket)))
     (should (equal process-name (format "websocket to %s" safe-url)))
     (should (equal websocket-url safe-url))
@@ -5463,6 +5463,88 @@ url.el flags every 4xx/5xx via the callback status; the useless
   (dolist (value '(t 1)) (should (hermes-transport--true-p value)))
   (dolist (value '(nil :false :null 0 2 -1 1.0 "true" "1" (t) [t]))
     (should-not (hermes-transport--true-p value))))
+
+(ert-deftest hermes-transport-server-request-negotiation-per-connection ()
+  "Advertise once on readiness, preserve RPCs and explicitly accept old gateways."
+  (let* ((client (hermes-test--dashboard-client))
+         (hermes-dashboard-transport-request-timeout nil)
+         (ready '((method . "event") (params . ((type . "gateway.ready")))))
+         frames events
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_socket text) (push (hermes-dashboard-transport--decode-frame text) frames))))
+    (setf (hermes-dashboard-transport-client-callback client) (lambda (event) (push event events)))
+    (dotimes (_ 2) (hermes-dashboard-transport--handle-frame client ready))
+    (should (= (length frames) 1))
+    (should (equal (hermes-transport--get (car frames) 'method) "client.capabilities"))
+    (should (eq (hermes-transport--get (hermes-transport--get (car frames) 'params) 'server_requests) t))
+    (hermes-dashboard-transport--handle-frame
+     client `((id . ,(hermes-transport--get (car frames) 'id))
+              (error . ((code . -32601) (message . "No such method")))))
+    (should (eq (hermes-dashboard-transport-client-server-requests-capability client) 'unavailable))
+    (should (seq-some (lambda (event) (string-match-p "legacy events only" (or (plist-get event :content) ""))) events))
+    (let* (resolved
+           (id (hermes-dashboard-transport-request client "ordinary" nil (lambda (value) (setq resolved value)))))
+      (hermes-dashboard-transport--handle-frame client `((id . ,id) (result . ((ok . t)))))
+      (should (equal resolved '((ok . t)))))
+    (hermes-dashboard-transport--take-reconnect client "fixture reconnect" nil)
+    (setf (hermes-dashboard-transport-client-websocket client) 'next
+          (hermes-dashboard-transport-client-reconnecting-p client) nil)
+    (hermes-dashboard-transport--handle-frame client ready)
+    (should (= (length (seq-filter (lambda (frame) (equal (hermes-transport--get frame 'method) "client.capabilities")) frames)) 2))
+    (hermes-dashboard-transport-stop client)))
+
+(ert-deftest hermes-transport-rpc-failure-keeps-safe-string-discriminator ()
+  "Numeric routing evidence survives without changing rejection string consumers."
+  (let* ((client (hermes-test--dashboard-client))
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function #'ignore)
+         reason
+         (id (hermes-dashboard-transport-request client "slash.exec" nil nil
+                                                  (lambda (text) (setq reason text)))))
+    (setf (hermes-dashboard-transport-client-token client) "private-token")
+    (hermes-dashboard-transport--handle-frame
+     client `((id . ,id) (error . ((code . 4018) (message . "failed private-token")))))
+    (should (stringp reason))
+    (should-not (string-match-p "private-token" reason))
+    (should (eql (get-text-property 0 'hermes-rpc-code reason) 4018))
+    (should (equal (get-text-property 0 'hermes-rpc-method reason) "slash.exec"))))
+
+(ert-deftest hermes-transport-server-request-replay-rebind-and-cancel ()
+  "Replay grants an unanswered request only to its current session subscriber."
+  (let* ((client (hermes-test--dashboard-client))
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function #'ignore)
+         events
+         (first (hermes-dashboard-transport-subscribe client (lambda (event) (push event events))))
+         (frame '((id . "replay") (method . "clarify")
+                  (params . ((session_id . "owned") (question . "Q"))))))
+    (hermes-dashboard-transport-subscribe-session client first "owned")
+    (hermes-dashboard-transport--handle-frame client frame)
+    (let ((old (plist-get (car events) :server-request)))
+      (hermes-dashboard-transport-unsubscribe client first)
+      (let ((next (hermes-dashboard-transport-subscribe client (lambda (event) (push event events)))))
+        (hermes-dashboard-transport-subscribe-session client next "owned")
+        (dolist (method '("session.resume" "session.activate" "session.events.since"))
+          (let ((id (hermes-dashboard-transport-request client method nil #'ignore)))
+            (hermes-dashboard-transport--handle-frame
+             client `((id . ,id) (result . ((open_requests . [,frame])))))))
+        ;; Duplicate replays retain the fresh handle without duplicate prompts.
+        (should (= (length events) 2))
+        (should-not (hermes-dashboard-transport-server-request-current-p old))
+        (let ((current (plist-get (car events) :server-request)))
+          (should (hermes-dashboard-transport-server-request-current-p current))
+          (dolist (fields '(("foreign" "clarify" "replay")
+                            ("owned" "approval" "replay")
+                            ("owned" "clarify" "other")
+                            ("owned" "clarify" "replay")))
+            (hermes-dashboard-transport--handle-frame
+             client `((method . "event")
+                      (params . ((type . "request.cancel") (session_id . ,(nth 0 fields))
+                                 (payload . ((method . ,(nth 1 fields)) (id . ,(nth 2 fields)))))))))
+          (should-not (hermes-dashboard-transport-server-request-current-p current))
+          (should (= (length events) 3))
+          (hermes-dashboard-transport--handle-frame client frame)
+          (should (= (length events) 3)))))))
 
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

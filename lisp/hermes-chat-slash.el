@@ -530,6 +530,18 @@ CONFIRMED acknowledges a prior expensive-model warning."
         (hermes-chat--command-context client owner)
         arg confirmed buffer)))))
 
+(defun hermes-chat--slash-routing-refusal-p (message name)
+  "Return non-nil for a proven pre-execution refusal of slash NAME.
+MESSAGE must carry the original RPC discriminator as well as the released
+routing diagnostic: 4018 is also used for failures after command dispatch."
+  (and (stringp message) (not (string-empty-p message))
+       (eql (get-text-property 0 'hermes-rpc-code message) 4018)
+       (equal (get-text-property 0 'hermes-rpc-method message) "slash.exec")
+       (or (equal message (format "skill command: use command.dispatch for /%s" name))
+           (and (member name '("snapshot" "snap"))
+                (equal message
+                       "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore")))))
+
 (defun hermes-chat--dashboard-slash-exec (name arg raw)
   "Run RAW slash command for NAME and ARG, using native state paths when available."
   (let ((reasoning-request (and (string-equal name "reasoning")
@@ -544,21 +556,28 @@ CONFIRMED acknowledges a prior expensive-model warning."
         (hermes-chat--command-run-owned
          preserve-content
          (lambda (client owner)
-           (let ((context (hermes-chat--command-context client owner)))
+           (let ((context (hermes-chat--command-context client owner)) settled)
              (hermes-dashboard-transport-slash-exec
               client raw
               :session-id (plist-get context :session-id)
               :resolve
               (lambda (result)
-                (hermes-chat--in-buffer buffer
-                  (hermes-chat--command-result context name arg result)))
+                (unless settled
+                  (setq settled t)
+                  (hermes-chat--in-buffer buffer
+                    (hermes-chat--command-result context name arg result))))
               :reject
-              (lambda (_message)
-                (hermes-chat--in-buffer buffer
-                  (if (hermes-chat--command-context-current-p context)
+              (lambda (message)
+                (unless settled
+                  (setq settled t)
+                  (hermes-chat--in-buffer buffer
+                    (cond
+                     ((not (hermes-chat--command-context-current-p context))
+                      (hermes-chat--command-stop owner))
+                     ((hermes-chat--slash-routing-refusal-p message name)
                       (hermes-chat--dashboard-dispatch-command
-                       name arg preserve-content context)
-                    (hermes-chat--command-stop owner)))))))))))))
+                       name arg preserve-content context))
+                     (t (hermes-chat--command-rejection context message)))))))))))))))
 
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."
