@@ -101,16 +101,6 @@
 ;; the number of messages in the imap folder on the server
 (defsubst vm-folder-imap-mailbox-count ()
   (aref vm-folder-access-data 4))
-;; flag indicating whether the imap folder allows writing
-(defsubst vm-folder-imap-read-write ()
-  (aref vm-folder-access-data 5))
-;; flag indicating whether the imap folder allows deleting
-(defsubst vm-folder-imap-can-delete ()
-  (aref vm-folder-access-data 6))
-;; flag indicating whether the imap server has body-peek functionality
-(defsubst vm-folder-imap-body-peek ()
-  (aref vm-folder-access-data 7))
-;; list of permanent flags storable on the imap server
 (defsubst vm-folder-imap-permanent-flags ()
   (aref vm-folder-access-data 8))
 ;; obarray of uid's with message numbers as their values (on the server)
@@ -2854,26 +2844,6 @@ to notice and refuse, as it does for any other stale UID."
 	    (vm-set-stuff-flag-of (car mp) t)
 	    (setq mp (cdr mp)))))))
 
-;; Add a X-VM-Storage header
-(defun vm-add-storage-header (mp &rest args)
-  (save-excursion
-    (let ((buffer-read-only nil)
-	  opoint)
-      (goto-char (vm-headers-of (car mp)))
-      (setq opoint (point))
-      (insert-before-markers vm-external-storage-header " (")
-      (when args (insert-before-markers (format "%s" (car args))))
-      (setq args (cdr args))
-      (while args
-	(insert-before-markers (format " %s" (car args)))
-	(setq args (cdr args)))
-      (insert-before-markers ")\n")
-      (set-marker (vm-headers-of (car mp)) opoint))))
-
-
-;; This is now replaced by vm-mime-encode-words-in-cache-vector
-;;
-
 (defun vm-stuff-message-data (m &optional for-other-folder)
   "Stuff the attributes, labels, soft and cached data of the
 message M into the folder buffer.  The optional argument
@@ -3074,14 +3044,6 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
        " edited,")
    (if (vm-written-flag m)
        " written,")))
-
-(defun vm-babyl-labels-string (m)
-  (let ((list nil)
-	(labels (vm-decoded-labels-of m)))
-    (while labels
-      (setq list (cons "," (cons (car labels) (cons " " list)))
-	    labels (cdr labels)))
-    (apply 'concat (nreverse list))))
 
 (defun vm-stuff-virtual-message-data (message)
   (let ((virtual (vm-virtual-message-p message))
@@ -5685,12 +5647,6 @@ maildrop string)."
       (and (string-match "^\\(imap\\|imap-ssl\\|imap-ssh\\):\\([^:]*\\):[^:]*:\\([^:]*\\):[^:]*:\\([^:]*\\):[^:]*" drop)
 	   (vm-imapdrop-sans-personal-info drop))
       drop))
-
-(defun vm-maildrop-alist-sans-password (alist)
-  (vm-mapcar 
-   (lambda (pair-xxx)
-     (cons (vm-maildrop-sans-password (car pair-xxx)) (cdr pair-xxx)))
-   alist))
 
 (defun vm-maildrop-alist-sans-personal-info (alist)
   (vm-mapcar 

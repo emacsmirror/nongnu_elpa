@@ -185,9 +185,6 @@ rest (emacs-vm/vm#473)."
 			      :chars :vector 
 			      :floats :intervals :strings))
 
-(defsubst vm-garbage-collect ()
-  (pp (vm-zip-lists gc-fields (garbage-collect))))
-
 (defun vm-accept-process-output (process &optional timeout)
   "Accept output from PROCESS, optionally with TIMEOUT seconds.
 Binds `inhibit-quit' to nil to allow user interrupts and avoid
@@ -714,14 +711,6 @@ the function for < comparison."
 (defalias 'vm-view-file-other-frame #'view-file-other-frame)
 
 
-(defun vm-device-type (&optional _device)
-  "The type of the current screen device.
-One of `x', `gtk', `w32', `ns' and `pc'.  DEVICE is ignored, and is there
-because XEmacs's `device-type', which this stood in for, took one."
-  (if (eq window-system 'x)
-      (if (featurep 'gtk) 'gtk)
-    window-system))
-
 (defun vm-generate-new-unibyte-buffer (name)
   (let ((buffer (generate-new-buffer name)))
     (with-current-buffer buffer
@@ -928,10 +917,6 @@ than passed over in silence, since it is the one holding the older mail."
 (put 'beginning-of-folder 'error-message "Beginning of folder")
 (put 'end-of-folder 'error-conditions '(end-of-folder error))
 (put 'end-of-folder 'error-message "End of folder")
-
-(defun vm-trace (&rest args)
-  (with-current-buffer (get-buffer-create "*vm-trace*")
-    (apply 'insert args)))
 
 (defun vm-timezone-make-date-sortable (string)
   (or (cdr (assq string vm-sortable-date-alist))
@@ -1178,22 +1163,6 @@ answered that and this not."
 		  o-list nil)
 	  (setq o-list (cdr o-list))))
       o)))
-
-(defun vm-extent-list (beg end &optional property)
-  "The overlays that overlap the positions BEG to END.
-Where PROPERTY is given, only those carrying it."
-  (let ((o-list (overlays-in beg end)))
-    (if property
-	(vm-delete (lambda (e) (vm-extent-property e property)) o-list t)
-      o-list)))
-
-(defun vm-copy-extent (e)
-  (let ((props (vm-extent-properties e))
-	(ee (vm-make-extent (vm-extent-start-position e)
-			    (vm-extent-end-position e))))
-    (while props
-      (vm-set-extent-property ee (car props) (car (cdr props)))
-      (setq props (cdr (cdr props))))))
 
 (defun vm-make-tempfile (&optional filename-suffix proposed-filename)
   (let ((modes (default-file-modes))
@@ -1671,15 +1640,6 @@ front before adding it to the RING-VARIABLE."
 (defun vm-process-sentinel-kill-buffer (process _what-happened)
   (kill-buffer (process-buffer process)))
 
-(defun vm-fsfemacs-scroll-bar-width ()
-  (or vm-fsfemacs-cached-scroll-bar-width
-      (let (size)
-	(setq size (frame-pixel-width))
-	(scroll-bar-mode nil)
-	(setq size (- size (frame-pixel-width)))
-	(scroll-bar-mode nil)
-	(setq vm-fsfemacs-cached-scroll-bar-width size))))
-
 (defvar vm-disable-modes-ignore nil
   "List of modes ignored by `vm-disable-modes'.
 Any mode causing an error while trying to disable it will be added to this
@@ -1910,13 +1870,6 @@ whichever entry for that host comes first -- someone else's password."
 			       (funcall secret)
 			     secret)))))))
     nil))
-
-(defun vm-auth-source-forget-password (hosts port user)
-  "Forget any cached auth-source password for USER at PORT on HOSTS.
-HOSTS is a list of machine names; nil entries are ignored."
-  (dolist (host hosts)
-    (when host
-      (auth-source-forget+ :host host :port port :user user))))
 
 (defun vm-percent-quote (string)
   "STRING as a `format' control string standing for itself.

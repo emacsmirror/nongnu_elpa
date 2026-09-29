@@ -132,10 +132,6 @@ one needs no charset negotiation."
 	  :parts :cache :message-symbol :display-error 
 	  :layout-is-converted :unconverted-layout])
 
-(defun vm-pp-mime-layout (layout)
-  (pp (vm-formatted-mime-layout layout))
-  nil)
-
 (defun vm-formatted-mime-layout (layout)
   (let ((copy (copy-sequence layout)))
     (vm-set-mm-layout-parts 
@@ -1967,62 +1963,6 @@ assuming that it is text."
 	     (setq done t))
 	    (t (setq alist (cdr alist)))))
     (and alist (car alist))))
-
-;; This function from VM 7.19 is not being used anywhere.  However,
-;; see vm-mime-charset-convert-region for similar functionality.  
-;; 						   USR, 2011-02-11
-(defun vm-mime-convert-undisplayable-charset (layout)
-  (let ((charset (vm-mime-get-parameter layout "charset"))
-	ooo work-buffer)
-    (setq ooo (vm-mime-can-convert-charset charset))
-    (vm-inform 6 "Converting charset %s to %s..."
-	     charset
-	     (nth 1 ooo))
-    (save-excursion
-      (setq work-buffer (vm-make-work-buffer " *mime object*"))
-      (vm-register-message-garbage 'kill-buffer work-buffer)
-      (set-buffer work-buffer)
-      ;; call-process-region calls write-region.
-      ;; don't let it do CR -> LF translation.
-      (setq selective-display nil)
-      (vm-mime-insert-mime-body layout)
-      (vm-mime-transfer-decode-region layout (point-min) (point-max))
-      (call-process-region (point-min) (point-max) shell-file-name
-			   t t nil shell-command-switch (nth 2 ooo))
-      (setq layout
-	    (vm-make-layout
-	     'type (copy-sequence (vm-mm-layout-type layout))
-	     'qtype (copy-sequence (vm-mm-layout-type layout))
-	     'encoding "binary"
-	     'id (vm-mm-layout-id layout)
-	     'description (vm-mm-layout-description layout)
-	     'disposition (vm-mm-layout-disposition layout)
-	     'qdisposition (vm-mm-layout-qdisposition layout)
-	     'header-start (vm-marker (point-min))
-	     'header-body (vm-marker (1- (point)))
-	     'body-start (vm-marker (point))
-	     'body-end (vm-marker (point-max))
-	     'cache (vm-mime-make-cache-symbol)
-	     'message-symbol (vm-mime-make-message-symbol
-			      (vm-mm-layout-message layout))
-	     'layout-is-converted t
-	     'onconverted-layout layout
-	     ))
-      (vm-mime-set-parameter layout "charset" (nth 1 ooo))
-      (vm-mime-set-qparameter layout "charset" (nth 1 ooo))
-      (goto-char (point-min))
-      (let ((vm-mime-avoid-folding-content-type t)) ; maybe no need
-	(insert-before-markers "Content-Type: " 
-			       (vm-mime-type-with-params
-				(car (vm-mm-layout-type layout))
-				(cdr (vm-mm-layout-type layout)))
-			       "\n"))
-      (insert-before-markers "Content-Transfer-Encoding: binary\n\n")
-      (set-buffer-modified-p nil)
-      (vm-inform 6 "Converting charset %s to %s... done"
-	       charset
-	       (nth 1 ooo))
-      layout)))
 
 (defun vm-mime-charset-convert-region (charset b-start b-end)
   (let ((b (current-buffer))
@@ -4178,15 +4118,6 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
       (vm-set-mm-layout-type layout saved-type)
       (vm-set-mm-layout-disposition layout saved-disposition))))
 
-(defun vm-mark-image-tempfile-as-message-garbage-once (layout tempfile)
-  "Register image TEMPFILE used for MIME LAYOUT as a message garbage
-file, and set the `vm-message-garbage' property of LAYOUT.  This
-feature is currently not in use.                        USR, 2012-11-17"
-  (if (get (vm-mm-layout-cache layout) 'vm-message-garbage)
-      nil
-    (vm-register-message-garbage-files (list tempfile))
-    (put (vm-mm-layout-cache layout) 'vm-message-garbage t)))
-
 (defun vm-mime-rotate-image-left (extent)
   (vm-mime-frob-image-xxxx extent "-rotate" "-90"))
 
@@ -5330,14 +5261,6 @@ better than sending the part to an external viewer.  It answered per
 charset when it had to serve XEmacs on a tty as well."
   t)
 
-(defun vm-mime-default-face-charset-p (charset)
-  (and (or (eq vm-mime-default-face-charsets t)
-	   (and (consp vm-mime-default-face-charsets)
-		(vm-string-member charset vm-mime-default-face-charsets)))
-       (not (vm-string-member charset
-			      vm-mime-default-face-charset-exceptions))))
-
-
 (defun vm-mime-find-message/partials (layout id)
   (let ((list nil)
 	(type (vm-mm-layout-type layout)))
@@ -6180,23 +6103,6 @@ Content-Disposition header and leaves the choice to them."
 
 (defun vm-mime-set-attachment-encoding-at-point (sym)
   (setcar (get-text-property (point) 'vm-mime-encoding) sym))
-
-(defun vm-disallow-overlay-endpoint-insertion 
-  (overlay after start end &optional _old-size)
-  "Hook function called before and after text is inserted at the
-endpoint of an OVERLAY.  AFTER is true if the call is being made after
-insertion.  Otherwise, it is being made before insertion.  START and
-END denote the range of the text inserted.  Optional argument
-OLD-SIZE is ignored.
-
-This hook does nothing when called before insertion.  When it is
-called after insertion, it moves the overlay so that the inserted is
-excluded from the overlay."
-  (when after
-    (cond ((= start (overlay-start overlay))
-	   (move-overlay overlay end (overlay-end overlay)))
-	  ((= start (overlay-end overlay))
-	   (move-overlay overlay (overlay-start overlay) start)))))
 
 (defun vm-mime-attachment-button-extents (start end &optional prop)
   "Return the extents of all attachment buttons in the region.  Optional

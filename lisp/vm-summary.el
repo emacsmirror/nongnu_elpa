@@ -1738,37 +1738,6 @@ the `reply-to' and `reply-to-name' entries of the cached-data vector."
 		 (substring address (match-beginning 1) (match-end 1)))))
     (list full-name from)))
 
-;; test for existence and functionality of mail-extract-address-components
-;; there are versions out there that don't work right, so we run
-;; some test data through it to see if we can trust it.
-(defun vm-choose-chop-full-name-function (address)
-  (let ((test-data '(("kyle@uunet.uu.net" .
-		      (nil "kyle@uunet.uu.net"))
-		     ("c++std=lib@inet.research.att.com" .
-		      (nil "c++std=lib@inet.research.att.com"))
-		     ("\"Piet.Rypens\" <rypens@reks.uia.ac.be>" .
-		      ("Piet Rypens" "rypens@reks.uia.ac.be"))
-		     ("makke@wins.uia.ac.be (Marc.Gemis)" .
-		      ("Marc Gemis" "makke@wins.uia.ac.be"))
-		     ("" . (nil nil))))
-	(failed nil)
-	result)
-    (while test-data
-      (setq result (condition-case nil
-		       (mail-extract-address-components (car (car test-data)))
-		     (error nil)))
-      (if (not (equal result (cdr (car test-data))))
-	  ;; failed test, use default
-	  (setq failed t
-		test-data nil)
-	(setq test-data (cdr test-data))))
-    (if failed
-	;; it failed, use default
-	(setq vm-chop-full-name-function 'vm-default-chop-full-name)
-      ;; it passed the tests
-      (setq vm-chop-full-name-function 'mail-extract-address-components))
-    (funcall vm-chop-full-name-function address)))
-
 (defun vm-su-do-recipients (m)
   "Given a message M, extract its recipients from the headers and
 store the strings in the cached data vector.		USR, 2012-10-13"
