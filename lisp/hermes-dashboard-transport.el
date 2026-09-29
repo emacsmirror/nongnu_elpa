@@ -848,8 +848,11 @@ INTERACTIVE permits login only for the first manual attempt.
 Opening does not settle readiness or schedule another attempt."
   (let* ((generation (or generation (hermes-dashboard-transport-client-generation client)))
          (maximum (or maximum hermes-dashboard-transport-reconnect-max-attempts))
-         (current (lambda () (hermes-dashboard-transport--reconnect-current-p
-                              client generation attempt)))
+         (endpoint (copy-sequence (hermes-dashboard-transport-client-base-url client)))
+         (current (lambda ()
+                    (and (equal endpoint (hermes-dashboard-transport-client-base-url client))
+                         (hermes-dashboard-transport--reconnect-current-p
+                          client generation attempt))))
          settled)
     (when (and (funcall current)
                (hermes-dashboard-transport-client-reconnecting-p client))
@@ -1508,7 +1511,11 @@ Emacs."
                   :auth-method method :auth-token token
                   :ready-promise (hermes--promise-make)
                   :callback (or callback #'ignore)))
-         (generation (hermes-dashboard-transport-client-generation client)))
+         (generation (hermes-dashboard-transport-client-generation client))
+         (endpoint (copy-sequence base-url))
+         (current (lambda ()
+                    (and (hermes-dashboard-transport--generation-live-p client generation)
+                         (equal endpoint (hermes-dashboard-transport-client-base-url client))))))
     (hermes--promise-then
      (hermes-dashboard-transport-client-ready-promise client)
      (lambda (_value)
@@ -1523,13 +1530,12 @@ Emacs."
        (lambda (expected next)
          (hermes-dashboard-transport--startup-cancel-setter
           client expected next))
-       (lambda ()
-         (hermes-dashboard-transport--generation-live-p client generation)))
+       current)
       (lambda (auth)
-        (when (hermes-dashboard-transport--generation-live-p client generation)
+        (when (funcall current)
           (hermes-dashboard-transport--remote-connect client auth))))
      (lambda (reason)
-       (when (hermes-dashboard-transport--generation-live-p client generation)
+       (when (funcall current)
          (hermes-dashboard-transport--fail-ready
           client (hermes-dashboard-transport--redact-secret reason)))))
     client))

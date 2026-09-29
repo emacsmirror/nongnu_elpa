@@ -991,8 +991,8 @@ CLAIMS is an alist of buffer objects to their ownership occurrences."
 (defun hermes-close ()
   "Close local Hermes state so the frontend can restart cleanly.
 Stop optional capability and eval services, kill still-owned views and chats,
-and force-stop remaining shared dashboard clients.  Durable Hermes
-sessions and backend data are preserved."
+discard model catalogs, and force-stop remaining shared dashboard clients.
+Durable Hermes sessions and backend data are preserved."
   (interactive)
   (let* ((buffers (hermes--managed-buffers))
          (claims (mapcar (lambda (buffer)
@@ -1002,6 +1002,7 @@ sessions and backend data are preserved."
            (format "Close Hermes connections and kill %d buffer%s? "
                    (length buffers)
                    (if (= (length buffers) 1) "" "s")))
+      (hermes-dashboard-transport-invalidate-model-options)
       (mapc #'hermes--call-if-defined
             '(hermes-capabilities-stop hermes-exec-stop))
       (let* ((killed (hermes--kill-managed-buffers claims))

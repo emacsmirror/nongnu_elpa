@@ -1303,7 +1303,7 @@
        (should-not hermes-chat--command-owner)))))
 
 (ert-deftest hermes-chat-model-command-without-argument-keeps-picker ()
-  "Bare `/model' retains the interactive cached model picker."
+  "Bare `/model' opens the interactive model picker."
   (let (picked)
     (cl-letf (((symbol-function 'hermes-chat-switch-model)
                (lambda (&rest _args) (setq picked t))))

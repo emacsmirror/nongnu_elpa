@@ -474,16 +474,37 @@ because url.el checks it case-sensitively, unlike HTTP."
         (ignore-errors (delete-process process))))
     (ignore-errors (kill-buffer buffer))))
 
+(defun hermes-dashboard-transport--settle-bootstrap-response
+    (promise status buffer kind)
+  "Settle bootstrap PROMISE from STATUS and BUFFER for KIND.
+Never echo response content in an error."
+  (let ((response (hermes-dashboard-transport--parse-http-response-buffer buffer)))
+    (if (or (plist-get status :error) (not (eql (plist-get response :status) 200)))
+        (hermes--promise-reject promise "Dashboard token discovery failed")
+      (hermes--promise-resolve
+       promise (if (eq kind 'status)
+                   (plist-put response :body
+                              (hermes-dashboard-transport--json-body
+                               (plist-get response :body-text)))
+                 response)))))
+
 (cl-defun hermes-dashboard-transport--default-http-request-async
     (url &key (method "GET") headers data secrets timeout
-         cancel-setter cancel-expected)
+         cancel-setter cancel-expected bootstrap)
   "Fetch URL with METHOD, HEADERS, and DATA asynchronously using url.el.
 Return a promise of the response plist; SECRETS are redacted from any error.
 HTTP failures reject with (hermes-dashboard-http-error MESSAGE STATUS);
 other failures reject with a display string.
 TIMEOUT overrides `hermes-dashboard-transport-http-timeout' when non-nil.
-CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
+CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner.
+BOOTSTRAP disables redirects, proxy, disk caching, and error-body output;
+it returns raw HTML, or JSON when its value is `status'."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
+        (url-debug (and (not bootstrap) url-debug))
+        (url-automatic-caching (and (not bootstrap) url-automatic-caching))
+        (url-max-redirections (if bootstrap 0 url-max-redirections))
+        (url-proxy-services (if bootstrap '(("no_proxy" . ".*"))
+                              url-proxy-services))
         (url-request-method method)
         (url-request-extra-headers
          (hermes-dashboard-transport--http-explicit-auth-headers headers))
@@ -504,7 +525,8 @@ CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
              (setq settled t)
              (release-owner)
              (hermes-dashboard-transport--close-http-buffer request-buffer)
-             (hermes--promise-reject promise reason))))
+             (hermes--promise-reject
+              promise (if bootstrap "Dashboard token discovery failed" reason)))))
       (setq cancel
             (lambda ()
               (reject "Hermes dashboard request was superseded")))
@@ -532,20 +554,30 @@ CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
                          (release-owner)
                          (unwind-protect
                              (condition-case response-error
-                                 (hermes-dashboard-transport--settle-http-response
-                                  promise status buffer safe-url secrets)
+                                 (if bootstrap
+                                     (hermes-dashboard-transport--settle-bootstrap-response
+                                      promise status buffer bootstrap)
+                                   (hermes-dashboard-transport--settle-http-response
+                                    promise status buffer safe-url secrets))
                                (error
                                 (hermes--promise-reject
                                  promise
-                                 (format
-                                  "Hermes dashboard response error at %s: %s"
-                                  safe-url
-                                  (hermes-dashboard-transport--redact-secret
-                                   (error-message-string response-error)
-                                   secrets)))))
+                                 (if bootstrap "Dashboard token discovery failed"
+                                   (format
+                                    "Hermes dashboard response error at %s: %s"
+                                    safe-url
+                                    (hermes-dashboard-transport--redact-secret
+                                     (error-message-string response-error)
+                                     secrets))))))
                            (hermes-dashboard-transport--close-http-buffer
                             buffer)))))
                    nil t t))
+            (when (and bootstrap (buffer-live-p request-buffer))
+              (with-current-buffer request-buffer
+                ;; url.el callbacks outlive the dynamic retrieval bindings.
+                (setq-local url-max-redirections 0
+                            url-automatic-caching nil
+                            url-debug nil)))
             (when settled
               (hermes-dashboard-transport--close-http-buffer request-buffer)))
         (error
@@ -557,9 +589,11 @@ CANCEL-SETTER replaces CANCEL-EXPECTED with this request's cancellation owner."
   #'hermes-dashboard-transport--default-http-request-async
   "Function used for asynchronous remote dashboard HTTP requests.
 Called with URL and keyword arguments :method, :headers, :data, and :secrets.
-Caller-specific overrides add :timeout or the paired :cancel-setter and
-:cancel-expected keywords.  The function returns a promise of the response
-plist.  HTTP failures reject with (hermes-dashboard-http-error MESSAGE STATUS);
+Caller-specific overrides add :timeout, the paired :cancel-setter and
+:cancel-expected keywords, or :bootstrap.  Bootstrap requests must disable
+redirects/proxies, disk caching and body diagnostics.  Return HTML unparsed for
+t, or parsed JSON for `status'.  Return a promise of the response plist.
+HTTP failures reject with (hermes-dashboard-http-error MESSAGE STATUS);
 plain string rejections never authorize authentication recovery.
 Editable config GET responses must retain the raw JSON in `:body-text';
 a parsed `:body' alone cannot preserve the types needed for a full-config PUT.")
@@ -648,6 +682,8 @@ Return a promise of the response plist.  CANCEL-SETTER owns cancellation."
 (defcustom hermes-dashboard-transport-remote-auth-method 'auto
   "Authentication method for remote dashboard attach.
 `auto' probes /api/status.  An ungated dashboard uses a legacy session token.
+Without explicit credentials, 127.0.0.1 endpoints discover the token
+asynchronously from the dashboard HTML.  Discovery never follows redirects.
 A gated dashboard prefers stored basic credentials when a basic provider is
 available, then RFC 8252 native PKCE when `/api/status' advertises
 `native_pkce', and otherwise attempts basic login.  `token' forces the legacy
@@ -1696,12 +1732,6 @@ also retains :native-tokens for expiry and credential-generation checks.")
        hermes-dashboard-transport-url)
       (user-error "Set `hermes-dashboard-transport-url' to a Hermes dashboard URL")))
 
-(defun hermes-dashboard-transport--api-token-auth (base-url)
-  "Return REST token auth for dashboard BASE-URL."
-  (let ((token (hermes-dashboard-transport--remote-token-secret base-url)))
-    (list :headers (list (cons "X-Hermes-Session-Token" token))
-          :secrets (list token))))
-
 (defun hermes-dashboard-transport--basic-auth-request
     (base-url provider username password &optional next)
   "Return the password-login request plist for dashboard BASE-URL.
@@ -1818,19 +1848,26 @@ the base URL plus its own headers and secrets."
   "Return a promise of the /api/status object from dashboard BASE-URL.
 CANCEL-SETTER owns the in-flight request when non-nil."
   (hermes--promise-map
-   (hermes-dashboard-transport--http-json-async
-    (hermes-dashboard-transport--api-url base-url "/api/status")
-    :cancel-setter cancel-setter)
+   (if (ignore-errors (hermes-dashboard-transport--discovery-url base-url))
+       (funcall hermes-dashboard-transport-http-request-async-function
+                (hermes-dashboard-transport--api-url base-url "/api/status")
+                :bootstrap 'status :method "GET" :cancel-setter cancel-setter)
+     (hermes-dashboard-transport--http-json-async
+      (hermes-dashboard-transport--api-url base-url "/api/status")
+      :cancel-setter cancel-setter))
    (lambda (response) (plist-get response :body))))
 
-(defun hermes-dashboard-transport--api-token-auth-async (base-url)
-  "Return a promise of REST token auth for dashboard BASE-URL.
-Token resolution is local (auth-source or environment) and never blocks on the
-network; a missing token rejects the promise."
-  (condition-case err
-      (hermes--promise-resolved
-       (hermes-dashboard-transport--api-token-auth base-url))
-    (error (hermes--promise-rejected (error-message-string err)))))
+(defun hermes-dashboard-transport--api-token-auth-async
+    (base-url &optional owner-current-p)
+  "Resolve REST token auth for BASE-URL under OWNER-CURRENT-P."
+  (hermes--promise-map
+   (hermes-dashboard-transport--token-async base-url nil nil owner-current-p)
+   (lambda (credential)
+     (let ((token (plist-get credential :token)))
+       (list :headers (list (cons "X-Hermes-Session-Token" token))
+             :secrets (list token)
+             :discovered-token (and (eq (plist-get credential :kind) 'discovered-token)
+                                    token))))))
 
 (defun hermes-dashboard-transport--api-basic-auth-async
     (base-url status &optional credentials)
@@ -1859,7 +1896,8 @@ network; a missing token rejects the promise."
             (owner-current-p hermes-dashboard-transport--api-auth-current-p))
         (hermes--promise-map
          (pcase hermes-dashboard-transport-remote-auth-method
-           ('token (hermes-dashboard-transport--api-token-auth-async base-url))
+           ('token (hermes-dashboard-transport--api-token-auth-async
+                    base-url owner-current-p))
            ('basic (hermes--promise-then
                     (hermes-dashboard-transport--remote-status-async base-url)
                     (lambda (status)
@@ -1876,7 +1914,8 @@ network; a missing token rejects the promise."
                  (pcase (hermes-dashboard-transport--preferred-auto-auth
                          base-url status)
                    ('token
-                    (hermes-dashboard-transport--api-token-auth-async base-url))
+                    (hermes-dashboard-transport--api-token-auth-async
+                     base-url owner-current-p))
                    (`(basic . ,credentials)
                     (hermes-dashboard-transport--api-basic-auth-async
                      base-url status credentials))
@@ -1899,11 +1938,20 @@ Native expiry, replacement, or endpoint changes require fresh resolution."
     (setq hermes-dashboard-transport--api-auth nil))
   (if hermes-dashboard-transport--api-auth
       (hermes--promise-resolved hermes-dashboard-transport--api-auth)
-    (hermes--promise-map
-     (hermes-dashboard-transport--api-authenticate-async)
-     (lambda (auth)
-       (setq hermes-dashboard-transport--api-auth auth)
-       auth))))
+    (let ((owner-current-p hermes-dashboard-transport--api-auth-current-p)
+          (base (or hermes-dashboard-transport--api-auth-base-url
+                    (hermes-dashboard-transport--api-base-url)))
+          (pinned hermes-dashboard-transport--api-auth-base-url))
+      (hermes--promise-map
+       (hermes-dashboard-transport--api-authenticate-async)
+       (lambda (auth)
+         (unless (and (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+                      (or pinned (equal base (hermes-dashboard-transport--api-base-url))))
+           (user-error "Dashboard authentication was superseded"))
+         ;; A delayed acquisition must not replace a newer cached owner.
+         (unless hermes-dashboard-transport--api-auth
+           (setq hermes-dashboard-transport--api-auth auth))
+         auth)))))
 
 (defun hermes-dashboard-transport--api-response-body (method path response)
   "Project RESPONSE for REST METHOD PATH without losing editable JSON types."
@@ -1971,18 +2019,52 @@ CURRENT-P, when non-nil, must authorize each HTTP dispatch after auth."
 	       (hermes-dashboard-transport--redact-secret
 	        reason (plist-get request :secrets)))))))))))
 
+(defun hermes-dashboard-transport--api-client-guard (client current-p)
+  "Capture CLIENT's endpoint and generation, extending CURRENT-P."
+  (let ((base (copy-sequence (hermes-dashboard-transport--api-client-base-url client)))
+        (generation (hermes-dashboard-transport-client-generation client)))
+    (lambda ()
+      (and (not (hermes-dashboard-transport-client-stopping-p client))
+           (= generation (hermes-dashboard-transport-client-generation client))
+           (equal base (hermes-dashboard-transport--api-client-base-url client))
+           (or (not current-p) (funcall current-p))))))
+
 (cl-defun hermes-dashboard-transport--api-request-with-client-async
-    (client method path &key body query headers secrets timeout)
+    (client method path &key body query headers secrets timeout current-p)
   "Return a promise of dashboard REST METHOD PATH using CLIENT's session token.
-BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request."
-  (hermes--promise-map
-   (hermes-dashboard-transport--http-json-request-async
-    (hermes-dashboard-transport--api-request-plist
-     (hermes-dashboard-transport--api-client-auth client)
-     method path :body body :query query :headers headers :secrets secrets
-     :timeout timeout))
-   (lambda (response)
-     (hermes-dashboard-transport--api-response-body method path response))))
+BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request.
+CURRENT-P fences recovery.  Only discovered tokens permit one GET retry."
+  (let* ((auth (hermes-dashboard-transport--api-client-auth client))
+         (token (hermes-dashboard-transport-client-token client))
+         (base (plist-get auth :base-url))
+         (cached hermes-dashboard-transport--api-auth)
+         (discovered (eq (hermes-dashboard-transport-client-credential-kind client)
+                         'discovered-token))
+         (current (hermes-dashboard-transport--api-client-guard client current-p)))
+    (hermes--promise-catch
+     (hermes--promise-map
+      (hermes-dashboard-transport--http-json-request-async
+       (hermes-dashboard-transport--api-request-plist
+        auth method path :body body :query query :headers headers :secrets secrets
+        :timeout timeout))
+      (lambda (response)
+        (hermes-dashboard-transport--api-response-body method path response)))
+     (lambda (reason)
+       (if (and discovered (hermes-dashboard-transport--auth-error-p reason)
+                (funcall current)
+                (eq token (hermes-dashboard-transport-client-token client)))
+           (progn
+             (setf (hermes-dashboard-transport-client-token client) nil)
+             (when (and (eq cached hermes-dashboard-transport--api-auth)
+                        (equal base (plist-get cached :base-url))
+                        (equal token (plist-get hermes-dashboard-transport--api-auth :discovered-token)))
+               (setq hermes-dashboard-transport--api-auth nil))
+             (if (equal method "GET")
+                 (hermes-dashboard-transport--api-request-1-async
+                  method path :body body :query query :headers headers :secrets secrets
+                  :timeout timeout :base-url base :current-p current)
+               (hermes--promise-rejected reason)))
+         (hermes--promise-rejected reason))))))
 
 (cl-defun hermes-dashboard-transport-api-request-async
     (method path &key body query headers secrets client timeout current-p)
@@ -1992,16 +2074,22 @@ CLIENT pins the dashboard base URL.  Its live session token is used when
 present; otherwise REST auth is resolved for that endpoint.
 CURRENT-P optionally fences reads as well as writes across authentication."
   (hermes--promise-catch
-   (let ((current-p (or current-p
-                        (and (not (equal method "GET"))
-                             hermes-dashboard-transport--api-dispatch-guard))))
+   (let* ((guard (or current-p
+                     (and (not (equal method "GET"))
+                          hermes-dashboard-transport--api-dispatch-guard)))
+          (discovered (and (hermes-dashboard-transport-client-p client)
+                           (eq (hermes-dashboard-transport-client-credential-kind client)
+                               'discovered-token)))
+          (current-p (if discovered
+                         (hermes-dashboard-transport--api-client-guard client guard)
+                       guard)))
      (when (and current-p (not (funcall current-p)))
        (error "Retired browser operation"))
      (cond
       ((hermes-dashboard-transport--api-client-token client)
        (hermes-dashboard-transport--api-request-with-client-async
         client method path :body body :query query :headers headers
-        :secrets secrets :timeout timeout))
+        :secrets secrets :timeout timeout :current-p current-p))
       ((hermes-dashboard-transport-client-p client)
        (hermes-dashboard-transport--api-request-1-async
         method path :body body :query query :headers headers :secrets secrets
@@ -2125,9 +2213,14 @@ The cache is warmed by `hermes-dashboard-transport-profile-list-async'."
 (defvar hermes-dashboard-transport--model-options-cache nil
   "Cached `model.options' payloads as an alist of (BASE-URL . PAYLOAD).
 The provider/model catalog is dashboard-global -- disk config plus the curated
-model list -- so it is shared across sessions for the same endpoint.  A saved
-API key invalidates it;
+model list -- so it is shared across sessions for the same endpoint.
+Explicit model pickers refresh it; completion uses the last accepted payload.
+Saving an API key or closing Hermes invalidates it;
 see `hermes-dashboard-transport-invalidate-model-options'.")
+
+(defvar hermes-dashboard-transport--model-options-requests nil
+  "Latest model catalog request tokens as an alist of (BASE-URL . TOKEN).
+Only the latest fetch for an endpoint may update its completion cache.")
 
 (defun hermes-dashboard-transport--store-model-options (payload &optional base-url)
   "Cache PAYLOAD for BASE-URL and return it.
@@ -2149,8 +2242,10 @@ discarded when `hermes-dashboard-transport-invalidate-model-options' is called."
 (defun hermes-dashboard-transport-invalidate-model-options ()
   "Discard any cached `model.options' payload.
 Callers that change provider authentication -- for example after saving an API
-key -- call this so the next picker refetches the full list."
-  (setq hermes-dashboard-transport--model-options-cache nil))
+key -- call this so completion refetches the full list.  Pending fetches
+lose permission to cache their replies, but still settle their callers."
+  (setq hermes-dashboard-transport--model-options-cache nil
+        hermes-dashboard-transport--model-options-requests nil))
 
 (defun hermes-dashboard-transport-profile-list-async (&optional client)
   "Return a promise of `/api/profiles', warming the profile cache on success.
@@ -2262,6 +2357,82 @@ example when the dashboard opens)."
   (and-let* ((secret (plist-get entry :secret)))
     (if (functionp secret) (funcall secret) secret)))
 
+(define-error 'hermes-dashboard-token-missing
+  "No dashboard session token configured" 'user-error)
+
+(defun hermes-dashboard-transport--discovery-url (base-url)
+  "Return the bootstrap URL for IPv4 loopback BASE-URL, or signal.
+Do not trust DNS names, URL credentials, or alternate numeric spellings."
+  (unless (and (stringp base-url)
+               (string-match-p
+                "\\`https?://127\\.0\\.0\\.1\\(?::[0-9]+\\)?\\(?:/[^?#[:space:]\\\\]*\\)?\\'"
+                base-url))
+    (user-error "Automatic token discovery requires 127.0.0.1; configure a session token for other hosts"))
+  (concat (hermes-dashboard-transport--normalize-base-url base-url) "/"))
+
+(defun hermes-dashboard-transport--bootstrap-token (response)
+  "Return the ungated session token from bootstrap RESPONSE, or signal.
+Parse only the released literal assignments, never evaluate JavaScript.
+Reject ambiguous, malformed, oversized, or non-HTML responses without echoes."
+  (let ((case-fold-search nil)
+        (text (plist-get response :body-text))
+        (content-type (cdr (assoc "content-type" (plist-get response :headers))))
+        (token-re "window\\.__HERMES_SESSION_TOKEN__[ \t]*=[ \t]*\\(\"[^\"\r\n]*\"\\)[ \t]*;")
+        (gate-re "window\\.__HERMES_AUTH_REQUIRED__[ \t]*=[ \t]*false[ \t]*;"))
+    (unless (and (eql (plist-get response :status) 200)
+                 (stringp content-type)
+                 (string-match-p "\\`text/html\\(?:;\\|\\'\\)" content-type)
+                 (stringp text) (<= (length text) 1048576)
+                 (= (length (split-string text "window\\.__HERMES_SESSION_TOKEN__")) 2)
+                 (= (length (split-string text "window\\.__HERMES_AUTH_REQUIRED__")) 2)
+                 (string-match-p gate-re text)
+                 (string-match token-re text))
+      (user-error "Dashboard did not supply an ungated session token"))
+    (let ((token (condition-case nil
+                     (json-parse-string (match-string 1 text))
+                   (error nil))))
+      (unless (and (stringp token)
+                   (string-match-p "\\`[A-Za-z0-9_-]\\{1,512\\}\\'" token))
+        (user-error "Dashboard supplied an invalid session token"))
+      token)))
+
+(defun hermes-dashboard-transport--discover-token-async
+    (base-url cancel-setter owner-current-p)
+  "Discover BASE-URL's token under CANCEL-SETTER and OWNER-CURRENT-P."
+  (let ((url (hermes-dashboard-transport--discovery-url base-url)))
+    (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+      (user-error "Dashboard authentication was superseded"))
+    (hermes--promise-map
+     (funcall hermes-dashboard-transport-http-request-async-function
+              url :bootstrap t :method "GET"
+              :headers '(("Cache-Control" . "no-store"))
+              :cancel-setter cancel-setter)
+     (lambda (response)
+       (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+         (user-error "Dashboard authentication was superseded"))
+       (list :token (hermes-dashboard-transport--bootstrap-token response)
+             :kind 'discovered-token)))))
+
+(defun hermes-dashboard-transport--token-async
+    (base-url token cancel-setter owner-current-p)
+  "Resolve TOKEN for BASE-URL with CANCEL-SETTER and OWNER-CURRENT-P.
+Only missing explicit credentials permit the loopback bootstrap handshake."
+  (condition-case err
+      (progn
+        (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+          (user-error "Dashboard authentication was superseded"))
+        (let ((secret (hermes-dashboard-transport--remote-token-secret base-url token)))
+          (unless (hermes-dashboard-transport--native-owner-current-p owner-current-p)
+            (user-error "Dashboard authentication was superseded"))
+          (hermes--promise-resolved
+           (list :token secret :kind 'legacy-token))))
+    (hermes-dashboard-token-missing
+     (condition-case failure
+         (hermes-dashboard-transport--discover-token-async
+          base-url cancel-setter owner-current-p)
+       (error (hermes--promise-rejected (error-message-string failure)))))
+    (error (hermes--promise-rejected (error-message-string err)))))
+
 (defun hermes-dashboard-transport--remote-token-secret (base-url &optional token)
   "Return legacy dashboard session token for BASE-URL, preferring TOKEN."
   (or (hermes-transport--non-empty-string token)
@@ -2274,8 +2445,8 @@ example when the dashboard opens)."
          (hermes-dashboard-transport--auth-source-secret entry)))
       (hermes-transport--non-empty-string
        (getenv "HERMES_DASHBOARD_SESSION_TOKEN"))
-      (user-error
-       "No Hermes dashboard session token found; add auth-source login hermes-dashboard-token with port hermes-dashboard-token, or set HERMES_DASHBOARD_SESSION_TOKEN for legacy token attach")))
+      (signal 'hermes-dashboard-token-missing
+              '("No Hermes dashboard session token found; add auth-source login hermes-dashboard-token with port hermes-dashboard-token, or set HERMES_DASHBOARD_SESSION_TOKEN for legacy token attach"))))
 
 (defun hermes-dashboard-transport--remote-basic-credentials (base-url)
   "Return plist with username and password from auth-source for BASE-URL."
@@ -2304,16 +2475,17 @@ example when the dashboard opens)."
    base-url))
 
 (defun hermes-dashboard-transport--remote-token-auth
-    (host port base-url &optional token)
-  "Return legacy-token auth plist for HOST, PORT, BASE-URL, and TOKEN."
+    (host port base-url &optional token discovered)
+  "Return token auth for HOST, PORT, BASE-URL, and TOKEN.
+DISCOVERED marks an automatic credential that must be renewed on reconnect."
   (let* ((token (hermes-dashboard-transport--remote-token-secret base-url token))
          (url (hermes-dashboard-transport--websocket-url
                host port token base-url "token"))
          (redacted-url (hermes-dashboard-transport--redacted-websocket-url
                         host port base-url "token")))
     (list :token token :url url :redacted-url redacted-url
-          :kind 'legacy-token :reusable-p t
-          :secrets (list token))))
+          :kind (if discovered 'discovered-token 'legacy-token)
+          :reusable-p (not discovered) :secrets (list token))))
 
 (defun hermes-dashboard-transport--basic-ticket-auth
     (host port base-url password cookies ticket-response)
@@ -2375,14 +2547,16 @@ OWNER-CURRENT-P own credential selection and the login/ticket exchange."
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-token-auth-async
-    (host port base-url &optional token)
-  "Return a promise of legacy-token WebSocket auth for HOST, PORT, BASE-URL, TOKEN.
-Token resolution is local (auth-source or environment) and never blocks on the
-network; a missing token rejects the promise."
-  (condition-case err
-      (hermes--promise-resolved
-       (hermes-dashboard-transport--remote-token-auth host port base-url token))
-    (error (hermes--promise-rejected (error-message-string err)))))
+    (host port base-url &optional token cancel-setter owner-current-p)
+  "Resolve WebSocket auth for HOST, PORT, BASE-URL and optional TOKEN.
+CANCEL-SETTER and OWNER-CURRENT-P fence automatic loopback discovery."
+  (hermes--promise-map
+   (hermes-dashboard-transport--token-async
+    base-url token cancel-setter owner-current-p)
+   (lambda (credential)
+     (hermes-dashboard-transport--remote-token-auth
+      host port base-url (plist-get credential :token)
+      (eq (plist-get credential :kind) 'discovered-token)))))
 
 (defun hermes-dashboard-transport--remote-auth-async
     (host port base-url method &optional token interactive cancel-setter owner-current-p)
@@ -2397,7 +2571,8 @@ OWNER-CURRENT-P guards every auth stage when non-nil."
     (hermes--promise-rejected "Dashboard authentication was superseded"))
    (t
     (if (eq method 'token)
-        (hermes-dashboard-transport--remote-token-auth-async host port base-url token)
+        (hermes-dashboard-transport--remote-token-auth-async
+         host port base-url token cancel-setter owner-current-p)
       (hermes--promise-then
        (hermes-dashboard-transport--remote-status-async base-url cancel-setter)
        (lambda (status)
@@ -2410,7 +2585,7 @@ OWNER-CURRENT-P guards every auth stage when non-nil."
              (user-error "Dashboard authentication was superseded"))
            (pcase selected
              ('token (hermes-dashboard-transport--remote-token-auth-async
-                      host port base-url token))
+                      host port base-url token cancel-setter owner-current-p))
              ((or 'basic `(basic . ,_))
               (hermes-dashboard-transport--remote-basic-auth-async
                host port base-url status (and (consp selected) (cdr selected))
@@ -2479,7 +2654,8 @@ the chat client does."
            (token (and client
                        (hermes-dashboard-transport-client-auth-token client))))
       (hermes-dashboard-transport--remote-auth-async
-       host port base-url method token nil))))
+       host port base-url method token nil nil
+       (and client (hermes-dashboard-transport--api-client-guard client nil))))))
 
 (cl-defun hermes-dashboard-transport-kanban-events-url-async
     (&key since board client)

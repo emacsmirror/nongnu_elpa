@@ -53,7 +53,15 @@ always opens a new chat buffer:
 - “Set directory” browses or accepts a path in the gateway's namespace.  On
   success, the backend-returned path becomes both the gateway cwd and the
   buffer's =default-directory=; a project chat keeps its launch-root name.
-- =M-x hermes-close= closes local connections and Hermes buffers for restart.
+- =C-c C-o M m= (or bare =/model=) fetches model choices from the owning
+  dashboard each time.  =/model= argument completion stays cached and
+  nonblocking; opening the picker refreshes that cache after backend changes.
+  The profile browser's model picker also fetches fresh choices each time.
+  Failed fetches do not offer stale cached choices.
+  The dashboard may maintain its own provider catalogue cache.
+- =M-x hermes-close= closes local connections and Hermes buffers for restart,
+  discarding the frontend model catalogue cache.
+  Reconnecting alone retains completion data; the picker still fetches anew.
 
 Hermes commands declare their buffer contexts for native =M-x= completion.
 To filter completion candidates by context, set
@@ -170,8 +178,18 @@ session browsing remains available.
 
 =hermes-dashboard-transport-remote-auth-method= defaults to =auto=:
 
-- Loopback dashboards (=127.0.0.1= / =localhost=) can spawn or attach without extra credentials when the dashboard is not gated.
-- Remote or gated dashboards probe =/api/status=.  Auto mode uses valid stored basic credentials first, otherwise native PKCE when advertised, and finally reports missing basic credentials for a basic-only dashboard.
+- With =auto= start mode, loopback dashboards spawn without extra credentials.
+- With =remote= start mode, an ungated dashboard at =127.0.0.1= can supply its session token automatically. Emacs reads the dashboard's HTML asynchronously; no shell command or environment change is needed.
+- Remote or gated dashboards probe =/api/status=. Auto authentication uses valid stored basic credentials first, otherwise native PKCE when advertised, and reports missing basic credentials for a basic-only dashboard.
+
+Automatic discovery accepts only =127.0.0.1=, never DNS names
+(including =localhost=), other addresses, or redirects. Use =127.0.0.1= rather than
+=localhost= for credential-free attach. Explicit token arguments, auth-source
+entries, and =HERMES_DASHBOARD_SESSION_TOKEN= take precedence, in that order.
+Discovered tokens stay in memory for their dashboard endpoint. Reconnect reads
+a fresh token after a backend restart; a REST GET rejected with HTTP 401 may
+retry once. Writes are never replayed automatically. Failed basic/native login
+never falls back to discovery.
 
 Supported gated attach paths:
 

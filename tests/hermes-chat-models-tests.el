@@ -76,14 +76,15 @@
     (hermes-test-with-chat-buffer
      (setq hermes-chat--session-id session
            hermes-chat--create-overrides-retry-session-id session)
-     (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
-                (lambda (&optional _client)
-                  '((providers . (((slug . "p") (authenticated . t)
-                                    (models . ("next"))))))))
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+                (lambda (_client &rest args)
+                  (funcall (plist-get args :resolve)
+                           '((providers . (((slug . "p") (authenticated . t)
+                                             (models . ("next")))))))))
                ((symbol-function 'completing-read)
                 (lambda (_prompt choices &rest _) (car choices)))
                ((symbol-function 'hermes-chat--dashboard-control-client)
-                (lambda () (ert-fail "Pending setting connected"))))
+                (lambda () (hermes-test--dashboard-client))))
        (hermes-chat-switch-model)
        (hermes-chat-set-reasoning "high"))
      (should (equal hermes-chat--dashboard-create-model "next"))
@@ -321,6 +322,27 @@
        (should (equal (plist-get requested :session-id)
                       hermes-chat--dashboard-active-session-id))))))
 
+(ert-deftest hermes-chat-model-warmup-uses-client-endpoint ()
+  "A warm default endpoint must not suppress another client's catalog warmup."
+  (let* ((hermes-dashboard-transport--model-options-cache nil)
+         (hermes-dashboard-transport--model-options-requests nil)
+         (ready (hermes--promise-make))
+         (client (make-hermes-dashboard-transport-client
+                  :base-url "http://other.example" :ready-promise ready))
+         (fresh '((providers . nil)))
+         fetched)
+    (hermes-dashboard-transport--store-model-options '((model . "default")))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+               (lambda (owner &rest args)
+                 (setq fetched owner)
+                 (funcall (plist-get args :resolve) fresh))))
+      (hermes-chat--warm-model-options client)
+      (should-not fetched)
+      (hermes--promise-resolve ready client)
+      (should (eq fetched client))
+      (should (equal (hermes-dashboard-transport-cached-model-options client)
+                     fresh)))))
+
 (ert-deftest hermes-chat-switch-model-sets-chosen-model ()
   "Switching prompts from model.options and applies the choice via config.set."
   (let (set-key set-value set-session set-confirm)
@@ -355,22 +377,73 @@
        (should-not set-confirm)
        (should (string-match-p "Model set to beta" (buffer-string)))))))
 
-(ert-deftest hermes-chat-switch-model-before-session-uses-cache-without-connecting ()
-  "A warm catalog lets a fresh buffer choose its first model offline."
-  (let ((payload '((providers . (((slug . "p1") (authenticated . t)
-                                  (models . ("beta")))))))
-        connected)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-cached-model-options)
-               (lambda (&optional _client) payload))
-              ((symbol-function 'hermes-chat--dashboard-control-client)
-               (lambda () (setq connected t)))
-              ((symbol-function 'completing-read)
-               (lambda (_prompt coll &rest _) (car coll))))
-      (hermes-test-with-chat-buffer
-       (hermes-chat-switch-model)
-       (should-not connected)
-       (should (equal hermes-chat--dashboard-create-model "beta"))
-       (should (equal hermes-chat--dashboard-create-provider "p1"))))))
+(ert-deftest hermes-chat-switch-model-refreshes-warm-catalog ()
+  "The public picker refreshes even for a new session or replacement client."
+  (dolist (attached '(nil t))
+    (hermes-test-with-chat-buffer
+     (let* ((client (hermes-test--dashboard-client))
+            (fresh '((providers . (((slug . "local") (authenticated . t)
+                                    (models . ("Qwen")))))))
+            requested choices applied)
+       (setf (hermes-dashboard-transport-client-base-url client)
+             "http://models.example")
+       (when attached
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-active-session-id "new-session"
+               hermes-chat--dashboard-session-ready-p t))
+       ;; A replacement at the same endpoint still shares the old cache.
+       (hermes-dashboard-transport--store-model-options
+        '((providers . (((slug . "local") (authenticated . t)
+                         (models . ("Devstral")))))) "http://models.example")
+       (hermes-dashboard-transport--store-model-options
+        '((providers . (((slug . "other") (authenticated . t)
+                         (models . ("foreign-model")))))))
+       (cl-letf (((symbol-function 'hermes-chat--dashboard-control-client)
+                  (lambda () client))
+                 ((symbol-function 'hermes-dashboard-transport-model-options)
+                  (lambda (owner &rest args)
+                    (setq requested owner)
+                    (funcall (plist-get args :resolve) fresh)))
+                 ((symbol-function 'hermes-dashboard-transport-session-create)
+                  (lambda (&rest _) (ert-fail "Picker created a session")))
+                 ((symbol-function 'hermes-dashboard-transport-config-set)
+                  (lambda (_client _key value &rest _args)
+                    (setq applied value)))
+                 (completing-read-function
+                  (lambda (_prompt collection &rest _)
+                    (setq choices collection)
+                    (car collection))))
+         (call-interactively #'hermes-chat-switch-model)
+         (should (eq requested client))
+         (should (equal choices '("local · Qwen")))
+         (if attached
+             (should (equal applied "Qwen --provider local"))
+           (should (equal hermes-chat--dashboard-create-model "Qwen")))
+         (should (equal (hermes-dashboard-transport-cached-model-options client)
+                        fresh)))))))
+
+(ert-deftest hermes-chat-switch-model-failed-refresh-keeps-completion-only ()
+  "A failed picker read reports failure, without offering cached choices."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t)
+   (let ((old '((providers . (((slug . "local") (authenticated . t)
+                              (models . ("Devstral")))))))
+         prompted)
+     (hermes-dashboard-transport--store-model-options old)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+                (lambda (_client &rest args)
+                  (funcall (plist-get args :reject) "Catalog unavailable")))
+               (completing-read-function
+                (lambda (&rest _) (setq prompted t) "")))
+       (call-interactively #'hermes-chat-switch-model)
+       (should-not prompted)
+       (should (string-match-p "Catalog unavailable" (buffer-string)))
+       (goto-char (point-max))
+       (insert "/model D")
+       (should (equal (nth 2 (hermes-chat--model-capf))
+                      '("Devstral --provider local")))))))
 
 (ert-deftest hermes-chat-switch-model-before-session-fetches-without-creating-session ()
   "A cold catalog may connect its socket but must not create the chat session."
