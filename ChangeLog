@@ -1,3 +1,12 @@
+2026-09-29  Ulrich Müller  <ulm@gentoo.org>
+
+	* ebuild-mode.el (ebuild-mode):
+	* gentoo-newsitem-mode.el (gentoo-newsitem-mode):
+	* devbook-mode.el (devbook-mode):
+	* glep-mode.el (glep-mode): Initialise font-lock in the mode
+	function rather than the mode hook. Remove the hook function.
+	(glep-mode-font-lock-keywords-1): New variable.
+
 2026-09-27  Ulrich Müller  <ulm@gentoo.org>
 
 	* test/devbook-mode-tests.el (devbook-mode-test-font-lock):

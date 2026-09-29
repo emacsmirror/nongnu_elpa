@@ -29,6 +29,7 @@
 
 (require 'nxml-mode)
 (require 'rng-loc)
+(require 'font-lock)
 (require 'easymenu)
 (require 'skeleton)
 
@@ -201,15 +202,10 @@ between the element name and its first attribute."
   (set (make-local-variable 'indent-line-function) #'devbook-indent-line)
   (add-hook 'fill-nobreak-predicate #'devbook-fill-tag-nobreak-p nil t)
   (unless rng-current-schema-file-name
-    (devbook-set-schema t)))
-
-(defun devbook-add-font-lock ()
-  "Add `devbook-mode' font-lock keywords for the current buffer."
+    (devbook-set-schema t))
   (font-lock-add-keywords nil devbook-font-lock-keywords)
   (add-hook 'font-lock-extend-region-functions
 	    #'devbook-font-lock-extend-region))
-
-(add-hook 'devbook-mode-hook #'devbook-add-font-lock)
 
 (define-skeleton devbook-insert-skeleton
   "Insert a skeleton for a DevBook XML document."

@@ -458,13 +458,8 @@ of the elements."
 		#'ebuild-mode-completion-at-point nil t))
   (setq fill-column 72)
   (setq tab-width 4)
-  (setq indent-tabs-mode t))
-
-(defun ebuild-mode-add-font-lock ()
-  "Add `ebuild-mode' font-lock keywords for the current buffer."
+  (setq indent-tabs-mode t)
   (font-lock-add-keywords nil ebuild-mode-font-lock-keywords))
-
-(add-hook 'ebuild-mode-hook #'ebuild-mode-add-font-lock)
 
 ;;;###autoload
 (define-derived-mode ebuild-eclass-mode ebuild-mode "Eclass"

@@ -64,7 +64,8 @@
   "Major mode for Gentoo GLEP 42 news items."
   (if (featurep 'xemacs)
       (easy-menu-add gentoo-newsitem-mode-menu))
-  (setq fill-column 72))
+  (setq fill-column 72)
+  (font-lock-add-keywords nil gentoo-newsitem-font-lock-keywords))
 
 (defun gentoo-newsitem-search-header (regexp limit)
   "Like `re-search-forward' but restricted to the header.
@@ -76,12 +77,6 @@ Buffer position LIMIT limits the search."
 		 (point))))
     (if (>= bound (point))
 	(re-search-forward regexp bound t))))
-
-(defun gentoo-newsitem-add-font-lock ()
-  "Add `gentoo-newsitem-mode' font-lock keywords for the current buffer."
-  (font-lock-add-keywords nil gentoo-newsitem-font-lock-keywords))
-
-(add-hook 'gentoo-newsitem-mode-hook #'gentoo-newsitem-add-font-lock)
 
 (define-skeleton gentoo-newsitem-insert-skeleton
   "Insert a skeleton for a Gentoo GLEP 42 news item."

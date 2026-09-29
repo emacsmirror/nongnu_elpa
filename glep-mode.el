@@ -53,6 +53,13 @@
 	    ":"))
   "Expressions to highlight in the preamble of a GLEP.")
 
+(defvar glep-mode-font-lock-keywords-1
+  '((glep-mode-font-lock-match-delims
+     . font-lock-comment-delimiter-face)
+    (glep-mode-font-lock-match-preamble
+     . font-lock-keyword-face))
+  "Expressions to highlight in `glep-mode'.")
+
 (defvar glep-mode-delim-re "^---$"
   "Regexp matching delimiters of the GLEP header.")
 
@@ -98,19 +105,10 @@ This will be added to the `write-contents-functions' hook."
   ;; of paragraphs to column 70.
   (setq fill-column 70)
   (set (make-local-variable 'sentence-end-double-space) t)
+  (font-lock-add-keywords nil glep-mode-font-lock-keywords-1)
   (add-hook 'font-lock-extend-region-functions
 	    #'glep-mode-font-lock-extend-region t)
   (add-hook 'write-contents-functions #'glep-mode-before-save t t))
-
-(defun glep-mode-add-font-lock ()
-  "Add `glep-mode' font-lock keywords for the current buffer."
-  (font-lock-add-keywords
-   nil '((glep-mode-font-lock-match-delims
-	  . font-lock-comment-delimiter-face)
-	 (glep-mode-font-lock-match-preamble
-	  . font-lock-keyword-face))))
-
-(add-hook 'glep-mode-hook #'glep-mode-add-font-lock)
 
 (defun glep-mode-preamble-bounds ()
   "Return (BEG . END) of the preamble, or nil if no preamble was found."
