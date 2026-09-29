@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **Emacs retrieves `message/external-body` URLs; wget, curl and fetch are
+    gone.**  VM tried five external programs in turn, and
+    `vm-url-retrieval-methods` named which to try.  Emacs has
+    `url-retrieve-synchronously` in core, which speaks http, https, ftp and
+    file, so nothing need be installed; `vm-wget-program`,
+    `vm-fetch-program` and `vm-curl-program` are removed.
+    `vm-url-retrieval-methods` remains, because it is also the permission
+    switch: nil still means never retrieve, which matters when an
+    external-body URL tells a server that the message was opened.  Any
+    non-nil value now means VM may retrieve, so an old setting naming
+    programs keeps working.  The new `vm-url-retrieval-timeout`, 30 seconds
+    by default, bounds the wait.
+
+
   * **VM's own browser handlers are gone; `browse-url` chooses the browser.**
     `vm-mouse-send-url-to-netscape`, `-mosaic`, `-mmosaic`, `-opera`,
     `-mozilla`, `-konqueror` and `-firefox`, their `-new-window` variants and

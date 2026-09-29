@@ -3393,7 +3393,7 @@ current buffer."
 			   (goto-char (point-min))
 			   (while (re-search-forward "[ \t\n]" nil t)
 			     (delete-char -1))))))
-	     (vm-mime-fetch-url-with-programs url work-buffer)))
+	     (vm-mime-fetch-url url work-buffer)))
 	  ((and (or (string= access-method "ftp")
 		    (string= access-method "anon-ftp"))
 		(fboundp 'ange-ftp-hook-function))
@@ -3417,7 +3417,7 @@ current buffer."
 		   (t (setq user "anonymous")))
 	     (if (and (string= access-method "ftp")
 		      vm-url-retrieval-methods
-		      (vm-mime-fetch-url-with-programs
+		      (vm-mime-fetch-url
 		       (if directory
 			   (concat "ftp:////" site "/"
 				   directory "/" name)
@@ -3566,59 +3566,45 @@ button that this LAYOUT comes from."
      :layout layout)))
 
 
-(defun vm-mime-fetch-url-with-programs (url buffer)
-  (when
-      (eq t (cond ((if (and (memq 'wget vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-wget-program "-q" "-O" "-" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'w3m vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-w3m-program "-dump_source" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'fetch vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-fetch-program "-o" "-" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'curl vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-curl-program url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'lynx vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-lynx-program "-source" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))))
-    (not (zerop (buffer-size buffer)))))
+(defun vm-mime-url-response-body-start ()
+  "Where the body starts in a response `url-retrieve-synchronously' returned.
+`url-http' records it in `url-http-end-of-headers'.  Other schemes do not
+bind that and still synthesise a header block: a file: URL comes back with
+Content-type and Content-length in front of the file.  So the fallback is
+the first blank line, and a response with no header block is all body."
+  (cond ((and (boundp 'url-http-end-of-headers)
+	      (symbol-value 'url-http-end-of-headers))
+	 (symbol-value 'url-http-end-of-headers))
+	(t
+	 (save-excursion
+	   (goto-char (point-min))
+	   (if (re-search-forward "^\r?\n" nil t)
+	       (point)
+	     (point-min))))))
+
+(defun vm-mime-fetch-url (url buffer)
+  "Retrieve URL into BUFFER.  Return non-nil when anything was retrieved.
+
+Emacs does the retrieving.  `url-retrieve-synchronously' is in core and
+speaks http, https, ftp and file, so this needs no external program and no
+option saying which one to run.  The body is copied buffer to buffer rather
+than through a string, so that a binary object keeps its bytes."
+  (let ((response
+	 (condition-case err
+	     (url-retrieve-synchronously url t t vm-url-retrieval-timeout)
+	   (error
+	    (vm-warn 0 2 "Could not retrieve %s: %s"
+		     url (error-message-string err))
+	    nil))))
+    (when response
+      (unwind-protect
+	  (let ((start (with-current-buffer response
+			 (vm-mime-url-response-body-start))))
+	    (with-current-buffer buffer
+	      (erase-buffer)
+	      (insert-buffer-substring response start)
+	      (not (zerop (buffer-size)))))
+	(kill-buffer response)))))
 
 (defun vm-mime-internalize-local-external-bodies (layout)
   "Given a LAYOUT representing a message/external-body object, convert

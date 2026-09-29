@@ -4654,30 +4654,31 @@ Nil means don't move the mouse cursor."
   :group 'vm-frames
   :type 'boolean)
 
-(defcustom vm-url-retrieval-methods '(lynx wget fetch curl w3m)
-  "*Non-nil value specifies how VM is permitted to retrieve URLs.
-VM needs to do this when supporting the message/external-body
-MIME type, which provides a reference to an object instead of the
-object itself.  The specification should be a list of symbols
-with the following meanings
+(defcustom vm-url-retrieval-methods t
+  "*Non-nil means VM may retrieve a URL over the network.
 
-        lynx - means VM should try to use the lynx program.
-        wget - means VM should try to use the wget program.
-         w3m - means VM should try to use the w3m program.
-       fetch - means VM should try to use the fetch program.
-        curl - means VM should try to use the curl program.
+VM needs to when it supports the message/external-body MIME type, which
+gives a reference to an object instead of the object itself.  Emacs does the
+retrieving, through `url-retrieve-synchronously', so nothing need be
+installed and no program is named here.
 
-The list can contain all these values and VM will try them all,
-but not in any particular order.
+Set it to nil to refuse: an external-body URL is fetched from a server that
+then knows the message was opened, which is not always wanted.
 
-If `vm-url-retrieval-methods' value is nil, VM will not try to
-use any URL retrieval methods."
-  :group 'vm-url
-  :type '(set (const lynx)
-	      (const wget)
-	      (const w3m)
-	      (const fetch)
-	      (const curl)))
+Earlier releases took a list of external programs to try, such as
+\\='(lynx wget fetch curl w3m).  Such a value still reads as non-nil and so
+still permits retrieval; which program it names is now ignored."
+  :group 'vm-mime
+  :type '(choice (const :tag "Retrieve with Emacs" t)
+		 (const :tag "Never retrieve" nil)))
+
+(defcustom vm-url-retrieval-timeout 30
+  "*Seconds to wait for a URL that VM is retrieving, or nil for no limit.
+A message/external-body part whose server does not answer would otherwise
+hold up Emacs for as long as the server cared to take."
+  :group 'vm-mime
+  :type '(choice (integer :tag "Seconds")
+		 (const :tag "No limit" nil)))
 
 (defcustom vm-url-browser 'browse-url
   "*The default web browser to be used for following URLs (hyperlinks)
@@ -5624,30 +5625,8 @@ named by `vm-movemail-program'."
   :type '(choice (const :tag "None" nil)
 		 (repeat string)))
 
-(defcustom vm-wget-program "wget"
-  "*Name of program to use to run wget.
-This is used to retrieve URLs."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
 (defcustom vm-w3m-program "w3m"
   "*Name of program to use to run w3m.
-This is used to retrieve URLs."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-fetch-program "fetch"
-  "*Name of program to use to run fetch.
-This is used to retrieve URLs.  Fetch is part of the standard
-FreeBSD installation."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-curl-program "curl"
-  "*Name of program to use to run curl.
 This is used to retrieve URLs."
   :group 'vm-helpers
   :type '(choice (const :tag "None" nil)

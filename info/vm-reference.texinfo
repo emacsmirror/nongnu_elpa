@@ -2605,23 +2605,6 @@ header section of the forwarded message.
 
 @appendixsubsec User options
 
-@defopt vm-curl-program
-@vindex vm-curl-program
-Name of program to use to run curl.
-This is used to retrieve URLs.
-
-Default value: @code{"curl"}
-@end defopt
-
-@defopt vm-fetch-program
-@vindex vm-fetch-program
-Name of program to use to run fetch.
-This is used to retrieve URLs.  Fetch is part of the standard
-FreeBSD installation.
-
-Default value: @code{"fetch"}
-@end defopt
-
 @defopt vm-grep-program
 @vindex vm-grep-program
 Name of program to use to run grep.
@@ -2826,14 +2809,6 @@ Name of program to use to run w3m.
 This is used to retrieve URLs.
 
 Default value: @code{"w3m"}
-@end defopt
-
-@defopt vm-wget-program
-@vindex vm-wget-program
-Name of program to use to run wget.
-This is used to retrieve URLs.
-
-Default value: @code{"wget"}
 @end defopt
 
 @node Reference for Hooks, Reference for IMAP, Reference for Helpers, Reference
@@ -5305,6 +5280,34 @@ encrypting this S/MIME encoded composition. Valid valus are as follows:
 @end example
 
 Default value: @code{ask}
+@end defopt
+
+@defopt vm-url-retrieval-methods
+@vindex vm-url-retrieval-methods
+Non-nil means VM may retrieve a URL over the network.
+
+VM needs to when it supports the message/external-body MIME type, which
+gives a reference to an object instead of the object itself.  Emacs does the
+retrieving, through @code{url-retrieve-synchronously}, so nothing need be
+installed and no program is named here.
+
+Set it to nil to refuse: an external-body URL is fetched from a server that
+then knows the message was opened, which is not always wanted.
+
+Earlier releases took a list of external programs to try, such as
+'(lynx wget fetch curl w3m).  Such a value still reads as non-nil and so
+still permits retrieval; which program it names is now ignored.
+
+Default value: @code{t}
+@end defopt
+
+@defopt vm-url-retrieval-timeout
+@vindex vm-url-retrieval-timeout
+Seconds to wait for a URL that VM is retrieving, or nil for no limit.
+A message/external-body part whose server does not answer would otherwise
+hold up Emacs for as long as the server cared to take.
+
+Default value: @code{30}
 @end defopt
 
 @appendixsubsec Called by VM
@@ -10968,31 +10971,6 @@ Default value: @code{browse-url}
 List of command line flags passed to the command named by
 @code{vm-url-browser}.  VM uses @code{vm-url-browser} to display URLs
 in messages when you click on them.
-@end defopt
-
-@defopt vm-url-retrieval-methods
-@vindex vm-url-retrieval-methods
-Non-nil value specifies how VM is permitted to retrieve URLs.
-VM needs to do this when supporting the message/external-body
-MIME type, which provides a reference to an object instead of the
-object itself.  The specification should be a list of symbols
-with the following meanings
-
-@example
-        lynx - means VM should try to use the lynx program.
-        wget - means VM should try to use the wget program.
-         w3m - means VM should try to use the w3m program.
-       fetch - means VM should try to use the fetch program.
-        curl - means VM should try to use the curl program.
-
-@end example
-The list can contain all these values and VM will try them all,
-but not in any particular order.
-
-If @code{vm-url-retrieval-methods} value is nil, VM will not try to
-use any URL retrieval methods.
-
-Default value: @code{(lynx wget fetch curl w3m)}
 @end defopt
 
 @defopt vm-url-search-limit
