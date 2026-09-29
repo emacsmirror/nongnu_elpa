@@ -320,9 +320,12 @@ Return a list of user, password/secret, and the item's save-function."
              `(,(plist-get source :user)
                ,(auth-info-password source)
                ,(plist-get source :save-function))))
+        ;; FIXME: save-function is nil if auth-sources is ~/authinfo:
         (when create ;; call save function:
-          (when (functionp (nth 2 creds))
-            (funcall (nth 2 creds))))
+          (if (functionp (nth 2 creds))
+              (funcall (nth 2 creds))
+            (user-error "Unable to save auth-source entry. \
+Create an auth-source entry yourself with token as password")))
         creds))))
 
 (defun mastodon-auth-source-token (url handle &optional token create)
