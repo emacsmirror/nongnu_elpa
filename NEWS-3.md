@@ -8,6 +8,19 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **HTML messages display on a stock Emacs: `shr` is a handler now.**
+    `vm-mime-text/html-handler` offered only `emacs-w3m`, `w3m` and `lynx`,
+    every one of which needs something installed, so a reader with none of
+    them got "No handler available for internal display of text/html".
+    `shr`, which Emacs ships and eww renders with, is now a value and is what
+    `auto-select` falls back to; it comes last, so an installed emacs-w3m is
+    still preferred.  It fetches no image while rendering, since a remote
+    image tells the sender that the message was opened: the new
+    `vm-mime-shr-inhibit-images` is on by default and is bound during
+    rendering rather than inherited from the shr settings a reader uses for
+    the web.
+
+
   * **Emacs retrieves `message/external-body` URLs; wget, curl and fetch are
     gone.**  VM tried five external programs in turn, and
     `vm-url-retrieval-methods` named which to try.  Emacs has
