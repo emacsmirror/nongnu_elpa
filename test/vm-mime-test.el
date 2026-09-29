@@ -2151,11 +2151,14 @@ its presentation copy behind (issue #559)."
         (with-current-buffer buffer (set-buffer-modified-p nil))
         (kill-buffer buffer)))))
 
-(defun vm-mime-test--cid-folder ()
-  "Visit the cid fixture as a folder and return its one message."
+(defun vm-mime-test--cid-folder (&optional fixture)
+  "Copy FIXTURE where it can be visited, and return its directory and path.
+FIXTURE names a folder fixture and defaults to cid-related.mbox, one message
+whose HTML refers to two sibling images."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-cid" t)))
          (file (expand-file-name "folder" dir)))
-    (copy-file (vm-test-fixture-path "folders" "cid-related.mbox") file)
+    (copy-file (vm-test-fixture-path "folders" (or fixture "cid-related.mbox"))
+               file)
     (list dir file)))
 
 (ert-deftest vm-mime-test-cid-file-name-is-a-file-name ()
@@ -2374,6 +2377,85 @@ The cid parts go in the same directory and need the same care."
               (should (equal "untouched\n" (buffer-string))))))
       (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
+
+;;; cid: references for emacs-w3m (issue #878)
+
+(defun vm-mime-test--cid-retrieve (fixture url)
+  "Return what `vm-mime-cid-retrieve' does with URL on the one message of FIXTURE.
+The list is the part it returned, the text it inserted, and the value it left
+in `vm-mime-cid-retrieved'."
+  (let* ((where (vm-mime-test--cid-folder fixture))
+         (dir (nth 0 where))
+         (file (nth 1 where))
+         (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list))
+         (vm-mime-cid-retrieved nil)
+         (part nil) (text nil))
+    (unwind-protect
+        (progn
+          (vm-visit-folder file)
+          ;; `vm-message-list' is local to the folder buffer, so the message
+          ;; is taken there and the call made where emacs-w3m makes it, in a
+          ;; buffer of its own
+          (let ((message (car vm-message-list)))
+            (with-temp-buffer
+              (setq part (vm-mime-cid-retrieve url message)
+                    text (buffer-string))))
+          (list part text vm-mime-cid-retrieved))
+      (vm-mime-test--kill-new-buffers before)
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-cid-retrieve-finds-a-part-under-a-nested-multipart ()
+  "REGRESSION: the first part of a nested multipart was never searched.
+`vm-mime-cid-retrieve' walked the message with a list it pushed each composite
+part's children onto and then took the `cdr' of, so the first child was
+dropped every time.  A `cid:' reference to the first part of a nested
+multipart/related found nothing and emacs-w3m drew a broken image.
+
+The fixture nests multipart/related inside multipart/mixed and puts the image
+before the HTML that shows it, which RFC 2387 allows and its `start' parameter
+exists for."
+  (require 'vm)
+  (let* ((got (vm-mime-test--cid-retrieve "cid-nested.mbox"
+                                          "cid:pic@example.com"))
+         (part (nth 0 got)))
+    (should part)
+    (should (vm-mime-types-match "image/gif" (car (vm-mm-layout-type part))))
+    ;; the body as it stands in the folder: the caller decodes it
+    (should (string-match-p "R0lGOD" (nth 1 got)))
+    (should (nth 2 got))))
+
+(ert-deftest vm-mime-test-cid-retrieve-finds-a-sibling-part ()
+  "The flat case the rewrite must keep: an image beside the HTML that shows it.
+Both are parts of the same multipart/related, which is how most HTML mail
+carries its pictures."
+  (require 'vm)
+  (let* ((got (vm-mime-test--cid-retrieve nil "cid:first@example.com"))
+         (part (nth 0 got)))
+    (should part)
+    (should (vm-mime-types-match "image/png" (car (vm-mm-layout-type part))))
+    (should (nth 2 got))))
+
+(ert-deftest vm-mime-test-cid-retrieve-does-not-claim-a-part-it-never-found ()
+  "REGRESSION: a failed lookup used to set `vm-mime-cid-retrieved' all the same.
+The flag was set on entry, so a reference to a part that is not there left VM
+believing the viewer had displayed the related parts.
+`vm-mime-display-internal-multipart/related' reads it and then displays
+nothing, so the reader saw neither the picture nor a button for it."
+  (require 'vm)
+  (let ((got (vm-mime-test--cid-retrieve "cid-nested.mbox"
+                                         "cid:absent@example.com")))
+    (should-not (nth 0 got))
+    (should (equal "" (nth 1 got)))
+    (should-not (nth 2 got))))
+
+(ert-deftest vm-mime-test-cid-retrieve-refuses-a-url-of-another-scheme ()
+  "Only cid: URLs are the message's own parts, so anything else is an error."
+  (require 'vm)
+  (should-error (vm-mime-cid-retrieve "http://example.com/pic.png" nil)))
 
 ;;; Reading one alternative with buttons for the rest (#16)
 
