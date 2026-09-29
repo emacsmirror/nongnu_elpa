@@ -127,32 +127,65 @@
      (delete-file "stubfile.plstore"))))
 
 (ert-deftest mastodon-auth-plstore-token-check-auth-source ()
-  (let ((mastodon-instance-url "https://mastodon.example")
-        (mastodon-active-user "test8000")
-        (file "stubfile-auth-source.plstore")
-        (mastodon-auth-encrypt-tokens-plstore nil)
-        ;; if clause so we can not lose the encrypted plist structure:
-        (user-details ;; order changed for new encrypted auth flow:
-         (if mastodon-auth-encrypt-tokens-plstore
-             '( :client_id "id" :client_secret "secret"
-                :access_token "token"
-                :username "test8000@mastodon.example"
-                :instance "https://mastodon.example")
-           '( :username "test8000@mastodon.example"
-              :instance "https://mastodon.example"
-              :client_id "id"
-              :client_secret "secret"
-              :access_token "token"))))
+  (let* ((mastodon-instance-url "https://mastodon.example")
+         (mastodon-active-user "test8000")
+         (file "fixture/stubfile-auth-source.plstore")
+         (mastodon-auth-encrypt-tokens-plstore nil)
+         ;; if clause so we can not lose the encrypted plist structure:
+         (user-details ;; order changed for new encrypted auth flow:
+          (if mastodon-auth-encrypt-tokens-plstore
+              '( :client_id "id" :client_secret "secret"
+                 :access_token "token"
+                 :username "test8000@mastodon.example"
+                 :instance "https://mastodon.example")
+            '( :username "test8000@mastodon.example"
+               :instance "https://mastodon.example"
+               :client_id "id"
+               :client_secret "secret"
+               :access_token "token"))))
     ;; setup plstore: store access token, using auth source:
-    (let ((mastodon-auth-use-auth-source t))
+    (let ((mastodon-auth-use-auth-source t)
+          (auth-sources "fixture/auth-source-stub"))
       (with-mock
-       ;; (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
-       (mock (mastodon-client--token-file) => file)
-       ;; should nil if we don't check with auth source
-       ;; because we saved in auth-source instead:
-       (let ((mastodon-auth-use-auth-source nil))
-         (should
-          (equal
-           (mastodon-auth--plstore-access-token-member)
-           nil))))
+        (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+        (mock (mastodon-client--token-file) => file)
+        (mastodon-client--store-access-token "token")
+        ;; should nil if we don't check with auth source
+        ;; because we saved in auth-source instead:
+
+        ;; FIXME: this fails because we currently DO save access-token in
+        ;; plstore even if using auth-source.
+        (let ((mastodon-auth-use-auth-source nil))
+          (should (equal
+                   (mastodon-auth--plstore-access-token-member)
+                   nil))))
       (delete-file file))))
+
+
+(ert-deftest mastodon-auth-auth-source-search ()
+  (let* ((mastodon-instance-url "https://mastodon.example")
+         (mastodon-active-user "test8000")
+         (auth-source-backend 'netrc)
+         (host (url-domain
+                (url-generic-parse-url mastodon-instance-url)))
+         (auth-sources "/home/mouse/code/elisp/mastodon.el/test/fixture/auth-source-stub.gpg")
+         (mastodon-auth-use-auth-source t)
+         (auth-source-debug t)
+         (token "token")
+         (creds
+          (mastodon-auth-source-get mastodon-active-user host token :create))
+         (epa-file-encrypt-to "02348176F1E0FFC3"))
+    ;; try to save token to unencrypted auth-source:
+    (should (equal 3 ; should return list of user, token, save-fun:
+                   (length creds)))
+    ;; it does so but does not save to our file, so if we save then fetch,
+    ;; we get zilch
+    (should
+     (not (eq nil (nth 2 creds))))
+    ;; ))
+
+    (should
+     (equal "token"
+            (mastodon-auth-source-token mastodon-instance-url mastodon-active-user
+                           token)))
+    ))
