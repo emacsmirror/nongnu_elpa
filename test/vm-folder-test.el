@@ -6728,6 +6728,74 @@ other work; the command is what a reader typed, so it answers."
                                       (error-message-string err))))))
       (delete-directory dir t))))
 
+(defconst vm-folder-test--spool-two-messages
+  "From one@example.com Mon Jan  1 00:00:00 2024
+From: one@example.com
+Subject: First
+
+First body.
+
+From two@example.com Mon Jan  1 00:01:00 2024
+From: two@example.com
+Subject: Second
+
+Second body.
+"
+  "A spool file's worth of mail, for `vm-spool-check-mail'.")
+
+(defmacro vm-folder-test--with-spool (var content &rest body)
+  "Run BODY with VAR bound to a temp spool file holding CONTENT.
+The count cache is fresh, so one test cannot answer from another's entry."
+  (declare (indent 2) (debug t))
+  `(let ((,var (make-temp-file "vm-spool-check"))
+         (vm-spool-file-message-count-hash (make-vector 61 0)))
+     (unwind-protect
+         (progn
+           (with-temp-file ,var (insert ,content))
+           ,@body)
+       (delete-file ,var))))
+
+(ert-deftest vm-folder-test-spool-check-mail-sees-mail ()
+  "A spool file holding messages has mail waiting; an empty one does not.
+This is what raises the Mail indicator for a local maildrop."
+  (vm-folder-test--with-spool spool vm-folder-test--spool-two-messages
+    (should (vm-spool-check-mail spool)))
+  (vm-folder-test--with-spool spool ""
+    (should-not (vm-spool-check-mail spool))))
+
+(ert-deftest vm-folder-test-spool-check-mail-caches-the-count ()
+  "The count is cached by file size, so an unchanged file is not recounted.
+Counting a spool file is the expensive part, which is why the cache exists."
+  (vm-folder-test--with-spool spool vm-folder-test--spool-two-messages
+    (should (vm-spool-check-mail spool))
+    (let ((counted 0))
+      (cl-letf* ((real (symbol-function 'vm-count-messages-in-file))
+                 ((symbol-function 'vm-count-messages-in-file)
+                  (lambda (&rest args)
+                    (setq counted (1+ counted))
+                    (apply real args))))
+        ;; unchanged: answered from the cache
+        (should (vm-spool-check-mail spool))
+        (should (= 0 counted))
+        ;; changed size: counted again
+        (with-temp-file spool
+          (insert vm-folder-test--spool-two-messages)
+          (insert "\nFrom three@example.com Mon Jan  1 00:02:00 2024\n"
+                  "From: three@example.com\nSubject: Third\n\nThird body.\n"))
+        (should (vm-spool-check-mail spool))
+        (should (= 1 counted))))))
+
+(ert-deftest vm-folder-test-spool-check-mail-does-not-cache-an-unknown-count ()
+  "A file whose messages cannot be counted is not remembered as empty.
+`vm-count-messages-in-file' answers nil for a file it cannot make sense of,
+which is not the same as zero: caching it would make the answer stick."
+  (vm-folder-test--with-spool spool vm-folder-test--spool-two-messages
+    (cl-letf (((symbol-function 'vm-count-messages-in-file)
+               (lambda (&rest _) nil)))
+      (should-not (vm-spool-check-mail spool)))
+    ;; nothing was written to the cache, so a real count still happens
+    (should (vm-spool-check-mail spool))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
