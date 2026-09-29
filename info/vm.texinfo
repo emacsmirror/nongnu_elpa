@@ -8676,23 +8676,25 @@ the desired browser function to get button-2 to work in @acronym{HTML} messages.
 In mail composition buffers only mouse button-3 is affected.
 Context sensitive menus are produced when that button is clicked.
 
-@findex vm-mouse-send-url-to-netscape
-@findex vm-mouse-send-url-to-xxx
-@findex vm-mouse-send-url-to-xxx-new-window
 @findex browse-url
 @cindex browse-url
 @cindex web browser
-VM provides a number of browser functions that you can set as the value of
-@code{vm-url-browser}.  An example is the function
-@code{vm-mouse-send-url-to-netscape}, which sends the @acronym{URL} at mouse
-to the Netscape browser.  Other browsers supported in this way include
-@code{mosaic}, @code{mmosaic}, @code{opera}, @code{mozilla}, @code{firefox},
-and @code{konqueror}, all of which have functions of the form
-@code{vm-mouse-send-url-to-xxx} and
-@code{vm-mouse-send-url-to-xxx-new-window}.  You can also set
-@code{vm-url-browser} to the Emacs function @code{browse-url}, and use the
-facilities defined in the @samp{browse-url} library to send URL's to
-external browsers.
+@vindex browse-url-browser-function
+@code{vm-url-browser} is set to the Emacs function @code{browse-url} by
+default, and which browser that opens is decided by
+@code{browse-url-browser-function}, not by VM.  Set that to choose a
+browser, and every Emacs package that follows a link obeys the same
+setting.
+
+@findex vm-mouse-send-url-to-window-system
+@findex vm-mouse-send-url-to-clipboard
+VM defines two handlers of its own that are not browsers, and either can be
+the value of @code{vm-url-browser}:
+@code{vm-mouse-send-url-to-window-system} passes the @acronym{URL} to the
+window system's copy mechanism, so it can be pasted elsewhere, and
+@code{vm-mouse-send-url-to-clipboard} sends it to the X clipboard.
+@code{vm-url-browser} can also be a string naming an external browser to
+run.
 
 @node Customizing VM, Hooks, Using the Mouse, Top
 @chapter Customizing VM

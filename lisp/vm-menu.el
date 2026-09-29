@@ -477,24 +477,7 @@ do not allow menubar buttons.")
      (vm-mouse-send-url-at-position (point) 'browse-url)
      browse-url-browser-function]
     ["Emacs W3M" (vm-mouse-send-url-at-position (point) 'w3m-browse-url)
-     (fboundp 'w3m-browse-url)]
-    "---"
-    ["Firefox"
-     (vm-mouse-send-url-at-position
-      (point) 'vm-mouse-send-url-to-firefox)
-     vm-firefox-program]
-    ["Konqueror"
-     (vm-mouse-send-url-at-position
-      (point) 'vm-mouse-send-url-to-konqueror)
-     vm-konqueror-client-program]
-    ["Mozilla"
-     (vm-mouse-send-url-at-position
-      (point) 'vm-mouse-send-url-to-mozilla)
-     vm-mozilla-program]
-    ["Opera"
-     (vm-mouse-send-url-at-position
-      (point) 'vm-mouse-send-url-to-opera)
-     vm-opera-program]))
+     (fboundp 'w3m-browse-url)]))
 
 (defconst vm-menu-mailto-url-browser-menu
   `("Send Mail using ..."

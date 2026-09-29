@@ -8,6 +8,22 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **VM's own browser handlers are gone; `browse-url` chooses the browser.**
+    `vm-mouse-send-url-to-netscape`, `-mosaic`, `-mmosaic`, `-opera`,
+    `-mozilla`, `-konqueror` and `-firefox`, their `-new-window` variants and
+    the eighteen `vm-*-program` and `vm-*-program-switches` options that drove
+    them have been removed.  Netscape, Mosaic and the old Opera and Mozilla
+    were driven over `-remote openURL(...)` or by writing `~/.mosaicpid`, and
+    none of that has worked for years; Emacs itself removed
+    `browse-url-netscape` and `browse-url-mosaic` and made `browse-url-mozilla`
+    obsolete.  `vm-url-browser` still exists and still defaults to
+    `browse-url`, so the browser is now chosen by
+    `browse-url-browser-function`, the same setting every other Emacs package
+    follows.  `vm-mouse-send-url-to-window-system` and
+    `vm-mouse-send-url-to-clipboard` are unaffected, being copy handlers
+    rather than browsers.
+
+
   * **`vm-after-postpone-message-hook` runs after a message is postponed.**  The
     existing `vm-postpone-message-hook` runs before the composition is written
     to the folder, where a function can still change what is filed; this one

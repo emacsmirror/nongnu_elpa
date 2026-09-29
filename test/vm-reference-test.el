@@ -233,9 +233,7 @@ examples chosen to pass."
 
 (defconst vm-reference-test--not-commands
   '(;; a value for `vm-url-browser', called once VM is loaded, not typed
-    vm-mouse-send-url-to-netscape
-    ;; named to show the form of a name the reader is to invent
-    vm-mouse-send-url-to-xxx vm-mouse-send-url-to-xxx-new-window)
+    vm-mouse-send-url-to-window-system vm-mouse-send-url-to-clipboard)
   "Functions the manual names that no one invokes by name.
 Everything else the manual indexes and that is a command has to be reachable
 before VM is loaded; see the test below.  The Personality Crisis conditions
@@ -345,8 +343,7 @@ new command in any other file has to carry a cookie."
   '(;; other packages, which VM does not require and a batch run has not loaded
     smtpmail-smtp-service smtpmail-stream-type
     w3m-force-redisplay w3m-goto-article-function w3m-pop-up-frames
-    ;; named to show the form of a name the reader is to invent
-    vm-mouse-send-url-to-xxx vm-mouse-send-url-to-xxx-new-window)
+    browse-url-browser-function)
   "Symbols the manual indexes that are deliberately not VM's own.")
 
 (defun vm-reference-test--manual-symbols ()
@@ -864,7 +861,7 @@ the word was taken out of the manual once already (emacs-vm/vm#776)."
     vm-mime-disposition vm-mime-function vm-mime-object vm-mime-parameters
     vm-string
     ;; patterns standing for a family of names
-    vm-epg-ACTION vm-fetch-HANDLER-message vm-mouse-send-url-to-xxx
+    vm-epg-ACTION vm-fetch-HANDLER-message
     vm-summary-function-B vm-vs-SELECTOR
     ;; named as history: a variable and a group that VM used to have, in
     ;; sentences that are about no longer having them

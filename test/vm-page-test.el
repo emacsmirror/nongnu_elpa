@@ -303,8 +303,8 @@ which is what that option's docstring promises."
   "The help text on a URL says where button 2 would send it."
   (let ((vm-url-browser "/usr/bin/firefox"))
     (should (string-match-p "/usr/bin/firefox" (vm-url-help nil))))
-  (let ((vm-url-browser 'vm-mouse-send-url-to-netscape))
-    (should (string-match-p "Netscape" (vm-url-help nil))))
+  (let ((vm-url-browser 'vm-mouse-send-url-to-clipboard))
+    (should (string-match-p "vm-mouse-send-url-to-clipboard" (vm-url-help nil))))
   (let ((vm-url-browser 'browse-url))
     (should (string-match-p "browse-url" (vm-url-help nil)))
     (should (string-match-p "button 2" (vm-url-help nil)))
