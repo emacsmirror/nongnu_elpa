@@ -279,6 +279,11 @@ Also nil `mastodon-auth--token-alist'."
         (message "No plstore file")
       (delete-file mastodon-client--token-file)
       (message "File %s deleted." mastodon-client--token-file))
+    ;; errors with: "The ‘read-passwd’ auth-source backend doesn’t support
+    ;; deletion yet":
+    ;; (auth-source-delete :host mastodon-instance-url :user mastodon-active-user
+    ;;                     :secret (mastodon-auth--access-token)
+    ;;                     :type 'secrets) ; also 'netrc
     ;; nil some vars too:
     (setq mastodon-client--active-user-details-plist nil)
     (setq mastodon-auth--token-alist nil)))
