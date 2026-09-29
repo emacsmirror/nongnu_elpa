@@ -5065,6 +5065,50 @@ the warning says to stop setting it while the setting still does something."
     (should (equal (list option nil)
                    (list option (vm-mime-test--files-naming option))))))
 
+(ert-deftest vm-mime-test-fetch-url-retrieves-a-file-url ()
+  "`vm-mime-fetch-url' gets the object with Emacs, no external program.
+A file: URL exercises the whole path without touching the network, and it is
+the case that proves the header block is stripped: url synthesises
+Content-type and Content-length in front of the file, without binding
+`url-http-end-of-headers'."
+  (let ((source (make-temp-file "vm-mime-url"))
+        (target (generate-new-buffer " *vm-mime-url-test*")))
+    (unwind-protect
+        (progn
+          (with-temp-file source (insert "the external body\n"))
+          (should (vm-mime-fetch-url (concat "file://" source) target))
+          (should (equal "the external body\n"
+                         (with-current-buffer target (buffer-string)))))
+      (kill-buffer target)
+      (delete-file source))))
+
+(ert-deftest vm-mime-test-fetch-url-warns-and-gives-up-on-a-bad-url ()
+  "A URL that cannot be retrieved warns and answers nil, rather than signalling."
+  (let ((warnings nil)
+        (target (generate-new-buffer " *vm-mime-url-test*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-warn)
+                   (lambda (_level _secs &rest args)
+                     (push (apply #'format args) warnings)))
+                  ((symbol-function 'url-retrieve-synchronously)
+                   (lambda (&rest _) (error "no route to host"))))
+          (should-not (vm-mime-fetch-url "http://example.invalid/x" target))
+          (should (= 1 (length warnings)))
+          (should (string-match-p "Could not retrieve" (car warnings))))
+      (kill-buffer target))))
+
+(ert-deftest vm-mime-test-fetch-url-answers-nil-for-an-empty-object ()
+  "Nothing retrieved is not a retrieval."
+  (let ((target (generate-new-buffer " *vm-mime-url-test*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'url-retrieve-synchronously)
+                   (lambda (&rest _)
+                     (let ((b (generate-new-buffer " *fake response*")))
+                       (with-current-buffer b (insert "Content-type: x\n\n"))
+                       b))))
+          (should-not (vm-mime-fetch-url "http://example.invalid/x" target)))
+      (kill-buffer target))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
