@@ -1,5 +1,7 @@
 2026-09-29  Ulrich Müller  <ulm@gentoo.org>
 
+	* ebuild-mode.texi (Top): Update introduction.
+
 	* ebuild-mode.el (ebuild-mode):
 	* gentoo-newsitem-mode.el (gentoo-newsitem-mode):
 	* devbook-mode.el (devbook-mode):

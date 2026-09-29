@@ -40,17 +40,17 @@ later version published by the Free Software Foundation.
 
 @top ebuild-mode: An introduction
 This collection of modes will help the user to efficiently write and
-edit ebuilds and eclasses which are special to Gentoo,
-a meta-distribution with various targets (Linux distribution, prefixed
-environments in other operating systems, and integration of other
-kernels and userlands like the BSDs).
+edit ebuilds, eclasses and other files that are specific to Gentoo,
+a meta-distribution with various targets (GNU/Linux distribution,
+prefixed environments in other operating systems, and integration
+of other kernels and userlands like the BSDs or the GNU Hurd).
 
 Ebuilds describe the build process and dependencies of a software
-package to automatically compile and install it under the control of a
-package manager.  They are simple text files, based on Bash shell
-scripts and there easy to create.  Eclasses are comparable to a library
-which provides generic functions that a set of ebuilds can use by
-sourcing it on request.
+package to compile and install it automatically under the control of a
+package manager.  They are simple text files based on Bash scripts and
+are easy to create.  Eclasses are comparable to libraries providing
+generic functions that ebuilds can use by sourcing the eclass on
+request.
 
 ebuild-mode provides major modes to edit the above two file types.
 Other features are the execution of often needed commands
