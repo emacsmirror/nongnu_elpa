@@ -71,7 +71,7 @@
   "Scoped wire requests preserve exit evidence and replace disappeared rows."
   (hermes-test--with-process-wire
     (hermes-chat-work-refresh)
-    (hermes-test--work-answer client "{\"active\":[]}")
+    (hermes-test--work-answer client "{\"subagents\":[]}")
     (let* ((owner hermes-chat--work-owner)
            (request (plist-get owner :request))
            (frame (hermes-dashboard-transport--decode-frame (car frames))))
@@ -94,7 +94,7 @@
                      (if (char-displayable-p ?⚙) "⚙ 1 ?" "1 process ?")))
       (should-not (plist-get owner :request))
       (hermes-chat-work-refresh)
-      (hermes-test--work-answer client "{\"active\":[]}")
+      (hermes-test--work-answer client "{\"subagents\":[]}")
       (hermes-test--work-answer client "{\"processes\":[]}")
       (should-not (plist-get (plist-get owner :processes) :rows))
       (should-not (hermes-chat--work-label nil))
@@ -102,70 +102,41 @@
       (should-not hermes-chat--pending-assistant-id))))
 
 (ert-deftest hermes-chat-work-process-runtime-without-durable-key ()
-  "Missing delegate authority cannot suppress explicitly runtime-scoped processes."
+  "Both observation sources use runtime scope before a durable key exists."
   (hermes-test--with-process-wire
     (setf (hermes-dashboard-transport-client-session-id client) "foreign-default")
     (hermes-chat--work-bind client "runtime" nil)
     (hermes-chat-work-refresh)
+    (hermes-test--work-answer client "{\"subagents\":[]}")
     (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
       (should (equal (hermes-transport--get frame 'method) "process.list"))
       (should (equal (hermes-transport--get
                       (hermes-transport--get frame 'params) 'session_id) "runtime")))
     (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\"}]}")
-    (should-not (plist-get hermes-chat--work-owner :delegates))
+    (should (eq (plist-get (plist-get hermes-chat--work-owner :delegates) :coverage) 'current))
     (should (equal (substring-no-properties (hermes-chat--work-label nil))
-                   (if (char-displayable-p ?⚙) "⚙ 1 ?" "1 process ?")))))
+                   (if (char-displayable-p ?⚙) "⚙ 1" "1 process")))))
 
-(ert-deftest hermes-chat-work-new-busy-session-adopts-late-key ()
-  "Cadence obtains a late durable key without duplicate reads or turn mutation."
+(ert-deftest hermes-chat-work-new-busy-session-needs-no-durable-key ()
+  "A runtime roster works before a durable key exists, preserving its turn."
   (hermes-test--with-process-wire
     (hermes-chat--work-bind client "runtime" nil)
     (setq hermes-chat--pending-assistant-id "busy-turn"
           hermes-chat--dashboard-running-p t)
-    (let ((owner hermes-chat--work-owner))
-      (cl-labels
-          ((title-frames ()
-             (seq-filter
-              (lambda (frame) (equal (hermes-transport--get frame 'method) "session.title"))
-              (mapcar #'hermes-dashboard-transport--decode-frame frames)))
-           (tick ()
-             (let ((timer (cdr (plist-get owner :timer))))
-               (should (= (car timer) 5))
-               (apply (cadr timer) (nth 2 timer)))))
-        (hermes-chat--work-refresh owner)
-        (should (= (length (title-frames)) 1))
-        (let* ((frame (car (title-frames)))
-               (id (hermes-transport--get frame 'id))
-               (pending (gethash id (hermes-dashboard-transport-client-pending client))))
-          (should (equal (hermes-transport--get frame 'params) '((session_id . "runtime"))))
-          (should (= (car (plist-get pending :timer)) 10))
-          (hermes-test--work-answer client "{\"processes\":[]}")
-          (tick)
-          (should (= (length (title-frames)) 1))
-          (hermes-test--work-answer client "{\"processes\":[]}")
-          (hermes-test--work-reply client id "{\"session_key\":null}")
-          (should-not (plist-get owner :key))
-          (tick)
-          (should (= (length (title-frames)) 2))
-          (hermes-test--work-reply
-           client (hermes-transport--get (car (title-frames)) 'id)
-           "{\"session_key\":\"A\"}")
-          (hermes-test--work-answer client "{\"processes\":[]}")
-          (tick)
-          (should (= (length (title-frames)) 2))
-          (should (eq (plist-get (plist-get owner :request) :source) :delegates))
-          (hermes-test--work-answer client "{\"active\":[]}")
-          (should (eq (plist-get (plist-get owner :delegates) :coverage) 'current))
-          (should (equal (plist-get owner :key) "A"))
-          (should (equal hermes-chat--pending-assistant-id "busy-turn"))
-          (should hermes-chat--dashboard-running-p)
-          (should (eq owner hermes-chat--work-owner)))))))
+    (hermes-chat-work-refresh)
+    (hermes-test--work-answer client "{\"subagents\":[]}")
+    (hermes-test--work-answer client "{\"processes\":[]}")
+    (should (= (length frames) 2))
+    (should (eq (plist-get (plist-get hermes-chat--work-owner :delegates) :coverage) 'current))
+    (should-not (plist-get hermes-chat--work-owner :key))
+    (should (equal hermes-chat--pending-assistant-id "busy-turn"))
+    (should hermes-chat--dashboard-running-p)))
 
 (ert-deftest hermes-chat-work-process-deadline-and-rebind ()
   "A held process request times out, and an old process cannot mutate a rebind."
   (hermes-test--with-process-wire
     (hermes-chat-work-refresh)
-    (hermes-test--work-answer client "{\"active\":[]}")
+    (hermes-test--work-answer client "{\"subagents\":[]}")
     (let* ((owner hermes-chat--work-owner)
            (id (plist-get (plist-get owner :request) :id))
            (timer (plist-get (gethash id (hermes-dashboard-transport-client-pending client)) :timer)))
@@ -190,7 +161,7 @@
                (lambda () (hermes-chat-work-refresh))))
       (let ((hermes-dashboard-transport-websocket-send-function
              (lambda (&rest _) (error "process send failed"))))
-        (hermes-test--work-answer client "{\"active\":[]}")))
+        (hermes-test--work-answer client "{\"subagents\":[]}")))
     (should (= (length frames) 1))
     (should-not (plist-get hermes-chat--work-owner :request))
     (should-not (plist-get hermes-chat--work-owner :cycle))
@@ -206,7 +177,7 @@
         (hermes-test--with-process-wire
           (hermes-chat-work-refresh)
           (when (eq source :processes)
-            (hermes-test--work-answer client "{\"active\":[]}"))
+            (hermes-test--work-answer client "{\"subagents\":[]}"))
           (let ((owner hermes-chat--work-owner)
                 successor request cycle signaled)
             (let ((hermes-chat-state-change-hook
@@ -222,7 +193,7 @@
               (condition-case condition
                   (hermes-test--work-answer
                    client (if (eq source :delegates)
-                              "{\"active\":[]}" "{\"processes\":[]}"))
+                              "{\"subagents\":[]}" "{\"processes\":[]}"))
                 ((error quit) (setq signaled (car condition)))))
             (should (eq signaled failure))
             (should-not (plist-get owner :request))
@@ -241,7 +212,7 @@
                           (hermes-dashboard-transport-client-pending client)) 1))
               (hermes-chat-work-refresh)
               (should (= (length frames) (+ before (if replace 0 1)))))
-            (hermes-test--work-answer client "{\"active\":[]}")
+            (hermes-test--work-answer client "{\"subagents\":[]}")
             (should (= (hash-table-count
                         (hermes-dashboard-transport-client-pending client)) 1))
             (hermes-test--work-answer client "{\"processes\":[]}")
@@ -256,7 +227,7 @@
                     ("{\"processes\":1}" stale) ("{\"processes\":[null]}" partial)
                     ("{\"processes\":[{\"session_id\":\"dup\",\"status\":\"running\"},{\"session_id\":\"dup\",\"status\":\"running\"}]}" partial)))
       (hermes-chat-work-refresh)
-      (hermes-test--work-answer client "{\"active\":[]}")
+      (hermes-test--work-answer client "{\"subagents\":[]}")
       (hermes-test--work-answer client (car case))
       (let ((source (plist-get hermes-chat--work-owner :processes)))
         (should (eq (plist-get source :coverage) (cadr case)))
@@ -272,7 +243,7 @@
       (hermes-test--with-process-wire
         (hermes-chat-work-refresh)
         (when (eq source :processes)
-          (hermes-test--work-answer client "{\"active\":[]}"))
+          (hermes-test--work-answer client "{\"subagents\":[]}"))
         (let* ((owner hermes-chat--work-owner)
                (id (plist-get (plist-get owner :request) :id)))
           (hermes-dashboard-transport--handle-frame
@@ -286,7 +257,7 @@
                       (if (eq source :delegates) :processes :delegates)))
           (hermes-test--work-answer client
                                    (if (eq source :delegates)
-                                       "{\"processes\":[]}" "{\"active\":[]}"))
+                                       "{\"processes\":[]}" "{\"subagents\":[]}"))
           (should-not (plist-get owner :request))
           (hermes-chat-work-refresh)
           (should (eq (plist-get (plist-get owner :request) :source) :delegates))
@@ -304,14 +275,14 @@
       (apply (cadr timer) (nth 2 timer))
       (should (eq (plist-get (plist-get owner :request) :source) :processes))
       (let ((request (plist-get owner :request)))
-        (hermes-test--work-reply client id "{\"active\":[]}")
+        (hermes-test--work-reply client id "{\"subagents\":[]}")
         (hermes-chat-work-refresh)
         (should (eq request (plist-get owner :request))))
       (hermes-test--work-answer client "{\"processes\":[]}")
       (should (plist-get (plist-get owner :delegates) :paused))
       (hermes-chat-work-refresh)
       (let ((request (plist-get owner :request)))
-        (hermes-test--work-reply client id "{\"active\":[]}")
+        (hermes-test--work-reply client id "{\"subagents\":[]}")
         (should (eq request (plist-get owner :request))))
       (should-not events))))
 
@@ -322,7 +293,7 @@
     (cl-letf (((symbol-function 'hermes-chat--notify-state-change)
                (lambda () (switch-to-buffer (get-buffer-create " *hidden work*")))))
       (unwind-protect
-          (hermes-test--work-answer client "{\"active\":[]}")
+          (hermes-test--work-answer client "{\"subagents\":[]}")
         (kill-buffer " *hidden work*")))
     (should (= (length frames) 1))
     (should-not (plist-get hermes-chat--work-owner :request))
@@ -339,7 +310,7 @@
                 (lambda (owner source)
                   (and (or hermes-test--work-processes-p (eq source :delegates))
                        (funcall source-eligible owner source))))
-               ((symbol-function 'hermes-dashboard-transport-delegation-status)
+               ((symbol-function 'hermes-dashboard-transport-subagent-list)
                 (lambda (_client &rest args)
                   (push args calls)
                   (should (= hermes-dashboard-transport-request-timeout 10))
@@ -358,6 +329,15 @@
                 hermes-chat--dashboard-session-ready-p t)
           (hermes-chat--work-bind client "runtime" "A")
           ,@body)))))
+
+(ert-deftest hermes-chat-workers-session-roster-wire ()
+  "Public refresh asks the captured runtime for its session roster."
+  (hermes-test--with-work-wire
+    (hermes-chat-work-refresh)
+    (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+      (should (equal (hermes-transport--get frame 'method) "subagent.list"))
+      (should (equal (hermes-transport--get frame 'params)
+                     '((session_id . "runtime")))))))
 
 (ert-deftest hermes-chat-work-refinement-popup-workers ()
   "The root renders delegate counts and preserves child Workers shortcuts."
@@ -615,7 +595,7 @@
       (hermes-chat-work-refresh)
       (should (= (length calls) 2))
       (funcall (plist-get (car calls) :resolve)
-               (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+               (hermes-transport-json-parse-lossless "{\"subagents\":[]}"))
       (should (eq (plist-get (plist-get owner :delegates) :coverage) 'current))
       (should (equal (caar timers) 5))
       ;; This fixture observes delegates alone; processes remain unknown.
@@ -631,7 +611,7 @@
       (hermes-chat--work-refresh hermes-chat--work-owner)
       (let ((request (plist-get hermes-chat--work-owner :request)))
         (funcall (plist-get old :resolve)
-                 (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+                 (hermes-transport-json-parse-lossless "{\"subagents\":[]}"))
         (should-not (hermes-chat--work-current-p owner))
         (should (eq request (plist-get hermes-chat--work-owner :request)))
         (should-not (plist-get hermes-chat--work-owner :delegates))))))
@@ -639,7 +619,7 @@
 (defmacro hermes-test--with-work-wire (&rest body)
   "Run BODY with real typed requests/raw responses and fake socket/timers."
   (declare (indent 0) (debug t))
-  `(let ((rpc (symbol-function 'hermes-dashboard-transport-delegation-status))
+  `(let ((rpc (symbol-function 'hermes-dashboard-transport-subagent-list))
          (hermes-dashboard-transport-request-timeout nil)
          frames events)
      (hermes-test--with-work
@@ -647,7 +627,7 @@
               (lambda (_socket text) (push text frames))))
          (setf (hermes-dashboard-transport-client-callback client)
                (lambda (event) (push event events)))
-         (cl-letf (((symbol-function 'hermes-dashboard-transport-delegation-status) rpc))
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-subagent-list) rpc))
            ,@body)))))
 
 (ert-deftest hermes-chat-reasoning-mode-exit-releases-exact-work ()
@@ -702,7 +682,7 @@
                  (next-timer (plist-get (gethash next-id pending) :timer)))
             (should request)
             (funcall callback '(:type thinking :event "thinking.delta" :content "late"))
-            (hermes-test--work-reply client id "{\"active\":[]}")
+            (hermes-test--work-reply client id "{\"subagents\":[]}")
             (apply (cadr timer) (nth 2 timer))
             (hermes-chat--cleanup-buffer)
             (should (eq successor hermes-chat--work-owner))
@@ -729,7 +709,7 @@
              (pending (hermes-dashboard-transport-client-pending client))
              fired caught cancelled)
         (hermes-chat-work-refresh)
-        (hermes-test--work-answer client "{\"active\":[]}")
+        (hermes-test--work-answer client "{\"subagents\":[]}")
         (hermes-test--work-answer client "{\"processes\":[]}")
         (let ((cadence (cdr (plist-get owner :timer))))
           (hermes-chat-work-refresh)
@@ -918,7 +898,7 @@
              (cadence (cdr (plist-get owner :timer)))
              view publication cancelled caught)
         ;; A cadence can already be queued when a manual refresh starts.
-        (hermes-test--work-answer client "{\"active\":[]}")
+        (hermes-test--work-answer client "{\"subagents\":[]}")
         (hermes-test--work-answer client "{\"processes\":[]}")
         (setq cadence (cdr (plist-get owner :timer)))
         (hermes-chat-work-refresh)
@@ -981,7 +961,7 @@
                          (transcript (buffer-string)))
                     (should request)
                     (funcall callback '(:type thinking :event "thinking.delta" :content "late"))
-                    (hermes-test--work-reply client id "{\"active\":[]}")
+                    (hermes-test--work-reply client id "{\"subagents\":[]}")
                     (apply (cadr deadline) (nth 2 deadline))
                     (apply (cadr cadence) (nth 2 cadence))
                     (apply (cadr publication) (nth 2 publication))
@@ -1076,19 +1056,19 @@
 (ert-deftest hermes-chat-work-real-wire-validation ()
   "Serialized shapes establish current, partial, or stale, never invented idle."
   (hermes-test--with-work-wire
-    (dolist (case '(("{\"active\":[]}" current nil)
-                    ("{}" stale t) ("{\"active\":null}" stale t)
-                    ("{\"active\":false}" stale t) ("{\"active\":{}}" stale t)
-                    ("{\"active\":7}" stale t) ("{\"active\":[null]}" partial t)
-                    ("{\"active\":[{\"subagent_id\":\"x\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"},false]}" partial t)))
+    (dolist (case '(("{\"subagents\":[]}" current nil)
+                    ("{}" stale t) ("{\"subagents\":null}" stale t)
+                    ("{\"subagents\":false}" stale t) ("{\"subagents\":{}}" stale t)
+                    ("{\"subagents\":7}" stale t) ("{\"subagents\":[null]}" partial t)
+                    ("{\"subagents\":[{\"subagent_id\":\"x\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"},false]}" partial t)))
       (hermes-chat-work-refresh)
       (let* ((owner hermes-chat--work-owner)
              (id (plist-get (plist-get owner :request) :id))
              (pending (gethash id (hermes-dashboard-transport-client-pending client))))
         (should (equal (hermes-transport--get
                         (hermes-dashboard-transport--decode-frame (car frames)) 'method)
-                       "delegation.status"))
-        (should (eq (plist-get pending :owner) owner))
+                       "subagent.list"))
+        (should (eq (plist-get pending :owner) (plist-get owner :request)))
         (should (plist-get pending :lossless-result))
         (should (= (car (plist-get pending :timer)) 10))
         (hermes-test--work-reply client id (car case))
@@ -1132,7 +1112,7 @@
       (should (plist-get (plist-get owner :delegates) :paused))
       (hermes-chat-work-refresh)
       (let ((request (plist-get owner :request)))
-        (hermes-test--work-reply client id "{\"active\":[]}")
+        (hermes-test--work-reply client id "{\"subagents\":[]}")
         (should (eq request (plist-get owner :request)))
         (should (eq (plist-get (plist-get owner :delegates) :coverage) 'stale))))
     (should-not events)))
@@ -1183,13 +1163,13 @@
                  (lambda ()
                    (hermes-chat--work-bind client "runtime" "B")
                    (hermes-chat-work-refresh))))
-        (funcall resolve (hermes-transport-json-parse-lossless "{\"active\":[]}")))
+        (funcall resolve (hermes-transport-json-parse-lossless "{\"subagents\":[]}")))
       (should-not (plist-get old :timer))
       (should (plist-get hermes-chat--work-owner :request))
       (should-not (plist-get hermes-chat--work-owner :delegates))
       (cl-incf hermes-chat--work-generation)
       (funcall (plist-get (car calls) :resolve)
-               (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+               (hermes-transport-json-parse-lossless "{\"subagents\":[]}"))
       (should-not (plist-get hermes-chat--work-owner :delegates)))))
 
 (ert-deftest hermes-chat-work-synchronous-ready-drops-owner ()
@@ -1213,23 +1193,24 @@
       (hermes-chat--dashboard-record-session client '((session_id . "runtime")))
       (should-not (plist-get hermes-chat--work-owner :key))
       (hermes-chat-work-refresh)
-      (should-not calls)
+      (should (= (length calls) 1))
       (hermes-chat--dashboard-record-session
        client '((session_id . "runtime") (session_key . "A")))
       (should (equal (plist-get hermes-chat--work-owner :key) "A"))
       (hermes-chat-work-refresh)
-      (should (= (length calls) 1))
+      (should (= (length calls) 2))
       (hermes-chat--dashboard-record-session
        client '((session_id . "runtime") (stored_session_id . "A")))
       (should-not (plist-get hermes-chat--work-owner :key))
       (should-not (plist-get hermes-chat--work-owner :delegates)))))
 
 (ert-deftest hermes-chat-work-two-chats-one-client ()
-  "A and B receive the same global wire inventory but keep exact owned rows."
+  "A and B share one client but request and receive separate runtime rosters."
   (hermes-test--with-work-wire
     (let ((a (current-buffer)) (owner-a hermes-chat--work-owner)
           (b (generate-new-buffer " *work B*"))
-          (wire "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"},{\"subagent_id\":\"b\",\"owner_agent_session_id\":\"B\",\"status\":\"running\",\"goal\":\"private B\"}]}"))
+          (wire-a "{\"subagents\":[{\"subagent_id\":\"a\",\"status\":\"running\"}]}")
+          (wire-b "{\"subagents\":[{\"subagent_id\":\"b\",\"status\":\"running\",\"goal\":\"private B\"}]}"))
       (unwind-protect
           (progn
             (hermes-chat-work-refresh)
@@ -1243,9 +1224,9 @@
               (hermes-chat-work-refresh)
               (let ((owner-b hermes-chat--work-owner))
                 (hermes-test--work-reply client
-                                        (plist-get (plist-get owner-a :request) :id) wire)
+                                        (plist-get (plist-get owner-a :request) :id) wire-a)
                 (hermes-test--work-reply client
-                                        (plist-get (plist-get owner-b :request) :id) wire)
+                                        (plist-get (plist-get owner-b :request) :id) wire-b)
                 (should (equal (mapcar (lambda (row) (plist-get row :id))
                                       (plist-get (plist-get owner-b :delegates) :rows)) '("b")))
                 (with-current-buffer a
@@ -1261,7 +1242,7 @@
     (let ((chat (current-buffer)) (owner hermes-chat--work-owner))
       (hermes-chat-work-refresh)
       (funcall (plist-get (car calls) :resolve)
-               (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+               (hermes-transport-json-parse-lossless "{\"subagents\":[]}"))
       (let ((old-timer (cdr (plist-get owner :timer)))
             (other (split-window-right)))
         (set-window-buffer other chat)
@@ -1302,7 +1283,7 @@
                                             (selected-window))))))
         (hermes-chat-work-refresh)
         (funcall (plist-get (car calls) :resolve)
-                 (hermes-transport-json-parse-lossless "{\"active\":[]}"))
+                 (hermes-transport-json-parse-lossless "{\"subagents\":[]}"))
         (let ((old-timer (cdr (plist-get owner :timer))))
           (cl-letf (((symbol-function 'frame-visible-p) (lambda (&rest _) visible)))
             (setq visible 'icon)
@@ -1345,7 +1326,7 @@
         ;; Full chat teardown may close an unshared client, so check disconnect here.
         (when (eq end 'disconnect)
           (should (gethash other-id (hermes-dashboard-transport-client-pending client))))
-        (hermes-test--work-reply client id "{\"active\":[]}")
+        (hermes-test--work-reply client id "{\"subagents\":[]}")
         (should-not (plist-get owner :timer))))))
 
 (ert-deftest hermes-chat-work-connection-change-makes-header-unknown ()
@@ -1354,7 +1335,7 @@
     (hermes-chat-work-refresh)
     (funcall (plist-get (car calls) :resolve)
              (hermes-transport-json-parse-lossless
-              "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
+              "{\"subagents\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
     (should (equal (substring-no-properties (hermes-chat--work-label t)) "1a ?"))
     (cl-incf (hermes-dashboard-transport-client-generation client))
     (should (equal (substring-no-properties (hermes-chat--work-label t)) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))
@@ -1373,7 +1354,7 @@
       (hermes-chat-work-refresh)
       (funcall (plist-get (car calls) :resolve)
                (hermes-transport-json-parse-lossless
-                "{\"active\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
+                "{\"subagents\":[{\"subagent_id\":\"a\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}]}"))
       (dolist (width '(12 20 30 40 50 80 120))
         (let ((header (hermes-chat--header-line width)))
           (should (<= (string-width header) width))
@@ -3125,7 +3106,7 @@
   (save-window-excursion
     (hermes-test--with-process-wire
       (hermes-chat-work-refresh)
-      (hermes-test--work-answer client "{\"active\":[{\"subagent_id\":\"same\",\"owner_agent_session_id\":\"A\",\"status\":\"running\",\"goal\":\"界 50% goal\"}]}")
+      (hermes-test--work-answer client "{\"subagents\":[{\"subagent_id\":\"same\",\"owner_agent_session_id\":\"A\",\"status\":\"running\",\"goal\":\"界 50% goal\"}]}")
       (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"same\",\"status\":\"exited\",\"exit_code\":7,\"command\":\"printf done\",\"cwd\":\"/remote/inert\",\"output_tail\":\"last output\"}]}")
       (let ((chat (current-buffer)) (owner hermes-chat--work-owner)
             (sent (length frames)) view details instance)
@@ -3169,7 +3150,7 @@
                 (with-current-buffer chat
                   (should (equal (buffer-substring-no-properties (hermes-chat--input-position) (point-max)) "draft text"))
                   (should (= offset (- (point) (hermes-chat--input-position))))
-                  (hermes-test--work-answer client "{\"active\":[]}")
+                  (hermes-test--work-answer client "{\"subagents\":[]}")
                   (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"same\",\"status\":\"running\"}]}"))
                 (with-current-buffer view
                   (should (equal (tabulated-list-get-id) '(process . "same")))
@@ -3186,7 +3167,7 @@
                   (should (string-match-p "Agents stale" (buffer-string)))
                   (should (string-match-p "Stale" (buffer-string)))
                   (should-error (hermes-work-refresh) :type 'user-error)
-                  (should-not (keymap-lookup hermes-work-mode-map "k"))))
+                  (should (eq (keymap-lookup hermes-work-mode-map "k") #'hermes-work-interrupt))))
             (dolist (buffer (list view details))
               (when (buffer-live-p buffer) (kill-buffer buffer)))))))))
 
@@ -3225,7 +3206,7 @@
   (save-window-excursion
     (hermes-test--with-process-wire
       (hermes-chat-work-refresh)
-      (hermes-test--work-answer client "{\"active\":[]}")
+      (hermes-test--work-answer client "{\"subagents\":[]}")
       (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\",\"command\":\"界% very long command with long description\",\"started_at\":0}]}")
       (let ((owner hermes-chat--work-owner) view details)
         (unwind-protect
@@ -3283,7 +3264,7 @@
     (save-window-excursion
       (hermes-test--with-process-wire
         (hermes-chat-work-refresh)
-        (hermes-test--work-answer client "{\"active\":[]}")
+        (hermes-test--work-answer client "{\"subagents\":[]}")
         (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\"}]}")
         (let ((chat (current-buffer)) (owner hermes-chat--work-owner) view details)
           (insert "retained draft")
@@ -3322,7 +3303,7 @@
                     (should (equal (hermes-chat--work-label nil) (if (char-displayable-p ?🤖) "🤖 ?" "Agents ?")))
                     (should (eq (get-text-property 0 'face (hermes-chat--work-label nil))
                                 'hermes-work-unknown))
-                    (hermes-test--work-answer client "{\"active\":[]}")
+                    (hermes-test--work-answer client "{\"subagents\":[]}")
                     (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\"}]}"))
                   (with-current-buffer view
                     (should (equal (aref (cadar tabulated-list-entries) 0) "Running"))
@@ -3376,7 +3357,7 @@
                     (should-not (plist-get owner :request)))
                   (hermes-chat-work-refresh)
                   (should (= (length frames) 1))
-                  (hermes-test--work-answer client "{\"active\":[]}")
+                  (hermes-test--work-answer client "{\"subagents\":[]}")
                   (hermes-test--work-answer client "{\"processes\":[]}")
                   (should-not (plist-get hermes-chat--work-owner :cycle))))
             (when (buffer-live-p view) (kill-buffer view))))))))
@@ -3451,6 +3432,505 @@
               (should-not hermes-chat--background-tasks)
               (should (equal (hermes-chat-input-string) "successor draft"))))
         (when (buffer-live-p recovery) (kill-buffer recovery))))))
+
+(defmacro hermes-test--with-worker-view (&rest body)
+  "Run BODY in the public worker view with real wire dispatch and one worker."
+  (declare (indent 0) (debug t))
+  `(hermes-test--with-work-wire
+     (hermes-chat-work-refresh)
+     (hermes-test--work-answer
+      client "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":1,\"goal\":\"Worker goal\"}]}")
+     (let ((chat (current-buffer)) (owner hermes-chat--work-owner) tail-view)
+       (unwind-protect
+           (progn
+             (call-interactively (keymap-lookup hermes-chat-actions-map "W"))
+             (goto-char (point-min))
+             (search-forward "Worker goal")
+             (setq frames nil)
+             ,@body)
+         (when (buffer-live-p tail-view) (kill-buffer tail-view))
+         (when (buffer-live-p (plist-get owner :view))
+           (kill-buffer (plist-get owner :view)))
+         (set-buffer chat)))))
+
+(ert-deftest hermes-work-session-interrupt-native-key-and-receipt ()
+  "The public key sends session and child once; found false is not success."
+  (dolist (found '(t :false))
+    (hermes-test--with-worker-view
+      (let (messages)
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+          (execute-kbd-macro "k")
+          (should (= (length frames) 1))
+          (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+            (should (equal (hermes-transport--get frame 'method) "subagent.interrupt"))
+            (should (equal (hermes-transport--get frame 'params)
+                           '((session_id . "runtime") (subagent_id . "child"))))
+            (hermes-test--work-reply
+             client (hermes-transport--get frame 'id)
+             (if (eq found t) "{\"found\":true}" "{\"found\":false}")))
+          (should (seq-some (lambda (text)
+                              (string-match-p (if (eq found t) "accepted" "not found") text))
+                            messages)))))))
+
+(ert-deftest hermes-work-session-controls-refuse-retired-consent ()
+  "Recursive confirmation/input cannot lend a replaced row, view or session."
+  (dolist (command '(hermes-work-interrupt hermes-work-steer))
+    (dolist (change '(row session connection mode association cancel))
+      (hermes-test--with-worker-view
+        (let* ((view (current-buffer)) entered
+               (read (lambda (&rest _)
+                       (setq entered t)
+                       (pcase change
+                         ('row (setf (plist-get (plist-get owner :delegates) :rows)
+                                     (copy-tree (plist-get (plist-get owner :delegates) :rows))))
+                         ('session (with-current-buffer chat
+                                     (setq hermes-chat--dashboard-active-session-id "foreign")))
+                         ('connection (cl-incf (hermes-dashboard-transport-client-generation client)))
+                         ('mode (fundamental-mode))
+                         ('association (set-visited-file-name
+                                        (expand-file-name "worker-notes" temporary-file-directory) t)))
+                       (if (eq command 'hermes-work-steer)
+                           (if (eq change 'cancel) "" "Literal steering")
+                         (not (eq change 'cancel))))))
+          (cl-letf (((symbol-function 'read-string) read)
+                    ((symbol-function 'yes-or-no-p) read))
+            (call-interactively command))
+          (should entered)
+          (should-not frames)
+          (with-current-buffer view (set-buffer-modified-p nil)))))))
+
+(ert-deftest hermes-work-session-controls-recheck-authentication ()
+  "A readiness wait rechecks the exact row and connection before serialization."
+  (dolist (change '(nil row connection))
+    (hermes-test--with-worker-view
+      (let ((ready (hermes--promise-make)))
+        (setf (hermes-dashboard-transport-client-ready-p client) nil
+              (hermes-dashboard-transport-client-ready-promise client) ready)
+        (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "Exact λ\ntext")))
+          (execute-kbd-macro "s"))
+        (should-not frames)
+        (pcase change
+          ('row (setf (plist-get (plist-get owner :delegates) :rows) nil))
+          ('connection (cl-incf (hermes-dashboard-transport-client-generation client))))
+        (setf (hermes-dashboard-transport-client-ready-p client) t)
+        (hermes--promise-resolve ready t)
+        (if change (should-not frames)
+          (should (= (length frames) 1))
+          (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+            (should (equal (hermes-transport--get frame 'method) "subagent.steer"))
+            (should (equal (hermes-transport--get frame 'params)
+                           '((session_id . "runtime") (subagent_id . "child")
+                             (text . "Exact λ\ntext"))))))))))
+
+(ert-deftest hermes-work-session-steering-queued-not-delivered ()
+  "Display queued versus rejected receipts without implying delivery."
+  (dolist (queued '(t nil))
+    (hermes-test--with-worker-view
+      (let (messages)
+        (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "Please check"))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+          (execute-kbd-macro "s")
+          (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+            (hermes-test--work-reply client (hermes-transport--get frame 'id)
+                                     (if queued "{\"status\":\"queued\"}" "{\"status\":\"rejected\"}")))
+          (should (seq-some (lambda (text)
+                              (string-match-p (if queued "queued (delivery not confirmed)"
+                                                "rejected") text)) messages)))))))
+
+(ert-deftest hermes-work-session-missing-authority-refuses-before-input ()
+  "Absent session, stale, finished or closed-steering rows never prompt or send."
+  (dolist (change '(session stale finished steer))
+    (hermes-test--with-worker-view
+      (pcase change
+        ('session (setf (plist-get owner :runtime) nil))
+        ('stale (setf (plist-get (plist-get owner :delegates) :coverage) 'stale))
+        ('finished (setf (plist-get (car (plist-get (plist-get owner :delegates) :rows)) :state) 'done))
+        ('steer (setf (plist-get (car (plist-get (plist-get owner :delegates) :rows)) :accepting-steer) nil)))
+      (let (entered)
+        (cl-letf (((symbol-function 'read-string) (lambda (&rest _) (setq entered t) "text"))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) (setq entered t))))
+          (should-error (call-interactively (if (eq change 'steer) #'hermes-work-steer
+                                               #'hermes-work-interrupt)) :type 'user-error))
+        (should-not entered)
+        (should-not frames)))))
+
+(ert-deftest hermes-work-session-tail-native-open-refresh-and-flags ()
+  "The native tail uses session/child, bounded receipts, and no guessed path."
+  (hermes-test--with-worker-view
+    (execute-kbd-macro "t")
+    (setq tail-view (current-buffer))
+    (should (derived-mode-p 'hermes-work-log-mode))
+    (should-error (hermes-work-log-refresh) :type 'user-error)
+    (dolist (result '("{\"subagent_id\":\"child\",\"available\":true,\"truncated\":true,\"text\":\"λ tail\"}"
+                      "{\"subagent_id\":\"child\",\"available\":false,\"truncated\":false,\"text\":\"\"}"))
+      (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+        (should (equal (hermes-transport--get frame 'method) "subagent.tail"))
+        (should (equal (hermes-transport--get frame 'params)
+                       '((session_id . "runtime") (subagent_id . "child"))))
+        (hermes-test--work-reply client (hermes-transport--get frame 'id) result))
+      (if (= (length frames) 1)
+          (progn
+            (should (equal (buffer-string) "λ tail"))
+            (should (string-match-p "available: yes · truncated: yes" header-line-format))
+            (execute-kbd-macro "g"))
+        (should (string-match-p "Tail unavailable" (buffer-string)))
+        (should (string-match-p "available: no · truncated: no" header-line-format))))))
+
+(ert-deftest hermes-work-instance-inventory-is-read-only ()
+  "Global inventory cannot supply the missing runtime control authority."
+  (with-temp-buffer
+    (hermes-subagents-mode)
+    (let (sent prompted)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                 (lambda (&rest _) (setq sent t)))
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) (setq prompted t))))
+        (should-error (call-interactively #'hermes-subagents-interrupt) :type 'user-error))
+      (should-not prompted)
+      (should-not sent))))
+
+(ert-deftest hermes-work-session-tail-retires-during-auth-and-reply ()
+  "The tail cannot dispatch or repaint after row or native buffer retirement."
+  (dolist (phase '(auth reply))
+    (dolist (change '(row connection association))
+      (hermes-test--with-worker-view
+        (let ((ready (hermes--promise-make)))
+          (when (eq phase 'auth)
+            (setf (hermes-dashboard-transport-client-ready-p client) nil
+                  (hermes-dashboard-transport-client-ready-promise client) ready))
+          (execute-kbd-macro "t")
+          (setq tail-view (current-buffer))
+          (pcase change
+            ('row (setf (plist-get (plist-get owner :delegates) :rows) nil))
+            ('connection (cl-incf (hermes-dashboard-transport-client-generation client)))
+            ('association
+             (set-visited-file-name (expand-file-name "tail-notes" temporary-file-directory) t)
+             (set-visited-file-name nil t)
+             (setq header-line-format "User notes")
+             (let ((inhibit-read-only t)) (insert "User draft"))))
+          (let ((text (buffer-string)))
+            (if (eq phase 'auth)
+                (progn
+                  (setf (hermes-dashboard-transport-client-ready-p client) t)
+                  (hermes--promise-resolve ready t)
+                  (should-not frames))
+              (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+                (hermes-test--work-reply
+                 client (hermes-transport--get frame 'id)
+                 "{\"subagent_id\":\"child\",\"available\":true,\"truncated\":false,\"text\":\"Late tail\"}")))
+            (should (equal text (buffer-string)))
+            (should-not hermes-work-log--request)
+            (should (string-match-p (if (eq change 'association) "User notes" "Retired.*reopen")
+                                    header-line-format))
+            (set-buffer-modified-p nil)))))))
+
+(ert-deftest hermes-work-session-roster-preserves-unchanged-occurrence ()
+  "Cadence retains unchanged rows but retires replaced worker occurrences."
+  (hermes-test--with-worker-view
+    (let* ((row (car (plist-get (plist-get owner :delegates) :rows)))
+           (key (plist-get row :key)))
+      (with-current-buffer chat
+        (hermes-chat-work-refresh)
+        (hermes-test--work-answer
+         client "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":1,\"goal\":\"Worker goal\"}]}"))
+      (should (eq row (car (plist-get (plist-get owner :delegates) :rows))))
+      (with-current-buffer chat
+        (hermes-chat-work-refresh)
+        (hermes-test--work-answer
+         client "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":2,\"goal\":\"Worker goal\"}]}"))
+      (should (equal key (plist-get (car (plist-get (plist-get owner :delegates) :rows)) :key)))
+      (should-not (hermes-work--action-current-p owner row)))))
+
+(ert-deftest hermes-work-session-late-control-receipt-is-quiet ()
+  "Late control receipts cannot report success into a successor view or owner."
+  (dolist (change '(nil row connection mode))
+    (hermes-test--with-worker-view
+      (let (messages)
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+          (execute-kbd-macro "k")
+          ;; Emacs 32 clears the key echo with (message "").  Attribute it
+          ;; to keyboard dispatch, never to a later operation receipt.
+          (should (seq-every-p #'string-empty-p messages))
+          (setq messages nil)
+          (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+            (pcase change
+              ('row (with-current-buffer chat
+                      (hermes-chat-work-refresh)
+                      (hermes-test--work-answer client "{\"subagents\":[]}")))
+              ('connection (hermes-dashboard-transport-stop client))
+              ('mode (fundamental-mode)))
+            (when change
+              (should (= (length messages) 1))
+              (should (string-match-p "outcome unknown" (car messages))))
+            (setq messages nil)
+            (hermes-test--work-reply client (hermes-transport--get frame 'id)
+                                     "{\"found\":true}"))
+          (if change (should-not messages)
+            (should (equal messages '("Hermes: worker interrupt accepted")))))))))
+
+(ert-deftest hermes-work-session-tail-only-visibility-settles ()
+  "Hiding the roster does not revoke an explicitly opened tail or its retry."
+  (dolist (failure '(nil t))
+    (hermes-test--with-worker-view
+      (execute-kbd-macro "t")
+      (setq tail-view (current-buffer))
+      (execute-kbd-macro (kbd "C-x 1"))
+      (hermes-chat--work-window-change (selected-window))
+      (let* ((frame (hermes-dashboard-transport--decode-frame (car frames)))
+             (id (hermes-transport--get frame 'id)))
+        (should (eq (plist-get (plist-get owner :delegates) :coverage) 'stale))
+        (if failure
+            (hermes-dashboard-transport--on-request-timeout client id)
+          (hermes-test--work-reply
+           client id "{\"subagent_id\":\"child\",\"available\":true,\"truncated\":false,\"text\":\"Visible tail\"}"))
+        (should-not hermes-work-log--request)
+        (should (string-match-p (if failure "Failed" "available: yes") header-line-format))
+        (unless failure (should (equal (buffer-string) "Visible tail")))
+        (execute-kbd-macro "g")
+        (should hermes-work-log--request)
+        (should (= (length frames) 2))))))
+
+(ert-deftest hermes-work-session-tail-retirement-settles-pending ()
+  "Row replacement/removal and disconnect settle before any delayed reply."
+  (dolist (change '(removed replaced disconnect))
+    (hermes-test--with-worker-view
+      (execute-kbd-macro "t")
+      (setq tail-view (current-buffer))
+      (let* ((frame (hermes-dashboard-transport--decode-frame (car frames)))
+             (id (hermes-transport--get frame 'id)))
+        (with-current-buffer chat
+          (if (eq change 'disconnect)
+              (hermes-chat--forget-live-dashboard-session)
+            (hermes-chat-work-refresh)
+            (hermes-test--work-answer
+             client (if (eq change 'removed) "{\"subagents\":[]}"
+                      "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"started_at\":2}]}"))))
+        (should-not hermes-work-log--request)
+        (should-not (gethash id (hermes-dashboard-transport-client-pending client)))
+        (should (string-match-p "Retired.*reopen" header-line-format))
+        (let ((header header-line-format) (body (buffer-string)))
+          (hermes-test--work-reply
+           client id "{\"subagent_id\":\"child\",\"available\":true,\"truncated\":false,\"text\":\"Obsolete tail\"}")
+          (should (equal header header-line-format))
+          (should (equal body (buffer-string))))
+        (should-error (hermes-work-log-refresh) :type 'user-error)))))
+
+(ert-deftest hermes-work-session-poll-failure-preserves-user-requests ()
+  "Observation timeout cannot consume a control/tail receipt or its deadline."
+  (dolist (source '(:delegates :processes))
+    (dolist (action '(interrupt steer tail))
+      (dolist (outcome '(success refusal error))
+	(hermes-test--with-worker-view
+         (let ((hermes-test--work-processes-p (eq source :processes)) messages)
+           (with-current-buffer chat
+             (hermes-chat--work-refresh owner)
+             (when (eq source :processes)
+               (hermes-test--work-answer
+		client "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":1,\"goal\":\"Worker goal\"}]}")))
+           (let* ((poll (plist-get (plist-get owner :request) :id))
+                  (pending (hermes-dashboard-transport-client-pending client)))
+             (should (equal (plist-get (gethash poll pending) :method)
+                            (if (eq source :processes) "process.list" "subagent.list")))
+             (setq frames nil)
+             (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                       ((symbol-function 'read-string) (lambda (&rest _) "Exact steering"))
+                       ((symbol-function 'message)
+			(lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+		      (execute-kbd-macro (pcase action ('interrupt "k") ('steer "s") ('tail "t")))
+		      (when (eq action 'tail) (setq tail-view (current-buffer)))
+		      (let* ((frame (hermes-dashboard-transport--decode-frame (car frames)))
+			     (id (hermes-transport--get frame 'id))
+			     (request (gethash id pending))
+			     (timer (plist-get request :timer)))
+			(should timer)
+			(hermes-dashboard-transport--on-request-timeout client poll)
+			(should (eq request (gethash id pending)))
+			(should (eq timer (plist-get (gethash id pending) :timer)))
+			(if (eq outcome 'error)
+			    (hermes-dashboard-transport--handle-frame
+			     client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":4001,\"message\":\"Control failed\"}}" id))
+			  (hermes-test--work-reply
+			   client id
+			   (pcase action
+			     ('interrupt (if (eq outcome 'success) "{\"found\":true}" "{\"found\":false}"))
+			     ('steer (if (eq outcome 'success) "{\"status\":\"queued\"}" "{\"status\":\"rejected\"}"))
+			     ('tail (if (eq outcome 'success)
+					"{\"subagent_id\":\"child\",\"available\":true,\"truncated\":false,\"text\":\"Independent tail\"}"
+				      "{\"subagent_id\":\"child\",\"available\":false,\"truncated\":false,\"text\":\"\"}")))))
+			(should-not (gethash id pending))
+			(should (= (length frames) 1))
+			(if (eq action 'tail)
+			    (progn
+			      (should-not hermes-work-log--request)
+			      (should (string-match-p
+				       (pcase outcome ('success "available: yes") ('refusal "available: no") ('error "Failed"))
+				       header-line-format)))
+			  (should (seq-some
+				   (lambda (text)
+				     (string-match-p
+				      (if (eq outcome 'error) "Control failed"
+					(pcase action
+					  ('interrupt (if (eq outcome 'success) "accepted" "not found"))
+					  ('steer (if (eq outcome 'success) "queued (delivery not confirmed)" "rejected"))))
+				      text)) messages))))))))))))
+
+(ert-deftest hermes-work-session-control-teardown-reports-uncertainty ()
+  "Attachment teardown reports uncertainty once and cannot touch successors."
+  (hermes-test--with-worker-view
+    (let (messages)
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+        (execute-kbd-macro "k")
+        (let* ((frame (hermes-dashboard-transport--decode-frame (car frames)))
+               (id (hermes-transport--get frame 'id)))
+          (with-current-buffer chat
+            (hermes-chat--work-stop)
+            (should (seq-some (lambda (text) (string-match-p "outcome unknown" text)) messages))
+            (hermes-chat--work-bind client "runtime" "A")
+            (hermes-chat-work-refresh)
+            (let* ((successor hermes-chat--work-owner)
+                   (request (plist-get successor :request))
+                   (before messages))
+              (hermes-test--work-reply client id "{\"found\":true}")
+              (hermes-dashboard-transport--on-request-timeout client id)
+              (should (eq before messages))
+              (should (eq request (plist-get successor :request)))
+              (should (gethash (plist-get request :id)
+                               (hermes-dashboard-transport-client-pending client))))))))))
+
+(defun hermes-test--retire-worker-control (change chat client)
+  "Apply native CHANGE to a control's view or CHAT and CLIENT authority."
+  (pcase change
+    ((or 'changed-row 'removed-row 'unchanged)
+     (with-current-buffer chat
+       (hermes-chat-work-refresh)
+       (hermes-test--work-answer
+        client
+        (pcase change
+          ('removed-row "{\"subagents\":[]}")
+          ('changed-row "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"accepting_steer\":false,\"started_at\":1,\"goal\":\"Worker goal\"}]}")
+          (_ "{\"subagents\":[{\"subagent_id\":\"child\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":1,\"goal\":\"Worker goal\"}]}")))))
+    ('mode (fundamental-mode))
+    ('kill (kill-buffer (current-buffer)))
+    ('association
+     (set-visited-file-name (expand-file-name "control-notes" temporary-file-directory) t)
+     (set-visited-file-name nil t))
+    ('connection (hermes-dashboard-transport-stop client))))
+
+(ert-deftest hermes-work-session-control-terminal-ownership ()
+  "Sent controls settle once despite roster/view retirement, never by replay."
+  (dolist (action '(interrupt steer))
+    (dolist (change '(unchanged changed-row removed-row mode kill association connection))
+      (dolist (outcome '(success refusal error timeout))
+        (hermes-test--with-worker-view
+          (let ((view (current-buffer)) messages)
+            (unwind-protect
+                (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                          ((symbol-function 'read-string) (lambda (&rest _) "Exact steering"))
+                          ((symbol-function 'message)
+                           (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+                  (execute-kbd-macro (if (eq action 'interrupt) "k" "s"))
+                  (should (seq-every-p #'string-empty-p messages))
+                  (setq messages nil)
+                  (let* ((frame (hermes-dashboard-transport--decode-frame (car frames)))
+                         (id (hermes-transport--get frame 'id))
+                         (pending (hermes-dashboard-transport-client-pending client))
+                         (request (gethash id pending)))
+                    (should request)
+                    (should (plist-get request :timer))
+                    (hermes-test--retire-worker-control change chat client)
+                    ;; Retirement has its own truthful outcome, before late delivery.
+                    (if (eq change 'unchanged)
+                        (progn (should-not messages) (should (eq request (gethash id pending))))
+                      (should-not (gethash id pending))
+                      (should (= (length messages) 1))
+                      (should (string-match-p "outcome unknown" (car messages)))
+                      (should (string-match-p "child.*runtime" (car messages)))
+                      (should (string-match-p (symbol-name action) (car messages))))
+                    (when (eq change 'changed-row)
+                      (with-current-buffer view (should (hermes-work--selected-worker))))
+                    (when (memq change '(mode association))
+                      (with-current-buffer view
+                        (let ((inhibit-read-only t)) (erase-buffer) (insert "Successor draft"))
+                        (setq header-line-format "Successor header")))
+                    (setq messages nil)
+                    (let ((text (and (buffer-live-p view) (with-current-buffer view (buffer-string))))
+                          (header (and (buffer-live-p view) (buffer-local-value 'header-line-format view)))
+                          (poll (plist-get owner :request)))
+                      (pcase outcome
+                        ('timeout (hermes-dashboard-transport--on-request-timeout client id))
+                        ('error (hermes-dashboard-transport--handle-frame
+                                 client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":4001,\"message\":\"Control failed\"}}" id)))
+                        (_ (hermes-test--work-reply
+                            client id (if (eq action 'interrupt)
+                                          (if (eq outcome 'success) "{\"found\":true}" "{\"found\":false}")
+                                        (if (eq outcome 'success) "{\"status\":\"queued\"}" "{\"status\":\"rejected\"}")))))
+                      (should-not (gethash id pending))
+                      (if (eq change 'unchanged)
+                          (progn
+                            (should (= (length messages) 1))
+                            (should (string-match-p
+                                     (pcase outcome
+                                       ('error "Control failed") ('timeout "[Tt]ime")
+                                       ('refusal (if (eq action 'interrupt) "not found" "rejected"))
+                                       (_ (if (eq action 'interrupt) "accepted" "queued (delivery not confirmed)")))
+                                     (car messages))))
+                        (should-not messages))
+                      (setq messages nil)
+                      (hermes-test--work-reply client id "{\"found\":true}")
+                      (hermes-dashboard-transport--on-request-timeout client id)
+                      (should-not messages)
+                      (should (eq poll (plist-get owner :request)))
+                      (when (buffer-live-p view)
+                        (should (equal text (with-current-buffer view (buffer-string))))
+                        (should (equal header (buffer-local-value 'header-line-format view)))))
+                    (should (= 1 (seq-count
+                                  (lambda (wire)
+                                    (equal (hermes-transport--get
+                                            (hermes-dashboard-transport--decode-frame wire) 'method)
+                                           (if (eq action 'interrupt) "subagent.interrupt" "subagent.steer")))
+                                  frames)))))
+              (when (buffer-live-p view)
+                (with-current-buffer view (set-buffer-modified-p nil))
+                (kill-buffer view)))))))))
+
+(ert-deftest hermes-work-session-control-unsent-retirement ()
+  "An authentication-retired control is not a dispatched uncertain operation."
+  (dolist (change '(changed-row removed-row mode kill association connection))
+    (hermes-test--with-worker-view
+      (let ((view (current-buffer)) (ready (hermes--promise-make)) messages)
+        (unwind-protect
+            (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                      ((symbol-function 'message)
+                       (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+              (setf (hermes-dashboard-transport-client-ready-p client) nil
+                    (hermes-dashboard-transport-client-ready-promise client) ready)
+              (execute-kbd-macro "k")
+              (should-not frames)
+              (should (seq-every-p #'string-empty-p messages))
+              (setq messages nil)
+              ;; Permit the roster read without releasing the held auth waiter.
+              (setf (hermes-dashboard-transport-client-ready-p client) t)
+              (hermes-test--retire-worker-control change chat client)
+              (should (= (length messages) 1))
+              (should (string-match-p "not sent" (car messages)))
+              (should-not (string-match-p "outcome unknown" (car messages)))
+              (setq messages nil)
+              (hermes--promise-resolve ready t)
+              (should-not messages)
+              (should-not (seq-some
+                           (lambda (wire) (equal "subagent.interrupt"
+                                                 (hermes-transport--get
+                                                  (hermes-dashboard-transport--decode-frame wire) 'method)))
+                           frames)))
+          (when (buffer-live-p view)
+            (with-current-buffer view (set-buffer-modified-p nil))
+            (kill-buffer view)))))))
 
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here

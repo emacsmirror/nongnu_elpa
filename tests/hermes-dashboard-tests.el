@@ -586,7 +586,7 @@
       (hermes-dashboard-transport-setup-status 'client)
       (hermes-dashboard-transport-rollback-restore
        'client "checkpoint" :session-id "sid" :file-path "notes.org")
-      (hermes-dashboard-transport-subagent-interrupt 'client "child")
+      (hermes-dashboard-transport-subagent-interrupt 'client "child" :session-id "sid")
       (hermes-dashboard-transport-cron-manage
        'client :action "pause" :name "nightly")
       (hermes-dashboard-transport-prompt-background
@@ -597,7 +597,7 @@
             '(("setup.status")
               ("rollback.restore" (hash . "checkpoint")
                (session_id . "sid") (file_path . "notes.org"))
-              ("subagent.interrupt" (subagent_id . "child"))
+              ("subagent.interrupt" (session_id . "sid") (subagent_id . "child"))
               ("cron.manage" (action . "pause") (name . "nightly"))
               ("prompt.background" (session_id . "sid") (text . "audit"))
               ("session.status" (session_id . "sid")))))))

@@ -256,8 +256,29 @@ RESOLVE and REJECT receive the result or error."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-subagent-interrupt "subagent.interrupt"
   "Send a `subagent.interrupt' request for SUBAGENT-ID on CLIENT.
+SESSION-ID selects the owning live session, not durable lineage.
 RESOLVE and REJECT receive the result or error."
-  :args (subagent-id))
+  :args (subagent-id) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-list "subagent.list"
+  "List visible workers for CLIENT's live SESSION-ID.
+Visibility includes resumed lineage and is not control authority.
+RESOLVE and REJECT receive the result or error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-steer "subagent.steer"
+  "Queue TEXT for SUBAGENT-ID on CLIENT's live SESSION-ID.
+A queued receipt does not establish delivery.
+RESOLVE and REJECT receive the result or error."
+  :args (subagent-id text) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-tail "subagent.tail"
+  "Read SUBAGENT-ID's bounded tail on CLIENT's live SESSION-ID.
+RESOLVE and REJECT receive the result or error."
+  :args (subagent-id) :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-cron-manage "cron.manage"

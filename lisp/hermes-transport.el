@@ -1233,6 +1233,23 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (setq roots (append (gethash id children) roots)))))
     (list :rows rows :coverage (if (cdr index) 'partial 'current))))
 
+(defun hermes-transport-work-subagents (result)
+  "Project lossless session roster RESULT without granting control authority.
+Reject invalid arrays; omit duplicate or malformed worker identities."
+  (unless (and (hash-table-p result) (vectorp (gethash "subagents" result)))
+    (error "Invalid session worker roster"))
+  (let* ((index (hermes-transport--work-delegate-index (gethash "subagents" result)))
+         rows)
+    (maphash
+     (lambda (_id row)
+       (when (hash-table-p row)
+         (push (append (hermes-transport-work-delegate-row row)
+                       (list :accepting-steer
+                             (eq (hermes-transport--get row 'accepting_steer) t)))
+               rows)))
+     (car index))
+    (list :rows rows :coverage (if (cdr index) 'partial 'current))))
+
 (defun hermes-transport-work-process-row (row)
   "Return inert display metadata and typed terminal evidence for process ROW."
   (let ((id (hermes-transport-work-string row 'session_id))

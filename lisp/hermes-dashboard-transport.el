@@ -1172,7 +1172,7 @@ id."
                       :owner hermes-dashboard-transport-request-owner
                       :lossless-result
                       (and hermes-dashboard-transport-request-lossless-result
-                           (member method '("delegation.status" "process.list"))))
+                           (member method '("delegation.status" "subagent.list" "process.list"))))
              pending)
     (hermes-dashboard-transport--when-ready
      client
