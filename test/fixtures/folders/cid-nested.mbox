@@ -1,0 +1,33 @@
+From sender@example.com  Mon Jan  1 00:00:00 2024
+From: Sender <sender@example.com>
+To: you@example.com
+Subject: a picture ahead of the text that shows it
+Date: Mon, 1 Jan 2024 00:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="OUTER"
+
+--OUTER
+Content-Type: multipart/related; boundary="INNER"; start="<doc@example.com>"; type="text/html"
+
+--INNER
+Content-Type: image/gif; name="pic.gif"
+Content-Disposition: inline; filename="pic.gif"
+Content-Transfer-Encoding: base64
+Content-ID: <pic@example.com>
+
+R0lGODlhAQABAIAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+
+--INNER
+Content-Type: text/html; charset="UTF-8"
+Content-ID: <doc@example.com>
+
+<div>Here it is: <img src="cid:pic@example.com" alt="pic"></div>
+
+--INNER--
+
+--OUTER
+Content-Type: text/plain; charset="UTF-8"
+
+A note after the pictures.
+
+--OUTER--

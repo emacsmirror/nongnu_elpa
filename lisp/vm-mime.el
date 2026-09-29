@@ -2414,25 +2414,20 @@ possible.  Returns a boolean flag indicating success."
   (vm-mime-display-internal-text/plain layout))
 
 (defun vm-mime-cid-retrieve (url message)
-  "Insert a content pointed by URL if it has the cid: scheme."
-  (setq vm-mime-cid-retrieved t)
-  (if (string-match "\\`cid:" url)
-      (setq url (concat "<" (substring url (match-end 0)) ">"))
+  "Insert the part of MESSAGE that URL names, URL having the cid: scheme.
+Returns the part, or nil when the message carries no part with that
+Content-ID.  `vm-mime-cid-retrieved' is set only when a part was inserted,
+since it is what `vm-mime-display-internal-multipart/related' reads to decide
+that the viewer has shown the related parts itself."
+  (unless (string-match "\\`cid:" url)
     (error "%S is not a cid url" url))
-  (let ((part-list (vm-mm-layout-parts (vm-mm-layout message)))
-        part)
-    (while part-list
-      (setq part (car part-list))
-      (if (vm-mime-composite-type-p (car (vm-mm-layout-type part)))
-          (setq part-list (nconc (copy-sequence (vm-mm-layout-parts part))
-                                 (cdr part-list))))
-      (setq part-list (cdr part-list))
-      (if (not (equal url (vm-mm-layout-id part)))
-          (setq part nil)
-        (vm-mime-insert-mime-body part)
-        (setq part-list nil)))
-    (unless part
-      (vm-inform 5 "No data for cid %S" url))
+  (let* ((id (concat "<" (substring url (match-end 0)) ">"))
+         (top (vm-mm-layout (vm-real-message-of message)))
+         (part (and (vectorp top) (vm-mime-find-leaf-content-id top id))))
+    (if (null part)
+        (vm-inform 5 "No data for cid %S" id)
+      (vm-mime-insert-mime-body part)
+      (setq vm-mime-cid-retrieved t))
     part))
 
 (defun vm-mime-html-columns ()
