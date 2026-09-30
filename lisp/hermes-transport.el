@@ -862,6 +862,8 @@ The :final-text field preserves literal text when PAYLOAD has no error."
   "Return redacted display content for PROMPT-TYPE and PAYLOAD."
   (let ((title (hermes-dashboard-transport--prompt-title prompt-type)))
     (pcase prompt-type
+      ((or "vault.unlock_prompt" "vault.save_login" "vault.code")
+       "Browser vault input requested")
       ("approval"
        (string-join
         (delq nil (list title
@@ -901,14 +903,18 @@ The :final-text field preserves literal text when PAYLOAD has no error."
                    (command . :command) (description . :description)
                    (pattern_key . :pattern-key)
                    (pattern_keys . :pattern-keys)
-                   (start . :start) (count . :count)))
+                   (start . :start) (count . :count)
+                   (backend . :backend) (display_name . :display-name)
+                   (origin . :origin) (site . :site) (hint . :hint)))
     (when-let* ((value (hermes-transport--get payload (car field))))
       (setq event (plist-put event (cdr field) value))))
   event)
 
 (defun hermes-dashboard-transport--prompt-request-event (type params payload)
   "Return a redacted prompt request status event for TYPE/PARAMS/PAYLOAD."
-  (let* ((prompt-type (car (split-string type "\\." t)))
+  (let* ((prompt-type (if (string-prefix-p "vault." type)
+                          (string-remove-suffix ".request" type)
+                        (car (split-string type "\\." t))))
          (event (hermes-dashboard-transport--status-event
                  type params payload "requested"
                  (hermes-dashboard-transport--prompt-content

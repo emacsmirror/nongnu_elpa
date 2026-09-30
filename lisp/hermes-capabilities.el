@@ -682,8 +682,12 @@ modes are denied even after renaming; ordinary namesakes are not owned views."
 
 (defun hermes-capabilities--buffer-denied-p (buffer)
   "Apply the configured disclosure policy to BUFFER."
-  (and hermes-capabilities-buffer-deny-predicate
-       (funcall hermes-capabilities-buffer-deny-predicate buffer)))
+  ;; A native credential reader can be active even with the optional policy
+  ;; disabled.  Indirect buffers share that input, even though `minibufferp'
+  ;; is nil on the alias itself.  Deny them before any metadata or text read.
+  (or (minibufferp (or (buffer-base-buffer buffer) buffer))
+      (and hermes-capabilities-buffer-deny-predicate
+           (funcall hermes-capabilities-buffer-deny-predicate buffer))))
 
 (defun hermes-capabilities--remote-path-p (path)
   "Return non-nil when PATH is a TRAMP/remote file name.

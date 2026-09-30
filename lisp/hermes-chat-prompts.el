@@ -42,6 +42,7 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 
+(defvar websocket-debug)
 
 (defvar hermes-chat--prompt-control-client-function nil
   "Function returning the dashboard client for an unowned prompt response.
@@ -49,7 +50,7 @@ Installed by the dashboard session owner; called without arguments.")
 
 (defcustom hermes-chat-auto-prompt-requests t
   "Whether visible chat buffers should prompt for backend input requests.
-When non-nil, approvals, sudo passwords, secrets, and terminal reads
+When non-nil, approvals, sudo passwords, secrets, and browser-vault requests
 automatically open the usual minibuffer prompt in a visible interactive chat.
 Clarifications wait for the chat input or `hermes-chat-respond-to-prompt'.
 Invisible buffers and batch sessions record every prompt and show a message."
@@ -405,6 +406,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
     ("clarify" "Clarify")
     ("sudo" "Sudo")
     ("secret" "Secret")
+    ("vault.unlock_prompt" "Vault unlock")
+    ("vault.save_login" "Save browser login")
+    ("vault.code" "Browser verification code")
     ("terminal" "Terminal read")
     (_ "Prompt")))
 
@@ -830,6 +834,99 @@ Emacs the closest analog is the chat transcript, encoded with the same
        (cursor_row . ,(if (zerop rows) 0 (1- rows)))
        (text . ,(string-join page "\n"))))))
 
+(defun hermes-chat--vault-prompt-p (prompt)
+  "Return non-nil when PROMPT is a supported browser-vault request."
+  (member (hermes-chat--prompt-event-type prompt)
+          '("vault.unlock_prompt" "vault.save_login" "vault.code")))
+
+(defun hermes-chat--vault-prompt-label (prompt)
+  "Return the backend and site identity for vault PROMPT."
+  (let* ((client (plist-get (plist-get prompt :server-request) :client))
+         (url (hermes-dashboard-transport-client-redacted-websocket-url client)))
+    (dolist (field (pcase (hermes-chat--prompt-event-type prompt)
+                    ("vault.unlock_prompt" '(:backend :display-name))
+                    ("vault.save_login" '(:site :origin))))
+      (unless (hermes-transport--non-empty-string (plist-get prompt field))
+        (user-error "Hermes vault destination identity unavailable")))
+    (format "Hermes backend %s — %s"
+            (or (hermes-transport--non-empty-string url)
+                (user-error "Hermes vault backend identity unavailable"))
+            (pcase (hermes-chat--prompt-event-type prompt)
+              ("vault.unlock_prompt"
+               (format "unlock %S (%S)"
+                       (plist-get prompt :display-name) (plist-get prompt :backend)))
+              ("vault.save_login"
+               (format "save login for %S, origin %S"
+                       (plist-get prompt :site) (plist-get prompt :origin)))
+              (_ (format "code for %S (%S)"
+                         (or (plist-get prompt :site) "unspecified site")
+                         (or (plist-get prompt :hint) "no hint")))))))
+
+(defun hermes-chat--vault-read (label masked current)
+  "Read LABEL with MASKED input while CURRENT retains authority.
+Do not store input in history.  Retire the exact native reader when its
+request expires, without aborting unrelated recursive input."
+  (unless (funcall current) (user-error "Hermes vault request retired"))
+  (let ((active t) timer)
+    (unwind-protect
+        (minibuffer-with-setup-hook
+            (lambda ()
+              (let ((input (current-buffer)) (depth (minibuffer-depth))
+                    (recursion (recursion-depth)))
+                (setq timer
+                      (run-at-time
+                       0.1 0.1
+                       (lambda ()
+                         (when (and active (not (funcall current))
+                                    (= recursion (recursion-depth))
+                                    (= depth (minibuffer-depth))
+                                    (eq input (window-buffer
+                                               (minibuffer-window))))
+                           (abort-recursive-edit)))))))
+          (if masked (read-passwd label) (read-string label nil t)))
+      (setq active nil)
+      (when timer (cancel-timer timer)))))
+
+(defun hermes-chat--vault-answer (prompt current)
+  "Collect the released value for vault PROMPT under CURRENT authority."
+  (let ((label (hermes-chat--vault-prompt-label prompt)))
+    (if (equal (hermes-chat--prompt-event-type prompt) "vault.save_login")
+        (let* ((identifier (hermes-chat--vault-read
+                            (concat label " — identifier: ") nil current))
+               (password (hermes-chat--vault-read
+                          (concat label " — password (empty declines): ") t current)))
+          (if (string-empty-p password) ""
+            (json-encode `((identifier . ,identifier) (password . ,password)))))
+      (hermes-chat--vault-read (concat label " (empty declines): ") t current))))
+
+(defun hermes-chat--respond-to-vault (key prompt context)
+  "Read and send vault PROMPT under KEY and exact owner CONTEXT.
+Only the backend stores credentials and controls its browser.  This reader
+does not provide memory zeroization or isolation from trusted Emacs Lisp."
+  (let* ((buffer (current-buffer))
+         (current (lambda ()
+                    (and (buffer-live-p buffer)
+                         (with-current-buffer buffer
+                           (and (derived-mode-p 'hermes-chat-mode)
+                                (hermes-chat--prompt-owner-current-p context))))))
+         (debug-on-error nil) (debug-on-quit nil) (debug-on-signal nil)
+         (websocket-debug nil) (message-log-max nil)
+         (kill-ring (copy-sequence kill-ring)) (kill-ring-yank-pointer nil)
+         ;; Native appended kills mutate existing menu entries, not just its
+         ;; spine.  Copy every cons so no retained menu aliases receive input.
+         (yank-menu (copy-tree yank-menu))
+         (interprogram-cut-function nil) (interprogram-paste-function nil)
+         (select-active-regions nil) (save-interprogram-paste-before-kill nil))
+    (condition-case nil
+        (let ((answer (condition-case nil
+                          (hermes-chat--vault-answer prompt current)
+                        (quit ""))))
+          (when (funcall current)
+            (with-current-buffer buffer
+              (hermes-chat--send-prompt-response
+               key prompt answer nil (string-empty-p answer) nil context))))
+      (error (user-error "Hermes vault response failed")))))
+
 (defun hermes-chat--read-prompt-response (prompt)
   "Read a response for PROMPT using an Emacs-native minibuffer UI."
   (pcase (hermes-chat--prompt-event-type prompt)
@@ -1249,7 +1346,8 @@ ALL applies to approval prompts only."
          ("clarify" (if (hermes-chat--batch-clarify-p prompt)
                         (make-hash-table :test #'equal)
                       `((answer . ,response))))
-         ((or "sudo" "secret") `((value . ,response))))
+         ((or "sudo" "secret" "vault.unlock_prompt" "vault.save_login" "vault.code")
+          `((value . ,response))))
        resolve reject))
      ((equal type "approval")
         (hermes-dashboard-transport-approval-respond
@@ -1297,7 +1395,8 @@ When called interactively, select the prompt and read RESPONSE in the
 minibuffer.  With prefix argument ALL, approval responses apply to all pending
 approvals in the dashboard session.  Unaccepted clarification answers remain
 recoverable if the request expires.  PRESERVE-RESPONSE also keeps programmatic
-clarification input recoverable when the request fails."
+clarification input recoverable when the request fails.  Browser-vault
+requests always use native readers, ignoring RESPONSE and PRESERVE-RESPONSE."
   (interactive (list nil nil current-prefix-arg) hermes-chat-mode)
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
@@ -1307,17 +1406,21 @@ clarification input recoverable when the request fails."
       (user-error "Hermes prompt request is no longer current"))
     (when (hermes-chat--prompt-response-in-flight-p prompt-key)
       (user-error "Hermes is accepting the previous prompt response"))
-    (if (hermes-chat--batch-clarify-p prompt)
-        (let ((responses (hermes-chat--batch-clarify-responses prompt response)))
-          (unless (hermes-chat--prompt-owner-current-p context)
-            (user-error "Hermes prompt request is no longer current"))
-          (hermes-chat--send-batch-clarify-response
-           prompt-key prompt responses context))
+    (cond
+     ((hermes-chat--vault-prompt-p prompt)
+      (hermes-chat--respond-to-vault prompt-key prompt context))
+     ((hermes-chat--batch-clarify-p prompt)
+      (let ((responses (hermes-chat--batch-clarify-responses prompt response)))
+        (unless (hermes-chat--prompt-owner-current-p context)
+          (user-error "Hermes prompt request is no longer current"))
+        (hermes-chat--send-batch-clarify-response
+         prompt-key prompt responses context)))
+     (t
       (let ((answer (or response (hermes-chat--read-prompt-response prompt))))
         (unless (hermes-chat--prompt-owner-current-p context)
           (user-error "Hermes prompt request is no longer current"))
         (hermes-chat--send-prompt-response
-         prompt-key prompt answer all nil preserve-response context)))))
+         prompt-key prompt answer all nil preserve-response context))))))
 
 (defun hermes-chat-cancel-prompt (&optional key)
   "Cancel pending prompt KEY by sending the protocol's safe empty/deny value."

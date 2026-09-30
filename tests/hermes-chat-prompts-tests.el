@@ -2597,7 +2597,7 @@ stays available."
                       (hermes-transport--get (hermes-transport--get (car frames) 'result) 'answer)
                       :array-type 'list)
                      '("one" "custom, literal")))
-      (dolist (method '("terminal.read" "vault.code" "unknown.method"))
+      (dolist (method '("terminal.read" "vault.card" "vault.address" "unknown.method"))
         (hermes-dashboard-transport--handle-frame
          client (json-encode `((id . ,method) (method . ,method)
                                (params . ((session_id . "sid-prompt"))))))
@@ -2611,6 +2611,260 @@ stays available."
   (hermes-dashboard-transport--handle-frame
    client (json-encode `((jsonrpc . "2.0") (id . ,id) (method . ,method)
                          (params . ,(cons '(session_id . "sid-prompt") params))))))
+
+(ert-deftest hermes-chat-vault-wire-readers ()
+  "Native vault readers answer the original id without storing their input."
+  (dolist (method '("vault.unlock_prompt" "vault.save_login" "vault.code"))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let* ((secret "synthetic-\"pass\\word\nλ")
+             (identifier "fixture-\"user\\name\nλ")
+             (kill-ring '("keep")) (minibuffer-history '("keep"))
+             labels frames
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket text)
+                (push (hermes-dashboard-transport--decode-frame text) frames))))
+        (setf (hermes-dashboard-transport-client-redacted-websocket-url client) "ws://backend-a.test/api/ws")
+        (hermes-test--server-request
+         client 133 method '((origin . "https://example.test:8443")
+                             (site . "example.test") (backend . "bitwarden")
+                             (display_name . "Bitwarden")))
+        (should (hermes-chat--pending-prompt-p))
+        (cl-letf (((symbol-function 'read-passwd)
+                   (lambda (label &rest _)
+                     (push label labels)
+                     (should-not debug-on-error)
+                     secret))
+                  ((symbol-function 'read-string)
+                   (lambda (label _initial history &rest _)
+                     (push label labels)
+                     (should (eq history t))
+                     identifier)))
+          (hermes-chat-respond-to-prompt))
+        (should (= (length frames) 1))
+        (should (equal (hermes-transport--get (car frames) 'id) 133))
+        (should-not (hermes-transport--get (car frames) 'method))
+        (let ((value (hermes-transport--get
+                      (hermes-transport--get (car frames) 'result) 'value)))
+          (if (equal method "vault.save_login")
+              (let ((data (json-parse-string value)))
+                (should (equal (gethash "identifier" data) identifier))
+                (should (equal (gethash "password" data) secret)))
+            (should (equal value secret))))
+        (dolist (label labels)
+          (should (string-match-p
+                   (regexp-quote (hermes-dashboard-transport-client-redacted-websocket-url client)) label))
+          (should (string-match-p (if (equal method "vault.unlock_prompt")
+                                     "bitwarden" "example.test") label)))
+        (should (equal kill-ring '("keep")))
+        (should (equal minibuffer-history '("keep")))
+        (should-not (string-match-p (regexp-quote secret) (buffer-string)))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should-not (hermes-chat--pending-prompt-p))))))
+
+(ert-deftest hermes-chat-vault-retirement-and-decline ()
+  "Retirement forbids replies and follow-up readers; a current quit declines."
+  (dolist (action '(quit empty cancel timeout disconnect owner identifier))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let* ((method (if (eq action 'identifier) "vault.save_login" "vault.code"))
+             (origin (current-buffer)) frames (reads 0)
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket text)
+                (push (hermes-dashboard-transport--decode-frame text) frames))))
+        (setf (hermes-dashboard-transport-client-redacted-websocket-url client)
+              "ws://backend-a.test/api/ws")
+        (hermes-test--server-request client "retired-vault" method
+                                     '((site . "example.test") (origin . "https://example.test")))
+        (cl-letf (((symbol-function 'read-passwd)
+                   (lambda (&rest _)
+                     (cl-incf reads)
+                     (pcase action
+                       ('quit (signal 'quit nil))
+                       ((or 'cancel 'timeout)
+                        (hermes-test--emit-dashboard-prompt
+                         client "request.cancel"
+                         `((id . "retired-vault") (method . ,method)
+                           (reason . ,(symbol-name action)))))
+                       ('disconnect (hermes-dashboard-transport-stop client))
+                       ('owner (with-current-buffer origin
+                                 (hermes-chat--invalidate-transport-state))))
+                     (if (eq action 'empty) "" "synthetic-never-replay")))
+                  ((symbol-function 'read-string)
+                   (lambda (&rest _)
+                     (hermes-chat--invalidate-transport-state)
+                     "synthetic-identifier")))
+          (condition-case nil (hermes-chat-respond-to-prompt) (user-error nil)))
+        (if (memq action '(quit empty))
+            (progn
+              (should (= (length frames) 1))
+              (should (equal (hermes-transport--get
+                              (hermes-transport--get (car frames) 'result) 'value) "")))
+          (should-not frames))
+        (should (= reads (if (eq action 'identifier) 0 1)))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should-not (string-match-p "synthetic-" (hermes-chat-input-string)))))))
+
+(ert-deftest hermes-chat-vault-two-backends ()
+  "Identical server ids never share a reply socket or a prompt owner."
+  ;; Give each client its own endpoint before the fixture's initial Send.
+  ;; Redacted display URLs alone do not separate session admission owners.
+  (let ((make-client (symbol-function 'hermes-test--dashboard-client))
+        (endpoints '("http://first.test" "http://second.test")))
+    (cl-letf (((symbol-function 'hermes-test--dashboard-client)
+               (lambda ()
+                 (let ((client (funcall make-client)))
+                   (setf (hermes-dashboard-transport-client-base-url client)
+                         (pop endpoints))
+                   client))))
+      (hermes-test-with-dashboard-prompt-session (first)
+        (let ((first-buffer (current-buffer)) frames)
+          (setf (hermes-dashboard-transport-client-redacted-websocket-url first)
+                "ws://first.test/api/ws"
+                (hermes-dashboard-transport-client-websocket first) 'first-socket)
+          (hermes-test--server-request first 133 "vault.code" '((site . "one.test")))
+          (hermes-test-with-dashboard-prompt-session (second)
+            (setf (hermes-dashboard-transport-client-redacted-websocket-url second)
+                  "ws://second.test/api/ws"
+                  (hermes-dashboard-transport-client-websocket second) 'second-socket)
+            (hermes-test--server-request second 133 "vault.code" '((site . "two.test")))
+            (let ((hermes-dashboard-transport-websocket-send-function
+                   (lambda (socket text)
+                     (push (cons socket (hermes-dashboard-transport--decode-frame text)) frames))))
+              (cl-letf (((symbol-function 'read-passwd)
+                         (lambda (label &rest _)
+                           (if (string-match-p "first.test.*one.test" label)
+                               "synthetic-first" "synthetic-second"))))
+                (hermes-chat-respond-to-prompt)
+                (with-current-buffer first-buffer (hermes-chat-respond-to-prompt))))
+            (should (= (length frames) 2))
+            (dolist (row '((first-socket . "synthetic-first")
+                           (second-socket . "synthetic-second")))
+              (let ((frame (cdr (assq (car row) frames))))
+                (should (equal (hermes-transport--get frame 'id) 133))
+                (should (equal (hermes-transport--get
+                                (hermes-transport--get frame 'result) 'value) (cdr row)))))))))))
+
+(ert-deftest hermes-chat-vault-send-failure-redacts ()
+  "Send failures neither log response bytes nor retain them for recovery."
+  (require 'websocket)
+  (hermes-test-with-dashboard-prompt-session (client)
+    (setf (hermes-dashboard-transport-client-redacted-websocket-url client)
+          "ws://backend.test/api/ws")
+    (hermes-test--server-request client "failure" "vault.save_login"
+                                 '((site . "example.test") (origin . "https://example.test")))
+    (let* ((websocket-debug t) observed (writes 0)
+          (hermes-dashboard-transport-websocket-send-function
+           (lambda (_socket text)
+             (cl-incf writes)
+             (setq observed (list websocket-debug debug-on-error debug-on-quit))
+             (error "%s" text))))
+      (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) "synthetic-failure-pass"))
+                ((symbol-function 'read-string) (lambda (&rest _) "synthetic-failure-user")))
+        (hermes-chat-respond-to-prompt))
+      (should (= writes 1))
+      (should (equal observed '(nil nil nil)))
+      (should-not (hermes-chat--pending-prompt-p))
+      (should-not hermes-chat--retained-clarify-owners)
+      (should-not (string-match-p "synthetic-failure" (buffer-string)))
+      (should-not (string-match-p "synthetic-failure"
+                                  (with-current-buffer "*Messages*" (buffer-string)))))))
+
+(ert-deftest hermes-chat-vault-reader-retired-timer ()
+  "A queued timer cannot inspect or abort a successor native reader."
+  (let (callback cancelled finished)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_time _repeat function) (setq callback function) 'timer))
+              ((symbol-function 'cancel-timer)
+               (lambda (timer) (setq cancelled timer)))
+              ((symbol-function 'read-passwd)
+               (lambda (_label)
+                 (run-hooks 'minibuffer-setup-hook)
+                 "synthetic-input")))
+      (should (equal (hermes-chat--vault-read
+                      "Vault: " t
+                      (lambda ()
+                        (should-not finished)
+                        t))
+                     "synthetic-input"))
+      (should (eq cancelled 'timer))
+      (should callback)
+      (setq finished t)
+      (funcall callback))))
+
+(ert-deftest hermes-chat-vault-native-reader ()
+  "Exercise real masked input, capability refusal and native cancellation."
+  (skip-unless (not noninteractive))
+  (require 'hermes-capabilities)
+  (dolist (action '(accept unlock save quit cancel timeout owner disconnect))
+    (let ((hermes-chat-auto-prompt-requests nil)
+          (hermes-notifications-enabled nil))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (let* ((origin (current-buffer)) (kill-ring '("keep"))
+               (method (pcase action
+                         ('unlock "vault.unlock_prompt")
+                         ('save "vault.save_login")
+                         (_ "vault.code")))
+               (minibuffer-history '("keep")) (websocket-debug t)
+               frames masked denied input-buffer fault
+               (hermes-dashboard-transport-websocket-send-function
+                (lambda (_socket text)
+                  (push (hermes-dashboard-transport--decode-frame text) frames))))
+          (setf (hermes-dashboard-transport-client-redacted-websocket-url client)
+                "ws://native.test/api/ws")
+          (hermes-test--server-request
+           client "native" method '((site . "example.test") (origin . "https://example.test")
+                                    (backend . "bitwarden") (display_name . "Bitwarden")))
+          (let ((minibuffer-setup-hook
+                 (list (lambda ()
+                (push read-hide-char masked)
+                (setq input-buffer (current-buffer))
+                (let ((hermes-capabilities-buffer-deny-predicate nil))
+                  (push (condition-case err
+                            (progn (hermes-capabilities--handle-buffer-read
+                                    `((buffer . ,(buffer-name input-buffer)))) nil)
+                          (error (error-message-string err))) denied))
+                (if (memq action '(accept unlock save quit))
+                    (setq unread-command-events
+                          (append (listify-key-sequence
+                                   (if (eq action 'quit) (kbd "C-g")
+                                     ;; Native kill command must not export input.
+                                     (kbd "s y n t h e t i c C-a C-k v a u l t RET")))
+                                  unread-command-events))
+                  (insert "synthetic-native-never-replay")
+                  (run-at-time
+                   0 nil
+                   (lambda ()
+                     (condition-case err
+                         (pcase action
+                           ((or 'cancel 'timeout)
+                            (hermes-test--emit-dashboard-prompt
+                             client "request.cancel"
+                             `((id . "native") (method . "vault.code")
+                               (reason . ,(symbol-name action)))))
+                           ('disconnect (hermes-dashboard-transport-stop client))
+                           ('owner (with-current-buffer origin
+                                     (hermes-chat--invalidate-transport-state))))
+                       (error (setq fault err) (abort-recursive-edit))))))))))
+            (hermes-chat-respond-to-prompt))
+          (should-not fault)
+          (should (equal masked (if (eq action 'save) '(?* nil) '(?*))))
+          (should (equal denied
+                         (make-list (if (eq action 'save) 2 1)
+                                    "Buffer.read: buffer denied by disclosure policy")))
+          (should (equal kill-ring '("keep")))
+          (should (equal minibuffer-history '("keep")))
+          (should (string-empty-p (with-current-buffer input-buffer (buffer-string))))
+          (if (memq action '(accept unlock save quit))
+              (progn
+                (should (= (length frames) 1))
+                (should (equal (hermes-transport--get
+                                (hermes-transport--get (car frames) 'result) 'value)
+                               (pcase action
+                                 ('quit "")
+                                 ('save (json-encode '((identifier . "vault") (password . "vault"))))
+                                 (_ "vault")))))
+            (should-not frames))
+          (should-not (string-match-p "synthetic-native" (buffer-string)))
+          (should-not hermes-chat--retained-clarify-owners))))))
 
 (ert-deftest hermes-chat-server-request-batch-replay-lock-and-cancel ()
   "Replay accepted locks; recover an expired unaccepted answer only once."
@@ -2839,6 +3093,204 @@ stays available."
                                  (result . ((status . "ok") (remaining . [])))))))
         (should-not (hermes-chat--pending-prompt-p))
         (should-not hermes-chat--retained-clarify-owners)))))
+
+
+(ert-deftest hermes-chat-vault-native-indirect-disclosure ()
+  "Deny shared minibuffer text before optional policy, counts or extraction."
+  (skip-unless (not noninteractive))
+  (require 'hermes-capabilities)
+  (let ((hermes-chat-auto-prompt-requests nil)
+        (hermes-notifications-events nil))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let ((ordinary (generate-new-buffer "vault-ordinary")) aliases fault frames)
+        (unwind-protect
+            (progn
+              (with-current-buffer ordinary (insert "ordinary control"))
+              (setf (hermes-dashboard-transport-client-redacted-websocket-url client)
+                    "ws://native.test/api/ws")
+              (hermes-test--server-request client "indirect" "vault.code"
+                                           '((site . "synthetic.test")))
+              (let ((hermes-dashboard-transport-websocket-send-function
+                     (lambda (_socket text) (push text frames)))
+                    (minibuffer-setup-hook
+                     (list
+                      (lambda ()
+                        (condition-case err
+                            (progn
+                              (should (eq read-hide-char ?*))
+                              (insert "SYNTHETIC-ALIAS-FIRST\nSYNTHETIC-ALIAS-SECOND")
+                              (dolist (policy (list #'hermes-capabilities-sensitive-buffer-p
+                                                    nil (lambda (_) nil)))
+                                (let* ((hermes-capabilities-buffer-deny-predicate policy)
+                                       (before (hermes-capabilities--handle-buffer-list nil))
+                                       (alias (make-indirect-buffer
+                                               (current-buffer) (generate-new-buffer-name "vault-alias"))))
+                                  (push alias aliases)
+                                  (dolist (buffer (list (current-buffer) alias))
+                                    (should-error
+                                     (hermes-capabilities--handle-buffer-read
+                                      `((buffer . ,(buffer-name buffer))))
+                                     :type 'error)
+                                    (should-not (memq buffer (hermes-capabilities--listable-buffers))))
+                                  (should (equal before (hermes-capabilities--handle-buffer-list nil)))
+                                  (should (equal
+                                           (hermes-transport--get
+                                            (hermes-capabilities--handle-buffer-read
+                                             `((buffer . ,(buffer-name ordinary)))) 'content)
+                                           "ordinary control"))
+                                  (should-not (string-match-p
+                                               "SYNTHETIC-ALIAS"
+                                               (json-encode (hermes-capabilities--handle-buffer-list nil)))))))
+                          ((error quit) (setq fault err)))
+                        (setq unread-command-events (list ?\r))))))
+                (hermes-chat-respond-to-prompt))
+              (when fault (signal (car fault) (cdr fault)))
+              (should (= (length frames) 1))
+              (should-not (string-match-p "SYNTHETIC-ALIAS" (buffer-string))))
+          (mapc #'kill-buffer aliases)
+          (kill-buffer ordinary))))))
+
+(ert-deftest hermes-chat-vault-native-yank-isolation ()
+  "Preserve native mutable yank entries after accept, quit and retirement."
+  (skip-unless (not noninteractive))
+  (require 'menu-bar)
+  (require 'websocket)
+  (dolist (action '(accept quit cancel))
+    (let ((hermes-chat-auto-prompt-requests nil)
+          (hermes-notifications-events nil))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (let* ((kill-ring (list (copy-sequence "keep")))
+               (kill-ring-yank-pointer kill-ring)
+               (yank-menu (list "Select Yank" (cons "keep" (cons "keep" 'menu-bar-select-yank))))
+               (ring-before kill-ring) (menu-before (copy-tree yank-menu))
+               (menu-entry (cadr yank-menu)) (pointer-before kill-ring-yank-pointer)
+               (minibuffer-history (list "history-control"))
+               clipboard-events
+               (interprogram-cut-function (lambda (&rest _) (push 'cut clipboard-events)))
+               (interprogram-paste-function (lambda () (push 'paste clipboard-events) nil))
+               (save-interprogram-paste-before-kill t)
+               (websocket-debug t) frames observed
+               (hermes-dashboard-transport-websocket-send-function
+                (lambda (_socket text) (push (hermes-dashboard-transport--decode-frame text) frames))))
+          (setf (hermes-dashboard-transport-client-redacted-websocket-url client)
+                "ws://native.test/api/ws")
+          (hermes-test--server-request client "yank" "vault.code" '((site . "synthetic.test")))
+          (let ((minibuffer-setup-hook
+                 (list
+                  (lambda ()
+                    (insert "SYNTHETIC-YANK\nSECOND")
+                    (goto-char (minibuffer-prompt-end))
+                    (use-local-map (copy-keymap (current-local-map)))
+                    (local-set-key
+                     (kbd "<f24>")
+                     (lambda ()
+                       (interactive)
+                       (setq observed (list read-hide-char (copy-tree kill-ring)
+                                            websocket-debug debug-on-error debug-on-quit
+                                            select-active-regions))
+                       (pcase action
+                         ('accept (insert "answer") (exit-minibuffer))
+                         ('quit (abort-recursive-edit))
+                         ('cancel
+                          (hermes-test--emit-dashboard-prompt
+                           client "request.cancel" '((id . "yank") (method . "vault.code")
+                                                      (reason . "timeout")))))))
+                    ;; Append into the existing front entry, then append twice
+                    ;; more, then copy fresh input through the native command.
+                    (setq unread-command-events
+                          (listify-key-sequence
+                           (kbd "C-M-w C-k C-k C-k S E C R E T C-SPC C-a M-w C-a C-k <f24>")))))))
+            (hermes-chat-respond-to-prompt))
+          (should (eq (car observed) ?*))
+          (should (member "keepSYNTHETIC-YANK\nSECOND" (cadr observed)))
+          (should (equal (cddr observed) '(nil nil nil nil)))
+          (should-not clipboard-events)
+          (should (eq kill-ring ring-before))
+          (should (equal kill-ring '("keep")))
+          (should (eq kill-ring-yank-pointer pointer-before))
+          (should (eq (cadr yank-menu) menu-entry))
+          (should (equal yank-menu menu-before))
+          (should (equal minibuffer-history '("history-control")))
+          (if (eq action 'cancel)
+              (should-not frames)
+            (should (= (length frames) 1))
+            (should (equal (hermes-transport--get (car frames) 'id) "yank"))
+            (should (equal (hermes-transport--get
+                            (hermes-transport--get (car frames) 'result) 'value)
+                           (if (eq action 'quit) "" "answer"))))
+          (should-not hermes-chat--retained-clarify-owners)
+          (let ((last-command-event (car (cadr yank-menu))))
+            (menu-bar-select-yank))
+          (should (equal (hermes-chat-input-string) "keep"))
+          (dolist (buffer (list (current-buffer) (get-buffer "*Messages*")))
+            (when buffer
+              (should-not (with-current-buffer buffer
+                            (string-match-p "SYNTHETIC-YANK" (buffer-string)))))))))))
+
+(ert-deftest hermes-chat-vault-native-nested-retirement ()
+  "Retirement aborts only the owned recursion after nested input finishes."
+  (skip-unless (not noninteractive))
+  (dolist (kind '(recursive-edit minibuffer))
+    (let ((hermes-chat-auto-prompt-requests nil)
+          (hermes-notifications-events nil)
+          (enable-recursive-minibuffers t))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (let* (frames nested-finished nested-quit expired input timers fault
+              (hermes-dashboard-transport-websocket-send-function
+               (lambda (_socket text) (push text frames))))
+          (setf (hermes-dashboard-transport-client-redacted-websocket-url client)
+                "ws://native.test/api/ws")
+          (hermes-test--server-request client "nested" "vault.code" '((site . "synthetic.test")))
+          (unwind-protect
+              (let ((minibuffer-setup-hook
+                     (list
+                      (lambda ()
+                        (setq input (current-buffer))
+                        (insert "SYNTHETIC-NESTED-NEVER-REPLAY")
+                        (push
+                         (run-at-time
+                          0.01 nil
+                          (lambda ()
+                            (push (run-at-time
+                                   0.01 nil
+                                   (lambda ()
+                                     (hermes-test--emit-dashboard-prompt
+                                      client "request.cancel"
+                                      '((id . "nested") (method . "vault.code") (reason . "timeout")))
+                                     (setq expired t))) timers)
+                            (push (run-at-time
+                                   0.35 nil
+                                   (lambda ()
+                                     (unless nested-finished
+                                       (if (eq kind 'recursive-edit)
+                                           (exit-recursive-edit)
+                                         (exit-minibuffer))))) timers)
+                            (condition-case err
+                                (progn
+                                  (if (eq kind 'recursive-edit)
+                                      (recursive-edit)
+                                    (let ((minibuffer-setup-hook
+                                           (list (lambda () (insert "unrelated")))))
+                                      (unless (equal (read-string "Unrelated: ") "unrelated")
+                                        (error "Nested answer changed"))))
+                                  (setq nested-finished t))
+                              (quit (setq nested-quit t))
+                              (error (setq fault err))))) timers)))))
+                (hermes-chat-respond-to-prompt))
+            (mapc #'cancel-timer timers))
+          (when fault (signal (car fault) (cdr fault)))
+          (should expired)
+          (should-not nested-quit)
+          (should nested-finished)
+          (should-not frames)
+          (should-not hermes-chat--retained-clarify-owners)
+          (should-not (hermes-chat--pending-prompt-p))
+          (should (string-empty-p (with-current-buffer input (buffer-string))))
+          (should-not (string-match-p "SYNTHETIC-NESTED" (buffer-string)))
+          ;; The exact retired id cannot reopen a prompt or authorize replay.
+          (hermes-test--server-request client "nested" "vault.code" '((site . "synthetic.test")))
+          (should-not (hermes-chat--pending-prompt-p))
+          (should-not frames))))))
 
 (provide 'hermes-chat-prompts-tests)
 ;;; hermes-chat-prompts-tests.el ends here

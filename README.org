@@ -279,6 +279,27 @@ scratch is refused, including when a file-name handler appears while waiting.
 Backend audio providers must be configured separately.  These relays require
 Hermes Agent 0.21.4 or a compatible API.
 
+** Browser-vault prompts
+
+Hermes Agent 0.21.4 browser-vault requests use native minibuffers: masked
+password-manager unlock, save-login password and verification code readers,
+plus an identifier reader without input history.  Use =C-c C-a= to answer a
+pending request.  Each reader shows the owning backend endpoint and the
+site/origin or password manager supplied by that backend.  Empty password/code
+or =C-g= declines a current request; expired or disconnected requests cannot
+send or recover an answer.
+
+Credentials go directly to the original backend request, never to chat input.
+The backend owns origin verification, credential storage and browser filling;
+Emacs does not run a local password manager or control its local browser.
+Minibuffer input, including indirect aliases sharing its text, is excluded
+from capability listings and reads even when the optional buffer-denial policy
+is disabled.  Native kill/copy operations use a private kill ring and yank menu.
+Expiry revokes response authority immediately; an unrelated nested reader or
+recursive edit can finish before the expired vault reader is dismissed.
+This is not memory zeroization or a sandbox against trusted Emacs Lisp.
+Card/address collection is unsupported.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.
