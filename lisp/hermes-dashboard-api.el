@@ -1955,16 +1955,21 @@ Native expiry, replacement, or endpoint changes require fresh resolution."
 
 (defun hermes-dashboard-transport--api-response-body (method path response)
   "Project RESPONSE for REST METHOD PATH without losing editable JSON types."
-  (if (and (equal method "GET") (equal path "/api/config"))
-      (let ((text (plist-get response :body-text)))
-        ;; Never reconstruct editable configuration from the lossy event body.
-        (unless (and (stringp text) (string-match-p "\\`[ \t\r\n]*{" text))
-          (error "Dashboard configuration requires a raw JSON object"))
-        (condition-case nil
-            (json-parse-string text :object-type 'alist :array-type 'array
-                               :false-object :false :null-object :null)
-          (json-error (error "Dashboard configuration is not valid JSON"))))
-    (plist-get response :body)))
+  (cond
+   ((and (equal method "POST")
+         (string-match-p "\\`/api/dashboard/agent-plugins/[^/]+/update\\'" path))
+    ;; Consent receipts must distinguish explicit false from null or {}.
+    (hermes-transport-json-parse-lossless (plist-get response :body-text)))
+   ((and (equal method "GET") (equal path "/api/config"))
+    (let ((text (plist-get response :body-text)))
+      ;; Never reconstruct editable configuration from the lossy event body.
+      (unless (and (stringp text) (string-match-p "\\`[ \t\r\n]*{" text))
+        (error "Dashboard configuration requires a raw JSON object"))
+      (condition-case nil
+          (json-parse-string text :object-type 'alist :array-type 'array
+                             :false-object :false :null-object :null)
+        (json-error (error "Dashboard configuration is not valid JSON")))))
+   (t (plist-get response :body))))
 
 (defvar hermes-dashboard-transport--api-dispatch-guard nil
   "Optional predicate authorizing browser mutations at HTTP transport entry.
