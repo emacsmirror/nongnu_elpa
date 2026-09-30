@@ -40,6 +40,8 @@
 (require 'hermes-chat)
 (require 'hermes-session-title)
 
+(autoload 'hermes-list-foreign-sessions "hermes-foreign" nil t)
+
 (defvar-local hermes-sessions--catalogue-profile nil
   "Explicit backend profile for stored catalogue paging, or nil for RPC.")
 (defvar hermes-sessions--append-catalogue nil
@@ -276,6 +278,7 @@ client just for the listing."
          :group "Stored"
          hermes-sessions-list-stored "Stored catalogue"
          hermes-sessions-next-page "Next window"
+         hermes-list-foreign-sessions "Foreign histories"
          :group "Keep"
          hermes-sessions-toggle-pin #'hermes-sessions--pin-label
          :row
@@ -293,6 +296,7 @@ client just for the listing."
          "v" #'hermes-sessions-view
          "k" #'hermes-sessions-toggle-pin
          "l" #'hermes-sessions-list-stored
+         "F" #'hermes-list-foreign-sessions
          ">" #'hermes-sessions-next-page
          "f" #'hermes-sessions-view
          "b" #'quit-window

@@ -17,7 +17,9 @@
 (define-error 'hermes-test-manifest-error "Invalid Hermes test manifest")
 
 (defconst hermes-test-manifest-edges
-  '(("lisp/hermes-browser.el" "tests/hermes-browsers-tests.el" both)
+  '(("lisp/hermes-foreign.el" "tests/hermes-foreign-context-tests.el" both)
+    ("lisp/hermes-context.el" "tests/hermes-foreign-context-tests.el" both)
+    ("lisp/hermes-browser.el" "tests/hermes-browsers-tests.el" both)
     ("lisp/hermes-dashboard-api.el" "tests/hermes-transport-tests.el" forward)
     ("lisp/hermes-dashboard-api.el" "tests/hermes-dashboard-tests.el" both)
     ("lisp/hermes-dashboard-rpc.el" "tests/hermes-transport-tests.el" forward)

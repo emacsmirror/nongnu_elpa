@@ -1644,17 +1644,28 @@ Built with `list' so each call yields its own plist; the result is handed to
   "Return this buffer's shared dashboard client, acquiring one when needed.
 A live attached client is reused; otherwise this buffer's stale reference is
 released and a shared client for the configured endpoint is acquired and warmed.
+An explicit `hermes-chat--pinned-url' retains backend authority through cold
+acquisition and retry; ordinary chats keep their normal instance resolution.
 CALLBACK seeds a freshly created client's fallback callback; per-buffer events
 still route through this buffer's subscriber, so the fallback only matters once
 no buffer is attached."
   (setq-local hermes-dashboard-transport-request-owner (current-buffer))
+  (when (and hermes-chat--pinned-url
+             (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+             (not (equal (hermes-dashboard-transport--normalize-base-url
+                          hermes-chat--pinned-url)
+                         (hermes-dashboard-transport--api-client-base-url
+                          hermes-chat--dashboard-client))))
+    (user-error "Chat client does not serve the captured backend"))
   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
       (progn
         (hermes-chat--ensure-resolved-start-mode)
         hermes-chat--dashboard-client)
-    (let* ((instance (hermes-instance-resolve))
+    (let* ((instance (if hermes-chat--pinned-url hermes-instance
+                       (hermes-instance-resolve)))
            (start-mode (hermes-chat--ensure-resolved-start-mode instance))
-           (hermes-dashboard-transport-url (hermes-instance-url instance)))
+           (hermes-dashboard-transport-url
+            (or hermes-chat--pinned-url (hermes-instance-url instance))))
       (hermes-chat--stop-dashboard-client)
       (setq hermes-chat--dashboard-session-ready-p nil
             hermes-chat--dashboard-active-session-id nil

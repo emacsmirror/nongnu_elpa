@@ -91,6 +91,37 @@ mode, so later configuration changes cannot reroute them.  Chats against
 different dashboards can stay open at the same time.  Browser views retain
 their chosen instance until explicitly reopened for another one.
 
+** Foreign histories
+
+In Sessions, =F= opens the serving backend's Claude Code and Codex histories.
+Choose the destination profile and source.  This does not scan the Emacs
+host.  =>= requests the next page, including after an unreadable-only page.
+=RET= opens an inert tail preview, bounded by the backend to 40 turns and
+8000 characters per turn; backend directory labels are not local links.
+
+Previewing never imports.  =i= asks for confirmation before importing into
+the displayed destination.  Only after the returned stored session is read
+back from that profile does =RET= offer native resume.  Preview refresh and
+canceling another import confirmation preserve that verified session; changing
+the preview's backend, destination or history does not.  If the legacy default
+backend URL changes, reopen from Sessions before previewing or importing again.
+Once resume opens a chat, acquisition and reconnect retain that chat's selected
+backend, even if a mode or display hook changes the legacy default URL.
+An interrupted import can have an uncertain outcome: use =g= to inspect before
+explicitly retrying.  There is no automatic import retry.
+
+** Context budget
+
+From a connected chat, =C-c C-o X b= (or =M-x hermes-chat-context=) opens an
+on-demand context snapshot for that exact runtime session.  =g= explicitly
+refreshes it; there is no polling.  Computing a snapshot can rebuild backend
+prompt blocks and invoke memory hooks, even when computation fails.
+
+The view keeps backend category estimates separate from reported usage and
+its source.  Unbuilt categories and missing file information remain unknown,
+not zero-cost claims.  Context-file paths are inert backend labels; they are
+not visited on the Emacs host.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.
