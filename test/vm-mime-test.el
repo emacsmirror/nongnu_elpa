@@ -2249,6 +2249,49 @@ picture wanting a presentation buffer and a button in it."
     ;; the image is named before what is to be done to it
     (should (< (seq-position sent "-[0]") (seq-position sent "-thumbnail")))))
 
+;;; The thumbnail on a button is not the image (issue #884)
+
+(defun vm-mime-test--image-layout (file)
+  "A layout of type image/png whose cached image file is FILE."
+  (let ((layout (make-vector (length vm-mime-layout-fields) nil)))
+    (aset layout 0 '("image/png"))
+    (aset layout 12 (make-symbol "vm-mime-test-cache"))
+    (vm-set-mm-layout-image-file layout file)
+    layout))
+
+(ert-deftest vm-mime-test-a-button-thumbnail-is-not-left-as-the-image ()
+  "REGRESSION: [Display] showed the button's thumbnail instead of the picture.
+Issue #884.  `vm-mime-display-button-image' writes the part to a file and
+remembers it in the layout, and then has `vm-mime-frob-image-xxxx' write the
+thumbnail over that same file and mark the image modified.
+`vm-mime-display-internal-image-xxxx' reuses the file the layout points at
+whenever it is readable, so what the reader got was the thumbnail, at whatever
+`vm-mime-thumbnail-max-geometry' says.  The last lines of the button function
+were a comment saying to remove the cached thumb, with no code under it.
+
+The thumbnail is not made here: a batch Emacs has no image support at all,
+`clear-image-cache' being void, so what this checks is the bookkeeping the
+display reads afterwards."
+  (let* ((thumb (make-temp-file "vm-mime-test-thumb"))
+         (layout (vm-mime-test--image-layout thumb)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-images-possible-here-p) (lambda () t))
+                  ((symbol-function 'vm-imagemagick-available-p) (lambda () t))
+                  ((symbol-function 'vm-mime-display-button-xxxx)
+                   (lambda (&rest _) t))
+                  ;; what the real one leaves behind: its output over the file
+                  ;; the layout points at, and the modified flag set
+                  ((symbol-function 'vm-mime-frob-image-xxxx)
+                   (lambda (extent &rest _)
+                     (vm-set-mm-layout-image-modified
+                      (vm-extent-property extent 'vm-mime-layout) t))))
+          (let ((vm-mime-thumbnail-max-geometry "80x80"))
+            (with-temp-buffer
+              (vm-mime-display-button-image layout)))
+          (should-not (vm-mm-layout-image-file layout))
+          (should-not (vm-mm-layout-image-modified layout)))
+      (ignore-errors (delete-file thumb)))))
+
 ;;; cid: references for an external viewer (issue #506)
 
 (defun vm-mime-test--find-layout (layout type)

@@ -4231,8 +4231,14 @@ image when possible."
 	(vm-mime-display-button-xxxx layout t)
 	(when glyph
 	  (put-text-property start (1+ start) 'display glyph))
-	;; remove the cached thumb so that full sized image will be shown
-	;; next time
+	;; Remove the cached thumb so that the full sized image is shown next
+	;; time.  `vm-mime-frob-image-xxxx' wrote the thumbnail over the file
+	;; the layout points at, and `vm-mime-display-internal-image-xxxx'
+	;; reuses that file if it is there: pressing [Display] showed the
+	;; thumbnail (emacs-vm/vm#884).  The comment here has always said so
+	;; and there was nothing under it.
+	(vm-set-mm-layout-image-file layout nil)
+	(vm-set-mm-layout-image-modified layout nil)
 	t)
     ;; if image not possible, just display the normal button
     (vm-mime-display-button-xxxx layout t)))
