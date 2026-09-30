@@ -259,6 +259,45 @@ WHERE stanza_id = 'stanza-abc'"))
 
 ;;; Group 4: ewoc apply correction
 
+(ert-deftest jabber-test-message-correct-rejections-are-silent ()
+  "Repeated rejected corrections neither notify nor change messages."
+  (dolist (case '(missing ambiguous undecryptable unknown wrong-sender))
+    (let* ((scoped-p (memq case '(missing ambiguous undecryptable)))
+           (candidate '(:from "alice@example.com/phone" :row-id 1))
+           (candidates (pcase case
+                         ('missing nil)
+                         ('ambiguous (list candidate candidate))
+                         (_ (list candidate))))
+           notifications writes renders)
+      (cl-letf (((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _) candidates))
+                ((symbol-function 'jabber-db-message-sender-by-stanza-id)
+                 (lambda (_id)
+                   (unless (eq case 'unknown) "alice@example.com/phone")))
+                ((symbol-function 'jabber-db-correct-message)
+                 (lambda (&rest _) (push t writes)))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (push t writes)))
+                ((symbol-function 'jabber-message-correct--update-buffer)
+                 (lambda (&rest _) (push t renders)))
+                ((symbol-function 'message)
+                 (lambda (&rest args) (push args notifications))))
+        (dotimes (_ 10)
+          (should-not
+           (jabber-message-correct--apply
+            "original" (if (eq case 'undecryptable)
+                           "[OMEMO: could not decrypt]"
+                         "corrected")
+            (if (eq case 'wrong-sender)
+                "mallory@example.com/phone"
+              "alice@example.com/laptop")
+            nil (lambda (_original) (push t renders)) nil
+            (and scoped-p "me@example.com")
+            (and scoped-p "alice@example.com")))))
+      (should-not notifications)
+      (should-not writes)
+      (should-not renders))))
+
 (ert-deftest jabber-test-message-correct-apply-updates-ewoc ()
   "jabber-message-correct--apply updates body and edited in the ewoc node, and writes DB."
   (jabber-test-message-correct-with-ewoc

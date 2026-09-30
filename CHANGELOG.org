@@ -3,6 +3,8 @@
 * Unreleased
 
 ** Fixes
+- Drop rejected incoming message corrections silently, including missing or
+  ambiguous archive targets, instead of flooding =*Messages*=.
 - Keep contact names, presence, subscriptions, avatars and resource capabilities
   separate for each connection, including completion and background chat alerts.
 - Keep unread activity and subscription prompts attached to their originating

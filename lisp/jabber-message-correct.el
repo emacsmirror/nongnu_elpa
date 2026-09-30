@@ -210,23 +210,16 @@ dropped.  Returns non-nil when the correction was accepted."
             (and muc-p
                  (jabber-db-occupant-id-by-stanza-id replace-id)))))
     (cond
+     ;; Rejected incoming corrections are routine during archive replay,
+     ;; especially when the original is outside the fetched history.  Drop
+     ;; them silently rather than letting remote traffic flood *Messages*.
      ;; A correction that failed to decrypt must never overwrite the
      ;; original body with the placeholder (issue #134).
-     ((jabber--decrypt-failure-body-p new-body)
-      (message "XEP-0308: dropped correction %s with undecryptable body"
-               replace-id)
-      nil)
-     ((and scoped-p (/= (length matches) 1))
-      (message "XEP-0308: correction target %s is missing or ambiguous"
-               replace-id)
-      nil)
-     ((null original-from)
-      (message "XEP-0308: correction for unknown message %s dropped" replace-id)
-      nil)
+     ((jabber--decrypt-failure-body-p new-body) nil)
+     ((and scoped-p (/= (length matches) 1)) nil)
+     ((null original-from) nil)
      ((not (jabber-message-correct--valid-sender-p
             original-from new-from muc-p original-occupant-id new-occupant-id))
-     (message "XEP-0308: rejected correction from %s for message by %s"
-               new-from original-from)
       nil)
      (t
       (if scoped-p
