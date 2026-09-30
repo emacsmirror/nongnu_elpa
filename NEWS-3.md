@@ -42,6 +42,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     nothing has read either since 2009.  Emacs draws a replacement character
     for what a font cannot render and VM displays the message either way.
 
+    The manual's own advice was to extend the list, so an init file is likely
+    to say
+
+    ```elisp
+    (setq vm-mime-default-face-charsets
+          (nconc vm-mime-default-face-charsets '("UTF-8" "Windows-1252")))
+    ```
+
+    which now stops the file with "Symbol's value as variable is void"
+    (emacs-vm/vm#883).  Delete those lines: nothing has read them since 2009.
+
   * **Twelve user options are gone, eleven of which no code read**
     (emacs-vm/vm#880).  Four bounded what one fetch brings in:
     `vm-imap-messages-per-session`, `vm-imap-bytes-per-session`,
@@ -62,8 +73,14 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     And three dead for longer: `vm-mime-encode-words-regexp`, which
     `vm-mime-encode-headers-words-regexp` supersedes, and
     `vm-forwarded-message-preamble-format` and
-    `vm-remember-passwords-insecurely`, neither read since 2011.  An init
-    file setting any of these is harmless; Customize will not offer them.
+    `vm-remember-passwords-insecurely`, neither read since 2011.
+
+    **An init file that reads one of these names as it sets it will stop**
+    (emacs-vm/vm#883).  Writing an option from its old value, `(setq X (nconc
+    X ...))` or `(add-to-list 'X ...)`, reads it first, and with the variable
+    gone that raises "Symbol's value as variable is void" and the rest of the
+    file does not run.  Delete the lines that set any of these; a plain
+    `setq` of one is harmless but does nothing.
 
   * **HTML messages display on a stock Emacs: `shr` is a handler now.**
     `vm-mime-text/html-handler` offered only `emacs-w3m`, `w3m` and `lynx`,
