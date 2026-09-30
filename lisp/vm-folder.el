@@ -230,8 +230,7 @@ specific intent."
   (memq m vm-message-list))
 
 (defun vm-number-messages (&optional start-point end-point)
-  "Set the number-of and padded-number-of slots of messages
-in vm-message-list.
+  "Set the number-of slot of the messages in vm-message-list.
 
 If non-nil, START-POINT should point to a cons cell in
 vm-message-list and the numbering will begin there, else the
@@ -257,7 +256,6 @@ the end of vm-message-list is reached."
 	      message-list start-point)))
     (while (not (eq message-list end-point))
       (vm-set-number-of (car message-list) (int-to-string n))
-      (vm-set-padded-number-of (car message-list) (format "%3d" n))
       (setq n (1+ n) 
 	    message-list (cdr message-list)))
     (or end-point (setq vm-ml-highest-message-number (int-to-string (1- n))))

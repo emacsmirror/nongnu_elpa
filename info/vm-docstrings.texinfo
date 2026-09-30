@@ -8952,7 +8952,7 @@ See @code{vm-summary-format} for a description of the conversion specifiers.
 Default value:
 @example
 "******************************************************************************
-%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\\"%s\\"
+%3n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\\"%s\\"
 ******************************************************************************
 "
 @end example
@@ -12029,7 +12029,7 @@ The summary format need not be one line per message but it must end with
 a newline, otherwise the message pointer will not be displayed correctly
 in the summary window.
 
-Default value: @code{"%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\\"%s\\"\\n"}
+Default value: @code{"%3n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\\"%s\\"\\n"}
 @end defopt
 
 @end macro

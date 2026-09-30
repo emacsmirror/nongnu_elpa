@@ -270,17 +270,16 @@ be silently ignored and the real code would `aref' a bogus value."
          (top    (vm-epg-test--make-layout
                   "multipart/encrypted" (list header msg)))
          (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*"))
-         ;; A minimal "message object" as `vm-buffer-of' dereferences it:
-         ;; (aref (aref message 1) 9) must be the buffer holding the cipher.
-         (msg-inner (make-vector 10 nil))
-         (msg-obj (make-vector 2 nil))
+         ;; a message of VM's own making, whose buffer holds the cipher: the
+         ;; slot numbers are not written down here, a hand-built vector
+         ;; having had to be renumbered with them (emacs-vm/vm#861)
+         (msg-obj (vm-make-message))
          (msg-sym (make-symbol "vm-epg-test-msg"))
          (vm-epg-auto-decrypt t))
     (unwind-protect
         (progn
           (with-current-buffer cipher-buf (insert "CIPHERTEXT"))
-          (aset msg-inner 9 cipher-buf)
-          (aset msg-obj 1 msg-inner)
+          (vm-set-buffer-of msg-obj cipher-buf)
           (set msg-sym msg-obj)
           ;; Wire the octet-stream layout to the message object and to the
           ;; cipher region: slot 13 = message symbol, slots 9/10 = body

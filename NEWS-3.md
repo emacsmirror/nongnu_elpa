@@ -8,6 +8,23 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`%n` in a summary format is the message number, and the width does the
+    padding** (emacs-vm/vm#861).  VM padded the number to three columns
+    itself, so `%n` was three columns wide whatever you wrote: `%-3n` did
+    nothing, `%3n` was no different from `%n`, and `%05n` put the zeros in
+    front of the padding and answered `00  1`.  The padding is the format's
+    job now, as it is in printf and as the manual already described it.
+
+    **If you have your own `vm-summary-format` with `%n` in it, write `%3n`
+    to keep the column you had.**  The default now says `%3n`, so a summary
+    nobody customised is unchanged.  A thread's number keeps its own padding,
+    the decorations around it being VM's rather than the format's.
+
+    One difference remains between the two ways a format is rendered: a
+    folder summary fills `%n` with spaces even when the width says `0`, since
+    the number is written as a token and filled in as the line is displayed.
+    The manual says so.
+
   * **`vm-mime-charset-converter-alist` works, seventeen years after it
     stopped** (emacs-vm/vm#879).  Both places that would have run a converter
     asked first whether VM could display the charset, and that question has
