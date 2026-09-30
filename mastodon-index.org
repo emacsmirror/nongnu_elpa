@@ -150,6 +150,7 @@
 |            | mastodon-search-trending-tags                    | Display a list of tags trending on your instance.                              |
 | /          | mastodon-switch-to-buffer                        | Switch to a live mastodon buffer.                                              |
 |            | mastodon-tl--change-post-quote-policy            | Change the quote policy of the toot at point.                                  |
+|            | mastodon-tl--jump-to-quoted-toot                 | Load quoted toot in present item.                                              |
 |            | mastodon-tl-announcements                        | Display announcements from your instance.                                      |
 |            | mastodon-tl-block-domain                         | Read a domain and block it.                                                    |
 | B          | mastodon-tl-block-user                           | Query for USER-HANDLE from current status and block that user.                 |
@@ -215,6 +216,7 @@
 | RET        | mastodon-tl-view-full-image-or-play-video        | View full sized version of image at point, or try to play video.               |
 |            | mastodon-tl-view-item-on-own-instance            | Load current toot on your own instance.                                        |
 |            | mastodon-tl-view-single-toot                     | View toot at point in a separate buffer.                                       |
+|            | mastodon-tl-view-toot-quotes                     | View the toots that quote the toot at point.                                   |
 |            | mastodon-tl-view-whole-thread                    | From a thread view, view entire thread.                                        |
 | C-c m t, t | mastodon-toot                                    | Update instance with new toot. Content is captured in a new buffer.            |
 | C-c C-a    | mastodon-toot-attach-media                       | Prompt for an attachment file.                                                 |
@@ -307,6 +309,7 @@
 |            | mastodon-views-view-profile-collection           | Prompt for a user profile collection and view it.                              |
 | g, S       | mastodon-views-view-scheduled-toots              | Show the user's scheduled toots in a new buffer.                               |
 |            | mastodon-views-view-timeline-list-at-point       | View timeline of list at point.                                                |
+|            | mastodon-webfinger                               | Do a webfinger lookup on the server for QUERY.                                 |
 
 * mastodon custom variables index
  
@@ -340,7 +343,7 @@
 | Custom variable                                    | Description                                                                  |
 |----------------------------------------------------+------------------------------------------------------------------------------|
 | mastodon-active-user                               | Username of the active user.                                                 |
-| mastodon-auth-encrypt-tokens-plstore                       | Whether to encrypt client (mastodon.el) and user auth sources.               |
+| mastodon-auth-encrypt-tokens-plstore               | Whether to encrypt client and user tokens in the plstore.                    |
 | mastodon-auth-use-auth-source                      | Whether to use auth sources for user credentials.                            |
 | mastodon-client--token-file                        | File path where Mastodon access tokens are stored.                           |
 | mastodon-display-featured-tags-on-profiles         | Whether to display featured tags on user profiles.                           |
