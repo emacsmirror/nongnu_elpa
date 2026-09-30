@@ -60,6 +60,7 @@
             "lisp/hermes-chat-slash.el"
             "lisp/hermes-chat.el"
             "lisp/hermes-gnosis.el"
+            "lisp/hermes-audio.el"
             "lisp/hermes-browser.el"
             "lisp/hermes-admin.el"
             "lisp/hermes-sessions.el"
@@ -105,6 +106,7 @@
           testElFiles = [
             "hermes-buffer-tests.el"
             "hermes-gnosis-tests.el"
+            "hermes-audio-tests.el"
             "hermes-request-tests.el"
             "hermes-admin-tests.el"
             "hermes-browsers-tests.el"

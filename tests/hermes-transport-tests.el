@@ -1214,6 +1214,59 @@
     (should (equal (nth 1 captured) "POST"))
     (should (assoc "Accept" (nth 2 captured)))))
 
+(ert-deftest hermes-transport-dashboard-http-json-utf8-wire-roundtrip ()
+  "JSON requests carry UTF-8 bytes and byte lengths through native url.el."
+  (dolist (text '(nil "ASCII" "Synthetic reply α — café 漢字 🎵\nnext"))
+    (let* ((url-proxy-services nil)
+           (hermes-dashboard-transport-http-request-async-function
+            #'hermes-dashboard-transport--default-http-request-async)
+           (body (and text `((text . ,text) (flag . :false)
+                             (nothing . :null) (items . []))))
+           (expected (and text
+                          (encode-coding-string
+                           (concat "{\"text\":\""
+                                   (string-replace "\n" "\\n" text)
+                                   "\",\"flag\":false,\"nothing\":null,\"items\":[]}")
+                           'utf-8 t)))
+           request)
+      (hermes-test--with-http-server
+       (lambda (peer wire)
+         (setq request wire)
+         (hermes-test--http-reply
+          peer 200 (substring wire (+ 4 (string-match "\r\n\r\n" wire)))))
+       (lambda (base)
+         (let ((promise
+                (hermes-dashboard-transport--http-json-async
+                 base :method "POST" :body body
+                 :headers '(("Content-Type" . "application/json")))))
+           (hermes-test--http-wait
+            (lambda () (not (eq (hermes--promise-state promise) 'pending))))
+           (should (eq (hermes--promise-state promise) 'resolved))
+           (should request)
+           (let* ((end (+ 4 (string-match "\r\n\r\n" request)))
+                  (headers (substring request 0 end))
+                  (bytes (substring request end))
+                  (case-fold-search t)
+                  (content-length
+                   (and (string-match "Content-Length: *\\([0-9]+\\)" headers)
+                        (string-to-number (match-string 1 headers)))))
+             (should-not (multibyte-string-p bytes))
+             (should (equal bytes (or expected "")))
+             (if expected
+                 (progn
+                   (should content-length)
+                   (should (= content-length (length expected)))
+                   (let ((reply (json-parse-string
+                                 (plist-get (hermes--promise-value promise) :body-text)
+                                 :object-type 'alist :null-object :null
+                                 :false-object :false)))
+                     (should (equal reply body)))
+                   (should (equal (alist-get 'text
+                                            (plist-get (hermes--promise-value promise) :body))
+                                  text)))
+               (should-not content-length)
+               (should-not (plist-get (hermes--promise-value promise) :body))))))))))
+
 (ert-deftest hermes-transport-dashboard-http-cancel-releases-exact-owner ()
   "Cancellation closes resources but cannot clear a successor owner."
   (let ((client (make-hermes-dashboard-transport-client))

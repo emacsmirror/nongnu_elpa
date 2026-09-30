@@ -15,6 +15,9 @@
 - Kept script-output history rows inert on newer backends.  Available previews
   can be partial; only session-backed rows open transcripts.  Remote output
   paths are never opened as local files.
+- Added optional client-local dictation and read-aloud through the owning
+  backend's audio relays.  Recording requires consent; transcription stays
+  in the draft or a manual recovery buffer and is never sent automatically.
 
 - Made buffer-specific commands context-aware in native =M-x= completion,
   while keeping launchers available globally.  Filtering follows the user's

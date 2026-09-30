@@ -206,6 +206,48 @@ handoff rather than using its stale actions.  Observation actions attach to
 the captured URL; they never auto-start a local service, even for loopback
 addresses.
 
+** Local dictation and read-aloud
+
+=C-c C-o A= opens local audio actions in an attached chat: =r= records,
+=s= stops and transcribes, =c= cancels, and =a= reads a chosen settled
+assistant reply aloud.  Nothing listens or plays automatically.
+
+Configure =hermes-audio-recorder-command= and =hermes-audio-player-command=
+with trusted local foreground programs.  Both default to =nil=; chat works
+without them.  The recorder must write audio to stdout and finalize on SIGINT.
+The player receives a private local file in place of its =%f= argument.
+For example, with ALSA and ffplay installed on the Emacs machine:
+
+#+begin_src emacs-lisp
+  (setq hermes-audio-recorder-command
+        '("arecord" "-q" "-t" "wav" "-f" "S16_LE" "-r" "16000")
+        hermes-audio-recording-mime-type "audio/wav"
+        hermes-audio-player-command
+        '("ffplay" "-nodisp" "-autoexit" "-loglevel" "quiet" "%f"))
+#+end_src
+
+Recording and read-aloud ask consent and identify the backend and profile.
+Devices belong to the Emacs machine, even with a remote dashboard.  Audio bytes,
+not local paths, go to that chat's backend transcription relay.  The result
+is a draft, never an automatic message.  If you edit the draft while waiting,
+the transcript opens separately for manual copying.  Silence leaves the
+draft unchanged.  Read-aloud uploads only the reply you choose and plays the
+returned bytes locally; it does not retrieve provider credentials.
+
+The defaults allow 8 MiB and 120 seconds per recording or playback.  WAV,
+FLAC, Ogg, MPEG and WebM are supported; the recorder's MIME must match its
+output and the player must support the returned format.  A time limit cancels
+rather than uploads.  Stop gives the recorder two seconds to finalize.
+Cancellation or chat retirement stops owned local processes, removes private
+playback files and ignores late replies.  It cannot revoke an upload or
+cancel a provider request already running.  Limits need Emacs event-loop
+progress; response size is checked only after HTTP retrieval.
+Audio captures an absolute, local =temporary-file-directory= before consent.
+Later changes to that option cannot redirect recording or playback.  Handler-managed
+scratch is refused, including when a file-name handler appears while waiting.
+Backend audio providers must be configured separately.  These relays require
+Hermes Agent 0.21.4 or a compatible API.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.

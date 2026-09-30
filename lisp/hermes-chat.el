@@ -2604,6 +2604,25 @@ Do not wrap into the composer or modify its draft."
          "Steer / queue")
         (t "Steer / send now")))
 
+;; Audio is lazy and absent-safe; ordinary chat has no device dependency.
+(autoload 'hermes-audio-record "hermes-audio" nil t)
+(autoload 'hermes-audio-stop "hermes-audio" nil t)
+(autoload 'hermes-audio-cancel "hermes-audio" nil t)
+(autoload 'hermes-audio-read-aloud "hermes-audio" nil t)
+
+(keymap-popup-define hermes-chat-audio-map
+  "Use optional Emacs-side audio devices through the owning backend."
+  :description #'hermes-chat--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "Local audio"
+  "r" ("Record (consent)" hermes-audio-record)
+  "s" ("Stop / transcribe" hermes-audio-stop)
+  "c" ("Cancel local audio" hermes-audio-cancel)
+  "a" ("Read reply aloud" hermes-audio-read-aloud))
+
+(put 'hermes-chat-audio-map-popup 'command-modes '(hermes-chat-mode))
+
 (keymap-popup-define hermes-chat-images-map
   "Manage images in the current draft."
   :description #'hermes-chat--popup-title
@@ -2738,6 +2757,7 @@ Do not wrap into the composer or modify its draft."
   "S" ("Session" :keymap hermes-chat-sess-map)
   "M" ("Model" :keymap hermes-chat-model-map)
   "w" ("Workspace" :keymap hermes-chat-work-map)
+  "A" ("Local audio" :keymap hermes-chat-audio-map)
   :group "Browse"
   "B" ("Work" :keymap hermes-chat-jobs-map)
   "X" ("Inspect" :keymap hermes-chat-info-map)
@@ -2750,6 +2770,7 @@ Do not wrap into the composer or modify its draft."
   "d" ("Cancel prompt" hermes-chat-cancel-prompt))
 
 (dolist (command '(hermes-chat-actions-map-popup
+                  hermes-chat-actions-map--enter-hermes-chat-audio-map
                   hermes-chat-actions-map--enter-hermes-chat-images-map
                   hermes-chat-actions-map--enter-hermes-chat-sess-map
                   hermes-chat-actions-map--enter-hermes-chat-model-map
