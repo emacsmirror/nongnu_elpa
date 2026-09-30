@@ -2184,6 +2184,71 @@ Not the line breaks: undoing them is the whole point, and the reader re-wraps."
             (should-not (string-match-p "format=flowed" text))))))))
 
 
+;;; Displaying an image through ImageMagick (issue #882)
+
+(defun vm-mime-test--strip-sizes (strips)
+  "The size of each file in STRIPS, nil for one that is not there."
+  (mapcar (lambda (file)
+            (and (file-exists-p file) (nth 7 (file-attributes file))))
+          strips))
+
+(ert-deftest vm-mime-test-every-image-strip-has-an-image-in-it ()
+  "REGRESSION: pressing [Display] on an image displayed nothing.
+Issue #882.  VM ran ImageMagick with the operators ahead of the file,
+`magick -crop ... FILE OUT', and version 7 answers \"no images found for
+operation `-crop'\" to an operator with nothing read yet.  Nothing was
+written, and nothing noticed: the strip files are made by `vm-make-tempfile'
+before the conversion runs, so all of them existed and all of them were
+empty.
+
+VM displays an image as a run of strips so that scrolling moves through it a
+line at a time, which is what `vm-mime-use-image-strips' asks for and what
+the reader sees instead of the image when this breaks."
+  (skip-unless (vm-imagemagick-available-p))
+  (let* ((file (vm-test-fixture-path "images" "strips.png"))
+         (result (vm-make-image-strips file 26 'png t nil))
+         (process (car result))
+         (strips (cdr result)))
+    (unwind-protect
+        (progn
+          (should strips)
+          (let ((deadline (+ (float-time) 60)))
+            (while (and (process-live-p process) (< (float-time) deadline))
+              (accept-process-output process 0.2)))
+          (should-not (process-live-p process))
+          ;; every one of them, since it is the empty ones that are the bug
+          (should (equal nil (seq-filter (lambda (size) (or (null size)
+                                                            (zerop size)))
+                                         (vm-mime-test--strip-sizes strips)))))
+      (dolist (strip strips) (ignore-errors (delete-file strip)))
+      (when (buffer-live-p (process-buffer process))
+        (kill-buffer (process-buffer process))))))
+
+(ert-deftest vm-mime-test-a-thumbnail-names-the-image-before-the-operators ()
+  "The thumbnail conversion reads the image first too.
+Issue #882: `vm-mime-frob-image-xxxx' passed `-[0]', which is the first page
+of standard input, after the operators, and ImageMagick 7 refuses that in the
+same way.  The arguments are checked here rather than the picture, the
+picture wanting a presentation buffer and a button in it."
+  (let ((sent nil))
+    (cl-letf (((symbol-function 'vm-imagemagick-call-convert)
+               (lambda (_infile _buffer args) (setq sent args) 1)))
+      (let ((layout (vector nil nil nil nil nil nil nil nil nil nil nil nil
+                            nil nil (make-symbol "cache") nil nil nil nil))
+            (extent nil))
+        (with-temp-buffer
+          (insert " ")
+          (setq extent (vm-make-extent (point-min) (point-max)))
+          (vm-set-extent-property extent 'vm-mime-layout layout)
+          (ignore-errors
+            (vm-mime-frob-image-xxxx extent "-thumbnail" "80x80")))))
+    (should sent)
+    (should (equal "-[0]" (car sent)))
+    (should (equal "png:-" (car (last sent))))
+    (should (member "-thumbnail" sent))
+    ;; the image is named before what is to be done to it
+    (should (< (seq-position sent "-[0]") (seq-position sent "-thumbnail")))))
+
 ;;; cid: references for an external viewer (issue #506)
 
 (defun vm-mime-test--find-layout (layout type)
