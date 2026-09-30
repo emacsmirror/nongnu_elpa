@@ -1795,13 +1795,13 @@ them as ``@acronym{SSL}'' in this manual.
 @cindex stunnel
 @vindex vm-stunnel-program
 @vindex vm-stunnel-program-additional-configuration-file
-For @acronym{SSL}, you must either be using a version of Emacs that has
-@acronym{SSL} capability or have the @command{stunnel} program installed and
-the variable @code{vm-stunnel-program} naming it.  The default value of this
-variable, @samp{"stunnel"}, which will work if an @samp{stunnel} program is
-installed in your normal command search path.  In order to use the built-in
-@acronym{SSL} capability of your Emacs, set
-@code{vm-stunnel-program} to @code{nil}.  Depending on the version of
+For @acronym{SSL}, Emacs makes the connection itself where it was built with
+GnuTLS, and VM runs the @command{stunnel} program where it was not.  That is
+what @code{vm-stunnel-program} says: its default is @code{nil}, meaning
+Emacs's own, on an Emacs with GnuTLS, and @samp{"stunnel"} on one without,
+which works if that program is in your command search path.  An Emacs without
+GnuTLS on a machine without stunnel cannot reach a server that requires
+@acronym{SSL} at all.  Depending on the version of
 @samp{stunnel} program you are using, you may need to define a configuration
 file for @samp{stunnel}.  If you need it, you should set the variable
 @code{vm-stunnel-program-additional-configuration-file} to the location of
@@ -1817,7 +1817,7 @@ For SSH, you must have the @command{ssh} program installed and the variable
 over SSH to work.  When VM makes the SSH connection it must run a command on
 the remote server so that the SSH session is maintained long enough for the
 @acronym{POP}/@acronym{IMAP} connection to be established.  By default that
-command is @samp{"echo ready; sleep 10"}, but you can specify another
+command is @samp{"echo ready; sleep 15"}, but you can specify another
 command by setting @code{vm-ssh-remote-command}.  Whatever command you use
 must produce some output and hold the connection open long enough for VM to
 establish a port-forwarded connection to the mail server.  (SSH must be able
@@ -2174,12 +2174,9 @@ server, (iv) deleting and expunging the locally expunged messages on the
 server folder, and finally, (v) saving a copy of the folder on the file
 system.
 
-Whatever that is set to, the synchronization can always be asked for:
+The synchronization can also be asked for on its own:
 
 @vmdocvmimapsynchronize
-
-
-
 
 @anchor{Gmail}
 @unnumberedsubsec Gmail, and why labels do not stick
@@ -2573,13 +2570,16 @@ that mail, and the indicator then says what is no longer true.  Set
 @code{vm-mail-check-always} to have VM go on checking.
 
 @cindex checking for mail, cost of
-For a @acronym{POP} or @acronym{IMAP} folder a check is a conversation with the
-server, and VM holds Emacs while it happens.  On a working connection you will
-not notice it; on a slow or absent one Emacs stops until the connection times
-out, every @var{n} seconds, whether or not you are reading mail at the time.
-Setting @code{vm-mail-check-interval} and @code{vm-auto-get-new-mail} to
-@code{nil} avoids that, at the price of no longer being told about new mail
-until you ask for it with @kbd{g}.
+For a @acronym{POP} or @acronym{IMAP} folder a check is a conversation with
+the server, and it goes on in the background like everything else VM does
+with one (@pxref{talking to the server}): the check is started and Emacs
+comes straight back to you, and the answer sets the indicator when it
+arrives.  A server that is slow or unreachable therefore costs you nothing
+but a late answer or none, and a check that fails says so in the session log
+rather than at you.  Setting @code{vm-mail-check-interval} and
+@code{vm-auto-get-new-mail} to @code{nil} stops the checking altogether, at
+the price of no longer being told about new mail until you ask for it with
+@kbd{g}.
 
 @node Crash Recovery,, Getting New Mail, Starting Up
 @section Crash Recovery
