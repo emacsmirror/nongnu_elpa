@@ -158,17 +158,11 @@ Return the plist after the operation."
          (plstore (plstore-open mastodon-client--token-file))
          (username (mastodon-client--form-user-from-vars))
          (key (concat "user-" username))
-         (user-and-token
-          ;; FIXME: we should only add token if using auth-source
-          ;; but i tried that and login flow breaks...:
-          ;; i think this function was not returning properly, meaning
-          ;; saving of user details also broke
-
-          ;; if encrypting, user-and-token is nil (instead we use
+         (user-or-nil
+          ;; if encrypting, user-or-nil is nil (instead we use
           ;; secrets/sans-secrets):
           (unless mastodon-auth-encrypt-tokens-plstore
-            ;; if not encrypting, add token to omnibus value:
-            (plist-put user-details :access_token token)))
+            user-details))
          (secrets
           (when mastodon-auth-encrypt-tokens-plstore
             `( :client_id ,(plist-get user-details :client_id)
@@ -186,30 +180,41 @@ Return the plist after the operation."
         (progn
           (mastodon-auth-source-token
            mastodon-instance-url username token :create)
-          ;; FIXME: we store token even if auth-source:
-          (mastodon-client-plstore-put plstore key user-and-token ; nil if encrypting
-                        secrets sans-secrets token))
+          (mastodon-client-plstore-put plstore key user-or-nil ; nil if encrypting
+                        secrets sans-secrets)) ;; no token
       ;; plstore only:
-      (mastodon-client-plstore-put plstore key user-and-token ; nil if encrypting
+      (mastodon-client-plstore-put plstore key user-or-nil ; nil if encrypting
                     secrets sans-secrets token))
     (prog1 ;; return plist for our vars:
         (cdr (plstore-get plstore key)) ;; updated value
       (plstore-save plstore)
       (plstore-close plstore))))
 
-(defun mastodon-client-plstore-put (plstore name keys secrets sans-secrets token)
+(defun mastodon-client-plstore-put (plstore name keys secrets sans-secrets
+                             &optional token)
   "Save to PLSTORE with NAME, conditionally encrypted.
 If `mastodon-auth-encrypt-tokens-plstore', save SANS-SECRETS, and
 SECRETS with TOKEN appended.
 Else, just store KEYS, unencrypted."
-  (plstore-put plstore name
-               ;; KEYS:
-               (if mastodon-auth-encrypt-tokens-plstore
-                   sans-secrets
-                 keys)
-               ;; SECRET-KEYS:
-               (when mastodon-auth-encrypt-tokens-plstore
-                 (append secrets `(:access_token ,token)))))
+  (if mastodon-auth-use-auth-source
+      ;; if auth-source, add token nowhere:
+      (plstore-put plstore name
+                   ;; KEYS:
+                   (if mastodon-auth-encrypt-tokens-plstore
+                       sans-secrets
+                     keys)
+                   ;; SECRET-KEYS:
+                   (when mastodon-auth-encrypt-tokens-plstore
+                     secrets))
+    ;; if encrypt plstore, add token to secrets, else add to keys:
+    (plstore-put plstore name
+                 ;; KEYS:
+                 (if mastodon-auth-encrypt-tokens-plstore
+                     sans-secrets
+                   (append keys `(:access_token ,token)))
+                 ;; SECRET-KEYS:
+                 (when mastodon-auth-encrypt-tokens-plstore
+                   (append secrets `(:access_token ,token))))))
 
 (defun mastodon-client--make-user-active (user-details)
   "USER-DETAILS is a plist consisting of user details.
@@ -221,7 +226,8 @@ Return a plist of secret and non-secret key/val pairs."
          (handle (plist-get user-details :username))
          (token
           (if mastodon-auth-use-auth-source
-              (mastodon-auth-source-token mastodon-instance-url handle)
+              (mastodon-auth-source-token mastodon-instance-url
+                                          handle :token)
             (plist-get user-details :access_token)))
          (secrets
           (when mastodon-auth-encrypt-tokens-plstore
