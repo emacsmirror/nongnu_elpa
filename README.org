@@ -174,6 +174,30 @@ confuse live sessions with the same stored ID in different profiles.
 Older backends without project methods show an unsupported status; ordinary
 session browsing remains available.
 
+** Hosted Group Chats
+
+=M-x hermes-list-groups= reads rooms hosted by the selected backend.  The
+dashboard's Browse menu also offers =H= for Group Chats.  Use =RET= or =f=
+to open a room, =m= for the next list page, and =g= to refresh or reconnect.
+Public messages show their speakers in sequence order; member activity,
+task counts, and pending approvals appear separately.  This is a read-only
+view: it does not send messages, answer approvals, or start room workers.
+
+The backend must advertise the protocol-2 room-reading methods and
+features.  Driver availability is shown separately: stored history can
+remain readable when the worker is unavailable.  =F= toggles five-second
+activity refresh and keeps its own connection reference, even without an
+open chat.  Turning it off, closing or repurposing the view, transport
+retirement, terminal room state, or three consecutive read failures
+releases that reference.  =g= resumes from the last rendered cursor;
+failed rendering retains the accepted text and cursor.  Each refresh
+reads at most 20 log pages; =g= continues larger histories.
+
+Authority changes restart replay explicitly.  A sequence gap triggers a
+state check, not a skipped range.  Disbanded history stays marked as such;
+expired history is a retained local snapshot, never a revived room.  These
+are gateway-owned rooms, not the desktop's legacy localStorage rooms.
+
 * Dashboard authentication
 
 =hermes-dashboard-transport-remote-auth-method= defaults to =auto=:
