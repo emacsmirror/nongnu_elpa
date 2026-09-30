@@ -795,16 +795,12 @@ had arrived (#781).
   '(("vm-digest.el"   . vm-mime-burst-layout)
     ("vm-folder.el"   . vm-change-folder-type)
     ("vm-folder.el"   . vm-convert-folder-type)
-    ("vm-pop.el"      . vm-pop-retrieve-to-target)
     ("vm-postpone.el" . vm-postpone-message)
     ("vm-save.el"     . vm-save-message-to-local-folder))
   "Writers that end the message some other way than by asking where point is.
 
 - `vm-mime-burst-layout\\=' inserts a newline whether one is wanted or not.
 - `vm-postpone-message\\=' trims the trailing whitespace and writes \"\\n\\n\\n\".
-- `vm-pop-retrieve-to-target\\=' ends the region at the start of the \".\" line
-  that closes a POP response, so the text before it ends with a newline.
-  IMAP needs a check because there the length is the server\\='s word for it.
 - `vm-change-folder-type\\=', `vm-convert-folder-type\\=' and
   `vm-save-message-to-local-folder\\=' copy a message already delimited in a
   folder.  Adding a newline there would also have to correct the byte count

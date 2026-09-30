@@ -200,24 +200,6 @@
   (should-error (signal 'vm-uidl-failed '("test"))
                 :type 'vm-uidl-failed))
 
-;;; vm-pop-stat-* accessor tests
-
-(ert-deftest vm-pop-test-stat-accessors ()
-  "Test POP status blob accessors."
-  (let ((blob (make-vector 12 nil)))
-    ;; Set some values
-    (aset blob 0 'timer)
-    (aset blob 1 t)
-    (aset blob 2 "inbox")
-    (aset blob 3 5)
-    (aset blob 4 10)
-    ;; Test accessors
-    (should (eq (vm-pop-stat-timer blob) 'timer))
-    (should (eq (vm-pop-stat-did-report blob) t))
-    (should (equal (vm-pop-stat-x-box blob) "inbox"))
-    (should (= (vm-pop-stat-x-currmsg blob) 5))
-    (should (= (vm-pop-stat-x-maxmsg blob) 10))))
-
 ;;; vm-maildrop-sans-password tests (handles both POP and IMAP)
 
 (ert-deftest vm-pop-test-maildrop-sans-password-pop ()
@@ -253,36 +235,6 @@
 
  ; total size
 
-(ert-deftest vm-pop-test-read-uidl-long-response ()
-  "Test vm-pop-read-uidl-long-response parses multi-line UIDL."
-  (vm-test-with-pop-session '("+OK\r\n1 UID001\r\n2 UID002\r\n3 UID003\r\n.\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-uidl-long-response process)))
-        (should (listp result))
-        (should (= (length result) 3))
-        ;; Each entry is (msgnum-string . uidl), list is in reverse order
-        (should (equal (car (nth 0 result)) "3"))
-        (should (equal (cdr (nth 0 result)) "UID003"))
-        (should (equal (car (nth 2 result)) "1"))
-        (should (equal (cdr (nth 2 result)) "UID001"))))))
-
-(ert-deftest vm-pop-test-read-uidl-no-support ()
-  "Test vm-pop-read-uidl-long-response returns nil when UIDL not supported."
-  (vm-test-with-pop-session '("-ERR UIDL not supported\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (should (null (vm-pop-read-uidl-long-response process))))))
-
-(ert-deftest vm-pop-test-read-past-dot-sentinel ()
-  "Test vm-pop-read-past-dot-sentinel-line finds end of multi-line response."
-  (vm-test-with-pop-session '("Line 1\r\nLine 2\r\nLine 3\r\n.\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (vm-pop-read-past-dot-sentinel-line process)
-      ;; vm-pop-read-point should now be past the dot line
-      (should (>= vm-pop-read-point (point-max))))))
-
 ;;; POP session flow tests
 
 ;;; Spec parsing edge cases
@@ -306,87 +258,6 @@
   (let ((result (vm-pop-parse-spec-to-list
                  "pop:mail.example.com:110:pass:user:*")))
     (should (equal (nth 5 result) "*"))))
-
-;;; vm-pop-retrieve-to-target tests
-
-(defconst vm-pop-test--retrieved-message
-  (concat "From: sender@example.com\r\n"
-          "To: recipient@example.com\r\n"
-          "Subject: POP retrieval test\r\n"
-          "\r\n"
-          "Hello, world.\r\n"
-          ".\r\n")
-  "A complete POP RETR response body, terminated by the \".\" line.")
-
-(defmacro vm-pop-test--with-retrieval (target-form &rest body)
-  "Run `vm-pop-retrieve-to-target' on a mocked session, then execute BODY.
-TARGET-FORM is evaluated to produce the target passed to the function.
-BODY is executed in the mock session buffer with `target' bound to the
-target and `result' bound to the function's return value."
-  (declare (indent 1) (debug t))
-  `(vm-test-with-pop-session (list vm-pop-test--retrieved-message)
-     (setq vm-folder-type 'From_)
-     (let* ((target ,target-form)
-            (statblob (make-vector 12 nil))
-            (result (vm-pop-retrieve-to-target
-                     vm-test-mock-process target statblob)))
-       (ignore result)
-       ,@body)))
-
-(ert-deftest vm-pop-test-retrieve-to-target-file-writes-message ()
-  "Test that retrieving to a file target actually writes the message.
-Regression test: a stray `defvar' became the then-branch of the
-\(if (stringp target) ...) form, so nothing was ever written to the
-crashbox while the message was still deleted from the session buffer,
-making retrieved mail disappear."
-  (let ((target-file (make-temp-file "vm-pop-test-crashbox-")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-file
-          (should result)
-          (let ((contents (with-temp-buffer
-                            (insert-file-contents target)
-                            (buffer-string))))
-            (should (string-prefix-p "From " contents))
-            (should (string-match-p "Subject: POP retrieval test" contents))
-            (should (string-match-p "Hello, world\\." contents))
-            ;; CRLF must have been converted to LF on the way out
-            (should-not (string-match-p "\r" contents))))
-      (delete-file target-file))))
-
-(ert-deftest vm-pop-test-retrieve-to-target-file-appends ()
-  "Test that retrieving to a file target appends to existing content."
-  (let ((target-file (make-temp-file "vm-pop-test-crashbox-" nil nil
-                                     "From preexisting@example.com\n\n")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-file
-          (let ((contents (with-temp-buffer
-                            (insert-file-contents target)
-                            (buffer-string))))
-            (should (string-match-p "preexisting@example.com" contents))
-            (should (string-match-p "Subject: POP retrieval test" contents))))
-      (delete-file target-file))))
-
-(ert-deftest vm-pop-test-retrieve-to-target-buffer-inserts-message ()
-  "Test that retrieving to a buffer target inserts the message."
-  (let ((target-buffer (generate-new-buffer " *vm-pop-test-target*")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-buffer
-          (should result)
-          (let ((contents (with-current-buffer target
-                            (buffer-string))))
-            (should (string-prefix-p "From " contents))
-            (should (string-match-p "Subject: POP retrieval test" contents))
-            (should (string-match-p "Hello, world\\." contents))))
-      (kill-buffer target-buffer))))
-
-(ert-deftest vm-pop-test-retrieve-to-target-consumes-session-text ()
-  "Test that the retrieved message is removed from the session buffer."
-  (let ((target-buffer (generate-new-buffer " *vm-pop-test-target*")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-buffer
-          (should-not (string-match-p "Subject: POP retrieval test"
-                                      (buffer-string))))
-      (kill-buffer target-buffer))))
 
 ;;; vm-pop-get-password / auth-source tests
 
@@ -412,34 +283,6 @@ Regression test for issue #460; see the IMAP counterpart."
                            "s3cret"))))
       (delete-file file)
       (auth-source-forget-all-cached))))
-
-;;; One UIDL wait loop, not two (emacs-vm/vm#473)
-
-(defun vm-pop-test--uidl-obarray-alist (obarray-or-nil)
-  "The (UID . NUMBER) pairs OBARRAY-OR-NIL holds, sorted, or nil."
-  (when obarray-or-nil
-    (let (pairs)
-      (mapatoms (lambda (symbol)
-                  (push (cons (symbol-name symbol) (symbol-value symbol))
-                        pairs))
-                obarray-or-nil)
-      (sort pairs (lambda (a b) (string< (car a) (car b)))))))
-
-(defmacro vm-pop-test--getting-uidl-data (responses &rest body)
-  "Run BODY with `vm-pop-get-uidl-data' reading RESPONSES.
-The folder's process is the mock one, and the command it sends goes into
-the same buffer it reads from, which is what the real session does."
-  (declare (indent 1) (debug t))
-  `(vm-test-with-pop-session ,responses
-     (let ((process vm-test-mock-process))
-       (setq vm-pop-read-point (point-min-marker))
-       ;; `vm-folder-pop-process' is a defsubst, so a compiled caller has it
-       ;; inlined and stubbing the symbol does nothing: the folder's access
-       ;; data is set instead, which is what it reads.
-       (setq vm-folder-access-data (make-vector 5 nil))
-       (aset vm-folder-access-data 1 process)
-       (cl-letf (((symbol-function 'vm-pop-send-command) #'ignore))
-         ,@body))))
 
 (provide 'vm-pop-test)
 

@@ -6773,8 +6773,6 @@ the current folder (internal variable).")
 (defvar vm-ml-message-marked nil)
 (make-variable-buffer-local 'vm-ml-message-marked)
 
-;; to make the tanjed compiler shut up
-(defvar vm-pop-read-point nil)
 ;; Variable indicating whether POP session handling functions can ask
 ;; questions to the user, typically if they are run from interactive
 ;; commands. 

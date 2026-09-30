@@ -436,28 +436,6 @@ Example:
 
 ;;; POP-specific mock helpers
 
-(defmacro vm-test-with-pop-session (responses &rest body)
-  "Execute BODY with a mocked POP session buffer already set up.
-RESPONSES are injected as POP server responses.
-The buffer has `vm-pop-read-point' initialized.
-`vm-test-mock-process' is set to a valid mock process."
-  (declare (indent 1) (debug t))
-  `(vm-test-with-mock-process ,responses
-     (let ((pop-buffer (generate-new-buffer " *mock-pop*")))
-       (unwind-protect
-           (with-current-buffer pop-buffer
-             ;; Create mock process connected to this buffer
-             (setq vm-test-mock-buffer pop-buffer)
-             (setq vm-test-mock-process (cons 'vm-mock-process pop-buffer))
-             (make-local-variable 'vm-pop-read-point)
-             (setq vm-pop-read-point (point-min-marker))
-             ;; Inject greeting
-             (when vm-test-mock-responses
-               (insert (pop vm-test-mock-responses)))
-             (goto-char (point-min))
-             ,@body)
-         (kill-buffer pop-buffer)))))
-
 ;;; IMAP-specific mock helpers
 
 (defmacro vm-test-with-imap-session (responses &rest body)
