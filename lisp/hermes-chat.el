@@ -2190,11 +2190,12 @@ visible while reading."
       (user-error "No Hermes input to send")))
     (when retry-p (hermes-chat--load-session-history (current-buffer)))))
 
-(defun hermes-chat-resume-session (session-id &optional title profile instance)
+(defun hermes-chat-resume-session (session-id &optional title profile instance pinned-url)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
 TITLE, when given, records its server title metadata.  PROFILE selects its
 owning profile, and INSTANCE selects its owning Hermes instance.  A nil
-INSTANCE is resolved from the current context.
+INSTANCE is resolved from the current context.  PINNED-URL, when non-nil,
+retains an explicitly verified backend through constructor hooks and reconnect.
 Over the dashboard transport the prior messages are fetched and rendered; the
 durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
@@ -2202,6 +2203,7 @@ durable session continues on send."
     (user-error "No Hermes session id to resume"))
   (let* ((directory default-directory)
          (instance (or instance (hermes-instance-resolve)))
+         (pinned-url (and pinned-url (copy-sequence pinned-url)))
          (start-mode (hermes-chat--instance-start-mode instance))
          (title (hermes-transport--non-empty-string
                  (and title (string-trim title))))
@@ -2216,6 +2218,7 @@ durable session continues on send."
             hermes-chat--working-directory
             (and (eq start-mode 'spawn) directory)
             hermes-chat--session-id session-id
+            hermes-chat--pinned-url pinned-url
             hermes-chat--profile profile
             hermes-chat--title title)
       (rename-buffer (hermes-chat--buffer-name profile instance) t))
@@ -2715,6 +2718,8 @@ Do not wrap into the composer or modify its draft."
     (keymap-set hermes-chat-work-map key
                 (keymap-lookup hermes-chat-jobs-map key))))
 
+(autoload 'hermes-chat-context "hermes-context" nil t)
+
 (keymap-popup-define hermes-chat-info-map
   "Inspect chat activity and connection state."
   :description #'hermes-chat--popup-title
@@ -2723,6 +2728,7 @@ Do not wrap into the composer or modify its draft."
   :group "Inspect"
   "h" ("Session details" hermes-chat-session-details)
   "u" ("Token usage" hermes-chat-show-usage)
+  "b" ("Context budget" hermes-chat-context)
   "t" ("Session status" hermes-chat-show-status)
   :row
   :group "Connection"

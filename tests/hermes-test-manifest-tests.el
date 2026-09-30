@@ -213,7 +213,7 @@ Pass SOURCES, TESTS, SUPPORT and EDGES to the real validator."
 (ert-deftest hermes-test-manifest-default-graph-all-roles ()
   ;; Keep the fixture's source inventory independent from the exception graph.
   ;; Ordinary exact-name modules outside this graph use the same pairing rule.
-  (let* ((stems '("hermes-groups-actions" "hermes-groups"
+  (let* ((stems '("hermes-foreign" "hermes-context" "hermes-groups-actions" "hermes-groups"
                   "hermes-browser" "hermes-dashboard-api" "hermes-dashboard-rpc"
                   "hermes-dashboard-transport" "hermes-kanban-events" "hermes-kanban-log"
                   "hermes-preview-format" "hermes-profiles" "hermes-rollback"
@@ -224,7 +224,7 @@ Pass SOURCES, TESTS, SUPPORT and EDGES to the real validator."
          (exact '("hermes-groups" "hermes-transport" "hermes-kanban" "hermes-preview" "hermes-sessions"
                   "hermes-chat-dashboard" "hermes-chat" "hermes-chat-format"
                   "hermes-chat-render" "hermes-chat-buffer" "hermes-chat-slash"))
-         (topics '("hermes-browsers" "hermes-dashboard" "hermes-ui" "hermes-dependency"
+         (topics '("hermes-foreign-context" "hermes-browsers" "hermes-dashboard" "hermes-ui" "hermes-dependency"
                    "hermes-chat-reducer" "hermes-fence-guard" "hermes-chat-fences"
                    "hermes-chat-terminal" "hermes-chat-wire" "hermes-chat-history"
                    "hermes-chat-lifecycle" "hermes-chat-queue"
