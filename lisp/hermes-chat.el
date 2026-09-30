@@ -801,7 +801,8 @@ extends the input instead of prepending a blank line to it."
           hermes-chat--server-queued-user-id (plist-get context :user-id)
           hermes-chat--server-queued-after-idle-count
           (plist-get context :idle-count)
-          hermes-chat--server-queued-prior-terminal-p nil)
+          hermes-chat--server-queued-prior-terminal-p
+          (plist-get context :prior-terminal-p))
     (hermes-chat--set-header-state
      :status 'pending :activity "Queued by Hermes"
      :assistant-id assistant-id)))
@@ -816,7 +817,9 @@ extends the input instead of prepending a blank line to it."
     (hermes-chat--insert-local-status "Queued by Hermes" 'done)
     (when-let* ((queue-id (plist-get context :queue-id)))
       (hermes-chat--queue-submit-accepted queue-id))
-    (when (and current-p (not terminal-p))
+    (when (and current-p (not terminal-p)
+               (equal (plist-get context :assistant-id)
+                      hermes-chat--prepared-submit-assistant-id))
       (hermes-chat--dashboard-activate-server-queued-turn
        (plist-get context :assistant-id)))))
 
@@ -874,6 +877,7 @@ extends the input instead of prepending a blank line to it."
                   (funcall (hermes-chat--queue-reject-callback buffer context)
                            "Image acceptance unknown; use image recovery"))
               (hermes-chat--submit-resolved context result)
+              (hermes-chat--application-notify context 'admitted result)
               (hermes-chat--clear-submit-context context))))))))
 
 (defun hermes-chat--queue-reject-callback (buffer context)
@@ -881,6 +885,7 @@ extends the input instead of prepending a blank line to it."
   (lambda (message)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--submit-context-current-p context)
+        (hermes-chat--application-notify context 'rejected message)
         (hermes-chat--image-admission-finish (plist-get context :admission) t)
         (when-let* ((record (plist-get (plist-get context :queue-entry) :image-record)))
           (when (eq (plist-get record :state) 'submitted)
@@ -897,6 +902,7 @@ extends the input instead of prepending a blank line to it."
   (lambda (message)
     (hermes-chat--in-buffer buffer
       (when (hermes-chat--submit-context-current-p context)
+        (hermes-chat--application-notify context 'rejected message)
         (hermes-chat--image-admission-finish (plist-get context :admission) t)
         (setq hermes-chat--dashboard-running-p nil)
         (hermes-chat--handle-transport-event
@@ -969,6 +975,7 @@ extends the input instead of prepending a blank line to it."
          queue-id user-id assistant-id message)
       (hermes-chat--handle-transport-event
        assistant-id (list :type 'error :content message)))
+    (hermes-chat--application-notify context 'rejected message)
     (hermes-chat--clear-submit-context context queue-id)
     (message "Hermes transport failed: %s" message)))
 
@@ -981,17 +988,40 @@ extends the input instead of prepending a blank line to it."
           :admission nil
           :application-guard nil
           :application-claim nil
+          :application-observer nil :application-admitted nil
+          :application-terminal nil :application-boundary nil
           :session-id nil
           :user-id (plist-get user :id)
           :assistant-id (plist-get assistant :id)
           :dashboard-p dashboard-p
           :generation (hermes-chat--next-transport-generation)
           :idle-count hermes-chat--dashboard-idle-count
-          :post-start-terminal-p nil
+          :prior-terminal-p nil :post-start-terminal-p nil
           :queue-id (plist-get queue-entry :id)
           :queue-entry queue-entry
           :content content
           :display display)))
+
+(defun hermes-chat--observe-resumed-application (observer)
+  "Observe this ordinarily resumed turn with request-scoped OBSERVER.
+The caller must reconcile complete raw history and exact application identity
+before using terminal output.  This function neither submits nor resumes work."
+  (unless (and (hermes-buffer--owned-p 'hermes-chat-mode)
+               hermes-chat--dashboard-session-ready-p
+               (not hermes-chat--session-bootstrap)
+               (not hermes-chat--application-context))
+    (user-error "No available resumed application turn"))
+  (setq hermes-chat--application-context
+        (list :application-observer observer :application-claim hermes-buffer--owner
+              :application-admitted '((status . "streaming"))
+              :application-terminal nil :application-boundary nil
+              :lifetime hermes-chat--lifecycle-generation
+              :generation hermes-chat--transport-generation
+              :client hermes-chat--dashboard-client
+              :session-id hermes-chat--dashboard-active-session-id
+              :idle-count hermes-chat--dashboard-idle-count))
+  (add-hook 'after-set-visited-file-name-hook #'hermes-chat--application-retire nil t)
+  hermes-chat--application-context)
 
 (defun hermes-chat--submit-callbacks (context)
   "Return the dashboard acceptance callbacks for CONTEXT."
@@ -1001,12 +1031,16 @@ extends the input instead of prepending a blank line to it."
               (hermes-chat--queue-reject-callback buffer context)
             (hermes-chat--submit-reject-callback buffer context)))))
 
-(defun hermes-chat--submit-content (content &optional display queue-entry application-guard)
+(defun hermes-chat--submit-content (content &optional display queue-entry application-guard
+                                         application-observer)
   "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
 DISPLAY lets a slash skill send its full payload while showing a compact line.
 QUEUE-ENTRY identifies a queued message retained until transport acceptance.
 APPLICATION-GUARD, when non-nil, must still authorize this application prompt
 at dispatch; it also forces non-interrupting backend admission.
+APPLICATION-OBSERVER receives (CONTEXT KIND PAYLOAD), where KIND is admitted,
+terminal or rejected.  Terminal retains exact normalized final text and status.
+It requires APPLICATION-GUARD and is independent of transcript rendering.
 Return non-nil when the transport request starts."
   (hermes-chat--ensure-submit-allowed)
   (when (and (hermes-chat--active-turn-p) (null queue-entry))
@@ -1022,6 +1056,12 @@ Return non-nil when the transport request starts."
     (when application-guard
       (setf (plist-get context :application-guard) application-guard
             (plist-get context :application-claim) hermes-buffer--owner))
+    (when application-observer
+      (unless application-guard (user-error "Application observer needs an owner guard"))
+      (when hermes-chat--application-context (user-error "Application turn still pending"))
+      (setf (plist-get context :application-observer) application-observer)
+      (setq hermes-chat--application-context context)
+      (add-hook 'after-set-visited-file-name-hook #'hermes-chat--application-retire nil t))
     (hermes-chat--begin-pending-turn user-entry assistant-entry context)
     (condition-case err
         (progn
@@ -2102,7 +2142,9 @@ visible while reading."
   (hermes-chat--dashboard-restore-pending-clarify result)
   (when (hermes-chat--dashboard-result-live-turn-p result)
     (hermes-chat--dashboard-bind-stream-callback
-     client hermes-chat--pending-assistant-id)))
+     client hermes-chat--pending-assistant-id))
+  (setq hermes-chat--restored-history
+        (cons (copy-sequence hermes-chat--session-id) (copy-tree result t))))
 
 (defun hermes-chat--load-session-history (buffer)
   "Resume BUFFER's session and hydrate history before draining queued input."

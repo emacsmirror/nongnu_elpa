@@ -41,6 +41,7 @@
 (require 'hermes-chat-render)
 (require 'hermes-preview-format)
 (require 'hermes-dashboard-api)
+(require 'hermes-transport)
 
 (autoload 'hermes-preview-open "hermes-preview")
 
@@ -158,6 +159,8 @@ runtime.")
 (defvar-local hermes-chat--create-overrides-retry-session-id nil
   "Session id owning unapplied create-time runtime overrides, or nil.")
 (defvar-local hermes-chat--session-bootstrap nil "Session setup or history owner.")
+(defvar-local hermes-chat--restored-history nil
+  "Exact accepted normal resume response, qualified by durable session identity.")
 (defvar-local hermes-chat--transport-generation 0
   "Monotonic transport-callback generation for the current chat buffer.
 Bumped per turn and transcript reset so stale async callbacks become obsolete.
@@ -181,6 +184,64 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 (defun hermes-chat--next-lifetime-token ()
   "Return a fresh process-unique chat lifetime token."
   (cons (cl-incf hermes-chat--lifetime-sequence) nil))
+
+(defvar-local hermes-chat--application-context nil
+  "Request-scoped observer retained beyond ordinary submit admission.")
+
+(defun hermes-chat--application-current-p (context)
+  "Return non-nil while CONTEXT owns this ordinary chat turn."
+  (and (eq context hermes-chat--application-context)
+       (hermes-buffer--owned-p 'hermes-chat-mode)
+       (eq hermes-buffer--owner (plist-get context :application-claim))
+       (hermes-chat--current-lifetime-p (plist-get context :lifetime))
+       (eql hermes-chat--transport-generation (plist-get context :generation))
+       (eq hermes-chat--dashboard-client (plist-get context :client))
+       (equal hermes-chat--dashboard-active-session-id (plist-get context :session-id))))
+
+(defun hermes-chat--application-call (context kind payload)
+  "Schedule CONTEXT's observer with KIND and PAYLOAD after native settlement.
+The observer runs outside renderer/receipt callbacks and may reenter safely.
+Ownership is captured at notification, not inferred from the current buffer."
+  (let ((observer (plist-get context :application-observer)))
+    (run-at-time
+     0 nil (lambda ()
+             (condition-case nil
+                 (funcall observer context kind payload)
+               ((error quit) (message "Hermes application observer failed")))))))
+
+(defun hermes-chat--application-retire ()
+  "Reject the retained observer without interrupting the ordinary chat."
+  (when-let* ((context hermes-chat--application-context))
+    (setq hermes-chat--application-context nil)
+    (hermes-chat--application-call context 'rejected "Chat owner retired; inspect history")))
+
+(defun hermes-chat--application-notify (context kind payload)
+  "Record owned CONTEXT's admission or terminal KIND with literal PAYLOAD.
+Retain terminal-before-receipt evidence.  A queued receipt excludes the prior
+backend turn unless the native queued handoff identified the new turn."
+  (when (and context (hermes-chat--application-current-p context))
+    (pcase kind
+      ('rejected
+       (setq hermes-chat--application-context nil)
+       (hermes-chat--application-call context kind payload))
+      ('admitted
+       (setf (plist-get context :application-admitted) payload)
+       (hermes-chat--application-call context kind payload))
+      ('terminal
+       (setq payload (copy-tree payload t))
+       (when (stringp (plist-get payload :final-text))
+         (setf (plist-get payload :final-text)
+               (substring-no-properties (plist-get payload :final-text))))
+       (setf (plist-get context :application-terminal) payload)))
+    (when (and (hermes-chat--application-current-p context)
+               (plist-get context :application-admitted)
+               (plist-get context :application-terminal)
+               (or (not (equal "queued" (hermes-transport--get
+                                        (plist-get context :application-admitted) 'status)))
+                   (plist-get context :application-boundary)))
+      (setq hermes-chat--application-context nil)
+      (hermes-chat--application-call
+       context 'terminal (plist-get context :application-terminal)))))
 
 (defun hermes-chat--current-lifetime-p (lifetime)
   "Return non-nil when LIFETIME owns the exact current chat mode."
@@ -807,6 +868,7 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
   ;; Teardown must not publish through display hooks before resource release.
   (hermes-chat--reasoning-row hermes-chat--pending-assistant-id nil t)
+  (hermes-chat--application-retire)
   (run-hooks 'hermes-chat-lifecycle-invalidation-hook)
   (when (hash-table-p hermes-chat--auto-prompt-keys)
     (clrhash hermes-chat--auto-prompt-keys))

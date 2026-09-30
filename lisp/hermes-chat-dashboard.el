@@ -859,6 +859,7 @@ so a new session can be started afterwards."
              (numberp hermes-chat--server-queued-after-idle-count)
              (hermes-chat--server-queued-start-ready-p
               hermes-chat--dashboard-last-start-idle-count))
+    (hermes-chat--dashboard-note-application-boundary assistant-id)
     (setq hermes-chat--server-queued-assistant-id nil
           hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
@@ -887,14 +888,24 @@ so a new session can be started afterwards."
         hermes-chat--server-queued-after-idle-count nil
         hermes-chat--server-queued-prior-terminal-p nil))
 
+(defun hermes-chat--dashboard-note-application-boundary (assistant-id)
+  "Record the native queued handoff for ASSISTANT-ID's application observer."
+  (when-let* ((context hermes-chat--application-context)
+              ((hermes-chat--application-current-p context))
+              ((equal assistant-id (plist-get context :assistant-id))))
+    (setf (plist-get context :application-boundary) t
+          (plist-get context :application-terminal) nil)))
+
 (defun hermes-chat--dashboard-handle-message-start (assistant-id)
   "Record a message boundary and activate ASSISTANT-ID when server-queued."
   (setq hermes-chat--dashboard-last-start-idle-count
         hermes-chat--dashboard-idle-count)
   (when-let* ((context hermes-chat--unsettled-submit-context)
               ((equal assistant-id (plist-get context :assistant-id)))
-              ((> hermes-chat--dashboard-idle-count
-                  (or (plist-get context :idle-count) 0))))
+              ((or (plist-get context :prior-terminal-p)
+                   (> hermes-chat--dashboard-idle-count
+                      (or (plist-get context :idle-count) 0)))))
+    (hermes-chat--dashboard-note-application-boundary assistant-id)
     (hermes-chat--reset-submit-assistant assistant-id)
     (setq hermes-chat--prepared-submit-assistant-id assistant-id))
   (hermes-chat--dashboard-activate-server-queued-turn assistant-id)
@@ -913,11 +924,15 @@ so a new session can be started afterwards."
 (defun hermes-chat--dashboard-note-unsettled-terminal (assistant-id event)
   "Record terminal EVENT after an early submit boundary for ASSISTANT-ID."
   (when-let* ((context hermes-chat--unsettled-submit-context)
-              ((equal assistant-id hermes-chat--prepared-submit-assistant-id))
+              ((equal assistant-id (plist-get context :assistant-id)))
               ((memq (plist-get event :type) '(done error))))
-    ;; Terminal evidence prevents a late queued acknowledgement from reviving
-    ;; this turn; only the request response may release its FIFO ownership.
-    (setf (plist-get context :post-start-terminal-p) t)))
+    ;; Retain the prior terminal even before admission.  A later message.start
+    ;; can qualify the native queued handoff without a session.info idle event.
+    (setf (plist-get context :prior-terminal-p) t)
+    ;; Only the request response may release FIFO ownership; a late queued
+    ;; receipt must not revive a turn that finished after its qualified start.
+    (when (equal assistant-id hermes-chat--prepared-submit-assistant-id)
+      (setf (plist-get context :post-start-terminal-p) t))))
 
 (defun hermes-chat--server-queued-prior-event-p (assistant-id event)
   "Return non-nil when EVENT predates ASSISTANT-ID's server-queued turn."
@@ -1095,6 +1110,8 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
 (defun hermes-chat--render-dashboard-turn-event (assistant-id event)
   "Render ordinary dashboard EVENT for ASSISTANT-ID and settle its lifecycle."
   (hermes-chat--dashboard-note-unsettled-terminal assistant-id event)
+  (when (memq (plist-get event :type) '(done error))
+    (hermes-chat--application-notify hermes-chat--application-context 'terminal event))
   (let ((interrupted-p
          (equal assistant-id hermes-chat--interrupted-assistant-id)))
     (setq event (hermes-chat--interrupted-terminal-event assistant-id event))
@@ -1584,7 +1601,17 @@ profile's workspace.  Keep the reservation through create and overrides."
              (null hermes-chat--pending-assistant-id)
              (null hermes-chat--dashboard-stream-assistant-id)
              (null hermes-chat--server-queued-assistant-id))
-    (let ((assistant-id (hermes-chat--dashboard-insert-inflight-assistant)))
+    (let* ((context hermes-chat--unsettled-submit-context)
+           (assistant-id
+            (if (and (plist-get context :prior-terminal-p)
+                     (eq client (plist-get context :client))
+                     (hermes-chat--current-lifetime-p (plist-get context :lifetime))
+                     (hermes-chat--current-transport-generation-p
+                      (plist-get context :generation))
+                     (equal hermes-chat--dashboard-active-session-id
+                            (plist-get context :session-id)))
+                (plist-get context :assistant-id)
+              (hermes-chat--dashboard-insert-inflight-assistant))))
       (hermes-chat--clear-active-tools)
       (setq hermes-chat--dashboard-running-p t
             hermes-chat--pending-assistant-id assistant-id
