@@ -1143,7 +1143,8 @@ The optional domain source must be on `load-path'; never open learner data."
                            (vector (hermes-gnosis-test-native-question "q1")
                                    (hermes-gnosis-test-native-question "q2")
                                    (hermes-gnosis-test-native-question "q3")
-                                   (hermes-gnosis-test-native-question "q4" "agent-eval"))))
+                                   (hermes-gnosis-test-native-question "q4")
+                                   (hermes-gnosis-test-native-question "q5" "agent-eval"))))
                    (review (gnosis-review--setup-buffer nil 'practice)))
               (unwind-protect
                   (with-current-buffer review
@@ -1193,7 +1194,8 @@ The optional domain source must be on `load-path'; never open learner data."
                     (hermes-gnosis-test-terminal client request
                                                  (hermes-gnosis-test-native-plan
                                                   (hermes-gnosis-test-native-question "q3")
-                                                  (hermes-gnosis-test-native-question "q4" "agent-eval")))
+                                                  (hermes-gnosis-test-native-question "q4")
+                                                  (hermes-gnosis-test-native-question "q5" "agent-eval")))
                     (hermes-test--wait-until
                      (lambda () (plist-get gnosis-agent-review--background :settled)))
                     (with-current-buffer review-buffer
@@ -1241,6 +1243,9 @@ The optional domain source must be on `load-path'; never open learner data."
                       (should-not (plist-get tutor :recovery))
                       (should-not (plist-get tutor :active))
                       (with-current-buffer review-buffer
+                        ;; Keep two native items before semantic evaluation so
+                        ;; optional adaptation is eligible for this timeout.
+                        (hermes-gnosis-test-native-answer state)
                         (hermes-gnosis-test-native-answer state)
                         (gnosis-agent-review--present state))
                       (let ((next (gnosis-agent-review--request state "evaluate" "fresh-semantic" "opens")))
