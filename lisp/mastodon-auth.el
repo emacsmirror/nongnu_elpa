@@ -64,14 +64,20 @@
   "Whether to use auth sources for user credentials.
 If t, save and read user access token in the user's auth source
 file (see `auth-sources'). If nil, use `mastodon-client--token-file'
-(a plstore) instead.
+\(a plstore) instead.
+
 If you change the value of this variable, call
 `mastodon-forget-all-logins' and log in again.
+
 If for some reason you generate a new token, you'll have to update your
 auth souce file manually, or at least remove the entry and authenticate
 again, as auth-source.el only provides unreliable tools for updating
 entries.
-You may also have to save your token manually to your auth source file if it is unencrypted. From testing,
+
+You may also have to save your token manually to your auth source file
+if it is unencrypted. From testing, it seems that auth-sources fails to
+save to unencrypted authinfo files.
+
 If you do not have access to a JS-capable browser, or just want to avoid
 the auth flow, you can manually create an entry in authinfo containing
 your existing token as the password entry, and mastodon.el should pick
@@ -306,6 +312,8 @@ Handle any errors from the server."
 (defun mastodon-auth-source-get (user host &optional token create)
   "Fetch an auth source token, searching by USER and HOST.
 If CREATE, use TOKEN or prompt for it, and save it if there is no such entry.
+If not CREATE, but only fetching, TOKEN must be non-nil (e.g. a flag) to
+return to return token.
 Return a list of user, password/secret, and the item's save-function."
   (let* ((auth-source-creation-prompts
           '((secret . "%u access token: ")))
@@ -332,7 +340,9 @@ Create an auth-source entry yourself with token as password")))
 (defun mastodon-auth-source-token (url handle &optional token create)
   "Parse URL, search auth sources with it, user HANDLE and TOKEN.
 Calls `mastodon-auth-source-get', returns only the token.
-If CREATE, create an entry is none is found."
+If CREATE, create an entry is none is found.
+If not CREATE, but only fetching, TOKEN must be non-nil (e.g. a flag) to
+return to return token."
   (let ((host (url-host
                (url-generic-parse-url url)))
         (username (car (split-string handle "@"))))
