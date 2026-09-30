@@ -219,7 +219,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :exit-key "q"
   :group "System"
   "G" ("Gateway status" hermes-system-status)
-  "L" ("Gateway logs" hermes-system-logs))
+  "L" ("Gateway logs" hermes-system-logs)
+  "H" ("Restart handoff" hermes-system-restart-handoff))
 
 (put 'hermes-dash-sys-map-popup 'command-modes '(hermes-dashboard-mode))
 

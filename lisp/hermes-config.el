@@ -32,6 +32,7 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'hermes-system)
 (require 'keymap-popup)
 
 (defvar-local hermes-config--schema nil
@@ -362,7 +363,8 @@ List fields use JSON arrays, including [] for an empty list."
   "k" #'hermes-config-set-env
   "D" #'hermes-config-delete-env
   "R" #'hermes-config-reveal-env
-  "g" #'hermes-config-refresh)
+  "g" #'hermes-config-refresh
+  "H" #'hermes-system-restart-handoff)
 
 (keymap-popup-annotate hermes-config-mode-map
   :popup-key "?" :exit-key "C-g"
@@ -383,6 +385,7 @@ List fields use JSON arrays, including [] for an empty list."
                            (lambda () (not (get-text-property (point) 'hermes-env-key))))
   :row
   :group "View"
+  hermes-system-restart-handoff "Restart handoff"
   quit-window "Quit view")
 
 (put 'hermes-config-mode-map-popup 'command-modes '(hermes-config-mode))

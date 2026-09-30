@@ -33,6 +33,7 @@
 (require 'url-util)
 (require 'keymap-popup)
 (require 'hermes-browser)
+(require 'hermes-system)
 (require 'hermes-config)
 
 (defvar-local hermes-plugins--snapshot nil
@@ -379,7 +380,8 @@ backend-declared settings and environment entries are editable here."
   :row
   :group ("Configuration" :inapt-if (lambda () hermes-plugins--busy))
   "c" ("Schema and environment" hermes-plugins-configure)
-  "x" ("Context engine" hermes-plugins-select-context-engine))
+  "x" ("Context engine" hermes-plugins-select-context-engine)
+  "H" ("Restart handoff" hermes-system-restart-handoff))
 
 (put 'hermes-plugins-mode-map-popup 'command-modes '(hermes-plugins-mode))
 

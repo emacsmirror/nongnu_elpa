@@ -39,6 +39,7 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'hermes-system)
 
 (defvar-local hermes-messaging-profile nil
   "Dashboard profile owned by the current messaging browser.")
@@ -475,7 +476,8 @@ accepted.  Arbitrary runtime error text is never displayed."
   :group "View"
   "p" ("Select profile" hermes-messaging-select-profile)
   "g" ("Refresh" revert-buffer)
-  "?" ("Help" hermes-messaging-mode-map-popup))
+  "?" ("Help" hermes-messaging-mode-map-popup)
+  "H" ("Restart handoff" hermes-system-restart-handoff))
 
 (put 'hermes-messaging-mode-map-popup 'command-modes '(hermes-messaging-mode))
 

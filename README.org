@@ -91,6 +91,28 @@ mode, so later configuration changes cannot reroute them.  Chats against
 different dashboards can stay open at the same time.  Browser views retain
 their chosen instance until explicitly reopened for another one.
 
+** Gateway restart handoff
+
+=H= in Configuration, Agent plugins, Messaging, or Status/Logs opens
+=hermes-system-restart-handoff=.  It is also in the dashboard's System
+menu.  The handoff retains the selected backend and explains the external
+operator action; it does not save, restart, run a shell command, or replay
+a configuration write.
+
+Saved-value readback and runtime adoption are separate.  Adoption and actual
+service/profile impact remain unverified: a named profile may share a
+multiplexer with other profiles and active sessions.  Open the displayed
+dashboard URL separately and use its gateway controls, or ask that backend's
+operator to identify the service and arrange a safe restart.
+
+The handoff's =s= (Status) and =l= (Logs) open read-only observations for the
+captured endpoint.  After external action, =g= explicitly refreshes them;
+reported fields are not proof of a scoped restart or configuration adoption.
+If the originating view or handoff is replaced or retargeted, reopen the
+handoff rather than using its stale actions.  Observation actions attach to
+the captured URL; they never auto-start a local service, even for loopback
+addresses.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.
