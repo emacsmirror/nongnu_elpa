@@ -39,6 +39,7 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'hermes-skills)
 (require 'keymap-popup)
 
 (defun hermes-inventory--bool-cell (value &optional unknown)
@@ -213,6 +214,9 @@ a `skills' field too so older/newer dashboard shapes render the same way."
 (defvar-keymap hermes-inventory-mode-map
   :doc "Keymap for `hermes-inventory-mode'."
   :parent tabulated-list-mode-map
+  "RET" #'hermes-inventory-skill-content
+  "f" #'hermes-inventory-skill-content
+  "H" #'hermes-skills-hub
   "e" #'hermes-inventory-enable
   "d" #'hermes-inventory-disable
   "t" #'hermes-inventory-toggle
@@ -231,6 +235,10 @@ a `skills' field too so older/newer dashboard shapes render the same way."
   hermes-inventory-disable "Disable"
   hermes-inventory-toggle "Toggle"
   :group "Manage"
+  hermes-inventory-skill-content ("Skill content" :inapt-if
+                                (lambda () (not (eq (hermes-inventory--spec-kind hermes-inventory--spec)
+                                                   'skills))))
+  hermes-skills-hub "Skill Hub (passive)"
   hermes-inventory-configure-toolset ("Configure toolset" :inapt-if
                                     (lambda () (or (not (tabulated-list-get-id))
                                                    (not (eq (hermes-inventory--spec-kind hermes-inventory--spec)
@@ -377,6 +385,14 @@ client for the listing."
       (user-error "No Hermes inventory row on this line")))
 
 (declare-function hermes-tool-setup "hermes-tool-setup" (name &optional profile))
+
+(defun hermes-inventory-skill-content ()
+  "Read the selected installed skill on this inventory's backend."
+  (interactive nil hermes-inventory-mode)
+  (unless (and (hermes-buffer--owned-p 'hermes-inventory-mode)
+               (eq (hermes-inventory--spec-kind hermes-inventory--spec) 'skills))
+    (user-error "Select an owned installed-skills inventory first"))
+  (hermes-skill-content (hermes-inventory--row-name)))
 
 (defun hermes-inventory-configure-toolset ()
   "Configure the toolset at point on this inventory's instance."
