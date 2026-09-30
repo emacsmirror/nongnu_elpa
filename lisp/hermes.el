@@ -39,6 +39,7 @@
 (autoload 'hermes-request "hermes-request")
 (require 'hermes-sessions)
 (require 'hermes-projects)
+(require 'hermes-groups)
 (require 'hermes-inventory)
 (require 'hermes-rollback)
 (require 'hermes-subagents)
@@ -191,7 +192,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "K" ("Kanban" hermes-list-kanban)
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
-  "R" ("Rollbacks" hermes-list-rollbacks))
+  "R" ("Rollbacks" hermes-list-rollbacks)
+  "H" ("Group Chats" hermes-list-groups))
 
 (put 'hermes-dash-res-map-popup 'command-modes '(hermes-dashboard-mode))
 

@@ -1161,6 +1161,10 @@ Reject the pending request through REJECT when the WebSocket send fails."
   "Optional predicate captured by RPCs and checked immediately before sending.
 A retired request is rejected and its pending timer is cancelled.")
 
+(defvar hermes-dashboard-transport-request-structured-error nil
+  "Non-nil means retain JSON-RPC code/data for this request's rejection.
+Transport failures remain strings; ordinary callers retain string rejections.")
+
 (defun hermes-dashboard-transport-request (client method &optional params resolve reject)
   "Send METHOD with PARAMS for CLIENT and correlate response callbacks.
 RESOLVE is called with the JSON-RPC result.  REJECT is called with the error
@@ -1175,6 +1179,7 @@ id."
          (frame (hermes-dashboard-transport--jsonrpc-request id method params))
          (timer (hermes-dashboard-transport--arm-request-timer client id method)))
     (puthash id (list :method method :resolve resolve :reject reject :timer timer
+                      :structured-error hermes-dashboard-transport-request-structured-error
                       :owner hermes-dashboard-transport-request-owner
                       :lossless-result
                       (and hermes-dashboard-transport-request-lossless-result
@@ -1950,7 +1955,12 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
       (when-let* ((reject (plist-get pending :reject)))
         (setq handled t)
         (hermes-dashboard-transport--call-request-callback
-         client method reject message)))
+         client method reject
+         (if (plist-get pending :structured-error)
+             `((code . ,code) (message . ,message)
+               (data . ,(hermes-transport--get
+                         (hermes-transport--get frame 'error) 'data)))
+           message))))
     ;; Like successful responses, errors need a pending request owner.
     (when (and pending (not handled))
       (hermes-dashboard-transport--emit-error client message method code))))

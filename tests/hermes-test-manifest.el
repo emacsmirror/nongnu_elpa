@@ -24,6 +24,7 @@
     ("lisp/hermes-dashboard-rpc.el" "tests/hermes-dashboard-tests.el" both)
     ("lisp/hermes-dashboard-transport.el" "tests/hermes-dashboard-tests.el" both)
     ("lisp/hermes-dashboard-transport.el" "tests/hermes-transport-tests.el" forward)
+    ("lisp/hermes-groups-actions.el" "tests/hermes-groups-tests.el" forward)
     ("lisp/hermes-kanban-events.el" "tests/hermes-kanban-tests.el" forward)
     ("lisp/hermes-kanban-log.el" "tests/hermes-kanban-tests.el" forward)
     ("lisp/hermes-kanban-log.el" "tests/hermes-browsers-tests.el" both)

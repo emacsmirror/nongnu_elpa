@@ -704,6 +704,7 @@
                         ("b" "K" hermes-list-kanban)
                         ("b" "X" hermes-list-mcp)
                         ("b" "T" hermes-list-projects)
+                        ("b" "H" hermes-list-groups)
                         ("z" "F" hermes-list-profiles)
                         ("z" "M" hermes-list-messaging-platforms)
                         ("z" "Z" hermes-config)
