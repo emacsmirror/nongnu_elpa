@@ -517,19 +517,77 @@ anyone looking at the message as it was sent."
                     "Hello =?UTF-8?B?V29ybGQ=?=!")
                    "Hello World!"))))
 
-;;; vm-mime-charset-internally-displayable-p tests
+;;; Charsets Emacs can and cannot decode (issue #879)
 
-(ert-deftest vm-mime-test-charset-displayable-utf8 ()
-  "Test UTF-8 is displayable."
-  (should (vm-mime-charset-internally-displayable-p "utf-8")))
+(ert-deftest vm-mime-test-a-charset-emacs-knows-is-decodable ()
+  "The charsets of ordinary mail, all of which Emacs has a coding system for."
+  (dolist (charset '("utf-8" "us-ascii" "iso-8859-1" "iso-2022-jp" "big5"))
+    (should (vm-mime-charset-decodable-p charset))))
 
-(ert-deftest vm-mime-test-charset-displayable-ascii ()
-  "Test US-ASCII is displayable."
-  (should (vm-mime-charset-internally-displayable-p "us-ascii")))
+(ert-deftest vm-mime-test-a-charset-emacs-does-not-know-is-not-decodable ()
+  "Names that arrive in mail and that Emacs has no coding system for.
+`vm-mime-charset-to-coding' answers `undecided' for these, so the text is
+guessed at rather than decoded, and they are the ones
+`vm-mime-charset-converter-alist' exists for.  Emacs knows the same character
+sets under other names, cp874 and mac-roman among them, which is why a
+converter is worth having."
+  (dolist (charset '("windows-874" "x-mac-roman" "unknown-8bit"
+                     "x-user-defined"))
+    (should-not (vm-mime-charset-decodable-p charset))))
 
-(ert-deftest vm-mime-test-charset-displayable-iso8859 ()
-  "Test ISO-8859-1 is displayable."
-  (should (vm-mime-charset-internally-displayable-p "iso-8859-1")))
+(ert-deftest vm-mime-test-the-unknown-charset-is-decoded-as-latin-1 ()
+  "\"unknown\" is not a charset but VM has always read it as ISO-8859-1,
+so it counts as decodable and no converter runs for it."
+  (should (vm-mime-charset-decodable-p "unknown")))
+
+;;; Running a charset converter (issue #879)
+
+(defun vm-mime-test--decoded-header (charset)
+  "Decode an encoded word declaring CHARSET, and return the header text.
+The word is `abc' in every case, and the converter configured by the caller
+turns abc into xyz, so the answer says whether the converter ran."
+  (with-temp-buffer
+    (insert (format "Subject: =?%s?Q?abc?=\n" charset))
+    (vm-decode-mime-encoded-words)
+    (buffer-substring-no-properties (point-min) (point-max))))
+
+(ert-deftest vm-mime-test-a-converter-runs-for-a-charset-emacs-cannot-decode ()
+  "REGRESSION: `vm-mime-charset-converter-alist' never ran at all.
+Issue #879.  Both callers asked `vm-mime-charset-internally-displayable-p'
+first, and that had answered t for every charset on GNU Emacs since 2009, so
+no converter was ever reached and the option did nothing for seventeen years
+while the manual documented it.
+
+A converter now runs where Emacs has no coding system for the charset, which
+is the case the manual describes: the text is guessed at otherwise."
+  (let ((vm-mime-charset-converter-alist
+         '(("x-weird" "utf-8" "tr abc xyz"))))
+    (should (equal "Subject: xyz\n" (vm-mime-test--decoded-header "x-weird")))))
+
+(ert-deftest vm-mime-test-a-converter-does-not-run-for-a-charset-emacs-decodes ()
+  "A converter configured for a charset Emacs can decode is not run.
+The other half of the choice made on issue #879: text that reads correctly
+today is not put through iconv, which drops what it cannot map."
+  (let ((vm-mime-charset-converter-alist
+         '(("utf-8" "utf-8" "tr abc xyz"))))
+    (should (equal "Subject: abc\n" (vm-mime-test--decoded-header "utf-8")))))
+
+(ert-deftest vm-mime-test-a-charset-with-no-converter-is-still-decoded ()
+  "An undecodable charset with nothing configured is still shown.
+Emacs draws a replacement character for what it cannot render, which beats
+refusing the message: `vm-mime-display-internal-text/plain' used to set an
+`Undisplayable charset' error on the layout and display nothing, a branch no
+GNU Emacs reader ever reached."
+  (let ((vm-mime-charset-converter-alist nil))
+    (should (equal "Subject: abc\n" (vm-mime-test--decoded-header "x-weird")))))
+
+(ert-deftest vm-mime-test-a-converter-to-an-unknown-charset-is-not-used ()
+  "A converter whose target Emacs cannot decode either is passed over.
+Converting from one name Emacs does not know to another gains nothing, so the
+search goes on to the next entry."
+  (let ((vm-mime-charset-converter-alist
+         '(("x-weird" "x-stranger" "tr abc xyz"))))
+    (should (equal "Subject: abc\n" (vm-mime-test--decoded-header "x-weird")))))
 
 ;;; vm-mime-charset-decode-region tests
 

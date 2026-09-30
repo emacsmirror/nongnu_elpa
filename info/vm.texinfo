@@ -4067,56 +4067,21 @@ Example:
 @node Character sets, multipart/alternative, @acronym{MIME} type conversion, @acronym{MIME} Messages
 @subsection @acronym{MIME} character sets
 
-For text type messages, @acronym{MIME} also requires that a character set
-be specified, so that the recipient's mail reader knows what
-character glyphs to use to display each character code.  To
-display a message properly VM needs to know how to choose a font
-for a given character set.
-
 @cindex character sets
-@cindex Windows-1252
-@cindex CP1252
-@cindex GB2312
-@cindex ISO-8859-1
-@cindex US-ASCII
-@vmdocvmmimedefaultfacecharsets
-
-@noindent
-Listing a set your face cannot fully display is sometimes still the better
-bargain.  A Chinese sender's message may declare GB2312 and hold nothing but
-English; a message from a Windows user may declare Windows-1252 or CP1252 and
-be ISO-8859-1 almost throughout.  Naming those sets here shows you the
-majority of the characters rather than none of them.
-
-The value of @code{vm-mime-default-face-charsets} must be a list of
-strings specifying the character sets that your default face can
-display.  Example:
-
-@example
-(add-to-list 'vm-mime-default-face-charsets "Windows-1251")
-(add-to-list 'vm-mime-default-face-charsets "Windows-1252")
-(add-to-list 'vm-mime-default-face-charsets "Windows-1257")
-@end example
-
-Note that for character sets listed in this variable, VM's @acronym{MIME}
-decoding is bypassed.  So you should not add charsets like "UTF-8"
-that require additional decoding.
+For text type messages, @acronym{MIME} also requires that a character set
+be specified, so that the recipient's mail reader knows what character
+glyphs to use to display each character code.  Emacs decodes any character
+set it has a coding system for, and draws a replacement character where the
+font has no glyph, so a message is shown whatever it declares.
 
 @vindex vm-mime-charset-converter-alist
-@cindex UTF-8
-@cindex ISO-2022-JP
-Sometimes a charset that VM cannot display can be converted to a
-one that VM can display.  An example would be a message encoded
-using UTF-8 but in fact only contains Japanese characters.  In
-that case the message text could probably be converted to
-iso-2022-jp, which VM can display.
-
-VM offers a way to do such conversions.  The variable
-@code{vm-mime-charset-converter-alist} is an associative list of @acronym{MIME}
-charsets and programs that can convert between them.  If VM
-cannot display a particular character set, it will scan this list
-to see if the charset can be converted into a charset that it can
-display.
+A few of the names that arrive in mail are not names Emacs knows:
+@samp{windows-874}, @samp{x-mac-roman} and @samp{unknown-8bit} are three.
+Text declaring one of those is guessed at rather than decoded, and it is
+those that @code{vm-mime-charset-converter-alist} is for.  Name a command
+that converts from such a charset to one Emacs knows, and VM runs the text
+through it before decoding.  A charset Emacs can decode is left alone,
+whatever the list says.
 
 The alist format is:
 
@@ -4124,11 +4089,12 @@ The alist format is:
  ( ( START-CHARSET END-CHARSET COMMAND-LINE ) ... )
 @end example
 
-@var{START-CHARSET} is a string specifying a @acronym{MIME} charset.
-Example @samp{"iso-8859-1"} or @samp{"utf-8"}.
+@var{START-CHARSET} is a string specifying a @acronym{MIME} charset, one
+Emacs has no coding system for.  Example @samp{"windows-874"} or
+@samp{"x-mac-roman"}.
 
 @var{END-CHARSET} is a string specifying the charset to which
-@var{START-CHARSET} will be converted.
+@var{START-CHARSET} will be converted, one Emacs does know.
 
 @var{COMMAND-LINE} is a string giving a command line to be passed to
 the shell.  The characters in @var{START-CHARSET} will be written to the
@@ -4143,7 +4109,7 @@ Example:
 @example
 (setq vm-mime-charset-converter-alist
       '(
-         ("utf-8" "iso-2022-jp" "iconv -f utf-8 -t iso-2022-jp -c")
+         ("windows-874" "utf-8" "iconv -f cp874 -t utf-8 -c")
        )
 )
 @end example
