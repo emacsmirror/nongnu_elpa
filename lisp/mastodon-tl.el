@@ -1437,21 +1437,26 @@ content should be hidden."
   (let ((spoiler (mastodon-tl--field 'spoiler_text toot)))
     (and spoiler (> (length spoiler) 0))))
 
-(defun mastodon-tl--toggle-spoiler-text (position)
-  "Toggle the visibility of the spoiler text at/after POSITION."
+(defun mastodon-tl--toggle-spoiler-text (position &optional state)
+  "Toggle the visibility of the spoiler text at/after POSITION.
+Optionally, set it to STATE, a keyword of either :visible or :invisible."
   (let* ((inhibit-read-only t)
          (spoiler-region (mastodon-tl--find-property-range
                           'mastodon-content-warning-body position nil))
-         (new-state (not (get-text-property (car spoiler-region)
-                                            'invisible))))
+         (new-state (if state
+                        (when (eq state :invisible)
+                          t)
+                      (not (get-text-property (car spoiler-region)
+                                              'invisible)))))
     (if (not spoiler-region)
         (user-error "No spoiler text here")
       (add-text-properties (car spoiler-region) (cdr spoiler-region)
                            (list 'invisible new-state))
       new-state))) ;; return what we set invisibility to
 
-(defun mastodon-tl-toggle-spoiler-text-in-toot ()
-  "Toggle the visibility of the spoiler text in the current toot."
+(defun mastodon-tl-toggle-spoiler-text-in-toot (&optional state)
+  "Toggle the visibility of the spoiler text in the current toot.
+Optionally, set it to STATE, a keyword of either :visible or :invisible."
   (interactive)
   (let* ((toot-range (or (mastodon-tl--find-property-range
                           'item-json (point))
@@ -1467,10 +1472,12 @@ content should be hidden."
                (> (car spoiler-range) (cdr toot-range)))
            (user-error "No content warning text here"))
           (t
-           (mastodon-tl--toggle-spoiler-text (car spoiler-range))))))
+           (mastodon-tl--toggle-spoiler-text (car spoiler-range) state)))))
 
 (defun mastodon-tl-toggle-spoiler-in-thread ()
-  "Toggler content warning for all posts in current thread."
+  "Toggle content warning for all posts in current thread.
+If some items are hidden and some not, toggle them all to the opposite
+of the status of the top item."
   (interactive)
   (let ((thread-p (eq (mastodon-tl--buffer-property 'update-function)
                       'mastodon-tl--thread-do)))
@@ -1478,18 +1485,34 @@ content should be hidden."
         (user-error "Not in a thread")
       (save-excursion
         (goto-char (point-min))
-        (while (not (string= "No more items" ; improve this hack test!
-                             (mastodon-tl-goto-next-item :no-refresh)))
-          (let* ((json (mastodon-tl--property 'item-json :no-move))
-                 (cw (alist-get 'spoiler_text json)))
-            (when (not (string= "" cw))
-              (let ((new-state
-                     (pcase
-                         (mastodon-tl-toggle-spoiler-text-in-toot)
-                       ('t 'folded)
-                       ('nil 'unfolded))))
-                (plist-put mastodon-tl--buffer-spec
-                           'thread-unfolded new-state)))))))))
+        ;; get top item's CW state:
+        (mastodon-tl-goto-next-item :no-refresh)
+        (let* ((json (mastodon-tl--property 'item-json :no-move))
+               (cw (alist-get 'spoiler_text json))
+               ;; FIXME: this would be painless if byline had CW-state prop!
+               (init-state (when (not (string= "" cw)) ;; top item has CW
+                             (save-excursion
+                               (forward-line -1) ;; back into toot body
+                               (if (mastodon-tl--property 'invisible :no-move)
+                                   :invisible
+                                 :visible))))
+               (new-state (if (eq init-state :visible)
+                              'folded
+                            'unfolded)))
+          (goto-char (point-min))
+          (while (not (string= "No more items" ; FIXME: improve this test!
+                               (mastodon-tl-goto-next-item :no-refresh)))
+            (let* ((json (mastodon-tl--property 'item-json :no-move))
+                   (cw (alist-get 'spoiler_text json)))
+              (when (not (string= "" cw))
+                (mastodon-tl-toggle-spoiler-text-in-toot
+                 ;; mandate all items to follow top item's
+                 ;; state:
+                 (if (eq init-state :visible)
+                     :invisible
+                   :visible)))))
+          (plist-put mastodon-tl--buffer-spec
+                     'thread-unfolded new-state))))))
 
 (defun mastodon-tl--spoiler (toot &optional filter)
   "Render TOOT with spoiler message.
