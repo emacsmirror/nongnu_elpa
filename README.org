@@ -91,6 +91,24 @@ mode, so later configuration changes cannot reroute them.  Chats against
 different dashboards can stay open at the same time.  Browser views retain
 their chosen instance until explicitly reopened for another one.
 
+** Kanban task bodies
+
+Use =E= in a Kanban board or task detail to open the selected task's body in
+an independent multiline draft.  =C-c C-c= saves only the body and reads the
+same task back; =C-c C-k= discards the draft.  Empty bodies and Unicode are
+preserved.  Saving uses the backend's last-write-wins behavior and can overwrite
+concurrent body edits; it does not resend title, status or assignee fields.
+
+The draft retains its original board, task and backend.  Changing or closing
+that source view retires save authority; copy the retained draft into a newly
+opened editor if needed.  Failed or unverified saves retain the text and are
+never automatically retried.  Check the board before manually retrying an
+uncertain update.  A deleted task is not recreated.
+
+Task details display literal Markdown with guarded programming-language
+highlighting.  Fence labels cannot select arbitrary minor or global modes;
+copying preserves markup, and outline navigation remains available.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.
