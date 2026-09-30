@@ -1853,11 +1853,11 @@ before retrying.  Never invoke a slash worker or automatically replay a branch."
                    ((error quit) (failed (error-message-string err))))))))
         ((error quit) (failed (error-message-string err)))))))
 
-(defun hermes-chat--new-buffer (&optional profile title instance)
+(defun hermes-chat--new-buffer (&optional profile title instance pinned-url)
   "Create, display, and return a fresh chat buffer.
 PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
 the owning Hermes instance.  A nil INSTANCE is resolved from the current
-context.
+context.  Non-nil PINNED-URL retains an explicit backend across reconnect.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
 Buffer names identify the instance, profile, and working directory; TITLE stays
 session metadata.  This is the single side-effecting constructor every new-chat
@@ -1865,22 +1865,31 @@ entry point funnels through."
   (let* ((directory default-directory)
          (project-root hermes-chat--project-chat-root)
          (instance (or instance (hermes-instance-resolve)))
+         (instance (if pinned-url
+                       (cons (copy-sequence (car instance))
+                             (copy-sequence (cdr instance)))
+                     instance))
          (start-mode (hermes-chat--instance-start-mode instance))
          (profile (hermes-chat--clean-profile profile))
+         (profile (and profile (copy-sequence profile)))
+         (pinned-url (and pinned-url (copy-sequence pinned-url)))
          (title (hermes-transport--non-empty-string
                  (and title (string-trim title))))
          (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (setq default-directory directory)
-      (hermes-chat-mode)
+      ;; Publish captured authority before native hooks can acquire a client.
+      (if pinned-url (delay-mode-hooks (hermes-chat-mode)) (hermes-chat-mode))
       (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
             hermes-chat--cwd-explicit-p (and project-root t)
+            hermes-chat--pinned-url (and pinned-url (copy-sequence pinned-url))
             hermes-chat--resolved-start-mode start-mode
             hermes-chat--working-directory
             (and (eq start-mode 'spawn) directory)
             hermes-chat--profile profile)
+      (when pinned-url (run-mode-hooks))
       (hermes-chat--restore-draft-runtime)
       (when title
         (setq hermes-chat--title title
@@ -1926,8 +1935,10 @@ entry point funnels through."
 
 (defun hermes-chat--restore-draft-runtime ()
   "Restore pending or profile runtime state in this fresh draft's header."
-  (let* ((instance (hermes-instance-resolve))
-         (hermes-dashboard-transport-url (hermes-instance-url instance))
+  (let* ((instance (if hermes-chat--pinned-url hermes-instance
+                     (hermes-instance-resolve)))
+         (hermes-dashboard-transport-url
+          (or hermes-chat--pinned-url (hermes-instance-url instance)))
          (profile-model
           (unless hermes-chat--dashboard-create-model
             (when-let* ((payload
@@ -2190,12 +2201,14 @@ visible while reading."
       (user-error "No Hermes input to send")))
     (when retry-p (hermes-chat--load-session-history (current-buffer)))))
 
-(defun hermes-chat-resume-session (session-id &optional title profile instance pinned-url)
+(defun hermes-chat-resume-session (session-id &optional title profile instance bot-root pinned-url)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
 TITLE, when given, records its server title metadata.  PROFILE selects its
 owning profile, and INSTANCE selects its owning Hermes instance.  A nil
-INSTANCE is resolved from the current context.  PINNED-URL, when non-nil,
-retains an explicitly verified backend through constructor hooks and reconnect.
+INSTANCE is resolved from the current context.  BOT-ROOT, when non-nil, is
+the backend-confirmed canonical Bot Chat root and enables its /new policy.
+PINNED-URL explicitly retains a verified backend through hooks and reconnect;
+when omitted, BOT-ROOT uses INSTANCE's endpoint.  Ordinary chats stay unpinned.
 Over the dashboard transport the prior messages are fetched and rendered; the
 durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
@@ -2203,14 +2216,23 @@ durable session continues on send."
     (user-error "No Hermes session id to resume"))
   (let* ((directory default-directory)
          (instance (or instance (hermes-instance-resolve)))
+         (instance (if (or pinned-url bot-root)
+                       (cons (copy-sequence (car instance))
+                             (copy-sequence (cdr instance)))
+                     instance))
+         (pinned-url (or pinned-url (and bot-root (hermes-instance-url instance))))
          (pinned-url (and pinned-url (copy-sequence pinned-url)))
+         (profile (and profile (copy-sequence profile)))
+         (session-id (copy-sequence session-id))
+         (bot-root (and bot-root (copy-sequence bot-root)))
          (start-mode (hermes-chat--instance-start-mode instance))
          (title (hermes-transport--non-empty-string
                  (and title (string-trim title))))
          (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (setq default-directory directory)
-      (hermes-chat-mode)
+      ;; Publish captured authority before native hooks can acquire a client.
+      (if pinned-url (delay-mode-hooks (hermes-chat-mode)) (hermes-chat-mode))
       (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root nil
@@ -2218,9 +2240,11 @@ durable session continues on send."
             hermes-chat--working-directory
             (and (eq start-mode 'spawn) directory)
             hermes-chat--session-id session-id
+            hermes-chat--bot-chat-root bot-root
             hermes-chat--pinned-url pinned-url
             hermes-chat--profile profile
             hermes-chat--title title)
+      (when pinned-url (run-mode-hooks))
       (rename-buffer (hermes-chat--buffer-name profile instance) t))
     (pop-to-buffer-same-window buffer)
     (when (hermes-chat--dashboard-default-transport-p)
@@ -2902,6 +2926,30 @@ session is titled, after that title -- so chats stay filterable with
        (list (hermes-chat--read-profile) instance))))
   (hermes-chat--new-buffer profile nil instance))
 
+(defun hermes-chat--new-command (title)
+  "Handle /new with TITLE, preserving a canonical Bot Chat relationship."
+  (if (not hermes-chat--bot-chat-root)
+      (hermes-chat--new-buffer nil title)
+    (let* ((buffer (current-buffer))
+           (root hermes-chat--bot-chat-root)
+           (lifetime hermes-chat--lifecycle-generation)
+           (profile hermes-chat--profile)
+           (instance hermes-instance)
+           (url (or hermes-chat--pinned-url (hermes-instance-url instance)))
+           (choice (completing-read
+                    "Bot Chat: " '("Compress conversation" "Open scratch chat") nil t)))
+      (unless (and (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (and (equal root hermes-chat--bot-chat-root)
+                          (eql lifetime hermes-chat--lifecycle-generation)
+                          (equal profile hermes-chat--profile)
+                          (equal instance hermes-instance))))
+        (user-error "Bot Chat changed during input"))
+      (with-current-buffer buffer
+        (pcase choice
+          ("Compress conversation" (hermes-chat--dashboard-compress "compact" ""))
+          ("Open scratch chat" (hermes-chat--new-buffer profile title instance url)))))))
+
 
 ;; Registries keep lower chat layers free of upward references.
 (defun hermes-chat--install-terminal-owner-registry ()
@@ -2939,7 +2987,7 @@ session is titled, after that title -- so chats stay filterable with
          (cons '("interrupt" "int")
                (lambda (_arg) (hermes-chat-interrupt)))
          (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
-         (cons '("new") (lambda (arg) (hermes-chat--new-buffer nil arg)))
+         (cons '("new") #'hermes-chat--new-command)
          (cons '("model")
                (lambda (arg)
                  (if (string-empty-p arg)

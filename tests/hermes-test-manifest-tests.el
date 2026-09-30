@@ -224,7 +224,7 @@ Pass SOURCES, TESTS, SUPPORT and EDGES to the real validator."
          (exact '("hermes-groups" "hermes-transport" "hermes-kanban" "hermes-preview" "hermes-sessions"
                   "hermes-chat-dashboard" "hermes-chat" "hermes-chat-format"
                   "hermes-chat-render" "hermes-chat-buffer" "hermes-chat-slash"))
-         (topics '("hermes-foreign-context" "hermes-browsers" "hermes-dashboard" "hermes-ui" "hermes-dependency"
+         (topics '("hermes-bot-chat" "hermes-foreign-context" "hermes-browsers" "hermes-dashboard" "hermes-ui" "hermes-dependency"
                    "hermes-chat-reducer" "hermes-fence-guard" "hermes-chat-fences"
                    "hermes-chat-terminal" "hermes-chat-wire" "hermes-chat-history"
                    "hermes-chat-lifecycle" "hermes-chat-queue"

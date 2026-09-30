@@ -137,6 +137,11 @@ without each one repeating the liveness guard."
 (defvar-local hermes-chat--pinned-url nil
   "Captured backend URL for an explicitly backend-owned chat.
 Nil preserves ordinary instance resolution.  Retain this pin across reconnect.")
+
+(defvar-local hermes-chat--bot-chat-root nil
+  "Backend-confirmed canonical Bot Chat root, or nil for ordinary chats.
+This marks the interface, not a lookup cache.
+Profiles always reads the backend registry.")
 (defvar-local hermes-chat--dashboard-create-model nil
   "Buffer-local model override for the next `session.create'.
 Nil means inherit the profile default.  Kept buffer-local so two chat buffers

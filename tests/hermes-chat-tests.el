@@ -1175,10 +1175,16 @@
      (lambda (event binding)
        (when (and (commandp binding)
                   (not (eq binding #'hermes-chat--submenu-root-key))
+                  ;; Context budget is new, not an original root shortcut.
+                  (not (eq binding #'hermes-chat-context))
                   (not (memq event '(?? ?S ?w ?B))))
          (should (eq (lookup-key hermes-chat-actions-map (vector event))
                      binding))))
-     map)))
+     map))
+  (should (eq (lookup-key hermes-chat-actions-map (kbd "b"))
+              #'hermes-switch-to-chat))
+  (should (eq (lookup-key hermes-chat-info-map (kbd "b"))
+              #'hermes-chat-context)))
 
 (ert-deftest hermes-chat-actions-popup-back-and-cancel ()
   "Native q/C-g back navigation and dismissal preserve the chat draft."

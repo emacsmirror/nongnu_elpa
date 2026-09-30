@@ -123,7 +123,9 @@
                               "stored/result"))
                (should (equal (hermes-transport--get (hermes-transport--get (car frames) 'params) 'profile) "work"))
                (should (equal resumed '("stored/result" "Read back" "work" ("fixture" . "http://fixture.invalid")
-                                       "http://fixture.invalid"))))
+                                       nil "http://fixture.invalid")))
+               (with-current-buffer (window-buffer)
+                 (should-not hermes-chat--bot-chat-root)))
              (should-not hermes-browser--owned-cleanup))))))))
 
 (ert-deftest hermes-foreign-malformed-page-retains-cursor-and-retries ()
@@ -629,7 +631,14 @@
                 (ready (hermes--promise-make))
                 (retarget (lambda (&rest _)
                             (setq hermes-dashboard-transport-url "http://other.invalid")))
-                (hermes-chat-mode-hook (and (eq boundary 'mode) (list retarget)))
+                (hermes-chat-mode-hook
+                 (and (eq boundary 'mode)
+                      (list (lambda ()
+                              (funcall retarget)
+                              (should-not hermes-chat--bot-chat-root)
+                              (should (equal hermes-chat--profile "work"))
+                              (should (equal hermes-chat--session-id "verified-A"))
+                              (hermes-chat--dashboard-ensure-client)))))
                 (buffer-list-update-hook (and (eq boundary 'display) (list retarget)))
                 routed acquired
                 (hermes-dashboard-transport-websocket-send-function
@@ -715,7 +724,7 @@
           (count (length frames)))
      (should (equal (should-error (call-interactively (key-binding (kbd "RET")))
                                  :type 'user-error)
-                    '(user-error "Chat client does not serve the captured backend")))
+                    '(user-error "Chat backend changed; reconnect to its original backend")))
      (should (= count (length frames))))))
 
 (ert-deftest hermes-foreign-resume-reuses-effective-spawn-endpoint ()

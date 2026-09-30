@@ -99,12 +99,14 @@ Use nil to disable per-request timeouts."
   "Identity attached to requests for scoped cancellation by their caller.")
 
 (defvar hermes-dashboard-transport-request-lossless-result nil
-  "Non-nil requests lossless inventory results at request registration.
-Only `delegation.status' and `process.list' honor this option.  Bind it
-around the typed RPC invocation, together with the request owner and a
-10-second `hermes-dashboard-transport-request-timeout', even if the user's
-ordinary timeout is nil.  Registration captures both options before waiting
-for readiness.  Other requests and notifications keep their legacy decoding.
+  "Non-nil requests lossless results at request registration.
+Supported methods are `delegation.status', `subagent.list', `process.list',
+`profiles.list', `session.list', `session.create', and `session.title'.
+Bind this around the
+typed RPC invocation together with its request owner.  Inventory callers also
+bind a 10-second `hermes-dashboard-transport-request-timeout', even if the
+ordinary timeout is nil.  Registration captures options before readiness.
+Other requests and notifications keep their legacy decoding.
 See `hermes-transport-json-parse-lossless' for the result representation.")
 
 (defcustom hermes-dashboard-transport-idle-close-delay nil
@@ -1183,7 +1185,9 @@ id."
                       :owner hermes-dashboard-transport-request-owner
                       :lossless-result
                       (and hermes-dashboard-transport-request-lossless-result
-                           (member method '("delegation.status" "subagent.list" "process.list"))))
+                           (member method '("delegation.status" "subagent.list" "process.list"
+                                            "profiles.list" "session.list"
+                                            "session.create" "session.title"))))
              pending)
     (hermes-dashboard-transport--when-ready
      client

@@ -285,7 +285,7 @@ A lost import receipt is uncertain; never automatically resubmit it."
   (hermes-chat-resume-session
    (hermes-transport--get hermes-foreign--session 'id)
    (hermes-transport--display-field hermes-foreign--session 'title)
-   hermes-foreign--profile hermes-instance
+   hermes-foreign--profile hermes-instance nil
    (hermes-instance-url hermes-foreign--endpoint)))
 
 (defvar-keymap hermes-foreign-mode-map

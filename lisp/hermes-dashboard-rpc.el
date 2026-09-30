@@ -83,12 +83,13 @@ nil values are dropped.  RESOLVE and REJECT keys are always added."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-create "session.create"
   "Send a `session.create' request for CLIENT.
-COLS, MESSAGES, TITLE, PROFILE, CWD, HIDDEN, CLOSE-ON-DISCONNECT, and optional
+COLS, MESSAGES, TITLE, PROFILE, CWD, HIDDEN, FOLLOW-PROFILE-CONFIG,
+CLOSE-ON-DISCONNECT, and optional
 runtime choices become request
 parameters.  The request identifies its source as `emacs'.  RESOLVE and REJECT
 receive the asynchronous result or error."
   :keys (cols messages title profile cwd cwd-explicit model provider reasoning-effort fast
-               hidden close-on-disconnect)
+               hidden close-on-disconnect follow-profile-config)
   :params ((source . "emacs")))
 
 (hermes-dashboard-transport-define-rpc
@@ -134,9 +135,17 @@ receive the updated session info or error."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-list "session.list"
   "Send a `session.list' request for CLIENT.
-LIMIT caps the number of sessions returned.  RESOLVE and REJECT receive the
+LIMIT caps ordinary listing; TITLE requests exact lookup within PROFILE,
+including hidden sessions and their resolved compression tip.
+RESOLVE and REJECT receive the
 asynchronous result or error."
-  :keys (limit))
+  :keys (limit profile title))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-profiles-list "profiles.list"
+  "Read CLIENT's profile registry, optionally with INCLUDE-SESSIONS metadata.
+RESOLVE and REJECT receive the asynchronous result or error."
+  :keys (include-sessions))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-history "session.history"

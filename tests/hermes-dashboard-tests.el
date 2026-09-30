@@ -353,8 +353,16 @@
       (should-not (memq (plist-get (car observed) :timer) timer-list))
       (hermes-dashboard-transport-session-list
        client :resolve (lambda (value) (setq result value)))
+      (should (hash-table-p result))
+      (should (plist-get (car observed) :lossless-result))
+      (hermes-dashboard-transport-session-history
+       client "ordinary" :resolve (lambda (value) (setq result value)))
       (should (equal result '((active))))
       (should-not (plist-get (car observed) :lossless-result)))
+    (hermes-dashboard-transport-session-list
+     client :resolve (lambda (value) (setq result value)))
+    (should (equal result '((active))))
+    (should-not (plist-get (car observed) :lossless-result))
     (should (= 0 (hash-table-count
                   (hermes-dashboard-transport-client-pending client))))))
 

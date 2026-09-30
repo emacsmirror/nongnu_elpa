@@ -1663,6 +1663,20 @@ Built with `list' so each call yields its own plist; the result is handed to
          (hermes-chat--dashboard-reattach-status-event))))))
   (hermes-chat-todos--reattach))
 
+(defun hermes-chat--dashboard-check-pinned-client (&optional client)
+  "Refuse CLIENT when it violates this buffer's explicit backend pin.
+With no CLIENT, check and release this buffer's owned client.  A not-yet
+adopted candidate remains the acquisition caller's exact lease to release."
+  (let ((client (or client hermes-chat--dashboard-client)))
+    (when (and hermes-chat--pinned-url client
+               (not (equal
+                     (hermes-dashboard-transport--normalize-base-url
+                      hermes-chat--pinned-url)
+                     (hermes-dashboard-transport--api-client-base-url client))))
+      (when (eq client hermes-chat--dashboard-client)
+        (hermes-chat--stop-dashboard-client))
+      (user-error "Chat backend changed; reconnect to its original backend"))))
+
 (defun hermes-chat--dashboard-ensure-client (&optional callback)
   "Return this buffer's shared dashboard client, acquiring one when needed.
 A live attached client is reused; otherwise this buffer's stale reference is
@@ -1673,15 +1687,9 @@ CALLBACK seeds a freshly created client's fallback callback; per-buffer events
 still route through this buffer's subscriber, so the fallback only matters once
 no buffer is attached."
   (setq-local hermes-dashboard-transport-request-owner (current-buffer))
-  (when (and hermes-chat--pinned-url
-             (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-             (not (equal (hermes-dashboard-transport--normalize-base-url
-                          hermes-chat--pinned-url)
-                         (hermes-dashboard-transport--api-client-base-url
-                          hermes-chat--dashboard-client))))
-    (user-error "Chat client does not serve the captured backend"))
   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
       (progn
+        (hermes-chat--dashboard-check-pinned-client)
         (hermes-chat--ensure-resolved-start-mode)
         hermes-chat--dashboard-client)
     (let* ((instance (if hermes-chat--pinned-url hermes-instance
@@ -1708,6 +1716,7 @@ acquisition's lease if the buffer already owns a client or retires meanwhile."
           (hermes-chat--in-lifetime buffer lifetime
             (when (= generation hermes-chat--transport-generation)
               (unless hermes-chat--dashboard-client
+                (hermes-chat--dashboard-check-pinned-client client)
                 (setq hermes-chat--dashboard-client client
                       adopted t
                       hermes-chat--dashboard-session-ready-p nil

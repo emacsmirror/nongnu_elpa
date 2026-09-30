@@ -45,6 +45,8 @@
 (require 'hermes-browser)
 (require 'hermes-chat)
 
+(declare-function hermes-cron-for-profile "hermes-cron" (profile instance))
+
 (defun hermes-profiles--field (profile key)
   "Return PROFILE's KEY as a string, or nil."
   (hermes-transport--scalar-string (hermes-transport--get profile key)))
@@ -373,6 +375,161 @@ If the catalogue fetch fails, do not offer stale cached choices."
        (message "Hermes: read back model for profile %s" name))
      #'hermes-browser--read-error)))
 
+;;; Canonical conversations
+
+(defun hermes-profiles--bot-registry (rpc profile)
+  "Read PROFILE's canonical registry via guarded RPC."
+  (hermes--promise-map
+   (funcall rpc #'hermes-dashboard-transport-profiles-list :include-sessions t)
+   (lambda (result)
+     (unless (eq t (hermes-transport--get result 'bot_mode_protocol))
+       (user-error "Backend does not advertise canonical Bot Chats"))
+     (let ((rows (seq-filter
+                  (lambda (row) (equal profile (hermes-transport--get row 'name)))
+                  (hermes-transport--get result 'profiles))))
+       (unless (= 1 (length rows))
+         (user-error "Profile is missing or ambiguous: %s" profile))
+       (let ((canonical (hermes-transport--get (car rows) 'canonical_session)))
+         (cond ((eq canonical :json-null) nil)
+               ((and (hermes-transport--object-p canonical)
+                     (hermes-transport--non-empty-string
+                      (hermes-transport--get canonical 'id))) canonical)
+               (t (user-error "Missing canonical registry evidence"))))))))
+
+(defun hermes-profiles--bot-row (result)
+  "Validate exact-title lookup RESULT and return its unique row, or nil."
+  (unless (hermes-transport--field-present-p result 'sessions)
+    (user-error "Missing Bot Chat lookup result"))
+  (let ((rows (hermes-transport--get result 'sessions)))
+    (unless (and (vectorp rows) (<= (length rows) 1))
+      (user-error "Ambiguous Bot Chat lookup"))
+    (when (> (length rows) 0)
+      (unless (and (equal "Bot Chat" (hermes-transport--get (aref rows 0) 'title))
+                   (hermes-transport--non-empty-string
+                    (hermes-transport--get (aref rows 0) 'id))
+                   (hermes-transport--non-empty-string
+                    (hermes-transport--get (aref rows 0) 'resolved_id)))
+        (user-error "Incomplete Bot Chat identity"))
+      (aref rows 0))))
+
+(defun hermes-profiles--bot-lookup (rpc profile)
+  "Look up PROFILE's exact hidden canonical title via guarded RPC."
+  (hermes--promise-map
+   (funcall rpc #'hermes-dashboard-transport-session-list
+            :profile profile :title "Bot Chat")
+   #'hermes-profiles--bot-row))
+
+(defun hermes-profiles--bot-readback (rpc profile)
+  "Require matching exact-title and registry identities for PROFILE via RPC."
+  (hermes--promise-then
+   (hermes-profiles--bot-lookup rpc profile)
+   (lambda (row)
+     (unless row (user-error "Bot Chat is not persisted; reopen Profiles to retry"))
+     (hermes--promise-map
+      (hermes-profiles--bot-registry rpc profile)
+      (lambda (canonical)
+        (unless (and (equal (hermes-transport--get row 'id)
+                            (hermes-transport--get canonical 'id))
+                     (equal (hermes-transport--get row 'resolved_id)
+                            (hermes-transport--get canonical 'resolved_id)))
+          (user-error "Bot Chat registry changed; reopen to reconcile"))
+        row)))))
+
+(defun hermes-profiles--bot-title (rpc profile created)
+  "Persist CREATED's canonical title for PROFILE via RPC, then read it back."
+  (let ((runtime (hermes-transport--non-empty-string
+                  (hermes-transport--get created 'session_id))))
+    (unless (and runtime
+                 (equal profile (hermes-transport--get
+                                 (hermes-transport--get created 'info) 'profile_name)))
+      (user-error "Created session did not confirm the selected profile"))
+    (hermes--promise-then
+     (funcall rpc #'hermes-dashboard-transport-session-title
+              :session-id runtime :title "Bot Chat")
+     (lambda (receipt)
+       (unless (and (hermes-transport--field-present-p receipt 'pending)
+                    (eq (hermes-transport--get receipt 'pending) :json-false)
+                    (equal "Bot Chat" (hermes-transport--get receipt 'title)))
+         (user-error "Bot Chat title is not persisted; no conversation opened"))
+       (hermes-profiles--bot-readback rpc profile))
+     (lambda (reason)
+       ;; 4022 also covers canonical rename protection.  Only fresh registry
+       ;; evidence authorizes adoption; the diagnostic text is never parsed.
+       (if (and (stringp reason) (> (length reason) 0)
+                (eql 4022 (get-text-property 0 'hermes-rpc-code reason)))
+           (hermes-profiles--bot-readback rpc profile)
+         (hermes--promise-rejected reason))))))
+
+(defun hermes-profiles--bot-resolve (rpc profile current origin)
+  "Resolve PROFILE via RPC while CURRENT owns ORIGIN, creating on absence."
+  (hermes--promise-then
+   (hermes-profiles--bot-registry rpc profile)
+   (lambda (canonical)
+     (hermes--promise-then
+      (hermes-profiles--bot-lookup rpc profile)
+      (lambda (row)
+        (cond
+         (row (hermes-profiles--bot-readback rpc profile))
+         (canonical (user-error "Bot Chat registry contradicts lookup; refusing creation"))
+         ((not (funcall current)) (user-error "Profiles changed; no Bot Chat created"))
+         (t
+          (with-current-buffer origin
+            (unless (yes-or-no-p (format "Create persistent Bot Chat for %s? " profile))
+              (user-error "Bot Chat creation cancelled")))
+          ;; RPC retains the same owner through consent, readiness and follow-ups.
+          (hermes--promise-then
+           (funcall rpc #'hermes-dashboard-transport-session-create
+                    :profile profile :hidden t :follow-profile-config t)
+           (lambda (created) (hermes-profiles--bot-title rpc profile created))))))))))
+
+(defun hermes-profiles-open-bot-chat ()
+  "Open the selected profile's backend-owned canonical Bot Chat.
+Look up the exact title, never the most recent session.  Confirm creation only
+on proven absence; persist and read back the title before opening or sending.
+Opening never sends an introduction.  The backend may prewarm its agent."
+  (interactive nil hermes-profiles-mode)
+  (let* ((profile (tabulated-list-get-id))
+         (origin (current-buffer))
+         (instance (hermes-browser--copy-identity (hermes-instance-resolve))))
+    (unless profile (user-error "No profile on this line"))
+    (hermes-browser--run-owned
+     (lambda (client current)
+       (unless (equal (hermes-dashboard-transport--normalize-base-url
+                       (hermes-instance-url instance))
+                      (hermes-dashboard-transport--api-client-base-url client))
+         (user-error "Bot Chat backend changed; reopen Profiles"))
+       (let* ((token hermes-dashboard-transport-request-owner)
+              (rpc (lambda (function &rest args)
+                     (unless (funcall current) (user-error "Bot Chat operation retired"))
+                     (let ((hermes-dashboard-transport-dispatch-guard current)
+                           (hermes-dashboard-transport-request-lossless-result t)
+                           (hermes-dashboard-transport-request-owner token))
+                       (apply #'hermes-dashboard-transport-call-fn function client args)))))
+         (hermes-profiles--bot-resolve rpc profile current origin)))
+     (hermes-browser--mutation-context #'tabulated-list-get-id)
+     (lambda (row)
+       (hermes-chat-resume-session
+        (hermes-transport--get row 'resolved_id) "Bot Chat" profile instance
+        (hermes-transport--get row 'id)))
+     #'hermes-browser--read-error)))
+
+(defun hermes-profiles-scratch-chat ()
+  "Open a separate ordinary chat for the selected profile."
+  (interactive nil hermes-profiles-mode)
+  (let ((profile (tabulated-list-get-id)))
+    (unless profile (user-error "No profile on this line"))
+    (hermes-chat profile (hermes-instance-resolve))))
+
+(defun hermes-profiles-routines ()
+  "Browse existing cron routines for the selected backend and profile.
+Navigation never creates or triggers a job."
+  (interactive nil hermes-profiles-mode)
+  (let ((profile (tabulated-list-get-id))
+        (instance (hermes-instance-resolve)))
+    (unless profile (user-error "No profile on this line"))
+    (require 'hermes-cron)
+    (hermes-cron-for-profile profile instance)))
+
 ;;;###autoload (autoload 'hermes-list-profiles "hermes-profiles" nil t)
 (hermes-define-list-browser profiles
   :title "Hermes Profiles"
@@ -385,7 +542,11 @@ If the catalogue fetch fails, do not offer stale cached choices."
   :fetch (lambda (client)
            (hermes-dashboard-transport-profile-list-async client))
   :rows #'hermes-profiles--rows
-  :help (:group "Settings"
+  :help (:group "Conversation"
+         hermes-profiles-open-bot-chat "Open Bot Chat"
+         hermes-profiles-scratch-chat "Open scratch chat"
+         hermes-profiles-routines "Routines"
+         :group "Settings"
          hermes-profiles-set-model "Set default model"
          hermes-profiles-edit-soul "Edit SOUL"
          :group "Profile"
@@ -393,7 +554,9 @@ If the catalogue fetch fails, do not offer stale cached choices."
          hermes-profiles-rename "Rename"
          hermes-profiles-delete "Delete")
   :keys ("m" #'hermes-profiles-set-model
-         "RET" #'hermes-profiles-set-model
+         "RET" #'hermes-profiles-open-bot-chat
+         "N" #'hermes-profiles-scratch-chat
+         "R" #'hermes-profiles-routines
          "s" #'hermes-profiles-edit-soul
          "c" #'hermes-profiles-create
          "r" #'hermes-profiles-rename

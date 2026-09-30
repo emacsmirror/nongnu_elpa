@@ -1087,7 +1087,8 @@
 
 (ert-deftest hermes-chat-model-invocation-retires-during-acquisition ()
   "Real credential reentry preserves the newest picker and its single lease."
-  (dolist (reenter '(nil t))
+  (dolist (pinned '(nil t))
+    (dolist (reenter '(nil t))
     (let* ((instance '("remote" . "http://remote.invalid"))
            (hermes-instances (list instance))
            (hermes-dashboard-transport-remote-auth-method 'token)
@@ -1095,6 +1096,7 @@
            (hermes-dashboard-transport-idle-close-delay nil)
            (hermes-dashboard-transport-request-timeout nil))
       (hermes-test-with-chat-buffer
+       (setq hermes-chat--pinned-url (and pinned "http://remote.invalid"))
        (let* ((owner (current-buffer))
               (secret-reads 0) (reads 0) opened requests closed
               (hermes-dashboard-transport-websocket-send-function
@@ -1148,16 +1150,18 @@
                  (dolist (client opened)
                    (should (= (hermes-dashboard-transport-client-refcount client) 0))))
              (dolist (client opened)
-               (hermes-dashboard-transport-stop client)))))))))
+               (hermes-dashboard-transport-stop client))))))))))
 
 (ert-deftest hermes-chat-model-acquisition-releases-retired-lifetime ()
   "Credential input cannot attach a client after mode exit or replacement."
-  (dolist (retire '(fundamental-mode hermes-chat-mode))
+  (dolist (pinned '(nil t))
+    (dolist (retire '(fundamental-mode hermes-chat-mode))
     (let ((hermes-instances '(("remote" . "http://remote.invalid")))
           (hermes-dashboard-transport-remote-auth-method 'token)
           (hermes-dashboard-transport-start-mode 'remote)
           (hermes-dashboard-transport-idle-close-delay nil))
       (hermes-test-with-chat-buffer
+       (setq hermes-chat--pinned-url (and pinned "http://remote.invalid"))
        (let ((owner (current-buffer)) opened requests closed)
          (cl-letf (((symbol-function 'auth-source-search)
                     (lambda (&rest _)
@@ -1185,7 +1189,7 @@
                  (should (= (hermes-dashboard-transport-client-refcount opened) 0))
                  (should (= (hash-table-count hermes-dashboard-transport--clients) 0))
                  (should (= (length closed) 1)))
-             (when opened (hermes-dashboard-transport-stop opened)))))))))
+             (when opened (hermes-dashboard-transport-stop opened))))))))))
 
 (provide 'hermes-chat-models-tests)
 ;;; hermes-chat-models-tests.el ends here

@@ -61,6 +61,9 @@ Used with `hermes-cron-notify-on-failure'."
 
 ;;; Fields
 
+(defvar-local hermes-cron--scope-profile nil
+  "Exact profile for a Routines view, or nil for the ordinary all-jobs view.")
+
 (defun hermes-cron--job-id (job)
   "Return JOB's stable identifier."
   (or (hermes-transport--non-blank-string (hermes-transport--display-field job 'id))
@@ -324,11 +327,14 @@ RUNS is the run list from the dashboard."
   :interactive nil
   (hermes-browser--setup-status))
 
-(defun hermes-cron--display-detail (job runs &optional instance)
+(defun hermes-cron--display-detail (job runs &optional instance pinned-instance)
   "Display cron JOB with run history in a detail buffer.
-RUNS is the detail run list.  Retain INSTANCE before rendering or display."
+RUNS is the detail run list.  Retain INSTANCE before rendering or display.
+PINNED-INSTANCE retains a Routines view's backend for transcript actions."
   (with-current-buffer (hermes-buffer--get "*Hermes Cron Job*"
                                           #'hermes-cron-detail-mode)
+    (setq hermes-browser--pinned-instance
+          (hermes-browser--copy-identity pinned-instance))
     (when instance (hermes-browser--own-instance instance))
     (hermes-browser--next-request-generation)
     (let ((inhibit-read-only t))
@@ -342,7 +348,8 @@ RUNS is the detail run list.  Retain INSTANCE before rendering or display."
 (defun hermes-cron-show ()
   "Show details and recent run history for the cron job at point."
   (interactive nil hermes-cron-mode)
-  (let ((instance (hermes-instance-resolve))
+  (let ((instance (hermes-browser--instance))
+        (pinned hermes-browser--pinned-instance)
         (id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile))
         (origin (current-buffer))
@@ -362,7 +369,9 @@ RUNS is the detail run list.  Retain INSTANCE before rendering or display."
      (lambda (detail)
        (when (hermes-browser--request-current-mode-p
               origin generation 'hermes-cron-mode)
-         (hermes-cron--display-detail (car detail) (cadr detail) instance))))))
+         (if pinned
+             (hermes-cron--display-detail (car detail) (cadr detail) instance pinned)
+           (hermes-cron--display-detail (car detail) (cadr detail) instance)))))))
 
 ;;; Run transcript (log)
 
@@ -420,7 +429,7 @@ RUNS is the detail run list.  Retain INSTANCE before rendering or display."
               (with-current-buffer buffer
                 (get-text-property (point) 'hermes-cron-run-id)))))
   (interactive)
-  (let ((instance (hermes-instance-resolve))
+  (let ((instance (hermes-browser--instance))
         (id (get-text-property (point) 'hermes-cron-run-id))
         (profile (get-text-property (point) 'hermes-cron-run-profile))
         (origin (current-buffer))
@@ -612,7 +621,7 @@ Trigger can still force a run.  Interactive creation offers both initial states.
     (lambda () (list (read-string "Cron job name: ")
                      (read-string "Schedule (cron expression): ")
                      (read-string-from-buffer "Prompt: " "")
-                     (read-string "Profile: " "default")
+                     (or hermes-cron--scope-profile (read-string "Profile: " "default"))
                      (read-string "Deliver: " "local")
                      (hermes-cron--split-skills
                       (read-string "Skills (comma-separated): "))
@@ -629,6 +638,9 @@ Trigger can still force a run.  Interactive creation offers both initial states.
               (string-empty-p schedule)
               (string-empty-p prompt))
       (user-error "Name, schedule and prompt are required"))
+    (when (and hermes-cron--scope-profile
+               (not (equal profile hermes-cron--scope-profile)))
+      (user-error "Routines creation must use profile %s" hermes-cron--scope-profile))
     (hermes-browser--run-owned
      (lambda (client guard)
        (hermes--promise-then
@@ -869,7 +881,8 @@ Arm newly enabled auto-refresh after a successful owned read."
                     ("Next run" 16 0 t) ("Prompt" 24 5 nil))
   :fetch (lambda (client)
            (hermes--promise-map
-            (hermes-cron--api client "GET" "/jobs" nil '((profile . "all")))
+            (hermes-cron--api client "GET" "/jobs" nil
+                             `((profile . ,(or hermes-cron--scope-profile "all"))))
             #'hermes-cron--jobs-result))
   :rows #'hermes-cron--rows
   :on-result #'hermes-cron--note-failures
@@ -890,6 +903,32 @@ Arm newly enabled auto-refresh after a successful owned read."
          "t" #'hermes-cron-toggle
          "D" #'hermes-cron-remove
          "c" #'hermes-cron-create))
+
+(defun hermes-cron-for-profile (profile instance)
+  "Browse existing cron jobs for exact PROFILE on INSTANCE.
+Use the ordinary cron editor and store; opening this view performs only reads."
+  (let* ((instance (hermes-browser--copy-identity instance))
+         (profile (copy-sequence profile))
+         (target (generate-new-buffer
+                  (format "*Hermes Routines@%s: %s*"
+                          (hermes-instance-name instance) profile))))
+    (with-current-buffer target
+      ;; Native refresh and inherited actions must see the selected authority.
+      (delay-mode-hooks (hermes-cron-mode))
+      (hermes-buffer--claim 'hermes-cron-mode)
+      (setq hermes-browser--pinned-instance (hermes-browser--copy-identity instance))
+      (hermes-browser--own-instance (hermes-browser--copy-identity instance))
+      (setq hermes-cron--scope-profile (copy-sequence profile))
+      (let ((owner hermes-buffer--owner))
+        (run-mode-hooks)
+        (unless (and (buffer-live-p target)
+                     (eq owner (buffer-local-value 'hermes-buffer--owner target))
+                     (with-current-buffer target
+                       (hermes-buffer--owned-p 'hermes-cron-mode)))
+          (user-error "Hermes Routines view changed during mode initialization"))))
+    (pop-to-buffer target)
+    (with-current-buffer target (hermes-cron--revert))
+    target))
 
 (provide 'hermes-cron)
 ;;; hermes-cron.el ends here
