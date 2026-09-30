@@ -83,6 +83,7 @@
             "lisp/hermes-command-palette.el"
             "lisp/hermes-exec.el"
             "lisp/hermes-onboarding.el"
+            "lisp/hermes-endpoints.el"
             "lisp/hermes-capabilities.el"
             "lisp/hermes.el"
           ];
@@ -129,6 +130,7 @@
             "hermes-messaging-tests.el"
             "hermes-notifications-tests.el"
             "hermes-onboarding-tests.el"
+            "hermes-endpoints-tests.el"
             "hermes-plugins-tests.el"
             "hermes-promise-tests.el"
             "hermes-sessions-tests.el"

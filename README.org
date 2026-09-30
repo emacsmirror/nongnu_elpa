@@ -91,6 +91,53 @@ mode, so later configuration changes cannot reroute them.  Chats against
 different dashboards can stay open at the same time.  Browser views retain
 their chosen instance until explicitly reopened for another one.
 
+** Named custom endpoints
+
+=M-x hermes-endpoints= lists named endpoints on the owning dashboard.  It
+retains the profile of a chat or onboarding view; other origins use the
+dashboard's launch profile.  Use =c= for a new draft or =RET= to edit a saved
+row, then =e= to edit
+individual fields and =k= to choose Preserve, Replace or Clear for the API key.
+Keys use masked input, never minibuffer history or list text.  Preserve omits
+the key from Save; only Clear sends an empty key.  Stored keys are not fetched.
+Replace refuses values that would become empty under Hermes Agent 0.21.4
+storage: boundary whitespace is stripped, then CR/LF and non-ASCII characters
+are removed.  Refusal retains the previous key policy and draft.  Accepted
+keys are sent literally, but backend storage can still change them; saved
+metadata is not proof of a usable credential or successful authentication.
+
+In a draft, =t= requests explicit consent before Test.  The dashboard sends the
+entered credential to the destination, may probe alternate =/v1= paths, and
+may perform chargeable inference: one output token for Chat Completions or
+Messages, or up to 16 for Responses.  Test neither saves nor activates.
+Its observations are not proof of successful inference or authentication:
+the transport check accepts 401/429 responses and inconclusive timeouts.
+The resolved URL is shown without changing the draft; =u= explicitly adopts
+it and the advertised model metadata.
+
+=s= confirms Save with =make_default:false=.  This is last-write-wins upsert,
+not an atomic edit: it can recreate a concurrently deleted endpoint.  The
+backend merges unknown settings and existing model metadata.  Unedited API
+mode and context length are omitted to preserve them; model discovery is
+sent explicitly.  Editing an already-active provider can affect future
+runtime use even without Activate.  Inspect the saved list and active model
+configuration read back below the retained draft; backend normalization can
+change names, URLs, IDs and model aliases.
+
+Back in the list, =a= separately confirms Activate; =d= confirms Delete and
+possible detachment of the active provider's URL and credentials.  =g=
+reconciles state, including after a failed or uncertain write; writes are
+never automatically retried.  =?= shows actions in either view.
+
+Legacy/direct-config rows remain read-only.  Stored IDs such as =has.dot=,
+=-edge= and =edge_= support Activate/Delete and are sent unchanged.  Hermes
+Agent 0.21.4 can leave the active-model mirror attached for IDs containing
+ASCII spaces (for example =Mixed endpoint=) or beginning with =custom:=
+(case-insensitive).  Boundary whitespace can select a different stored key;
+slash-containing IDs and the whole IDs =.= and =..= are not addressable by
+this route.  Activate/Delete refuse those hazards before confirmation.  The
+client does not rename IDs or repair backend configuration silently.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.

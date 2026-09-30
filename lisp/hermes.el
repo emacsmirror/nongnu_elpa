@@ -55,6 +55,7 @@
 (require 'hermes-browser)
 (autoload 'hermes-files "hermes-files" nil t)
 (require 'hermes-onboarding)
+(require 'hermes-endpoints)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -207,6 +208,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :group "Access"
   "e" ("Connect provider" hermes-onboarding-connect-provider)
   "o" ("Provider accounts" hermes-onboarding-oauth-connect)
+  "E" ("Custom endpoints" hermes-endpoints)
   "B" ("Pairing" hermes-list-pairing)
   "W" ("Webhooks" hermes-list-webhooks))
 
