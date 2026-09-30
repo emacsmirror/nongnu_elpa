@@ -666,6 +666,11 @@ The mock answers NO, which is what a server does, and VM has to notice."
 
 ;;; Saving a message to an IMAP folder
 
+(defvar vm-imap-mock-test--folder-text nil
+  "What `vm-imap-mock-test--saving-from-a-file' writes as the folder.
+Nil for its usual two messages.  A test binds it to put something else in
+the folder, an eight-bit body for one.")
+
 (defmacro vm-imap-mock-test--saving-from-a-file (spec &rest body)
   "Visit a file folder of two messages and run BODY, with MOCK serving IMAP.
 SPEC is (MOCK-VAR &rest ARGS) as for `vm-imap-mock-start'.  This is the
@@ -685,12 +690,14 @@ source folder is not on the server, so the save is an APPEND."
             (before (buffer-list)))
        (unwind-protect
            (progn
-             (write-region
-              (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
-                      vm-imap-mock-test--alice "\n"
-                      "From bob@example.com Sat Aug  8 14:25:13 2026\n"
-                      vm-imap-mock-test--bob "\n")
-              nil folder nil 'quiet)
+             (let ((coding-system-for-write 'binary))
+               (write-region
+                (or vm-imap-mock-test--folder-text
+                    (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                            vm-imap-mock-test--alice "\n"
+                            "From bob@example.com Sat Aug  8 14:25:13 2026\n"
+                            vm-imap-mock-test--bob "\n"))
+                nil folder nil 'quiet))
              (cl-letf (((symbol-function 'vm-display) #'ignore))
                (vm-visit-folder folder)
                (setq vm-message-pointer vm-message-list)
@@ -742,6 +749,45 @@ not exist yet is how the first one is made."
       (should (vm-imap-mock-received-p mock "APPEND \"Saved\" .* {[0-9]+}"))
       (should (vm-filed-flag (car vm-message-list)))
       (should-not (vm-filed-flag (nth 1 vm-message-list))))))
+
+(defconst vm-imap-mock-test--eight-bit
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nTo: me@example.com\n"
+          "Subject: caf\303\251\nMessage-ID: <eight@example.com>\n"
+          "MIME-Version: 1.0\n"
+          "Content-Type: text/plain; charset=UTF-8\n"
+          "Content-Transfer-Encoding: 8bit\n\n"
+          "Two caf\303\251s and a na\303\257ve r\303\251sum\303\251.\n\n")
+  "One message whose header and body carry UTF-8, so eight-bit on the wire.
+Written as octets: a folder file is bytes, and these are the bytes.")
+
+(ert-deftest vm-imap-mock-test-saving-an-eight-bit-message-announces-its-octets ()
+  "REGRESSION: an APPEND promised more octets than it sent.
+The literal count came from `string-bytes' on the text, and the text is
+multibyte by then: `vm-imap-subst-CRLF-for-LF' works in a multibyte buffer,
+where each byte of the folder over 0x7F becomes a character that
+`string-bytes' counts as two.  A message with one UTF-8 `e' acute was
+announced as four octets longer than it was sent, so the server went on
+waiting for the rest of a literal that had finished, took the next command
+line as message data, and the session was lost.
+
+Every save of a message with an eight-bit header or body to an IMAP mailbox
+went that way, which is most real mail.  The test message carries UTF-8 in
+both."
+  (let ((vm-imap-mock-test--folder-text vm-imap-mock-test--eight-bit))
+    (vm-imap-mock-test--saving-from-a-file (mock)
+      (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
+        (vm-save-message-to-imap-folder target)
+        (vm-imap-net-wait nil 10)
+        ;; it arrived at all, which it cannot have done if the count was wrong
+        (should (equal (length (vm-imap-mock-messages mock "Saved")) 1))
+        (let ((text (vm-imap-mock-message-text
+                     (car (vm-imap-mock-messages mock "Saved")))))
+          ;; and it arrived whole: the body is the last thing in the literal,
+          ;; so a short count loses the end of it
+          (should (string-match-p "r\303\251sum\303\251" text))
+          (should (string-match-p "Subject: caf\303\251" text)))
+        (should (vm-filed-flag (car vm-message-list)))))))
 
 (ert-deftest vm-imap-mock-test-saving-remembers-the-folder-it-saved-to ()
   "`vm-last-save-imap-folder' is what the next save offers, so it is the
