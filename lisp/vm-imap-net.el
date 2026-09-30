@@ -2239,12 +2239,22 @@ than left empty."
 (declare-function vm-unread-flag "vm-message" (m))
 
 (defun vm-imap-net-message-text (message)
-  "MESSAGE as it goes on the wire: headers and body, CRLF for LF."
+  "MESSAGE as it goes on the wire: headers and body, CRLF for LF.
+
+Unibyte, so that its length is the octet count the APPEND literal announces.
+A folder buffer holds bytes, but `vm-imap-subst-CRLF-for-LF' works in a
+multibyte buffer of its own, where every byte over 0x7F comes back as a
+character `string-bytes' counts as two: VM promised the server more octets
+than it sent, the server waited for a literal that had finished and read the
+next command line as message data, and the session was lost.  Every save of
+a message with an eight-bit header or body went that way (#887)."
   (with-current-buffer (vm-buffer-of message)
     (save-restriction
       (widen)
-      (vm-imap-subst-CRLF-for-LF
-       (buffer-substring (vm-headers-of message) (vm-text-end-of message))))))
+      (encode-coding-string
+       (vm-imap-subst-CRLF-for-LF
+	(buffer-substring (vm-headers-of message) (vm-text-end-of message)))
+       'binary))))
 
 (defun vm-imap-net-message-flags (message)
   "The flags to store MESSAGE under, as a list of IMAP flag names.
