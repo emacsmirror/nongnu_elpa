@@ -84,8 +84,12 @@ summary display."
 
 (defsubst vm-summary-message-number-thread-descendant (m)
   "Returns the message number of M, padded with spaces to display as
-an interior message of a thread."
-  (concat "  " (vm-padded-number-of m) " "))
+an interior message of a thread.
+
+The number is padded here rather than by `%n', which is now the bare number
+as printf would have it: a width on the specifier applies to this whole
+decoration, so it cannot line up the number inside it."
+  (concat "  " (format "%3s" (vm-number-of m)) " "))
 
 (defsubst vm-expanded-root-p (m)
   "Returns t if M is the root of a thread that is currently shown
@@ -855,11 +859,15 @@ tokenized summary TOKENS."
 			vm-summary-show-thread-count)
 		   (if (= (vm-thread-indentation message) 0)
 		       (insert
-			(concat (vm-padded-number-of message) 
+			;; padded here, as in
+			;; `vm-summary-message-number-thread-descendant': a
+			;; width on `%n' applies to the number and the count
+			;; together, so it cannot line up the number itself
+			(concat (format "%3s" (vm-number-of message))
 				(vm-summary-padded-thread-count message)))
 		     (insert
 		      (vm-summary-message-number-thread-descendant message)))
-		 (insert (vm-padded-number-of message))))
+		 (insert (vm-number-of message))))
 	      ((eq token 'mark)
 	       (insert (vm-su-mark message)))
 	      ((eq token 'thread-indent)
@@ -1020,7 +1028,7 @@ path, which `group-end' has no way to be told."
 			 (setq token (vm-summary-token-with-width
 				      ''number format)
 			       splice t)
-		       (setq sexp (cons (list 'vm-padded-number-of
+		       (setq sexp (cons (list 'vm-number-of
 					      'vm-su-message) sexp))))
 		    ((= conv-spec ?s)
 		     (setq sexp (cons (list 'vm-su-summary-subject

@@ -343,13 +343,6 @@ This is the test message body.
       (vm-set-number-of msg "1")
       (should (equal (vm-number-of msg) "1")))))
 
-(ert-deftest vm-accessors-test-padded-number-of ()
-  "Test vm-padded-number-of accessor."
-  (vm-test-with-folder vm-accessors-test-folder
-    (let ((msg (car vm-message-list)))
-      (vm-set-padded-number-of msg "  1")
-      (should (equal (vm-padded-number-of msg) "  1")))))
-
 (ert-deftest vm-accessors-test-mark-of ()
   "Test vm-mark-of accessor."
   (vm-test-with-folder vm-accessors-test-folder

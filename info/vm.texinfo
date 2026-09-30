@@ -7064,7 +7064,10 @@ number pads on the right instead.  A width beginning with @samp{0} fills
 with zeros rather than spaces, for the specifiers whose substitution is a
 number: @samp{%c}, @samp{%d}, @samp{%l}, @samp{%M}, @samp{%n} and
 @samp{%y}.  A negative width fills with spaces whatever the @samp{0} says,
-zeros to the right of a number being a different number.
+zeros to the right of a number being a different number.  A folder summary
+fills @samp{%n} with spaces even so: it is written as a token and filled in
+as the line is displayed, which is what keeps the number right when messages
+are expunged, and a token is padded with spaces.
 @item maximum
 A @samp{.} and a number after that is the most of the substitution that is
 used, and anything longer is cut.  A negative number keeps the last columns
@@ -10002,24 +10005,21 @@ specific to a VM session.
 @itemize
 @item
 @code{number} (0). The message number as an integer.
-@inindex padded-number
-@item
-@code{padded-number} (1). The message number as a padded string.
 @inindex mark
 @item
-@code{mark} (2). Flag that indicates if the message has been marked (via
+@code{mark} (1). Flag that indicates if the message has been marked (via
 @code{vm-mark-message}).
 @inindex su-start
 @item
-@code{su-start} (3). The position in the Summary buffer where the summary
+@code{su-start} (2). The position in the Summary buffer where the summary
 line of the message starts.
 @inindex su-end
 @item
-@code{su-end} (4).  The position in the Summary buffer where the summary line of
+@code{su-end} (3).  The position in the Summary buffer where the summary line of
 the message ends.
 @inindex real-message-sym
 @item
-@code{real-message-sym} (5).  If the message is in a virtual folder, then its
+@code{real-message-sym} (4).  If the message is in a virtual folder, then its
 corresponding ``real message'' is the underlying message in another
 folder which is described by a message data structure similar to the
 current one.  The real message data structures are represented by
@@ -10030,76 +10030,76 @@ The use of symbols for this purpose avoids the possibility of circular
 data structures.
 @inindex mirrored-message-sym
 @item
-@code{mirrored-message-sym} (21).  This is similar to the
+@code{mirrored-message-sym} (20).  This is similar to the
 @code{real-message-sym}, except that it points to the message that this
 message directly mirrors (as a virtual message).  If we follow the
 ``mirrored-message'' links in succession we should eventually reach the
 ``real-message''.
 @inindex unused
 @item
-@code{unused} (6).  Formerly @code{reverse-link-sym}.  The reverse link now
+@code{unused} (5).  Formerly @code{reverse-link-sym}.  The reverse link now
 lives in @code{vm-reverse-link-table}; see @code{vm-reverse-link-of}.  Stored in
 the message it chained the whole folder for the garbage collector, one stack
 frame per message, which crashed Emacs on large folders.
 @inindex message-type
 @item
-@code{message-type} (7).  A symbol indicating the type of the message
+@code{message-type} (6).  A symbol indicating the type of the message
 according to its folder type, one of @code{BellFrom_}, @code{From_} and
 @code{mboxcl2}.
 @inindex message-id-number
 @item
-@code{message-id-number} (8).  A number that uniquely identifies the message 
+@code{message-id-number} (7).  A number that uniquely identifies the message 
 within a VM session.
 @inindex buffer
 @item
-@code{buffer} (9). The Folder buffer of the message.  (Messages in Presentation
+@code{buffer} (8). The Folder buffer of the message.  (Messages in Presentation
 buffers also have this field set to the corresponding Folder buffer.)
 @inindex thread-indentation
 @item
-@code{thread-indentation} (10). Indentation level of the message in its message
+@code{thread-indentation} (9). Indentation level of the message in its message
 thread.
 @inindex thread-indentation-offset
 @item
-@code{thread-indentation-offset} (22). Indentation added by the user for the
+@code{thread-indentation-offset} (21). Indentation added by the user for the
 message, which is used in addition to the @code{thread-indentation}.  This
 is not ``cached'' data and should not be discarded.
 @inindex thread-list
 @item
-@code{thread-list} (11).  List of symbols from @code{vm-thread-obarray} that
+@code{thread-list} (10).  List of symbols from @code{vm-thread-obarray} that
 give this message's lineage.
 @inindex thread-subtree
 @item
-@code{thread-subtree} (20).  List of messages that form the subtree under
+@code{thread-subtree} (19).  List of messages that form the subtree under
 this message in a threaded summary display.
 @inindex babyl-frob-flag
 @item
-@code{babyl-frob-flag} (12).
+@code{babyl-frob-flag} (11).
 @inindex saved-virtual-attributes
 @item
-@code{saved-virtual-attributes} (13).  Saved attributes if the message
+@code{saved-virtual-attributes} (12).  Saved attributes if the message
 switched from unmirrored to mirrored.
 @inindex saved-virtual-mirror-data
 @item
-@code{saved-virtual-mirror-data} (14).  Saved mirror data, if the message was
+@code{saved-virtual-mirror-data} (13).  Saved mirror data, if the message was
 switched from unmirrored to mirrored.
 @inindex virtual-summary
 @item
-@code{virtual-summary} (15).  Summary for unmirrored virtual message.
+@code{virtual-summary} (14).  Summary for unmirrored virtual message.
 @inindex mime-layout
 @item
-@code{mime-layout} (16).  @acronym{MIME} layout information; types, ids,
+@code{mime-layout} (15).  @acronym{MIME} layout information; types, ids,
 positions, etc of all @acronym{MIME} entities.  (See below.)
 @inindex mime-encoded-header-flag
 @item
-@code{mime-encoded-header-flag} (17). Flag that indicates if the headers of
+@code{mime-encoded-header-flag} (16). Flag that indicates if the headers of
 the message are @acronym{MIME} encoded.
 @inindex su-summary-mouse-track-overlay
 @item
-@code{su-summary-mouse-track-overlay} (18).  The overlay on the summary of
+@code{su-summary-mouse-track-overlay} (17).  The overlay on the summary of
 this message used for selection by mouse.
 @inindex message-access-method
 @item
-@code{message-access-method} (19).  The access-method to be used for the
+@code{message-access-method} (18).  The access-method to be used for the
 message, inherited from its real folder.
 @end itemize
 

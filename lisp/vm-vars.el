@@ -3756,7 +3756,7 @@ the message."
   :type '(choice (const nil)
 		 regexp))
 
-(defcustom vm-summary-format "%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"\n"
+(defcustom vm-summary-format "%3n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"\n"
   "*String which specifies the message summary line format.
 The string may contain the printf-like `%' conversion specifiers which
 substitute information about the message into the final summary line.

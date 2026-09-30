@@ -538,14 +538,56 @@ answer alike."
                          (list format (vm-summary-sprintf format message))))))
       ;; and the columns themselves, so the two paths cannot agree on
       ;; something neither of them should answer
-      (dolist (case '(("%5n" . "    1") ("%-5n" . "  1  ") ("%n" . "  1")
-                      ("%5*" . "     ") ("%5I" . "     ") ("%3.2n" . "   ")))
+      (dolist (case '(("%5n" . "    1") ("%-5n" . "1    ") ("%n" . "1")
+                      ("%5*" . "     ") ("%5I" . "     ") ("%3.2n" . "  1")))
         (with-temp-buffer
           (vm-tokenized-summary-insert
            message (vm-summary-sprintf (car case) message t))
           (should (equal (list (car case) (buffer-substring-no-properties
                                           (point-min) (point-max)))
                          (list (car case) (cdr case)))))))))
+
+;;; `%n' is printf's %s, and the width does the padding (issue #861)
+
+(ert-deftest vm-summary-test-the-message-number-is-not-padded-for-you ()
+  "`%n' substitutes the message number and nothing else.
+VM padded it to three columns in `vm-number-messages' and `%n' inserted that,
+so `%n' was three wide whatever the reader wrote, `%-3n' did nothing at all,
+and `%05n' filled the zeros in front of the padding: \"00  1\".  The padding
+is the format's job now, which is what it is in printf and what the manual
+already said (emacs-vm/vm#861).
+
+The default `vm-summary-format' asks for `%3n', so a default summary is the
+same three columns it always was."
+  (vm-test-with-folder vm-summary-test-folder
+    (vm-number-messages)
+    (let ((message (car vm-message-list)))
+      (dolist (case '(("%n" . "1") ("%3n" . "  1") ("%-3n" . "1  ")
+                      ("%5n" . "    1")))
+        (should (equal (list (car case) (vm-summary-sprintf (car case) message))
+                       (list (car case) (cdr case))))
+        (with-temp-buffer
+          (vm-tokenized-summary-insert
+           message (vm-summary-sprintf (car case) message t))
+          (should (equal (list (car case) (buffer-string))
+                         (list (car case) (cdr case)))))))))
+
+(ert-deftest vm-summary-test-a-zero-width-fills-a-number-on-the-compiled-path ()
+  "`%05n' zero-fills where the format is a string, and pads with spaces where
+it is a token list.  Against \"00  1\" and \"    1\" before, which agreed with
+neither printf nor each other.
+
+A folder summary is tokenized, so the zeros are the compiled path's: filling
+a group with anything but spaces means telling `group-begin' what to fill
+with, and a token list is written into the folder's own summary cache."
+  (vm-test-with-folder vm-summary-test-folder
+    (vm-number-messages)
+    (let ((message (car vm-message-list)))
+      (should (equal "00001" (vm-summary-sprintf "%05n" message)))
+      (with-temp-buffer
+        (vm-tokenized-summary-insert
+         message (vm-summary-sprintf "%05n" message t))
+        (should (equal "    1" (buffer-string)))))))
 
 (defconst vm-summary-test--with-attachments
   (concat "From a@b.c Mon Jan  1 00:00:00 2024\n"
@@ -582,6 +624,22 @@ buffer of VM\='s own making rather than a buffer holding the text."
              (with-current-buffer buffer (set-buffer-modified-p nil))
              (kill-buffer buffer))))
        (delete-directory dir t))))
+
+(ert-deftest vm-summary-test-the-default-format-still-gives-three-columns ()
+  "The default format's first field is the same as it was.
+`%n' with the padding gone is one column, so the default asks for `%3n': a
+reader who did not change `vm-summary-format' sees no difference.  A real
+folder here, because the default format asks for things a bare message
+vector does not carry."
+  (vm-summary-test--visiting vm-summary-test-folder
+    ;; `vm-message-list' is local to the folder buffer, so the message is
+    ;; taken here rather than inside the temporary one
+    (let* ((message (car vm-message-list))
+           (tokens (vm-summary-sprintf vm-summary-format message t))
+           (line (with-temp-buffer
+                   (vm-tokenized-summary-insert message tokens)
+                   (buffer-string))))
+      (should (string-prefix-p "  1 " line)))))
 
 (ert-deftest vm-summary-test-the-attachment-indicator-counts-for-a-symbol ()
   "%P is the indicator alone for a string and the indicator and count for a

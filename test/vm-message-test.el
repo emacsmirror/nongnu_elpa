@@ -21,7 +21,30 @@
 
 (ert-deftest vm-message-test-softdata-vector-length ()
   "Test softdata vector length constant."
-  (should (= vm-softdata-vector-length 23)))
+  (should (= vm-softdata-vector-length 22))
+  (should (= (length vm-softdata-fields) vm-softdata-vector-length)))
+
+(ert-deftest vm-message-test-every-softdata-accessor-reads-its-own-field ()
+  "Each `vm-FIELD-of' reads the slot `vm-softdata-fields' names for it.
+The vector is positional and every accessor carries its index as a literal,
+so a slot added or taken out in one place and not the other is silent.  The
+padded-number slot came out in emacs-vm/vm#861 and every index above it moved
+down; this is what says they all moved together.
+
+`:unused' has no accessor, and the two `-sym' fields hold a symbol whose
+value is the message, so they are read by name here like any other slot."
+  (let ((m (vm-make-message))
+        (checked 0))
+    (dotimes (i vm-softdata-vector-length)
+      (let* ((field (symbol-name (aref vm-softdata-fields i)))
+             (getter (intern-soft (concat "vm-" (substring field 1) "-of")))
+             (token (intern (format "slot-%d" i))))
+        (when (fboundp getter)
+          (aset (vm-softdata-of m) i token)
+          (should (eq token (funcall getter m)))
+          (setq checked (1+ checked)))))
+    ;; every field but `:unused\='
+    (should (= checked (1- vm-softdata-vector-length)))))
 
 (ert-deftest vm-message-test-attributes-vector-length ()
   "Test attributes vector length constant."
@@ -101,12 +124,6 @@
   (let ((m (vm-make-message)))
     (vm-set-number-of m "42")
     (should (string= (vm-number-of m) "42"))))
-
-(ert-deftest vm-message-test-set-padded-number-of ()
-  "Test setting padded message number."
-  (let ((m (vm-make-message)))
-    (vm-set-padded-number-of m "  42")
-    (should (string= (vm-padded-number-of m) "  42"))))
 
 (ert-deftest vm-message-test-set-mark-of ()
   "Test setting message mark."

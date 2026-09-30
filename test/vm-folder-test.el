@@ -1551,9 +1551,7 @@ this folder two messages numbered 2."
     (vm-set-number-of (vm-test-nth-message 2) "99")
     (vm-set-number-of (vm-test-nth-message 3) "99")
     (vm-number-messages (nthcdr 2 vm-message-list))
-    (should (equal '("1" "2" "3" "4") (mapcar #'vm-number-of vm-message-list)))
-    (should (equal '("  1" "  2" "  3" "  4")
-                   (mapcar #'vm-padded-number-of vm-message-list)))))
+    (should (equal '("1" "2" "3" "4") (mapcar #'vm-number-of vm-message-list)))))
 
 (ert-deftest vm-folder-test-numbering-from-the-first-message-starts-at-one ()
   "A start point at the head of the folder has no message before it.
@@ -4429,7 +4427,7 @@ the folder the message being looked at really lives in."
                   (real-sym (make-symbol "real")))
               ;; a virtual message points at its real one through a symbol
               (set real-sym message)
-              (aset (aref mirror 1) 5 real-sym)
+              (vm-set-real-message-sym-of mirror real-sym)
               (vm-set-buffer-of mirror virtual)
               (setq vm-message-list (list mirror)
                     vm-message-pointer vm-message-list))
