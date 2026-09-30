@@ -259,6 +259,7 @@ work, with no need for auth flow/JS-capable browser."
    ;; error out and tell user to remove plstore and start over or disable
    ;; auth source:
    ((mastodon-auth--plstore-token-check))
+   ;; FIXME: remove :access_token from "active user" when auth-source:
    ((plist-get (mastodon-client--active-user) :access_token)
     ;; user variables need to be read from plstore active-user entry.
     (push (cons mastodon-instance-url
