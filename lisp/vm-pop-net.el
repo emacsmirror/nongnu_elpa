@@ -53,8 +53,7 @@
 
 (defvar vm-pop-net-read-point nil
   "Where the next read of this POP session starts.
-Buffer-local to the process buffer, as `vm-pop-read-point\\=' is for the
-blocking implementation.")
+Buffer-local to the process buffer, one session to a buffer.")
 (make-variable-buffer-local 'vm-pop-net-read-point)
 
 (defvar vm-pop-net-auth nil
@@ -753,8 +752,8 @@ with none: the same cleaning up the blocking path does, in the same order."
 	  ;;
 	  ;; Some servers send the separators and some do not, which is what
 	  ;; the type of what arrived says.  Without them the message is a
-	  ;; bare one and is given the folder's own, the same way and in the
-	  ;; same order as vm-pop-retrieve-to-target does it.
+	  ;; bare one and is given the folder's own: leading separator, then
+	  ;; the headers converted to the folder's type, then the trailing one.
 	  (when (eq (vm-get-folder-type nil start end) 'unknown)
 	    (vm-munge-message-separators folder-type start end)
 	    (goto-char start)
