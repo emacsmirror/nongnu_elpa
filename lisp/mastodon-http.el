@@ -342,7 +342,9 @@ Optionally make the request SILENT."
    url
    params silent
    (lambda (status)
-     (when status ; for flakey servers
+     ;; status can be nil if no GnuTLS, so can't just (when status ...)
+     (if-let* ((err (plist-get status :error)))
+         (message "Error fetching %s: %s" url (car err))
        (apply callback (mastodon-http--process-response) cbargs)))))
 
 (defun mastodon-http--get-json-async (url &optional params silent
@@ -354,7 +356,9 @@ Optionally make the request SILENT."
    url
    params silent
    (lambda (status)
-     (when status ;; only when we actually get sth?
+     ;; status can be nil if no GnuTLS, so can't just (when status ...)
+     (if-let* ((err (plist-get status :error)))
+         (message "Error fetching %s: %s" url (car err))
        (apply callback (mastodon-http--process-json) cbargs)))))
 
 (defun mastodon-http--post-async (url params _headers &optional callback &rest cbargs)
@@ -418,7 +422,7 @@ The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
 (require 'mm-url)
 
 (defun mastodon-http--post-media-attachment (url filepath caption)
-  "Make POST request to upload FILENAME with CAPTION to the server's media URL.
+  "POST file at FILEPATH with CAPTION to the server's media URL.
 The upload is asynchronous. On succeeding,
 `mastodon-toot--media-attachment-ids' is set to the id(s) of the
 item uploaded, and `mastodon-toot--update-status-fields' is run."

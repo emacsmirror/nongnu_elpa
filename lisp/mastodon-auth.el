@@ -48,8 +48,8 @@
 (autoload 'mastodon-http--post "mastodon-http")
 (autoload 'mastodon-return-credential-account "mastodon")
 (autoload 'mastodon-client--general-read "mastodon-client")
-(autoload 'mastodon-client--token-file "mastodon-client")
 
+(defvar mastodon-client--token-file)
 (defvar mastodon-instance-url)
 (defvar mastodon-client-scopes)
 (defvar mastodon-client-redirect-uri)
@@ -64,13 +64,32 @@
   "Whether to use auth sources for user credentials.
 If t, save and read user access token in the user's auth source
 file (see `auth-sources'). If nil, use `mastodon-client--token-file'
-instead.
+\(a plstore) instead.
+
 If you change the value of this variable, call
 `mastodon-forget-all-logins' and log in again.
+
 If for some reason you generate a new token, you'll have to update your
 auth souce file manually, or at least remove the entry and authenticate
 again, as auth-source.el only provides unreliable tools for updating
-entries."
+entries.
+
+You may also have to save your token manually to your auth source file
+if it is unencrypted. From testing, it seems that auth-sources fails to
+save to unencrypted authinfo files.
+
+If you do not have access to a JS-capable browser, or just want to avoid
+the auth flow, you can manually create an entry in authinfo containing
+your existing token as the password entry, and mastodon.el should pick
+it up and work."
+  :type 'boolean)
+
+(defcustom mastodon-auth-encrypt-tokens-plstore t
+  "Whether to encrypt client and user tokens in the plstore.
+Disable this if you don't want to use GPG to encrypt mastodon.plstore.
+If you want this enalbed, set `plstore-encrypt-to' (and maybe also
+`epa-file-encrypt-to') to your key ID to avoid being asked for your
+passphrase everytime the plstore if loaded/saved."
   :type 'boolean)
 
 (defvar mastodon-auth-source-file nil
@@ -204,15 +223,17 @@ Used to help users switch to the new encrypted auth token flow."
  If you don't want to use auth sources,\
  also set `mastodon-auth-use-auth-source' to nil.\
  If this message is in error, contact us on the mastodon.el repo")
-      (user-error "Unencrypted access token in your plstore.\
+      (when mastodon-auth-encrypt-tokens-plstore
+        (user-error "Unencrypted access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and log in again.
- If this message is in error, contact us on the mastodon.el repo"))))
+Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
+ If this message is in error, contact us on the mastodon.el repo")))))
 
 (defun mastodon-auth--plstore-access-token-member (&optional auth-source)
   "Return non-nil if the user entry of the plstore contains :access_token.
 If AUTH-SOURCE, also check if it contains :secret-access_token."
-  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+  (let* ((plstore (plstore-open mastodon-client--token-file))
          (name (concat "user-" (mastodon-client--form-user-from-vars)))
          ;; get alist like plstore.el does, so that keys will display with
          ;; ":secret-" prefix if encrypted:
@@ -224,7 +245,11 @@ If AUTH-SOURCE, also check if it contains :secret-access_token."
 
 (defun mastodon-auth--access-token ()
   "Return the access token to use with `mastodon-instance-url'.
-Generate/save token if none known yet."
+Generate/save token if none known yet.
+Also try to fetch token from `mastodon-auth-use-auth-source' if it is enabled.
+Note that this means it should be possible for a user to copy an
+existing token to their authinfo file manually, and mastodon.el will
+work, with no need for auth flow/JS-capable browser."
   (cond
    (mastodon-auth--token-alist
     ;; user variables are known and initialised.
@@ -234,6 +259,7 @@ Generate/save token if none known yet."
    ;; error out and tell user to remove plstore and start over or disable
    ;; auth source:
    ((mastodon-auth--plstore-token-check))
+   ;; FIXME: remove :access_token from "active user" when auth-source:
    ((plist-get (mastodon-client--active-user) :access_token)
     ;; user variables need to be read from plstore active-user entry.
     (push (cons mastodon-instance-url
@@ -247,6 +273,23 @@ Generate/save token if none known yet."
     (mastodon-auth--show-notice mastodon-auth--user-unaware
                                 "*mastodon-notice*")
     (user-error "Variables not set properly"))
+   ;; Check auth-source for a token:
+   ((and mastodon-auth-use-auth-source
+         ;; nil if we have no entry (i.e. if we fail, don't error out, but
+         ;; continue to auth flow):
+         (mastodon-auth-source-get
+          mastodon-active-user
+          (url-domain
+           (url-generic-parse-url mastodon-instance-url))))
+    ;; if entry token is incorrect, we error in
+    ;; `mastodon-return-account-credentials'
+    (let ((token (cadr
+                  (mastodon-auth-source-get
+                   mastodon-active-user
+                   (url-domain
+                    (url-generic-parse-url mastodon-instance-url))))))
+      (push `(,mastodon-instance-url . ,token) mastodon-auth--token-alist)
+      token))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
@@ -270,6 +313,8 @@ Handle any errors from the server."
 (defun mastodon-auth-source-get (user host &optional token create)
   "Fetch an auth source token, searching by USER and HOST.
 If CREATE, use TOKEN or prompt for it, and save it if there is no such entry.
+If not CREATE, but only fetching, TOKEN must be non-nil (e.g. a flag) to
+return to return token.
 Return a list of user, password/secret, and the item's save-function."
   (let* ((auth-source-creation-prompts
           '((secret . "%u access token: ")))
@@ -285,15 +330,20 @@ Return a list of user, password/secret, and the item's save-function."
              `(,(plist-get source :user)
                ,(auth-info-password source)
                ,(plist-get source :save-function))))
+        ;; FIXME: save-function is nil if auth-sources is ~/authinfo:
         (when create ;; call save function:
-          (when (functionp (nth 2 creds))
-            (funcall (nth 2 creds))))
+          (if (functionp (nth 2 creds))
+              (funcall (nth 2 creds))
+            (user-error "Unable to save auth-source entry. \
+Create an auth-source entry yourself with token as password")))
         creds))))
 
 (defun mastodon-auth-source-token (url handle &optional token create)
   "Parse URL, search auth sources with it, user HANDLE and TOKEN.
 Calls `mastodon-auth-source-get', returns only the token.
-If CREATE, create an entry is none is found."
+If CREATE, create an entry is none is found.
+If not CREATE, but only fetching, TOKEN must be non-nil (e.g. a flag) to
+return to return token."
   (let ((host (url-host
                (url-generic-parse-url url)))
         (username (car (split-string handle "@"))))

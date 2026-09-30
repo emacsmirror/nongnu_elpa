@@ -1,4 +1,4 @@
-This is mastodon.info, produced by makeinfo version 6.8 from
+This is mastodon.info, produced by makeinfo version 7.1.1 from
 mastodon.texi.
 
 INFO-DIR-SECTION Emacs
@@ -16,7 +16,7 @@ A Mastodon client
 
 * README::
 
-— The Detailed Node Listing —
+-- The Detailed Node Listing --
 
 README
 
@@ -148,7 +148,7 @@ Then, require it and go.
        :ensure t)
 
    The minimum Emacs version is now 28.1.  But if you are running an
-older version it shouldn’t be very hard to get it working.
+older version it shouldn't be very hard to get it working.
 
 
 File: mastodon.info,  Node: Emoji,  Next: Discover,  Prev: Repo,  Up: Installation
@@ -236,17 +236,17 @@ Emacs and follow the steps again.
 
   1. encrypted access tokens (from 2.0.0)
 
-     By default, user access tokens are now stored in the user’s auth
+     By default, user access tokens are now stored in the user's auth
      source file (typically ‘~/.authinfo.gpg’, check the value of
      ‘auth-sources’).  When you first update to 2.0.0, or if you
      encounter issues due to old credentials, call
      ‘(mastodon-forget-all-logins)’ to remove the old mastodon.el
-     plstore, and then authenticate again.  If you don’t want to use the
+     plstore, and then authenticate again.  If you don't want to use the
      auth source file, set ‘mastodon-auth-use-auth-source’ to nil.
      Entries will instead be stored encrypted in
      ‘mastodon-client--token-file’, a plstore.
 
-     If for some reason you reauthenticate, you’ll need to either remove
+     If for some reason you reauthenticate, you'll need to either remove
      the entry in your auth sources file, or manually update the token
      in it after doing so, as mastodon.el is unable to reliably update
      (or even remove) entries.
@@ -257,9 +257,10 @@ Emacs and follow the steps again.
 
      with the token being what you copy from the browser when
      authenticating.  If you have ‘auth-source-save-behavior’ set to
-     nil, you’ll also need to add such an entry manually.
+     nil, you'll also need to add such an entry manually.  Moreover, you
+     should ensure that your ‘auth-sources’ file is actually writable.
 
-     Finally, if you find you’re asked for your key passphrase too often
+     Finally, if you find you're asked for your key passphrase too often
      while authenticating, consider setting ‘epa-file-encrypt-to’ (for
      auth-source encryption) and ‘plstore-encrypt-to’ (for plstore
      encryption) to your preferred key ID.
@@ -356,11 +357,11 @@ your ‘mastodon-token-file’ does not contain ‘:client_id’ and
 
      Marker             Meaning
      --------------------------------------------
-     ‘(🔁)’ (or          I boosted this toot
+     ‘(🔁)’ (or         I boosted this toot
      ‘(B)’)
-     ‘(⭐)’ (or          I favourited this toot
+     ‘(⭐)’ (or         I favourited this toot
      ‘(F)’)
-     ‘(🔖)’ (or          I bookmarked this toot
+     ‘(🔖)’ (or         I bookmarked this toot
      ‘(K)’)
 
 
@@ -380,10 +381,10 @@ boosters by default.  If the region is active when you start a reply, it
 will be yanked into the compose buffer prefixed with ‘>’ to form a rough
 reply quote.
 
-   Server’s max toot length, with running char count, and attachment
+   Server's max toot length, with running char count, and attachment
 previews, are shown.
 
-   You can download and use your instance’s custom emoji
+   You can download and use your instance's custom emoji
 (‘mastodon-toot--download-custom-emoji’,
 ‘mastodon-toot--enable-custom-emoji’).
 
@@ -489,7 +490,7 @@ and should work without first loading a ‘mastodon.el’ buffer:
    • ‘mastodon-tl--follow-tag’: Follow a tag (works like following a
      user)
    • ‘mastodon-tl--unfollow-tag’: Unfollow a tag
-   • ‘mastodon-tl--list-followed-tags’: View a list of tags you’re
+   • ‘mastodon-tl--list-followed-tags’: View a list of tags you're
      following.
    • ‘mastodon-tl--followed-tags-timeline’: View a timeline of all your
      followed tags.
@@ -514,7 +515,7 @@ File: mastodon.info,  Node: Notifications,  Next: Customization,  Prev: Other co
 
 Mastodon from 4.3 supports grouped notifications.  These are implemented
 by ‘mastodon.el’ but disabled by default out of consideration to users
-on instances that don’t support them.  If you are on an instance that
+on instances that don't support them.  If you are on an instance that
 implements grouped notifications, set ‘mastodon-group-notifications’ to
 ‘t’ to enable them.
 
@@ -544,7 +545,7 @@ See ‘M-x customize-group RET mastodon’ to view all customize options.
         • Set default reply visibility
 
    • Nofitication options:
-        • Display user’s profile note in follow requests
+        • Display user's profile note in follow requests
         • Group notifications
 
 
@@ -583,7 +584,7 @@ File: mastodon.info,  Node: Packages related to mastodonel,  Next: Live-updating
   3. Mastodon hydra
 
      A user made a hydra for handling basic ‘mastodon.el’ commands.
-     It’s available at
+     It's available at
      <https://holgerschurig.github.io/en/emacs-mastodon-hydra/>.
 
   4. Narrow to timeline item
@@ -592,11 +593,18 @@ File: mastodon.info,  Node: Packages related to mastodonel,  Next: Live-updating
      timelines:
      <http://takeonrules.com/2024/10/31/hacking-on-mastodon-emacs-package-to-narrow-viewing/>
 
-  5. Sachac’s config goodies
+  5. Sachac's config goodies
 
      The incomparable sachac has a bunch of ‘mastodon.el’ extensions and
      goodies in their literate config, available here:
      <https://sachachua.com/dotemacs/index.html#mastodon>.
+
+  6. syntax highlighting in posts
+
+     If you would like to have syntax highlighting when viewing posts
+     containing code (provided it is in ‘<pre>’ tags), consider
+     installing
+     <https://github.com/xuchunyang/shr-tag-pre-highlight.el>.
 
 
 File: mastodon.info,  Node: Live-updating timelines mastodon-async-mode,  Next: Translating toots,  Prev: Packages related to mastodonel,  Up: Usage
@@ -608,8 +616,8 @@ File: mastodon.info,  Node: Live-updating timelines mastodon-async-mode,  Next: 
 (https://github.com/alexjgriffith/mastodon-future.el).)
 
    Works for federated, local, and home timelines and for notifications.
-It’s a little touchy, one thing to avoid is trying to load a timeline
-more than once at a time.  It can go off the rails a bit, but it’s still
+It's a little touchy, one thing to avoid is trying to load a timeline
+more than once at a time.  It can go off the rails a bit, but it's still
 pretty cool.  The current maintainer of ‘mastodon.el’ is unable to debug
 or improve this feature.
 
@@ -630,9 +638,9 @@ lingva.ml (https://lingva.ml), to be installed to work.
 
    You could easily modify the simple function to use your Emacs
 translator of choice (‘libretrans.el’ , ‘google-translate’, ‘babel’,
-‘go-translate’, etc.), you just need to fetch the toot’s content with
+‘go-translate’, etc.), you just need to fetch the toot's content with
 ‘(mastodon-tl--content toot)’ and pass it to your translator function as
-its text argument.  Here’s what ‘mastodon-toot--translate-toot-text’
+its text argument.  Here's what ‘mastodon-toot--translate-toot-text’
 looks like:
 
      (defun mastodon-toot-translate-toot-text ()
@@ -654,7 +662,7 @@ File: mastodon.info,  Node: Bookmarks and mastodonel,  Prev: Translating toots, 
 Currently, this means that you can bookmark a post item and later load
 it in thread view.  This could be expanded to any item with an id, but
 probably not to things like timeline views.  If you want to be able to
-bookmark something, open an issue and ask, as it’s trivial to expand the
+bookmark something, open an issue and ask, as it's trivial to expand the
 bookmarking code.
 
 
@@ -709,7 +717,7 @@ File: mastodon.info,  Node: Contributing,  Next: Supporting mastodonel,  Prev: N
 PRs, issues, feature requests, and general feedback are very welcome!
 
    If you prefer emailing patches to the process described below, feel
-free to send them on.  Ideally they’d be patches that can be applied
+free to send them on.  Ideally they'd be patches that can be applied
 with ‘git am’, if you want to actually contribute a commit.
 
 * Menu:
@@ -725,8 +733,8 @@ File: mastodon.info,  Node: Bug reports,  Next: Fixes and features,  Up: Contrib
 -----------------
 
   1. ‘mastodon.el’ has bugs, as well as lots of room for improvement.
-  2. I receive very little feedback, so if I don’t run into the bug it
-     often doesn’t get fixed.
+  2. I receive very little feedback, so if I don't run into the bug it
+     often doesn't get fixed.
   3. If you run into something that seems broken, first try running
      ‘mastodon.el’ in emacs with no init file (i.e.  ‘emacs -q’
      (instructions and code for doing this are here
@@ -746,11 +754,11 @@ File: mastodon.info,  Node: Fixes and features,  Next: Coding style,  Prev: Bug 
 
   1. Install Cask
      (https://cask.readthedocs.io/en/latest/guide/installation.html) if
-     you don’t already have it installed
+     you don't already have it installed
   2. Create an issue (https://codeberg.org/martianh/mastodon.el/issues)
-     detailing what you’d like to do.
+     detailing what you'd like to do.
   3. Fork the repository and create a branch off of ‘develop’.
-  4. Run the tests (with ‘make tests’) and ensure that your code doesn’t
+  4. Run the tests (with ‘make tests’) and ensure that your code doesn't
      break any of them.
   5. Create a pull request (to develop) referencing the issue created in
      step 2.
@@ -767,7 +775,7 @@ File: mastodon.info,  Node: Coding style,  Prev: Fixes and features,  Up: Contri
      changed.
    • Use ‘aggressive-indent-mode’ or similar to keep your code indented.
    • Single spaces end sentences in docstrings.
-   • There’s no need for a blank line after the first docstring line
+   • There's no need for a blank line after the first docstring line
      (one is added automatically when documentation is displayed).
 
 
@@ -776,17 +784,17 @@ File: mastodon.info,  Node: Supporting mastodonel,  Next: Contributors,  Prev: C
 1.6 Supporting ‘mastodon.el’
 ============================
 
-If you’d like to support continued development of ‘mastodon.el’, I
+If you'd like to support continued development of ‘mastodon.el’, I
 accept donations via paypal: paypal.me/martianh
 (https://paypal.me/martianh).
 
    I also accept support via liberapay:
 
    If you would prefer a different payment method, please write to me at
-<mousebot {at} disroot.org> and I can provide IBAN or other bank account
+<martianh {at} disroot.org> and I can provide IBAN or other bank account
 details.
 
-   I don’t have a tech worker’s income, so even a small tip would help
+   I don't have a tech worker's income, so even a small tip would help
 out.
 
 
@@ -811,23 +819,23 @@ File: mastodon.info,  Node: Screenshots,  Prev: Contributors,  Up: README
 1.8 Screenshots
 ===============
 
-Here’s a (federated) timeline:
+Here's a (federated) timeline:
 
  [image src="screenshot-tl.png" ]
 
 
-   Here’s a notifcations view plus a compose buffer:
+   Here's a notifcations view plus a compose buffer:
 
  [image src="screenshot-notifs+compose.png" ]
 
 
-   Here’s a user settings transient (active values green, current server
+   Here's a user settings transient (active values green, current server
 values commented and, if a boolean, underlined):
 
  [image src="screenshot-transient-1.jpg" ]
 
 
-   Here’s a user profile fields transient (changed fields green, current
+   Here's a user profile fields transient (changed fields green, current
 server values commented):
 
  [image src="screenshot-transient-2.jpg" ]
@@ -836,46 +844,47 @@ server values commented):
 
 
 Tag Table:
-Node: Top219
+Node: Top221
 Node: README1083
 Node: Installation1732
 Node: ELPA2021
 Node: MELPA2249
 Node: Repo2629
-Node: Emoji3122
-Node: Discover3716
-Node: Usage4268
-Node: Logging in to your instance4770
-Ref: encrypted access tokens (from 200)5742
-Node: Timelines7200
-Ref: Keybindings7675
-Ref: Toot byline legend12657
-Node: Composing toots12966
-Ref: Keybindings (1)14518
-Ref: Autocompletion of mentions tags and emoji15073
-Ref: Draft toots15998
-Node: Other commands and account settings16469
-Node: Notifications19144
-Node: Customization19629
-Node: Commands and variables index20517
-Node: Packages related to mastodonel21036
-Ref: Alternative timeline layout21289
-Ref: Org links archive search21516
-Ref: Mastodon hydra21735
-Ref: Narrow to timeline item21919
-Ref: Sachac's config goodies22126
-Node: Live-updating timelines mastodon-async-mode22345
-Node: Translating toots23200
-Node: Bookmarks and mastodonel24383
-Node: Dependencies24925
-Node: Network compatibility25711
-Node: Contributing26652
-Node: Bug reports27148
-Node: Fixes and features28059
-Node: Coding style28722
-Node: Supporting mastodonel29346
-Node: Contributors29947
-Node: Screenshots30382
+Node: Emoji3120
+Node: Discover3714
+Node: Usage4266
+Node: Logging in to your instance4768
+Ref: encrypted access tokens (from 200)5740
+Node: Timelines7278
+Ref: Keybindings7753
+Ref: Toot byline legend12735
+Node: Composing toots13041
+Ref: Keybindings (1)14589
+Ref: Autocompletion of mentions tags and emoji15144
+Ref: Draft toots16069
+Node: Other commands and account settings16540
+Node: Notifications19213
+Node: Customization19696
+Node: Commands and variables index20582
+Node: Packages related to mastodonel21101
+Ref: Alternative timeline layout21354
+Ref: Org links archive search21581
+Ref: Mastodon hydra21800
+Ref: Narrow to timeline item21982
+Ref: Sachac's config goodies22189
+Ref: syntax highlighting in posts22411
+Node: Live-updating timelines mastodon-async-mode22659
+Node: Translating toots23510
+Node: Bookmarks and mastodonel24689
+Node: Dependencies25229
+Node: Network compatibility26015
+Node: Contributing26956
+Node: Bug reports27450
+Node: Fixes and features28357
+Node: Coding style29014
+Node: Supporting mastodonel29636
+Node: Contributors30231
+Node: Screenshots30666
 
 End Tag Table
 

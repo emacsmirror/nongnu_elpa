@@ -25,7 +25,13 @@ tests:
 	cask emacs -batch -load test/ert-helper.el -f ert-run-tests-batch-and-exit
 
 testsclean:
-	cask clean-elc && rm -f stubfile.plstore~
+	cask clean-elc && rm -f stubfile.plstore~ && rm -f .caskmastodon.plstore && rm -f .caskmastodon.plstore~
+
+build:
+	cask build
+
+buildclean:
+	cask clean-elc
 
 ## ################################################################
 
