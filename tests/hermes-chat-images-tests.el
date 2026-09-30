@@ -284,17 +284,38 @@
 (defmacro hermes-images-test-with-fresh-send (text &rest body)
   "Send image-bearing TEXT from a genuinely fresh chat, then run BODY."
   (declare (indent 1) (debug t))
-  `(let ((client (hermes-test--dashboard-client))
-         (preflight (hermes--promise-make))
-         (upload (hermes--promise-make))
-         (starts 0) (creates 0) (uploads 0) sent
-         create-resolve create-reject attach-resolve prompt-resolve)
+  `(let* ((client (hermes-test--dashboard-client))
+          (ready (hermes--promise-make))
+          (upload (hermes--promise-make))
+          (starts 0) (creates 0) (uploads 0) sent
+          create-resolve create-reject attach-resolve prompt-resolve
+          (hermes-dashboard-transport-websocket-send-function
+           (lambda (_socket wire)
+             (let* ((frame (hermes-dashboard-transport--decode-frame wire))
+                    (id (hermes-transport--get frame 'id))
+                    (params (hermes-transport--get frame 'params)))
+               (should (equal (hermes-transport--get frame 'method) "session.create"))
+               (should-not (assq 'cwd params))
+               (should-not (assq 'cwd_explicit params))
+               (cl-incf creates)
+               (setq create-resolve
+                     (lambda (result)
+                       (hermes-dashboard-transport--handle-frame
+                        client (hermes-dashboard-transport--encode-frame
+                                `((jsonrpc . "2.0") (id . ,id) (result . ,result)))))
+                     create-reject
+                     (lambda (message)
+                       (hermes-dashboard-transport--handle-frame
+                        client (hermes-dashboard-transport--encode-frame
+                                `((jsonrpc . "2.0") (id . ,id)
+                                  (error . ((code . -32000) (message . ,message))))))))))))
+     (setf (hermes-dashboard-transport-client-ready-promise client) ready
+           (hermes-dashboard-transport-client-ready-p client) nil)
      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
                 (lambda (&rest _) (cl-incf starts) client))
                ((symbol-function 'hermes-dashboard-transport-api-request-async)
                 (lambda (_method path &rest args)
                   (pcase path
-                    ("/api/fs/default-cwd" preflight)
                     ("/api/chat/image-upload"
                      (should (equal hermes-chat--dashboard-active-session-id "fresh"))
                      (should (equal (base64-decode-string
@@ -302,11 +323,7 @@
                                     hermes-images-test-png))
                      (cl-incf uploads) upload)
                     (_ (ert-fail (format "Unexpected HTTP request: %s" path))))))
-               ((symbol-function 'hermes-dashboard-transport-session-create)
-                (lambda (_client &rest args)
-                  (cl-incf creates)
-                  (setq create-resolve (plist-get args :resolve)
-                        create-reject (plist-get args :reject))))
+               ((symbol-function 'hermes-chat--warm-model-options) #'ignore)
                ((symbol-function 'hermes-dashboard-transport-image-attach)
                 (lambda (_client path &rest args)
                   (should (equal path "/backend/image.png"))
@@ -343,7 +360,7 @@
         (should (equal hermes-chat--queued-submit-id (plist-get entry :id)))
         (hermes-chat--drain-queued-message)
         (should (= starts 1))
-        (hermes--promise-resolve preflight '((cwd . "/srv/default")))
+        (hermes--promise-resolve ready t)
         (should (= creates 1))
         (should (= uploads 0))
         (funcall create-resolve '((session_id . "fresh")))
@@ -365,7 +382,7 @@
     (let* ((entry (car hermes-chat--queued-messages))
            (record (plist-get entry :image-record)))
       (should (= starts 1))
-      (hermes--promise-resolve preflight '((cwd . "/srv/default")))
+      (hermes--promise-resolve ready t)
       (should (= creates 1))
       (insert "newer draft")
       (funcall create-reject "Creation rejected")
@@ -388,7 +405,7 @@
       (should (= uploads 1)))))
 
 (ert-deftest hermes-images-fresh-bootstrap-cancel-kill-and-replace ()
-  (dolist (phase '(preflight create))
+  (dolist (phase '(ready create))
     (dolist (action '(cancel kill replace))
       (hermes-images-test-with-fresh-send "  retained\n"
         (let* ((chat (current-buffer))
@@ -397,7 +414,7 @@
                (recovery hermes-chat--image-recovery-buffer))
           (should (= starts 1))
           (when (eq phase 'create)
-            (hermes--promise-resolve preflight '((cwd . "/srv/default")))
+            (hermes--promise-resolve ready t)
             (should (= creates 1)))
           (pcase action
             ('cancel (hermes-chat-interrupt))
@@ -407,8 +424,8 @@
              (hermes-chat--stop-dashboard-client)
              (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
                    hermes-chat--dashboard-active-session-id "replacement")))
-          (if (eq phase 'preflight)
-              (hermes--promise-resolve preflight '((cwd . "/srv/stale")))
+          (if (eq phase 'ready)
+              (hermes--promise-resolve ready t)
             (funcall create-resolve '((session_id . "stale"))))
           (should (= creates (if (eq phase 'create) 1 0)))
           (should (= uploads 0))
@@ -426,15 +443,15 @@
             (should (equal hermes-chat--dashboard-active-session-id "replacement"))))))))
 
 (ert-deftest hermes-images-fresh-bootstrap-retired-connection-stays-local ()
-  (dolist (phase '(preflight create))
+  (dolist (phase '(ready create))
     (hermes-images-test-with-fresh-send "retained"
       (let ((record (plist-get (car hermes-chat--queued-messages) :image-record)))
         (should (= starts 1))
         (when (eq phase 'create)
-          (hermes--promise-resolve preflight '((cwd . "/srv/default"))))
+          (hermes--promise-resolve ready t))
         (cl-incf (hermes-dashboard-transport-client-generation client))
-        (if (eq phase 'preflight)
-            (hermes--promise-resolve preflight '((cwd . "/srv/stale")))
+        (if (eq phase 'ready)
+            (hermes--promise-resolve ready t)
           (funcall create-resolve '((session_id . "fresh"))))
         (should (= creates (if (eq phase 'create) 1 0)))
         (should (= uploads 0))
@@ -451,7 +468,7 @@
     (hermes-chat-send)
     (should (equal (hermes-test--queued-contents) '("first" "second")))
     (should (= starts 1))
-    (hermes--promise-resolve preflight '((cwd . "/srv/default")))
+    (hermes--promise-resolve ready t)
     (funcall create-resolve '((session_id . "fresh")))
     (hermes--promise-resolve upload '((ok . t) (path . "/backend/image.png")))
     (funcall attach-resolve '((attached . t) (path . "/backend/image.png")))

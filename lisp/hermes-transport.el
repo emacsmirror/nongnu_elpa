@@ -1095,7 +1095,7 @@ Delegate non-activity events to the notice and display fallback phase."
             type params payload "notification"
             (hermes-dashboard-transport--payload-text payload))))
     ;; Background completion is persistent content, not a transient status line.
-    ("background.complete"
+    ((or "background.complete" "btw.complete")
      (list (hermes-dashboard-transport--background-complete-event type params payload)))
     ;; A keyed clear must not decay into an empty transcript line.
     ((or "notification.show" "notification.clear")

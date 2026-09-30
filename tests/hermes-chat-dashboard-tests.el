@@ -2146,8 +2146,8 @@
        (should-not hermes-chat--create-override-owner)
        (should-not hermes-chat--dashboard-create-fast-p)))))
 
-(ert-deftest hermes-chat-dashboard-remote-create-uses-optional-default-cwd ()
-  "Prompt and control creation use the gateway default when it is available."
+(ert-deftest hermes-chat-dashboard-remote-create-keeps-profile-default ()
+  "Prompt and control creation omit launch defaults even when available."
   (dolist (path '(prompt control))
     (dolist (outcome '(success reject signal malformed))
       (let ((client (hermes-test--dashboard-client))
@@ -2181,9 +2181,8 @@
                 (setq hermes-chat--dashboard-client client)
                 (hermes-chat--dashboard-ensure-session-action
                  client (current-buffer) (lambda (_client) (setq action t)))))
-             (should (= api-calls 1))
-             (should (equal create-cwd
-                            (and (eq outcome 'success) "/srv/default")))
+             (should-not api-calls)
+             (should-not create-cwd)
              (should (equal hermes-chat--working-directory create-cwd))
              (should (equal default-directory "/tmp/editor/"))
              (should action))))))))
@@ -2218,7 +2217,7 @@
           (setq actions (1+ (or actions 0)))
           (error "continuation boom"))
         (lambda (message) (push message rejections)))
-       (should (= api-calls 1))
+       (should-not api-calls)
        (hermes-chat--dashboard-ensure-session
         client "late prompt" (current-buffer) nil
         (lambda (message) (push message rejections)))
@@ -2293,7 +2292,7 @@
 
 (ert-deftest hermes-chat-dashboard-reset-cancels-each-bootstrap-phase ()
   "Reset cancels preflight, create, and override owners before late callbacks."
-  (dolist (phase '(preflight create override))
+  (dolist (phase '(create override))
     (let ((client (hermes-test--dashboard-client))
           (preflight (hermes--promise-make))
           create-resolve config-resolve action rejected)
@@ -3451,6 +3450,177 @@
               (should-not hermes-chat--background-tasks)
               (should (equal (hermes-chat-input-string) "successor draft"))))
         (when (buffer-live-p recovery) (kill-buffer recovery))))))
+
+(ert-deftest hermes-chat-btw-wire-and-owned-completion ()
+  "Real BTW frames settle once, independent of launch receipt and main turn."
+  (dolist (early '(t nil))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let ((assistant hermes-chat--pending-assistant-id) requests)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                   (lambda (_client method params resolve reject)
+                     (push (list method params resolve reject) requests))))
+          (insert "/btw same question") (hermes-chat-send)
+          (insert "/btw same question") (hermes-chat-send)
+          (insert "/bg independent") (hermes-chat-send)
+          (setq requests (reverse requests))
+          (should (equal (mapcar #'car requests)
+                         '("prompt.btw" "prompt.btw" "prompt.background")))
+          (should (equal (alist-get 'text (nth 1 (car requests))) "same question"))
+          (should (equal (alist-get 'session_id (nth 1 (car requests))) "sid-prompt"))
+          (insert "new draft")
+          (cl-loop for task in '("btw-one" "btw-two") for request in requests do
+                   (unless early (funcall (nth 2 request) `((task_id . ,task))))
+                   (dotimes (_ 2)
+                     (hermes-test--emit-dashboard-prompt
+                      client "btw.complete" `((task_id . ,task) (text . "prior fact answer"))))
+                   (when early (funcall (nth 2 request) `((task_id . ,task)))))
+          (should (= 2 (length (seq-filter
+                               (lambda (entry) (eq (plist-get entry :role) 'background))
+                               (hermes-chat--entries)))))
+          (should (equal assistant hermes-chat--pending-assistant-id))
+          (should (equal (hermes-chat-input-string) "new draft")))))))
+
+(defun hermes-test--side-question-documents ()
+  "Return manual side-question recovery documents in this isolated test."
+  (seq-filter (lambda (buffer)
+                (string-prefix-p "*Hermes side question*" (buffer-name buffer)))
+              (buffer-list)))
+
+(ert-deftest hermes-chat-btw-failure-never-replays-on-main-settlement ()
+  "Real admission failures retain literal text outside the ordinary FIFO."
+  (dolist (failure '(rejected timeout malformed completed-before-rejection))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let* ((question "retain α\nsecond line")
+             (history (copy-tree hermes-chat--input-history))
+             (assistant hermes-chat--pending-assistant-id)
+             frames main-sends
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket frame) (push frame frames))))
+        (unwind-protect
+            (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                       (lambda (&rest args) (push args main-sends))))
+              (insert "/btw " question) (hermes-chat-send)
+              (should (= 1 (hash-table-count (hermes-dashboard-transport-client-pending client))))
+              (insert "newer draft")
+              (let* ((id (car (hash-table-keys (hermes-dashboard-transport-client-pending client))))
+                     (request (gethash id (hermes-dashboard-transport-client-pending client))))
+                (when (eq failure 'completed-before-rejection)
+                  (hermes-test--emit-dashboard-prompt client "btw.complete"
+                    '((task_id . "early") (text . "side answer"))))
+                (if (eq failure 'timeout)
+                    (hermes-dashboard-transport--on-request-timeout client id)
+                  (hermes-dashboard-transport--handle-frame
+                   client (hermes-dashboard-transport--encode-frame
+                           `((jsonrpc . "2.0") (id . ,id)
+                             ,(if (eq failure 'malformed) '(result . ())
+                                '(error . ((code . -32000) (message . "rejected"))))))))
+                ;; A duplicate or conflicting receipt cannot create another copy.
+                (funcall (plist-get request :reject) "late")
+                (funcall (plist-get request :resolve) '((task_id . "late"))))
+              (should (equal assistant hermes-chat--pending-assistant-id))
+              (should-not hermes-chat--queued-messages)
+              (should (= 1 (length (hermes-test--side-question-documents))))
+              (with-current-buffer (car (hermes-test--side-question-documents))
+                (should (equal question (buffer-string))))
+              (should (string-search "manual copying only" (buffer-string)))
+              (funcall (hermes-chat--submit-resolve-callback
+                        (current-buffer) hermes-chat--unsettled-submit-context)
+                       '((status . "streaming")))
+              (hermes-test--emit-dashboard-prompt client "session.info" '((running . :false)))
+              (hermes-test--emit-dashboard-prompt client "message.complete" '((text . "main answer")))
+              (should-not hermes-chat--pending-assistant-id)
+              (should-not main-sends)
+              (should (equal (cons (concat "/btw " question) history)
+                             hermes-chat--input-history))
+              (should-not hermes-chat--queued-messages)
+              (should (equal "newer draft" (hermes-chat-input-string)))
+              (should (= 1 (length frames)))
+              (should (equal "prompt.btw" (hermes-transport--get
+                                           (hermes-dashboard-transport--decode-frame (car frames)) 'method)))
+              (should (= (if (eq failure 'completed-before-rejection) 1 0)
+                         (length (seq-filter (lambda (entry) (eq (plist-get entry :role) 'background))
+                                             (hermes-chat--entries))))))
+          (mapc #'kill-buffer (hermes-test--side-question-documents)))))))
+
+(ert-deftest hermes-chat-btw-native-stop-recovery-and-replacement ()
+  "Closed status precedes RPC rejection; recovery never needs live admission."
+  (dolist (replacement '(nil newer session mode lifetime))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let ((hermes-dashboard-transport-websocket-send-function #'ignore))
+        (unwind-protect
+            (progn
+              (insert "/btw exact side question") (hermes-chat-send)
+              (let* ((pending (hermes-dashboard-transport-client-pending client))
+                     (request (gethash (car (hash-table-keys pending)) pending)))
+                (should (= 1 (hash-table-count pending)))
+                (pcase replacement
+                  ('session (setq hermes-chat--dashboard-active-session-id "successor"))
+                  ('mode (fundamental-mode) (let ((inhibit-read-only t)) (erase-buffer)))
+                  ('lifetime (hermes-chat--reset-transcript)))
+                (when replacement (insert "successor draft"))
+                ;; Replacement assertions concern the pending BTW callback, not
+                ;; the old main-turn listener retained by this fixture.
+                (when (memq replacement '(session mode lifetime))
+                  (setf (hermes-dashboard-transport-client-callback client) #'ignore))
+                (hermes-dashboard-transport-stop client "fixture closed" '(:type status :status "closed"))
+                (funcall (plist-get request :reject) "late rejection")
+                (should (= 0 (hash-table-count pending)))
+                (if (memq replacement '(session mode lifetime))
+                    (progn
+                      (should-not (hermes-test--side-question-documents))
+                      (should (string-suffix-p "successor draft" (buffer-string))))
+                  (should-not hermes-chat--dashboard-active-session-id)
+                  (should (= 1 (length (hermes-test--side-question-documents))))
+                  (with-current-buffer (car (hermes-test--side-question-documents))
+                    (should (equal "exact side question" (buffer-string))))
+                  (should (equal (if replacement "successor draft" "")
+                                 (hermes-chat-input-string))))
+                (should-not hermes-chat--queued-messages)))
+          (mapc #'kill-buffer (hermes-test--side-question-documents)))))))
+
+(ert-deftest hermes-chat-profile-cwd-wire-intent ()
+  "Unknown remote cwd is omitted; inherited spawn cwd is never explicit."
+  (hermes-test-with-chat-buffer
+   (let ((client (hermes-test--dashboard-client)) wire)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                (lambda (_client _method params &rest _) (setq wire params))))
+       (dolist (choice '(unknown inherited explicit))
+         (setq hermes-chat--profile "selected"
+               hermes-chat--resolved-start-mode 'remote
+               hermes-chat--working-directory (unless (eq choice 'unknown) "/selected")
+               hermes-chat--cwd-explicit-p (eq choice 'explicit))
+         (apply #'hermes-dashboard-transport-session-create client
+                (hermes-chat--dashboard-create-params))
+         (should (equal (alist-get 'profile wire) "selected"))
+         (if (eq choice 'unknown)
+             (progn (should-not (assq 'cwd wire)) (should-not (assq 'cwd_explicit wire)))
+           (should (equal (alist-get 'cwd wire) "/selected"))
+           (should (eq (alist-get 'cwd_explicit wire)
+                       (if (eq choice 'explicit) t :false)))))))))
+
+(ert-deftest hermes-chat-btw-foreign-and-retired-frames-stay-quiet ()
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let ((parent (current-buffer)) resolve)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-btw)
+                 (lambda (_client _text &rest args) (setq resolve (plist-get args :resolve)))))
+        (hermes-chat-btw "same question")
+        (hermes-dashboard-transport--handle-frame
+         client (hermes-dashboard-transport--encode-frame
+                 '((jsonrpc . "2.0") (method . "event")
+                   (params . ((type . "btw.complete") (session_id . "foreign")
+                              (payload . ((task_id . "foreign") (text . "wrong"))))))))
+        (should-not (seq-some (lambda (entry) (eq (plist-get entry :role) 'background))
+                             (hermes-chat--entries)))
+        (hermes-chat--reset-transcript)
+        (setf (hermes-dashboard-transport-client-callback client) #'ignore)
+        (insert "successor draft")
+        (funcall resolve '((task_id . "old")))
+        (hermes-test--emit-dashboard-prompt client "btw.complete"
+          '((task_id . "old") (text . "retired")))
+        (should (eq parent (current-buffer)))
+        (should (equal (hermes-chat-input-string) "successor draft"))
+        (should-not (seq-some (lambda (entry) (eq (plist-get entry :role) 'background))
+                             (hermes-chat--entries)))))))
 
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here

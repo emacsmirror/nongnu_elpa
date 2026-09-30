@@ -87,9 +87,28 @@ COLS, MESSAGES, TITLE, PROFILE, CWD, HIDDEN, CLOSE-ON-DISCONNECT, and optional
 runtime choices become request
 parameters.  The request identifies its source as `emacs'.  RESOLVE and REJECT
 receive the asynchronous result or error."
-  :keys (cols messages title profile cwd model provider reasoning-effort fast
+  :keys (cols messages title profile cwd cwd-explicit model provider reasoning-effort fast
                hidden close-on-disconnect)
   :params ((source . "emacs")))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-branch "session.branch"
+  "Branch CLIENT's live SESSION-ID, optionally assigning NAME.
+RESOLVE receives child identity and history; REJECT receives the error."
+  :keys (name) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-complete-path "complete.path"
+  "Complete WORD in CLIENT's SESSION-ID and gateway CWD.
+RESOLVE receives backend items; REJECT receives the error."
+  :args (word) :keys (cwd) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-prompt-btw "prompt.btw"
+  "Ask TEXT about CLIENT's SESSION-ID without changing its history.
+RESOLVE receives a task ID; REJECT receives the error.  The answer arrives
+separately as a `btw.complete' event."
+  :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-close "session.close"

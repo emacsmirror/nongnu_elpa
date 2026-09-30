@@ -146,6 +146,32 @@ The panel is read-only: pending tasks stay pending when a turn ends, with
 settled or stale labels rather than invented completion.  Backends without
 a restored task snapshot can still populate the panel from live tool results.
 
+** Conversation commands and file references
+
+=/btw QUESTION= asks a side question over the current conversation without
+changing its main history.  =/bg TASK= (also =/background=) instead starts an
+independent background task.  Both deliver persistent result links while the
+main turn can continue.  A rejected or uncertain side question is retained in
+a separate =*Hermes side question*= buffer, never in the send queue.  Inspect
+results before manually copying it into a new =/btw= command; recovery does not
+retry the question or replace a newer draft.
+
+=/branch [NAME]= branches the attached, idle conversation through the backend
+and opens the child with its history in a separate chat.  The parent and its
+draft remain available.  If a branch fails after backend creation, the child
+may still exist; inspect Sessions before retrying.
+
+Composer =@= completion reads the attached session's backend workspace, not
+Emacs's local project.  Try =@src/mo=, =@file:src/mo= or =@folder:src= and invoke
+completion again after the asynchronous lookup finishes.  Accepted candidates
+become explicit, quoted backend references.  Paths that cannot be represented
+by the backend parser are not offered.  This is reference completion, not a
+local-file upload; literal bare =@path= text does not attach file contents.
+
+New remote chats with no selected directory inherit the selected profile's
+backend workspace.  Emacs records the returned directory without changing its
+own =default-directory=.  Deliberately selected directories remain explicit.
+
 ** Session pins and named workspaces
 
 In =M-x hermes-list-sessions=, =k= toggles the selected session's server pin.

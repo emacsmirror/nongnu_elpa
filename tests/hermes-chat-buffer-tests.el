@@ -1131,21 +1131,134 @@
        (hermes-chat-send)
        (should-not hermes-chat--input-history)))))
 
-(ert-deftest hermes-chat-file-ref-capf-inserts-project-relative-path ()
-  "An @ prefix completes project files while retaining the reference marker."
+(ert-deftest hermes-chat-file-ref-capf-inserts-backend-reference ()
+  "Completion uses the session backend, never the editor project."
   (hermes-test-with-chat-buffer
-   (goto-char (point-max))
-   (insert "See @lisp/her")
-   (cl-letf (((symbol-function 'project-current) (lambda (&rest _) 'project))
-             ((symbol-function 'project-root) (lambda (_) "/tmp/project/"))
-             ((symbol-function 'project-files)
-              (lambda (_) '("/tmp/project/lisp/hermes.el"))))
-     (pcase-let ((`(,begin ,end ,candidates . ,_) (hermes-chat--file-ref-capf)))
-       (should (member "lisp/hermes.el" candidates))
-       (delete-region begin end)
-       (insert "lisp/hermes.el")
+   (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+         hermes-chat--dashboard-active-session-id "remote"
+         hermes-chat--working-directory "/remote")
+   (insert "See @src/mo")
+   (let (request local-read)
+     (cl-letf (((symbol-function 'project-current)
+                (lambda (&rest _) (setq local-read t) nil))
+               ((symbol-function 'hermes-dashboard-transport-complete-path)
+                (lambda (client word &rest args)
+                  (setq request (list client word args))
+                  (funcall (plist-get args :resolve)
+                           '((items . (((text . "@file:src/module.py")))))))))
+       (completion-at-point)
+       (should-not local-read)
+       (should (equal (cadr request) "@src/mo"))
+       (should (equal (plist-get (nth 2 request) :session-id) "remote"))
+       (should (equal (plist-get (nth 2 request) :cwd) "/remote"))
+       (should (equal (hermes-chat-input-string) "See @file:`src/module.py`"))))))
+
+(ert-deftest hermes-chat-file-ref-stale-reads-cannot-complete ()
+  "Late completion cannot replace newer text or cross session/cwd/connection."
+  (dolist (change '(input session cwd connection failure))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+           hermes-chat--dashboard-active-session-id "remote"
+           hermes-chat--working-directory "/remote")
+     (insert "@file:src/mo")
+     (let (resolve reject)
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                  (lambda (_client _word &rest args)
+                    (setq resolve (plist-get args :resolve) reject (plist-get args :reject)))))
+         (should-not (hermes-chat--file-ref-capf))
+         (let ((snapshot hermes-chat--path-completion))
+           (pcase change
+             ('input (insert "new"))
+             ('session (setq hermes-chat--dashboard-active-session-id "other"))
+             ('cwd (setq hermes-chat--working-directory "/other"))
+             ('connection (cl-incf (hermes-dashboard-transport-client-generation
+                                   hermes-chat--dashboard-client))))
+           (if (eq change 'failure) (funcall reject "unavailable")
+             (funcall resolve '((items . (((text . "@file:src/module.py")))))))
+           (should-not (plist-get snapshot :items))
+           (should (equal (hermes-chat-input-string)
+                          (if (eq change 'input) "@file:src/monew" "@file:src/mo")))))))))
+
+(ert-deftest hermes-chat-file-ref-quotes-space-and-unicode ()
+  (dolist (word '("@file:src/sp" "@file:`src/space α" "@folder:src"))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+           hermes-chat--dashboard-active-session-id "remote")
+     (insert word)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                (lambda (_client query &rest args)
+                  (should-not (string-search "`" query))
+                  (funcall (plist-get args :resolve)
+                           `((items . (((text . ,(if (string-prefix-p "@folder" word)
+                                                     "@folder:src/" "@file:src/space α.txt")))
+                                       ((text . "@file:bad`\"' name")))))))))
+       (completion-at-point)
        (should (equal (hermes-chat-input-string)
-                      "See @lisp/hermes.el"))))))
+                      (if (string-prefix-p "@folder" word)
+                          "@folder:`src/`" "@file:`src/space α.txt`")))))))
+
+(ert-deftest hermes-chat-path-choice-refuses-retired-native-candidates ()
+  "A displayed native candidate cannot overwrite a changed composer."
+  (dolist (change '(input session cwd connection))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+           hermes-chat--dashboard-active-session-id "live"
+           hermes-chat--working-directory "/backend")
+     (insert "@src/mo")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                (lambda (_client _word &rest args)
+                  (funcall (plist-get args :resolve)
+                           '((items . (((text . "@file:src/module.py")))))))))
+       (let* ((capf (hermes-chat--file-ref-capf))
+              (base (list (copy-marker (nth 0 capf)) (copy-marker (nth 1 capf)))))
+         (pcase change
+           ('input (insert " newer draft"))
+           ('session (setq hermes-chat--dashboard-active-session-id "new"))
+           ('cwd (setq hermes-chat--working-directory "/elsewhere"))
+           ('connection (cl-incf (hermes-dashboard-transport-client-generation
+                                 hermes-chat--dashboard-client))))
+         (let ((before (hermes-chat-input-string)))
+           (should-error (choose-completion-string
+                          "@file:`src/module.py`" (current-buffer) base)
+                         :type 'user-error)
+           (should (equal before (hermes-chat-input-string)))))))))
+
+(ert-deftest hermes-chat-path-native-common-prefix-keeps-owned-choices ()
+  "Native prefix edits renew the snapshot; subsequent user edits do not."
+  (dolist (change '(nil input erased-edit point session cwd connection))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+           hermes-chat--dashboard-active-session-id "live"
+           hermes-chat--working-directory "/backend")
+     (insert "See @src/mo")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                (lambda (_client _word &rest args)
+                  (funcall (plist-get args :resolve)
+                           '((items . (((text . "@file:src/module-one.py"))
+                                       ((text . "@file:src/module-two.py")))))))))
+       (completion-at-point)
+       (should (equal (hermes-chat-input-string) "See @file:`src/module-"))
+       (should (hermes-chat--path-completion-current-p hermes-chat--path-completion))
+       (completion-at-point)
+       (should (equal (hermes-chat-input-string) "See @file:`src/module-"))
+       (let ((base (list (copy-marker (+ 4 (hermes-chat--input-position)))
+                         (copy-marker (point)))))
+         (pcase change
+           ('input (insert "newer"))
+           ('erased-edit (insert "x") (delete-char -1))
+           ('point (backward-char))
+           ('session (setq hermes-chat--dashboard-active-session-id "other"))
+           ('cwd (setq hermes-chat--working-directory "/other"))
+           ('connection (cl-incf (hermes-dashboard-transport-client-generation
+                                 hermes-chat--dashboard-client))))
+         (if change
+             (let ((before (hermes-chat-input-string)))
+               (should-error (choose-completion-string "@file:`src/module-two.py`"
+                                                       (current-buffer) base)
+                             :type 'user-error)
+               (should (equal before (hermes-chat-input-string))))
+           (choose-completion-string "@file:`src/module-two.py`" (current-buffer) base)
+           (should (equal (hermes-chat-input-string) "See @file:`src/module-two.py`"))))))))
 
 (provide 'hermes-chat-buffer-tests)
 ;;; hermes-chat-buffer-tests.el ends here

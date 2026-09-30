@@ -1110,7 +1110,16 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
    ;; of band, so handle it before the stale-turn guard would drop it and apart
    ;; from the active turn's assistant entry.
    ((eq (plist-get event :type) 'background)
-    (hermes-chat--handle-background-complete event))
+    (unless (seq-some
+             (lambda (entry)
+               (let ((metadata (plist-get entry :metadata)))
+                 (and (eq (plist-get entry :role) 'background)
+                      (plist-get event :task-id)
+                      (equal (plist-get event :task-id) (plist-get metadata :task-id))
+                      (eql hermes-chat--lifecycle-generation
+                           (plist-get metadata :lifetime)))))
+             (hermes-chat--entries))
+      (hermes-chat--handle-background-complete event)))
    ;; A reconnect signal is a transport-wide broadcast, not a turn event, so
    ;; handle it before the stale-turn guard would drop it.
    ((hermes-chat--reconnecting-status-event-p event)
@@ -1313,7 +1322,7 @@ shared client."
   "Reserve CLIENT's fresh-session setup for KIND with failure callback REJECT."
   (setq hermes-chat--session-bootstrap
         (list :client client :generation hermes-chat--lifecycle-generation :kind kind
-              ;; HTTP preflight can outlive the FIFO or a socket replacement.
+              ;; Native readiness can outlive the FIFO or a socket replacement.
               :queue-context hermes-chat--unsettled-submit-context
               :queue-connection (hermes-dashboard-transport-client-generation client)
               :reject (or reject #'hermes-chat--command-error)
@@ -1334,36 +1343,34 @@ shared client."
       ((error quit) (funcall (plist-get owner :reject) (error-message-string err))))))
 
 (defun hermes-chat--dashboard-start-bootstrap (owner buffer resolver)
-  "Start OWNER's default-cwd preflight in BUFFER, then create through RESOLVER."
-  (let ((create
-         (lambda (&optional result)
-           (hermes-chat--in-buffer buffer
-             (when (hermes-chat--dashboard-bootstrap-current-p owner)
-               (when-let* ((cwd (hermes-chat--dashboard-result-cwd result)))
-                 (hermes-chat--record-working-directory cwd))
-               (setf (plist-get owner :phase) 'create)
-               (condition-case err
-                   (apply #'hermes-dashboard-transport-session-create
-                          (plist-get owner :client)
-                          (append
-                           (hermes-chat--dashboard-create-params)
+  "Create OWNER's session in BUFFER through RESOLVER.
+Omit an unselected remote cwd: only the backend knows the selected
+profile's workspace.  Keep the reservation through create and overrides."
+  (hermes-chat--in-buffer buffer
+    (when (hermes-chat--dashboard-bootstrap-current-p owner)
+      (setf (plist-get owner :phase) 'create)
+      (condition-case err
+          (let* ((previous-guard hermes-dashboard-transport-dispatch-guard)
+                 (hermes-dashboard-transport-dispatch-guard
+                  (lambda ()
+                    (and (buffer-live-p buffer)
+                         (with-current-buffer buffer
+                           (and (hermes-chat--dashboard-bootstrap-current-p owner)
+                                (= (plist-get owner :queue-connection)
+                                   (hermes-dashboard-transport-client-generation
+                                    (plist-get owner :client)))))
+                         (or (null previous-guard) (funcall previous-guard))))))
+            (apply #'hermes-dashboard-transport-session-create
+                   (plist-get owner :client)
+                   (append (hermes-chat--dashboard-create-params)
                            (list :resolve resolver :reject
                                  (lambda (message)
                                    (hermes-chat--in-buffer buffer
                                      (hermes-chat--dashboard-abort-bootstrap
-                                      owner message))))))
-                 ((error quit)
-                  (hermes-chat--dashboard-abort-bootstrap
-                   owner (error-message-string err)))))))))
-    (if (and (eq (hermes-chat--ensure-resolved-start-mode) 'remote)
-             (null hermes-chat--working-directory))
-        (condition-case nil
-            (hermes--promise-then
-             (hermes-dashboard-transport-api-request-async
-              "GET" "/api/fs/default-cwd" :client (plist-get owner :client))
-             create (lambda (_message) (funcall create)))
-          ((error quit) (funcall create)))
-      (funcall create))))
+                                      owner message)))))))
+        ((error quit)
+         (hermes-chat--dashboard-abort-bootstrap
+          owner (error-message-string err)))))))
 
 (defun hermes-chat--dashboard-refresh-goal ()
   "Refresh compact goal state through vanilla Hermes `/goal status'."
@@ -1835,13 +1842,18 @@ session-scoped mutation path after also seeding the fresh build at creation;
    (and hermes-chat--dashboard-create-fast-p
         (list (cons "fast" "fast")))))
 
+(defvar-local hermes-chat--cwd-explicit-p nil
+  "Non-nil when the user deliberately selected this chat's workspace.")
+
 (defun hermes-chat--dashboard-create-params ()
   "Return fresh-session parameters from this buffer's metadata and runtime."
   (append
    (list :cols (hermes-chat--dashboard-cols)
          :title (hermes-chat--dashboard-create-title)
          :profile hermes-chat--profile
-         :cwd (hermes-chat--current-working-directory))
+         :cwd (hermes-chat--current-working-directory)
+         :cwd-explicit (and (hermes-chat--current-working-directory)
+                            (if hermes-chat--cwd-explicit-p t :false)))
    (and hermes-chat--dashboard-create-model
         (list :model hermes-chat--dashboard-create-model
               :provider hermes-chat--dashboard-create-provider))
@@ -2098,6 +2110,7 @@ a local FIFO submission."
              (not (string-prefix-p "~" directory))
              (file-directory-p directory))
     (setq-local default-directory (file-name-as-directory directory)))
+  (setq hermes-chat--cwd-explicit-p t)
   (hermes-chat--record-working-directory directory)
   (hermes-chat--insert-local-status
    (format "Working directory: %s" directory)
@@ -2569,22 +2582,80 @@ BUFFER's client gains a result listener when no turn is streaming, so the
         'status (format "Background #%d started: %s" number preview) 'running)
        (hermes-chat--pending-assistant-node)))))
 
-(defun hermes-chat--background-submit (content buffer)
-  "Launch CONTENT as a background task for BUFFER's dashboard session."
-  (let ((lifetime hermes-chat--lifecycle-generation))
-    (hermes-chat--with-dashboard-session
-     content buffer
-     (lambda (live-client)
-       (hermes-dashboard-transport-prompt-background
-        live-client content
-        :session-id hermes-chat--dashboard-active-session-id
-        :resolve (lambda (result)
-                   (hermes-chat--in-lifetime buffer lifetime
-                     (hermes-chat--background-started result content buffer)))
-        :reject (lambda (message)
-                  (hermes-chat--in-lifetime buffer lifetime
-                    (hermes-chat--command-error message)
-                    (hermes-chat--preserve-control-content content))))))))
+(defun hermes-chat--recover-side-question (content)
+  "Keep literal CONTENT in a non-dispatching document for manual recovery."
+  (let ((recovery (generate-new-buffer "*Hermes side question*")))
+    (with-current-buffer recovery
+      (insert content)
+      (goto-char (point-min)))
+    (hermes-chat--insert-local-status
+     (format "Side question delivery uncertain; inspect results before retrying /btw.  Text in %s (manual copying only)"
+             (buffer-name recovery))
+     'error)
+    recovery))
+
+(defun hermes-chat--background-submit (content buffer &optional btw)
+  "Launch CONTENT for BUFFER's session, using side-question semantics if BTW."
+  (hermes-chat--with-dashboard-session
+   content buffer
+   (lambda (client)
+     (let ((lifetime hermes-chat--lifecycle-generation)
+           (session hermes-chat--dashboard-active-session-id)
+           (stored hermes-chat--session-id)
+           (composer hermes-chat--input-marker)
+           (connection (hermes-dashboard-transport-client-generation client))
+           settled retirement cleanup)
+       (cl-labels
+           ((settle ()
+              (setq settled t)
+              (when retirement
+                (hermes-dashboard-transport-unsubscribe client retirement))
+              (when cleanup
+                (remove-hook 'hermes-chat-lifecycle-invalidation-hook cleanup t)))
+            (current-p ()
+              (and (hermes-chat--dashboard-context-current-p client lifetime session)
+                   (= connection (hermes-dashboard-transport-client-generation client))))
+            (recovery-current-p ()
+              ;; Retirement runs before closed status forgets the attachment.
+              ;; This owner can recover after connection generation retirement;
+              ;; it cannot admit work or write into a replaced composer.
+              (and (hermes-chat--dashboard-context-current-p client lifetime session)
+                   (eq composer hermes-chat--input-marker)
+                   (equal stored hermes-chat--session-id)))
+            (failed (message)
+              (unless settled
+                (hermes-chat--in-buffer buffer
+                  (when (or btw
+                            (hermes-chat--dashboard-context-current-p client lifetime session))
+                    (settle)
+                    (if btw
+                        (when (recovery-current-p)
+                          (hermes-chat--recover-side-question content))
+                      (hermes-chat--command-error message)
+                      (hermes-chat--preserve-control-content content)))))))
+         (hermes-chat--ensure-idle-listener client buffer)
+         (when btw
+           (setq cleanup #'settle
+                 retirement
+                 (hermes-dashboard-transport-subscribe
+                  client nil (lambda () (failed "Connection retired; launch uncertain"))))
+           (add-hook 'hermes-chat-lifecycle-invalidation-hook cleanup nil t))
+         (condition-case err
+             (funcall (if btw #'hermes-dashboard-transport-prompt-btw
+                        #'hermes-dashboard-transport-prompt-background)
+                      client content :session-id session
+                      :resolve (lambda (result)
+                                 (hermes-chat--in-buffer buffer
+                                   (unless settled
+                                     (cond
+                                      ((not (current-p)) (failed "Launch connection changed; result uncertain"))
+                                      ((hermes-transport--non-empty-string
+                                        (hermes-transport--get result 'task_id))
+                                       (settle)
+                                       (hermes-chat--background-started result content buffer))
+                                      (t (failed "Missing task ID; launch uncertain, do not replay automatically"))))))
+                      :reject #'failed)
+           ((error quit) (failed (error-message-string err)))))))))
 
 (defun hermes-chat--handle-background-complete (event)
   "Insert a persistent result entry for a `background' EVENT.

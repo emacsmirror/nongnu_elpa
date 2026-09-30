@@ -611,29 +611,143 @@ Only matches while typing the /command word in the writable input tail."
             (when-let* ((desc (cdr (assoc cand candidates))))
               (concat "  " desc))))))
 
-(defun hermes-chat--file-ref-completion-bounds ()
-  "Return completion bounds after an @ file-ref prefix in the input tail."
-  (when (and (hermes-chat--point-in-input-p)
-             (hermes-chat--input-position))
-    (let ((end (point))
-          (input (hermes-chat--input-position)))
-      (save-excursion
-        (skip-chars-backward "^ \t\n" input)
-        (when (and (< (point) end) (eq (char-after) ?@))
-          (cons (1+ (point)) end))))))
+(defvar-local hermes-chat--path-completion nil
+  "Exact pending or accepted backend path completion snapshot.")
 
-(defun hermes-chat--project-file-candidates ()
-  "Return project-relative file names for composer @ completion."
-  (when-let* ((project (project-current nil))
-              (root (project-root project)))
-    (mapcar (lambda (file) (file-relative-name file root))
-            (project-files project))))
+(defun hermes-chat--file-ref-completion-bounds ()
+  "Return bounds of an @ path query at point in the composer.
+Accept explicit file/folder prefixes, including a quoted path with spaces."
+  (when (and (hermes-chat--point-in-input-p) (hermes-chat--input-position))
+    (let ((end (point)))
+      (save-excursion
+        (when (search-backward "@" (hermes-chat--input-position) t)
+          (let ((start (point))
+                (word (buffer-substring-no-properties (point) end)))
+            (when (and (or (= start (hermes-chat--input-position))
+                           (memq (char-before) '(?\s ?\t ?\n)))
+                       (not (string-match-p "[\n\r]" word))
+                       (or (not (string-match-p "[ \t]" word))
+                           (string-match-p "\\`@\\(?:file\\|folder\\):[`\"']" word)))
+              (cons start end))))))))
+
+(defun hermes-chat--path-query (word)
+  "Remove the optional reference quoting from completion WORD."
+  (if (string-match "\\`\\(@\\(?:file\\|folder\\):\\)\\([`\"']\\)\\(.*\\)\\'" word)
+      (let ((prefix (match-string 1 word)) (quote (match-string 2 word))
+            (path (match-string 3 word)))
+        (concat prefix (if (string-suffix-p quote path) (substring path 0 -1) path)))
+    word))
+
+(defun hermes-chat--path-reference (item)
+  "Return a representable file/folder reference for backend ITEM, or nil."
+  (when-let* ((text (hermes-transport--get item 'text))
+              ((stringp text))
+              ((string-match "\\`@\\(file\\|folder\\):\\(.+\\)\\'" text)))
+    (let ((kind (match-string 1 text)) (path (match-string 2 text)))
+      (unless (string-match-p "[\n\r\0]" path)
+        (when-let* ((quote (seq-find (lambda (q) (not (string-search q path)))
+                                    '("`" "\"" "'"))))
+          (concat "@" kind ":" quote path quote))))))
+
+(defun hermes-chat--path-completion-context-p (snapshot)
+  "Return non-nil when SNAPSHOT still owns the backend context."
+  (and (eq snapshot hermes-chat--path-completion)
+       (hermes-chat--dashboard-context-current-p
+        (plist-get snapshot :client) (plist-get snapshot :lifetime)
+        (plist-get snapshot :session))
+       (= (plist-get snapshot :connection)
+          (hermes-dashboard-transport-client-generation
+           (plist-get snapshot :client)))
+       (equal (plist-get snapshot :cwd) (hermes-chat--current-working-directory))))
+
+(defun hermes-chat--path-completion-current-p (snapshot)
+  "Return non-nil when SNAPSHOT still owns the composer and backend."
+  (and (hermes-chat--path-completion-context-p snapshot)
+       (= (plist-get snapshot :tick) (buffer-chars-modified-tick))
+       (= (plist-get snapshot :point) (point))))
+
+(defun hermes-chat--path-completion-replace (replace beg end text)
+  "Run native REPLACE of BEG through END with TEXT under its CAPF owner.
+Native completion has no hook around its common-prefix edit.  Only this
+CAPF's exact dynamic owner may advance the edit snapshot; ordinary edits
+and other completion tables must not renew it."
+  (let ((snapshot (plist-get completion-extra-properties :hermes-path-owner)))
+    (if (null snapshot)
+        (funcall replace beg end text)
+      (unless (hermes-chat--path-completion-current-p snapshot)
+        (user-error "Path completion expired; invoke completion again"))
+      (let ((expected (concat
+                       (buffer-substring-no-properties (hermes-chat--input-position) beg)
+                       text (buffer-substring-no-properties end (point-max)))))
+        (prog1 (funcall replace beg end text)
+          (when (and (hermes-chat--path-completion-context-p snapshot)
+                     (equal expected (hermes-chat-input-string)))
+            (setf (plist-get snapshot :tick) (buffer-chars-modified-tick)
+                  (plist-get snapshot :point) (point))))))))
+
+(defun hermes-chat--request-path-completion (bounds)
+  "Request backend candidates for BOUNDS without editing the composer."
+  (let* ((buffer (current-buffer))
+         (client hermes-chat--dashboard-client)
+         (snapshot (list :client client :lifetime hermes-chat--lifecycle-generation
+                         :session hermes-chat--dashboard-active-session-id
+                         :connection (hermes-dashboard-transport-client-generation client)
+                         :cwd (hermes-chat--current-working-directory)
+                         :tick (buffer-chars-modified-tick) :point (point)
+                         :items nil)))
+    (setq hermes-chat--path-completion snapshot)
+    (condition-case nil
+        (hermes-dashboard-transport-complete-path
+         client (hermes-chat--path-query
+                 (buffer-substring-no-properties (car bounds) (cdr bounds)))
+         :session-id (plist-get snapshot :session) :cwd (plist-get snapshot :cwd)
+         :resolve (lambda (result)
+                    (hermes-chat--in-buffer buffer
+                      (when (hermes-chat--path-completion-current-p snapshot)
+                        (setf (plist-get snapshot :items)
+                              (delq nil (mapcar #'hermes-chat--path-reference
+                                               (hermes-chat--listify
+                                                (hermes-transport--get result 'items))))))))
+         :reject #'ignore)
+      (error nil))
+    snapshot))
+
+(defun hermes-chat--guard-path-choice (choice _buffer _base &rest _ignored)
+  "Refuse stale native completion CHOICE before it can replace input."
+  (when (and hermes-chat--path-completion
+             (string-match-p "\\`@\\(?:file\\|folder\\):" choice))
+    (unless (and (hermes-chat--path-completion-current-p hermes-chat--path-completion)
+                 (member choice (plist-get hermes-chat--path-completion :items)))
+      (user-error "Path completion expired; invoke completion again"))))
 
 (defun hermes-chat--file-ref-capf ()
-  "Completion-at-point for project file references after @ in the input tail."
+  "Complete @ paths using the attached backend session, never local files.
+The first invocation starts a read; invoke completion again when it finishes.
+Unavailable or stale reads offer no candidates and never edit the input."
   (when-let* ((bounds (hermes-chat--file-ref-completion-bounds))
-              (candidates (hermes-chat--project-file-candidates)))
-    (list (car bounds) (cdr bounds) candidates :exclusive 'no)))
+              (client hermes-chat--dashboard-client)
+              ((hermes-dashboard-transport-client-p client))
+              (hermes-chat--dashboard-active-session-id))
+    (let* ((buffer (current-buffer))
+           (query (buffer-substring-no-properties (car bounds) (cdr bounds)))
+           (snapshot (if (and hermes-chat--path-completion
+                              (hermes-chat--path-completion-current-p
+                               hermes-chat--path-completion))
+                         hermes-chat--path-completion
+                       (hermes-chat--request-path-completion bounds))))
+      (when (plist-get snapshot :items)
+        (advice-add 'completion--replace :around #'hermes-chat--path-completion-replace)
+        (add-hook 'choose-completion-string-functions
+                  #'hermes-chat--guard-path-choice nil t)
+        (list (car bounds) (cdr bounds)
+              (lambda (string predicate action)
+                (when (and (buffer-live-p buffer)
+                           (with-current-buffer buffer
+                             (hermes-chat--path-completion-current-p snapshot)))
+                  (complete-with-action action (plist-get snapshot :items)
+                                        (if (equal string query) "" string)
+                                        predicate)))
+              :hermes-path-owner snapshot :exclusive 'no)))))
 
 (defun hermes-chat-show-commands ()
   "Fetch and display the dashboard slash command catalog."
@@ -672,7 +786,7 @@ Native control commands run in-client through
 via `hermes-chat--dashboard-slash-exec'."
   (hermes-chat--ensure-submit-allowed)
   (pcase-let ((`(,name . ,arg) (hermes-chat--parse-slash content)))
-    (hermes-chat--delete-input-tail)
+    (unless (member name '("branch" "btw")) (hermes-chat--delete-input-tail))
     (if-let* ((handler (hermes-chat--native-slash-handler name)))
         (funcall handler (or arg ""))
       (hermes-chat--dashboard-slash-exec name arg (substring content 1)))))
