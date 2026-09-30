@@ -1311,7 +1311,10 @@ Secret values are never placed in the outgoing RPC correlation table."
                             :client client :socket (hermes-dashboard-transport-client-websocket client)
                             :generation (hermes-dashboard-transport-client-generation client)
                             :active t))
-             (supported (and subscriber (member method '("clarify" "approval" "sudo" "secret")))))
+             (supported (and subscriber
+                             (member method '("clarify" "approval" "sudo" "secret"
+                                              "vault.unlock_prompt"
+                                              "vault.save_login" "vault.code")))))
         (puthash id request table)
         (if supported
             (hermes-dashboard-transport--dispatch-event
