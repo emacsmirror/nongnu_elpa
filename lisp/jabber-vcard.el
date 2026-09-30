@@ -549,24 +549,30 @@ obtained from `xml-parse-region'."
     ("Choose file" (jabber-vcard--set 'PHOTO (read-file-name "Avatar file: " nil nil t))))
   (jabber-vcard--render-editor))
 
-(keymap-popup-define jabber-vcard-edit-mode-map
-  "Edit vCard fields."
-  :parent special-mode-map
-  :group "Basic"
-  "s" ("Simple field" jabber-vcard-edit-simple)
-  "n" ("Structured name" jabber-vcard-edit-name)
-  :group "Repeatable"
-  "t" ("Add phone" jabber-vcard-add-phone)
-  "T" ("Delete phone" jabber-vcard-delete-phone)
-  "e" ("Add email" jabber-vcard-add-email)
-  "E" ("Delete email" jabber-vcard-delete-email)
-  "a" ("Add address" jabber-vcard-add-address)
-  "A" ("Delete address" jabber-vcard-delete-address)
-  :group "Avatar"
-  "p" ("Edit avatar" jabber-vcard-edit-avatar)
-  :group "Actions"
-  "C-c C-c" ("Publish" jabber-vcard-submit)
-  "m" ("Menu" jabber-vcard-edit-menu))
+(defvar jabber-vcard-edit-mode-map)
+
+;; Newer popup revisions generate these launchers at first initialization.
+(declare-function jabber-vcard-edit-mode-map-popup "jabber-vcard" () t)
+
+(unless (boundp 'jabber-vcard-edit-mode-map)
+  (keymap-popup-define jabber-vcard-edit-mode-map
+    "Edit vCard fields."
+    :parent special-mode-map
+    :group "Basic"
+    "s" ("Simple field" jabber-vcard-edit-simple)
+    "n" ("Structured name" jabber-vcard-edit-name)
+    :group "Repeatable"
+    "t" ("Add phone" jabber-vcard-add-phone)
+    "T" ("Delete phone" jabber-vcard-delete-phone)
+    "e" ("Add email" jabber-vcard-add-email)
+    "E" ("Delete email" jabber-vcard-delete-email)
+    "a" ("Add address" jabber-vcard-add-address)
+    "A" ("Delete address" jabber-vcard-delete-address)
+    :group "Avatar"
+    "p" ("Edit avatar" jabber-vcard-edit-avatar)
+    :group "Actions"
+    "C-c C-c" ("Publish" jabber-vcard-submit)
+    "m" ("Menu" jabber-vcard-edit-menu)))
 
 (define-derived-mode jabber-vcard-edit-mode special-mode "Jabber-vCard"
   "Major mode for editing a vCard as explicit plain data.")

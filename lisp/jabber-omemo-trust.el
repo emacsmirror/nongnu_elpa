@@ -62,20 +62,38 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 (eval-when-compile
   (defvar jabber-omemo-trust-mode-map))
 
-(keymap-popup-define jabber-omemo-trust-mode-map
-  "OMEMO trust commands."
-  :description #'jabber-omemo-trust--menu-description
-  :group "Trust"
-  "t" ("Verify" jabber-omemo-trust-set-verified)
-  "u" ("Untrust" jabber-omemo-trust-set-untrusted)
-  "r" ("Reset session" jabber-omemo-reset-session)
-  "d" ("Delete" jabber-omemo-trust-delete)
-  "w" ("Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
-  "g" ("Refresh" revert-buffer)
-  "G" ("Re-fetch from server" jabber-omemo-trust-refresh))
+;; Newer dependency revisions generate this launcher inside the conditional
+;; initializer below.  Its definition is macro-generated, not a source defun.
+(declare-function jabber-omemo-trust-mode-map-popup "jabber-omemo-trust" () t)
 
-(keymap-set jabber-omemo-trust-mode-map "h" #'jabber-omemo-trust-menu)
-(keymap-set jabber-omemo-trust-mode-map "?" #'jabber-omemo-trust-menu)
+;; The dependency floor supports dynamic captions in `keymap-popup-define',
+;; but not in `keymap-popup-annotate'.  Initialize once through that API, then
+;; install guarded help before exposing the map.  Retain both user bindings
+;; and their descriptions on reevaluation.
+(unless (boundp 'jabber-omemo-trust-mode-map)
+  (keymap-popup-define jabber-omemo-trust-mode-map
+    "OMEMO trust commands."
+    :popup-key "h"
+    :description #'jabber-omemo-trust--menu-description
+    "t" ("Verify" jabber-omemo-trust-set-verified)
+    "u" ("Untrust" jabber-omemo-trust-set-untrusted)
+    "r" ("Reset session" jabber-omemo-reset-session)
+    "d" ("Delete" jabber-omemo-trust-delete)
+    "w" ("Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
+    "g" ("Refresh" revert-buffer)
+    "G" ("Re-fetch from server" jabber-omemo-trust-refresh))
+  (keymap-set jabber-omemo-trust-mode-map "h" #'jabber-omemo-trust-menu)
+  (keymap-set jabber-omemo-trust-mode-map "?" #'jabber-omemo-trust-menu)
+  (keymap-popup-annotate jabber-omemo-trust-mode-map
+    :description #'jabber-omemo-trust--menu-description
+    :group "Trust"
+    jabber-omemo-trust-set-verified "Verify"
+    jabber-omemo-trust-set-untrusted "Untrust"
+    jabber-omemo-reset-session "Reset session"
+    jabber-omemo-trust-delete "Delete"
+    jabber-omemo-trust-copy-fingerprint "Copy fingerprint"
+    revert-buffer "Refresh"
+    jabber-omemo-trust-refresh "Re-fetch from server"))
 
 (defun jabber-omemo--list-format ()
   "Return the column format vector for the OMEMO trust list buffer."

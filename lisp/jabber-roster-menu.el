@@ -83,26 +83,35 @@ Only contacts and rooms belonging to this connection are shown.")
         count)
     (hash-table-count jabber-muc--rooms)))
 
-(keymap-popup-define jabber-roster-presence-map
-  "Set presence."
-  :description (lambda ()
-                 (format "Presence (current: %s)"
-                         (propertize
-                          (or (cdr (assoc jabber-current-show
-                                          jabber-presence-strings))
-                              "Offline")
-                          'face 'keymap-popup-value)))
-  "o" ("Online" jabber-send-default-presence)
-  "a" ("Away" jabber-send-away-presence)
-  "x" ("Extended away" jabber-send-xa-presence)
-  "p" ("Custom" jabber-send-presence))
+;; Newer popup revisions generate these launchers at first initialization.
+(declare-function jabber-roster-presence-map-popup "jabber-roster-menu" () t)
+(declare-function jabber-roster-discovery-map-popup "jabber-roster-menu" () t)
+(declare-function jabber-roster-contact-action-map-popup "jabber-roster-menu" () t)
+(declare-function jabber-roster-popup-map-popup "jabber-roster-menu" () t)
+(declare-function jabber-roster-account-action-map-popup "jabber-roster-menu" () t)
 
-(keymap-popup-define jabber-roster-discovery-map
-  "Discovery commands."
-  "i" ("Disco items" jabber-get-disco-items)
-  "I" ("Disco info" jabber-get-disco-info)
-  "b" ("Browse" jabber-get-browse)
-  "v" ("Client version" jabber-get-version))
+(unless (boundp 'jabber-roster-presence-map)
+  (keymap-popup-define jabber-roster-presence-map
+    "Set presence."
+    :description (lambda ()
+                   (format "Presence (current: %s)"
+                           (propertize
+                            (or (cdr (assoc jabber-current-show
+                                            jabber-presence-strings))
+                                "Offline")
+                            'face 'keymap-popup-value)))
+    "o" ("Online" jabber-send-default-presence)
+    "a" ("Away" jabber-send-away-presence)
+    "x" ("Extended away" jabber-send-xa-presence)
+    "p" ("Custom" jabber-send-presence)))
+
+(unless (boundp 'jabber-roster-discovery-map)
+  (keymap-popup-define jabber-roster-discovery-map
+    "Discovery commands."
+    "i" ("Disco items" jabber-get-disco-items)
+    "I" ("Disco info" jabber-get-disco-info)
+    "b" ("Browse" jabber-get-browse)
+    "v" ("Client version" jabber-get-version)))
 
 (defun jabber-roster--presence-menu ()
   "Show roster presence menu."
@@ -124,95 +133,97 @@ Only contacts and rooms belonging to this connection are shown.")
   "Selected JID, with its owning connection in the `jabber-account' property.
 The action submenu retains this owner even when roster scope changes.")
 
-(keymap-popup-define jabber-roster-contact-action-map
-  "Action for selected contact."
-  :description (lambda ()
-                 (format "Contact: %s"
-                         (propertize (or jabber-roster--selected-jid "?")
-                                     'face 'font-lock-constant-face)))
-  "c" ("Chat" jabber-roster--action-chat)
-  "i" ("Info" jabber-roster--action-info)
-  "e" ("Edit" jabber-roster--action-edit)
-  "d" ("Delete" jabber-roster--action-delete)
-  "b" ("Block" jabber-roster--action-block))
+(unless (boundp 'jabber-roster-contact-action-map)
+  (keymap-popup-define jabber-roster-contact-action-map
+    "Action for selected contact."
+    :description (lambda ()
+                   (format "Contact: %s"
+                           (propertize (or jabber-roster--selected-jid "?")
+                                       'face 'font-lock-constant-face)))
+    "c" ("Chat" jabber-roster--action-chat)
+    "i" ("Info" jabber-roster--action-info)
+    "e" ("Edit" jabber-roster--action-edit)
+    "d" ("Delete" jabber-roster--action-delete)
+    "b" ("Block" jabber-roster--action-block)))
 
-(keymap-popup-define jabber-roster-popup-map
-  "Jabber roster."
-  :description (lambda ()
-                 (if jabber-connections
-                     (format "Jabber: %s"
-                             (propertize
-                              (if jabber-roster--scoped-connection
-                                  (jabber-connection-bare-jid
-                                   jabber-roster--scoped-connection)
-                                (string-join
-                                 (mapcar #'jabber-connection-bare-jid
-                                         jabber-connections)
-                                 ", "))
-                              'face 'font-lock-constant-face))
-                   "Jabber (not connected)"))
-  :group "Contacts"
-  "o" ((lambda ()
-         (format "Online %s"
-                 (propertize (number-to-string (jabber-roster--online-count))
-                             'face 'success)))
-       jabber-roster-chat-online
-       :if (lambda () jabber-connections))
-  "c" ((lambda ()
-         (format "All contacts %s"
-                 (propertize (number-to-string (jabber-roster--total-count))
-                             'face 'keymap-popup-value)))
-       jabber-roster-chat-any
-       :if (lambda () jabber-connections))
-  "u" ((lambda ()
-         (format "Unread %s"
-                 (propertize (number-to-string (jabber-roster--unread-count))
-                             'face 'warning)))
-       jabber-roster-chat-unread
-       :if (lambda () (bound-and-true-p jabber-activity-jids)))
-  :group "MUC"
-  "m" ((lambda ()
-         (format "Joined rooms %s"
-                 (propertize (number-to-string (jabber-roster--muc-count))
-                             'face 'keymap-popup-value)))
-       jabber-roster-switch-muc
-       :if (lambda () (> (jabber-roster--muc-count) 0))
-       :c-u "match by room name")
-  "j" ("Join room" jabber-muc-join
-       :if (lambda () jabber-connections))
-  "B" ("Bookmarks" jabber-edit-bookmarks
-       :if (lambda () jabber-connections))
-  :group "Roster"
-  "a" ("Add contact" jabber-roster-change
-       :if (lambda () jabber-connections))
-  "s" ("Subscribe" jabber-send-subscription-request
-       :if (lambda () jabber-connections))
-  :row
-  :group "Presence"
-  "p" ("Presence" jabber-roster--presence-menu
-       :if (lambda () jabber-connections))
-  :group "Discovery"
-  "d" ("Discovery" jabber-roster--discovery-menu
-       :if (lambda () jabber-connections))
-  :group "Connection"
-  "C" ("Connect" jabber-connect-all
-       :if (lambda () (null jabber-connections)))
-  "D" ("Disconnect all" jabber-disconnect
-       :if (lambda () jabber-connections))
-  "A" ((lambda ()
-         (format "Accounts %s"
-                 (propertize
-                  (format "[%s]"
-                          (if jabber-roster--scoped-connection
-                              (jabber-connection-bare-jid
-                               jabber-roster--scoped-connection)
-                            "all"))
-                  'face 'font-lock-constant-face)))
-       jabber-roster-accounts
-       :if (lambda () (cdr jabber-connections)))
-  :group "OMEMO"
-  "f" ("Fingerprints" jabber-roster--show-omemo-fingerprints
-       :if (lambda () jabber-connections)))
+(unless (boundp 'jabber-roster-popup-map)
+  (keymap-popup-define jabber-roster-popup-map
+    "Jabber roster."
+    :description (lambda ()
+                   (if jabber-connections
+                       (format "Jabber: %s"
+                               (propertize
+                                (if jabber-roster--scoped-connection
+                                    (jabber-connection-bare-jid
+                                     jabber-roster--scoped-connection)
+                                  (string-join
+                                   (mapcar #'jabber-connection-bare-jid
+                                           jabber-connections)
+                                   ", "))
+                                'face 'font-lock-constant-face))
+                     "Jabber (not connected)"))
+    :group "Contacts"
+    "o" ((lambda ()
+           (format "Online %s"
+                   (propertize (number-to-string (jabber-roster--online-count))
+                               'face 'success)))
+         jabber-roster-chat-online
+         :if (lambda () jabber-connections))
+    "c" ((lambda ()
+           (format "All contacts %s"
+                   (propertize (number-to-string (jabber-roster--total-count))
+                               'face 'keymap-popup-value)))
+         jabber-roster-chat-any
+         :if (lambda () jabber-connections))
+    "u" ((lambda ()
+           (format "Unread %s"
+                   (propertize (number-to-string (jabber-roster--unread-count))
+                               'face 'warning)))
+         jabber-roster-chat-unread
+         :if (lambda () (bound-and-true-p jabber-activity-jids)))
+    :group "MUC"
+    "m" ((lambda ()
+           (format "Joined rooms %s"
+                   (propertize (number-to-string (jabber-roster--muc-count))
+                               'face 'keymap-popup-value)))
+         jabber-roster-switch-muc
+         :if (lambda () (> (jabber-roster--muc-count) 0))
+         :c-u "match by room name")
+    "j" ("Join room" jabber-muc-join
+         :if (lambda () jabber-connections))
+    "B" ("Bookmarks" jabber-edit-bookmarks
+         :if (lambda () jabber-connections))
+    :group "Roster"
+    "a" ("Add contact" jabber-roster-change
+         :if (lambda () jabber-connections))
+    "s" ("Subscribe" jabber-send-subscription-request
+         :if (lambda () jabber-connections))
+    :row
+    :group "Presence"
+    "p" ("Presence" jabber-roster--presence-menu
+         :if (lambda () jabber-connections))
+    :group "Discovery"
+    "d" ("Discovery" jabber-roster--discovery-menu
+         :if (lambda () jabber-connections))
+    :group "Connection"
+    "C" ("Connect" jabber-connect-all
+         :if (lambda () (null jabber-connections)))
+    "D" ("Disconnect all" jabber-disconnect
+         :if (lambda () jabber-connections))
+    "A" ((lambda ()
+           (format "Accounts %s"
+                   (propertize
+                    (format "[%s]"
+                            (if jabber-roster--scoped-connection
+                                (jabber-connection-bare-jid
+                                 jabber-roster--scoped-connection)
+                              "all"))
+                    'face 'font-lock-constant-face)))
+         jabber-roster-accounts
+         :if (lambda () (cdr jabber-connections)))
+    :group "OMEMO"
+    "f" ("Fingerprints" jabber-roster--show-omemo-fingerprints
+         :if (lambda () jabber-connections))))
 
 ;;;###autoload
 (defun jabber-roster-popup ()
@@ -398,19 +409,20 @@ names and annotate them with room JIDs."
 (defvar jabber-roster--selected-account nil
   "Connection selected in the accounts menu.")
 
-(keymap-popup-define jabber-roster-account-action-map
-  "Account actions."
-  :description (lambda ()
-                 (if jabber-roster--selected-account
-                     (jabber-connection-bare-jid jabber-roster--selected-account)
-                   "Account"))
-  "i" ((lambda ()
-         (if (eq jabber-roster--scoped-connection
-                 jabber-roster--selected-account)
-             "Show all accounts"
-           "Isolate"))
-       jabber-roster--account-toggle-scope)
-  "d" ("Disconnect" jabber-roster--account-disconnect))
+(unless (boundp 'jabber-roster-account-action-map)
+  (keymap-popup-define jabber-roster-account-action-map
+    "Account actions."
+    :description (lambda ()
+                   (if jabber-roster--selected-account
+                       (jabber-connection-bare-jid jabber-roster--selected-account)
+                     "Account"))
+    "i" ((lambda ()
+           (if (eq jabber-roster--scoped-connection
+                   jabber-roster--selected-account)
+               "Show all accounts"
+             "Isolate"))
+         jabber-roster--account-toggle-scope)
+    "d" ("Disconnect" jabber-roster--account-disconnect)))
 
 (defconst jabber-roster--all-accounts-label "All accounts"
   "Synthetic entry in the account picker that clears scope.")

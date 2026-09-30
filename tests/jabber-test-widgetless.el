@@ -286,13 +286,24 @@
                              (lambda (a b)
                                (string< (symbol-name a) (symbol-name b))))))))))
 
+(defun jabber-test-widgetless--popup-rows (map)
+  "Return MAP's popup rows from the supported metadata layouts."
+  ;; 0.2.0 uses a prefixed property in a flat map; 0.4.2 uses a nested
+  ;; map, and newer versions use inert menu items.  Keep this test-only.
+  (or (keymap-popup--meta map 'descriptions)
+      (keymap-popup--meta map 'keymap-popup--descriptions)))
+
 (ert-deftest jabber-test-vcard-editor-map-preserves-command-groups ()
   "The vCard editor exposes basic, repeatable, avatar, and action groups."
-  (let* ((rows (lookup-key jabber-vcard-edit-mode-map
-                           [keymap-popup descriptions]))
-         (groups (car rows)))
-    (should (equal '("Basic" "Repeatable" "Avatar" "Actions")
-                   (mapcar (lambda (group) (plist-get group :name)) groups)))
+  (let ((rows (jabber-test-widgetless--popup-rows jabber-vcard-edit-mode-map)))
+    (should (proper-list-p rows))
+    (should (= 1 (length rows)))
+    (let ((groups (car rows)))
+      (should (proper-list-p groups))
+      (should (= 4 (length groups)))
+      (should (cl-every #'proper-list-p groups))
+      (should (equal '("Basic" "Repeatable" "Avatar" "Actions")
+                     (mapcar (lambda (group) (plist-get group :name)) groups))))
     (should (eq (lookup-key jabber-vcard-edit-mode-map "t")
                 #'jabber-vcard-add-phone))
     (should (eq (lookup-key jabber-vcard-edit-mode-map "e")
@@ -301,6 +312,22 @@
                 #'jabber-vcard-add-address))
     (should (eq (lookup-key jabber-vcard-edit-mode-map "p")
                 #'jabber-vcard-edit-avatar))))
+
+(ert-deftest jabber-test-vcard-editor-map-rejects-invalid-command-groups ()
+  "Missing, short, malformed, or reordered metadata must fail the group test."
+  (let ((rows (jabber-test-widgetless--popup-rows jabber-vcard-edit-mode-map))
+        (check (ert-test-body
+                (ert-get-test
+                 'jabber-test-vcard-editor-map-preserves-command-groups))))
+    (funcall check)
+    (dolist (invalid (list nil 1 '(()) '(malformed)
+                          (list (butlast (car rows)))
+                          (list (cons 'malformed (cdar rows)))
+                          (list (reverse (car rows)))
+                          (append rows rows)))
+      (cl-letf (((symbol-function 'keymap-popup--meta)
+                 (lambda (_map _property) invalid)))
+        (should-error (funcall check) :type 'ert-test-failed)))))
 
 (ert-deftest jabber-test-vcard-avatar-keep-remove-replace ()
   "Keeping, removing, and replacing an avatar produce matching XML."

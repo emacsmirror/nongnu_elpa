@@ -251,31 +251,35 @@ JC is the Jabber connection."
   (< (* (1+ jabber-ahc--command-page) jabber-ahc--command-page-size)
      (length jabber-ahc--command-items)))
 
-(keymap-popup-define jabber-ahc-command-list-map
-  "Discovered XEP-0050 commands."
-  :exit-key "C-g"
-  :description
-  (lambda () (format "Commands for %s" jabber-ahc--command-target))
-  :group "Commands"
-  "1" ((lambda () (jabber-ahc--command-description 0))
-       jabber-ahc-execute-command-1
-       :if (lambda () (jabber-ahc--command-at 0)))
-  "2" ((lambda () (jabber-ahc--command-description 1))
-       jabber-ahc-execute-command-2
-       :if (lambda () (jabber-ahc--command-at 1)))
-  "3" ((lambda () (jabber-ahc--command-description 2))
-       jabber-ahc-execute-command-3
-       :if (lambda () (jabber-ahc--command-at 2)))
-  "4" ((lambda () (jabber-ahc--command-description 3))
-       jabber-ahc-execute-command-4
-       :if (lambda () (jabber-ahc--command-at 3)))
-  :group "Navigation"
-  "[" ("Previous page" jabber-ahc-command-previous-page
-       :stay-open t
-       :if (lambda () (> jabber-ahc--command-page 0)))
-  "]" ("Next page" jabber-ahc-command-next-page
-       :stay-open t
-       :if (lambda () (jabber-ahc--command-has-next-page-p))))
+;; Newer popup revisions generate these launchers at first initialization.
+(declare-function jabber-ahc-command-list-map-popup "jabber-ahc" () t)
+
+(unless (boundp 'jabber-ahc-command-list-map)
+  (keymap-popup-define jabber-ahc-command-list-map
+    "Discovered XEP-0050 commands."
+    :exit-key "C-g"
+    :description
+    (lambda () (format "Commands for %s" jabber-ahc--command-target))
+    :group "Commands"
+    "1" ((lambda () (jabber-ahc--command-description 0))
+         jabber-ahc-execute-command-1
+         :if (lambda () (jabber-ahc--command-at 0)))
+    "2" ((lambda () (jabber-ahc--command-description 1))
+         jabber-ahc-execute-command-2
+         :if (lambda () (jabber-ahc--command-at 1)))
+    "3" ((lambda () (jabber-ahc--command-description 2))
+         jabber-ahc-execute-command-3
+         :if (lambda () (jabber-ahc--command-at 2)))
+    "4" ((lambda () (jabber-ahc--command-description 3))
+         jabber-ahc-execute-command-4
+         :if (lambda () (jabber-ahc--command-at 3)))
+    :group "Navigation"
+    "[" ("Previous page" jabber-ahc-command-previous-page
+         :stay-open t
+         :if (lambda () (> jabber-ahc--command-page 0)))
+    "]" ("Next page" jabber-ahc-command-next-page
+         :stay-open t
+         :if (lambda () (jabber-ahc--command-has-next-page-p)))))
 
 (defun jabber-ahc--command-list-result (jc context result)
   "Display XEP-0050 command RESULT for JC using CONTEXT.

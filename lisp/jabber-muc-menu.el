@@ -23,30 +23,34 @@
 
 (defvar jabber-muc-menu-map)
 
-(keymap-popup-define jabber-muc-menu-map
-  "Jabber MUC commands."
-  :description (lambda ()
-                 (if (bound-and-true-p jabber-group)
-                     (format "MUC actions for %s"
-                             (propertize jabber-group 'face
-                                         'font-lock-constant-face))
-                   "MUC actions"))
-  :group "Room"
-  "j" ("Join" jabber-muc-join)
-  "J" ("Create room" jabber-muc-create)
-  "l" ("Leave" jabber-muc-leave)
-  "t" ("Set topic" jabber-muc-set-topic)
-  "c" ("Configure" jabber-muc-get-config)
-  :group "Participants"
-  "n" ("Change nick" jabber-muc-nick)
-  "I" ("Get info" jabber-muc-get-info)
-  "i" ("Invite" jabber-muc-invite)
-  "w" ("List participants" jabber-muc-names)
-  "p" ("Private chat" jabber-muc-private)
-  "v" ("Request vcard" jabber-muc-vcard-get)
-  :group "Admin"
-  "r" ("Set role" jabber-muc-set-role)
-  "a" ("Set affiliation" jabber-muc-set-affiliation))
+;; Newer popup revisions generate these launchers at first initialization.
+(declare-function jabber-muc-menu-map-popup "jabber-muc-menu" () t)
+
+(unless (boundp 'jabber-muc-menu-map)
+  (keymap-popup-define jabber-muc-menu-map
+    "Jabber MUC commands."
+    :description (lambda ()
+                   (if (bound-and-true-p jabber-group)
+                       (format "MUC actions for %s"
+                               (propertize jabber-group 'face
+                                           'font-lock-constant-face))
+                     "MUC actions"))
+    :group "Room"
+    "j" ("Join" jabber-muc-join)
+    "J" ("Create room" jabber-muc-create)
+    "l" ("Leave" jabber-muc-leave)
+    "t" ("Set topic" jabber-muc-set-topic)
+    "c" ("Configure" jabber-muc-get-config)
+    :group "Participants"
+    "n" ("Change nick" jabber-muc-nick)
+    "I" ("Get info" jabber-muc-get-info)
+    "i" ("Invite" jabber-muc-invite)
+    "w" ("List participants" jabber-muc-names)
+    "p" ("Private chat" jabber-muc-private)
+    "v" ("Request vcard" jabber-muc-vcard-get)
+    :group "Admin"
+    "r" ("Set role" jabber-muc-set-role)
+    "a" ("Set affiliation" jabber-muc-set-affiliation)))
 
 (defun jabber-muc-menu ()
   "Show the Jabber MUC command menu."

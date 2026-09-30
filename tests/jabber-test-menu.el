@@ -97,6 +97,17 @@ inherited bindings from parent mode keymaps."
    (eq (keymap-lookup jabber-chat-mode-map "RET")
        'jabber-chat-goto-reply-target-or-send)))
 
+(ert-deftest jabber-test-menu-thread-title-context ()
+  "Resolve the title command only in its current thread buffer."
+  (with-temp-buffer
+    (let ((map jabber-chat-operations-menu-map))
+      (use-local-map map)
+      (dolist (id '(nil "thread-id" nil "other-thread"))
+        (setq-local jabber-message-thread-id id)
+        (let ((command (and id #'jabber-message-thread-set-title)))
+          (should (eq (keymap-lookup map "L") command))
+          (should (eq (local-key-binding (kbd "L")) command)))))))
+
 (defun jabber-test-menu--connection (name contacts)
   "Return a disposable connection NAME with CONTACTS."
   (let ((jc (make-symbol name)))

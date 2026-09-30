@@ -94,6 +94,15 @@
             '';
           };
 
+          # Recursive Make and the matrix runner use their own job variables.
+          testJobBudget = ''
+            jobs="''${NIX_BUILD_CORES:-1}"
+            case "$jobs" in *[!0-9]*) jobs=1 ;; esac
+            if ! [ "$jobs" -gt 0 ] 2>/dev/null; then
+              jobs=1
+            fi
+          '';
+
           # Run a Makefile test target in a sandbox that mirrors a
           # buildd: clean HOME/XDG, the module built from source.
           mkTests = { pname, target }: pkgs.stdenv.mkDerivation {
@@ -111,12 +120,15 @@
               export XDG_CONFIG_HOME="$TMPDIR/config"
               export XDG_DATA_HOME="$TMPDIR/share"
               export XDG_STATE_HOME="$TMPDIR/state"
+              # Keep first-attempt ERT diagnostics, including successful runs.
+              export JABBER_MATRIX_EVIDENCE=1
               mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" \
                 "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+              ${testJobBudget}
               CFLAGS="${moduleCFlags}" \
                 EMACS_CMD=emacs \
                 JABBER_ENV_WRAPPED=1 \
-                make ${target}
+                make ${target} JOBS="$jobs"
               runHook postBuild
             '';
 
@@ -124,6 +136,9 @@
               runHook preInstall
               mkdir -p $out
               touch $out/tests-passed
+              if [ -d .test-results ]; then
+                cp -r .test-results $out/test-results
+              fi
               runHook postInstall
             '';
           };
@@ -139,12 +154,15 @@
             buildPhase = ''
               export JABBER_MATRIX_DEPS=${testDependencies}
               export CFLAGS="${moduleCFlags}"
-              python3 admin/test-matrix --lane ${if emacs.version == "29.1" then "minimum" else "default"} \
+              ${testJobBudget}
+              MATRIX_JOBS="$jobs" python3 admin/test-matrix --lane ${if emacs.version == "29.1" then "minimum" else "default"} \
                 --expected ${emacs.version} --root "$TMPDIR/lane"
             '';
             installPhase = ''
               mkdir -p $out
-              cp "$TMPDIR/lane/runtime.json" "$TMPDIR/lane/passed" $out/
+              cp "$TMPDIR/lane/runtime.json" "$TMPDIR/lane/completion.json" \
+                "$TMPDIR/lane/passed" $out/
+              cp -r "$TMPDIR/lane/source/.test-results" $out/test-results
             '';
           };
           matrixShell = pkgs.mkShell {

@@ -2259,13 +2259,12 @@ ALLOWED-TYPES and `jabber-image-max-bytes' are enforced per
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'jabber-chat-url-action-at-point)
     (define-key map "w" #'jabber-chat-copy-url)
+    (define-key map "+" #'jabber-chat-image-enlarge)
+    (define-key map "=" #'jabber-chat-image-enlarge)
+    (define-key map "-" #'jabber-chat-image-shrink)
+    (define-key map "0" #'jabber-chat-image-reset-size)
     map)
   "Keymap active on images, attachments, and preview URLs in chats.")
-
-(define-key jabber-chat-url-keymap "+" #'jabber-chat-image-enlarge)
-(define-key jabber-chat-url-keymap "=" #'jabber-chat-image-enlarge)
-(define-key jabber-chat-url-keymap "-" #'jabber-chat-image-shrink)
-(define-key jabber-chat-url-keymap "0" #'jabber-chat-image-reset-size)
 
 (defvar jabber-chat--image-cache (make-hash-table :test 'equal)
   "Session-local cache mapping image URLs to Emacs image objects.")

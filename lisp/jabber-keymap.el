@@ -21,11 +21,21 @@
 
 (require 'keymap-popup)
 
-(defconst jabber-keymap--common-bindings
-  '(("C-c C-i" "Info/Discovery" jabber-info-menu)
-    ("C-c C-m" "MUC" jabber-muc-menu)
-    ("C-c C-s" "Services" jabber-service-menu))
-  "Bindings shared by Jabber `special-mode' maps.")
+;; Feature modules depend on these shared maps, so keep their loading lazy.
+(declare-function jabber-info-menu "jabber-disco-menu" ())
+(declare-function jabber-service-menu "jabber-disco-menu" ())
+(declare-function jabber-muc-menu "jabber-muc-menu" ())
+(declare-function jabber-connect-all "jabber-core" (&optional arg))
+(declare-function jabber-disconnect "jabber-core" (&optional arg interactivep))
+(declare-function jabber-roster-popup "jabber-roster-menu" ())
+(declare-function jabber-chat-with "jabber-chat" (jc jid &optional other-window))
+(declare-function jabber-activity-switch-to "jabber-activity" (&optional jid-param))
+(declare-function jabber-send-away-presence "jabber-presence" (&optional status jc))
+(declare-function jabber-send-default-presence "jabber-presence" (&optional jc))
+(declare-function jabber-send-xa-presence "jabber-presence" (&optional status jc))
+(declare-function jabber-send-presence "jabber-presence" (show status priority &optional jc))
+(declare-function jabber-chat-buffer-switch "jabber-chatbuffer" ())
+(declare-function jabber-muc-join "jabber-muc" (jc group nickname &optional popup))
 
 (defconst jabber-keymap--global-bindings
   '(("C-c" "Connect" jabber-connect-all)
@@ -41,30 +51,59 @@
     ("C-m" "Join MUC" jabber-muc-join))
   "Bindings exposed through `jabber-global-keymap'.")
 
-(defun jabber-keymap--add-bindings (keymap bindings)
-  "Install BINDINGS and their popup descriptions in KEYMAP."
-  (dolist (binding bindings)
-    (pcase-let ((`(,key ,description ,command) binding))
-      (keymap-popup-add-entry keymap key description command))))
+(defvar jabber-common-keymap)
+(defvar jabber-global-keymap)
 
-(keymap-popup-define jabber-common-keymap
-  "Common Jabber commands."
-  :parent special-mode-map
-  "TAB" ("Next button" forward-button)
-  "<backtab>" ("Previous button" backward-button))
+(defun jabber-common-menu ()
+  "Show common Jabber commands."
+  (interactive)
+  (keymap-popup jabber-common-keymap))
 
-(jabber-keymap--add-bindings jabber-common-keymap
-                            jabber-keymap--common-bindings)
+(defun jabber-global-menu ()
+  "Show global Jabber commands."
+  (interactive)
+  (keymap-popup jabber-global-keymap))
 
-(keymap-popup-define jabber-global-keymap
-  "Global Jabber commands."
-  "C-g" ("Quit" keyboard-quit))
+(unless (boundp 'jabber-common-keymap)
+  (defvar-keymap jabber-common-keymap
+    :doc "Common Jabber commands."
+    :parent special-mode-map
+    "h" #'jabber-common-menu
+    "TAB" #'forward-button
+    "<backtab>" #'backward-button
+    "C-c C-i" #'jabber-info-menu
+    "C-c C-m" #'jabber-muc-menu
+    "C-c C-s" #'jabber-service-menu)
 
-;; keymap-popup 0.3 cannot add entries before a map has popup metadata.
-(jabber-keymap--add-bindings jabber-global-keymap
-                            jabber-keymap--global-bindings)
-(keymap-popup-remove-entry jabber-global-keymap "C-g")
-(define-key ctl-x-map "\C-j" jabber-global-keymap)
+  (keymap-popup-annotate jabber-common-keymap
+    forward-button "Next button"
+    backward-button "Previous button"
+    jabber-info-menu "Info/Discovery"
+    jabber-muc-menu "MUC"
+    jabber-service-menu "Services"))
+
+(unless (boundp 'jabber-global-keymap)
+  (defvar jabber-global-keymap
+    (let ((map (make-sparse-keymap)))
+      (keymap-set map "h" #'jabber-global-menu)
+      (dolist (binding jabber-keymap--global-bindings)
+        (keymap-set map (car binding) (caddr binding)))
+      (define-key ctl-x-map "\C-j" map)
+      map)
+    "Global Jabber commands.")
+
+  (keymap-popup-annotate jabber-global-keymap
+    jabber-connect-all "Connect"
+    jabber-disconnect "Disconnect"
+    jabber-roster-popup "Roster"
+    jabber-chat-with "Chat with"
+    jabber-activity-switch-to "Next unread"
+    jabber-send-away-presence "Away"
+    jabber-send-default-presence "Online"
+    jabber-send-xa-presence "Extended away"
+    jabber-send-presence "Set presence"
+    jabber-chat-buffer-switch "Switch buffer"
+    jabber-muc-join "Join MUC"))
 
 (provide 'jabber-keymap)
 

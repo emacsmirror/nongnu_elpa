@@ -33,31 +33,37 @@
 (defvar jabber-info-menu-map)
 (defvar jabber-service-menu-map)
 
-(keymap-popup-define jabber-info-menu-map
-  "Jabber info/discovery commands."
-  :group "Discovery"
-  "I" ("Get info" jabber-get-info)
-  "i" ("Disco items" jabber-get-disco-items)
-  "d" ("Disco info" jabber-get-disco-info)
-  "b" ("Browse" jabber-get-browse)
-  "v" ("Client version" jabber-get-version)
-  "p" ("Ping" jabber-ping)
-  "t" ("Request time" jabber-get-time)
-  "V" ("View vCard" jabber-vcard-get))
+;; Newer popup revisions generate these launchers at first initialization.
+(declare-function jabber-info-menu-map-popup "jabber-disco-menu" () t)
+(declare-function jabber-service-menu-map-popup "jabber-disco-menu" () t)
+
+(unless (boundp 'jabber-info-menu-map)
+  (keymap-popup-define jabber-info-menu-map
+    "Jabber info/discovery commands."
+    :group "Discovery"
+    "I" ("Get info" jabber-get-info)
+    "i" ("Disco items" jabber-get-disco-items)
+    "d" ("Disco info" jabber-get-disco-info)
+    "b" ("Browse" jabber-get-browse)
+    "v" ("Client version" jabber-get-version)
+    "p" ("Ping" jabber-ping)
+    "t" ("Request time" jabber-get-time)
+    "V" ("View vCard" jabber-vcard-get)))
 
 (defun jabber-info-menu ()
   "Jabber info/discovery commands."
   (interactive)
   (keymap-popup jabber-info-menu-map))
 
-(keymap-popup-define jabber-service-menu-map
-  "Jabber service commands."
-  :group "Services"
-  "r" ("Register" jabber-get-register)
-  "s" ("Search directory" jabber-get-search)
-  "c" ("Execute command" jabber-ahc-execute-command)
-  "l" ("Command list" jabber-ahc-get-list)
-  "C" ("Enable carbons" jabber-enable-carbons))
+(unless (boundp 'jabber-service-menu-map)
+  (keymap-popup-define jabber-service-menu-map
+    "Jabber service commands."
+    :group "Services"
+    "r" ("Register" jabber-get-register)
+    "s" ("Search directory" jabber-get-search)
+    "c" ("Execute command" jabber-ahc-execute-command)
+    "l" ("Command list" jabber-ahc-get-list)
+    "C" ("Enable carbons" jabber-enable-carbons)))
 
 (defun jabber-service-menu ()
   "Jabber service commands."

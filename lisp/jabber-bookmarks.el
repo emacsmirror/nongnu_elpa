@@ -440,35 +440,49 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
 
 ;;; Bookmark editor
 
-(keymap-popup-define jabber-bookmarks-edit-map
-  "Edit bookmark at point."
-  :description (lambda ()
-		 (format "Edit: %s"
-			 (propertize (or (tabulated-list-get-id) "(none)")
-				     'face 'font-lock-constant-face)))
-  :group "Edit"
-  "a" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
-  "n" ("Change nick" jabber-bookmarks-set-nick)
-  "N" ("Change name" jabber-bookmarks-set-name)
-  "p" ("Change password" jabber-bookmarks-set-password))
+(defvar jabber-bookmarks-edit-map)
+(defvar jabber-bookmarks-mode-map)
+
+;; Newer popup revisions generate these launchers at first initialization.
+(declare-function jabber-bookmarks-edit-map-popup "jabber-bookmarks" () t)
+
+(unless (boundp 'jabber-bookmarks-edit-map)
+  (keymap-popup-define jabber-bookmarks-edit-map
+    "Edit bookmark at point."
+    :description (lambda ()
+                   (format "Edit: %s"
+                           (propertize (or (tabulated-list-get-id) "(none)")
+                                       'face 'font-lock-constant-face)))
+    :group "Edit"
+    "a" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
+    "n" ("Change nick" jabber-bookmarks-set-nick)
+    "N" ("Change name" jabber-bookmarks-set-name)
+    "p" ("Change password" jabber-bookmarks-set-password)))
 
 (defun jabber-bookmarks--edit-menu ()
   "Show bookmark edit menu."
   (interactive)
   (keymap-popup jabber-bookmarks-edit-map))
 
-(keymap-popup-define jabber-bookmarks-mode-map
-  "Bookmarks commands."
-  :parent tabulated-list-mode-map
-  :group "Bookmark"
-  "a" ("Add bookmark" jabber-bookmarks-add)
-  "d" ("Delete bookmark" jabber-bookmarks-delete)
-  "t" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
-  "e" ("Edit bookmark" jabber-bookmarks--edit-menu)
-  "g" ("Refresh" revert-buffer))
+(unless (boundp 'jabber-bookmarks-mode-map)
+  (defvar-keymap jabber-bookmarks-mode-map
+    :doc "Bookmarks commands."
+    :parent tabulated-list-mode-map
+    "h" #'jabber-bookmarks-menu
+    "?" #'jabber-bookmarks-menu
+    "a" #'jabber-bookmarks-add
+    "d" #'jabber-bookmarks-delete
+    "t" #'jabber-bookmarks-toggle-autojoin
+    "e" #'jabber-bookmarks--edit-menu
+    "g" #'revert-buffer)
 
-(keymap-set jabber-bookmarks-mode-map "h" #'jabber-bookmarks-menu)
-(keymap-set jabber-bookmarks-mode-map "?" #'jabber-bookmarks-menu)
+  (keymap-popup-annotate jabber-bookmarks-mode-map
+    :group "Bookmark"
+    jabber-bookmarks-add "Add bookmark"
+    jabber-bookmarks-delete "Delete bookmark"
+    jabber-bookmarks-toggle-autojoin "Toggle autojoin"
+    jabber-bookmarks--edit-menu "Edit bookmark"
+    revert-buffer "Refresh"))
 
 (defun jabber-bookmarks--column-format ()
   "Compute `tabulated-list-format' based on window width."
