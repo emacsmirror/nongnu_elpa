@@ -2085,6 +2085,48 @@ and `url' to the URL; `display-graphic-p' is stubbed to t."
        (should (equal downloads '("https://example.com/doc.pdf")))
        (should (null fetches))))))
 
+(ert-deftest jabber-test-chat-download-aesgcm-preserves-literal-bytes ()
+  "Save decrypted bytes unchanged, preserving other filename handlers."
+  (require 'jabber-omemo)
+  (dolist (suffix '(".bin" ".targz" ".gz" ".tgz"))
+    (let* ((dir (make-temp-file "jabber-download-bytes-" t))
+           (dest (expand-file-name (concat "download" suffix) dir))
+           (writes 0))
+      (unwind-protect
+          (let* ((original (unibyte-string 0 1 10 13 127 128 254 255))
+                 (enc (jabber-omemo-aesgcm-encrypt original)))
+            (cl-labels
+                ((handle (operation &rest args)
+                   (when (eq operation 'write-region)
+                     (cl-incf writes))
+                   (let ((inhibit-file-name-handlers
+                          (cons #'handle
+                                (and (eq inhibit-file-name-operation operation)
+                                     inhibit-file-name-handlers)))
+                         (inhibit-file-name-operation operation))
+                     (apply operation args))))
+              (let ((file-name-handler-alist
+                     (cons (cons (regexp-quote dest) #'handle)
+                           file-name-handler-alist)))
+                ;; Only the network boundary is mocked; use real GCM and I/O.
+                (cl-letf (((symbol-function 'url-queue-retrieve)
+                           (lambda (_url callback args &rest _)
+                             (with-temp-buffer
+                               (set-buffer-multibyte nil)
+                               (insert "HTTP/1.1 200 OK\r\n\r\n"
+                                       (plist-get enc :ciphertext))
+                               (apply callback nil args)))))
+                  (jabber-chat--download-aesgcm
+                   "https://example.org/file" dest
+                   (plist-get enc :key) (plist-get enc :iv)))))
+            (should (> writes 0))
+            (should (equal original
+                           (with-temp-buffer
+                             (set-buffer-multibyte nil)
+                             (insert-file-contents-literally dest)
+                             (buffer-string)))))
+        (delete-directory dir t)))))
+
 (ert-deftest jabber-test-chat-manual-load-tty-errors ()
   "Batch Emacs is not graphical, so the tty branch errors."
   (with-temp-buffer

@@ -380,6 +380,42 @@ Clears OMEMO in-memory caches and tears down on exit."
       (when (and result (stringp (car result)))
         (ignore-errors (delete-file (car result)))))))
 
+(ert-deftest jabber-test-omemo-message-httpupload-preserves-literal-bytes ()
+  "Upload ciphertext must decrypt to the literal source file bytes."
+  (dolist (suffix '(".bin" ".targz" ".gz" ".tgz"))
+    (let* ((source (make-temp-file "jabber-upload-bytes-" nil suffix))
+           (jabber-chat-encryption 'omemo)
+           (payload (unibyte-string 0 1 10 13 127 128 254 255))
+           result)
+      (unwind-protect
+          (progn
+            ;; For compressed suffixes, create a real compressed input file.
+            (with-temp-file source
+              (set-buffer-multibyte nil)
+              (insert payload))
+            (let ((original (with-temp-buffer
+                              (set-buffer-multibyte nil)
+                              (insert-file-contents-literally source)
+                              (buffer-string))))
+              (setq result
+                    (jabber-omemo--httpupload-transform source #'identity))
+              (let* ((ciphertext (with-temp-buffer
+                                   (set-buffer-multibyte nil)
+                                   (insert-file-contents-literally (car result))
+                                   (buffer-string)))
+                     (url (funcall (cdr result)
+                                   (concat "https://example.org/file" suffix)))
+                     (parsed (jabber-chat--parse-aesgcm-url url)))
+                (should-not (file-exists-p (car result)))
+                (should (equal original
+                               (jabber-omemo-aesgcm-decrypt
+                                (plist-get parsed :key)
+                                (plist-get parsed :iv) ciphertext)))
+                (should (= (length ciphertext) (+ 16 (length original)))))))
+        (delete-file source)
+        (when (and result (file-exists-p (car result)))
+          (delete-file (car result)))))))
+
 (ert-deftest jabber-test-omemo-message-httpupload-send-url-handles-aesgcm ()
   "Send-url override returns non-nil for aesgcm:// URLs."
   (let (sent)

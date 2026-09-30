@@ -2097,9 +2097,12 @@ Signal encryption or file errors so the caller cannot upload plaintext."
            (tmp (make-temp-file "jabber-aesgcm-" nil
                                 (file-name-extension filepath t))))
       (condition-case err
-          (with-temp-file tmp
-            (set-buffer-multibyte nil)
-            (insert ciphertext))
+          ;; Keep opaque ciphertext literal even for compressed file suffixes.
+          (let ((jka-compr-inhibit t)
+                (coding-system-for-write 'no-conversion))
+            (with-temp-file tmp
+              (set-buffer-multibyte nil)
+              (insert ciphertext)))
         ((error quit)
          (ignore-errors (delete-file tmp))
          (signal (car err) (cdr err))))
