@@ -2,6 +2,20 @@
 
 * Version 0.7.1 (unreleased)
 
+- Preserved empty prompts when editing skills-only and script-only cron jobs;
+  ordinary edits now send only changed fields.
+- Added an initial paused choice to cron creation.  Paused jobs do not run
+  automatically, but the explicit Run now action can still force a run.
+- Added =E= in the cron browser for requested model/provider and backend
+  workdir overrides, with Unchanged, Set and Inherit choices.  A fresh model
+  catalogue supplies provider-qualified choices; a literal draft remains for
+  manual recovery after a failed or uncertain save.  Provider fallback still
+  applies, and a workdir removed before execution is ignored by the backend.
+  Cron profile lookup remains a backend hint, not atomic profile isolation.
+- Kept script-output history rows inert on newer backends.  Available previews
+  can be partial; only session-backed rows open transcripts.  Remote output
+  paths are never opened as local files.
+
 - Made buffer-specific commands context-aware in native =M-x= completion,
   while keeping launchers available globally.  Filtering follows the user's
   =read-extended-command-predicate= setting; Hermes does not change it.

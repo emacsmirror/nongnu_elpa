@@ -29,6 +29,7 @@
 
 (require 'hermes-buffer)
 (require 'subr-x)
+(require 'seq)
 (require 'tabulated-list)
 (require 'url-util)
 (require 'hermes-transport)
@@ -36,6 +37,7 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'hermes-chat-models)
 
 (declare-function read-string-from-buffer "string-edit")
 
@@ -237,7 +239,13 @@ token when present, otherwise the configured dashboard URL."
                                       (hermes-cron--profile job))
                                      "default"))
          (format "State:    %s" (hermes-cron--state job))
+         (format "Paused:   %s" (or (hermes-transport--non-blank-string
+                                     (hermes-transport--display-field job 'paused_reason)) "-"))
          (format "Schedule: %s" (hermes-cron--schedule job))
+         (format "Requested model: %s / %s"
+                 (hermes-cron--preference job 'provider)
+                 (hermes-cron--preference job 'model))
+         (format "Backend workdir: %s" (hermes-cron--preference job 'workdir))
          (format "Deliver:  %s" (or (hermes-transport--non-blank-string
                                       (hermes-transport--display-field job 'deliver))
                                      "local"))
@@ -266,33 +274,42 @@ token when present, otherwise the configured dashboard URL."
   "<mouse-1>" #'hermes-cron-show-run-log)
 
 (defun hermes-cron--format-run (run)
-  "Return one display line for cron RUN, navigable to its transcript."
+  "Return source-aware display text for cron RUN."
   (let ((id (hermes-transport--display-field run 'id))
         (line (format "  %s  %s  %s msg%s  %s%s"
-                      (hermes-cron--time (or (hermes-transport--get run 'started_at)
-                                             (hermes-transport--get run 'created_at)))
+                      (or (hermes-transport--non-blank-string
+                           (hermes-cron--time
+                            (or (hermes-transport--get run 'started_at)
+                                (hermes-transport--get run 'created_at))))
+                          "Time unknown")
                       (or (hermes-transport--non-blank-string
                            (hermes-transport--display-field run 'title))
                           (hermes-transport--display-field run 'id))
                       (or (hermes-transport--non-blank-string
                            (hermes-transport--display-field run 'message_count))
-                          "0")
+                          "?")
                       (if (equal (hermes-transport--display-field run 'message_count) "1") "" "s")
                       (hermes-transport--display-field run 'source)
                       (if (eq (hermes-transport--get run 'is_active) t) " active" ""))))
-    (if (hermes-transport--non-blank-string id)
+    (if (and (hermes-transport--non-blank-string id)
+             (not (string-prefix-p "cron_output:" id))
+             (or (not (hermes-transport--field-present-p run 'source))
+                 (equal (hermes-transport--get run 'source) "cron")))
         (propertize line
                     'hermes-cron-run-id id
                     'hermes-cron-run-profile (hermes-cron--profile run)
                     'keymap hermes-cron--run-line-map
                     'mouse-face 'highlight
                     'help-echo "RET: show this run's transcript")
-      line)))
+      (concat line "  [No session transcript]\n    "
+              (or (hermes-transport--non-blank-string
+                   (hermes-transport--display-field run 'preview))
+                  "Preview unavailable")))))
 
 (defun hermes-cron--format-runs (runs)
   "Return detail text for recent cron run history.
 RUNS is the run list from the dashboard."
-  (concat "\n\nRuns (RET on a line for its transcript):\n"
+  (concat "\n\nRuns (RET on session lines for transcripts; output previews may be partial):\n"
           (if runs
               (string-join (mapcar #'hermes-cron--format-run runs) "\n")
             "  No recorded runs.")))
@@ -489,26 +506,49 @@ CURRENT, when non-nil, retains ownership captured before confirmation."
         (mapcar #'hermes-transport--non-blank-string
                 (split-string (or text "") ","))))
 
+(defun hermes-cron--editable-fields (job)
+  "Return JOB's editable values without display-only fallbacks."
+  `((name . ,(hermes-transport--display-field job 'name))
+    (schedule . ,(hermes-cron--schedule-expr job))
+    (prompt . ,(hermes-transport--display-field job 'prompt))
+    (deliver . ,(or (hermes-transport--non-blank-string
+                    (hermes-transport--display-field job 'deliver)) "local"))
+    (skills . ,(vconcat (hermes-cron--skills job)))))
+
+(defun hermes-cron--validate-execution (prompt skills job)
+  "Validate PROMPT and SKILLS with JOB's retained script and agent policy."
+  (let ((script (hermes-transport--non-blank-string
+                 (hermes-transport--display-field job 'script))))
+    (if (eq (hermes-transport--get job 'no_agent) t)
+        (unless script (user-error "Script-only jobs require a script"))
+      (unless (or (hermes-transport--non-blank-string prompt) skills script)
+        (user-error "A prompt, skill or script is required")))))
+
 (defun hermes-cron--read-updates (job)
-  "Read and return update fields for JOB."
+  "Read and return only changed editable fields for JOB."
   (let* ((name (read-string "Name: " (hermes-transport--display-field job 'name)))
          (schedule (read-string "Schedule: " (hermes-cron--schedule-expr job)))
-         (prompt (read-string-from-buffer "Prompt: " (hermes-cron--prompt job)))
+         (prompt (read-string-from-buffer
+                  "Prompt: " (hermes-transport--display-field job 'prompt)))
          (deliver (read-string "Deliver: " (or (hermes-transport--non-blank-string
                                                 (hermes-transport--display-field job 'deliver))
                                                "local")))
          (skills (hermes-cron--split-skills
                   (read-string "Skills (comma-separated): "
                                (hermes-cron--skills-string job)))))
+    (unless prompt (signal 'quit nil))
     (when (or (string-empty-p (string-trim name))
-              (string-empty-p (string-trim schedule))
-              (string-empty-p (string-trim prompt)))
-      (user-error "Name, schedule and prompt are required"))
-    `((name . ,(string-trim name))
-      (schedule . ,(string-trim schedule))
-      (prompt . ,(string-trim prompt))
-      (deliver . ,(or (hermes-transport--non-blank-string deliver) "local"))
-      (skills . ,(vconcat skills)))))
+              (string-empty-p (string-trim schedule)))
+      (user-error "Name and schedule are required"))
+    (hermes-cron--validate-execution prompt skills job)
+    (let ((original (hermes-cron--editable-fields job)))
+      (seq-remove
+       (lambda (field) (equal (cdr field) (alist-get (car field) original)))
+       `((name . ,(string-trim name))
+         (schedule . ,(string-trim schedule))
+         (prompt . ,prompt)
+         (deliver . ,(or (hermes-transport--non-blank-string deliver) "local"))
+         (skills . ,(vconcat skills)))))))
 
 (defun hermes-cron-edit ()
   "Edit the cron job at point."
@@ -523,32 +563,50 @@ CURRENT, when non-nil, retains ownership captured before confirmation."
         (lambda (job)
           (when (funcall guard)
             (with-current-buffer origin
-              (let* ((job-profile (or (hermes-transport--non-blank-string
-                                      (hermes-cron--profile job))
-                                     profile))
-                     (updates (hermes-cron--read-updates job)))
-                (when (funcall guard)
+              (when (or (and (hermes-transport--field-present-p job 'id)
+                             (not (equal job-id (hermes-cron--job-id job))))
+                        (and profile
+                             (hermes-transport--non-blank-string
+                              (hermes-cron--profile job))
+                             (not (equal profile (hermes-cron--profile job)))))
+                (user-error "Backend returned a different cron job or profile; refresh"))
+              (let ((updates (hermes-cron--read-updates job)))
+                (when (and updates (funcall guard))
                   (let ((hermes-dashboard-transport--api-dispatch-guard guard))
                     (hermes--promise-map
-                     (hermes-cron--update-job client job-id job-profile updates)
+                     (hermes-cron--update-job client job-id profile updates)
                      #'hermes-cron--checked-result)))))))))
      (hermes-browser--mutation-context #'hermes-cron--selection)
-     (lambda (_result)
-       (message "Hermes: updated %s" job-id)
-       (hermes-cron--refresh-origin origin))
+     (lambda (result)
+       (if result
+           (progn (message "Hermes: updated %s" job-id)
+                  (hermes-cron--refresh-origin origin))
+         (message "Hermes: no cron fields changed")))
      #'hermes-browser--read-error)))
 
 (defun hermes-cron-trigger ()
-  "Trigger the cron job at point immediately."
+  "Trigger the cron job at point immediately, even when it is paused."
   (interactive nil hermes-cron-mode)
   (let ((id (hermes-cron--id-at-point)))
     (hermes-cron--act "trigger" id (hermes-cron--entry-profile)
                       (format "triggered %s" id))))
 
-(defun hermes-cron-create (name schedule prompt &optional profile deliver skills)
+(defun hermes-cron--validate-profile (client profile guard)
+  "Check exact PROFILE against CLIENT's fresh catalogue under GUARD."
+  (hermes--promise-map
+   (hermes-dashboard-transport-api-request-async
+    "GET" "/api/profiles" :client client :current-p guard)
+   (lambda (result)
+     (unless (seq-some (lambda (row)
+                         (equal profile (hermes-transport--get row 'name)))
+                       (hermes-transport--get result 'profiles))
+       (user-error "Unknown cron profile: %s" profile)))))
+
+(defun hermes-cron-create (name schedule prompt &optional profile deliver skills paused)
   "Create cron job NAME running PROMPT on SCHEDULE for PROFILE.
 When non-nil, DELIVER names the delivery target and SKILLS is a list of skill
-names.  Interactive creation defaults DELIVER to local delivery."
+names.  PAUSED prevents scheduled automatic execution from creation; explicit
+Trigger can still force a run.  Interactive creation offers both initial states."
   (interactive
    (hermes-browser--read-owned-arguments
     (lambda () (list (read-string "Cron job name: ")
@@ -557,7 +615,11 @@ names.  Interactive creation defaults DELIVER to local delivery."
                      (read-string "Profile: " "default")
                      (read-string "Deliver: " "local")
                      (hermes-cron--split-skills
-                      (read-string "Skills (comma-separated): "))))))
+                      (read-string "Skills (comma-separated): "))
+                     (equal (completing-read
+                             "Initial state: " '("Create active" "Create paused")
+                             nil t nil nil "Create active")
+                            "Create paused")))))
   (let* ((name (string-trim name))
          (schedule (string-trim schedule))
          (prompt (string-trim prompt))
@@ -568,19 +630,163 @@ names.  Interactive creation defaults DELIVER to local delivery."
               (string-empty-p prompt))
       (user-error "Name, schedule and prompt are required"))
     (hermes-browser--run-owned
-     (lambda (client _guard)
-       (hermes--promise-map
-        (hermes-cron--api client "POST" "/jobs"
-                          (append `((name . ,name) (schedule . ,schedule)
-                                    (prompt . ,prompt))
-                                  (and deliver `((deliver . ,deliver)))
-                                  (and skills `((skills . ,(vconcat skills)))))
-                          (hermes-cron--query profile))
-        #'hermes-cron--checked-result))
+     (lambda (client guard)
+       (hermes--promise-then
+        (hermes-cron--validate-profile client profile guard)
+        (lambda (_)
+          (when (funcall guard)
+            (let ((hermes-dashboard-transport--api-dispatch-guard guard))
+              (hermes--promise-map
+               (hermes-cron--api
+                client "POST" "/jobs"
+                (append `((name . ,name) (schedule . ,schedule)
+                          (prompt . ,prompt) (paused . ,(if paused t :false)))
+                        (and deliver `((deliver . ,deliver)))
+                        (and skills `((skills . ,(vconcat skills)))))
+                (hermes-cron--query profile))
+               #'hermes-cron--checked-result))))))
      (hermes-browser--mutation-context)
      (lambda (_result)
        (message "Hermes: created cron job %s" name)
        (hermes-cron--refresh-origin origin))
+     #'hermes-browser--read-error)))
+
+;;; Execution preferences
+
+(defun hermes-cron--preference (job field)
+  "Return JOB's configured FIELD, keeping inheritance and unknown distinct."
+  (if (hermes-transport--field-present-p job field)
+      (or (hermes-transport--non-blank-string
+           (hermes-transport--display-field job field)) "inherited")
+    "unknown"))
+
+(defun hermes-cron--preference-action (label value)
+  "Read an explicit editing action for LABEL with configured VALUE."
+  (completing-read (format "%s (%s): " label value)
+                   '("Unchanged" "Set" "Inherit") nil t nil nil "Unchanged"))
+
+(defun hermes-cron--read-model-preference (catalog)
+  "Select an exact provider-qualified preference from fresh CATALOG."
+  (let* ((candidates (seq-filter
+                      (lambda (candidate)
+                        (hermes-transport--non-blank-string
+                         (plist-get (cdr candidate) :provider)))
+                      (hermes-chat--model-candidates catalog)))
+         (choice (completing-read "Model choice: " (mapcar #'car candidates) nil t))
+         (candidate (cdr (assoc choice candidates))))
+    (unless candidate (user-error "No provider-qualified model selected"))
+    `((model . ,(plist-get candidate :model))
+      (provider . ,(plist-get candidate :provider)))))
+
+(defun hermes-cron--read-workdir-preference (job)
+  "Read JOB's remote workdir preference without local filesystem access."
+  (pcase (hermes-cron--preference-action
+          "Backend workdir" (hermes-cron--preference job 'workdir))
+    ("Inherit" '((workdir . :null)))
+    ("Set"
+     (let ((value (read-string "Backend workdir (must exist on backend): "
+                               (hermes-transport--display-field job 'workdir))))
+       (unless (hermes-transport--non-blank-string value)
+         (user-error "Use Inherit to clear the workdir"))
+       `((workdir . ,value))))))
+
+(defun hermes-cron--retain-preference-draft (client id profile updates)
+  "Display a literal recovery copy of requested preferences.
+CLIENT, ID and PROFILE identify the target; UPDATES holds the draft fields."
+  (with-current-buffer (generate-new-buffer "*Hermes Cron Preference Draft*")
+    (insert (format "Requested cron preferences (not proof of persistence)\n\nBackend: %s\nJob: %s\nProfile: %s\n\n"
+                    (hermes-dashboard-transport--cache-base-url client) id profile))
+    (dolist (field updates)
+      (insert (format "%s: %s\n" (car field)
+                      (if (eq (cdr field) :null) "inherit" (cdr field)))))
+    (insert "\nKept for manual recovery; refresh the job before retrying.\n"
+            "Provider fallback remains enabled. Workdirs removed before a run are ignored.\n"
+            "Backend profile lookup is a hint, not atomic cross-profile isolation.\n")
+    (special-mode)
+    (display-buffer (current-buffer))))
+
+(defun hermes-cron--save-preferences (client id profile job model origin guard)
+  "Read workdir and save CLIENT's ID/PROFILE preferences under GUARD.
+JOB supplies defaults; MODEL holds explicit model updates.  Retain ORIGIN.
+Keep accepted input for manual recovery even when GUARD retires or the
+workdir is refused locally.  Explicit quit abandons the edit instead."
+  (let ((updates
+         (append model
+                 (when (funcall guard)
+                   (with-current-buffer origin
+                     (condition-case err
+                         (hermes-cron--read-workdir-preference job)
+                       (error
+                        (when model
+                          (hermes-cron--retain-preference-draft
+                           client id profile model))
+                        (signal (car err) (cdr err)))))))))
+    (when updates
+      (hermes-cron--retain-preference-draft client id profile updates)
+      (when (funcall guard)
+        (let ((hermes-dashboard-transport--api-dispatch-guard guard))
+          (hermes--promise-then
+           (hermes-cron--update-job client id profile updates)
+           (lambda (receipt)
+             (hermes-cron--checked-result receipt)
+             (hermes-dashboard-transport-api-request-async
+              "GET" (concat "/api/cron" (hermes-cron--job-path id))
+              :client client :query (hermes-cron--query profile)
+              :current-p guard))))))))
+
+(defun hermes-cron--choose-preferences (client id profile job origin guard)
+  "Choose CLIENT's ID/PROFILE preferences from JOB while ORIGIN owns GUARD."
+  (when (funcall guard)
+    (with-current-buffer origin
+      (unless (and (equal id (hermes-cron--job-id job))
+                   (equal profile (hermes-cron--profile job)))
+        (user-error "Backend returned a different cron job or profile; refresh"))
+      (let ((action (hermes-cron--preference-action
+                     "Model/provider"
+                     (format "%s / %s" (hermes-cron--preference job 'provider)
+                             (hermes-cron--preference job 'model)))))
+        (if (equal action "Set")
+            (when (funcall guard)
+              (hermes--promise-then
+               (hermes-dashboard-transport-call-fn
+                #'hermes-dashboard-transport-model-options-cached client :force t)
+               (lambda (catalog)
+                 (when (funcall guard)
+                   (with-current-buffer origin
+                     (hermes-cron--save-preferences
+                      client id profile job
+                      (hermes-cron--read-model-preference catalog) origin guard))))))
+          (hermes-cron--save-preferences
+           client id profile job
+           (and (equal action "Inherit") '((model . :null) (provider . :null)))
+           origin guard))))))
+
+(defun hermes-cron-edit-preferences ()
+  "Edit requested model/provider and backend workdir for the selected job.
+Unchanged fields are omitted; Inherit explicitly clears overrides.  Retain a
+literal draft for recovery.  Read back saved preferences without running the
+job.  Provider fallback and missing-workdir behavior remain backend-owned."
+  (interactive nil hermes-cron-mode)
+  (let ((id (hermes-cron--id-at-point))
+        (profile (hermes-cron--entry-profile))
+        (origin (current-buffer)))
+    (hermes-browser--run-owned
+     (lambda (client guard)
+       (hermes--promise-then
+        (hermes-cron--fetch-job client id profile)
+        (lambda (job)
+          (hermes-cron--choose-preferences client id profile job origin guard))))
+     (hermes-browser--mutation-context #'hermes-cron--selection)
+     (lambda (job)
+       (when job
+         (unless (and (equal id (hermes-cron--job-id job))
+                      (equal profile (hermes-cron--profile job)))
+           (user-error "Cron readback changed job or profile; refresh before retrying"))
+         (message "Hermes: read back requested preferences: %s / %s; workdir %s"
+                  (hermes-cron--preference job 'provider)
+                  (hermes-cron--preference job 'model)
+                  (hermes-cron--preference job 'workdir))
+         (hermes-cron--refresh-origin origin)))
      #'hermes-browser--read-error)))
 
 ;;; Failure notifications and auto-refresh
@@ -672,12 +878,14 @@ Arm newly enabled auto-refresh after a successful owned read."
          hermes-cron-show "Show details"
          hermes-cron-create "Create"
          hermes-cron-edit "Edit"
+         hermes-cron-edit-preferences "Execution preferences"
          :group "Run"
          hermes-cron-trigger "Run now"
          hermes-cron-toggle "Toggle enabled"
          hermes-cron-remove "Remove")
   :keys ("RET" #'hermes-cron-show
          "e" #'hermes-cron-edit
+         "E" #'hermes-cron-edit-preferences
          "!" #'hermes-cron-trigger
          "t" #'hermes-cron-toggle
          "D" #'hermes-cron-remove

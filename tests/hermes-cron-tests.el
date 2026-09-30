@@ -276,7 +276,9 @@
 (ert-deftest hermes-cron-create-refreshes-the-list-on-success ()
   "Creating a cron job refreshes the list so the new row appears."
   (let (refreshed)
-    (cl-letf (((symbol-function 'hermes-browser--with-client)
+    (cl-letf (((symbol-function 'hermes-cron--validate-profile)
+               (lambda (&rest _) (hermes--promise-resolved t)))
+              ((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--api)
                (lambda (&rest _) (hermes--promise-resolved '((id . "j9")))))
@@ -452,7 +454,9 @@
 (ert-deftest hermes-cron-create-posts-default-profile-over-rest ()
   "Creating a job posts its fields through the profile-aware REST API."
   (let (request)
-    (cl-letf (((symbol-function 'hermes-browser--with-client)
+    (cl-letf (((symbol-function 'hermes-cron--validate-profile)
+               (lambda (&rest _) (hermes--promise-resolved t)))
+              ((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--api)
                (lambda (client method path &optional body query)
@@ -464,13 +468,16 @@
       (should (equal (nth 2 request) "/jobs"))
       (should (equal (nth 3 request)
                      '((name . "nightly") (schedule . "0 0 * * *")
-                       (prompt . "do it"))))
+                       (prompt . "do it") (paused . :false))))
       (should (equal (cdr (assq 'profile (nth 4 request))) "default")))))
 
 (ert-deftest hermes-cron-create-reads-multiline-prompt ()
   "Interactive creation keeps prompt newlines and scalar minibuffer readers."
   (let (body deliver-initial encoded-data scalar-prompts)
-    (cl-letf (((symbol-function 'read-string)
+    (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "Create active"))
+              ((symbol-function 'hermes-cron--validate-profile)
+               (lambda (&rest _) (hermes--promise-resolved t)))
+              ((symbol-function 'read-string)
                (lambda (prompt &optional initial &rest _)
                  (push prompt scalar-prompts)
                  (cond
@@ -504,12 +511,12 @@
       (call-interactively #'hermes-cron-create))
     (should (equal body
                    '((name . "nightly") (schedule . "0 0 * * *")
-                     (prompt . "first line\nsecond line") (deliver . "telegram")
+                     (prompt . "first line\nsecond line") (paused . :false) (deliver . "telegram")
                      (skills . ["emacs" "cron"]))))
     (should (equal encoded-data
                    (concat "{\"name\":\"nightly\",\"schedule\":\"0 0 * * *\","
                            "\"prompt\":\"first line\\nsecond line\","
-                           "\"deliver\":\"telegram\","
+                           "\"paused\":false,\"deliver\":\"telegram\","
                            "\"skills\":[\"emacs\",\"cron\"]}")))
     (should (equal deliver-initial "local"))
     (should (member "Cron job name: " scalar-prompts))
@@ -549,7 +556,9 @@
 (ert-deftest hermes-cron-create-trims-required-fields-before-post ()
   "Create trims required fields before posting them."
   (let (body)
-    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-cron--validate-profile)
+               (lambda (&rest _) (hermes--promise-resolved t)))
+              ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-acquire)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
@@ -561,7 +570,7 @@
                           " first\nsecond "))
     (should (equal body
                    '((name . "nightly") (schedule . "0 0 * * *")
-                     (prompt . "first\nsecond"))))))
+                     (prompt . "first\nsecond") (paused . :false))))))
 
 (ert-deftest hermes-cron-create-rejects-blank-fields-before-request ()
   "Create rejects whitespace-only required fields before any REST request."
@@ -879,7 +888,7 @@
               (hermes--promise-resolved
                '(:status 200 :body ((id . "j1") (profile . "work")
                                     (name . "nightly") (schedule . "0 0 * * *")
-                                    (prompt . "prompt")))))))
+                                    (prompt . "prompt") (skills . ("old"))))))))
       (cl-letf (((symbol-function 'hermes-browser--with-client)
                  (lambda (fn) (funcall fn client (lambda () (cl-incf releases)))))
                 ((symbol-function 'read-string)
@@ -918,7 +927,9 @@
                  (lambda (fn) (funcall fn client #'ignore)))
                 ((symbol-function 'pop-to-buffer) #'ignore))
         (with-temp-buffer
-          (insert (hermes-cron--format-run `((id . "same") (profile . ,profile))))
+          (insert (hermes-cron--format-run
+                   `((id . "same") (profile . ,profile)
+                     ,@(and (equal profile "work") '((source . "cron"))))))
           (special-mode)
           (goto-char (point-min))
           (hermes-cron-show-run-log))
@@ -1050,6 +1061,348 @@
             (funcall tick)
             (should (= starts 1))))
       (kill-buffer buffer))))
+
+(ert-deftest hermes-cron-promptless-edit-preserves-execution ()
+  "Public edits preserve skills-only and script-only jobs at the JSON boundary."
+  (dolist (execution '(((skills . ("audit")))
+                       ((script . "audit.py") (no_agent . t))))
+    (let* ((job (append '((id . "j1") (profile . "work") (name . "nightly")
+                         (schedule . "0 0 * * *") (prompt . "")
+                         (prompt_preview . "display only") (deliver . "local")
+                         (model . "old-model") (provider . "old-provider"))
+                       execution))
+           (client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           updates initial
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (_url &rest args)
+              (when (equal (plist-get args :method) "PUT")
+                (setq updates (alist-get 'updates
+                                         (json-parse-string (plist-get args :data)
+                                                            :object-type 'alist))))
+              (hermes--promise-resolved (list :status 200 :body job)))))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'read-string)
+                 (lambda (label &optional value &rest _)
+                   (cond ((string-prefix-p "Name" label) "edited")
+                         ((string-prefix-p "Schedule" label) "*/5 * * * *")
+                         (t value))))
+                ((symbol-function 'read-string-from-buffer)
+                 (lambda (_label value) (setq initial value) value))
+                ((symbol-function 'hermes-cron--revert) #'ignore))
+        (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+          (hermes-cron-edit)))
+      (should (equal initial ""))
+      (should (equal updates '((name . "edited") (schedule . "*/5 * * * *")))))))
+
+(ert-deftest hermes-cron-empty-execution-is-refused ()
+  "Removing the sole skill cannot leave a promptless agent job invalid."
+  (cl-letf (((symbol-function 'read-string)
+             (lambda (label &optional initial &rest _)
+               (if (string-prefix-p "Skills" label) "" initial)))
+            ((symbol-function 'read-string-from-buffer) (lambda (_ value) value)))
+    (should-error
+     (hermes-cron--read-updates
+      '((name . "job") (schedule . "daily") (prompt . "") (skills . ("only"))))
+     :type 'user-error)))
+
+(ert-deftest hermes-cron-output-history-is-inert ()
+  "Output and unknown sources never acquire a SessionDB navigation action."
+  (dolist (fields '(((id . "cron_output:j1:run") (source . "cron_output")
+                     (preview . "script result"))
+                    ((id . "ordinary-id") (source . "unknown"))
+                    ((id . "cron_output:j1:run"))))
+    (let* ((line (hermes-cron--format-run
+                  (append '((profile . "work")) fields)))
+           requested)
+      (should-not (get-text-property 0 'hermes-cron-run-id line))
+      (should-not (get-text-property 0 'keymap line))
+      (should (string-match-p "No session transcript" line))
+      (cl-letf (((symbol-function 'hermes-browser--with-client)
+                 (lambda (&rest _) (setq requested t))))
+        (with-temp-buffer
+          (insert line) (goto-char (point-min))
+          (should-error (hermes-cron-show-run-log) :type 'user-error)))
+      (should-not requested)))
+  (should (string-match-p "Preview unavailable"
+                          (hermes-cron--format-run
+                           '((id . "output") (source . "cron_output"))))))
+
+(ert-deftest hermes-cron-create-paused-is-initial-wire-choice ()
+  "Paused and active creation each send one explicit Boolean in the first POST."
+  (dolist (paused '(t nil))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           writes
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (if (equal (plist-get args :method) "POST")
+                  (progn
+                    (push (json-parse-string (plist-get args :data)
+                                             :object-type 'alist) writes)
+                    (should (string-suffix-p "/api/cron/jobs?profile=work" url))
+                    (hermes--promise-resolved '(:status 200 :body ((id . "new")))))
+                (hermes--promise-resolved
+                 '(:status 200 :body ((profiles . (((name . "work")))))))))))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-cron--revert) #'ignore)
+                ((symbol-function 'read-string)
+                 (lambda (label &rest _)
+                   (cond ((string-prefix-p "Cron" label) "new")
+                         ((string-prefix-p "Schedule" label) "1m")
+                         ((string-prefix-p "Profile" label) "work")
+                         ((string-prefix-p "Deliver" label) "local")
+                         (t ""))))
+                ((symbol-function 'read-string-from-buffer) (lambda (&rest _) "prompt"))
+                ((symbol-function 'completing-read)
+                 (lambda (&rest _) (if paused "Create paused" "Create active"))))
+        (hermes-test-with-cron-buffer nil
+          (call-interactively #'hermes-cron-create)))
+      (should (= (length writes) 1))
+      (should (eq (alist-get 'paused (car writes)) (if paused t :false))))))
+
+(ert-deftest hermes-cron-preferences-use-fresh-model-and-minimal-json ()
+  "Preferences preserve execution and pair model/provider using a fresh catalogue."
+  (dolist (choice '("Set" "Inherit" "Unchanged"))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           (job '((id . "j1") (profile . "work") (name . "nightly")
+                  (prompt . "") (script . "audit.py") (no_agent . t)
+                  (model . "old") (provider . "old") (workdir . "/backend/old")))
+           updates forced local-probes drafts
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (_url &rest args)
+              (when (equal (plist-get args :method) "PUT")
+                (setq updates (alist-get 'updates
+                                         (json-parse-string (plist-get args :data)
+                                                            :object-type 'alist))))
+              (hermes--promise-resolved (list :status 200 :body job)))))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+                 (lambda (_client &rest args)
+                   (setq forced (plist-get args :force))
+                   (funcall (plist-get args :resolve)
+                            '((providers . (((slug . "fixture") (models . ("exact-model")))))))))
+                ((symbol-function 'completing-read)
+                 (lambda (prompt collection &rest _)
+                   (if (string-prefix-p "Model choice" prompt)
+                       (car collection) choice)))
+                ((symbol-function 'read-string) (lambda (&rest _) "/backend/new"))
+                ((symbol-function 'file-directory-p)
+                 (lambda (&rest _) (setq local-probes t)))
+                ((symbol-function 'hermes-cron--revert) #'ignore)
+                ((symbol-function 'display-buffer)
+                 (lambda (buffer &rest _) (push buffer drafts))))
+        (unwind-protect
+            (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+              (save-window-excursion
+                (switch-to-buffer (current-buffer))
+                (execute-kbd-macro "E"))
+              (pcase choice
+                ("Set"
+                 (should forced)
+                 (should (equal updates '((model . "exact-model") (provider . "fixture")
+                                          (workdir . "/backend/new")))))
+                ("Inherit"
+                 (should-not forced)
+                 (should (equal updates '((model . :null) (provider . :null)
+                                          (workdir . :null)))))
+                ("Unchanged" (should-not updates)))
+              (should-not local-probes))
+          (mapc #'kill-buffer drafts))))))
+
+(ert-deftest hermes-cron-create-profile-and-ownership-refusals ()
+  "Unknown profiles and superseded catalogue reads send no create request."
+  (dolist (event '(unknown retired failed))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :host "127.0.0.1" :port 9119 :token "fixture"))
+           (pending (hermes--promise-make)) writes refreshed
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (_url &rest args)
+              (if (equal (plist-get args :method) "GET") pending
+                (push args writes)
+                (hermes--promise-rejected "Create refused")))))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-cron--revert) (lambda () (setq refreshed t))))
+        (hermes-test-with-cron-buffer nil
+          (hermes-cron-create "new" "1m" "prompt" "work" nil nil t)
+          (when (eq event 'retired) (hermes-browser--next-request-generation))
+          (hermes--promise-resolve
+           pending (list :status 200 :body
+                         (if (eq event 'unknown) '((profiles . nil))
+                           '((profiles . (((name . "work"))))))))))
+      (should (= (length writes) (if (eq event 'failed) 1 0)))
+      (should-not refreshed))))
+
+(ert-deftest hermes-cron-preferences-retain-draft-and-dispatch-owner ()
+  "Authentication retirement refuses writes; failures keep a literal draft."
+  (dolist (event '(auth reader failure readback))
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :base-url "http://127.0.0.1:9119" :ready-p t))
+           (auth (hermes--promise-make))
+           (reply (hermes--promise-make))
+           (job '((id . "j1") (profile . "work") (model . "old")))
+           (auth-count 0) writes drafts refreshed readback)
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                 (lambda (&rest _)
+                   (cl-incf auth-count)
+                   (if (and (eq event 'auth) (= auth-count 2)) auth
+                     (hermes--promise-resolved
+                      '(:base-url "http://127.0.0.1:9119" :session-token "fixture")))))
+                ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                 (lambda (request &rest _)
+                   (if (equal (plist-get request :method) "PUT")
+                       (progn (push "PUT" writes)
+                              (if (eq event 'failure)
+                                  (hermes--promise-rejected "Uncertain save") reply))
+                     (when writes (setq readback t))
+                     (hermes--promise-resolved (list :body job)))))
+                ((symbol-function 'completing-read)
+                 (lambda (&rest _)
+                   (when (eq event 'reader) (hermes-browser--next-request-generation))
+                   "Inherit"))
+                ((symbol-function 'display-buffer) (lambda (b &rest _) (push b drafts)))
+                ((symbol-function 'hermes-cron--revert) (lambda () (setq refreshed t))))
+        (unwind-protect
+            (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+              (hermes-cron-edit-preferences)
+              (when (memq event '(auth readback))
+                (hermes-browser--next-request-generation)
+                (hermes--promise-resolve auth '(:base-url "http://127.0.0.1:9119"
+                                                          :session-token "fixture"))
+                (hermes--promise-resolve reply (list :body job)))
+              (should (= (length writes) (if (memq event '(failure readback)) 1 0)))
+              (should-not readback)
+              (should-not refreshed)
+              (should (= (length drafts) 1))
+              (with-current-buffer (car drafts)
+                (should (string-match-p "model: inherit" (buffer-string)))
+                (should (string-match-p "provider: inherit" (buffer-string)))
+                (should (string-match-p "Profile: work" (buffer-string)))))
+          (mapc #'kill-buffer drafts))))))
+
+(defun hermes-test--cron-preference-input-recovery (event)
+  "Exercise public preference input EVENT without borrowing a successor."
+  (let* ((client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 9119 :token "fixture"))
+         (job '((id . "j1") (profile . "work") (model . "old")))
+         requests drafts forced workdir-read errors
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest args)
+            (push (cons url (plist-get args :method)) requests)
+            (hermes--promise-resolved (list :status 200 :body job)))))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-acquire)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (setq forced (plist-get args :force))
+                 (funcall (plist-get args :resolve)
+                          '((providers . (((slug . "chosen-provider")
+                                           (models . ("chosen-model")))))))))
+              ((symbol-function 'completing-read)
+               (lambda (label choices &rest _)
+                 (if (string-prefix-p "Model choice" label)
+                     (progn
+                       (when (eq event 'model-retired)
+                         (hermes-browser--next-request-generation))
+                       (car choices))
+                   "Set")))
+              ((symbol-function 'read-string)
+               (lambda (&rest _)
+                 (setq workdir-read t)
+                 (pcase event
+                   ('blank "   ")
+                   ('cancel (signal 'quit nil))
+                   ('retired
+                    (hermes-browser--next-request-generation)
+                    (hermes-browser--own-instance '("successor" . "http://successor"))
+                    (let ((inhibit-read-only t))
+                      (erase-buffer)
+                      (insert "Successor draft"))
+                    "/remote/chosen")
+                   (_ "/remote/chosen"))))
+              ((symbol-function 'hermes-browser--read-error)
+               (lambda (reason) (push reason errors)))
+              ((symbol-function 'display-buffer)
+               (lambda (buffer &rest _) (push buffer drafts))))
+      (unwind-protect
+          (progn
+            (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+              (condition-case nil
+                  (hermes-cron-edit-preferences)
+                (quit (unless (eq event 'cancel) (ert-fail "Unexpected quit"))))
+              (when (eq event 'retired)
+                (should (equal (buffer-string) "Successor draft"))
+                (should (equal hermes-instance '("successor" . "http://successor")))))
+            (should forced)
+            (should (eq workdir-read (not (eq event 'model-retired))))
+            (should (equal requests '(("http://127.0.0.1:9119/api/cron/jobs/j1?profile=work"
+                                       . "GET"))))
+            (if (eq event 'cancel)
+                (should-not drafts)
+              (should (= (length drafts) 1))
+              (with-current-buffer (car drafts)
+                (dolist (text '("Backend: http://127.0.0.1:9119" "Job: j1"
+                                "Profile: work" "model: chosen-model"
+                                "provider: chosen-provider"))
+                  (should (string-match-p (regexp-quote text) (buffer-string))))
+                (if (eq event 'retired)
+                    (should (string-match-p "workdir: /remote/chosen" (buffer-string)))
+                  (should-not (string-match-p "workdir:" (buffer-string))))))
+            (when (eq event 'blank)
+              (should (= (length errors) 1))
+              (should (string-match-p "Use Inherit" (car errors)))))
+        (mapc #'kill-buffer drafts)))))
+
+(ert-deftest hermes-cron-preferences-local-refusal-retains-model ()
+  "Blank workdir refusal retains the accepted fresh model/provider choice."
+  (hermes-test--cron-preference-input-recovery 'blank))
+
+(ert-deftest hermes-cron-preferences-retired-input-retains-original-draft ()
+  "Retiring during either reader preserves accepted input but never writes."
+  (dolist (event '(retired model-retired))
+    (hermes-test--cron-preference-input-recovery event)))
+
+(ert-deftest hermes-cron-preferences-cancel-is-not-a-refused-save ()
+  "Explicit quit abandons input rather than creating a recovery draft."
+  (hermes-test--cron-preference-input-recovery 'cancel))
+
+(ert-deftest hermes-cron-edit-refuses-mismatched-target ()
+  "Ordinary and preference edits refuse redirected job/profile read results."
+  (dolist (command '(hermes-cron-edit hermes-cron-edit-preferences))
+    (dolist (job '(((id . "other") (profile . "work"))
+                   ((id . "j1") (profile . "other"))))
+      (let (prompted updated)
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn 'fake-client #'ignore)))
+                  ((symbol-function 'hermes-cron--fetch-job)
+                   (lambda (&rest _) (hermes--promise-resolved job)))
+                  ((symbol-function 'read-string)
+                   (lambda (&rest _) (setq prompted t)))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest _) (setq prompted t)))
+                  ((symbol-function 'hermes-cron--update-job)
+                   (lambda (&rest _) (setq updated t))))
+          (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+            (funcall command)))
+        (should-not prompted)
+        (should-not updated)))))
 
 (provide 'hermes-cron-tests)
 ;;; hermes-cron-tests.el ends here

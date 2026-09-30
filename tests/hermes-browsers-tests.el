@@ -2585,8 +2585,15 @@
                                     :session-token "synthetic")))))
                         ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
                          (lambda (request &rest _)
-                           (push request requests)
-                           (hermes--promise-resolved '(:body ((ok . t))))))
+                           (if (and (eq (cadr case) 'hermes-cron-create)
+                                    (equal (plist-get request :method) "GET"))
+                               (progn
+                                 (should (equal (plist-get request :url)
+                                                "http://a.invalid/api/profiles"))
+                                 (hermes--promise-resolved
+                                  '(:body ((profiles . (((name . "worker"))))))))
+                             (push request requests)
+                             (hermes--promise-resolved '(:body ((ok . t)))))))
                         ((symbol-function 'hermes-profiles--revert) #'ignore)
                         ((symbol-function 'hermes-cron--revert) #'ignore)
                         ((symbol-function 'hermes-sessions--after-rename) #'ignore))
