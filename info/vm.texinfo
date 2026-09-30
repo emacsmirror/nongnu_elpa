@@ -6215,8 +6215,8 @@ disagreeing.
 After a message is saved to a folder, the usual thing to do next is to
 delete it.  If the variable @code{vm-delete-after-saving} is
 non-@code{nil}, VM will flag messages for deletion automatically after
-saving them.  This applies only to saves to folders, not for the @kbd{w}
-command.  There is a separate variable
+saving them.  This applies only to saves to folders, not to
+@code{vm-save-message-sans-headers}, which writes a message to a file.  There is a separate variable
 @code{vm-delete-after-archiving}, which
 works like @code{vm-delete-after-saving} but applies to the @kbd{A}
 (@code{vm-auto-archive-messages}) command (see below).
@@ -7691,6 +7691,15 @@ Examples:
 @item subject
 matches message if @var{ARG} matches any part of the message's
 subject; @var{ARG} should be a regular expression.
+@vindex vm-subject-ignored-prefix
+@vindex vm-subject-ignored-suffix
+@item sortable-subject
+matches message if @var{ARG} matches the subject as sorting reads it, with
+the prefixes, suffixes and insignificant characters left out that
+@code{vm-subject-ignored-prefix}, @code{vm-subject-ignored-suffix},
+@code{vm-subject-tag-prefix}, @code{vm-subject-tag-prefix-exceptions} and
+@code{vm-subject-significant-chars} describe.  So a reply and the message it
+answers match alike, whatever @samp{Re:} the reply carries.
 @item sent-after
 matches message if it was sent after the date @var{ARG}.
 A fully specified date looks like this:
@@ -7784,6 +7793,8 @@ matches message if it is marked, as with
 @code{vm-mark-message}.
 @item unmarked
 matches message if it is not marked.
+@item selected
+matches the message the folder is looking at, and no other.
 @item unwritten
 matches message if it has not been saved without its headers.
 @cindex message labels
