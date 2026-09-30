@@ -28,6 +28,9 @@
 (require 'hermes-browser)
 (require 'url-util)
 
+(defvar-local hermes-admin--profile nil
+  "Backend-selected webhook profile, published only with its list snapshot.")
+
 (defvar-local hermes-admin--state 'unknown
   "Current list state: unknown, loading, ready, mutating, failed or uncertain.")
 (defvar-local hermes-admin--snapshot nil
@@ -61,9 +64,11 @@
 
 (defun hermes-admin--header ()
   "Return instance scope and the current administrative state."
-  (format " %s · Server profile · %s%s · ? Help "
+  (format " %s · Profile: %s · %s%s · ? Help "
           (if (hermes-instance--valid-p hermes-instance)
               (hermes-instance-name hermes-instance) "No instance")
+          (if (derived-mode-p 'hermes-webhooks-mode)
+              (or hermes-admin--profile "unselected") "server profile")
           (propertize (pcase hermes-admin--state
                         ('ready (format "ready · %d rows" (length tabulated-list-entries)))
                         ('failed "Read failed; refresh or check dashboard authentication")
@@ -87,7 +92,7 @@
 
 (defun hermes-admin--owner ()
   "Capture the current browser's request and instance ownership."
-  (hermes-browser--owner))
+  (hermes-browser--owner '(hermes-admin--profile)))
 
 (defun hermes-admin--current-p (owner)
   "Return non-nil if OWNER still owns its browser and instance."
@@ -109,22 +114,33 @@
 (defun hermes-admin--request (client owner scope method path body mutation)
   "Request METHOD PATH BODY through CLIENT under OWNER and SCOPE.
 For MUTATION, fence transport entry again after asynchronous authentication."
-  (if (or (not mutation) (hermes-dashboard-transport--api-client-token client))
-      (hermes-dashboard-transport-api-request-async
-       method path :body body :client client :timeout 30)
-    (let ((hermes-dashboard-transport-url (cadr scope)))
-      (hermes--promise-then
-       (hermes-dashboard-transport-api-auth-async)
-       (lambda (auth)
-         (unless (and (hermes-admin--current-p owner)
-                      (equal scope (hermes-admin--scope client)))
-           (error "Retired operation"))
-         (hermes--promise-then
-          (hermes-dashboard-transport--http-json-request-async
-           (hermes-dashboard-transport--api-request-plist
-            auth method path :body body :timeout 30))
-          (lambda (response)
-            (hermes-dashboard-transport--api-response-body method path response))))))))
+  (let* ((profile hermes-admin--profile)
+         (webhook (derived-mode-p 'hermes-webhooks-mode))
+         (query (and webhook profile `((profile . ,profile)))))
+    (when (and webhook mutation (not profile))
+      (user-error "Refresh and select a backend profile first"))
+    (if (or (not mutation) (hermes-dashboard-transport--api-client-token client))
+        (if (and webhook (not mutation))
+            (hermes-browser--profiled-read
+             client path profile (hermes-browser--dispatch-guard
+                                  client (lambda () (hermes-admin--current-p owner))))
+          (hermes-dashboard-transport-api-request-async
+           method path :body body :query query :client client :timeout 30
+           :current-p (hermes-browser--dispatch-guard
+                       client (lambda () (hermes-admin--current-p owner)))))
+      (let ((hermes-dashboard-transport-url (cadr scope)))
+        (hermes--promise-then
+         (hermes-dashboard-transport-api-auth-async)
+         (lambda (auth)
+           (unless (and (hermes-admin--current-p owner)
+                        (equal scope (hermes-admin--scope client)))
+             (error "Retired operation"))
+           (hermes--promise-then
+            (hermes-dashboard-transport--http-json-request-async
+             (hermes-dashboard-transport--api-request-plist
+              auth method path :body body :query query :timeout 30))
+            (lambda (response)
+              (hermes-dashboard-transport--api-response-body method path response)))))))))
 
 (defun hermes-admin--fail (owner mutation)
   "Invalidate OWNER's actionable state after failure of a read or MUTATION."
@@ -207,6 +223,101 @@ Never display remote error bodies: they may contain credentials."
   (interactive nil hermes-admin-mode)
   (quit-window t))
 
+(defun hermes-admin--list-text (entries)
+  "Return sorted ENTRIES and their native text without editing the owned view."
+  (let ((format tabulated-list-format)
+        (padding tabulated-list-padding)
+        (sort-key tabulated-list-sort-key)
+        (header-line tabulated-list-use-header-line)
+        (header tabulated-list--header-string)
+        (printer tabulated-list-printer))
+    (with-temp-buffer
+      (setq-local tabulated-list-format format
+            tabulated-list-padding padding
+            tabulated-list-sort-key sort-key
+            tabulated-list-use-header-line header-line
+            tabulated-list--header-string header
+            tabulated-list-printer printer
+            tabulated-list-entries (copy-sequence entries))
+      (tabulated-list-print t)
+      (list tabulated-list-entries (buffer-string)
+            (and (overlayp tabulated-list--header-overlay)
+                 (overlay-end tabulated-list--header-overlay))))))
+
+(defun hermes-admin--publish (entries profile &optional forget-position)
+  "Publish ENTRIES and PROFILE only through the current request owner.
+FORGET-POSITION means return to the beginning rather than the selected row."
+  (let* ((owner (hermes-admin--owner))
+         (id (and (not forget-position) (tabulated-list-get-id)))
+         (column (current-column))
+         (rendered (hermes-admin--list-text entries))
+         (entries (car rendered)))
+    (when (hermes-browser--publish-text owner (cadr rendered))
+      (when-let* ((end (nth 2 rendered)))
+        (unless (overlayp tabulated-list--header-overlay)
+          (setq-local tabulated-list--header-overlay (make-overlay (point-min) end)))
+        (move-overlay tabulated-list--header-overlay (point-min) end)
+        (overlay-put tabulated-list--header-overlay 'fake-header t)
+        (overlay-put tabulated-list--header-overlay 'face 'tabulated-list-fake-header))
+      ;; Only the accepted profile changes; never borrow a successor's owner.
+      (setf (alist-get 'hermes-admin--profile (nth 6 owner))
+            (hermes-browser--copy-identity profile))
+      (setq tabulated-list-entries entries
+            hermes-admin--profile profile
+            hermes-admin--snapshot entries
+            hermes-admin--snapshot-owner owner
+            hermes-admin--state 'ready)
+      (goto-char (point-min))
+      (when id
+        (while (and (not (eobp)) (not (equal id (tabulated-list-get-id))))
+          (forward-line 1))
+        (if (eobp) (goto-char (point-min)) (move-to-column column)))
+      (set-buffer-modified-p nil))))
+
+(defvar hermes-admin--resize-tag nil
+  "Catch tag for the next administrative print in a native column resize.")
+
+(defun hermes-admin--resize (resize-function &optional n)
+  "Call native RESIZE-FUNCTION with N, retiring stale header continuations."
+  (let ((hermes-admin--resize-tag
+         (and (derived-mode-p 'hermes-admin-mode) (make-symbol "admin-resize"))))
+    (if hermes-admin--resize-tag
+        (catch hermes-admin--resize-tag (funcall resize-function n))
+      (funcall resize-function n))))
+
+(defun hermes-admin--print (print-function &optional remember-pos update)
+  "Fence native administrative reprints through the accepted snapshot.
+PRINT-FUNCTION handles other modes unchanged, with REMEMBER-POS and UPDATE.
+Administrative views always rebuild complete rows under their exact owner."
+  (if (not (derived-mode-p 'hermes-admin-mode))
+      (funcall print-function remember-pos update)
+    (hermes-admin--require-ready)
+    (let ((owner (hermes-admin--owner))
+          (resize-tag hermes-admin--resize-tag)
+          ;; Nested successor prints must not unwind the outer native resize.
+          (hermes-admin--resize-tag nil))
+      (condition-case err
+          (prog1 (hermes-admin--publish tabulated-list-entries hermes-admin--profile
+                                       (not remember-pos))
+            ;; Native widening initializes its header after printing returns.
+            (when (and resize-tag (not (hermes-admin--current-p owner)))
+              (throw resize-tag nil)))
+        ((error quit)
+         (hermes-admin--fail owner nil)
+         (signal (car err) (cdr err)))))))
+
+;; Native keyboard/header sorting and column resizing call the printer directly;
+;; tabulated-list has no whole-print function variable or transactional hook.
+;; Keep this adapter mode-gated; staging buffers and other lists use core printing.
+(advice-add 'tabulated-list-print :around #'hermes-admin--print)
+(advice-add 'tabulated-list-widen-current-column :around #'hermes-admin--resize)
+
+(defun hermes-admin-unload-function ()
+  "Remove the administrative native-printer and resize adapters before unloading."
+  (advice-remove 'tabulated-list-print #'hermes-admin--print)
+  (advice-remove 'tabulated-list-widen-current-column #'hermes-admin--resize)
+  nil)
+
 (defun hermes-admin--revert (&rest _)
   "Refresh this administrative browser without retrying any mutation."
   (interactive nil hermes-admin-mode)
@@ -215,19 +326,18 @@ Never display remote error bodies: they may contain credentials."
   (let ((pairing (derived-mode-p 'hermes-pairing-mode)))
     (hermes-admin--run
      "GET" (if pairing "/api/pairing" "/api/webhooks") nil
-     (lambda (result)
-       (unless (and (hermes-transport--field-present-p
-                     result (if pairing 'pending 'subscriptions))
-                    (or (not pairing)
-                        (hermes-transport--field-present-p result 'approved)))
-         (error "Invalid administrative list"))
-       (setq hermes-admin--snapshot
-             (if pairing (hermes-admin--pairing-rows result)
-               (hermes-admin--webhook-rows result))
-             tabulated-list-entries hermes-admin--snapshot
-             hermes-admin--snapshot-owner (hermes-admin--owner)
-             hermes-admin--state 'ready)
-       (tabulated-list-print t)))))
+     (lambda (scoped)
+       (let* ((profile (and (not pairing) (car scoped)))
+              (result (if pairing scoped (cdr scoped))))
+         (unless (and (hermes-transport--field-present-p
+                       result (if pairing 'pending 'subscriptions))
+                      (or (not pairing)
+                          (hermes-transport--field-present-p result 'approved)))
+           (error "Invalid administrative list"))
+         (hermes-admin--publish
+          (if pairing (hermes-admin--pairing-rows result)
+            (hermes-admin--webhook-rows result))
+          profile))))))
 
 (defun hermes-admin--open (mode title)
   "Open MODE with TITLE for the selected instance."
@@ -255,7 +365,9 @@ Never display remote error bodies: they may contain credentials."
 
 ;;;###autoload
 (defun hermes-list-webhooks ()
-  "Browse webhook routes in the selected instance's server profile."
+  "Browse webhook routes in an explicitly selected backend profile.
+Choose from the backend catalogue on first opening.  Refresh retains that
+scope; quit the view and reopen to choose another profile."
   (interactive)
   (hermes-admin--open 'hermes-webhooks-mode "*Hermes Webhooks*"))
 
@@ -264,8 +376,9 @@ Never display remote error bodies: they may contain credentials."
 CREATED means retain only the one-time secret from the create response."
   (hermes-admin--require-ready)
   (let ((owner (hermes-admin--owner)))
-    (when (yes-or-no-p (format "%s on %s (server profile)? " question
-                              (hermes-instance-name hermes-instance)))
+    (when (yes-or-no-p (format "%s on %s (profile %s)? " question
+                              (hermes-instance-name hermes-instance)
+                              (or hermes-admin--profile "server profile")))
       (unless (hermes-admin--prompt-current-p owner)
         (user-error "Administrative view changed during confirmation"))
       (hermes-admin--require-ready)
@@ -457,7 +570,8 @@ Those destinations may persist or synchronize it; only do this intentionally."
   :interactive nil
   (setq-local revert-buffer-function #'hermes-admin--revert)
   (setq-local header-line-format '(:eval (hermes-admin--header)))
-  (setq-local hermes-browser--snapshot-variables '(hermes-admin--snapshot))
+  (setq-local hermes-browser--snapshot-variables
+              '(hermes-admin--snapshot hermes-admin--profile))
   (add-hook 'kill-buffer-hook #'hermes-admin--stop nil t)
   (add-hook 'change-major-mode-hook #'hermes-admin--stop nil t))
 

@@ -70,14 +70,32 @@
   "Return a fresh dashboard buffer name for tests."
   (generate-new-buffer-name "*Hermes Dashboard Test*"))
 
+(defvar hermes-test-notifications nil
+  "Native notification argument lists captured by integration fixtures.")
+
+(defun hermes-test--notifications-notify (&rest arguments)
+  "Capture native notification ARGUMENTS without contacting a desktop service."
+  (push arguments hermes-test-notifications)
+  (length hermes-test-notifications))
+
+;; Integration suites keep Hermes policy and callbacks real, but must not
+;; contact a desktop service (or depend on ERT's version-specific debugger
+;; treatment of notifications.el's `with-demoted-errors').  Notification
+;; boundary tests deliberately do not require this integration fixture.
+(require 'notifications)
+(defalias 'notifications-notify #'hermes-test--notifications-notify)
+
 (defmacro hermes-test-with-chat-buffer (&rest body)
   "Create a fresh Hermes chat buffer and run BODY in it.
+Capture desktop delivery in `hermes-test-notifications', retaining the real
+notification policy and action callbacks without needing a session D-Bus.
 The buffer is captured by object so teardown still kills it after a rename."
   (declare (indent 0) (debug t))
   `(let* ((hermes-dashboard-transport--model-options-cache nil)
           (hermes-dashboard-transport--model-options-requests nil)
           (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
           (hermes-chat-buffer-name (hermes-test--chat-buffer-name))
+          (hermes-test-notifications nil)
           (buffer (hermes-chat)))
      (unwind-protect
          (with-current-buffer buffer ,@body)

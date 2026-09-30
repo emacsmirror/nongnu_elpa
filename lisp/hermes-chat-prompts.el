@@ -126,6 +126,23 @@ Invisible buffers and batch sessions record every prompt and show a message."
                    (format "%s (%d pending approvals)" content count)
                  content))))
 
+(defun hermes-chat--reconcile-batch-prompt (existing prompt)
+  "Merge accepted answers from PROMPT into the same live EXISTING request.
+Keep locally accepted answers absent from a replay and preserve in-flight
+response ownership.  Released snapshots have no revision or unlock operation."
+  (when-let* ((request (plist-get existing :server-request))
+              ((eq request (plist-get prompt :server-request)))
+              ((hermes-dashboard-transport-server-request-current-p request))
+              ((hermes-chat--batch-clarify-p existing)))
+    (let* ((incoming (hermes-chat--batch-clarify-answer-alist prompt))
+           (answers (append incoming
+                            (cl-remove-if
+                             (lambda (answer) (assoc (car answer) incoming))
+                             (hermes-chat--batch-clarify-answer-alist existing))))
+           (next (plist-put (copy-sequence existing) :answers answers))
+           (content (hermes-dashboard-transport--batch-clarify-content next)))
+      (plist-put (plist-put next :content content) :prompt-content content))))
+
 (defun hermes-chat--record-prompt-request (event assistant-id)
   "Record prompt request EVENT for ASSISTANT-ID and return display event."
   (if-let* ((key (hermes-chat--prompt-event-key event)))
@@ -133,14 +150,16 @@ Invisible buffers and batch sessions record every prompt and show a message."
                       event key assistant-id))
              (table (hermes-chat--ensure-pending-prompts))
              (existing (gethash key table))
-             (stored (if (and existing (hermes-chat--approval-prompt-p prompt))
-                         (hermes-chat--approval-prompt-with-queue
-                          (append (plist-get existing :prompt-queue)
-                                  (list prompt)))
-                       (if (hermes-chat--approval-prompt-p prompt)
-                           (hermes-chat--approval-prompt-with-queue
-                            (list prompt))
-                         prompt)))
+             (reconciled (hermes-chat--reconcile-batch-prompt existing prompt))
+             (stored (or reconciled
+                         (if (and existing (hermes-chat--approval-prompt-p prompt))
+                             (hermes-chat--approval-prompt-with-queue
+                              (append (plist-get existing :prompt-queue)
+                                      (list prompt)))
+                           (if (hermes-chat--approval-prompt-p prompt)
+                               (hermes-chat--approval-prompt-with-queue
+                                (list prompt))
+                             prompt))))
              (token (and existing
                          (or (and (hermes-chat--approval-prompt-p existing)
                                   (hermes-chat--approval-prompt-p prompt))
@@ -228,6 +247,9 @@ With nil CLAIM, release any claim for KEY."
          (eq hermes-chat--pending-prompts (plist-get context :prompts))
          (when-let* ((prompt (gethash key hermes-chat--pending-prompts)))
            (and (or (null expected) (eq prompt expected))
+                (or (not (plist-get prompt :server-request))
+                    (hermes-dashboard-transport-server-request-current-p
+                     (plist-get prompt :server-request)))
                 (or (null claim)
                     (and (hash-table-p hermes-chat--auto-prompt-keys)
                          (eq (gethash key hermes-chat--auto-prompt-keys)
@@ -817,7 +839,11 @@ Emacs the closest analog is the chat transcript, encoded with the same
      (if-let* ((choices (hermes-chat--prompt-choices prompt)))
          ;; Choices are suggestions, not a closed set: the agent's clarify tool
          ;; always lets the user type their own answer, so do not require a match.
-         (completing-read "Clarify: " choices)
+         (if (and (plist-get prompt :server-request)
+                  (eq (plist-get prompt :multi-select) t))
+             (json-encode
+              (vconcat (completing-read-multiple "Clarify: " choices)))
+           (completing-read "Clarify: " choices))
        (read-string (or (hermes-chat--event-string prompt '(:question :content))
                         "Clarify: "))))
     ("sudo" (read-passwd "Sudo password: "))
@@ -928,7 +954,10 @@ When PRESERVE-RESPONSE is non-nil, keep clarification RESPONSE recoverable."
   (let* ((safe-message
           (hermes-chat--prompt-safe-error prompt response message))
          (next-prompt
-          (if (hermes-chat--prompt-missing-error-p prompt message)
+          (if (or (hermes-chat--prompt-missing-error-p prompt message)
+                  (and (plist-get prompt :server-request)
+                       (not (hermes-dashboard-transport-server-request-current-p
+                             (plist-get prompt :server-request)))))
               (hermes-chat--advance-prompt-response
                context prompt (plist-get context :response-count))
             (hermes-chat--release-prompt-response context)
@@ -1116,6 +1145,14 @@ PRESERVE-RESPONSE keeps submitted clarification text recoverable."
               (hermes-chat--prompt-response-stale context prompt))
           (hermes-chat--record-batch-clarify-answer context qid answer)
           (hermes-chat--settle-retained-clarify context)
+          ;; A replay may have accepted a queued questionnaire answer while
+          ;; this lock was in flight.  Never overwrite that surface's answer.
+          (let ((accepted (hermes-chat--batch-clarify-answer-alist
+                           (gethash (plist-get context :key)
+                                    hermes-chat--pending-prompts))))
+            (setq remaining
+                  (cl-remove-if (lambda (entry) (assoc (car entry) accepted))
+                                remaining)))
           (if remaining
               (let ((pending (hermes-chat--release-prompt-response context)))
                 ;; Each question gets a fresh claim: a duplicate receipt for
@@ -1140,8 +1177,11 @@ PRESERVE-RESPONSE keeps submitted clarification text recoverable."
     (hermes-chat--call-prompt-response
      context prompt (or input answer) input
      (lambda ()
-       (hermes-dashboard-transport-clarify-question-respond
-        (plist-get context :client) request qid answer
+       (funcall (if (plist-get prompt :server-request)
+                    #'hermes-dashboard-transport-clarify-lock
+                  #'hermes-dashboard-transport-clarify-question-respond)
+        (plist-get context :client)
+        (or (plist-get prompt :server-request) request) qid answer
         (hermes-chat--batch-clarify-success-callback
          context prompt qid answer (cdr responses))
         (hermes-chat--prompt-reject-callback
@@ -1198,11 +1238,24 @@ For a batch, answer only the next unanswered question."
     (client key prompt response all resolve reject)
   "Dispatch RESPONSE for KEY/PROMPT on CLIENT with RESOLVE and REJECT.
 ALL applies to approval prompts only."
-  (let ((type (hermes-chat--prompt-event-type prompt)))
-    (if (equal type "approval")
+  (let ((type (hermes-chat--prompt-event-type prompt))
+        (request (plist-get prompt :server-request)))
+    (cond
+     (request
+      (hermes-dashboard-transport-answer-request
+       request
+       (pcase type
+         ("approval" `((choice . ,response) (all . ,(if all t :false))))
+         ("clarify" (if (hermes-chat--batch-clarify-p prompt)
+                        (make-hash-table :test #'equal)
+                      `((answer . ,response))))
+         ((or "sudo" "secret") `((value . ,response))))
+       resolve reject))
+     ((equal type "approval")
         (hermes-dashboard-transport-approval-respond
          client :session-id (hermes-chat--approval-session-id prompt)
-         :choice response :all (and all t) :resolve resolve :reject reject)
+         :choice response :all (and all t) :resolve resolve :reject reject))
+     (t
       (funcall (pcase type
                  ("clarify" #'hermes-dashboard-transport-clarify-respond)
                  ("sudo" #'hermes-dashboard-transport-sudo-respond)
@@ -1210,7 +1263,7 @@ ALL applies to approval prompts only."
                  ("terminal" #'hermes-dashboard-transport-terminal-read-respond)
                  (_ (user-error "Unsupported Hermes prompt type: %s" type)))
                client (hermes-chat--request-prompt-id key prompt) response
-               resolve reject))))
+               resolve reject)))))
 
 (defun hermes-chat--send-prompt-response
     (key prompt response all canceled &optional preserve-response owner)
@@ -1249,6 +1302,9 @@ clarification input recoverable when the request fails."
   (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
          (context (hermes-chat--prompt-owner-context prompt-key prompt)))
+    (when (and (plist-get prompt :server-request)
+               (not (hermes-chat--prompt-owner-current-p context)))
+      (user-error "Hermes prompt request is no longer current"))
     (when (hermes-chat--prompt-response-in-flight-p prompt-key)
       (user-error "Hermes is accepting the previous prompt response"))
     (if (hermes-chat--batch-clarify-p prompt)

@@ -569,8 +569,11 @@ names a structured event type."
   (hermes-transport--scalar-string (hermes-transport--get frame 'id)))
 
 (defun hermes-dashboard-transport--frame-kind (frame)
-  "Return FRAME kind: response, error-response, event, or unknown."
+  "Return FRAME kind: request, response, error-response, event, or unknown."
   (cond
+   ((and (hermes-transport--field-present-p frame 'id)
+         (stringp (hermes-transport--get frame 'method)))
+    'request)
    ((and (hermes-dashboard-transport--frame-id frame)
          (hermes-transport--get frame 'error))
     'error-response)
@@ -1095,7 +1098,7 @@ Delegate non-activity events to the notice and display fallback phase."
             type params payload "notification"
             (hermes-dashboard-transport--payload-text payload))))
     ;; Background completion is persistent content, not a transient status line.
-    ("background.complete"
+    ((or "background.complete" "btw.complete")
      (list (hermes-dashboard-transport--background-complete-event type params payload)))
     ;; A keyed clear must not decay into an empty transcript line.
     ((or "notification.show" "notification.clear")
@@ -1231,6 +1234,23 @@ ambiguous IDs and their traversal edges; malformed rows make coverage partial."
           (puthash id t seen)
           (push (hermes-transport-work-delegate-row row) rows)
           (setq roots (append (gethash id children) roots)))))
+    (list :rows rows :coverage (if (cdr index) 'partial 'current))))
+
+(defun hermes-transport-work-subagents (result)
+  "Project lossless session roster RESULT without granting control authority.
+Reject invalid arrays; omit duplicate or malformed worker identities."
+  (unless (and (hash-table-p result) (vectorp (gethash "subagents" result)))
+    (error "Invalid session worker roster"))
+  (let* ((index (hermes-transport--work-delegate-index (gethash "subagents" result)))
+         rows)
+    (maphash
+     (lambda (_id row)
+       (when (hash-table-p row)
+         (push (append (hermes-transport-work-delegate-row row)
+                       (list :accepting-steer
+                             (eq (hermes-transport--get row 'accepting_steer) t)))
+               rows)))
+     (car index))
     (list :rows rows :coverage (if (cdr index) 'partial 'current))))
 
 (defun hermes-transport-work-process-row (row)

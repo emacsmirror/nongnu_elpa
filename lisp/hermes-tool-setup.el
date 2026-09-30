@@ -137,7 +137,8 @@ Fence success and failure against buffer, instance and profile changes."
                (lambda () (and (hermes-tool-setup--current-p owner)
                                (or (null guard) (funcall guard))))))
          (hermes-dashboard-transport-api-request-async
-          method path :client client :body body :query query :secrets secrets)))
+          method path :client client :body body :query query :secrets secrets
+          :current-p hermes-dashboard-transport--api-dispatch-guard)))
      (lambda (result)
        (when (hermes-tool-setup--current-p owner)
          (with-current-buffer (car owner)
@@ -288,7 +289,8 @@ Call VERIFY, or re-read readiness, after a semantically successful write."
 (defun hermes-tool-setup-save-credentials ()
   "Save credentials declared by the provider at point.
 Use secret input for every env field.
-Blank input leaves an existing key intact."
+Blank input leaves an existing key intact.  The backend owns normalization
+when saving; it may trim whitespace and strip non-ASCII credential characters."
   (interactive nil hermes-tool-setup-mode)
   (let* ((provider (hermes-tool-setup--provider))
          (owner (hermes-tool-setup--owner))
@@ -306,7 +308,10 @@ Blank input leaves an existing key intact."
       (user-error "Tool setup changed while entering credentials"))
     (unless env (user-error "No credential values entered"))
     (hermes-tool-setup--change
-     "/env" `((env . ,env)) "Save these credentials on the selected backend? "
+     "/env" `((env . ,(let ((object (make-hash-table :test #'equal)))
+                       (dolist (entry env object)
+                         (puthash (car entry) (cdr entry) object)))))
+     "Save these credentials on the selected backend? "
      (mapcar #'cdr env))))
 
 (defun hermes-tool-setup--verify-model (provider model)

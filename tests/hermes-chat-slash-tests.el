@@ -260,7 +260,8 @@
                (lambda (_client command &rest args)
                  (setq slash-command command)
                  (funcall (plist-get args :reject)
-                          "skill command uses command.dispatch")))
+                          (propertize "skill command: use command.dispatch for /demo"
+                                       'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))))
               ((symbol-function 'hermes-dashboard-transport-command-dispatch)
                (lambda (_client name arg &rest args)
                  (setq dispatch-name name
@@ -299,7 +300,8 @@
               ((symbol-function 'hermes-dashboard-transport-slash-exec)
                (lambda (_client _command &rest args)
                  (funcall (plist-get args :reject)
-                          "skill command uses command.dispatch")))
+                          (propertize "skill command: use command.dispatch for /demo"
+                                       'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))))
               ((symbol-function 'hermes-dashboard-transport-command-dispatch)
                (lambda (_client _name _arg &rest args)
                  (funcall (plist-get args :resolve)
@@ -389,7 +391,9 @@
             (hermes-chat-send)
             (insert "x")
             (delete-char -1)
-            (funcall reject "Use command.dispatch")
+            (funcall reject
+                     (propertize "skill command: use command.dispatch for /undo"
+                                 'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))
             (funcall resolve '((type . "prefill") (message . "Old answer")))
             (should (string-empty-p (hermes-chat-input-string)))
             (should (equal (with-current-buffer recovery (buffer-string))
@@ -455,7 +459,8 @@
               ((symbol-function 'hermes-dashboard-transport-slash-exec)
                (lambda (_client _command &rest args)
                  (funcall (plist-get args :reject)
-                          "skill command uses command.dispatch")))
+                          (propertize "skill command: use command.dispatch for /demo"
+                                       'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))))
               ((symbol-function 'hermes-dashboard-transport-command-dispatch)
                (lambda (_client _name _arg &rest args)
                  (funcall (plist-get args :resolve)
@@ -777,9 +782,12 @@
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-active")))))
               ((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
+               (lambda (_client command &rest args)
                  (funcall (plist-get args :reject)
-                          "use command.dispatch")))
+                          (propertize
+                           (format "skill command: use command.dispatch for /%s"
+                                   (car (split-string command)))
+                           'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))))
               ((symbol-function 'hermes-dashboard-transport-command-dispatch)
                (lambda (_client name arg &rest args)
                  (push (cons name arg) dispatches)
@@ -1393,7 +1401,8 @@
                (lambda (_client command &rest args)
                  (setq slash-command command)
                  (funcall (plist-get args :reject)
-                          "pending-input command: use command.dispatch")))
+                          (propertize "skill command: use command.dispatch for /foo"
+                                       'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))))
               ((symbol-function 'hermes-dashboard-transport-command-dispatch)
                (lambda (_client name arg &rest args)
                  (setq dispatch-name name
@@ -1420,7 +1429,8 @@
               ((symbol-function 'hermes-dashboard-transport-slash-exec)
                (lambda (_client _command &rest args)
                  (funcall (plist-get args :reject)
-                          "pending-input command: use command.dispatch")))
+                          (propertize "skill command: use command.dispatch for /nope"
+                                       'hermes-rpc-code 4018 'hermes-rpc-method "slash.exec"))))
               ((symbol-function 'hermes-dashboard-transport-command-dispatch)
                (lambda (_client name arg &rest args)
                  (setq dispatch-name name
@@ -1434,6 +1444,243 @@
        (should (equal dispatch-arg "argument"))
        (should (equal (plist-get hermes-chat--status-state :status) 'error))
        (should (string-match-p "unknown command: nope" (buffer-string)))))))
+
+(ert-deftest hermes-chat-slash-uncertain-failure-never-redispatches ()
+  "Uncertain execution settles once without replay, retaining manual input."
+  (dolist (failure '(timeout send 5030 4001 4018))
+    (hermes-test-with-chat-buffer
+     (let* ((client (hermes-test--dashboard-client))
+            (hermes-dashboard-transport-request-timeout nil)
+            frames
+            (hermes-dashboard-transport-websocket-send-function
+             (lambda (_socket text)
+               (push (hermes-dashboard-transport--decode-frame text) frames)
+               (when (eq failure 'send) (error "Uncertain write")))))
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "slash-session"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/custom literal argument")
+       (hermes-chat-send)
+       (let ((id (hermes-transport--get (car (last frames)) 'id)))
+         (insert "new draft")
+         (pcase failure
+           ('timeout (hermes-dashboard-transport--on-request-timeout client id))
+           ('send nil)
+           (_ (hermes-dashboard-transport--handle-frame
+               client `((jsonrpc . "2.0") (id . ,id)
+                        (error . ((code . ,failure) (message . "worker failed")))))))
+         (hermes-dashboard-transport--handle-frame
+          client `((jsonrpc . "2.0") (id . ,id)
+                   (result . ((type . "prefill") (text . "late result"))))))
+       (should (equal (mapcar (lambda (frame) (hermes-transport--get frame 'method))
+                             (reverse frames)) '("slash.exec")))
+       (should-not hermes-chat--command-owner)
+       (should (eq (plist-get hermes-chat--status-state :status) 'error))
+       (should (string-match-p "new draft" (hermes-chat-input-string)))
+       (should (or (member "/custom literal argument" hermes-chat--input-history)
+                   (string-match-p "/custom literal argument"
+                                   (hermes-chat-input-string))))))))
+
+(ert-deftest hermes-chat-slash-routing-refusal-is-typed-and-exact ()
+  "Only the released pre-execution routing refusals permit one fallback."
+  (dolist (case '(("custom" "arg" 4018 "skill command: use command.dispatch for /custom" t)
+                  ("snapshot" "restore saved" 4018 "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore" t)
+                  ("custom" "arg" 5030 "skill command: use command.dispatch for /custom" nil)
+                  ("custom" "arg" 4018 "skill command: use command.dispatch for /other" nil)))
+    (pcase-let ((`(,name ,arg ,code ,message ,fallback) case))
+      (hermes-test-with-chat-buffer
+       (let* ((client (hermes-test--dashboard-client))
+              (hermes-dashboard-transport-request-timeout nil)
+              frames
+              (hermes-dashboard-transport-websocket-send-function
+               (lambda (_socket text)
+                 (push (hermes-dashboard-transport--decode-frame text) frames))))
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-active-session-id "original-session"
+               hermes-chat--dashboard-session-ready-p t)
+         (hermes-chat--dashboard-slash-exec name arg (concat name " " arg))
+         (let* ((id (hermes-transport--get (car frames) 'id))
+                (error-frame `((id . ,id) (error . ((code . ,code) (message . ,message))))))
+           (hermes-dashboard-transport--handle-frame client error-frame)
+           (hermes-dashboard-transport--handle-frame client error-frame))
+         (should (= (length frames) (if fallback 2 1)))
+         (when fallback
+           (let ((params (hermes-transport--get (car frames) 'params)))
+             (should (equal (hermes-transport--get (car frames) 'method) "command.dispatch"))
+             (should (equal (hermes-transport--get params 'session_id) "original-session"))
+             (should (equal (hermes-transport--get params 'name) name))
+             (should (equal (hermes-transport--get params 'arg) arg)))))))))
+
+(ert-deftest hermes-chat-session-actions-native-routing ()
+  "Conversation commands never use the slash worker."
+  (let (calls)
+    (cl-letf (((symbol-function 'hermes-chat-background)
+               (lambda (text) (push (cons 'background text) calls)))
+              ((symbol-function 'hermes-chat-btw)
+               (lambda (text) (push (cons 'btw text) calls)))
+              ((symbol-function 'hermes-chat-branch)
+               (lambda (text) (push (cons 'branch text) calls))))
+      (dolist (name '("btw" "bg" "branch"))
+        (when-let* ((handler (hermes-chat--native-slash-handler name)))
+          (funcall handler "question")))
+      (should (equal (reverse calls)
+                     '((btw . "question") (background . "question")
+                       (branch . "question")))))))
+
+(ert-deftest hermes-chat-branch-adopts-child-and-preserves-parent ()
+  "A typed receipt hydrates a separate child whose next Send uses its live ID."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (funcall (hermes-chat--submit-resolve-callback
+              (current-buffer) hermes-chat--unsettled-submit-context)
+             '((status . "streaming")))
+    (hermes-test--emit-dashboard-prompt client "message.complete" '((text . "first answer")))
+    (hermes-test--emit-dashboard-prompt client "session.info" '((running . :false)))
+    (insert "parent draft")
+    (let ((parent (current-buffer)) child resolve request sent)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                     (lambda (_client method params success _failure)
+                       (should (equal method "session.branch"))
+                       (setq request params resolve success)))
+                    ((symbol-function 'pop-to-buffer-same-window)
+                     (lambda (buffer &rest _) (setq child buffer)))
+                    ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                     (lambda (_client text &rest args)
+                       (setq sent (cons text (plist-get args :session-id))))))
+            (hermes-chat-branch "child title")
+            (should (equal (alist-get 'session_id request) "sid-prompt"))
+            (should (equal (alist-get 'name request) "child title"))
+            (should (equal (hermes-chat-input-string) "parent draft"))
+            (funcall resolve
+                     '((session_id . "child-live") (stored_session_id . "child-stored")
+                       (parent . "sid-stored") (title . "child title")
+                       (messages . (((role . "user") (text . "prior fact"))
+                                    ((role . "tool") (name . "read_file") (context . "src"))
+                                    ((role . "assistant") (text . "later answer"))))
+                       (info . ((cwd . "/remote/child")))))
+            (should (buffer-live-p child))
+            (should (eq (current-buffer) parent))
+            (should (equal hermes-chat--session-id "sid-stored"))
+            (should (equal hermes-chat--dashboard-active-session-id "sid-prompt"))
+            (should (equal (hermes-chat-input-string) "parent draft"))
+            (with-current-buffer child
+              (should (equal hermes-chat--dashboard-active-session-id "child-live"))
+              (should (string-match-p "prior fact" (buffer-string)))
+              (should (string-match-p "later answer" (buffer-string)))
+              (insert "next child turn")
+              (hermes-chat-send)
+              (should (equal sent '("next child turn" . "child-live")))))
+        (when (buffer-live-p child) (kill-buffer child))))))
+
+(ert-deftest hermes-chat-branch-failure-and-stale-receipts-retain-parent ()
+  (dolist (failure '(reject malformed connection session hydration))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (funcall (hermes-chat--submit-resolve-callback
+              (current-buffer) hermes-chat--unsettled-submit-context)
+             '((status . "streaming")))
+    (hermes-test--emit-dashboard-prompt client "message.complete" '((text . "answer")))
+    (hermes-test--emit-dashboard-prompt client "session.info" '((running . :false)))
+      (insert "/branch")
+      (let (resolve reject displayed)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-session-branch)
+                   (lambda (_client &rest args)
+                     (setq resolve (plist-get args :resolve)
+                           reject (plist-get args :reject))))
+                  ((symbol-function 'pop-to-buffer-same-window)
+                   (lambda (&rest _) (setq displayed t))))
+          (hermes-chat-send)
+          (should (equal (hermes-chat-input-string) "/branch"))
+          (pcase failure
+            ('connection (cl-incf (hermes-dashboard-transport-client-generation client)))
+            ('session (setq hermes-chat--dashboard-active-session-id "successor")))
+          (if (eq failure 'reject) (funcall reject "nothing to branch")
+            (cl-letf (((symbol-function 'hermes-chat--render-history)
+                       (lambda (&rest _) (error "hydration interrupted"))))
+              (funcall resolve
+                       (if (eq failure 'malformed) '((session_id . "bad"))
+                         '((session_id . "child") (stored_session_id . "child-store")
+                           (parent . "sid-stored")
+                           (messages . (((role . "user") (text . "fact")))))))))
+          (should-not displayed)
+          (should-not hermes-chat--command-owner)
+          (should (equal (hermes-chat-input-string) "/branch"))
+          (should (equal hermes-chat--session-id "sid-stored")))))))
+
+(ert-deftest hermes-chat-branch-refuses-busy-without-clearing-draft ()
+  (hermes-test-with-dashboard-prompt-session (client)
+    (ignore client)
+    (insert "/branch")
+    (should-error (hermes-chat-send) :type 'user-error)
+    (should (equal (hermes-chat-input-string) "/branch"))))
+
+(ert-deftest hermes-chat-branch-retains-repurposed-child ()
+  "Hydration hooks cannot make adoption overwrite or kill a successor view."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (funcall (hermes-chat--submit-resolve-callback
+              (current-buffer) hermes-chat--unsettled-submit-context)
+             '((status . "streaming")))
+    (hermes-test--emit-dashboard-prompt client "message.complete" '((text . "answer")))
+    (insert "/branch")
+    (let (child displayed)
+      (unwind-protect
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-session-branch)
+                     (lambda (_client &rest args)
+                       (funcall (plist-get args :resolve)
+                                '((session_id . "child") (stored_session_id . "child-store")
+                                  (parent . "sid-stored")
+                                  (messages . (((role . "user") (text . "fact"))))))))
+                    ((symbol-function 'hermes-chat--render-history)
+                     (lambda (&rest _)
+                       (setq child (current-buffer))
+                       (fundamental-mode)
+                       (let ((inhibit-read-only t)) (erase-buffer) (insert "successor"))))
+                    ((symbol-function 'pop-to-buffer-same-window)
+                     (lambda (&rest _) (setq displayed t))))
+            (hermes-chat-send)
+            (should-not displayed)
+            (should (equal (hermes-chat-input-string) "/branch"))
+            (should (buffer-live-p child))
+            (with-current-buffer child
+              (should (equal (buffer-string) "successor"))
+              (should-not hermes-chat--dashboard-active-session-id)))
+        (when (buffer-live-p child) (kill-buffer child))))))
+
+(ert-deftest hermes-chat-btw-refusal-retains-draft ()
+  (hermes-test-with-chat-buffer
+   (insert "/btw prior fact?")
+   (should-error (hermes-chat-send) :type 'user-error)
+   (should (equal (hermes-chat-input-string) "/btw prior fact?"))))
+
+
+(ert-deftest hermes-chat-slash-snapshot-alias-routing-refusals ()
+  "Keep released snapshot aliases and their literal dispatch arguments."
+  (dolist (name '("snapshot" "snap"))
+    (dolist (action '("restore" "rewind"))
+      (hermes-test-with-chat-buffer
+        (let* ((client (hermes-test--dashboard-client))
+               (hermes-dashboard-transport-request-timeout nil) frames
+               (hermes-dashboard-transport-websocket-send-function
+                (lambda (_socket text)
+                  (push (hermes-dashboard-transport--decode-frame text) frames)))
+               (arg (concat action " chosen")))
+          (setq hermes-chat--dashboard-client client
+                hermes-chat--dashboard-active-session-id "owned"
+                hermes-chat--dashboard-session-ready-p t)
+          (insert (concat "/" name " " arg))
+          (hermes-chat-send)
+          (let ((refusal `((id . ,(hermes-transport--get (car frames) 'id))
+                           (error . ((code . 4018)
+                                     (message . "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore"))))))
+            (dotimes (_ 2)
+              (hermes-dashboard-transport--handle-frame client refusal)))
+          (should (equal (mapcar (lambda (frame) (hermes-transport--get frame 'method))
+                                 (reverse frames))
+                         '("slash.exec" "command.dispatch")))
+          (let ((params (hermes-transport--get (car frames) 'params)))
+            (should (equal (hermes-transport--get params 'name) name))
+            (should (equal (hermes-transport--get params 'arg) arg))
+            (should (equal (hermes-transport--get params 'session_id) "owned"))))))))
+
 
 (provide 'hermes-chat-slash-tests)
 ;;; hermes-chat-slash-tests.el ends here

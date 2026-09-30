@@ -4,6 +4,740 @@
 
 (require 'ert)
 (require 'hermes-test-helpers)
+(require 'string-edit)
+
+(defun hermes-kanban-test--multiple-backends (terminate &optional phase change native)
+  "Exercise a fresh multi-backend chain, optionally retiring at PHASE.
+TERMINATE selects run termination instead of creation.  CHANGE names the
+retirement; NATIVE uses recursive minibuffers rather than canned answers."
+  (let* ((hermes-instances (copy-tree '(("a" . "http://a.invalid") ("b" . "http://b.invalid"))))
+         (origin (generate-new-buffer " *kanban multiple*"))
+         (buffers (buffer-list))
+         (clients (mapcar (lambda (entry)
+                            (make-hermes-dashboard-transport-client :base-url (cdr entry) :ready-p t))
+                          hermes-instances))
+         (text (symbol-function 'read-string))
+         (confirm (symbol-function 'yes-or-no-p))
+         (choice (symbol-function 'completing-read))
+         (choices 0) (acquired 0) (released 0) (pending 0) (auth-count 0)
+         requests timers errors prompts
+         (retire (lambda ()
+                   (with-current-buffer origin
+                     (pcase change
+                       ('instance (setq hermes-instance (cadr hermes-instances)))
+                       ('catalogue (setq hermes-instances (cdr hermes-instances)))
+                       ('mode (fundamental-mode))
+                       ('claim (setq hermes-buffer--owner (cons t major-mode)))
+                       ('generation (hermes-browser--next-request-generation))))))
+         (reader (lambda (fn answer args)
+                   (push (car args) prompts)
+                   (if native
+                       (minibuffer-with-setup-hook
+                           (lambda ()
+                             (when (and (eq phase 'selection) (eq fn choice)) (funcall retire))
+                             (delete-minibuffer-contents) (insert answer)
+                             (setq unread-command-events (list ?\r)))
+                         (apply fn args))
+                     (when (and (eq phase 'selection) (eq fn choice)) (funcall retire))
+                     (if (eq fn confirm) t answer)))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'read-string)
+                   (lambda (&rest args) (funcall reader text "sample" args)))
+                  ((symbol-function 'yes-or-no-p)
+                   (lambda (&rest args) (funcall reader confirm "yes" args)))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest args)
+                     (cl-incf choices)
+                     (funcall reader choice (if (= choices 1) "a" "b") args)))
+                  ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (cl-incf acquired)
+                     (when (eq phase 'acquisition) (funcall retire))
+                     (or (seq-find (lambda (client)
+                                     (equal (hermes-dashboard-transport-client-base-url client)
+                                            (hermes-instance-url hermes-instance))) clients)
+                         (error "Unknown acquired instance"))))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (_) (cl-incf released)))
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _)
+                     (let ((promise (hermes--promise-make)) (number (cl-incf auth-count))
+                           (base hermes-dashboard-transport--api-auth-base-url))
+                       (cl-incf pending)
+                       (push (run-at-time
+                              0 nil
+                              (lambda ()
+                                (when (or (and (eq phase 'auth) (= number 1))
+                                          (and (eq phase 'mutation-auth) (= number 2)))
+                                  (funcall retire))
+                                (hermes--promise-resolve
+                                 promise (list :base-url base :session-token "fixture"))
+                                (cl-decf pending))) timers)
+                       promise)))
+                  ((symbol-function 'hermes-dashboard-transport--default-http-request-async)
+                   (lambda (url &rest args)
+                     (push (list (plist-get args :method) url
+                                 (when (plist-get args :data)
+                                   (json-parse-string (plist-get args :data) :object-type 'alist
+                                                      :false-object :false))) requests)
+                     (hermes--promise-resolved
+                      '(:body ((boards . nil) (task . ((id . "task/a") (current_run_id . 42)))))))))
+          (with-current-buffer origin
+            (pcase terminate
+              ('detail
+               (hermes-kanban-task-mode)
+               (setq hermes-kanban-task--board-slug "work"
+                     hermes-kanban-task--task-id "task/a"))
+              ('diagnostics
+               (hermes-kanban-diagnostics-mode)
+               (setq hermes-kanban-diagnostics--slug "work"
+                     tabulated-list-entries '(("task/a" ["warning" "Task" "-" "Diagnostic"])))
+               (tabulated-list-print) (goto-char (point-min)))
+              ('t
+               (hermes-kanban-mode)
+               (setq hermes-kanban--slug "work"
+                     tabulated-list-entries '(("task/a" ["running" "0" "-" "Task"])))
+               (tabulated-list-print) (goto-char (point-min))))
+            (condition-case err
+                (call-interactively (if terminate #'hermes-kanban-terminate-run #'hermes-kanban-create-board))
+              (user-error (push err errors))))
+          (hermes-test--wait-until (lambda () (zerop pending)) nil "Multi-backend chain")
+          (unless change (should-not errors))
+          (should (= acquired released))
+          (list :choices choices :requests (nreverse requests) :prompts (nreverse prompts)))
+      (mapc #'cancel-timer timers)
+      (when (buffer-live-p origin) (kill-buffer origin))
+      (dolist (buffer (seq-difference (buffer-list) buffers))
+        (when (and (buffer-live-p buffer)
+                   (with-current-buffer buffer (derived-mode-p 'hermes-kanban-boards-mode)))
+          (kill-buffer buffer))))))
+
+(defun hermes-kanban-test--assert-multiple-backends (terminate)
+  "Check exact creation or TERMINATE requests through native routing."
+  (progn
+    (let* ((result (hermes-kanban-test--multiple-backends terminate nil nil (not noninteractive)))
+           (requests (plist-get result :requests)))
+      (should (= (plist-get result :choices) 1))
+      (should (equal requests
+                     (if terminate
+                         (append
+                          '(("GET" "http://a.invalid/api/plugins/kanban/tasks/task%2Fa?board=work" nil)
+                            ("POST" "http://a.invalid/api/plugins/kanban/runs/42/terminate?board=work" ((reason . "sample"))))
+                          (pcase terminate
+                            ('detail '(("GET" "http://a.invalid/api/plugins/kanban/tasks/task%2Fa?board=work" nil)))
+                            ('diagnostics '(("GET" "http://a.invalid/api/plugins/kanban/diagnostics?board=work" nil)))
+                            (_ '(("GET" "http://a.invalid/api/plugins/kanban/board?board=work" nil)
+                                 ("GET" "http://a.invalid/api/plugins/kanban/orchestration" nil)))))
+                       '(("POST" "http://a.invalid/api/plugins/kanban/boards"
+                          ((slug . "sample") (name . "sample") (switch . :false)))
+                         ("GET" "http://a.invalid/api/plugins/kanban/boards" nil)))))
+      (when terminate
+        (should (member "Terminate run #42 of task task/a? " (plist-get result :prompts)))))))
+
+(ert-deftest hermes-kanban-multiple-backends-create-one-choice ()
+  (hermes-kanban-test--assert-multiple-backends nil))
+
+(ert-deftest hermes-kanban-multiple-backends-terminate-one-choice ()
+  (dolist (view '(t detail diagnostics))
+    (hermes-kanban-test--assert-multiple-backends view)))
+
+(ert-deftest hermes-kanban-multiple-backends-retirement ()
+  "The selected endpoint never hides retirement of the original origin."
+  (dolist (terminate '(nil t))
+    (dolist (phase (append '(selection acquisition auth) (and terminate '(mutation-auth))))
+      (dolist (change (if (eq phase 'acquisition) '(claim generation) '(instance catalogue mode claim generation)))
+        (ert-info ((format "terminate=%s phase=%s change=%s" terminate phase change))
+          (let* ((result (hermes-kanban-test--multiple-backends terminate phase change (not noninteractive)))
+                 (requests (plist-get result :requests)))
+            (should (= (plist-get result :choices) 1))
+            (should-not (seq-find (lambda (r) (not (equal (car r) "GET"))) requests))
+            (unless (eq phase 'mutation-auth) (should-not requests))))))))
+
+(defconst hermes-kanban-test--siblings
+  '(hermes-kanban-rename-board hermes-kanban-set-status
+    hermes-kanban-change-assignee hermes-kanban-comment hermes-kanban-reclaim
+    hermes-kanban-create-board hermes-kanban-create-task
+    hermes-kanban-create-triage-task hermes-kanban-terminate-run))
+
+(defun hermes-kanban-test--sibling-wire (command change &optional legacy phase native)
+  "Run COMMAND with CHANGE at PHASE and return serialized requests.
+LEGACY uses URL-only routing; `unowned' starts without a claim or instance.
+NATIVE uses actual recursive readers.
+PHASE is a reader number, `auth', `receipt', or `readback'."
+  (let* ((hermes-instances (cond ((eq legacy t) nil)
+                                  ((eq legacy 'multiple)
+                                   '(("a" . "http://a.invalid") ("b" . "http://b.invalid")))
+                                  (t '(("a" . "http://a.invalid")))))
+         (hermes-dashboard-transport-url "http://a.invalid/")
+         (origin (generate-new-buffer " *kanban sibling*"))
+         (foreign (generate-new-buffer " *kanban foreign*"))
+         (client (make-hermes-dashboard-transport-client :base-url "http://a.invalid" :ready-p t))
+         (text-reader (symbol-function 'read-string))
+         (confirm-reader (symbol-function 'yes-or-no-p))
+         (completion-reader (symbol-function 'completing-read))
+         (body-reader (symbol-function 'read-string-from-buffer))
+         (count 0) (choices 0) (writes 0) (pending 0) timers requests errors notices
+         (change-owner
+          (lambda ()
+            (pcase change
+              ('instance (setq hermes-instance '("b" . "http://b.invalid")))
+              ('legacy (setq hermes-dashboard-transport-url "http://b.invalid"))
+              ('row (goto-char (point-max)))
+              ('board (setq hermes-kanban--slug "other"))
+              ('claim (setq hermes-buffer--owner (cons t major-mode)))
+              ('mode (fundamental-mode))
+              ('generation (hermes-browser--next-request-generation))
+              ('supersede (hermes-kanban--read-and-act #'ignore #'ignore nil))
+              ('killed (kill-buffer origin))
+              ('replaced (let ((name (buffer-name origin)))
+                           (kill-buffer origin)
+                           (with-current-buffer foreign (rename-buffer name))))
+              ('foreign (set-buffer foreign)))))
+         (reader
+          (lambda (function answer args &optional body)
+            (cl-incf count)
+            (if native
+                (if body
+                    ;; The native string editor enters recursive-edit, not a minibuffer.
+                    (let ((timer
+                           (run-at-time
+                            0 nil (lambda ()
+                                    (when (equal count (or phase 1))
+                                      (with-current-buffer origin (funcall change-owner)))
+                                    (insert answer)
+                                    (execute-kbd-macro (kbd "C-c C-c"))))))
+                      (unwind-protect (apply function args) (cancel-timer timer)))
+                  (minibuffer-with-setup-hook
+                      (lambda ()
+                        (when (equal count (or phase 1))
+                          (with-current-buffer origin (funcall change-owner)))
+                        (delete-minibuffer-contents) (insert answer)
+                        (setq unread-command-events (list ?\r)))
+                    (apply function args)))
+              (when (equal count (or phase 1)) (funcall change-owner))
+              (if (eq function confirm-reader) t answer)))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) notices)))
+                  ((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (setf (hermes-dashboard-transport-client-base-url client)
+                           (string-remove-suffix "/" (hermes-instance-url hermes-instance))) client))
+                  ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _)
+                     (let ((promise (hermes--promise-make)))
+                       (cl-incf pending)
+                       (push (run-at-time
+                        0 nil
+                        (lambda ()
+                          (when (or (and (eq phase 'auth) (= writes 0))
+                                    (and (eq phase 'readback) (> writes 0)))
+                            (with-current-buffer origin (funcall change-owner)))
+                          (hermes--promise-resolve
+                           promise (list :base-url (hermes-dashboard-transport-client-base-url client)
+                                         :session-token "fixture"))
+                          (cl-decf pending))) timers)
+                       promise)))
+                  ((symbol-function 'hermes-dashboard-transport--default-http-request-async)
+                   (lambda (url &rest args)
+                     (push (list url (plist-get args :method) (plist-get args :data)) requests)
+                     (unless (equal (plist-get args :method) "GET") (cl-incf writes))
+                     (when (and (eq phase 'receipt) (> writes 0))
+                       (with-current-buffer origin (funcall change-owner)))
+                     (hermes--promise-resolved
+                      '(:body ((task . ((id . "task/a") (current_run_id . 42))))))))
+                  ((symbol-function 'hermes-kanban--profile-candidates) (lambda () '("worker")))
+                  ((symbol-function 'yes-or-no-p)
+                   (lambda (&rest args) (funcall reader confirm-reader "yes" args)))
+                  ((symbol-function 'read-string)
+                   (lambda (&rest args) (funcall reader text-reader "renamed" args)))
+                  ((symbol-function 'read-string-from-buffer)
+                   (lambda (&rest args) (funcall reader body-reader "body α\nnext" args t)))
+                  ((symbol-function 'read-number)
+                   (lambda (&rest _) (string-to-number (funcall reader text-reader "7" '("Priority: ")))))
+                  ((symbol-function 'completing-read)
+                   (lambda (&rest args)
+                     (funcall reader completion-reader
+                              (if (equal (car args) "Hermes instance: ")
+                                  (if (= (cl-incf choices) 1) "a" "b")
+                                (if (eq command 'hermes-kanban-set-status) "done" "worker")) args))))
+          (with-current-buffer origin
+            (if (memq command '(hermes-kanban-rename-board hermes-kanban-create-board))
+                (progn (hermes-kanban-boards-mode)
+                       (setq tabulated-list-entries
+                             (hermes-kanban--board-rows '(((slug . "work") (name . "Work"))))))
+              (hermes-kanban-mode)
+              (setq hermes-kanban--slug "work"
+                    tabulated-list-entries '(("task/a" ["todo" "0" "-" "Task"]))))
+            (unless (memq legacy '(unowned multiple)) (hermes-buffer--claim major-mode))
+            (unless legacy (setq hermes-instance (car hermes-instances)))
+            (tabulated-list-print) (goto-char (point-min))
+            (condition-case err (call-interactively command)
+              (user-error (push err errors))))
+          (hermes-test--wait-until (lambda () (zerop pending)) nil "Kanban auth and readback")
+          (should (or (> count 0) (and (eq phase 'auth) change)))
+          (unless change (should-not errors))
+          (when (eq legacy 'multiple) (should (= choices 1)))
+          (when (and change (not (eq change 'foreign)) (or (null phase) (numberp phase)))
+            (should (= count (or phase 1))))
+          (when (eq phase 'receipt)
+            (should (= 1 (cl-count-if
+                          (lambda (notice) (string-match-p "check board before retrying" notice))
+                          notices))))
+          (nreverse requests))
+      (when (buffer-live-p origin) (kill-buffer origin))
+      (mapc #'cancel-timer timers)
+      (when (buffer-live-p foreign) (kill-buffer foreign)))))
+
+(ert-deftest hermes-kanban-multiple-backends-sibling-readback ()
+  "Every sibling retains its choice through real serialized readback."
+  (dolist (command hermes-kanban-test--siblings)
+    (let ((requests (hermes-kanban-test--sibling-wire command nil 'multiple nil (not noninteractive))))
+      (should (= 1 (cl-count-if (lambda (r) (not (equal (cadr r) "GET"))) requests)))
+      (should (seq-every-p (lambda (r) (string-prefix-p "http://a.invalid/" (car r))) requests)))))
+
+(ert-deftest hermes-kanban-sibling-retarget-refuses-before-write ()
+  (dolist (command hermes-kanban-test--siblings)
+    (ert-info ((symbol-name command))
+      (let ((requests (hermes-kanban-test--sibling-wire command 'instance)))
+        (should-not (cl-remove-if (lambda (r) (equal (cadr r) "GET")) requests))))))
+
+(ert-deftest hermes-kanban-sibling-original-serialization-and-readback ()
+  (dolist (legacy '(nil t unowned multiple))
+    (dolist (command hermes-kanban-test--siblings)
+      (ert-info ((format "%s legacy=%s" command legacy))
+        (let* ((requests (hermes-kanban-test--sibling-wire command nil legacy))
+               (writes (cl-remove-if (lambda (r) (equal (cadr r) "GET")) requests))
+               (expected
+                (pcase command
+                  ('hermes-kanban-rename-board '("/boards/work" "PATCH" "{\"name\":\"renamed\"}"))
+                  ('hermes-kanban-set-status '("/tasks/task%2Fa?board=work" "PATCH" "{\"status\":\"done\"}"))
+                  ('hermes-kanban-change-assignee '("/tasks/task%2Fa?board=work" "PATCH" "{\"assignee\":\"worker\"}"))
+                  ('hermes-kanban-comment '("/tasks/task%2Fa/comments?board=work" "POST" "{\"body\":\"body α\\nnext\"}"))
+                  ('hermes-kanban-reclaim '("/tasks/task%2Fa/reclaim?board=work" "POST" "{\"reason\":\"renamed\"}"))
+                  ('hermes-kanban-create-board '("/boards" "POST" "{\"slug\":\"renamed\",\"name\":\"renamed\",\"switch\":false}"))
+                  ('hermes-kanban-create-task '("/tasks?board=work" "POST" "{\"title\":\"renamed\",\"priority\":7,\"body\":\"body α\\nnext\",\"assignee\":\"worker\"}"))
+                  ('hermes-kanban-create-triage-task '("/tasks?board=work" "POST" "{\"title\":\"renamed\",\"priority\":7,\"body\":\"body α\\nnext\",\"triage\":true}"))
+                  ('hermes-kanban-terminate-run '("/runs/42/terminate?board=work" "POST" "{\"reason\":\"renamed\"}")))))
+          (should (= (length writes) 1))
+          (should (equal (caar writes)
+                         (concat "http://a.invalid/api/plugins/kanban" (car expected))))
+          (should (equal (cadar writes) (cadr expected)))
+          ;; Emacs 29's native serializer returns characters; newer versions
+          ;; return UTF-8 bytes.  Parse the actual JSON, preserving literal
+          ;; Unicode content, null/false and the exact set of body fields.
+          (should (equal (json-parse-string (caddar writes) :object-type 'alist
+                                            :false-object :false :null-object :null)
+                         (json-parse-string (caddr expected) :object-type 'alist
+                                            :false-object :false :null-object :null)))
+          (should (equal (car (cadr (member (car writes) requests)))
+                         (concat "http://a.invalid/api/plugins/kanban/"
+                                 (if (memq command '(hermes-kanban-rename-board hermes-kanban-create-board))
+                                     "boards" "board?board=work")))))))))
+
+(ert-deftest hermes-kanban-sibling-lifecycle-auth-and-readback ()
+  (dolist (command hermes-kanban-test--siblings)
+    (dolist (phase '(1 auth readback receipt))
+      (dolist (change '(instance legacy row claim mode generation killed replaced))
+        (ert-info ((format "%s %s %s" command phase change))
+          (let* ((requests (hermes-kanban-test--sibling-wire command change (eq change 'legacy) phase))
+                 (writes (cl-remove-if (lambda (r) (equal (cadr r) "GET")) requests)))
+            (should (= (length writes) (if (memq phase '(readback receipt)) 1 0)))
+            (when (memq phase '(readback receipt))
+              (should-not (cdr (member (car writes) requests))))))))
+    (let ((requests (hermes-kanban-test--sibling-wire command 'foreign)))
+      (should (= 1 (cl-count-if (lambda (r) (not (equal (cadr r) "GET"))) requests))))
+    (unless (memq command '(hermes-kanban-rename-board hermes-kanban-create-board))
+      (should-not (cl-remove-if (lambda (r) (equal (cadr r) "GET"))
+                               (hermes-kanban-test--sibling-wire command 'board))))))
+
+(ert-deftest hermes-kanban-sibling-successive-reader-retirement ()
+  "Refuse follow-up readers as soon as the original owner retires."
+  (dolist (entry '((hermes-kanban-create-board . 2)
+                   (hermes-kanban-create-task . 4)
+                   (hermes-kanban-create-triage-task . 3)
+                   (hermes-kanban-reclaim . 2)
+                   (hermes-kanban-terminate-run . 2)))
+    (cl-loop for phase from 2 to (cdr entry) do
+             (ert-info ((format "%s reader=%s" (car entry) phase))
+               (should-not
+                (cl-remove-if (lambda (r) (equal (cadr r) "GET"))
+                              (hermes-kanban-test--sibling-wire
+                               (car entry) 'instance nil phase)))))))
+
+(ert-deftest hermes-kanban-sibling-native-input-ownership ()
+  (skip-unless (not noninteractive))
+  (dolist (command hermes-kanban-test--siblings)
+    (dolist (legacy '(nil t unowned))
+      (dolist (change '(nil instance generation mode supersede))
+        (ert-info ((format "%s legacy=%s change=%s" command legacy change))
+          (let ((requests (hermes-kanban-test--sibling-wire command change legacy nil t)))
+            (should (= (cl-count-if (lambda (r) (not (equal (cadr r) "GET"))) requests)
+                       (if change 0 1)))))))))
+
+(defun hermes-kanban-test--input-wire (kind change &optional legacy waiting native readback)
+  "Invoke KIND with CHANGE during input, returning actual HTTP requests.
+LEGACY selects URL-only resolution instead of a named backend.
+WAITING delays CHANGE until authentication.  NATIVE uses real minibuffers.
+READBACK retains the real board refresh."
+  (let* ((hermes-instances (unless legacy '(("a" . "http://a.invalid"))))
+         (hermes-dashboard-transport-url "http://a.invalid/")
+         (origin (generate-new-buffer " *kanban input*"))
+         (foreign (generate-new-buffer " *kanban foreign*"))
+         (auth (hermes--promise-make))
+         (native-entered 0)
+         (render-board (symbol-function 'hermes-kanban--render-board))
+         (render-boards (symbol-function 'hermes-kanban--render-boards))
+         (confirm (symbol-function 'yes-or-no-p))
+         (read-text (symbol-function 'read-string))
+         (reader
+          (lambda (function answer &rest args)
+            (if native
+                (minibuffer-with-setup-hook
+                    (lambda ()
+                      (cl-incf native-entered)
+                      (with-current-buffer origin (funcall change origin foreign))
+                      (delete-minibuffer-contents)
+                      (insert answer)
+                      (setq unread-command-events (list ?\r)))
+                  (apply function args))
+              (unless waiting (funcall change origin foreign))
+              answer)))
+         (client (make-hermes-dashboard-transport-client
+                  :base-url "http://a.invalid" :ready-p t))
+         requests)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (setf (hermes-dashboard-transport-client-base-url client)
+                           (string-remove-suffix "/" (hermes-instance-url hermes-instance)))
+                     client))
+                  ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _) auth))
+                  ((symbol-function 'hermes-dashboard-transport--default-http-request-async)
+                   (lambda (url &rest request)
+                     (setq request
+                           (append (list :url url :body
+                                         (when (plist-get request :data)
+                                           (json-parse-string (plist-get request :data) :object-type 'alist)))
+                                   request))
+                     (push request requests)
+                     (hermes--promise-resolved '(:body ((ok . t))))))
+                  ((symbol-function 'yes-or-no-p)
+                   (lambda (&rest args) (apply reader confirm "yes" args)))
+                  ((symbol-function 'read-string)
+                   (lambda (&rest args) (apply reader read-text "New title" args)))
+                  ((symbol-function 'read-number) (lambda (&rest _) 7))
+                  ((symbol-function 'hermes-kanban--render-board)
+                   (lambda (&rest args) (when readback (apply render-board args))))
+                  ((symbol-function 'hermes-kanban--render-boards)
+                   (lambda (&rest args) (when readback (apply render-boards args)))))
+          (with-current-buffer origin
+            (if (eq kind 'archive)
+                (progn
+                  (hermes-kanban-boards-mode)
+                  (setq tabulated-list-entries
+                        (hermes-kanban--board-rows '(((slug . "work") (name . "Work"))))))
+              (hermes-kanban-mode)
+              (setq hermes-kanban--slug "work"
+                    tabulated-list-entries '(("task/a" ["todo" "0" "-" "Old title"]))))
+            (tabulated-list-print)
+            (goto-char (point-min))
+            (condition-case nil
+                (call-interactively (if (eq kind 'archive)
+                                        #'hermes-kanban-archive-board #'hermes-kanban-edit))
+              (user-error nil)))
+          (when waiting (with-current-buffer origin (funcall change origin foreign)))
+          (hermes--promise-resolve
+           auth (list :base-url (hermes-dashboard-transport-client-base-url client)
+                      :session-token "fixture"))
+          (when native (should (> native-entered 0)))
+          (nreverse requests))
+      (when (buffer-live-p origin) (kill-buffer origin))
+      (kill-buffer foreign))))
+
+(ert-deftest hermes-kanban-input-original-owner-readback ()
+  "An accepted write performs its real original-backend refresh."
+  (dolist (kind '(archive edit))
+    (let ((requests (hermes-kanban-test--input-wire kind #'ignore nil nil nil t)))
+      (should (= 1 (cl-count-if (lambda (r) (not (equal "GET" (plist-get r :method)))) requests)))
+      (should (equal (plist-get (cadr requests) :url)
+                     (if (eq kind 'archive)
+                         "http://a.invalid/api/plugins/kanban/boards"
+                       "http://a.invalid/api/plugins/kanban/board?board=work")))
+      (when (eq kind 'edit)
+        (should (equal (plist-get (car requests) :data)
+                       "{\"title\":\"New title\",\"priority\":7}"))))))
+
+(ert-deftest hermes-kanban-receipt-precedes-final-lease-release ()
+  "A cold request settles before releasing its final native transport lease."
+  (let* ((hermes-instances '(("a" . "http://a.invalid")))
+         (hermes-dashboard-transport-idle-close-delay 0)
+         (client (make-hermes-dashboard-transport-client
+                  :base-url "http://a.invalid" :ready-p t :refcount 1))
+         accepted)
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                 (lambda (&rest _)
+                   (hermes--promise-resolved '(:base-url "http://a.invalid" :session-token "fixture"))))
+                ((symbol-function 'hermes-dashboard-transport--default-http-request-async)
+                 (lambda (&rest _) (hermes--promise-resolved '(:body ((ok . t)))))))
+        (hermes-kanban--then (hermes-kanban--api "PATCH" "/tasks/task" '((body . "body")))
+                            (lambda (_) (setq accepted t)))
+        (should (= (hermes-dashboard-transport-client-refcount client) 0))
+        (should accepted)))))
+
+(ert-deftest hermes-kanban-input-retarget-emits-no-write ()
+  "Public archive and edit refuse changed owners before acquisition."
+  (dolist (kind '(archive edit))
+    (should-not
+     (hermes-kanban-test--input-wire
+      kind (lambda (_origin _foreign)
+             (setq-local hermes-instance '("b" . "http://b.invalid")))))))
+
+(ert-deftest hermes-kanban-input-current-owner-writes-once ()
+  "Fresh named and legacy origins retain the original serialized target."
+  (dolist (legacy '(nil t))
+    (dolist (kind '(archive edit))
+      (let ((requests (hermes-kanban-test--input-wire kind #'ignore legacy)))
+        (should (= (length requests) 1))
+        (should (equal (plist-get (car requests) :url)
+                       (if (eq kind 'archive)
+                           "http://a.invalid/api/plugins/kanban/boards/work"
+                         "http://a.invalid/api/plugins/kanban/tasks/task%2Fa?board=work")))))))
+
+(ert-deftest hermes-kanban-detail-rejects-executable-fence-label ()
+  "The actual detail renderer must not enable a global minor mode."
+  (require 'autorevert)
+  (let ((markdown-fontify-code-blocks-natively t)
+        (global-auto-revert-mode nil))
+    (unwind-protect
+        (with-temp-buffer
+          (hermes-kanban-task-mode)
+          (hermes-kanban--display-task
+           '((task . ((id . "task") (body . "```global-auto-revert\nliteral\n```\n"))))
+           "work" t)
+          (font-lock-ensure)
+          (should-not global-auto-revert-mode))
+      (global-auto-revert-mode -1))))
+
+(ert-deftest hermes-kanban-input-lifecycle-and-authentication ()
+  "Selection, claims, modes, generations and endpoints fence real dispatch."
+  (dolist (kind '(archive edit))
+    (dolist (waiting '(nil t))
+      (dolist (change '(row board claim mode generation killed replaced legacy))
+        (ert-info ((format "%s %s waiting=%s" kind change waiting))
+          (should-not
+           (hermes-kanban-test--input-wire
+            kind
+            (lambda (origin _foreign)
+              (pcase change
+                ('row (goto-char (point-max)))
+                ('board (if (eq kind 'edit) (setq hermes-kanban--slug "other")
+                          (goto-char (point-max))))
+                ('claim (setq hermes-buffer--owner (cons t major-mode)))
+                ('mode (fundamental-mode))
+                ('generation (hermes-browser--next-request-generation))
+                ('killed (kill-buffer origin))
+                ('replaced
+                 (let ((name (buffer-name origin)))
+                   (kill-buffer origin)
+                   (with-current-buffer _foreign
+                     (rename-buffer name) (insert "unrelated draft"))))
+                ('legacy (setq hermes-dashboard-transport-url "http://b.invalid"))))
+            (eq change 'legacy) waiting))))))
+  (dolist (kind '(archive edit))
+    (should (= 1 (length (hermes-kanban-test--input-wire
+                         kind (lambda (_origin foreign) (set-buffer foreign))))))))
+
+(ert-deftest hermes-kanban-input-native-recursive-minibuffer ()
+  "Actual recursive minibuffers retain named and legacy mutation owners."
+  (skip-unless (not noninteractive))
+  (dolist (kind '(archive edit))
+    (dolist (legacy '(nil t))
+      (dolist (retire '(nil instance generation mode))
+        (let ((requests
+               (hermes-kanban-test--input-wire
+                kind (lambda (_origin _foreign)
+                       (pcase retire
+                         ('instance (setq hermes-instance '("b" . "http://b.invalid")))
+                         ('generation (hermes-browser--next-request-generation))
+                         ('mode (fundamental-mode))))
+                legacy nil t)))
+          (should (= (length requests) (if retire 0 1))))))))
+
+(ert-deftest hermes-kanban-detail-preserves-literal-guarded-markdown ()
+  "Literal copy and outline survive unsafe, nested and programming fences."
+  (require 'autorevert)
+  (dolist (native '(nil t))
+    (let ((markdown-fontify-code-blocks-natively native)
+          (markdown-fontify-code-block-default-mode 'global-auto-revert-mode)
+          (global-auto-revert-mode nil)
+          (hooks 0)
+          (text "# Δοκιμή\n```\nblank label\n```\n```org\n#+begin_src emacs-lisp\n(message \"nested\")\n#+end_src\n```\n```emacs-lisp\n(defun example () t)\n```\n| a | b |\n|---|---|\n"))
+      (let ((emacs-lisp-mode-hook (list (lambda () (cl-incf hooks))))
+            (org-mode-hook (list (lambda () (cl-incf hooks)))))
+        (with-temp-buffer
+          (hermes-kanban-task-mode)
+          (hermes-kanban--display-task `((task . ((id . "t") (body . ,text)))) "work" t)
+          (font-lock-flush)
+          (font-lock-ensure)
+          (should-not global-auto-revert-mode)
+          (should (= hooks 0))
+          (should outline-minor-mode)
+          (should (string-match-p (regexp-quote text) (buffer-string)))
+          (should (equal (filter-buffer-substring (point-min) (point-max))
+                         (buffer-substring-no-properties (point-min) (point-max))))
+          (should-not (text-property-not-all (point-min) (point-max) 'hermes-chat-table nil))
+          (when native
+            (goto-char (point-min))
+            (search-forward "defun example")
+            (should (get-text-property (- (point) 3) 'face))))))))
+
+(ert-deftest hermes-kanban-body-editor-roundtrip ()
+  "Open, edit and explicitly save only the literal body, then read it back."
+  (should (commandp 'hermes-kanban-edit-body))
+  (dolist (body '("first\nδεύτερο\n" ""))
+    (let ((hermes-instances '(("a" . "http://a.invalid")))
+          (client (make-hermes-dashboard-transport-client
+                   :base-url "http://a.invalid" :ready-p t))
+          (stored "Old body") requests editor)
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                 (lambda (&rest _)
+                   (hermes--promise-resolved '(:base-url "http://a.invalid" :session-token "fixture"))))
+                ((symbol-function 'hermes-dashboard-transport--default-http-request-async)
+                 (lambda (url &rest request)
+                     (setq request
+                           (append (list :url url :body
+                                         (when (plist-get request :data)
+                                           (json-parse-string (plist-get request :data) :object-type 'alist)))
+                                   request))
+                   (push request requests)
+                   (when (equal (plist-get request :method) "PATCH")
+                     (should (equal (mapcar #'car (plist-get request :body)) '(body)))
+                     (setq stored (alist-get 'body (plist-get request :body))))
+                   (hermes--promise-resolved
+                    `(:body ((task . ((id . "task/a") (body . ,stored)))))))))
+        (unwind-protect
+            (with-temp-buffer
+              (hermes-kanban-task-mode)
+              (setq hermes-kanban-task--task-id "task/a"
+                    hermes-kanban-task--board-slug "work")
+              (call-interactively #'hermes-kanban-edit-body)
+              (setq editor (get-buffer "*Hermes Task Body*"))
+              (set-buffer editor)
+              (should (derived-mode-p 'hermes-kanban-body-mode))
+              (should (equal (buffer-string) "Old body"))
+              (erase-buffer)
+              (insert body)
+              (if noninteractive
+                  (call-interactively (key-binding (kbd "C-c C-c")))
+                (execute-kbd-macro (kbd "C-c C-c")))
+              (should (equal stored body))
+              (should (equal (buffer-string) body))
+              (should-not (buffer-modified-p))
+              (should (equal (mapcar (lambda (r) (plist-get r :method)) (reverse requests))
+                             '("GET" "PATCH" "GET")))
+              (dolist (request requests)
+                (should (equal (plist-get request :url)
+                               "http://a.invalid/api/plugins/kanban/tasks/task%2Fa?board=work"))))
+          (when (buffer-live-p editor) (kill-buffer editor)))))))
+
+(ert-deftest hermes-kanban-body-editor-retains-draft-on-retirement-and-failure ()
+  "Save refuses stale owners, survives failed receipts, and never retries."
+  (dolist (stage '(source-mode source-instance source-board source-task source-claim
+                  editor-mode editor-instance editor-board editor-task editor-claim
+                  auth-source auth-kill receipt-retired patch-error readback-error
+                  changed-draft))
+    (ert-info ((format "%s" stage))
+      (let* ((hermes-instances '(("a" . "http://a.invalid")))
+             (source (generate-new-buffer " *body source*"))
+             (client (make-hermes-dashboard-transport-client
+                      :base-url "http://a.invalid" :ready-p t))
+             (auth (hermes--promise-make))
+             (receipt (hermes--promise-make))
+             editor saving requests messages)
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                  ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                  ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda (&rest _)
+                     (if (and saving (memq stage '(auth-source auth-kill))) auth
+                       (hermes--promise-resolved '(:base-url "http://a.invalid" :session-token "fixture")))))
+                  ((symbol-function 'hermes-dashboard-transport--default-http-request-async)
+                   (lambda (url &rest request)
+                     (setq request
+                           (append (list :url url :body
+                                         (when (plist-get request :data)
+                                           (json-parse-string (plist-get request :data) :object-type 'alist)))
+                                   request))
+                     (push request requests)
+                     (cond
+                      ((equal (plist-get request :method) "PATCH") receipt)
+                      ((and saving (eq stage 'readback-error))
+                       (hermes--promise-rejected "HTTP 404 task not found"))
+                      (t (hermes--promise-resolved
+                          `(:body ((task . ((id . "task") (body . ,(if saving "Draft\nλ" "Old")))))))))))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) messages))))
+          (unwind-protect
+              (progn
+                (with-current-buffer source
+                  (hermes-kanban-task-mode)
+                  (hermes-buffer--claim 'hermes-kanban-task-mode)
+                  (setq hermes-kanban-task--task-id "task" hermes-kanban-task--board-slug "work")
+                  (hermes-kanban-edit-body))
+                (setq editor (get-buffer "*Hermes Task Body*"))
+                (should editor)
+                (with-current-buffer editor (erase-buffer) (insert "Draft\nλ"))
+                (with-current-buffer source
+                  (pcase stage
+                    ('source-mode (fundamental-mode))
+                    ('source-instance (setq hermes-instance '("b" . "http://b.invalid")))
+                    ('source-board (setq hermes-kanban-task--board-slug "other"))
+                    ('source-task (setq hermes-kanban-task--task-id "other"))
+                    ('source-claim (hermes-buffer--retire))))
+                (with-current-buffer editor
+                  (pcase stage
+                    ('editor-mode (fundamental-mode))
+                    ('editor-instance (setq hermes-instance '("b" . "http://b.invalid")))
+                    ('editor-board (setq hermes-kanban-body--board "other"))
+                    ('editor-task (setq hermes-kanban-body--task "other"))
+                    ('editor-claim (hermes-buffer--retire)))
+                  (setq saving t)
+                  (condition-case nil (hermes-kanban-body-save) (user-error nil))
+                  (when (eq stage 'changed-draft) (insert "newer")))
+                (when (memq stage '(auth-source receipt-retired))
+                  (with-current-buffer source (hermes-browser--next-request-generation)))
+                (when (eq stage 'auth-kill) (kill-buffer editor))
+                (hermes--promise-resolve auth '(:base-url "http://a.invalid" :session-token "fixture"))
+                (if (eq stage 'patch-error) (hermes--promise-reject receipt "HTTP 404 task not found")
+                  (hermes--promise-resolve receipt '(:body ((task . ((id . "task")))))))
+                (should (= (cl-count "PATCH" requests :test #'equal
+                                     :key (lambda (r) (plist-get r :method)))
+                           (if (memq stage '(receipt-retired patch-error readback-error changed-draft)) 1 0)))
+                (when (buffer-live-p editor)
+                  (with-current-buffer editor
+                    (should (string-prefix-p "Draft\nλ" (buffer-string)))
+                    (should (buffer-modified-p))
+                    (unless (memq stage '(editor-mode editor-instance editor-board editor-task editor-claim))
+                      (should-not hermes-kanban-body--save))))
+                (when (eq stage 'receipt-retired)
+                  (should (seq-some (lambda (text) (string-match-p "check board before retrying" text)) messages))))
+            (when (buffer-live-p source) (kill-buffer source))
+            (when (buffer-live-p editor) (kill-buffer editor))))))))
 
 (ert-deftest hermes-kanban-api-uses-selected-dashboard-client ()
   "Kanban REST requests use the client for the selected instance."
@@ -573,10 +1307,10 @@
                   (counts . nil)))))
         (tabulated-list-print)
         (goto-char (point-min))
-        (hermes-kanban-switch-board))
-      (with-temp-buffer
-        (hermes--promise-resolve mutation '((current . "work"))))
-      (should (equal refreshed-instance remote)))))
+        (hermes-kanban-switch-board)
+        (with-temp-buffer
+          (hermes--promise-resolve mutation '((current . "work"))))
+        (should (equal refreshed-instance remote))))))
 
 (ert-deftest hermes-kanban-rename-board-rejects-blank-name ()
   "Whitespace-only board renames signal before PATCH or refresh."
@@ -879,8 +1613,8 @@
             (should (equal show-path "/tasks/t1"))
             (with-current-buffer "*Hermes Kanban Task*"
               (should (derived-mode-p 'hermes-kanban-task-mode))
-              (when (require 'markdown-mode nil t)
-                (should (derived-mode-p 'markdown-mode)))
+              (should (derived-mode-p 'special-mode))
+              (should outline-minor-mode)
               (should buffer-read-only)
               (should (equal hermes-kanban-task--task-id "t1"))
               (should (string-match-p "## Description" (buffer-string)))

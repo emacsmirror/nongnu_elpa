@@ -126,7 +126,9 @@ When a request asks for a larger range, the response is capped and reports
 
 (defcustom hermes-capabilities-buffer-read-max-chars 20000
   "Maximum number of characters the `buffer.read' method returns in one call.
-A char cap keeps the JSON-RPC response bounded even for very long lines."
+A char cap keeps the JSON-RPC response bounded even for very long lines.
+A nonnegative integer also bounds text extraction before copying; line
+counting can still scan the whole buffer.  Nil disables the character cap."
   :type 'integer)
 
 
@@ -740,12 +742,25 @@ When MAX is nil, no cap is applied."
     `((root . :null)
       (name . :null))))
 
-(defun hermes-capabilities--buffer-slice (buffer start-line end-line)
+(defun hermes-capabilities--buffer-substring (beg end max-chars)
+  "Return (TRUNCATED . STRING) for the buffer region BEG to END.
+Bound extraction to MAX-CHARS when it is a nonnegative integer.  Other
+values leave extraction uncapped for the envelope's character handling."
+  (let* ((start (min beg end))
+         (end (max beg end))
+         (limit (if (natnump max-chars) (min end (+ start max-chars)) end)))
+    (cons (< limit end) (buffer-substring-no-properties start limit))))
+
+(defun hermes-capabilities--buffer-slice
+    (buffer start-line end-line &optional max-chars)
   "Return a plist slicing BUFFER from START-LINE to END-LINE (1-based, inclusive).
 Shape: (:content STRING :start-line N :end-line N :total-lines N
-:truncated-by-lines BOOL).  START-LINE defaults to 1; END-LINE defaults to
-the line cap.  Honors `hermes-capabilities-buffer-read-max-lines'.  When
-START-LINE exceeds the buffer's line count, returns empty content."
+:truncated-by-lines BOOL :truncated-by-chars BOOL).  START-LINE defaults to
+1; END-LINE defaults to the line cap.  Honor
+`hermes-capabilities-buffer-read-max-lines' and bound extraction to MAX-CHARS
+when it is a nonnegative integer.  Line metadata still describes the full
+selected range, and counting lines can still scan the whole buffer.
+When START-LINE exceeds the buffer's line count, return empty content."
   (let* ((max hermes-capabilities-buffer-read-max-lines)
          (total (with-current-buffer buffer
                   (save-restriction
@@ -770,8 +785,10 @@ START-LINE exceeds the buffer's line count, returns empty content."
                     (let ((beg (point)))
                       (forward-line (- effective-end start))
                       (end-of-line)
-                      (buffer-substring-no-properties beg (point))))))))
-        (list :content content
+                      (hermes-capabilities--buffer-substring
+                       beg (point) max-chars)))))))
+        (list :content (cdr content)
+              :truncated-by-chars (car content)
               :start-line start
               :end-line effective-end
               :total-lines total
@@ -820,7 +837,8 @@ Safe when no project is active: returns null root and name."
   (let* ((chars (hermes-capabilities--truncate-by-chars
                  (plist-get slice :content)
                  hermes-capabilities-buffer-read-max-chars))
-         (truncated (or (car chars) (plist-get slice :truncated-by-lines))))
+         (truncated (or (car chars) (plist-get slice :truncated-by-chars)
+                        (plist-get slice :truncated-by-lines))))
     `((ok . t)
       (content . ,(cdr chars))
       (metadata
@@ -851,7 +869,8 @@ Returns the roadmap §2.3 envelope shape
          (start (hermes-transport--get-any params '(start start_line)))
          (end (hermes-transport--get-any params '(end end_line))))
     (hermes-capabilities--buffer-read-envelope
-     name (hermes-capabilities--buffer-slice buffer start end))))
+     name (hermes-capabilities--buffer-slice
+           buffer start end hermes-capabilities-buffer-read-max-chars))))
 
 (defun hermes-capabilities--handle-capabilities-list (_params)
   "Return the `capabilities.list' result alist for runtime discovery.

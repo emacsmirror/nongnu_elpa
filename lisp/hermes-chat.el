@@ -307,67 +307,58 @@ line."
       (append (list (cons 'set-dashboard-running running))
               (unless running '((drain)))))))
 
+(defun hermes-chat--turn-terminal-suffix (status)
+  "Return the ordered terminal settlement effects for STATUS."
+  (list (cons 'settle status) '(finish) '(clear-pending)
+        '(set-dashboard-running) '(drain)))
+
 (defun hermes-chat--turn-done-effects (event status)
   "Return the ordered effect list for a `done' EVENT with header STATUS.
 `refresh-header' precedes the lifecycle so the header settles before `drain'
 re-submits any queued turn."
-  (delq nil
-        (list '(clear-tools)
-              (cons 'refresh-header status)
-              (cons 'clear-prompts event)
-              (cons (if (plist-get event :response-previewed)
-                        'mark-previewed
-                      'mark-done)
-                    (plist-get event :content))
-              (and-let* ((warning (plist-get event :warning)))
-                (cons 'warning warning))
-              '(drop-thinking)
-              '(settle . done)
-              '(finish)
-              '(clear-pending)
-              '(set-dashboard-running)
-              '(drain))))
+  (append
+   (delq nil
+         (list '(clear-tools)
+               (cons 'refresh-header status)
+               (cons 'clear-prompts event)
+               (cons (if (plist-get event :response-previewed)
+                         'mark-previewed
+                       'mark-done)
+                     (plist-get event :content))
+               (and-let* ((warning (plist-get event :warning)))
+                 (cons 'warning warning))
+               '(drop-thinking)))
+   (hermes-chat--turn-terminal-suffix 'done)))
 
 (defun hermes-chat--turn-suppressed-effects (event status)
   "Return the ordered effect list for a `suppressed-terminal' EVENT.
 STATUS is the merged header state.  Mirrors `hermes-chat--turn-done-effects'
 minus content copying: the turn was resumed in flight without a local
 assistant entry, so the reply placeholder keeps its text."
-  (list '(clear-tools)
-        (cons 'refresh-header status)
-        (cons 'clear-prompts (plist-get event :original))
-        (cons 'mark-status (plist-get event :settle-status))
-        '(drop-thinking)
-        (cons 'settle (plist-get event :settle-status))
-        '(finish)
-        '(clear-pending)
-        '(set-dashboard-running)
-        '(drain)))
+  (append
+   (list '(clear-tools)
+         (cons 'refresh-header status)
+         (cons 'clear-prompts (plist-get event :original))
+         (cons 'mark-status (plist-get event :settle-status))
+         '(drop-thinking))
+   (hermes-chat--turn-terminal-suffix (plist-get event :settle-status))))
 
 (defun hermes-chat--turn-error-effects (event status)
   "Return the ordered effect list for an `error' EVENT with header STATUS."
   (let ((estatus (hermes-chat--error-status event)))
-    (if (hermes-chat--interrupted-status-p estatus)
-        (list '(clear-tools)
-              (cons 'refresh-header status)
-              (cons 'clear-prompts event)
-              (cons 'mark-status estatus)
-              (cons 'settle estatus)
-              '(finish)
-              '(clear-pending)
-              '(set-dashboard-running)
-              '(drain))
-      (let ((content (let ((value (or (plist-get event :content) "")))
-                       (if (string-empty-p value) "Transport error" value))))
-        (list '(clear-tools)
-              (cons 'refresh-header status)
-              (cons 'clear-prompts event)
-              (cons 'append-error (cons content estatus))
-              (cons 'settle estatus)
-              '(finish)
-              '(clear-pending)
-              '(set-dashboard-running)
-              '(drain))))))
+    (append
+     (if (hermes-chat--interrupted-status-p estatus)
+         (list '(clear-tools)
+               (cons 'refresh-header status)
+               (cons 'clear-prompts event)
+               (cons 'mark-status estatus))
+       (let ((content (let ((value (or (plist-get event :content) "")))
+                        (if (string-empty-p value) "Transport error" value))))
+         (list '(clear-tools)
+               (cons 'refresh-header status)
+               (cons 'clear-prompts event)
+               (cons 'append-error (cons content estatus)))))
+     (hermes-chat--turn-terminal-suffix estatus))))
 
 (defun hermes-chat--turn-reduce-status (state event now)
   "Return (NEW-STATE . EFFECTS) for a status EVENT on STATE at time NOW.
@@ -451,6 +442,10 @@ and `upsert-entry'.  Other types return (STATE)."
   "Rotate ASSISTANT-ID's presentation without starting another backend turn."
   (hermes-chat--reasoning-row assistant-id nil)
   (hermes-chat--mark-assistant assistant-id 'done nil t)
+  (hermes-chat--continue-assistant assistant-id))
+
+(defun hermes-chat--continue-assistant (assistant-id)
+  "Create a streaming successor for the already settled ASSISTANT-ID."
   (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
          (next-id (plist-get entry :id)))
     (hermes-chat--insert-entry entry)
@@ -463,11 +458,17 @@ and `upsert-entry'.  Other types return (STATE)."
 
 (defun hermes-chat--seal-interim-assistant (assistant-id content)
   "Seal ASSISTANT-ID with interim CONTENT and rotate the live stream entry."
-  (hermes-chat--mark-assistant
-   assistant-id 'done (hermes-chat--assistant-segment-content assistant-id content) t)
-  (hermes-chat--update-entry
-   assistant-id (lambda (entry) (hermes-chat--entry-with entry :interim-content content)))
-  (hermes-chat--rotate-assistant assistant-id)
+  (hermes-chat--clear-ansi-fragment
+   (hermes-chat--assistant-ansi-key assistant-id))
+  (let ((text (hermes-chat--sanitize-assistant-content
+               (hermes-chat--assistant-segment-content assistant-id content) t)))
+    (hermes-chat--update-entry
+     assistant-id
+     (lambda (entry)
+       (hermes-chat--entry-with entry :status 'done :content text
+                                :interim-content content))))
+  (hermes-chat--reasoning-row assistant-id nil)
+  (hermes-chat--continue-assistant assistant-id)
   (setq hermes-chat--dashboard-interim-assistant-id assistant-id))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
@@ -1712,6 +1713,146 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--reset-transcript)
     (hermes-chat--insert-local-status "Session cleared" 'done)))
 
+(defun hermes-chat-btw (&optional question)
+  "Ask QUESTION about the live conversation without changing main history.
+With no QUESTION, use the composer.  Failure retains the question for manual
+recovery; it never falls back to an independent tool-capable background task."
+  (interactive nil hermes-chat-mode)
+  (hermes-chat--ensure-submit-allowed)
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "A side question needs an attached conversation"))
+  (let ((content (or question (hermes-chat-input-string))))
+    (when (string-empty-p (string-trim content))
+      (user-error "No Hermes side question given"))
+    (when (or (null question)
+              (equal (hermes-chat--parse-slash (hermes-chat-input-string))
+                     (cons "btw" question)))
+      (hermes-chat--delete-input-tail))
+    (hermes-chat--background-submit content (current-buffer) t)))
+
+(defun hermes-chat--branch-receipt-p (result parent)
+  "Return non-nil for a complete child RESULT belonging to PARENT."
+  (let ((live (hermes-transport--get result 'session_id))
+        (stored (hermes-transport--get result 'stored_session_id))
+        (messages (hermes-transport--get result 'messages)))
+    (and (stringp live) (not (string-empty-p live))
+         (stringp stored) (not (string-empty-p stored))
+         (not (equal stored parent))
+         (equal (hermes-transport--get result 'parent) parent)
+         (listp messages) messages
+         (seq-every-p (lambda (message)
+                        (pcase (hermes-transport--get message 'role)
+                          ((or "user" "assistant")
+                           (stringp (hermes-transport--get message 'text)))
+                          ("tool" (stringp (hermes-transport--get message 'name)))
+                          (_ nil)))
+                      messages))))
+
+(defun hermes-chat--adopt-branch (client result current-p)
+  "Open CLIENT's child RESULT while CURRENT-P retains parent authority.
+Hydrate in a fresh buffer; failed initialization never rewrites the parent
+or deletes the child already persisted by the backend."
+  (let ((instance hermes-instance)
+        (profile hermes-chat--profile)
+        (mode hermes-chat--resolved-start-mode)
+        (parent (current-buffer))
+        (child (generate-new-buffer hermes-chat-buffer-name))
+        claim lifetime accepted)
+    (cl-labels ((child-current-p ()
+                  (and (buffer-live-p child)
+                       (with-current-buffer child
+                         (and (eq claim hermes-buffer--owner)
+                              (hermes-buffer--owned-p 'hermes-chat-mode)
+                              (eql lifetime hermes-chat--lifecycle-generation)))))
+		(check-current ()
+                  (unless (and (child-current-p) (buffer-live-p parent)
+                               (with-current-buffer parent (funcall current-p)))
+                    (error "Branch view was replaced during adoption"))))
+      (unwind-protect
+          (progn
+            (with-current-buffer child
+              (hermes-chat-mode)
+              (hermes-buffer--claim 'hermes-chat-mode)
+              (setq claim hermes-buffer--owner
+                    lifetime hermes-chat--lifecycle-generation)
+              (setq hermes-instance instance hermes-chat--profile profile
+                    hermes-chat--resolved-start-mode mode)
+              (unless (and (with-current-buffer parent (funcall current-p))
+                           (eq client (hermes-chat--dashboard-start
+                                       (hermes-chat--transport-callback
+					child nil t (hermes-chat--next-transport-generation)))))
+		(error "Branch connection was replaced"))
+              (check-current)
+              (hermes-chat--render-history (hermes-transport--get result 'messages))
+              (check-current)
+              (hermes-chat--dashboard-record-session client result)
+              (check-current)
+              (setq hermes-chat--title (hermes-transport--get result 'title))
+              (hermes-chat--insert-local-status
+               (format "Branch %s of %s" hermes-chat--session-id
+                       (hermes-transport--get result 'parent)) 'done)
+              (check-current)
+              (hermes-chat--refresh-buffer-name))
+            (check-current)
+            (setq accepted t)
+            child)
+        (unless accepted
+          (when (child-current-p) (kill-buffer child)))))))
+
+(defun hermes-chat-branch (&optional name)
+  "Branch the attached conversation, optionally assigning NAME to the child.
+Open the returned child with authoritative history; retain the parent and its
+draft.  An uncertain failure may have created a backend child: inspect sessions
+before retrying.  Never invoke a slash worker or automatically replay a branch."
+  (interactive nil hermes-chat-mode)
+  (hermes-chat--ensure-submit-allowed)
+  (when (hermes-chat--active-turn-p)
+    (user-error "Wait for the active turn before branching"))
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "No attached conversation to branch"))
+  (let* ((buffer (current-buffer))
+         (client hermes-chat--dashboard-client)
+         (connection (hermes-dashboard-transport-client-generation client))
+         (parent hermes-chat--session-id)
+         (input (hermes-chat-input-string))
+         (tick (buffer-chars-modified-tick))
+         (owner (hermes-chat--command-start))
+         (context (hermes-chat--command-context client owner)))
+    (cl-labels
+        ((current-p ()
+           (and (hermes-chat--command-context-current-p context)
+                (= connection (hermes-dashboard-transport-client-generation client))))
+         (failed (message)
+           (hermes-chat--in-buffer buffer
+             (hermes-chat--command-finish
+              context (lambda ()
+                        (hermes-chat--command-error
+                         (concat message "; child may exist; inspect sessions before retrying")))))))
+      (condition-case err
+          (hermes-dashboard-transport-session-branch
+           client :session-id (plist-get context :session-id)
+           :name (hermes-transport--non-empty-string name)
+           :reject #'failed
+           :resolve
+           (lambda (result)
+             (hermes-chat--in-buffer buffer
+               (if (not (current-p))
+                   (hermes-chat--command-stop owner)
+                 (condition-case err
+                     (progn
+                       (unless (and (hermes-chat--branch-receipt-p result parent)
+                                    (not (equal (hermes-transport--get result 'session_id)
+                                                (plist-get context :session-id))))
+                         (error "Malformed branch receipt"))
+                       (let ((child (hermes-chat--adopt-branch client result #'current-p)))
+                         (hermes-chat--command-stop owner)
+                         (when (and (= tick (buffer-chars-modified-tick))
+                                    (equal (car (hermes-chat--parse-slash input)) "branch"))
+                           (hermes-chat--delete-input-tail))
+                         (pop-to-buffer-same-window child)))
+                   ((error quit) (failed (error-message-string err))))))))
+        ((error quit) (failed (error-message-string err)))))))
+
 (defun hermes-chat--new-buffer (&optional profile title instance)
   "Create, display, and return a fresh chat buffer.
 PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
@@ -1735,6 +1876,7 @@ entry point funnels through."
       (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
+            hermes-chat--cwd-explicit-p (and project-root t)
             hermes-chat--resolved-start-mode start-mode
             hermes-chat--working-directory
             (and (eq start-mode 'spawn) directory)
@@ -2761,8 +2903,10 @@ session is titled, after that title -- so chats stay filterable with
          (cons '("queue" "q")
                (lambda (arg)
                  (hermes-chat--dashboard-dispatch-command "queue" arg)))
-         (cons '("background" "bg" "btw")
+         (cons '("background" "bg")
                (lambda (arg) (hermes-chat-background arg)))
+         (cons '("btw") (lambda (arg) (hermes-chat-btw arg)))
+         (cons '("branch") (lambda (arg) (hermes-chat-branch arg)))
          (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
          (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
          (cons '("interrupt" "int")

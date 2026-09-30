@@ -986,6 +986,282 @@
        (should (< (cl-position 'background roles)
                   (cl-position 'assistant roles)))))))
 
+(ert-deftest hermes-chat-streaming-inserts-only-new-characters ()
+  "Normalized deltas insert linear text, not cumulative prefixes."
+  (dolist (chunks '(256 512 1024))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let ((chunk (make-string 64 ?x)) (inserted 0) (deleted 0) spans tick)
+        (insert "draft λ")
+        (add-hook 'before-change-functions
+                  (lambda (&rest _) (setq tick (buffer-chars-modified-tick))) nil t)
+        (add-hook 'after-change-functions
+                  (lambda (beg end old)
+                    (unless (= tick (buffer-chars-modified-tick))
+                      (cl-incf inserted (- end beg))
+                      (cl-incf deleted old)
+                      (push (list beg end old) spans))) nil t)
+        (dotimes (_ chunks)
+          (hermes-test--emit-dashboard-prompt
+           client "message.delta" `((text . ,chunk))))
+        (should (equal (hermes-chat--entry-content-by-id
+                        hermes-chat--pending-assistant-id)
+                       (make-string (* chunks 64) ?x)))
+        (should (equal (hermes-chat-input-string) "draft λ"))
+        (message "Streaming spans: chunks=%d inserted=%d deleted=%d max=%d"
+                 chunks inserted deleted
+                 (apply #'max (mapcar (lambda (span) (- (cadr span) (car span))) spans)))
+        ;; Initial placeholder/separator work is constant, not one prefix/chunk.
+        (should (<= inserted (+ (* chunks 64) 32)))
+        (should (<= deleted 32))))))
+
+(defun hermes-test--streaming-hook-failure (failure &optional phase)
+  "Retain accepted deltas when a PHASE observer signals FAILURE.
+PHASE defaults to `after-change-functions'."
+  (setq phase (or phase 'after-change-functions))
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "prefix")))
+    (let* ((id hermes-chat--pending-assistant-id)
+           (node (gethash id hermes-chat--nodes))
+           (reader (split-window (selected-window) nil 'right))
+           (calls 0)
+           (hook (lambda (beg end &optional old)
+                   (when (and (= calls 0)
+                              (= beg (+ (ewoc-location node) 6))
+                              (if (eq phase 'before-change-functions)
+                                  (= beg end)
+                                (and (= old 0)
+                                     (equal (buffer-substring-no-properties beg end)
+                                            " SUFFIX"))))
+                     (cl-incf calls)
+                     ;; ERT 29's debugger intercepts with-demoted-errors even
+                     ;; inside our handler.  Ignore only this expected fault
+                     ;; for debugger entry; still signal it through the real
+                     ;; native hook and transport error/quit unwind paths.
+                     (let ((debug-ignored-errors
+                            (cons "\\`stream observer\\'" debug-ignored-errors)))
+                       (signal failure '("stream observer")))))))
+      (set-window-buffer reader (current-buffer))
+      (set-window-point reader (+ (ewoc-location node) 2))
+      (set-window-start reader (ewoc-location node) t)
+      (setq buffer-undo-list nil)
+      (insert "draft λ")
+      (undo-boundary)
+      (let ((offset (- (point) (hermes-chat--input-position))))
+        (add-hook phase hook nil t)
+        (unwind-protect
+            (condition-case nil
+                (hermes-test--emit-dashboard-prompt
+                 client "message.delta" '((text . " SUFFIX")))
+              (quit nil))
+          (remove-hook phase hook t))
+        (should (= calls 1))
+        (should (equal (hermes-chat--entry-content-by-id id) "prefix SUFFIX"))
+        (should (equal (buffer-substring-no-properties
+                        (ewoc-location node)
+                        (- (hermes-chat--input-position)
+                           (length (cdr (ewoc-get-hf hermes-chat--ewoc)))))
+                       (if (eq phase 'before-change-functions)
+                           "prefix\n" "prefix SUFFIX\n")))
+        (should (equal (hermes-chat-input-string) "draft λ"))
+        (should (= (window-point reader) (+ (ewoc-location node) 2)))
+        (should (= (window-start reader) (ewoc-location node)))
+        (should (= (- (point) (hermes-chat--input-position)) offset))
+        (hermes-test--emit-dashboard-prompt client "message.delta" '((text . " NEXT")))
+        (hermes-test--emit-dashboard-prompt client "message.complete" '((status . "done")))
+        (should (equal (hermes-chat--entry-content-by-id id) "prefix SUFFIX NEXT"))
+        (should (eq (plist-get (ewoc-data node) :status) 'done))
+        (should (equal (buffer-substring-no-properties
+                        (ewoc-location node)
+                        (- (hermes-chat--input-position)
+                           (length (cdr (ewoc-get-hf hermes-chat--ewoc)))))
+                       "prefix SUFFIX NEXT\n"))
+        (should (= (window-point reader) (+ (ewoc-location node) 2)))
+        (should (= (window-start reader) (ewoc-location node)))
+        (should (equal (hermes-chat-input-string) "draft λ"))
+        (should (= (- (point) (hermes-chat--input-position)) offset)))
+      (should-not (text-property-not-all
+                   (point-min) (hermes-chat--input-position) 'read-only t))
+      (should-not (get-text-property (hermes-chat--input-position) 'read-only))
+      (let ((transcript (buffer-substring-no-properties
+                         (point-min) (hermes-chat--input-position))))
+        (undo-only 1)
+        (should (equal (hermes-chat-input-string) ""))
+        (should (equal (buffer-substring-no-properties
+                        (point-min) (hermes-chat--input-position)) transcript))))))
+
+(ert-deftest hermes-chat-streaming-hook-error-retains-content ()
+  (hermes-test--streaming-hook-failure 'error))
+
+(ert-deftest hermes-chat-streaming-hook-quit-retains-content ()
+  (hermes-test--streaming-hook-failure 'quit))
+
+(ert-deftest hermes-chat-streaming-before-hook-error-retains-content ()
+  (hermes-test--streaming-hook-failure 'error 'before-change-functions))
+
+(ert-deftest hermes-chat-streaming-before-hook-quit-retains-content ()
+  (hermes-test--streaming-hook-failure 'quit 'before-change-functions))
+
+(defun hermes-test--streaming-native-text (id)
+  "Return the exact native EWOC extent for entry ID."
+  (let* ((node (gethash id hermes-chat--nodes))
+         (next (ewoc-next hermes-chat--ewoc node)))
+    (buffer-substring-no-properties
+     (ewoc-location node)
+     (if next (ewoc-location next)
+       (- (hermes-chat--input-position)
+          (length (cdr (ewoc-get-hf hermes-chat--ewoc))))))))
+
+(defun hermes-test--streaming-hook-successor (phase)
+  "Preserve a reentrant interim and successor across a PHASE observer."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "prefix")))
+    (let* ((old hermes-chat--pending-assistant-id)
+           (node (gethash old hermes-chat--nodes))
+           (reader (split-window (selected-window) nil 'right))
+           (calls 0)
+           (hook (lambda (beg _end &rest _)
+                   (when (and (= calls 0)
+                              (= beg (+ (ewoc-location (gethash old hermes-chat--nodes)) 6)))
+                     (cl-incf calls)
+                     (hermes-test--emit-dashboard-prompt
+                      client "message.interim" '((text . "sealed") (already_streamed . t)))
+                     (hermes-test--emit-dashboard-prompt
+                      client "message.delta" '((text . "successor")))))))
+      (set-window-buffer reader (current-buffer))
+      (set-window-point reader (+ (ewoc-location node) 2))
+      (set-window-start reader (ewoc-location node) t)
+      (setq buffer-undo-list nil)
+      (insert "draft λ")
+      (undo-boundary)
+      (let ((offset (- (point) (hermes-chat--input-position))))
+        (add-hook phase hook nil t)
+        (unwind-protect
+            (hermes-test--emit-dashboard-prompt client "message.delta" '((text . " SUFFIX")))
+          (remove-hook phase hook t))
+        (should (= calls 1))
+        (let ((successor hermes-chat--pending-assistant-id))
+          (should-not (equal old successor))
+          (should (equal (hermes-chat--entry-content-by-id old) "sealed"))
+          (should (equal (hermes-test--streaming-native-text old) "sealed\n"))
+          (should (= (window-point reader) (+ (ewoc-location node) 2)))
+          (should (= (window-start reader) (ewoc-location node)))
+          (should (eq (plist-get (ewoc-data (gethash old hermes-chat--nodes)) :status) 'done))
+          (should (equal (hermes-chat--entry-content-by-id successor) "successor"))
+          (should (equal (hermes-test--streaming-native-text successor) "successor\n"))
+          (hermes-test--emit-dashboard-prompt client "message.delta" '((text . " NEXT")))
+          (should (equal (hermes-chat--entry-content-by-id successor) "successor NEXT"))
+          (should (equal (hermes-test--streaming-native-text successor) "successor NEXT\n"))
+          (should (equal (hermes-test--streaming-native-text old) "sealed\n"))
+          (should (= (window-point reader) (+ (ewoc-location node) 2)))
+          (should (= (window-start reader) (ewoc-location node)))
+          (hermes-test--emit-dashboard-prompt client "message.complete" '((status . "done")))
+          (should (equal (hermes-chat--entry-content-by-id old) "sealed"))
+          (should (equal (hermes-test--streaming-native-text old) "sealed\n"))
+          (should (= (window-point reader) (+ (ewoc-location node) 2)))
+          (should (= (window-start reader) (ewoc-location node)))
+          (should (equal (hermes-chat--entry-content-by-id successor) "successor NEXT"))
+          (should (equal (hermes-test--streaming-native-text successor) "successor NEXT\n"))
+          (should (eq (plist-get (ewoc-data (gethash successor hermes-chat--nodes)) :status) 'done)))
+        (should (equal (hermes-chat-input-string) "draft λ"))
+        (should (= (- (point) (hermes-chat--input-position)) offset)))
+      (should-not (text-property-not-all
+                   (point-min) (hermes-chat--input-position) 'read-only t))
+      (should-not (get-text-property (hermes-chat--input-position) 'read-only))
+      (let ((transcript (buffer-substring-no-properties
+                         (point-min) (hermes-chat--input-position))))
+        (undo-only 1)
+        (should (equal (hermes-chat-input-string) ""))
+        (should (equal (buffer-substring-no-properties
+                        (point-min) (hermes-chat--input-position)) transcript))))))
+
+(ert-deftest hermes-chat-streaming-hook-successor-keeps-content ()
+  (hermes-test--streaming-hook-successor 'after-change-functions))
+
+(ert-deftest hermes-chat-streaming-before-hook-successor-keeps-content ()
+  (hermes-test--streaming-hook-successor 'before-change-functions))
+
+(ert-deftest hermes-chat-interim-fontifies-once ()
+  "A normalized interim seals once and creates exactly one empty successor."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "**candidate**")))
+    (insert "draft")
+    (let ((old hermes-chat--pending-assistant-id)
+          (printer (symbol-function 'hermes-chat--insert-markdown)) (passes 0))
+      (cl-letf (((symbol-function 'hermes-chat--insert-markdown)
+                 (lambda (&rest args) (cl-incf passes) (apply printer args))))
+        (hermes-test--emit-dashboard-prompt
+         client "message.interim" '((text . "**candidate**") (already_streamed . t))))
+      (should (= passes 1))
+      (should (equal hermes-chat--dashboard-interim-assistant-id old))
+      (should-not (equal hermes-chat--pending-assistant-id old))
+      (should (equal hermes-chat--dashboard-stream-assistant-id
+                     hermes-chat--pending-assistant-id))
+      (should (equal (plist-get (ewoc-data (gethash old hermes-chat--nodes))
+                               :interim-content) "**candidate**"))
+      (should (equal (mapcar (lambda (entry) (plist-get entry :content))
+                             (seq-filter (lambda (entry) (eq (plist-get entry :role) 'assistant))
+                                         (hermes-chat--entries)))
+                     '("**candidate**" "")))
+      (should (equal (hermes-chat-input-string) "draft")))))
+
+(ert-deftest hermes-chat-streaming-prefix-change-uses-full-printer ()
+  "Split ANSI stays hidden; completed metadata can retract a displayed prefix."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (insert "draft")
+    (let ((inserter (symbol-function 'hermes-chat--insert-entry-content)) (prints 0))
+      (cl-letf (((symbol-function 'hermes-chat--insert-entry-content)
+                 (lambda (&rest args) (cl-incf prints) (apply inserter args))))
+        (dolist (text '("α\e[38;2" ";1;2;3mβ\e[0m\n" "session_" "id: hidden"))
+          (hermes-test--emit-dashboard-prompt client "message.delta" `((text . ,text))))
+        (should (= prints 1))
+        (should (equal (hermes-chat--entry-content-by-id hermes-chat--pending-assistant-id)
+                       "αβ\nsession_id: hidden"))
+        (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "\nγ")))
+        (should (= prints 2))
+        (should (equal (hermes-chat--entry-content-by-id hermes-chat--pending-assistant-id)
+                       "αβ\nγ"))
+        (should-not (string-match-p "session_id\\|hidden\\|38;2" (buffer-string)))
+        (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "δ")))
+        (should (= prints 2)))
+      (should (equal (hermes-chat-input-string) "draft"))
+      (should-not (text-property-not-all (point-min) (hermes-chat--input-position)
+                                         'read-only t))
+      (should-not (get-text-property (hermes-chat--input-position) 'read-only)))))
+
+(ert-deftest hermes-chat-interim-printer-failure-keeps-owner ()
+  "Failed settled printing cannot publish a successor or transfer ownership."
+  (dolist (failure '(error quit))
+    (hermes-test-with-chat-buffer
+      (hermes-chat--insert-entry '(:id "old" :role assistant :status streaming :content "partial"))
+      (setq hermes-chat--pending-assistant-id "old"
+            hermes-chat--dashboard-stream-assistant-id "old")
+      (insert "draft")
+      (let ((passes 0) caught)
+        (cl-letf (((symbol-function 'hermes-chat--insert-markdown)
+                   (lambda (&rest _) (cl-incf passes) (signal failure '("printer")))))
+          (condition-case err
+              (hermes-chat--seal-interim-assistant "old" "settled")
+            ((error quit) (setq caught (car err)))))
+        (should (eq caught failure))
+        (should (= passes 1))
+        (should (equal hermes-chat--pending-assistant-id "old"))
+        (should (equal hermes-chat--dashboard-stream-assistant-id "old"))
+        (should-not hermes-chat--dashboard-interim-assistant-id)
+        (should (= (length (hermes-chat--entries)) 1))
+        (should (equal (hermes-chat-input-string) "draft"))))))
+
+(ert-deftest hermes-chat-ordinary-rotation-still-settles-once ()
+  "Redirect rotation retains its own settlement before creating a successor."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry '(:id "old" :role assistant :status streaming :content "**partial**"))
+    (let ((printer (symbol-function 'hermes-chat--insert-markdown)) (passes 0))
+      (cl-letf (((symbol-function 'hermes-chat--insert-markdown)
+                 (lambda (&rest args) (cl-incf passes) (apply printer args))))
+        (hermes-chat--rotate-assistant "old"))
+      (should (= passes 1))
+      (should (eq (plist-get (ewoc-data (gethash "old" hermes-chat--nodes)) :status) 'done))
+      (should (= (length (hermes-chat--entries)) 2)))))
+
 (ert-deftest hermes-chat-streaming-content-skips-markdown-and-diff ()
   "A streaming entry stays raw; only a settled entry renders diffs/markdown."
   (hermes-test-with-chat-buffer

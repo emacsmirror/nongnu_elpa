@@ -2560,5 +2560,285 @@ stays available."
           (should (eq (gethash "successor" old-table) different))
           (should (eq (gethash "unclaimed" old-table) unclaimed)))))))
 
+(ert-deftest hermes-chat-server-request-single-and-refusal ()
+  "Released requests route to native prompts or an explicit same-id refusal."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let* (frames
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames))))
+      (dolist (id '(17 "17"))
+        (hermes-dashboard-transport--handle-frame
+         client (json-encode `((jsonrpc . "2.0") (id . ,id) (method . "clarify")
+                               (params . ((session_id . "sid-prompt")
+                                          (question . "Which?") (choices . ["one"]))))))
+        (should (= (hermes-chat--pending-prompt-count) 1))
+        (let ((completing-read-function
+               (lambda (_prompt _choices _predicate require-match &rest _)
+                 (should-not require-match)
+                 "custom answer")))
+          (hermes-chat-respond-to-prompt))
+        (should (equal (hermes-transport--get (car frames) 'id) id))
+        (should (equal (hermes-transport--get
+                        (hermes-transport--get (car frames) 'result) 'answer)
+                       "custom answer"))
+        (should-not (hermes-chat--pending-prompt-p)))
+      (hermes-dashboard-transport--handle-frame
+       client (json-encode '((id . "multi") (method . "clarify")
+                              (params . ((session_id . "sid-prompt")
+                                         (question . "Which?") (choices . ["one"])
+                                         (multi_select . t))))))
+      (cl-letf (((symbol-function 'completing-read-multiple)
+                 (lambda (_prompt _choices &optional _predicate require-match &rest _)
+                   (should-not require-match)
+                   '("one" "custom, literal"))))
+        (hermes-chat-respond-to-prompt))
+      (should (equal (json-parse-string
+                      (hermes-transport--get (hermes-transport--get (car frames) 'result) 'answer)
+                      :array-type 'list)
+                     '("one" "custom, literal")))
+      (dolist (method '("terminal.read" "vault.code" "unknown.method"))
+        (hermes-dashboard-transport--handle-frame
+         client (json-encode `((id . ,method) (method . ,method)
+                               (params . ((session_id . "sid-prompt"))))))
+        (should (equal (hermes-transport--get (car frames) 'id) method))
+        (should (eql (hermes-transport--get
+                      (hermes-transport--get (car frames) 'error) 'code) -32601))
+        (should-not (hermes-chat--pending-prompt-p))))))
+
+(defun hermes-test--server-request (client id method params)
+  "Deliver server request ID/METHOD with PARAMS on CLIENT."
+  (hermes-dashboard-transport--handle-frame
+   client (json-encode `((jsonrpc . "2.0") (id . ,id) (method . ,method)
+                         (params . ,(cons '(session_id . "sid-prompt") params))))))
+
+(ert-deftest hermes-chat-server-request-batch-replay-lock-and-cancel ()
+  "Replay accepted locks; recover an expired unaccepted answer only once."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let* ((hermes-dashboard-transport-request-timeout nil) frames
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames)))
+           (params '((questions . [((qid . "a") (question . "First"))
+                                   ((qid . "b") (question . "Second")
+                                    (choices . ["suggestion"]) (multi_select . t))])
+                     (answers . ((a . "already accepted"))))))
+      ;; The public response path replays only after its owning session callback.
+      (let ((id (hermes-dashboard-transport-request client "session.resume" nil #'ignore)))
+        (hermes-dashboard-transport--handle-frame
+         client (json-encode
+                 `((id . ,id) (result . ((session_id . "sid-prompt")
+                                        (open_requests . [((id . "batch") (method . "clarify")
+                                                           (params . ,(cons '(session_id . "sid-prompt") params)))])))))))
+      (should (= (hermes-chat--pending-prompt-count) 1))
+      (let ((key (car (hermes-chat--pending-prompt-keys))))
+        (should (= (length (hermes-chat--unanswered-batch-questions
+                           (hermes-chat--pending-prompt key))) 1))
+        (insert "custom, literal")
+        (hermes-chat-send)
+        (should (equal (hermes-transport--get (car frames) 'method) "clarify.lock"))
+        (let* ((lock (car frames))
+               (args (hermes-transport--get lock 'params)))
+          (should (equal (hermes-transport--get args 'request_id) "batch"))
+          (should (equal (hermes-transport--get args 'question_id) "b"))
+          (should (equal (hermes-transport--get args 'answer) '("custom, literal")))
+          (insert "new draft")
+          (hermes-test--emit-dashboard-prompt
+           client "request.cancel" '((id . "batch") (method . "clarify") (reason . "timeout")))
+          (hermes-test--emit-dashboard-prompt
+           client "request.cancel" '((id . "batch") (method . "clarify") (reason . "timeout")))
+          (hermes-dashboard-transport--handle-frame
+           client `((id . ,(hermes-transport--get lock 'id))
+                    (result . ((status . "expired")))))
+          (should (equal (hermes-chat-input-string) "new draft\ncustom, literal"))
+          (should-not (hermes-chat--pending-prompt-p))
+          (should-not hermes-chat--retained-clarify-owners))))))
+
+(ert-deftest hermes-chat-server-request-approval-secret-and-retirement ()
+  "Use released result fields without retaining secret answers or stale authority."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let* (frames
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames))))
+      (dolist (method '("approval" "sudo" "secret"))
+        (hermes-test--server-request
+         client method method '((request_id . "inner-approval-id")
+                                 (command . "harmless command") (prompt . "Value")
+                                 (env_var . "TEST_VALUE")))
+        (let ((answer (if (equal method "approval") "deny" "fixture-private-value")))
+          (hermes-chat-respond-to-prompt nil answer)
+          (should (equal (hermes-transport--get (car frames) 'id) method))
+          (should (equal (hermes-transport--get (hermes-transport--get (car frames) 'result)
+                                              (if (equal method "approval") 'choice 'value)) answer)))
+        (should-not (string-match-p "fixture-private-value" (buffer-string)))
+        (should-not (member "fixture-private-value" hermes-chat--input-history))
+        (should-not hermes-chat--retained-clarify-owners))
+      (hermes-test--server-request client "retire" "clarify" '((question . "Q")))
+      (let* ((prompt (hermes-chat--first-pending-prompt))
+             (request (plist-get prompt :server-request))
+             (count (length frames)))
+        (setf (hermes-dashboard-transport-client-websocket client) 'successor)
+        (should-error (hermes-chat-respond-to-prompt nil "stale") :type 'user-error)
+        (hermes-dashboard-transport-answer-request request '((answer . "stale")))
+        (should (= (length frames) count))))))
+
+(ert-deftest hermes-chat-server-response-uncertainty-retires-and-recovers ()
+  "An uncertain response is never resent; only nonsecret input is recovered."
+  (dolist (method '("clarify" "secret"))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--server-request client "uncertain" method '((question . "Q") (prompt . "Value")))
+      (let* ((writes 0)
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (&rest _) (cl-incf writes) (error "fixture-private-value"))))
+        (if (equal method "clarify")
+            (progn (insert "recover this") (hermes-chat-send)
+                   (should (equal (hermes-chat-input-string) "recover this")))
+          (hermes-chat-respond-to-prompt nil "fixture-private-value"))
+        (should (= writes 1))
+        (should-not (hermes-chat--pending-prompt-p))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should-not (string-match-p "fixture-private-value" (buffer-string)))
+        (should-not (member "fixture-private-value" hermes-chat--input-history))))))
+
+(ert-deftest hermes-chat-server-request-batch-final-lock-settles-once ()
+  "A final installed-shape lock receipt completes the native prompt once."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let* ((hermes-dashboard-transport-request-timeout nil) frames
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames))))
+      (hermes-test--server-request
+       client "last-lock" "clarify"
+       '((questions . [((qid . "a") (question . "First"))
+                        ((qid . "b") (question . "Second"))])
+         (answers . ((a . "accepted")))))
+      (insert "custom final")
+      (hermes-chat-send)
+      (let ((receipt `((id . ,(hermes-transport--get (car frames) 'id))
+                       (result . ((status . "ok") (remaining . []))))))
+        (insert "newer draft")
+        (dotimes (_ 2)
+          (hermes-dashboard-transport--handle-frame client (json-encode receipt)))
+        (should (= (length frames) 1))
+        (should-not (hermes-chat--pending-prompt-p))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should (equal (hermes-chat-input-string) "newer draft"))
+        (should-not (hermes-dashboard-transport-server-request-current-p
+                     (gethash "last-lock" (hermes-dashboard-transport-client-server-requests client))))))))
+
+
+(defun hermes-test--server-request-snapshot (client method frame)
+  "Replay FRAME through CLIENT's ordinary METHOD result path."
+  (let ((id (hermes-dashboard-transport-request client method nil #'ignore)))
+    (hermes-dashboard-transport--handle-frame
+     client (json-encode `((id . ,id) (result . ((open_requests . [,frame]))))))))
+
+(ert-deftest hermes-chat-server-request-reconciles-current-batch ()
+  "Every snapshot route restores locks without replacing request ownership."
+  (dolist (method '("session.resume" "session.activate" "session.events.since"))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (let* ((hermes-dashboard-transport-request-timeout nil) frames
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket text)
+                (push (hermes-dashboard-transport--decode-frame text) frames)))
+             (params '((questions . [((qid . "a") (question . "First"))
+                                     ((qid . "b") (question . "Second"))])))
+             (snapshot `((id . "shared") (method . "clarify")
+                         (params . ((session_id . "sid-prompt") ,@params
+                                    (answers . ((a . "other surface"))))))))
+        (hermes-test--server-request client "shared" "clarify" params)
+        (let ((handle (plist-get (hermes-chat--first-pending-prompt) :server-request)))
+          (dotimes (_ 2)
+            (hermes-test--server-request-snapshot client method snapshot))
+          (should (= (hermes-chat--pending-prompt-count) 1))
+          (should (eq handle (plist-get (hermes-chat--first-pending-prompt) :server-request)))
+          (insert "second answer")
+          (hermes-chat-send)
+          (let ((lock (car frames)))
+            (should (equal (hermes-transport--get lock 'method) "clarify.lock"))
+            (should (equal (hermes-transport--get (hermes-transport--get lock 'params)
+                                                 'question_id) "b"))
+            (hermes-dashboard-transport--handle-frame
+             client (json-encode `((id . ,(hermes-transport--get lock 'id))
+                                   (result . ((status . "ok") (remaining . []))))))
+            (hermes-test--server-request-snapshot client method snapshot)
+            (should-not (hermes-chat--pending-prompt-p))))))))
+
+(ert-deftest hermes-chat-server-request-replay-preserves-inflight-answer ()
+  "Reconcile foreign locks while retaining the exact local response claim."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let* ((hermes-dashboard-transport-request-timeout nil) frames
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames)))
+           (params '((questions . [((qid . "a") (question . "First"))
+                                   ((qid . "b") (question . "Second"))
+                                   ((qid . "c") (question . "Third"))])))
+           (snapshot `((id . "inflight") (method . "clarify")
+                       (params . ((session_id . "sid-prompt") ,@params
+                                  (answers . ((b . "other surface"))))))))
+      (hermes-test--server-request client "inflight" "clarify" params)
+      (insert "local first")
+      (hermes-chat-send)
+      (let* ((lock (car frames))
+             (owner (car hermes-chat--retained-clarify-owners))
+             (token (plist-get (hermes-chat--first-pending-prompt) :response-token)))
+        (insert "newer draft")
+        (hermes-test--server-request-snapshot client "session.resume" snapshot)
+        (should (eq owner (car hermes-chat--retained-clarify-owners)))
+        (should (eq token (plist-get (hermes-chat--first-pending-prompt) :response-token)))
+        (dotimes (_ 2)
+          (hermes-dashboard-transport--handle-frame
+           client `((id . ,(hermes-transport--get lock 'id))
+                    (result . ((status . "ok") (remaining . ["c"]))))))
+        ;; A repeated earlier snapshot must not unlock our acknowledged answer.
+        (hermes-test--server-request-snapshot client "session.activate" snapshot)
+        (should (equal (hermes-chat--batch-clarify-answer-alist
+                        (hermes-chat--first-pending-prompt))
+                       '(("a" . "local first") ("b" . "other surface"))))
+        (should-not hermes-chat--retained-clarify-owners)
+        (should (equal (hermes-chat-input-string) "newer draft"))
+        (hermes-chat-send)
+        (should (equal (hermes-transport--get (hermes-transport--get (car frames) 'params)
+                                             'question_id) "c"))
+        (hermes-test--emit-dashboard-prompt
+         client "request.cancel" '((id . "inflight") (method . "clarify") (reason . "timeout")))
+        (hermes-test--server-request-snapshot client "session.events.since" snapshot)
+        (should-not (hermes-chat--pending-prompt-p))
+        (should (equal (hermes-chat-input-string) "newer draft"))))))
+
+(ert-deftest hermes-chat-server-request-replay-skips-accepted-queued-answer ()
+  "A snapshot lock supersedes a not-yet-sent questionnaire answer."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let* ((hermes-dashboard-transport-request-timeout nil) frames
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames)))
+           (params '((questions . [((qid . "a") (question . "First"))
+                                   ((qid . "b") (question . "Second"))
+                                   ((qid . "c") (question . "Third"))])))
+           (snapshot `((id . "queued") (method . "clarify")
+                       (params . ((session_id . "sid-prompt") ,@params
+                                  (answers . ((b . "other surface"))))))))
+      (hermes-test--server-request client "queued" "clarify" params)
+      (hermes-chat-respond-to-prompt
+       nil '(("a" . "first") ("b" . "must not overwrite") ("c" . "third")))
+      (let ((lock (car frames)))
+        (hermes-test--server-request-snapshot client "session.resume" snapshot)
+        (dotimes (_ 2)
+          (hermes-dashboard-transport--handle-frame
+           client (json-encode `((id . ,(hermes-transport--get lock 'id))
+                                 (result . ((status . "ok") (remaining . ["c"])))))))
+        (should (= (length frames) 3)) ; a, snapshot, c (never b or duplicate c).
+        (let ((last (car frames)))
+          (should (equal (hermes-transport--get (hermes-transport--get last 'params)
+                                               'question_id) "c"))
+          (hermes-dashboard-transport--handle-frame
+           client (json-encode `((id . ,(hermes-transport--get last 'id))
+                                 (result . ((status . "ok") (remaining . [])))))))
+        (should-not (hermes-chat--pending-prompt-p))
+        (should-not hermes-chat--retained-clarify-owners)))))
+
 (provide 'hermes-chat-prompts-tests)
 ;;; hermes-chat-prompts-tests.el ends here

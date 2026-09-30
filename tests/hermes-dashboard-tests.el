@@ -586,7 +586,7 @@
       (hermes-dashboard-transport-setup-status 'client)
       (hermes-dashboard-transport-rollback-restore
        'client "checkpoint" :session-id "sid" :file-path "notes.org")
-      (hermes-dashboard-transport-subagent-interrupt 'client "child")
+      (hermes-dashboard-transport-subagent-interrupt 'client "child" :session-id "sid")
       (hermes-dashboard-transport-cron-manage
        'client :action "pause" :name "nightly")
       (hermes-dashboard-transport-prompt-background
@@ -597,7 +597,7 @@
             '(("setup.status")
               ("rollback.restore" (hash . "checkpoint")
                (session_id . "sid") (file_path . "notes.org"))
-              ("subagent.interrupt" (subagent_id . "child"))
+              ("subagent.interrupt" (session_id . "sid") (subagent_id . "child"))
               ("cron.manage" (action . "pause") (name . "nightly"))
               ("prompt.background" (session_id . "sid") (text . "audit"))
               ("session.status" (session_id . "sid")))))))
@@ -1237,11 +1237,15 @@
           (client (make-hermes-dashboard-transport-client
                    :refcount 1 :port 9119 :websocket-url "ws://example.invalid/ws?token=stored"
                    :credential-reusable-p t :ready-promise (hermes--promise-make)))
-          sockets timers cancelled closed sent auth-calls
+          sockets timers cancelled closed sent negotiated auth-calls
           (hermes-dashboard-transport-websocket-open-function
            #'hermes-dashboard-transport--default-websocket-open)
           (hermes-dashboard-transport-websocket-send-function
-           (lambda (ws text) (push (list ws text) sent)))
+           (lambda (ws text)
+             (let ((frame (hermes-dashboard-transport--decode-frame text)))
+               (if (equal (hermes-transport--get frame 'method) "client.capabilities")
+                   (push (list ws frame) negotiated)
+                 (push (list ws text) sent)))))
           (hermes-dashboard-transport-schedule-function
            (lambda (delay fn &rest args)
              (let ((timer (list delay fn args))) (push timer timers) timer))))
@@ -1260,7 +1264,15 @@
                 (lambda (&rest args)
                   (push args auth-calls)
                   (ert-fail "Reconnect must not acquire auth in S5a"))))
-       (prog1 (progn ,@body) (should-not auth-calls)))))
+       (prog1 (progn ,@body)
+         (should-not auth-calls)
+         ;; Negotiation is a real wire request, separate from application sends.
+         ;; Validate every advertisement and reject duplicates on one socket.
+         (should (= (length negotiated)
+                    (length (cl-remove-duplicates (mapcar #'car negotiated) :test #'eq))))
+         (dolist (entry negotiated)
+           (should (equal (hermes-transport--get (cadr entry) 'params)
+                          '((server_requests . t)))))))))
 
 (defun hermes-dashboard-test--ready (socket)
   "Deliver gateway.ready through SOCKET's real on-message callback."
@@ -1610,6 +1622,8 @@
         (hermes-dashboard-test--ready b)
         (hermes-dashboard-test--ready b)
         (should (= readied 1))
+        (should (= (length negotiated) 1))
+        (should (eq (caar negotiated) b))
         (should (= (length sent) 1))
         (should (eq (caar sent) b))
         (hermes-dashboard-transport--handle-frame
@@ -2267,6 +2281,8 @@
         (hermes-dashboard-test--ready b)
         (hermes-dashboard-test--ready b)
         (should (= readied 1))
+        (should (= (length negotiated) 1))
+        (should (eq (caar negotiated) b))
         (should (= (length sent) 1))
         (should (eq (caar sent) b))
         (hermes-dashboard-transport--handle-frame
@@ -3219,7 +3235,11 @@
      c '((jsonrpc . "2.0") (method . "event")
          (params . ((type . "gateway.ready")))))
     (should (hermes-dashboard-transport-client-ready-p c))
-    (should (= (length sent-frames) 1))))
+    (should (equal (mapcar (lambda (text)
+                             (hermes-transport--get
+                              (hermes-dashboard-transport--decode-frame text) 'method))
+                           (reverse sent-frames))
+                   '("client.capabilities" "ping")))))
 
 ;;; Group: heartbeat keepalive
 
@@ -3229,6 +3249,7 @@
     (hermes-dashboard-transport-reconnect client)
     (let* ((hermes-dashboard-transport-heartbeat-interval 7)
            (hermes-dashboard-transport-reconnect-stable-period 17)
+           (hermes-dashboard-transport-request-timeout 11)
            (schedule hermes-dashboard-transport-schedule-function)
            trace
            (hermes-dashboard-transport-schedule-function
@@ -3247,7 +3268,8 @@
        (lambda (_) (push 'resolved trace)))
       (hermes-dashboard-test--ready (car sockets))
       (should (equal (nreverse trace)
-                     '(7 ("reconnected" t 1) resolved ("gateway.ready" t 1) 17))))))
+                     '(7 ("reconnected" t 1) 11 resolved ("gateway.ready" t 1) 17)))
+      (should (= (length negotiated) 1)))))
 
 (ert-deftest hermes-dashboard-transport-heartbeat-arms-on-ready-and-pings ()
   "With an interval set, `gateway.ready' arms a heartbeat that sends pings."

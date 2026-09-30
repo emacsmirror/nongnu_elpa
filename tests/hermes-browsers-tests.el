@@ -79,7 +79,8 @@
          (promise (hermes--promise-make)) calls)
     (with-temp-buffer
       (hermes-work-log-mode)
-      (setq hermes-work-log--binding (list :owner owner :id "one" :path "/remote/log"))
+      (setq hermes-work-log--binding
+            (list :owner owner :id "one" :path "/remote/log" :retired nil))
       (hermes-work-log--render "old snapshot\n")
       (goto-char 5)
       (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
@@ -87,7 +88,8 @@
         (hermes-work-log-refresh)
         (should-error (hermes-work-log-refresh) :type 'user-error)
         (should (= (length calls) 1))
-        (should (equal (car calls)
+        (should (functionp (plist-get (nthcdr 2 (car calls)) :current-p)))
+        (should (equal (butlast (car calls) 2)
                        (list "GET" "/api/files/read" :client client
                              :query '((path . "/remote/log")) :timeout 30)))
         (hermes--promise-resolve promise (hermes-test--log-response "new snapshot\nmore\n"))
@@ -113,7 +115,7 @@
       (unwind-protect
           (with-current-buffer buffer
             (hermes-work-log-mode)
-            (setq hermes-work-log--binding (list :owner owner :path "/log"))
+            (setq hermes-work-log--binding (list :owner owner :path "/log" :retired nil))
             (hermes-work-log--render "retained")
             (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
                        (lambda (&rest _) promise)))
@@ -163,6 +165,7 @@
                   (if failure (hermes--promise-reject promise 'unavailable)
                     (hermes--promise-resolve promise (hermes-test--log-response "wrong")))
                   (should (equal (buffer-string) "local log draft λ"))
+                  (should-not hermes-work-log--request)
                   (should (equal header-line-format "Local header"))
                   (should (equal buffer-file-name (unless detach filename)))
                   (should (buffer-modified-p))
@@ -212,7 +215,7 @@
                              (:event (:event "tool.complete" :name "delegate_task"
                                       :result ((subagent_ids "one")
                                                (live_transcripts "/remote/log"))))))
-          (let ((owner (list :buffer chat :current-p (lambda (_) t)
+          (let ((owner (list :buffer chat :current-p (lambda (_) t) :settle nil
                              :delegates '(:coverage current :rows
                                           ((:key (delegate . "one") :id "one" :kind delegate))))))
             (should (equal (hermes-work--log-path owner "one") "/remote/log"))
@@ -533,6 +536,62 @@
       (mapc (lambda (buffer)
               (when (buffer-live-p buffer) (kill-buffer buffer)))
             buffers))))
+
+(ert-deftest hermes-browser-passive-client-lookup-preserves-caller-lifecycles ()
+  "Both passive callers agree without borrowing each other's cleanup policy."
+  (let* ((local '("local" . "http://local.invalid"))
+         (remote '("remote" . "http://remote.invalid"))
+         (hermes-instances (list remote))
+         (hermes-dashboard-transport--profile-cache nil)
+         (pending (hermes--promise-make))
+         (client (hermes-test--dashboard-client))
+         (other (hermes-test--dashboard-client))
+         (acquires 0) (releases 0) (prompts 0) fetched)
+    (hermes-test-with-chat-buffer
+     (setq hermes-instance remote hermes-chat--dashboard-client client)
+     (hermes-test-with-chat-buffer
+      (setq hermes-instance local hermes-chat--dashboard-client other
+            hermes-instances (list local remote))
+      (with-temp-buffer
+        ;; An unrelated buffer's client slot never grants chat ownership.
+        (setq-local hermes-instance remote)
+        (setq-local hermes-chat--dashboard-client other)
+        (cl-letf (((symbol-function 'completing-read)
+                   (lambda (&rest _) (cl-incf prompts) ""))
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _) (cl-incf acquires) other))
+                  ((symbol-function 'hermes-dashboard-transport-release)
+                   (lambda (_client) (cl-incf releases)))
+                  ((symbol-function 'hermes-dashboard-transport-profile-list-async)
+                   (lambda (owner) (setq fetched owner) pending)))
+          (dolist (lookup '(hermes-browser--existing-client
+                            hermes-chat--existing-dashboard-client))
+            (should (eq (funcall lookup) client)))
+          (hermes-browser--with-client
+           (lambda (owner done)
+             (should (eq owner client))
+             (funcall done) (funcall done)))
+          (should-not (hermes-chat--profile-list-payload))
+          (should (eq fetched client))
+          (should (eq (hermes--promise-state pending) 'pending))
+          (should (= acquires 0))
+          (should (= releases 0))
+          (setf (hermes-dashboard-transport-client-websocket client) nil)
+          (dolist (instance (list remote nil))
+            (setq hermes-instance instance)
+            (dolist (lookup '(hermes-browser--existing-client
+                              hermes-chat--existing-dashboard-client))
+              (should-not (funcall lookup))))
+          (should (= acquires 0))
+          (should (= prompts 0))
+          ;; Missing local reuse still belongs to the browser's once-only lease.
+          (setq hermes-instance remote)
+          (hermes-browser--with-client
+           (lambda (owner done)
+             (should (eq owner other))
+             (funcall done) (funcall done)))
+          (should (= acquires 1))
+          (should (= releases 1))))))))
 
 (ert-deftest hermes-browser-existing-client-does-not-prompt-without-context ()
   "Passive client lookup returns nil when several instances are ambiguous."
@@ -858,33 +917,6 @@
               (should (equal (caar tabulated-list-entries) "s0"))))
         (when (get-buffer "*Hermes Subagents*")
           (kill-buffer "*Hermes Subagents*"))))))
-
-(ert-deftest hermes-subagents-interrupt-reports-finished-result ()
-  "An interrupt result with `found' false does not report success."
-  (let ((promise (hermes--promise-make)) messages refreshed)
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--existing-client)
-               (lambda () (make-hermes-dashboard-transport-client :ready-p t)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) promise))
-              ((symbol-function 'hermes-subagents--revert)
-               (lambda (&rest _) (setq refreshed (current-buffer))))
-              ((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (push (apply #'format fmt args) messages))))
-      (with-temp-buffer
-        (hermes-subagents-mode)
-        (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (hermes-subagents-interrupt)
-        (hermes--promise-resolve promise '((found . :false)))
-        (should (eq refreshed (current-buffer))))
-      (should-not (cl-some (lambda (text) (string-match-p "interrupted" text))
-                           messages))
-      (should (cl-some (lambda (text)
-                         (string-match-p "already finished\\|not found" text))
-                       messages)))))
 
 (ert-deftest hermes-browser-revert-does-not-resurrect-killed-buffer ()
   "A late revert result does not recreate its killed browser buffer."
@@ -1919,52 +1951,6 @@
           (should-not refreshed)
           (should-not messages))))))
 
-(ert-deftest hermes-subagents-interrupt-retired-by-newer-read ()
-  "A newer read retires an interrupt's local projection, not its remote effect."
-  (let ((promise (hermes--promise-make)) refreshed)
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--existing-client)
-               (lambda () (make-hermes-dashboard-transport-client :ready-p t)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) promise))
-              ((symbol-function 'hermes-subagents--revert)
-               (lambda (&rest _) (setq refreshed (current-buffer))))
-              ((symbol-function 'message) #'ignore))
-      (with-temp-buffer
-        (hermes-subagents-mode)
-        (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (hermes-subagents-interrupt)
-        (hermes-browser--next-request-generation)
-        (hermes--promise-resolve promise '((found . t)))
-        (should-not refreshed)))))
-
-(ert-deftest hermes-subagents-late-interrupt-does-not-report-or-refresh ()
-  "An instance A interrupt cannot report or refresh after retargeting to B."
-  (let ((promise (hermes--promise-make)) messages refreshed)
-    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-browser--existing-client)
-               (lambda () (make-hermes-dashboard-transport-client :ready-p t)))
-              ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) promise))
-              ((symbol-function 'hermes-subagents--revert)
-               (lambda (&rest _) (setq refreshed t)))
-              ((symbol-function 'message)
-               (lambda (fmt &rest args)
-                 (push (apply #'format fmt args) messages))))
-      (with-temp-buffer
-        (hermes-subagents-mode)
-        (hermes-browser--own-instance '("a" . "http://a"))
-        (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
-        (hermes-subagents-interrupt)
-        (hermes-browser--own-instance '("b" . "http://b"))
-        (hermes--promise-resolve promise '((found . t)))
-        (should-not refreshed)
-        (should-not messages)))))
-
 (ert-deftest hermes-browser-entry-displays-before-deferred-result ()
   "Show the pending list now; late replies cannot redirect subsequent typing."
   (save-window-excursion
@@ -2585,8 +2571,15 @@
                                     :session-token "synthetic")))))
                         ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
                          (lambda (request &rest _)
-                           (push request requests)
-                           (hermes--promise-resolved '(:body ((ok . t))))))
+                           (if (and (eq (cadr case) 'hermes-cron-create)
+                                    (equal (plist-get request :method) "GET"))
+                               (progn
+                                 (should (equal (plist-get request :url)
+                                                "http://a.invalid/api/profiles"))
+                                 (hermes--promise-resolved
+                                  '(:body ((profiles . (((name . "worker"))))))))
+                             (push request requests)
+                             (hermes--promise-resolved '(:body ((ok . t)))))))
                         ((symbol-function 'hermes-profiles--revert) #'ignore)
                         ((symbol-function 'hermes-cron--revert) #'ignore)
                         ((symbol-function 'hermes-sessions--after-rename) #'ignore))
@@ -2696,8 +2689,8 @@
                            '((title . "Exact title"))))))))))
 
 (ert-deftest hermes-browser-sibling-mutations-retain-consent-to-wire ()
-  "Kanban delete and subagent interrupt retain consent through acquisition."
-  (dolist (kind '(kanban subagent))
+  "Kanban delete retains consent through acquisition; workers use chat authority."
+  (dolist (kind '(kanban))
     (dolist (stage '(valid foreign cancel instance board row mode kill newer
                           acquire wait client-wait success error))
       (ert-info ((format "%s / %s" kind stage))

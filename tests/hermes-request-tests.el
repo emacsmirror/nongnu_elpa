@@ -388,5 +388,44 @@
       (hermes-request-test--event h-client "message.delta" '((text . "still running")) "chat")
       (should (= (length other-events) 2)))))
 
+(ert-deftest hermes-request-server-interaction-cannot-become-success ()
+  "Owned requests fail once; foreign requests never answer or affect the run."
+  (dolist (method '("clarify" "approval" "sudo" "secret" "vault.code" "terminal.read"))
+    (hermes-request-test--with-client
+      (hermes-request-test--start)
+      (hermes-request-test--catalogue h-catalogue)
+      (hermes-request-test--created h-client (car h-frames))
+      (let ((submit (car h-frames)))
+        (hermes-request-test--reply h-client submit '((status . "streaming")))
+        (let ((count (length h-frames)))
+          (hermes-dashboard-transport--handle-frame
+           h-client (json-encode `((id . "foreign") (method . ,method)
+                                   (params . ((session_id . "other"))))))
+          (should (= count (length h-frames))))
+        ;; A terminal event can arrive while the refusal is being written.
+        (let* ((send hermes-dashboard-transport-websocket-send-function)
+               (hermes-dashboard-transport-websocket-send-function
+                (lambda (socket text)
+                  (funcall send socket text)
+                  (when (equal (alist-get 'id (car h-frames)) "owned")
+                    (hermes-request-test--event
+                     h-client "message.complete" '((status . "complete") (text . "Racing answer")))))))
+          (hermes-dashboard-transport--handle-frame
+           h-client (json-encode `((id . "owned") (method . ,method)
+                                   (params . ((session_id . "fresh") (question . "Q")
+                                              (request_id . "approval") (env_var . "TEST")
+                                              (prompt . "Value")))))))
+        (hermes-request-test--event h-client "message.complete" '((status . "complete") (text . "Late answer")))
+        (hermes-request-test--reply h-client submit '((status . "streaming")))
+        (funcall h-cancel)
+        (hermes-test--event-loop-barrier)
+        (should (= (length h-errors) 1))
+        (should-not h-results)
+        (should (= (length (seq-filter (lambda (frame) (equal (alist-get 'id frame) "owned"))
+                                       h-frames)) 1))
+        (should (eql (alist-get 'code (alist-get 'error
+                                                (seq-find (lambda (frame) (equal (alist-get 'id frame) "owned"))
+                                                          h-frames))) -32601))))))
+
 (provide 'hermes-request-tests)
 ;;; hermes-request-tests.el ends here

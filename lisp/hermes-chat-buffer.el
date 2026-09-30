@@ -868,6 +868,53 @@ agent's reply can stay last while tool/status/diff entries land above it."
   "Return chat entries from the current buffer in display order."
   (ewoc-collect hermes-chat--ewoc #'identity))
 
+(defun hermes-chat--insert-stream-suffix (node entry prefix)
+  "Insert ENTRY's suffix after PREFIX only while NODE still owns its extent."
+  (let ((buffer (current-buffer))
+        (ewoc hermes-chat--ewoc)
+        (tick (buffer-chars-modified-tick))
+        (position (+ (ewoc-location node) (length prefix))))
+    (catch 'hermes-chat--superseded-append
+      (save-excursion
+        (combine-change-calls position position
+          ;; Before-change observers may settle or replace this entry.  Skip
+          ;; both the obsolete edit and its after-change notification then.
+          (unless (and (eq (current-buffer) buffer)
+                       (eq hermes-chat--ewoc ewoc)
+                       (eq (gethash (plist-get entry :id) hermes-chat--nodes) node)
+                       (eq (ewoc-data node) entry)
+                       (= tick (buffer-chars-modified-tick)))
+            (throw 'hermes-chat--superseded-append nil))
+          (let ((inhibit-modification-hooks t))
+            (goto-char position)
+            (insert (substring (plist-get entry :content) (length prefix)))))))))
+
+(defun hermes-chat--append-stream-entry (node entry)
+  "Append only new plain text when NODE can display ENTRY without replacement.
+Return non-nil on success.  Empty placeholders, changed prefixes and all
+settled content use the full printer.  Native markers preserve readers on
+this non-destructive path; logical reader anchors belong to replacement.
+This bounds buffer insertion, not accumulated string copying or scanning."
+  (let* ((old (ewoc-data node))
+         (prefix (plist-get old :content))
+         (text (plist-get entry :content))
+         (next (ewoc-next hermes-chat--ewoc node))
+         (end (if next (ewoc-location next)
+                (- (hermes-chat--input-position)
+                   (length (cdr (ewoc-get-hf hermes-chat--ewoc)))))))
+    (when (and (eq (plist-get old :role) 'assistant)
+               (eq (plist-get old :status) 'streaming)
+               (stringp prefix) (not (string-empty-p prefix))
+               (= end (+ (ewoc-location node) (length prefix) 1))
+               (eq (char-before end) ?\n)
+               (stringp text) (string-prefix-p prefix text)
+               (equal entry (hermes-chat--entry-with old :content text)))
+      ;; Accept the cumulative model even when a change observer signals.
+      ;; Neither hook phase may publish this old entry over a successor.
+      (ewoc-set-data node entry)
+      (hermes-chat--insert-stream-suffix node entry prefix)
+      t)))
+
 (defun hermes-chat--update-entry (id function &optional quiet)
   "Update entry ID by applying FUNCTION to its entry plist.
 With QUIET, leave state-change notification to the caller.
@@ -879,9 +926,10 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
                   (let ((inhibit-read-only t)
                         (buffer-undo-list t)
                         (entry (funcall function (ewoc-data node))))
-                    (hermes-chat--preserve-readers
-                      (ewoc-set-data node entry)
-                      (ewoc-invalidate hermes-chat--ewoc node))
+                    (unless (hermes-chat--append-stream-entry node entry)
+                      (hermes-chat--preserve-readers
+                        (ewoc-set-data node entry)
+                        (ewoc-invalidate hermes-chat--ewoc node)))
                     entry))))
       (unless quiet (hermes-chat--notify-state-change))
       entry)))

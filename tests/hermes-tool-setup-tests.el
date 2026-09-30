@@ -458,10 +458,11 @@
                             (format "%S" (keymap-popup--meta
                                           hermes-tool-setup-mode-map 'descriptions))))))
 
-(defun hermes-tool-setup-tests--backend (respond run &optional auth legacy)
+(defun hermes-tool-setup-tests--backend (respond run &optional auth legacy idle)
   "Call RUN with a disposable client whose HTTP boundary uses RESPOND.
 Use AUTH as the authentication promise when non-nil, and URL-only
-configuration when LEGACY is non-nil.  Retain real instance resolution,
+configuration when LEGACY is non-nil.  IDLE allows refusal before acquisition.
+Retain real instance resolution,
 client ownership, request construction, and cleanup."
   (let* ((url "http://setup.example.test")
          (hermes-instances (unless legacy
@@ -484,8 +485,131 @@ client ownership, request construction, and cleanup."
                  (or auth (hermes--promise-resolved `(:base-url ,url))))))
       (let ((hermes-dashboard-transport-http-request-async-function respond))
         (funcall run client)
-        (should (> acquired 0))
+        (unless idle (should (> acquired 0)))
         (should (= released acquired))))))
+
+(ert-deftest hermes-tool-setup-credentials-use-native-json ()
+  "Public Save serializes literal keys and secrets, then reads readiness."
+  (with-temp-buffer
+    (hermes-tool-setup-mode)
+    (let* ((config '(:providers ((:name "Fixture" :status "needs_auth"
+                                 :env_vars ((:key "FIRECRAWL_API_KEY") (:key "TAVILY_API_KEY")
+                                            (:key "BRAVE_API_KEY"))))))
+           (values '("  quoted\"λ\\value  " "second-秘密" "  "))
+           (inputs (copy-sequence values)) requests notices
+           (minibuffer-history nil) (kill-ring nil))
+      (setq hermes-tool-setup--name "web" hermes-tool-setup--profile "second"
+            hermes-tool-setup--config config
+            tabulated-list-entries (hermes-tool-setup--rows config))
+      (tabulated-list-print t)
+      (goto-char (point-min))
+      (hermes-tool-setup-tests--backend
+       (lambda (url &rest args)
+         (push (cons url args) requests)
+         (hermes--promise-resolved
+          (list :body (if (equal (plist-get args :method) "PUT") '(:ok t)
+                        (if (string-match-p "/config?" url) config
+                          '(:has_models :false))))))
+       (lambda (_client)
+         (setq hermes-instance (hermes-instance-resolve))
+         (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) (pop inputs)))
+                   ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                   ((symbol-function 'message)
+                    (lambda (fmt &rest args) (push (apply #'format fmt args) notices))))
+           (call-interactively #'hermes-tool-setup-save-credentials))))
+      (let* ((writes (seq-filter (lambda (r) (equal (plist-get (cdr r) :method) "PUT")) requests))
+             (_ (should (= (length writes) 1)))
+             (env (gethash "env" (json-parse-string (plist-get (cdar writes) :data)))))
+        (should (equal (caar writes) "http://setup.example.test/api/tools/toolsets/web/env?profile=second"))
+        (should (= (hash-table-count env) 2))
+        (should (equal (gethash "FIRECRAWL_API_KEY" env) (car values)))
+        (should (equal (gethash "TAVILY_API_KEY" env) (cadr values))))
+      (should (= (length requests) 3))
+      (should (equal hermes-tool-setup--config config))
+      (should-not hermes-tool-setup--busy)
+      (dolist (secret (butlast values))
+        (dolist (text (append (list (buffer-string)) notices minibuffer-history kill-ring))
+          (should-not (string-match-p (regexp-quote secret) text)))))))
+
+(ert-deftest hermes-tool-setup-public-save-refusal-boundaries ()
+  "Public Save retains its owner through secret input, consent and auth."
+  (dolist (phase '(secret consent auth readback))
+    (dolist (retirement (append '(instance profile mode claim generation)
+                                (and (memq phase '(auth readback)) '(client))))
+      (with-temp-buffer
+        (hermes-tool-setup-mode)
+        (hermes-buffer--claim major-mode)
+        (setq hermes-tool-setup--name "web" hermes-tool-setup--profile "second"
+              hermes-tool-setup--config
+              '(:providers ((:name "Fixture" :env_vars ((:key "FIRECRAWL_API_KEY")))))
+              tabulated-list-entries (hermes-tool-setup--rows hermes-tool-setup--config))
+        (tabulated-list-print t)
+        (goto-char (point-min))
+        (let ((auth (hermes--promise-make)) requests entered)
+          (hermes-tool-setup-tests--backend
+           (lambda (url &rest args)
+             (push (cons url args) requests)
+             (hermes--promise-resolved '(:body (:ok t))))
+           (lambda (client)
+             (setq hermes-instance (hermes-instance-resolve))
+             (cl-labels ((retire ()
+                           (setq entered t)
+                           (pcase retirement
+                             ('instance (setq hermes-instance (copy-tree hermes-instance)))
+                             ('profile (setq hermes-tool-setup--profile "other"))
+                             ('mode (fundamental-mode))
+                             ('claim (hermes-buffer--claim major-mode))
+                             ('generation (hermes-browser--next-request-generation))
+                             ('client (cl-incf (hermes-dashboard-transport-client-generation client))))))
+               (let ((auth-count 0))
+                 (cl-letf (((symbol-function 'read-passwd)
+                            (lambda (&rest _) (when (eq phase 'secret) (retire)) "fixture-secret"))
+                           ((symbol-function 'yes-or-no-p)
+                            (lambda (&rest _) (when (eq phase 'consent) (retire)) t))
+                           ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                            (lambda (&rest _)
+                              (if (or (eq phase 'auth)
+                                      (and (eq phase 'readback) (> (cl-incf auth-count) 1)))
+                                  auth
+                                (hermes--promise-resolved '(:base-url "http://setup.example.test"))))))
+                   (condition-case nil (call-interactively #'hermes-tool-setup-save-credentials)
+                     (user-error nil))
+                   (when (memq phase '(auth readback))
+                     (retire)
+                     (hermes--promise-resolve auth '(:base-url "http://setup.example.test")))))))
+           nil nil t)
+          (should entered)
+          (should (= (length requests) (if (eq phase 'readback) 1 0))))))))
+
+(ert-deftest hermes-tool-setup-public-save-blank-and-failure ()
+  "Blank fields do not write; a failed write neither exposes secrets nor reads readiness."
+  (dolist (blank '(nil t))
+    (with-temp-buffer
+      (hermes-tool-setup-mode)
+      (setq hermes-tool-setup--name "web" hermes-tool-setup--profile "second"
+            hermes-tool-setup--config
+            '(:providers ((:name "Fixture" :env_vars ((:key "FIRECRAWL_API_KEY")))))
+            tabulated-list-entries (hermes-tool-setup--rows hermes-tool-setup--config))
+      (tabulated-list-print t)
+      (goto-char (point-min))
+      (let (requests notices)
+        (hermes-tool-setup-tests--backend
+         (lambda (url &rest args)
+           (push (cons url args) requests)
+           (hermes--promise-rejected "fixture-secret"))
+         (lambda (_client)
+           (setq hermes-instance (hermes-instance-resolve))
+           (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) (if blank "  " "fixture-secret")))
+                     ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                     ((symbol-function 'message) (lambda (fmt &rest args) (push (apply #'format fmt args) notices))))
+             (if blank
+                 (should-error (call-interactively #'hermes-tool-setup-save-credentials) :type 'user-error)
+               (call-interactively #'hermes-tool-setup-save-credentials))))
+         nil nil blank)
+        (should (= (length requests) (if blank 0 1)))
+        (should-not hermes-tool-setup--busy)
+        (unless blank (should-not hermes-tool-setup--config))
+        (should-not (string-match-p "fixture-secret" (format "%S" (list notices (buffer-string)))))))))
 
 (ert-deftest hermes-tool-setup-public-entries-select-exact-install-scope ()
   "Legacy and named entries retry P through real acquisition and REST."

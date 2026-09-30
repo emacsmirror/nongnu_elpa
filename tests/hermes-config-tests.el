@@ -769,8 +769,8 @@
             (should-error (hermes-config-edit) :type 'user-error)
             (should-not written)))))))
 
-(defun hermes-config-tests--management-start (kind &optional unowned)
-  "Start a public management mutation of KIND, optionally UNOWNED."
+(defun hermes-config-tests--management-prepare (kind &optional unowned)
+  "Prepare a management view of KIND, optionally UNOWNED."
   (pcase kind
     ('config
      (hermes-config-mode)
@@ -793,6 +793,21 @@
     ((or 'memory 'reset) (hermes-memory-status-mode)))
   (unless unowned
     (hermes-browser--own-instance '("a" . "https://a.invalid")))
+  (when (memq kind '(memory reset))
+    ;; Establish the same catalogue-qualified snapshot as the public reader,
+    ;; without opening another view or changing the origin's instance.
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-browser--profiled-read
+        client "/api/memory" nil (hermes-browser--dispatch-guard client)))
+     (lambda (scoped)
+       (setq hermes-memory--profile (car scoped))
+       (hermes-inventory--render-memory-status (cdr scoped) (current-buffer))))
+    (should (equal hermes-memory--profile "worker"))
+    (should (hermes-browser--owner-current-p hermes-memory--status-owner))))
+
+(defun hermes-config-tests--management-start (kind)
+  "Start a public management mutation of KIND in its prepared view."
   (pcase kind
     ('config (hermes-config-edit))
     ('env (hermes-config-set-env))
@@ -804,11 +819,12 @@
   "Real REST writes and reads retain view and transport authority during auth."
   (dolist (kind '(config env messaging memory reset))
     (dolist (stage '(write readback))
-      (dolist (boundary '(current mode kill retarget generation transport))
+      (dolist (boundary (append '(current mode kill retarget generation transport)
+                                (when (memq kind '(memory reset)) '(profile))))
         (ert-info ((format "%s %s %s" kind stage boundary))
           (let* ((client (make-hermes-dashboard-transport-client
                           :base-url "https://a.invalid"))
-                 (auth (hermes--promise-make))
+                 (auth (hermes--promise-resolved '(:base-url "https://a.invalid")))
                  (write (hermes--promise-make))
                  (buffer (generate-new-buffer " *management*"))
                  (releases 0) requests
@@ -817,17 +833,29 @@
                     (push (list url (plist-get args :method) (plist-get args :data))
                           requests)
                     (if (not (equal (plist-get args :method) "GET")) write
-                      (hermes-config-test--response "{}")))))
+                      (hermes-config-test--response
+                       (if (string-suffix-p "/api/profiles" url)
+                           "{\"profiles\":[{\"name\":\"worker\"}]}"
+                         "{}"))))))
             (cl-letf (((symbol-function 'hermes-browser--with-client)
                        (lambda (fn) (funcall fn client (lambda () (cl-incf releases)))))
                       ((symbol-function 'hermes-dashboard-transport-api-auth-async)
                        (lambda (&rest _) auth))
+                      ((symbol-function 'completing-read) (lambda (&rest _) "worker"))
                       ((symbol-function 'read-string) (lambda (&rest _) "12"))
                       ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
                       ((symbol-function 'read-passwd) (lambda (&rest _) "synthetic")))
               (unwind-protect
                   (progn
-                    (with-current-buffer buffer (hermes-config-tests--management-start kind))
+                    (with-current-buffer buffer
+                      (hermes-config-tests--management-prepare kind)
+                      (when (memq kind '(memory reset))
+                        (should (equal (mapcar #'car (reverse requests))
+                                       '("https://a.invalid/api/profiles"
+                                         "https://a.invalid/api/memory?profile=worker")))
+                        (should (= releases 1)))
+                      (setq auth (hermes--promise-make) requests nil releases 0)
+                      (hermes-config-tests--management-start kind))
                     (should-not requests)
                     (when (eq stage 'readback)
                       (hermes--promise-resolve auth '(:base-url "https://a.invalid"))
@@ -840,7 +868,8 @@
                         ('kill (kill-buffer buffer))
                         ('retarget (hermes-browser--own-instance '("b" . "https://b.invalid")))
                         ('generation (hermes-browser--next-request-generation))
-                        ('transport (hermes-dashboard-transport-stop client))))
+                        ('transport (hermes-dashboard-transport-stop client))
+                        ('profile (setq hermes-memory--profile "other"))))
                     (hermes--promise-resolve auth '(:base-url "https://a.invalid"))
                     (when (and (eq stage 'write) (eq boundary 'current))
                       (hermes--promise-resolve write '(:status 200 :body ((ok . t)))))
@@ -850,8 +879,8 @@
                           (should (= (cl-count-if (lambda (r) (not (equal (cadr r) "GET"))) requests) 1))
                           (dolist (request requests)
                             (should (string-prefix-p "https://a.invalid/" (car request)))
-                            (when (eq kind 'messaging)
-                              (should (string-match-p "profile=worker" (car request))))))
+                            (when (memq kind '(messaging memory reset))
+                              (should (string-match-p "profile=worker\\'" (car request))))))
                       (should (= (length requests) (if (eq stage 'write) 0 1))))
                     (should (= releases 1)))
                 (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
@@ -900,6 +929,7 @@
                (lambda (_) (hermes--promise-resolved
                             (list schema '((agent . ((max_turns . 12) (verbose . t)))) nil)))))
       (with-temp-buffer
+        (hermes-config-tests--management-prepare 'config)
         (hermes-config-tests--management-start 'config)
         (hermes--promise-reject write "lost reply")
         (should-not hermes-config--mutation-in-flight)
@@ -971,7 +1001,10 @@
             (hermes-dashboard-transport-http-request-async-function
              (lambda (url &rest args)
                (push (list url (plist-get args :method)) requests)
-               (hermes-config-test--response "{}"))))
+               (hermes-config-test--response
+                (if (string-suffix-p "/api/profiles" url)
+                    "{\"profiles\":[{\"name\":\"worker\"}]}"
+                  "{}")))))
         (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
                    (lambda (&rest _)
                      (should (equal (hermes-instance-url hermes-instance)
@@ -982,9 +1015,24 @@
                    (lambda (_) (cl-incf releases)))
                   ((symbol-function 'read-string) (lambda (&rest _) "12"))
                   ((symbol-function 'read-passwd) (lambda (&rest _) "synthetic"))
+                  ((symbol-function 'completing-read) (lambda (&rest _) "worker"))
                   ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
           (with-temp-buffer
-            (hermes-config-tests--management-start kind unowned)
+            (hermes-config-tests--management-prepare kind unowned)
+            (when (memq kind '(memory reset))
+              (should (equal (reverse requests)
+                             '(("https://a.invalid/api/profiles" "GET")
+                               ("https://a.invalid/api/memory?profile=worker" "GET"))))
+              (should (= releases 1)))
+            (setq requests nil releases 0)
+            (hermes-config-tests--management-start kind)
+            (when (memq kind '(memory reset))
+              (should (equal (reverse requests)
+                             (list (list (if (eq kind 'reset)
+                                             "https://a.invalid/api/memory/reset?profile=worker"
+                                           "https://a.invalid/api/memory/provider?profile=worker")
+                                         (if (eq kind 'reset) "POST" "PUT"))
+                                   '("https://a.invalid/api/memory?profile=worker" "GET")))))
             (should (> (length requests) 1))
             (should (= releases 1))
             (should (equal hermes-instance

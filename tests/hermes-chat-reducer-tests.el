@@ -10,6 +10,65 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-chat-terminal-effect-lists-are-literal ()
+  "Keep complete terminal payloads and ordering, without a generated oracle."
+  (dolist (case
+           '((hermes-chat--turn-done-effects
+              (:type done :content "answer")
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type done :content "answer")
+               (mark-done . "answer") (drop-thinking) (settle . done)
+               (finish) (clear-pending) (set-dashboard-running) (drain)))
+             (hermes-chat--turn-done-effects
+              (:type done :content "preview" :response-previewed t :warning "warning")
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type done :content "preview" :response-previewed t :warning "warning")
+               (mark-previewed . "preview") (warning . "warning") (drop-thinking)
+               (settle . done) (finish) (clear-pending) (set-dashboard-running) (drain)))
+             (hermes-chat--turn-suppressed-effects
+              (:type suppressed-terminal :settle-status done :original (:type done :content "hidden"))
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type done :content "hidden") (mark-status . done)
+               (drop-thinking) (settle . done) (finish) (clear-pending)
+               (set-dashboard-running) (drain)))
+             (hermes-chat--turn-suppressed-effects
+              (:type suppressed-terminal :settle-status interrupted :original (:type error :status interrupted))
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type error :status interrupted) (mark-status . interrupted)
+               (drop-thinking) (settle . interrupted) (finish) (clear-pending)
+               (set-dashboard-running) (drain)))
+             (hermes-chat--turn-error-effects
+              (:type error :status interrupted :content "do not append")
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type error :status interrupted :content "do not append")
+               (mark-status . interrupted) (settle . interrupted)
+               (finish) (clear-pending) (set-dashboard-running) (drain)))
+             (hermes-chat--turn-error-effects
+              (:type error :status cancelled)
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type error :status cancelled)
+               (mark-status . cancelled) (settle . cancelled)
+               (finish) (clear-pending) (set-dashboard-running) (drain)))
+             (hermes-chat--turn-error-effects
+              (:type error :content "boom")
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type error :content "boom") (append-error "boom" . error)
+               (settle . error) (finish) (clear-pending) (set-dashboard-running) (drain)))
+             (hermes-chat--turn-error-effects
+              (:type error :content "")
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type error :content "") (append-error "Transport error" . error)
+               (settle . error) (finish) (clear-pending) (set-dashboard-running) (drain)))))
+    (let* ((event (copy-tree (nth 1 case)))
+           (status (list :status 'ready))
+           (effects (funcall (car case) event status)))
+      (should (equal effects (nth 2 case)))
+      (should (equal event (nth 1 case)))
+      (should (equal status '(:status ready)))
+      (should (eq (cdr (assq 'clear-prompts effects))
+                  (if (eq (car case) 'hermes-chat--turn-suppressed-effects)
+                      (plist-get event :original) event))))))
+
 (ert-deftest hermes-chat-turn-reduce-status-family-stamps-and-refreshes ()
   "Status-family events stamp :status-state and lead with a refresh-header effect."
   (let ((now '(100 200)))

@@ -87,9 +87,28 @@ COLS, MESSAGES, TITLE, PROFILE, CWD, HIDDEN, CLOSE-ON-DISCONNECT, and optional
 runtime choices become request
 parameters.  The request identifies its source as `emacs'.  RESOLVE and REJECT
 receive the asynchronous result or error."
-  :keys (cols messages title profile cwd model provider reasoning-effort fast
+  :keys (cols messages title profile cwd cwd-explicit model provider reasoning-effort fast
                hidden close-on-disconnect)
   :params ((source . "emacs")))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-branch "session.branch"
+  "Branch CLIENT's live SESSION-ID, optionally assigning NAME.
+RESOLVE receives child identity and history; REJECT receives the error."
+  :keys (name) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-complete-path "complete.path"
+  "Complete WORD in CLIENT's SESSION-ID and gateway CWD.
+RESOLVE receives backend items; REJECT receives the error."
+  :args (word) :keys (cwd) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-prompt-btw "prompt.btw"
+  "Ask TEXT about CLIENT's SESSION-ID without changing its history.
+RESOLVE receives a task ID; REJECT receives the error.  The answer arrives
+separately as a `btw.complete' event."
+  :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-close "session.close"
@@ -256,8 +275,29 @@ RESOLVE and REJECT receive the result or error."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-subagent-interrupt "subagent.interrupt"
   "Send a `subagent.interrupt' request for SUBAGENT-ID on CLIENT.
+SESSION-ID selects the owning live session, not durable lineage.
 RESOLVE and REJECT receive the result or error."
-  :args (subagent-id))
+  :args (subagent-id) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-list "subagent.list"
+  "List visible workers for CLIENT's live SESSION-ID.
+Visibility includes resumed lineage and is not control authority.
+RESOLVE and REJECT receive the result or error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-steer "subagent.steer"
+  "Queue TEXT for SUBAGENT-ID on CLIENT's live SESSION-ID.
+A queued receipt does not establish delivery.
+RESOLVE and REJECT receive the result or error."
+  :args (subagent-id text) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-tail "subagent.tail"
+  "Read SUBAGENT-ID's bounded tail on CLIENT's live SESSION-ID.
+RESOLVE and REJECT receive the result or error."
+  :args (subagent-id) :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-cron-manage "cron.manage"
@@ -409,6 +449,25 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
   (hermes-dashboard-transport-request
    client "clarify.respond" `((request_id . ,request-id) (answer . ,answer))
    resolve reject))
+
+(defun hermes-dashboard-transport-clarify-lock
+    (client request question-id answer &optional resolve reject)
+  "Lock QUESTION-ID's ANSWER for server REQUEST on CLIENT.
+RESOLVE and REJECT receive the backend lock receipt or safe failure."
+  (let ((hermes-dashboard-transport-dispatch-guard
+         (lambda () (hermes-dashboard-transport-server-request-current-p request))))
+    (hermes-dashboard-transport-request
+     client "clarify.lock"
+     `((request_id . ,(plist-get request :id)) (question_id . ,question-id)
+       (answer . ,(if (listp answer) (vconcat answer) answer)))
+     (lambda (result)
+       (when (or (equal (hermes-transport--get result 'status) "expired")
+                 (and (equal (hermes-transport--get result 'status) "ok")
+                      (hermes-transport--field-present-p result 'remaining)
+                      (not (hermes-transport--get result 'remaining))))
+         (setf (plist-get request :active) nil))
+       (when resolve (funcall resolve result)))
+     reject)))
 
 (defun hermes-dashboard-transport-clarify-question-respond
     (client request-id question-id answer &optional resolve reject)

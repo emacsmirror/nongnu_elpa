@@ -22,8 +22,8 @@
 ;;; Commentary:
 
 ;; A `tabulated-list' view of active Hermes subagents from `delegation.status',
-;; indented by spawn depth to show the delegation tree.  `k' interrupts the
-;; subagent at point via `subagent.interrupt'.
+;; indented by spawn depth to show the delegation tree.  Instance inventory
+;; is read-only; the chat Work view owns session-qualified worker actions.
 
 ;;; Code:
 
@@ -61,27 +61,10 @@ Each active subagent's goal is indented by its spawn depth."
    (hermes-transport--get result 'active)))
 
 (defun hermes-subagents-interrupt ()
-  "Interrupt the subagent at point."
+  "Refuse control from the read-only instance inventory.
+Open Workers from the owning chat to request a session-qualified interrupt."
   (interactive nil hermes-subagents-mode)
-  (let ((id (tabulated-list-get-id))
-        (origin (current-buffer)))
-    (unless id (user-error "No subagent on this line"))
-    (let ((id (copy-sequence id))
-          (current (hermes-browser--mutation-context #'tabulated-list-get-id)))
-      (when (and (yes-or-no-p (format "Interrupt subagent %s? " id))
-                 (funcall current))
-        (with-current-buffer origin
-          (hermes-browser--run-owned
-           (lambda (client _guard)
-             (hermes-dashboard-transport-call-fn
-              #'hermes-dashboard-transport-subagent-interrupt client id))
-           current
-           (lambda (result)
-             (if (eq (hermes-transport--get result 'found) t)
-                 (message "Hermes: interrupted %s" id)
-               (message "Hermes: subagent %s already finished or was not found" id))
-             (hermes-subagents--revert))
-           #'hermes-browser--read-error))))))
+  (user-error "Instance inventory is read-only; open Workers from its chat"))
 
 ;;;###autoload (autoload 'hermes-list-subagents "hermes-subagents" nil t)
 (hermes-define-list-browser subagents
@@ -93,9 +76,7 @@ Each active subagent's goal is indented by its spawn depth."
   :fetch (lambda (client)
            (hermes-dashboard-transport-call-fn
             #'hermes-dashboard-transport-delegation-status client))
-  :rows #'hermes-subagents--rows
-  :help (:group "Worker" hermes-subagents-interrupt "Interrupt")
-  :keys ("k" #'hermes-subagents-interrupt))
+  :rows #'hermes-subagents--rows)
 
 ;;; Exact-session observations
 
@@ -206,6 +187,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
   (concat
    (format "Scope: runtime %s; durable key %s\n\n"
            (plist-get owner :runtime) (or (plist-get owner :key) "unknown"))
+   "Roster visibility includes resumed lineage, not control authority.\nThe backend may refuse interrupt, steering or tail for a visible worker.\n\n"
    (if (buffer-live-p (plist-get owner :buffer))
        (with-current-buffer (plist-get owner :buffer)
          (let ((hermes-chat--work-owner owner)) (hermes-chat--work-details)))
@@ -255,7 +237,8 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 (defun hermes-work--detach ()
   "Release only this exact view's cross-link on kill or mode change."
   (when (eq (plist-get hermes-work--owner :view) (current-buffer))
-    (setf (plist-get hermes-work--owner :view) nil)))
+    (setf (plist-get hermes-work--owner :view) nil)
+    (hermes-work--settle-owner hermes-work--owner)))
 
 (defun hermes-work--resize (window)
   "Fit the work columns to WINDOW without fetching or changing ownership."
@@ -309,6 +292,138 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
         (goto-char (point-min)))
       (pop-to-buffer buffer))))
 
+;;; Session-qualified worker actions
+
+(defun hermes-work--selected-worker ()
+  "Return the exact current worker row at point, or refuse the action."
+  (let* ((owner hermes-work--owner)
+         (source (plist-get owner :delegates))
+         (key (tabulated-list-get-id))
+         (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
+                        (plist-get source :rows))))
+    (unless (and (hermes-work--view-p owner) (hermes-work--current-p owner)
+                 (eq (plist-get source :coverage) 'current)
+                 (stringp (plist-get owner :runtime))
+                 (not (string-empty-p (plist-get owner :runtime)))
+                 (eq (plist-get row :kind) 'delegate)
+                 (eq (plist-get row :state) 'running))
+      (user-error "No current running worker; refresh or reopen from its chat"))
+    row))
+
+(defun hermes-work--action-current-p (owner row)
+  "Return non-nil if OWNER and exact ROW remain actionable after input."
+  (and (hermes-work--view-p owner) (hermes-work--current-p owner)
+       (with-current-buffer (plist-get owner :view)
+         (eq row (ignore-errors (hermes-work--selected-worker))))))
+
+(defun hermes-work--row-current-p (owner row)
+  "Return non-nil if OWNER retains exact ROW, regardless of poll freshness."
+  (and (hermes-work--current-p owner)
+       (memq row (plist-get (plist-get owner :delegates) :rows))))
+
+(defun hermes-work--control-current-p (operation)
+  "Return non-nil if OPERATION retains its original presentation authority."
+  (let ((owner (plist-get operation :owner)))
+    (and (eq (plist-get operation :view) (plist-get owner :view))
+         (hermes-work--view-p owner)
+         (hermes-work--row-current-p owner (plist-get operation :row)))))
+
+(defun hermes-work--control-finish (operation text)
+  "Settle exact OPERATION once and report TEXT without touching any view."
+  (unless (plist-get operation :settled)
+    (let ((owner (plist-get operation :owner)))
+      (setf (plist-get operation :settled) t
+            (plist-get owner :controls) (delq operation (plist-get owner :controls)))
+      (hermes-dashboard-transport-cancel-owner-requests
+       (plist-get owner :client) operation)
+      (message "%s" text))))
+
+(defun hermes-work--control-retire (operation)
+  "Retire OPERATION, distinguishing an attempted send from an unsent request."
+  (hermes-work--control-finish
+   operation
+   (format "Hermes: %s worker %s in session %s: %s"
+           (plist-get operation :action) (plist-get operation :id)
+           (plist-get operation :session)
+           (if (plist-get operation :sent)
+               "outcome unknown after retirement; check before retrying"
+             "not sent; owner retired"))))
+
+(defun hermes-work--settle-owner (owner)
+  "Settle OWNER's retired controls and logs independently of their views."
+  (dolist (operation (copy-sequence (plist-get owner :controls)))
+    (unless (hermes-work--control-current-p operation)
+      (hermes-work--control-retire operation)))
+  (hermes-work-log--settle-owner owner))
+
+(defun hermes-work--control (owner row method &optional text)
+  "Request METHOD for OWNER's exact ROW, with optional steering TEXT.
+The backend checks control generation; roster visibility never grants it."
+  (let* ((operation (list :owner owner :row row :view (plist-get owner :view)
+                          :id (copy-sequence (plist-get row :id))
+                          :session (copy-sequence (plist-get owner :runtime))
+                          :action (if text "steer" "interrupt") :sent nil :settled nil))
+         (current (lambda ()
+                    (and (not (plist-get operation :settled))
+                         (hermes-work--action-current-p owner row)
+                         (or (not text) (plist-get row :accepting-steer)))))
+         ;; This predicate runs only at the transport's final send boundary,
+         ;; after authentication.  A send attempt can have an uncertain outcome.
+         (hermes-dashboard-transport-dispatch-guard
+          (lambda () (when (funcall current) (setf (plist-get operation :sent) t))))
+         (hermes-dashboard-transport-request-owner operation)
+         (hermes-dashboard-transport-request-timeout 10))
+    (when (funcall current)
+      (push operation (plist-get owner :controls))
+      (hermes--promise-catch
+       (hermes--promise-then
+        (apply #'hermes-dashboard-transport-call-fn method
+               (plist-get owner :client) (plist-get operation :id)
+               (append (and text (list text))
+                       (list :session-id (plist-get operation :session))))
+        (lambda (result)
+          (if (not (hermes-work--control-current-p operation))
+              (hermes-work--control-retire operation)
+            (hermes-work--control-finish
+             operation
+             (if text
+                 (if (equal (hermes-transport--get result 'status) "queued")
+                     "Hermes: steering queued (delivery not confirmed)"
+                   "Hermes: steering rejected; worker unavailable to this session")
+               (if (eq (hermes-transport--get result 'found) t)
+                   "Hermes: worker interrupt accepted"
+                 "Hermes: worker not found or unavailable to this session"))))))
+       (lambda (reason)
+         (if (hermes-work--control-current-p operation)
+             (hermes-work--control-finish operation (format "Hermes: %s" reason))
+           (hermes-work--control-retire operation)))))))
+
+(defun hermes-work-interrupt ()
+  "Request an interrupt of the selected worker through its owning session."
+  (interactive nil hermes-work-mode)
+  (let ((owner hermes-work--owner) (row (hermes-work--selected-worker)))
+    (when (yes-or-no-p (format "Interrupt worker %s in this session? "
+                              (plist-get row :id)))
+      (hermes-work--control owner row
+                            #'hermes-dashboard-transport-subagent-interrupt))))
+
+(defun hermes-work-steer ()
+  "Queue steering text for the selected worker, without claiming delivery."
+  (interactive nil hermes-work-mode)
+  (let ((owner hermes-work--owner) (row (hermes-work--selected-worker)))
+    (unless (plist-get row :accepting-steer)
+      (user-error "Worker is not accepting steering"))
+    (let ((text (read-string "Steer worker: ")))
+      (unless (string-empty-p (string-trim text))
+        (hermes-work--control owner row #'hermes-dashboard-transport-subagent-steer text)))))
+
+(defun hermes-work-tail ()
+  "Display the selected worker's bounded live tail, without inferring a path.
+Resumed lineage may be visible but unavailable to this control generation."
+  (interactive nil hermes-work-mode)
+  (let ((owner hermes-work--owner) (row (hermes-work--selected-worker)))
+    (hermes-work-log--open owner (plist-get row :id) nil row)))
+
 ;;; Worker logs
 
 (require 'hermes-kanban-log)
@@ -352,6 +467,75 @@ Only structured parent tool results supply paths, never text or filenames."
                            (hermes-chat--entries))))))
         (and (= (length paths) 1) (car paths))))))
 
+(defun hermes-work-log--owner-current-p (binding)
+  "Return non-nil if BINDING retains its attachment and optional tail row."
+  (let ((owner (plist-get binding :owner)) (row (plist-get binding :row)))
+    (and (not (plist-get binding :retired)) (hermes-work--current-p owner)
+         (or (plist-get binding :path)
+             ;; Poll freshness does not revoke an explicitly opened snapshot.
+             (and row
+                  (hermes-work--row-current-p owner row))))))
+
+(defun hermes-work-log--retire (buffer binding)
+  "Settle BUFFER's exact BINDING without repainting a retired view."
+  (setf (plist-get binding :retired) t)
+  (hermes-dashboard-transport-cancel-owner-requests
+   (plist-get (plist-get binding :owner) :client) binding)
+  (when (and (buffer-live-p buffer)
+             (eq binding (buffer-local-value 'hermes-work-log--binding buffer)))
+    (with-current-buffer buffer
+      (setq hermes-work-log--request nil)
+      (when (hermes-buffer--owned-p 'hermes-work-log-mode)
+        (setq header-line-format
+              "Worker log · Retired · reopen from Work in the attached chat")))))
+
+(defun hermes-work-log--settle-owner (owner)
+  "Retire OWNER's obsolete log bindings, independently of visible windows."
+  (dolist (buffer (buffer-list))
+    (when-let* ((binding (buffer-local-value 'hermes-work-log--binding buffer))
+                ((eq owner (plist-get binding :owner)))
+                ((not (hermes-work-log--owner-current-p binding))))
+      (hermes-work-log--retire buffer binding))))
+
+(defun hermes-work-log--detach ()
+  "Release this log's exact read on native buffer retirement."
+  (when hermes-work-log--binding
+    (hermes-work-log--retire (current-buffer) hermes-work-log--binding)))
+
+(defun hermes-work-log--fetch (buffer binding token)
+  "Fetch BUFFER's BINDING under exact request TOKEN through authentication."
+  (let* ((owner (plist-get binding :owner))
+         (client (plist-get owner :client))
+         (guard (lambda () (hermes-work-log--current-p buffer binding token)))
+         (hermes-dashboard-transport-dispatch-guard guard)
+         (hermes-dashboard-transport-request-owner binding)
+         (hermes-dashboard-transport-request-timeout 10))
+    (if-let* ((path (plist-get binding :path)))
+        (hermes-dashboard-transport-api-request-async
+         "GET" "/api/files/read" :client client :query (list (cons 'path path))
+         :timeout 30 :current-p guard)
+      (hermes-dashboard-transport-call-fn
+       #'hermes-dashboard-transport-subagent-tail client (plist-get binding :id)
+       :session-id (plist-get owner :runtime)))))
+
+(defun hermes-work-log--accept-tail (buffer binding token result)
+  "Render bounded tail RESULT for BUFFER's exact BINDING and TOKEN."
+  (when (hermes-work-log--current-p buffer binding token)
+    (let ((available (eq (hermes-transport--get result 'available) t))
+          (truncated (eq (hermes-transport--get result 'truncated) t))
+          (text (hermes-transport--get result 'text)))
+      (unless (and (equal (hermes-transport--get result 'subagent_id)
+                          (plist-get binding :id)) (stringp text))
+        (error "Invalid worker tail"))
+      (with-current-buffer buffer
+        (hermes-work-log--render
+         (if available (if (string-empty-p text) "Empty tail snapshot.\n" text)
+           "Tail unavailable: no log or no control authority in this session.\nUse the Work view's Published log action for historical logs.\n"))
+        (setq hermes-work-log--request nil
+              header-line-format
+              (format "Worker tail · available: %s · truncated: %s · g Refresh"
+                      (if available "yes" "no") (if truncated "yes" "no")))))))
+
 (defun hermes-work-log--decode (result)
   "Return log text from managed-file RESULT, or signal invalid data.
 The endpoint returns whole files, not a tail or a paginated transcript."
@@ -364,7 +548,7 @@ The endpoint returns whole files, not a tail or a paginated transcript."
        (not (with-current-buffer buffer (hermes-buffer--retired-p)))
        (eq binding (buffer-local-value 'hermes-work-log--binding buffer))
        (eq token (buffer-local-value 'hermes-work-log--request buffer))
-       (hermes-work--current-p (plist-get binding :owner))))
+       (hermes-work-log--owner-current-p binding)))
 
 (defun hermes-work-log--render (text)
   "Replace this log with rendered TEXT, preserving point and windows."
@@ -391,15 +575,15 @@ The endpoint returns whole files, not a tail or a paginated transcript."
                   "Worker log · Snapshot; entries may be truncated · ? Help")))))))
 
 (defun hermes-work-log-refresh ()
-  "Fetch this worker's remote log asynchronously, preserving point.
-Keep the last snapshot on failure.  Only one request may be pending per view."
+  "Fetch this worker's remote log or bounded tail, preserving point.
+Keep the last snapshot on failure.  Only one request may be pending per view.
+A changed roster row requires reopening a tail from the Work view."
   (interactive nil hermes-work-log-mode)
   (let* ((buffer (current-buffer))
-         (binding hermes-work-log--binding)
-         (owner (plist-get binding :owner)))
+         (binding hermes-work-log--binding))
     (unless (and (derived-mode-p 'hermes-work-log-mode)
                  (not (hermes-buffer--retired-p))
-                 (hermes-work--current-p owner))
+                 (hermes-work-log--owner-current-p binding))
       (user-error "Worker log owner detached; reopen from the attached chat"))
     (when hermes-work-log--request (user-error "Worker log refresh already pending"))
     (let ((token (list 'request)))
@@ -408,12 +592,17 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
       (hermes--promise-catch
        (hermes--promise-then
         (condition-case err
-            (hermes-dashboard-transport-api-request-async
-             "GET" "/api/files/read" :client (plist-get owner :client)
-             :query (list (cons 'path (plist-get binding :path))) :timeout 30)
+            (hermes-work-log--fetch buffer binding token)
           (error (hermes--promise-rejected (error-message-string err))))
-        (lambda (result) (hermes-work-log--accept buffer binding token result)))
+        (lambda (result)
+          (unless (hermes-work-log--owner-current-p binding)
+            (hermes-work-log--retire buffer binding))
+          (if (plist-get binding :path)
+              (hermes-work-log--accept buffer binding token result)
+            (hermes-work-log--accept-tail buffer binding token result))))
        (lambda (reason)
+         (unless (hermes-work-log--owner-current-p binding)
+           (hermes-work-log--retire buffer binding))
          (when (hermes-work-log--current-p buffer binding token)
            (with-current-buffer buffer
              (let ((reason (hermes-dashboard-transport--redact-secret
@@ -426,8 +615,8 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
                  (hermes-work-log--render (concat "Worker log unavailable: " reason "\n\ng Retry\n")))
                (message "Hermes worker log: %s" reason)))))))))
 
-(defun hermes-work-log--open (owner id path)
-  "Display the log for OWNER's worker ID using exact remote PATH."
+(defun hermes-work-log--open (owner id path &optional row)
+  "Display OWNER's worker ID using exact remote PATH, or live tail for ROW."
   (let ((existing
          (seq-find
           (lambda (buffer)
@@ -436,7 +625,8 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
                  (let ((binding (buffer-local-value 'hermes-work-log--binding buffer)))
                    (and (eq owner (plist-get binding :owner))
                         (equal id (plist-get binding :id))
-                        (equal path (plist-get binding :path))))))
+                        (equal path (plist-get binding :path))
+                        (eq row (plist-get binding :row))))))
           (buffer-list))))
     (if existing (pop-to-buffer existing)
       (let ((buffer (generate-new-buffer (format "*Hermes Worker Log: %s*" id))))
@@ -447,7 +637,9 @@ Keep the last snapshot on failure.  Only one request may be pending per view."
                      (not (hermes-buffer--retired-p))
                      (hermes-work--current-p owner))
             (hermes-buffer--claim 'hermes-work-log-mode)
-            (setq hermes-work-log--binding (list :owner owner :id id :path path)
+            (setf (plist-get owner :settle) #'hermes-work--settle-owner)
+            (setq hermes-work-log--binding
+                  (list :owner owner :id id :path path :row row :retired nil)
                   header-line-format "Worker log · Not fetched")
             (hermes-work-log-refresh)))
         (when (and (hermes-browser--buffer-mode-p buffer 'hermes-work-log-mode)
@@ -493,12 +685,16 @@ Use only the exact path published in this parent's structured tool result."
 (put 'hermes-work-log-mode-map-popup 'command-modes '(hermes-work-log-mode))
 
 (define-derived-mode hermes-work-log-mode special-mode "Worker Log"
-  "Read a remote worker log snapshot without visiting a local file.
+  "Read a remote worker log or live tail without visiting a local file.
 The backend may truncate individual entries or expire logs.  No full-session
-history guarantee is implied.  Requests time out after 30 seconds; files over
-2 MiB are not rendered, although the API transfers the whole file."
+history guarantee is implied.  Published-path reads time out after 30 seconds;
+files over 2 MiB are not rendered, although the API transfers the whole file.
+Live tails time out after 10 seconds and the backend bounds them to 16 KiB."
   (setq-local truncate-lines nil)
   (add-hook 'after-set-visited-file-name-hook #'hermes-buffer--retire nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-work-log--detach t t)
+  (add-hook 'kill-buffer-hook #'hermes-work-log--detach nil t)
+  (add-hook 'change-major-mode-hook #'hermes-work-log--detach nil t)
   (visual-line-mode 1)
   (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-log-refresh))))
 
@@ -507,6 +703,9 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
   "RET" #'hermes-work-log
   "d" #'hermes-work-details
   "g" #'hermes-work-refresh
+  "k" #'hermes-work-interrupt
+  "s" #'hermes-work-steer
+  "t" #'hermes-work-tail
   "q" #'quit-window
   "i" #'hermes-work-instance-subagents
   "h" #'hermes-work-scope-details)
@@ -514,7 +713,11 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
 (keymap-popup-annotate hermes-work-mode-map
   :popup-key "?" :exit-key "C-g" :description "Observed Chat Work"
   :group "Worker"
-  hermes-work-log "Open log"
+  hermes-work-tail "Live tail"
+  hermes-work-interrupt "Interrupt"
+  hermes-work-steer "Steer"
+  :group "History"
+  hermes-work-log "Published log"
   hermes-work-details "Observed details"
   :group "Scope"
   hermes-work-scope-details "Scope details"
@@ -530,6 +733,7 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
   (setq-local tabulated-list-padding 1)
   (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-refresh)))
   (add-hook 'window-size-change-functions #'hermes-work--resize nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-work--detach t t)
   (add-hook 'kill-buffer-hook #'hermes-work--detach nil t)
   (add-hook 'change-major-mode-hook #'hermes-work--detach nil t))
 
@@ -550,7 +754,8 @@ history guarantee is implied.  Requests time out after 30 seconds; files over
           (setq-local hermes-instance (plist-get owner :instance)))
         (setf (plist-get owner :view) buffer
               (plist-get owner :view-valid-p) #'hermes-work--view-p
-              (plist-get owner :render) #'hermes-work--render)))
+              (plist-get owner :render) #'hermes-work--render
+              (plist-get owner :settle) #'hermes-work--settle-owner)))
     (with-current-buffer (plist-get owner :buffer)
       (add-hook 'hermes-chat-state-change-hook #'hermes-work--changed nil t))
     (pop-to-buffer (plist-get owner :view))
