@@ -48,8 +48,8 @@
 (autoload 'mastodon-http--post "mastodon-http")
 (autoload 'mastodon-return-credential-account "mastodon")
 (autoload 'mastodon-client--general-read "mastodon-client")
-(autoload 'mastodon-client--token-file "mastodon-client")
 
+(defvar mastodon-client--token-file)
 (defvar mastodon-instance-url)
 (defvar mastodon-client-scopes)
 (defvar mastodon-client-redirect-uri)
@@ -227,7 +227,7 @@ Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
 (defun mastodon-auth--plstore-access-token-member (&optional auth-source)
   "Return non-nil if the user entry of the plstore contains :access_token.
 If AUTH-SOURCE, also check if it contains :secret-access_token."
-  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+  (let* ((plstore (plstore-open mastodon-client--token-file))
          (name (concat "user-" (mastodon-client--form-user-from-vars)))
          ;; get alist like plstore.el does, so that keys will display with
          ;; ":secret-" prefix if encrypted:

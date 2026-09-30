@@ -94,15 +94,11 @@
               (error "Error: %s" (cadr parsed))
             parsed))))))
 
-(defun mastodon-client--token-file ()
-  "Return `mastodon-client--token-file'."
-  mastodon-client--token-file)
-
 (defun mastodon-client--store ()
   "Store client_id and client_secret in `mastodon-client--token-file'.
 Make `mastodon-client--fetch' call to determine client values.
 Return a plist of secret and non-secret key/val pairs."
-  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+  (let* ((plstore (plstore-open mastodon-client--token-file))
          (client (mastodon-client--fetch))
          (secrets
           (when mastodon-auth-encrypt-tokens-plstore
@@ -127,28 +123,24 @@ Return a plist of secret and non-secret key/val pairs."
         (append secrets sans-secrets)
       client)))
 
-(defun mastodon-client--remove-key-from-plstore (plstore)
-  "Remove KEY from PLSTORE."
-  (cdr plstore))
-
 ;; Actually it returns a plist with client-details if such details are
 ;; already stored in mastodon.plstore
 (defun mastodon-client--read ()
   "Retrieve client_id and client_secret from `mastodon-client--token-file'."
-  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+  (let* ((plstore (plstore-open mastodon-client--token-file))
          (mastodon
           (plstore-get plstore
                        (concat "mastodon-" mastodon-instance-url))))
     (plstore-close plstore)
-    (mastodon-client--remove-key-from-plstore mastodon)))
+    (cdr mastodon)))
 
 (defun mastodon-client--general-read (key)
   "Retrieve the plstore item keyed by KEY.
 Return plist without the KEY."
-  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+  (let* ((plstore (plstore-open mastodon-client--token-file))
          (plstore-item (plstore-get plstore key)))
     (plstore-close plstore)
-    (mastodon-client--remove-key-from-plstore plstore-item)))
+    (cdr plstore-item)))
 
 (defun mastodon-client--make-user-details-plist ()
   "Make a plist with current user details.  Return it."
@@ -163,7 +155,7 @@ If `mastodon-auth-use-auth-source', encrypt it in auth source file.
 If `mastodon-auth-encrypt-tokens-plstore' is nil, don't encrypt the plstore.'
 Return the plist after the operation."
   (let* ((user-details (mastodon-client--make-user-details-plist))
-         (plstore (plstore-open (mastodon-client--token-file)))
+         (plstore (plstore-open mastodon-client--token-file))
          (username (mastodon-client--form-user-from-vars))
          (key (concat "user-" username))
          (user-and-token
@@ -225,7 +217,7 @@ Save it to plstore under key \"active-user\".
 If `mastodon-auth-use-auth-source' is non-nil, fetch the access token
 from the user's auth source file and add it to the active user entry.
 Return a plist of secret and non-secret key/val pairs."
-  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+  (let* ((plstore (plstore-open mastodon-client--token-file))
          (handle (plist-get user-details :username))
          (token
           (if mastodon-auth-use-auth-source
