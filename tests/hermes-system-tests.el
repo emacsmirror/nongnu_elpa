@@ -414,10 +414,10 @@
                            (mapcar (lambda (group) (plist-get group :entries))
                                    groups))))
       (should (equal (mapcar (lambda (group) (plist-get group :name)) groups)
-                     '("Filter" "View")))
+                     '("Filter" "View" "Gateway")))
       (should (equal (mapcar (lambda (group) (length (plist-get group :entries)))
                             groups)
-                     '(4 4)))
+                     '(4 4 1)))
       (pcase-dolist (`(,key . ,command)
                     '(("s" . hermes-system-log-source)
                       ("l" . hermes-system-log-level)
@@ -628,6 +628,334 @@
               (should hermes-system--auto-refresh)
               (should (string-match-p "live" (buffer-string))))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest hermes-system-handoff-is-discoverable-without-mutation ()
+  "Native management and system keys expose a truthful, inert handoff."
+  (save-window-excursion
+    (let ((hermes-instances '(("Named backend" . "http://named.invalid")))
+          (native-comp-enable-subr-trampolines nil)
+          (requests 0) (processes 0) buffer)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (&rest _) (cl-incf requests)))
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) (cl-incf processes)))
+                ((symbol-function 'call-process)
+                 (lambda (&rest _) (cl-incf processes)))
+                ((symbol-function 'start-process)
+                 (lambda (&rest _) (cl-incf processes)))
+                ((symbol-function 'make-process)
+                 (lambda (&rest _) (cl-incf processes))))
+        (unwind-protect
+            (progn
+              (dolist (map (list hermes-dash-sys-map hermes-config-mode-map
+                                 hermes-plugins-mode-map hermes-messaging-mode-map
+                                 hermes-system-mode-map))
+                (should (eq (lookup-key map (kbd "H"))
+                            'hermes-system-restart-handoff)))
+              (with-temp-buffer
+                (switch-to-buffer (current-buffer))
+                (hermes-system-mode)
+                (execute-kbd-macro (kbd "H"))
+                (setq buffer (current-buffer))
+                (should (eq major-mode 'hermes-system-handoff-mode))
+                (should (string-match-p "Named backend" (buffer-string)))
+                (should (string-match-p "http://named.invalid" (buffer-string)))
+                (should (string-match-p "Runtime adoption: unverified" (buffer-string)))
+                (should (string-match-p "shared multiplexer" (buffer-string)))
+                (should (string-match-p "separately" (buffer-string)))
+                (should (= requests 0))
+                (should (= processes 0))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(defun hermes-system-test--http-response (text)
+  "Decode a disposable HTTP response containing JSON TEXT."
+  (let ((promise (hermes--promise-make)))
+    (with-temp-buffer
+      (insert "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" text)
+      (hermes-dashboard-transport--settle-http-response
+       promise nil (current-buffer) "https://named.invalid" nil))
+    promise))
+
+(ert-deftest hermes-system-handoff-public-config-status-logs-journey ()
+  "Configuration, handoff, Status/Logs and refresh use only the captured GETs."
+  (save-window-excursion
+    (let* ((hermes-instances '(("Named" . "https://named.invalid")))
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "https://named.invalid" :token "fixture"))
+           (before (buffer-list)) requests (releases 0)
+           (hermes-dashboard-transport-http-request-async-function
+            (lambda (url &rest args)
+              (push (cons (plist-get args :method) url) requests)
+              (hermes-system-test--http-response
+               (cond ((string-suffix-p "/api/status" url)
+                      "{\"ok\":true,\"pid\":123}")
+                     ((string-match-p "/api/logs" url)
+                      "{\"lines\":[\"captured log\"]}")
+                     (t "{}"))))))
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _)
+                   (should (equal hermes-dashboard-transport-url "https://named.invalid"))
+                   client))
+                ((symbol-function 'hermes-dashboard-transport-release)
+                 (lambda (_) (cl-incf releases))))
+        (unwind-protect
+            (progn
+              (hermes-config)
+              (should (= (length requests) 3))
+              (execute-kbd-macro (kbd "H"))
+              (should (= (length requests) 3))
+              (let ((handoff (current-buffer))
+                    (keymap-popup-backend #'keymap-popup-backend-side-window))
+                (execute-kbd-macro (kbd "? s"))
+                (should (eq major-mode 'hermes-system-mode))
+                (should (string-match-p "123" (buffer-string)))
+                (should (string-match-p "Runtime adoption: unverified" (buffer-string)))
+                (execute-kbd-macro (kbd "g"))
+                (switch-to-buffer handoff)
+                (execute-kbd-macro (kbd "l"))
+                (should (string-match-p "captured log" (buffer-string)))
+                (should (string-match-p "Runtime adoption: unverified" (buffer-string)))
+                (execute-kbd-macro (kbd "g")))
+              (should (= (length requests) 7))
+              (should (= releases 5))
+              (should (seq-every-p
+                       (lambda (request)
+                         (and (equal (car request) "GET")
+                              (string-prefix-p "https://named.invalid/api/" (cdr request))))
+                       requests)))
+          (keymap-popup-dismiss)
+          (dolist (buffer (seq-difference (buffer-list) before))
+            (kill-buffer buffer)))))))
+
+(ert-deftest hermes-system-handoff-fences-navigation-refresh-and-auth ()
+  "Retired origin, handoff, target and transport never dispatch a late GET."
+  (dolist (boundary '(current error cancel origin-retarget handoff-retarget
+                     target-retarget origin-mode origin-kill handoff-file transport))
+    (ert-info ((format "Boundary: %s" boundary))
+      (save-window-excursion
+        (with-temp-buffer
+          (switch-to-buffer (current-buffer))
+          (let* ((origin (current-buffer))
+                 (hermes-instances '(("Named" . "https://named.invalid")))
+                 (client (make-hermes-dashboard-transport-client
+                          :base-url "https://named.invalid"))
+                 (auth (hermes--promise-make))
+                 (before (buffer-list)) (releases 0) requests
+                 (hermes-dashboard-transport-http-request-async-function
+                  (lambda (url &rest args)
+                    (push (cons (plist-get args :method) url) requests)
+                    (hermes-system-test--http-response "{\"pid\":123}"))))
+            (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                      ((symbol-function 'hermes-dashboard-transport-acquire)
+                       (lambda (&rest _) client))
+                      ((symbol-function 'hermes-dashboard-transport-release)
+                       (lambda (_) (cl-incf releases)))
+                      ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                       (lambda () auth)))
+              (unwind-protect
+                  (progn
+                    (hermes-system-restart-handoff)
+                    (let ((handoff (current-buffer)))
+                      (execute-kbd-macro (kbd "s"))
+                      (let ((target (current-buffer)))
+                        (should-not requests)
+                        (pcase boundary
+                          ('origin-retarget
+                           (with-current-buffer origin
+                             (setq-local hermes-instance '("Other" . "https://other.invalid"))))
+                          ('handoff-retarget
+                           (with-current-buffer handoff
+                             (setq hermes-instance '("Other" . "https://other.invalid"))))
+                          ('target-retarget
+                           (setq hermes-instance '("Other" . "https://other.invalid")))
+                          ('origin-mode
+                           (with-current-buffer origin
+                             (text-mode) (fundamental-mode)))
+                          ('origin-kill (kill-buffer origin))
+                          ('handoff-file
+                           (with-current-buffer handoff
+                             (set-visited-file-name
+                              (expand-file-name "handoff-notes" temporary-file-directory) t)
+                             (set-visited-file-name nil t)))
+                          ('transport (hermes-dashboard-transport-stop client)))
+                        (if (memq boundary '(error cancel))
+                            (hermes--promise-reject auth (if (eq boundary 'error) "HTTP 503" "Login cancelled"))
+                          (hermes--promise-resolve auth '(:base-url "https://named.invalid")))
+                        (should (= releases 1))
+                        (if (eq boundary 'current)
+                            (progn
+                              (should (equal requests '(("GET" . "https://named.invalid/api/status"))))
+                              (should (string-match-p "123" (buffer-string))))
+                          (should-not requests)
+                          (should-not (string-match-p "123" (buffer-string))))
+                        (when (memq boundary '(error cancel))
+                          (should (string-match-p "Error:" (buffer-string))))
+                        (when (memq boundary '(origin-retarget handoff-retarget target-retarget
+                                              origin-mode origin-kill handoff-file))
+                          (should-error (with-current-buffer target
+                                          (call-interactively #'revert-buffer))
+                                        :type 'user-error)
+                          (unless (eq boundary 'target-retarget)
+                            (should-error (with-current-buffer handoff
+                                            (call-interactively #'hermes-system-handoff-logs))
+                                          :type 'user-error))
+                          (should-not requests)))))
+                (dolist (buffer (seq-difference (buffer-list) before))
+                  (with-current-buffer buffer (set-buffer-modified-p nil))
+                  (kill-buffer buffer))))))))))
+
+(ert-deftest hermes-system-handoff-prompt-cancel-and-retarget-are-inert ()
+  "Instance selection cancellation and recursive retarget cannot open a handoff."
+  (dolist (outcome '(cancel retarget))
+    (save-window-excursion
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (let ((hermes-instances '(("One" . "https://one.invalid")
+                                  ("Two" . "https://two.invalid")))
+              (before (buffer-list)) (requests 0) (entered 0))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (&rest _)
+                       (cl-incf entered)
+                       (if (eq outcome 'cancel) (signal 'quit nil)
+                         (setq-local hermes-instance '("Two" . "https://two.invalid"))
+                         "One")))
+                    ((symbol-function 'hermes-dashboard-transport-acquire)
+                     (lambda (&rest _) (cl-incf requests))))
+            (if (eq outcome 'cancel)
+                (condition-case nil
+                    (progn (hermes-system-restart-handoff) (ert-fail "No quit"))
+                  (quit nil))
+              (should-error (hermes-system-restart-handoff) :type 'user-error))
+            (should (= entered 1))
+            (should (= requests 0))
+            (should-not (seq-difference (buffer-list) before))))))))
+
+(ert-deftest hermes-system-handoff-local-never-spawns ()
+  "Loopback observations attach remotely despite a configured spawn default."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let ((hermes-instances nil)
+            (hermes-dashboard-transport-url "http://127.0.0.1:9999")
+            (hermes-dashboard-transport-start-mode 'spawn)
+            (starts 0) handoff)
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _)
+                     (unless (eq hermes-dashboard-transport-start-mode 'remote)
+                       (cl-incf starts))
+                     (error "Offline fixture"))))
+          (unwind-protect
+              (progn
+                (hermes-system-restart-handoff)
+                (setq handoff (current-buffer))
+                (should (string-match-p "127.0.0.1:9999" (buffer-string)))
+                (should-error (call-interactively #'hermes-system-handoff-status))
+                (kill-buffer (current-buffer))
+                (switch-to-buffer handoff)
+                (should-error (call-interactively #'hermes-system-handoff-logs))
+                (kill-buffer (current-buffer))
+                (should (= starts 0)))
+            (when (buffer-live-p handoff) (kill-buffer handoff))))))))
+
+(ert-deftest hermes-system-handoff-real-http-is-read-only ()
+  "Native handoff keys cross real HTTP with GETs only and no restart receipt inference."
+  (save-window-excursion
+    (let (requests)
+      (hermes-test--with-http-server
+       (lambda (peer request)
+         (push (car (split-string request "\r\n")) requests)
+         (hermes-test--http-reply peer 200
+                                 (if (string-match-p "/api/logs" request)
+                                     "{\"lines\":[\"literal fixture log\"]}"
+                                   "{\"ok\":true,\"pid\":123}")))
+       (lambda (url)
+         (with-temp-buffer
+           (switch-to-buffer (current-buffer))
+           (let* ((hermes-instances (list (cons "Fixture" url)))
+                  (client (make-hermes-dashboard-transport-client
+                           :base-url url :token "synthetic"))
+                  (hermes-dashboard-transport-http-request-function
+                   #'hermes-dashboard-transport--default-http-request)
+                  (hermes-dashboard-transport-http-request-async-function
+                   #'hermes-dashboard-transport--default-http-request-async)
+                  (url-proxy-services nil)
+                  (before (buffer-list)) handoff)
+             (cl-letf (((symbol-function 'hermes-browser--existing-client)
+                        (lambda () client)))
+               (unwind-protect
+                   (progn
+                     (hermes-system-restart-handoff)
+                     (setq handoff (current-buffer))
+                     (should-not requests)
+                     (dolist (spec '(("s" . "123") ("l" . "literal fixture log")))
+                       (switch-to-buffer handoff)
+                       (execute-kbd-macro (kbd (car spec)))
+                       (let ((view (current-buffer)))
+                         (hermes-test--http-wait
+                          (lambda () (with-current-buffer view
+                                       (string-match-p (cdr spec) (buffer-string)))))
+                         (should (string-match-p "Runtime adoption: unverified" (buffer-string)))))
+                     (should (equal (reverse requests)
+                                    '("GET /api/status HTTP/1.1"
+                                      "GET /api/logs?file=agent&lines=100 HTTP/1.1"))))
+                 (dolist (buffer (seq-difference (buffer-list) before))
+                   (kill-buffer buffer)))))))))))
+
+(ert-deftest hermes-system-handoff-late-response-preserves-successor ()
+  "An issued observation cannot render after native file reassociation."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (let* ((hermes-instances '(("Named" . "https://named.invalid")))
+             (client (make-hermes-dashboard-transport-client
+                      :base-url "https://named.invalid" :token "synthetic"))
+             (reply (hermes--promise-make))
+             (before (buffer-list)) (requests 0)
+             (hermes-dashboard-transport-http-request-async-function
+              (lambda (&rest _) (cl-incf requests) reply)))
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () client)))
+          (unwind-protect
+              (progn
+                (hermes-system-restart-handoff)
+                (execute-kbd-macro (kbd "s"))
+                (should (= requests 1))
+                (set-visited-file-name (expand-file-name "notes" temporary-file-directory) t)
+                (set-visited-file-name nil t)
+                (let ((inhibit-read-only t)) (erase-buffer) (insert "Successor notes"))
+                (hermes--promise-resolve reply '(:status 200 :body ((pid . 123))))
+                (should (equal (buffer-string) "Successor notes"))
+                (should-error (call-interactively #'revert-buffer))
+                (should (= requests 1)))
+            (dolist (buffer (seq-difference (buffer-list) before))
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
+(ert-deftest hermes-system-handoff-native-instance-prompt-cancel ()
+  "Cancel the real instance minibuffer without a handoff or acquisition."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (hermes-system-mode)
+      (let ((hermes-instances '(("One" . "https://one.invalid")
+                                ("Two" . "https://two.invalid")))
+            (before (buffer-list)) (acquired 0) entered)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest _) (cl-incf acquired))))
+          (let ((noninteractive nil))
+            (minibuffer-with-setup-hook
+                (lambda () (setq entered (minibuffer-prompt)))
+              (condition-case nil
+                  (execute-kbd-macro (kbd "H C-g"))
+                (quit nil))))
+          (should (equal entered "Hermes instance: "))
+          (should (= acquired 0))
+          (should-not
+           (seq-some (lambda (buffer)
+                       (with-current-buffer buffer
+                         (derived-mode-p 'hermes-system-handoff-mode)))
+                     (seq-difference (buffer-list) before))))))))
 
 (provide 'hermes-system-tests)
 ;;; hermes-system-tests.el ends here

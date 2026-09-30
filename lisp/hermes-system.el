@@ -40,10 +40,17 @@
 (defvar-local hermes-system--query nil
   "REST query fetched by the current system buffer.")
 
+(defvar-local hermes-system--handoff-check nil
+  "Predicate retaining a restart handoff's origin, or nil for ordinary views.")
+
 (defun hermes-system--api (client path &optional query)
   "Return dashboard GET PATH promise through CLIENT with QUERY."
-  (hermes-dashboard-transport-api-request-async
-   "GET" path :query query :client client))
+  (let ((owner hermes-dashboard-transport--api-dispatch-guard)
+        (handoff hermes-system--handoff-check))
+    (hermes-dashboard-transport-api-request-async
+     "GET" path :query query :client client
+     :current-p (lambda () (and (or (null owner) (funcall owner))
+                                (or (null handoff) (funcall handoff)))))))
 
 (defun hermes-system--redact-text (text)
   "Return management TEXT with credential-shaped values redacted."
@@ -73,6 +80,9 @@
          (let ((inhibit-read-only t))
            (erase-buffer)
            (insert (propertize hermes-system--heading 'face 'bold) "\n\n")
+           (when hermes-system--handoff-check
+             (insert (propertize "Runtime adoption: unverified\n" 'face 'warning)
+                     "Reported fields below do not prove a scoped restart.\n\n"))
            (insert (hermes-system--redact-text
                     (hermes-dashboard-transport--redact-secret
                      (if (and (equal hermes-system--path "/api/logs")
@@ -140,21 +150,33 @@ A missing SCOPE may display an acquisition failure, but never grant polling."
         (hermes-system--stop)
         (when (hermes-transport--get result 'error)
           (hermes-system--render buffer result secrets)))
-       (t (hermes-system--stop))))))
+       (t
+        (hermes-system--stop)
+        (when hermes-system--handoff-check
+          (hermes-system--render
+           buffer '((error . "Observation retired; reopen the restart handoff")))))))))
 
 (defun hermes-system--fetch (buffer)
   "Fetch and render the REST view owned by BUFFER."
   (with-current-buffer buffer
+    (when (and hermes-system--handoff-check
+               (not (funcall hermes-system--handoff-check)))
+      (user-error "Restart handoff changed; reopen from the owning view"))
     (hermes-system--cancel-timer)
     (hermes-browser--next-request-generation)
-    (let* ((owner (hermes-browser--owned-predicate nil 'hermes-system-mode))
+    (let* ((hermes-dashboard-transport-start-mode
+            (if hermes-system--handoff-check 'remote
+              hermes-dashboard-transport-start-mode))
+           (owner (hermes-browser--owned-predicate nil 'hermes-system-mode))
            (path hermes-system--path)
            (query (copy-tree hermes-system--query))
+           (handoff hermes-system--handoff-check)
            (visible (get-buffer-window buffer t))
            client scope secrets completed connection-current
            (current-p
             (lambda ()
               (and (funcall owner)
+                   (or (null handoff) (funcall handoff))
                    scope
                    (if completed connection-current
                      (hermes-browser--client-current-p client scope))
@@ -188,12 +210,27 @@ A missing SCOPE may display an acquisition failure, but never grant polling."
        settle
        (lambda (reason) (funcall settle (list :error reason)))))))
 
-(defun hermes-system--open (buffer-name heading path &optional query)
-  "Open BUFFER-NAME for HEADING fetched from PATH with QUERY."
-  (let ((instance (hermes-instance-resolve))
+(defun hermes-system--open (buffer-name heading path &optional query instance check)
+  "Open BUFFER-NAME for HEADING fetched from PATH with QUERY.
+Optional INSTANCE and CHECK retain a restart handoff's captured owner."
+  (let ((instance (or instance (hermes-instance-resolve)))
         (buffer (hermes-buffer--get buffer-name #'hermes-system-mode t)))
     (with-current-buffer buffer
       (hermes-browser--own-instance instance)
+      (when check
+        ;; Pin legacy URL-only configurations too; no later resolver may
+        ;; substitute a successor endpoint or auto-start a local dashboard.
+        (setq-local hermes-instances (list instance))
+        (let ((buffer buffer)
+              (claim hermes-buffer--owner)
+              (identity (hermes-browser--copy-identity instance)))
+          (setq hermes-system--handoff-check
+                (lambda ()
+                  (and (funcall check) (buffer-live-p buffer)
+                       (with-current-buffer buffer
+                         (and (hermes-buffer--owned-p 'hermes-system-mode)
+                              (eq claim hermes-buffer--owner)
+                              (equal identity hermes-instance))))))))
       (setq-local header-line-format '(:eval (hermes-system--header-line)))
       (setq hermes-system--heading heading
             hermes-system--path path
@@ -211,6 +248,122 @@ A missing SCOPE may display an acquisition failure, but never grant polling."
   (interactive)
   (hermes-system--open "*Hermes Status*" "Hermes Gateway Status"
                        "/api/status"))
+
+(defvar-local hermes-system--handoff-lifetime nil
+  "Local lifetime token for handoffs opened from an otherwise unclaimed buffer.")
+
+(defun hermes-system--handoff-owner ()
+  "Capture this view's identity without expiring on ordinary read refresh."
+  (let ((buffer (current-buffer))
+        (mode major-mode)
+        (claim hermes-buffer--owner)
+        (lifetime (or hermes-system--handoff-lifetime
+                      (setq hermes-system--handoff-lifetime (list t))))
+        (instance hermes-instance)
+        (identity (hermes-browser--copy-identity hermes-instance))
+        (configured (hermes-browser--copy-identity
+                     (hermes-instance-configured))))
+    (lambda ()
+      (and (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (and (eq mode major-mode) (eq claim hermes-buffer--owner)
+                  (eq lifetime hermes-system--handoff-lifetime)
+                  (not (hermes-buffer--retired-p))
+                  (eq instance hermes-instance) (equal identity instance)
+                  (equal configured (hermes-instance-configured))))))))
+
+(defun hermes-system-handoff-status ()
+  "Read status for this handoff's captured backend, without restarting it."
+  (interactive nil hermes-system-handoff-mode)
+  (hermes-system--handoff-read nil))
+
+(defun hermes-system-handoff-logs ()
+  "Read logs for this handoff's captured backend, without restarting it."
+  (interactive nil hermes-system-handoff-mode)
+  (hermes-system--handoff-read t))
+
+(defun hermes-system--handoff-read (logs)
+  "Open an owned status view, or LOGS, for the current restart handoff."
+  (unless (and (hermes-buffer--owned-p 'hermes-system-handoff-mode)
+               hermes-system--handoff-check
+               (funcall hermes-system--handoff-check))
+    (user-error "Restart handoff changed; reopen from the owning view"))
+  (let ((check hermes-system--handoff-check))
+    (hermes-system--open
+     (generate-new-buffer-name (if logs "*Hermes Handoff Logs*" "*Hermes Handoff Status*"))
+     (if logs "Hermes Logs" "Hermes Gateway Status")
+     (if logs "/api/logs" "/api/status")
+     (when logs '((file . "agent") (lines . 100)))
+     (hermes-browser--copy-identity hermes-instance)
+     check)))
+
+(defun hermes-system--handoff-text (instance)
+  "Return the inert operator handoff for captured INSTANCE."
+  (concat
+   (propertize "Gateway restart handoff" 'face 'bold) "\n\n"
+   "Selected backend: " (propertize (hermes-instance-name instance)
+                                     'face 'font-lock-constant-face) "\n"
+   "Dashboard: " (hermes-instance-url instance) "\n\n"
+   "Saved configuration: use the management view's saved-value readback.\n"
+   "This handoff does not save configuration or verify a previous save.\n"
+   (propertize "Runtime adoption: unverified\n" 'face 'warning)
+   "A saved value is not evidence that the running gateway adopted it.\n\n"
+   (propertize "Service/profile impact: unknown\n" 'face 'warning)
+   "A named profile may be served by a shared multiplexer. Restarting it\n"
+   "may interrupt sibling profiles and active sessions; selection is not isolation.\n\n"
+   "Act separately in the owning dashboard's gateway controls or ask its\n"
+   "operator to identify the actual service and arrange a safe restart.\n"
+   "Use the dashboard URL above; this buffer runs no commands and sends no restart.\n\n"
+   "Status and Logs are read-only observations, not restart/adoption proof.\n"
+   "After external action, open Status or Logs and explicitly refresh with g.\n\n"
+   (substitute-command-keys
+    "\\<hermes-system-handoff-mode-map>\\[hermes-system-handoff-status] Status   \\[hermes-system-handoff-logs] Logs   \\[hermes-system-handoff-mode-map-popup] Help\n")))
+
+;;;###autoload
+(defun hermes-system-restart-handoff ()
+  "Show an operator restart handoff without saving or restarting anything.
+Retain the selected backend, not an inferred service or profile scope.
+Status and Logs remain observations; saved configuration is not adoption."
+  (interactive)
+  (when (hermes-buffer--retired-p)
+    (user-error "This view no longer owns a Hermes backend"))
+  (let* ((owner (hermes-system--handoff-owner))
+         (instance (hermes-browser--copy-identity
+                    (or (and (hermes-instance--valid-p hermes-instance)
+                             hermes-instance)
+                        (hermes-instance-resolve)))))
+    (unless (funcall owner)
+      (user-error "Backend changed while choosing; reopen the handoff"))
+    (let ((buffer (hermes-buffer--get "*Hermes Restart Handoff*"
+                                      #'hermes-system-handoff-mode t)))
+      (with-current-buffer buffer
+        (hermes-browser--own-instance instance)
+        (let ((view (hermes-system--handoff-owner)))
+          (setq hermes-system--handoff-check
+                (lambda () (and (funcall owner) (funcall view)))))
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (hermes-system--handoff-text instance))
+          (goto-char (point-min))))
+      (pop-to-buffer buffer))))
+
+(keymap-popup-define hermes-system-handoff-mode-map
+  "Keymap for the inert gateway restart handoff."
+  :parent special-mode-map
+  :popup-key "?"
+  :exit-key "C-g"
+  :group "Observe"
+  "s" ("Status" hermes-system-handoff-status)
+  "l" ("Logs" hermes-system-handoff-logs)
+  :group "View"
+  "q" ("Quit view" quit-window)
+  "?" ("Help" hermes-system-handoff-mode-map-popup))
+
+(put 'hermes-system-handoff-mode-map-popup 'command-modes '(hermes-system-handoff-mode))
+
+(define-derived-mode hermes-system-handoff-mode special-mode "Hermes Handoff"
+  "Read an operator handoff without performing a gateway restart."
+  :interactive nil)
 
 (defun hermes-system--bounded-log-lines (lines)
   "Return requested log LINES clamped to the backend's 1..500 tail range."
@@ -365,7 +518,9 @@ Requests never accumulate automatically while a previous poll is pending."
        :inapt-if (lambda () (not (equal hermes-system--path "/api/logs"))))
   "g" ("Refresh" revert-buffer :stay-open t)
   "q" ("Quit view" quit-window)
-  "?" ("Help" hermes-system-mode-map-popup))
+  "?" ("Help" hermes-system-mode-map-popup)
+  :group "Gateway"
+  "H" ("Restart handoff" hermes-system-restart-handoff))
 
 (put 'hermes-system-mode-map-popup 'command-modes '(hermes-system-mode))
 
