@@ -87,10 +87,12 @@ two advices became one and the reason for this stayed the same."
 
 (ert-deftest vm-reference-test-default-values-are-printable ()
   "A default holding control characters is escaped, not written raw.
-makeinfo loses the rest of the line when it meets a NUL, and
-`vm-mime-encode-words-regexp' has one -- it broke the build the first time."
+makeinfo loses the rest of the line when it meets a NUL, and the default of
+`vm-mime-encode-headers-words-regexp' holds one.  An option with that
+character in its default broke the build the first time."
   (let ((text (with-temp-buffer
-                (vm-reference-insert-default 'vm-mime-encode-words-regexp)
+                (vm-reference-insert-default
+                 'vm-mime-encode-headers-words-regexp)
                 (buffer-string))))
     (should (string-match-p "Default value" text))
     (should-not (string-match-p "[\0-\010\013\014\016-\037\177]" text))))
@@ -128,13 +130,15 @@ one each way round."
 
 (ert-deftest vm-reference-test-a-macro-body-doubles-its-backslashes ()
   "A backslash inside a `@macro' names a parameter, so it has to be doubled.
-`vm-mime-encode-words-regexp' defaults to \"[^\\x0-\\x7f]+\", and makeinfo
-stopped with \\ followed by `0-' the first time a chapter invoked that macro.
-The error comes when the macro is used, not when it is defined, so every
-macro nobody has invoked yet is carrying the same fault until this holds."
+`vm-mime-encode-headers-words-regexp' has `[^\\x0-\\x7f]+' in its default, and
+makeinfo stopped with \\ followed by `0-' the first time a chapter invoked
+such a macro.  The error comes when the macro is used, not when it is
+defined, so every macro nobody has invoked yet is carrying the same fault
+until this holds."
   (let ((text (with-temp-buffer
-                (vm-reference-insert-macro 'vm-mime-encode-words-regexp
-                                           #'vm-reference-insert-option)
+                (vm-reference-insert-macro
+                 'vm-mime-encode-headers-words-regexp
+                 #'vm-reference-insert-option)
                 (buffer-string))))
     (should (string-match-p "\\\\" text))
     ;; every backslash in the body is part of a doubled pair

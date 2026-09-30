@@ -119,8 +119,6 @@ The end-to-end case: `vm-pop-move-mail' against a server VM did not write."
 		(vm-pop-retrieved-messages nil)
 		(vm-pop-auto-expunge-alist nil)
 		(vm-pop-max-message-size nil)
-		(vm-pop-messages-per-session nil)
-		(vm-pop-bytes-per-session nil)
 		(vm-folder-type 'From_))
 	    (should (equal (vm-pop-live-test--fetch
 			    (vm-pop-live-spec server account) dest)
@@ -158,8 +156,6 @@ the message must then still be there afterwards."
 		(vm-pop-auto-expunge-warned nil)
 		(vm-pop-retrieved-messages nil)
 		(vm-pop-max-message-size nil)
-		(vm-pop-messages-per-session nil)
-		(vm-pop-bytes-per-session nil)
 		(vm-folder-type 'From_))
 	    (should (equal (vm-pop-live-test--fetch
 			    (vm-pop-live-spec server account) dest)

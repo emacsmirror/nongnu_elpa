@@ -1371,8 +1371,6 @@ that were sent."
                     (vm-imap-retrieved-messages nil)
                     (vm-imap-auto-expunge-alist nil)
                     (vm-imap-max-message-size nil)
-                    (vm-imap-messages-per-session nil)
-                    (vm-imap-bytes-per-session nil)
                     (vm-folder-type type))
                 (vm-imap-move-mail (vm-imap-mock-spec mock) dest)
                 (let ((read (vm-imap-mock-test--messages-in dest type)))

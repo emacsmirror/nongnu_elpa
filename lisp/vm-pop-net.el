@@ -540,7 +540,6 @@ Nothing waits: this returns as soon as the connection is made."
 ;;; Fetching what has not been fetched
 
 (defvar vm-pop-max-message-size)
-(defvar vm-pop-messages-per-session)
 
 (defun vm-pop-net-messages-to-fetch (uids sizes retrieved source)
   "Which of UIDS are to be fetched, as (NUMBER . UID) in server order.
@@ -548,9 +547,7 @@ Nothing waits: this returns as soon as the connection is made."
 Left out: what RETRIEVED already has from SOURCE, and what is larger than
 `vm-pop-max-message-size'.  What is left for its size is named, since a
 message nobody is told about is one nobody knows to raise the limit for; it
-stays on the server, so raising the limit is all it takes.  Cut at
-`vm-pop-messages-per-session' if that is set, so a maildrop with a thousand
-messages in it is not one session."
+stays on the server, so raising the limit is all it takes."
   (let ((wanted nil)
 	(too-large nil))
     (dolist (pair uids)
@@ -575,10 +572,7 @@ messages in it is not one session."
 		   vm-pop-max-message-size
 		   (mapconcat (lambda (size) (format "%d bytes" size))
 			      (nreverse too-large) ", ")))
-    (setq wanted (nreverse wanted))
-    (if vm-pop-messages-per-session
-	(seq-take wanted vm-pop-messages-per-session)
-      wanted)))
+    (nreverse wanted)))
 
 (iter-defun vm-pop-net-fetch-new (folder user password source retrieved)
   "Fetch the messages of this maildrop that are not in RETRIEVED.
@@ -596,10 +590,9 @@ deletion of messages whose text was thrown away with the session: fetched,
 deleted on the server, never written anywhere.  The caller deletes them once
 the crash box is on disk, in a session of its own and by UID.
 
-Stops at `vm-pop-messages-per-session' if that is set, and passes over a
-message bigger than `vm-pop-max-message-size' -- the same two limits the
-blocking implementation honours, and for the same reason: a maildrop with a
-thousand messages in it should not be one command."
+Passes over a message bigger than `vm-pop-max-message-size', which the
+blocking implementation honoured too: a local folder cannot go back to the
+server for a body later."
   (unwind-protect
       (progn
 	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))

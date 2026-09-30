@@ -519,29 +519,6 @@ A nil value for `vm-pop-max-message-size' means no size limit."
   :type '(choice (const :tag "No Limit" nil) 
 		 (integer :tag "Bytes")))
 
-(defcustom vm-pop-messages-per-session nil
-  "*Non-nil value should be an integer specifying how many messages to
-retrieve per POP session.  When you type `g' to get new mail, VM
-will only retrieve that many messages from any particular POP maildrop.
-To retrieve more messages, type `g' again.
-
-A nil value means there's no limit."
-  :group 'vm-folders
-  :type '(choice (const :tag "No Limit" nil) 
-		 integer))
-
-(defcustom vm-pop-bytes-per-session nil
-  "*Non-nil value should be an integer specifying how many bytes to
-retrieve per POP session.  When you type `g' to get new mail, VM
-will only retrieve messages until the byte limit is reached on
-any particular POP maildrop.  To retrieve more messages, type `g'
-again.
-
-A nil value means there's no limit."
-  :group 'vm-folders
-  :type '(choice (const :tag "No Limit" nil) 
-		 (integer :tag "Bytes")))
-
 (defcustom vm-pop-expunge-after-retrieving nil
   "*Non-nil value means that, when a POP mailbox is used as a
 spool file, messages should be deleted after retrieving them.  A
@@ -587,17 +564,6 @@ messages from the server."
 (defvar vm-pop-auto-expunge-warned nil
   "List of POP mailboxes for which warning has been given about the
 lack of settings for auto-expunge.")
-
-(defcustom vm-pop-read-quit-response t
-  "*Non-nil value tells VM to read the response to the POP QUIT command.
-Sometimes, for reasons unknown, the QUIT response never arrives
-from some POP servers and VM will hang waiting for it.  So it is
-useful to be able to tell VM not to wait.  Some other
-servers will not expunge messages unless the QUIT response is
-read, so for these servers you should set the variable's value to
-t."
-  :group 'vm-pop
-  :type 'boolean)
 
 (defconst vm-recognize-pop-maildrops 
   "^\\(pop\\|pop-ssl\\|pop-ssh\\):[^:]+:[^:]+:[^:]+:[^:]+:.+"
@@ -652,28 +618,6 @@ never be read.  Raise the limit and the next `vm-get-new-mail' brings it in."
   :group 'vm-imap
   :type '(choice (const :tag "Unlimited" nil)
                  (integer :tag "Bytes")))
-
-(defcustom vm-imap-messages-per-session nil
-  "*Non-nil value should be an integer specifying how many messages to
-retrieve per IMAP session.  When you type `g' to get new mail, VM
-will only retrieve that many messages from any particular IMAP maildrop.
-To retrieve more messages, type `g' again.
-
-A nil value means there's no limit."
-  :group 'vm-folders
-  :type '(choice (const :tag "Unlimited" nil) integer))
-
-(defcustom vm-imap-bytes-per-session nil
-  "*Non-nil value should be an integer specifying how many bytes to
-retrieve per IMAP session.  When you type `g' to get new mail, VM
-will only retrieve messages until the byte limit is reached on
-any particular IMAP maildrop.  To retrieve more messages, type `g'
-again.
-
-A nil value means there's no limit."
-  :group 'vm-folders
-  :type '(choice (const :tag "No Limit" nil) 
-		 (integer :tag "Bytes")))
 
 (defcustom vm-imap-expunge-after-retrieving nil
   "*Non-nil value means that, when an IMAP mailbox is used as a
@@ -793,12 +737,6 @@ behavior independent of this variable."
   :group 'vm-imap
   :type 'boolean)
 
-(defcustom vm-imap-expunge-retries 1
-  "*Number of retries to be performed for expunging IMAP mailboxes.
-Increase this if your IMAP server is sluggish."
-  :group 'vm-imap
-  :type 'integer)
-
 (defcustom vm-imap-server-timeout nil
   "*Number of seconds to wait for output from the IMAP server before
 timing out.  It can be set to nil to never time out."
@@ -806,44 +744,12 @@ timing out.  It can be set to nil to never time out."
   :type '(choice (const :tag "Never" nil) 
 		 (integer :tag "Seconds")))
 
-(defcustom vm-imap-connection-mode 'online
-  "*The mode of connection to the IMAP server.  Possible values
-are: `online', `offline', and `autoconnect'.  In the `online' mode,
-synchronization works normally and message bodies of external
-messages are fetched when needed.  In `offline' mode, no
-connection is established to the IMAP server and message bodies
-are not fetched.  In the `autoconnect' mode, a connection is
-established whenever a synchronization operation is performed and the
-connection mode is then turned into `online'."
-  :group 'vm-imap
-  :type '(choice (const :tag "online" online)
-		 (const :tag "offline" offline)
-		 (const :tag "autoconnect" autoconnect)))
-
-(defcustom vm-imap-ensure-active-sessions t
-  "*If non-NIL, ensures that an IMAP session is active before issuing
-commands to the server.  If it is not active, a new session is
-started.  This ensures a failure-proof operation, but involves
-additional overhead in checking that the session is active."
-  :group 'vm-imap
-  :type 'boolean)
-
 (defcustom vm-imap-message-bunch-size 10
   "*Number of messages to be bunched together in IMAP server
 operations.  This permits faster interaction with the IMAP servers.  To
 disable bunching, set it to 1."
   :group 'vm-imap
   :type 'integer)
-
-(defcustom vm-imap-sync-on-get t
-  "*If this variable is non-NIL, then the vm-get-new-mail command
-should synchronize with the IMAP mailbox on the server.  This involves
-expunging messages that have been expunged from the server, saving and
-retrieving message attributes as well retrieving new messages.  If the
-variable is NIL, this functionality can be obtained via the
-vm-imap-synchronize command."
-  :group 'vm-imap
-  :type 'boolean)
 
 (defcustom vm-auto-get-new-mail t
   "*Non-nil value causes VM to automatically move mail from spool files
@@ -2658,8 +2564,8 @@ are encoded.  `vm-mime-encode-headers-type' says with which encoding."
   "*A regexp matching the run of words to encode as one RFC 2047 word.
 A word here is delimited by whitespace or a comma, and a run of them is
 encoded together rather than one at a time, which is shorter and is what
-the standard asks for.  What makes a word need encoding at all is
-`vm-mime-encode-words-regexp'."
+the standard asks for.  What makes a word need encoding is a character
+outside US-ASCII, which this regexp matches for itself."
   :group 'vm-mime
   :type '(regexp))
 
@@ -2674,13 +2580,6 @@ base64 for the words it matches and quoted-printable for the rest."
                  (const  :tag "Binary" B)
                  (regexp :tag "BASE64 on match of " 
                          "[^- !#-'*+/-9=?A-Z^-~]")))
-
-(defcustom vm-mime-encode-words-regexp "[^\x0-\x7f]+"
-  "*A regexp matching the characters that make a word need encoding.
-Anything outside US-ASCII, by default.  What VM takes a word to be is
-`vm-mime-encode-headers-words-regexp'."
-  :group 'vm-mime
-  :type '(regexp))
 
 (defcustom vm-mime-max-text-line-length 998
   "*Longest line VM sends in a text part without encoding it.
@@ -3439,12 +3338,6 @@ Nil means leave the Subject header empty when forwarding."
   :group 'vm-forward
   :type '(choice (const nil)
 		 (string)))
-
-(defcustom vm-forwarded-message-preamble-format
-  "\n---------- Original Message ----------\n"
-  "*String which specifies the preamble for a forwarded message."
-  :group 'vm-forward
-  :type 'string)
 
 (defcustom vm-forwarded-headers nil
   "*List of headers that should be forwarded by `vm-forward-message'.
@@ -6917,12 +6810,6 @@ the current folder (internal variable).")
 (make-variable-buffer-local 'vm-ml-message-written)
 (defvar vm-ml-message-marked nil)
 (make-variable-buffer-local 'vm-ml-message-marked)
-
-(defcustom vm-remember-passwords-insecurely nil
-  "If set to `t', VM uses its own storage for remembering passwords
-for POP/IMAP accounts, which is insecure."
-  :group 'vm-folders
-  :type 'boolean)
 
 ;; to make the tanjed compiler shut up
 (defvar vm-pop-read-point nil)

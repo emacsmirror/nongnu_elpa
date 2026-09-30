@@ -2167,20 +2167,6 @@ deleted from the mailbox immediately after retrieval.
 
 @end macro
 
-@macro vmdocvmimapbytespersession
-@defopt vm-imap-bytes-per-session
-@vindex vm-imap-bytes-per-session
-Non-nil value should be an integer specifying how many bytes to
-retrieve per IMAP session.  When you type @code{g} to get new mail, VM
-will only retrieve messages until the byte limit is reached on
-any particular IMAP maildrop.  To retrieve more messages, type @code{g}
-again.
-
-A nil value means there’s no limit.
-@end defopt
-
-@end macro
-
 @macro vmdocvmimapexpungeafterretrieving
 @defopt vm-imap-expunge-after-retrieving
 @vindex vm-imap-expunge-after-retrieving
@@ -2192,19 +2178,6 @@ you run @code{vm-expunge-imap-messages}.
 This variable only affects IMAP mailboxes not listed in
 @code{vm-imap-auto-expunge-alist} (which is the recommended method for
 customizing this behavior).
-@end defopt
-
-@end macro
-
-@macro vmdocvmimapmessagespersession
-@defopt vm-imap-messages-per-session
-@vindex vm-imap-messages-per-session
-Non-nil value should be an integer specifying how many messages to
-retrieve per IMAP session.  When you type @code{g} to get new mail, VM
-will only retrieve that many messages from any particular IMAP maildrop.
-To retrieve more messages, type @code{g} again.
-
-A nil value means there’s no limit.
 @end defopt
 
 @end macro
@@ -2366,20 +2339,6 @@ messages from the server.
 
 @end macro
 
-@macro vmdocvmpopbytespersession
-@defopt vm-pop-bytes-per-session
-@vindex vm-pop-bytes-per-session
-Non-nil value should be an integer specifying how many bytes to
-retrieve per POP session.  When you type @code{g} to get new mail, VM
-will only retrieve messages until the byte limit is reached on
-any particular POP maildrop.  To retrieve more messages, type @code{g}
-again.
-
-A nil value means there’s no limit.
-@end defopt
-
-@end macro
-
 @macro vmdocvmpopexpungeafterretrieving
 @defopt vm-pop-expunge-after-retrieving
 @vindex vm-pop-expunge-after-retrieving
@@ -2399,34 +2358,12 @@ customizing this behavior).
 
 @end macro
 
-@macro vmdocvmpopmessagespersession
-@defopt vm-pop-messages-per-session
-@vindex vm-pop-messages-per-session
-Non-nil value should be an integer specifying how many messages to
-retrieve per POP session.  When you type @code{g} to get new mail, VM
-will only retrieve that many messages from any particular POP maildrop.
-To retrieve more messages, type @code{g} again.
-
-A nil value means there’s no limit.
-@end defopt
-
-@end macro
-
 @macro vmdocvmprimaryinbox
 @defopt vm-primary-inbox
 @vindex vm-primary-inbox
 Mail is moved from the system mailbox to this file for reading.
 
 Default value: @code{"~/INBOX"}
-@end defopt
-
-@end macro
-
-@macro vmdocvmrememberpasswordsinsecurely
-@defopt vm-remember-passwords-insecurely
-@vindex vm-remember-passwords-insecurely
-If set to @code{t}, VM uses its own storage for remembering passwords
-for POP/IMAP accounts, which is insecure.
 @end defopt
 
 @end macro
@@ -2747,16 +2684,6 @@ Default value:
 @example
 ("From:" "To:" "Newsgroups:" "Cc:" "Subject:" "Date:" "In-Reply-To:")
 @end example
-@end defopt
-
-@end macro
-
-@macro vmdocvmforwardedmessagepreambleformat
-@defopt vm-forwarded-message-preamble-format
-@vindex vm-forwarded-message-preamble-format
-String which specifies the preamble for a forwarded message.
-
-Default value: @code{"\\n---------- Original Message ----------\\n"}
 @end defopt
 
 @end macro
@@ -3806,23 +3733,6 @@ Example:
 
 @end macro
 
-@macro vmdocvmimapconnectionmode
-@defopt vm-imap-connection-mode
-@vindex vm-imap-connection-mode
-The mode of connection to the IMAP server.  Possible values
-are: @code{online}, @code{offline}, and @code{autoconnect}.  In the @code{online} mode,
-synchronization works normally and message bodies of external
-messages are fetched when needed.  In @code{offline} mode, no
-connection is established to the IMAP server and message bodies
-are not fetched.  In the @code{autoconnect} mode, a connection is
-established whenever a synchronization operation is performed and the
-connection mode is then turned into @code{online}.
-
-Default value: @code{online}
-@end defopt
-
-@end macro
-
 @macro vmdocvmimapdefaultaccount
 @defopt vm-imap-default-account
 @vindex vm-imap-default-account
@@ -3830,30 +3740,6 @@ Set this variable to a string denoting the name of an IMAP account
  (short name) declared in @code{vm-imap-account-alist}.  The account
  specified here will be regarded as the default account for
  various purposes, e.g., for saving copies of outgoing mail.
-@end defopt
-
-@end macro
-
-@macro vmdocvmimapensureactivesessions
-@defopt vm-imap-ensure-active-sessions
-@vindex vm-imap-ensure-active-sessions
-If non-NIL, ensures that an IMAP session is active before issuing
-commands to the server.  If it is not active, a new session is
-started.  This ensures a failure-proof operation, but involves
-additional overhead in checking that the session is active.
-
-Default value: @code{t}
-@end defopt
-
-@end macro
-
-@macro vmdocvmimapexpungeretries
-@defopt vm-imap-expunge-retries
-@vindex vm-imap-expunge-retries
-Number of retries to be performed for expunging IMAP mailboxes.
-Increase this if your IMAP server is sluggish.
-
-Default value: @code{1}
 @end defopt
 
 @end macro
@@ -3951,21 +3837,6 @@ behavior independent of this variable.
 @vindex vm-imap-server-timeout
 Number of seconds to wait for output from the IMAP server before
 timing out.  It can be set to nil to never time out.
-@end defopt
-
-@end macro
-
-@macro vmdocvmimapsynconget
-@defopt vm-imap-sync-on-get
-@vindex vm-imap-sync-on-get
-If this variable is non-NIL, then the vm-get-new-mail command
-should synchronize with the IMAP mailbox on the server.  This involves
-expunging messages that have been expunged from the server, saving and
-retrieving message attributes as well retrieving new messages.  If the
-variable is NIL, this functionality can be obtained via the
-vm-imap-synchronize command.
-
-Default value: @code{t}
 @end defopt
 
 @end macro
@@ -5928,8 +5799,8 @@ Default value: @code{Q}
 A regexp matching the run of words to encode as one RFC 2047 word.
 A word here is delimited by whitespace or a comma, and a run of them is
 encoded together rather than one at a time, which is shorter and is what
-the standard asks for.  What makes a word need encoding at all is
-@code{vm-mime-encode-words-regexp}.
+the standard asks for.  What makes a word need encoding is a character
+outside US-ASCII, which this regexp matches for itself.
 
 Default value:
 @example
@@ -5940,18 +5811,6 @@ Default value:
 \\\\15]*[^\\\\0-\\\\177]+[^ ,	
 \\\\15]*\\\\)+\\\\)*\\\\)"
 @end example
-@end defopt
-
-@end macro
-
-@macro vmdocvmmimeencodewordsregexp
-@defopt vm-mime-encode-words-regexp
-@vindex vm-mime-encode-words-regexp
-A regexp matching the characters that make a word need encoding.
-Anything outside US-ASCII, by default.  What VM takes a word to be is
-@code{vm-mime-encode-headers-words-regexp}.
-
-Default value: @code{"[^\\0-\\177]+"}
 @end defopt
 
 @end macro
@@ -8090,22 +7949,6 @@ warning message.  You will be able to retrieved any skipped messages
 later by running @code{vm-get-new-mail} interactively.
 
 A nil value for @code{vm-pop-max-message-size} means no size limit.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpopreadquitresponse
-@defopt vm-pop-read-quit-response
-@vindex vm-pop-read-quit-response
-Non-nil value tells VM to read the response to the POP QUIT command.
-Sometimes, for reasons unknown, the QUIT response never arrives
-from some POP servers and VM will hang waiting for it.  So it is
-useful to be able to tell VM not to wait.  Some other
-servers will not expunge messages unless the QUIT response is
-read, so for these servers you should set the variable’s value to
-t.
-
-Default value: @code{t}
 @end defopt
 
 @end macro

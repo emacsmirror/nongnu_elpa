@@ -8,6 +8,29 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **Twelve user options are gone, eleven of which no code read**
+    (emacs-vm/vm#880).  Four bounded what one fetch brings in:
+    `vm-imap-messages-per-session`, `vm-imap-bytes-per-session`,
+    `vm-pop-messages-per-session` and `vm-pop-bytes-per-session`.  A fetch no
+    longer blocks Emacs, so the reason for stopping one part way through has
+    gone, and VM now brings in whatever the mailbox holds, however large.
+    `vm-pop-messages-per-session` was the one of the twelve still doing
+    something.  `vm-pop-max-message-size` and `vm-imap-max-message-size` are
+    unaffected and still leave an enormous message on the server.
+
+    Gone with them, unread since the blocking driver went:
+    `vm-imap-connection-mode`, which was offline IMAP, `vm-imap-sync-on-get`,
+    `vm-imap-ensure-active-sessions`, `vm-imap-expunge-retries` and
+    `vm-pop-read-quit-response`.  A folder whose server cannot be reached is
+    still read and changed in its cache and still sends what it owes when the
+    server is back; what is gone is the setting that said so.
+
+    And three dead for longer: `vm-mime-encode-words-regexp`, which
+    `vm-mime-encode-headers-words-regexp` supersedes, and
+    `vm-forwarded-message-preamble-format` and
+    `vm-remember-passwords-insecurely`, neither read since 2011.  An init
+    file setting any of these is harmless; Customize will not offer them.
+
   * **HTML messages display on a stock Emacs: `shr` is a handler now.**
     `vm-mime-text/html-handler` offered only `emacs-w3m`, `w3m` and `lynx`,
     every one of which needs something installed, so a reader with none of
