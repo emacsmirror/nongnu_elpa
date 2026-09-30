@@ -3782,7 +3782,9 @@ describing the image type.                            USR, 2011-03-25"
 		  (setq tempfile (vm-make-tempfile))
 		  (let ((coding-system-for-write (vm-binary-coding-system)))
 		    (write-region start end tempfile nil 0))
-		  (vm-mm-layout-image-file layout))
+		  ;; remember it, or the next display writes it again: this
+		  ;; read of the same slot discarded its value (#882)
+		  (vm-set-mm-layout-image-file layout tempfile))
 		(vm-register-folder-garbage-files (list tempfile)))
 	    (and work-buffer (kill-buffer work-buffer))))
 	(if (not (bolp))
@@ -3918,7 +3920,11 @@ describing the image type.                            USR, 2011-03-25"
 		(progn
 		  ;; Problem - we have no way of knowing whether these
 		  ;; calls succeed or not.  USR, 2011-02-23
+		  ;; the file first: ImageMagick 7 refuses an operator with no
+		  ;; image read yet, "no images found for operation `-crop'",
+		  ;; and writes nothing (emacs-vm/vm#882)
 		  (insert (vm-imagemagick-convert-shell-command)
+			  " \"" file "\""
 			  " -crop"
 			  (format " %dx%d+0+%d"
 				  width
@@ -3931,13 +3937,14 @@ describing the image type.                            USR, 2011-03-25"
 				  (+ min-height adjustment
 				     (if (zerop remainder) 0 1)))
 			  (format " -roll +%d+%d" hroll vroll)
-			  " \"" file "\" \"" output-type newfile "\"\n")
+			  " \"" output-type newfile "\"\n")
 		  (when incremental
 			(insert "echo XZXX" (int-to-string i) "XZXX\n"))
 		  (setq i (1+ i)))
 	      (vm-imagemagick-call-convert
 	       nil nil
-	       (list "-crop"
+	       (list file
+		     "-crop"
 		     (format "%dx%d+0+%d"
 			     width
 			     (+ min-height adjustment
@@ -3950,7 +3957,7 @@ describing the image type.                            USR, 2011-03-25"
 				(if (zerop remainder) 0 1)))
 		     "-roll"
 		     (format "+%d+%d" hroll vroll)
-		     file (concat output-type newfile))))
+		     (concat output-type newfile))))
 	    (setq image-list (cons newfile image-list)
 		  starty (+ starty min-height adjustment
 			    (if (zerop remainder) 0 1))
@@ -4091,11 +4098,15 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	    ;; convert just the first page "[0]" and enforce PNG
 	    ;; output by "png:"
 	    (let ((coding-system-for-read (vm-binary-coding-system)))
+	      ;; the image first, then what to do to it: ImageMagick 7 refuses
+	      ;; an operator with nothing read yet (emacs-vm/vm#882).  "-" is
+	      ;; standard input, "[0]" the first page of it
 	      (setq success
 		    (eq 0 (vm-imagemagick-call-convert
 			   tempfile t
-			   (append convert-args
-				   (list "-[0]" "png:-"))))))
+			   (append (list "-[0]")
+				   convert-args
+				   (list "png:-"))))))
 	    (when success
 	      (write-region (point-min) (point-max) tempfile nil 0)
 	      (vm-set-mm-layout-image-modified layout t)))
