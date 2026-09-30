@@ -1316,7 +1316,11 @@ that was refused is still there to be continued later."
 (ert-deftest vm-postpone-test-the-drafts-on-screen-are-not-said-to-be-missing ()
   "The drafts folder on screen asks for a draft and says nothing else.
 It said \"Please select a draft!\" and then \"There are no known drafts.\" over
-the top of it, of the very drafts the reader was being asked to pick from."
+the top of it, of the very drafts the reader was being asked to pick from.
+
+Not under instrumentation: testcover raises its own \"constant does vary\"
+error inside `vm-postpone.el' before this gets there (emacs-vm/vm#870)."
+  (skip-unless (not vm-test-instrumented))
   (vm-postpone-test--deciding ()
     (let ((buffer (vm-postpone-test--open-drafts dir))
           (said nil))

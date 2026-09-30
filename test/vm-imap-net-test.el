@@ -1213,17 +1213,23 @@ filter\" and leaves the reader to guess whose it was."
            (warned nil)
            (before (buffer-list)))
       (unwind-protect
+          ;; every warning, not only the last: VM says other things while a
+          ;; session runs, and which of them comes last is not the point
           (cl-letf (((symbol-function 'vm-warn)
                      (lambda (_level _seconds &rest args)
-                       (setq warned (apply #'format args)))))
+                       (push (apply #'format args) warned))))
             (should (vm-imap-net-run-command
                      spec "NOOP" "NOOP" nil
                      (lambda (_result) (error "the callback went wrong"))))
-            (let ((deadline (+ (float-time) 10)))
-              (while (and (not warned) (< (float-time) deadline))
-                (accept-process-output nil 0.05)))
-            (should warned)
-            (should (string-match-p "the callback went wrong" warned)))
+            (let ((deadline (+ (float-time) 10))
+                  (wanted (lambda ()
+                            (seq-find (lambda (line)
+                                        (string-match-p "the callback went wrong"
+                                                        line))
+                                      warned))))
+              (while (and (not (funcall wanted)) (< (float-time) deadline))
+                (accept-process-output nil 0.05))
+              (should (funcall wanted))))
         (dolist (buffer (buffer-list))
           (unless (memq buffer before)
             (when (buffer-live-p buffer)
@@ -3449,7 +3455,11 @@ worst pause of 0.618s (issue #742).
 Bounds rather than figures, and loose ones: a hundred vector words and two
 hundred conses a line, against the twenty-three thousand and the three
 thousand seven hundred that were there.  Allocation and not time, because a
-count does not depend on how busy the machine is."
+count does not depend on how busy the machine is.
+
+Not under instrumentation: edebug allocates per form, which is most of what
+the count then measures (emacs-vm/vm#870)."
+  (skip-unless (not vm-test-instrumented))
   (let* ((lines 200)
          (text (with-temp-buffer
                  (dotimes (i lines)

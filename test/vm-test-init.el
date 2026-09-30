@@ -861,6 +861,14 @@ Files match pattern vm-*-test.el, excluding vm-test-init.el and the files in
                     (directory-files vm-test-dir nil "^vm-.*-test\\.el$"))
         #'string<))
 
+(defvar vm-test-instrumented nil
+  "Whether this Emacs is running the `--forms-coverage' pass.
+`test/forms-coverage-report.el' sets it, and a handful of tests skip on it:
+what edebug's instrumentation costs in time and consing, and what it does to
+`symbol-file' and to testcover's own constant checking, makes them fail for
+reasons that say nothing about VM.  A real failure in that pass should be
+the only failure in it.")
+
 (defun vm-test-load-all-test-files ()
   "Load all test files from `vm-test-dir'."
   (let ((test-files (vm-test-discover-test-files)))

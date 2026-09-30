@@ -227,10 +227,19 @@ a line is written as run once or not at all."
     (vm-forms-coverage-write-lines (vm-forms-coverage-lines))))
 
 ;; Main
+;;
+;; `vm-test-init.el' first, and only then instrument.  It is what puts
+;; test/opt/elpa on the load path, and VM loads its optional companions as it
+;; loads: instrumenting first meant `vm-serial.el' called for `bbdb-sc' with
+;; no BBDB to find, failed into the `condition-case' in `vm-load-features',
+;; and provided `vm-serial' all the same -- so the later `(require
+;; \='vm-serial)' in `vm-optional-test-bbdb-names-resolve' was a no-op and
+;; `bbdb-sc-get-attrib' was unbound in that pass alone (emacs-vm/vm#870).
+(load (expand-file-name "test/vm-test-init.el" vm-forms-coverage-dir))
 (let ((failed (vm-forms-coverage-instrument)))
   (dolist (f failed)
     (message "forms-coverage: %s would not instrument: %s" (car f) (cdr f)))
-  (load (expand-file-name "test/vm-test-init.el" vm-forms-coverage-dir))
+  (setq vm-test-instrumented t)
   (vm-test-load-all-test-files)
   (ert-run-tests-batch t)
   (vm-forms-coverage-report failed))

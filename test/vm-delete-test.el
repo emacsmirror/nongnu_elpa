@@ -586,7 +586,11 @@ message every time."
 (ert-deftest vm-delete-test-quiet-expunge-with-nothing-deleted-is-quiet ()
   "`:quiet t' silences the new message too.
 It has to: vm-avirtual.el's spam auto-delete expunges quietly, and mostly finds
-nothing to expunge."
+nothing to expunge.
+
+Not under instrumentation: edebug says things of its own while the tests run,
+and this one asks that nothing at all was said (emacs-vm/vm#870)."
+  (skip-unless (not vm-test-instrumented))
   (vm-delete-test--expungeable
     (should (null (vm-delete-test--said
                    (lambda () (vm-expunge-folder :quiet t)))))))
