@@ -1,5 +1,6 @@
 ;;; mastodon-client-test.el --- Tests for mastodon-client.el  -*- lexical-binding: nil -*-
 
+(use-package el-mock)
 (require 'el-mock)
 (require 'mastodon-client)
 (require 'mastodon-http)
@@ -36,13 +37,13 @@
   "Test the value `mastodon-client--store' returns/stores."
   (let ((mastodon-instance-url "http://mastodon.example")
         (plist '(:client_id "id" :client_secret "secret"))
-        (mastodon-auth-encrypt-tokens-plstore nil))
+        (mastodon-auth-encrypt-tokens-plstore nil)
+        (mastodon-client--token-file "stubfile.plstore"))
     (with-mock
-     (mock (mastodon-client--token-file) => "stubfile.plstore")
-     (mock (mastodon-client--fetch) => plist)
-     (should (equal (mastodon-client--store) plist)))
+      (mock (mastodon-client--fetch) => plist)
+      (should (equal (mastodon-client--store) plist)))
     (let* ((plstore (plstore-open "stubfile.plstore"))
-           (client (mastodon-client--remove-key-from-plstore
+           (client (cdr
                     (plstore-get plstore "mastodon-http://mastodon.example"))))
       (plstore-close plstore)
       (should (equal client plist))
@@ -51,15 +52,13 @@
 
 (ert-deftest mastodon-client--read-finds-match ()
   "Should return mastodon client from `mastodon-token-file' if it exists."
-  (let ((mastodon-instance-url "http://mastodon.example"))
-    (with-mock
-      (mock (mastodon-client--token-file) => "fixture/client.plstore")
-      (should (equal (mastodon-client--read)
-                     '(:client_id "id2" :client_secret "secret2"))))))
+  (let ((mastodon-instance-url "http://mastodon.example")
+        (mastodon-client--token-file "fixture/client.plstore"))
+    (should (equal (mastodon-client--read)
+                   '(:client_id "id2" :client_secret "secret2")))))
 
 (ert-deftest mastodon-client--general-read-finds-match ()
-  (with-mock
-    (mock (mastodon-client--token-file) => "fixture/client.plstore")
+  (let ((mastodon-client--token-file "fixture/client.plstore"))
     (should (equal (mastodon-client--general-read "user-test8000@mastodon.example")
                    '(:username "test8000@mastodon.example"
                                :instance "http://mastodon.example"
@@ -67,35 +66,31 @@
                                :access_token "token2")))))
 
 (ert-deftest mastodon-client--general-read-finds-no-match ()
-  (with-mock
-    (mock (mastodon-client--token-file) => "fixture/client.plstore")
+  (let ((mastodon-client--token-file "fixture/client.plstore"))
     (should (equal (mastodon-client--general-read "nonexistant-key")
                    nil))))
 
 (ert-deftest mastodon-client--general-read-empty-store ()
-  (with-mock
-    (mock (mastodon-client--token-file) => "fixture/empty.plstore")
+  (let ((mastodon-client--token-file "fixture/empty.plstore"))
     (should (equal (mastodon-client--general-read "something")
                    nil))))
 
 (ert-deftest mastodon-client--read-finds-no-match ()
   "Should return mastodon client from `mastodon-token-file' if it exists."
-  (let ((mastodon-instance-url "http://mastodon.social"))
-    (with-mock
-      (mock (mastodon-client--token-file) => "fixture/client.plstore")
-      (should (equal (mastodon-client--read) nil)))))
+  (let ((mastodon-instance-url "http://mastodon.social")
+        (mastodon-client--token-file "fixture/client.plstore"))
+    (should (equal (mastodon-client--read) nil))))
 
 (ert-deftest mastodon-client--read-empty-store ()
   "Should return nil if mastodon client is not present in the plstore."
-  (with-mock
-    (mock (mastodon-client--token-file) => "fixture/empty.plstore")
+  (let ((mastodon-client--token-file "fixture/empty.plstore"))
     (should (equal (mastodon-client--read) nil))))
 
 (ert-deftest mastodon-client--client-set-and-matching ()
   "Should return `mastondon-client' if `mastodon-client--client-details-alist' is non-nil and instance url is included."
   (let ((mastodon-instance-url "http://mastodon.example")
         (mastodon-client--client-details-alist '(("https://other.example" . :no-match)
-                                                 ("http://mastodon.example" . :matches))))
+                                  ("http://mastodon.example" . :matches))))
     (should (eq (mastodon-client) :matches))))
 
 (ert-deftest mastodon-client--client-set-but-not-matching ()
@@ -153,6 +148,7 @@
 (ert-deftest mastodon-client--store-access-token ()
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
+         (mastodon-client--token-file "stubfile.plstore")
          (mastodon-auth-encrypt-tokens-plstore nil)
          ;; if clause so we can not lose the encrypted plist structure:
          (user-details ;; order changed for new encrypted auth flow:
@@ -170,16 +166,14 @@
     ;; test if mastodon-client--store-access-token /returns/ right
     ;; value
     (with-mock
-     (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
-     (mock (mastodon-client--token-file) => "stubfile.plstore")
-     (should (equal (mastodon-client--store-access-token "token")
-                    user-details)))
+      (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+      (should (equal (mastodon-client--store-access-token "token")
+                     user-details)))
     ;; test if mastodon-client--store-access-token /stores/ right value
     (with-mock
-     (mock (mastodon-client--token-file) => "stubfile.plstore")
-     (should (equal (mastodon-client--general-read
-                     "user-test8000@mastodon.example")
-                    user-details)))
+      (should (equal (mastodon-client--general-read
+                      "user-test8000@mastodon.example")
+                     user-details)))
     (delete-file "stubfile.plstore")))
 
 (ert-deftest mastodon-client--make-user-active ()
@@ -189,10 +183,10 @@
                          :client_secret nil
                          :username "test@mastodon.example"))
         (mastodon-auth-use-auth-source nil) ;; FIXME: test auth source
-        (mastodon-auth-encrypt-tokens-plstore nil))
+        (mastodon-auth-encrypt-tokens-plstore nil)
+        (mastodon-client--token-file "stubfile.plstore"))
     (with-mock
-     (mock (mastodon-client--token-file) => "stubfile.plstore")
-     (mastodon-client--make-user-active user-details)
-     (should (equal (mastodon-client--general-read "active-user")
-                    user-details)))
+      (mastodon-client--make-user-active user-details)
+      (should (equal (mastodon-client--general-read "active-user")
+                     user-details)))
     (delete-file "stubfile.plstore")))
