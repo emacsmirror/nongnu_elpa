@@ -180,8 +180,29 @@ session browsing remains available.
 dashboard's Browse menu also offers =H= for Group Chats.  Use =RET= or =f=
 to open a room, =m= for the next list page, and =g= to refresh or reconnect.
 Public messages show their speakers in sequence order; member activity,
-task counts, and pending approvals appear separately.  This is a read-only
-view: it does not send messages, answer approvals, or start room workers.
+task counts, and pending approvals appear separately.  With a ready hosted
+driver, =c= creates a room from two to six existing profiles on that same
+backend.  Open the room and use =s= to send a literal message in a named
+thread.  The roster shows mention handles; the backend owns mention policy,
+rounds, member sessions and durable work, not Emacs.
+
+Send acceptance is separate from completed member turns.  If a receipt is
+lost, =R= reconciles the retained submission against the room log before
+offering an explicit retry with the same event ID.  No submission or task
+is retried automatically on reconnect.  Keep the view open to retain an
+uncertain message's recovery identity; closing it discards that local copy.
+
+=a= answers an exact pending approval (once or deny).  =x= requests
+cancellation for this room and reads state back; it does not terminate the
+gateway or claim that every process stopped.  =r= explicitly retries a
+named uncertain task, including work the backend has deferred, after warning
+that the prior execution may have had effects.  Before offering or answering
+an approval, Emacs reads complete room history and excludes retired tasks and
+executions, so historical failures do not block fresh requests.  Incomplete
+history, ambiguous task authority, or stopping work refuses approval; use =g=
+to continue reading.  State, history and approval are separate backend calls,
+not an atomic transaction with other clients.  Closing the view or Emacs only
+stops local monitoring: backend work can continue.
 
 The backend must advertise the protocol-2 room-reading methods and
 features.  Driver availability is shown separately: stored history can

@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 
-;; Read-only protocol-v2 hosted rooms.  The gateway owns room identity,
+;; Protocol-v2 hosted rooms.  The gateway owns room identity,
 ;; authority, tasks and retirement; this view never runs an orchestrator.
 ;; Public messages and typed activity are inert text, not chat events.
 
@@ -14,6 +14,17 @@
 (require 'hermes-buffer)
 (require 'hermes-browser)
 (require 'hermes-dashboard-transport)
+
+(autoload 'hermes-groups-create "hermes-groups-actions" nil t)
+(autoload 'hermes-groups-send "hermes-groups-actions" nil t)
+(autoload 'hermes-groups-stop "hermes-groups-actions" nil t)
+(autoload 'hermes-groups-approve "hermes-groups-actions" nil t)
+(autoload 'hermes-groups-retry "hermes-groups-actions" nil t)
+(autoload 'hermes-groups-resend "hermes-groups-actions" nil t)
+
+(defvar-local hermes-groups--mutation nil "Exact pending participation operation.")
+(defvar-local hermes-groups--submission nil "Uncertain message retained for explicit reconciliation.")
+(defvar-local hermes-groups--retired-approvals nil "Approval identities retired by local Stop.")
 
 (defvar-local hermes-groups--instance nil "Immutable backend identity for this view.")
 (defvar-local hermes-groups--room-id nil "Exact room being read, or nil for the list.")
@@ -155,7 +166,7 @@ reconciliation; never synthesize a cursor or infer continuity from text."
 (defun hermes-groups--header ()
   "Return separate connection, driver and local read state."
   (concat
-   (propertize "Group Chat · read-only · Last read: " 'face 'shadow)
+   (propertize "Group Chat · Last read: " 'face 'shadow)
    (propertize (or hermes-browser--status "Not fetched") 'face 'font-lock-type-face)
    (propertize " · Driver: " 'face 'shadow)
    (propertize
@@ -171,18 +182,27 @@ reconciliation; never synthesize a cursor or infer continuity from text."
   "g" #'hermes-groups-refresh "m" #'hermes-groups-more
   "RET" #'hermes-groups-view "f" #'hermes-groups-view
   "F" #'hermes-groups-follow "b" #'quit-window
+  "c" #'hermes-groups-create "s" #'hermes-groups-send "x" #'hermes-groups-stop
+  "a" #'hermes-groups-approve "r" #'hermes-groups-retry "R" #'hermes-groups-resend
   "n" #'next-line "p" #'previous-line)
 
 (keymap-popup-annotate hermes-groups-mode-map
-  :popup-key "?" :exit-key "C-g" :description "Hosted Group Chats (read-only)"
+  :popup-key "?" :exit-key "C-g" :description "Hosted Group Chats"
   :group "Read"
   hermes-groups-view "Open room" hermes-groups-refresh "Refresh / reconnect"
   hermes-groups-more "Next room page" hermes-groups-follow "Follow activity"
+  :group "Room"
+  hermes-groups-create "Create room" hermes-groups-send "Send message"
+  hermes-groups-resend "Reconcile submission"
+  :group "Work"
+  hermes-groups-stop "Stop room work" hermes-groups-approve "Answer approval"
+  hermes-groups-retry "Retry uncertain task"
   :group "Navigate"
   next-line "Next line" previous-line "Previous line" quit-window "Back")
 
 (define-derived-mode hermes-groups-mode special-mode "Hermes Groups"
-  "Read hosted rooms without sending messages or managing room workers."
+  "Read and participate in gateway-owned hosted rooms.
+Closing this view only stops local monitoring; backend work can continue."
   (setq-local header-line-format '(:eval (hermes-groups--header)))
   (add-hook 'kill-buffer-hook #'hermes-groups--retire nil t)
   (add-hook 'change-major-mode-hook #'hermes-groups--retire nil t)
@@ -274,6 +294,10 @@ buffer.  A successor's edits are not ours to undo, even on error or quit."
      (format "Room: %s\nAuthority: %s · Epoch: %s\n"
              (hermes-groups--text room 'room_id) (car (hermes-groups--authority room))
              (cdr (hermes-groups--authority room)))
+     (mapconcat (lambda (member)
+                  (format "@%s · %s\n" (hermes-groups--text member 'handle)
+                          (hermes-groups--text member 'profile)))
+                (hermes-transport--get room 'members) "")
      (propertize (format "History: %s\n%s\n" (or terminal "hosted") (or notice ""))
                  'face (if (or terminal notice) 'warning 'shadow))
      (propertize "Member activity / task status\n" 'face 'bold)
@@ -490,6 +514,7 @@ Optional OFFSET is a returned room-list offset.  Each read follows at most
   (interactive nil hermes-groups-mode)
   (hermes-groups--assert-owned)
   (when (eq hermes-groups--terminal 'expired) (user-error "This room's history expired"))
+  (when hermes-groups--mutation (user-error "Room operation pending"))
   (hermes-groups--retire-timer)
   (hermes-browser--next-request-generation)
   (setq hermes-browser--status "Loading")

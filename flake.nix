@@ -65,6 +65,7 @@
             "lisp/hermes-sessions.el"
             "lisp/hermes-projects.el"
             "lisp/hermes-groups.el"
+            "lisp/hermes-groups-actions.el"
             "lisp/hermes-inventory.el"
             "lisp/hermes-tool-setup.el"
             "lisp/hermes-rollback.el"
