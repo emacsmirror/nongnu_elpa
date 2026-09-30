@@ -949,7 +949,13 @@ the composition side has and the message side lacks."
 A composition has no folder, no flags and no uid, so the message side is
 larger; but a selector offered for compositions and not for messages would
 be one a reader could write in a vm-pcrisis condition and not in a virtual
-folder, which is a difference nobody intended."
+folder, which is a difference nobody intended.
+
+Not under instrumentation: edebug evaluates a `defvar' as \[eval-defun] does,
+which resets it, so instrumenting vm-vars.el throws away the selectors this
+file adds to `vm-virtual-selector-function-alist' as it loads, and the
+top-level call that added them is not re-run (emacs-vm/vm#870)."
+  (skip-unless (not vm-test-instrumented))
   (let ((missing (seq-remove
                   (lambda (name) (assq name vm-virtual-selector-function-alist))
                   (mapcar #'car vm-mail-virtual-selector-function-alist))))

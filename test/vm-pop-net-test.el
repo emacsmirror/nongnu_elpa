@@ -760,7 +760,11 @@ than that would otherwise collect a connection per round."
 (ert-deftest vm-pop-net-test-a-failed-check-leaves-the-last-answer ()
   "A check that fails does not report \"no mail\": a folder that had mail
 waiting goes on saying so while the server is down, which is the truth as
-far as anyone knows."
+far as anyone knows.
+
+Not under instrumentation: the check does not settle inside the wait when
+every form is instrumented (emacs-vm/vm#870)."
+  (skip-unless (not vm-test-instrumented))
   (vm-pop-net-test--in-a-folder-with-spool (mock :messages
                                                  (list vm-pop-net-test--alice))
     (vm-check-for-spooled-mail nil t)

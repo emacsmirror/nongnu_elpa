@@ -537,7 +537,12 @@ drops out of the manual.  Four did -- `vm-compact-folder',
 `vm-recover-folder', `vm-unread-message' and `vm-headers-summary' -- when
 they were autoloaded for emacs-vm/vm#609.  An alias needs the explicit form:
 
-  ;;;###autoload (autoload \\='vm-compact-folder \"vm-delete\" nil t)"
+  ;;;###autoload (autoload \\='vm-compact-folder \"vm-delete\" nil t)
+
+Not under instrumentation: edebug re-evaluates each definition, so
+`symbol-file' answers with the instrumenting file and every command reads as
+orphaned (emacs-vm/vm#870)."
+  (skip-unless (not vm-test-instrumented))
   (vm-reference-load-everything)
   (let ((orphans nil))
     (mapatoms

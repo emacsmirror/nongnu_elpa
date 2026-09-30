@@ -586,6 +586,14 @@ arrives, so what a failure leaves behind is a warning and not a signal."
 (defvar vm-imap-mock-test--said nil
   "Where `vm-imap-mock-test--warnings' collects what VM warned about.")
 
+(defun vm-imap-mock-test--warned-about (text &optional warnings)
+  "Whether WARNINGS, or what has been collected so far, has one matching TEXT.
+A test waits for the warning it is about rather than for the first warning of
+any kind: VM says \"running from source\" before anything else in a tree whose
+lisp/ has not been byte-compiled."
+  (seq-find (lambda (line) (string-match-p text line))
+            (or warnings vm-imap-mock-test--said)))
+
 (ert-deftest vm-imap-mock-test-creating-a-mailbox ()
   "`vm-create-imap-folder' makes the mailbox its spec names, and the server
 has it afterwards."
@@ -602,13 +610,16 @@ has it afterwards."
 says so rather than reporting success."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
     (let* ((vm-imap-server-timeout 10)
+           ;; wait for the warning this is about, not for any warning: VM
+           ;; says "running from source" first in a tree whose lisp/ is not
+           ;; byte-compiled, and the wait ended on that
            (said (vm-imap-mock-test--warnings
                    (vm-create-imap-folder
                     (vm-imap-mock-test--spec-for mock "INBOX"))
                    (vm-imap-mock-test--wait-until
-                    (lambda () vm-imap-mock-test--said)))))
-      (should said)
-      (should (string-match-p "CREATE failed" (car said))))))
+                    (lambda () (vm-imap-mock-test--warned-about
+                                "CREATE failed"))))))
+      (should (vm-imap-mock-test--warned-about "CREATE failed" said)))))
 
 (ert-deftest vm-imap-mock-test-renaming-a-mailbox ()
   "`vm-rename-imap-folder' renames it on the server, and what was in it is
@@ -648,9 +659,9 @@ The mock answers NO, which is what a server does, and VM has to notice."
                       (vm-delete-imap-folder
                        (vm-imap-mock-test--spec-for mock "Nowhere"))
                       (vm-imap-mock-test--wait-until
-                       (lambda () vm-imap-mock-test--said)))))
-          (should said)
-          (should (string-match-p "DELETE failed" (car said)))))
+                       (lambda () (vm-imap-mock-test--warned-about
+                                   "DELETE failed"))))))
+          (should (vm-imap-mock-test--warned-about "DELETE failed" said))))
       (should (equal (vm-imap-mock-mailbox-names mock) '("INBOX"))))))
 
 ;;; Saving a message to an IMAP folder
