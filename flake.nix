@@ -101,6 +101,7 @@
           # No directory trees — nested/generated/private files stay out of src.
           # Dot-prefixed basenames stay out of scans and release membership.
           testElFiles = [
+            "hermes-bot-chat-tests.el"
             "hermes-buffer-tests.el"
             "hermes-gnosis-tests.el"
             "hermes-request-tests.el"

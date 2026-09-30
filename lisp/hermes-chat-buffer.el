@@ -134,6 +134,14 @@ without each one repeating the liveness guard."
   "Owner lifetime, client and session captured when opening this panel.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
+(defvar-local hermes-chat--pinned-url nil
+  "Captured backend URL for a Bot Chat or its explicitly opened scratch chat.
+Nil keeps the ordinary chat endpoint-resolution policy.")
+
+(defvar-local hermes-chat--bot-chat-root nil
+  "Backend-confirmed canonical Bot Chat root, or nil for ordinary chats.
+This marks the interface, not a lookup cache.
+Profiles always reads the backend registry.")
 (defvar-local hermes-chat--dashboard-create-model nil
   "Buffer-local model override for the next `session.create'.
 Nil means inherit the profile default.  Kept buffer-local so two chat buffers

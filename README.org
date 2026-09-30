@@ -177,6 +177,32 @@ confuse live sessions with the same stored ID in different profiles.
 Older backends without project methods show an unsupported status; ordinary
 session browsing remains available.
 
+* Bot Chats and routines
+
+In =M-x hermes-list-profiles=, =RET= opens the selected profile's canonical
+=Bot Chat=.  Emacs looks up that exact title on the selected backend, including
+hidden history and its compression continuation.  Only confirmed absence offers
+creation.  A new conversation stays hidden and follows profile configuration;
+its title must be persisted and read back before the chat opens.  Failed or
+contradictory lookup never creates another conversation.  Opening sends no
+introduction, though the backend can prewarm the agent and discover MCP tools.
+
+=N= opens a separate ordinary scratch chat.  Within a canonical Bot Chat,
+=/new= offers compression or explicit scratch creation; it does not silently
+replace the relationship.  Ordinary chats retain their existing =/new= behavior.
+=m= still edits the profile's default model.
+
+=R= opens that backend/profile's existing cron jobs in the ordinary cron editor.
+Opening or refreshing Routines only reads jobs.  Creating, editing, pausing and
+running a job remain explicit cron actions; there is no separate scheduler or
+automatic Bot Chat delivery preset.
+
+Canonical chats, scratch chats explicitly opened by their =/new= command, and
+Routines retain the backend selected when opened, including after reconnect or
+changes to the default dashboard URL.  Routines actions and run transcripts stay
+on that backend.  Reopen from Profiles to choose another backend; ordinary chats
+and the all-jobs cron browser keep their existing endpoint-selection policy.
+
 * Dashboard authentication
 
 =hermes-dashboard-transport-remote-auth-method= defaults to =auto=:

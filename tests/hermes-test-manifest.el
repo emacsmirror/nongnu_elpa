@@ -29,6 +29,7 @@
     ("lisp/hermes-kanban-log.el" "tests/hermes-browsers-tests.el" both)
     ("lisp/hermes-preview-format.el" "tests/hermes-preview-tests.el" forward)
     ("lisp/hermes-profiles.el" "tests/hermes-browsers-tests.el" both)
+    ("lisp/hermes-profiles.el" "tests/hermes-bot-chat-tests.el" reverse)
     ("lisp/hermes-rollback.el" "tests/hermes-browsers-tests.el" both)
     ("lisp/hermes-session-title.el" "tests/hermes-sessions-tests.el" forward)
     ("lisp/hermes-subagents.el" "tests/hermes-browsers-tests.el" both)

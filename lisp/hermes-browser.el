@@ -277,6 +277,16 @@
 Browser modes register snapshot data here, not filters or request parameters.
 Tabulated rows and their rendered text are always invalidated together.")
 
+(defvar-local hermes-browser--pinned-instance nil
+  "Captured backend for a scoped browser, or nil for ordinary resolution.
+A scoped view must retain this identity through refresh and acquisition.")
+
+(defun hermes-browser--instance (&optional no-prompt)
+  "Return this view's pinned backend or resolve its ordinary instance.
+When NO-PROMPT is non-nil, return nil for ambiguous ordinary contexts."
+  (or (hermes-browser--copy-identity hermes-browser--pinned-instance)
+      (if no-prompt (hermes-instance-context) (hermes-instance-resolve))))
+
 (defun hermes-browser--own-instance (instance)
   "Make the current browser buffer own INSTANCE.
 Invalidate the previous instance's rows and registered caches first."
@@ -297,7 +307,7 @@ Invalidate the previous instance's rows and registered caches first."
 
 (defun hermes-browser--existing-client ()
   "Return a live dashboard client for the current Hermes instance, or nil."
-  (when-let* ((instance (hermes-instance-context)))
+  (when-let* ((instance (hermes-browser--instance t)))
     (cl-some (lambda (buffer)
                (with-current-buffer buffer
                  (and (derived-mode-p 'hermes-chat-mode)
@@ -315,9 +325,16 @@ Invalidate the previous instance's rows and registered caches first."
 Reuses a live chat connection when one exists; otherwise acquires a shared
 client that DONE releases.  Resolve the endpoint only for acquisition;
 FN runs without shadowing the source buffer's instance ownership."
-  (let* ((instance (hermes-instance-resolve))
+  (let* ((instance (hermes-browser--instance))
          (existing (let ((hermes-instance instance))
                      (hermes-browser--existing-client)))
+         (existing
+          (and existing
+               (or (null hermes-browser--pinned-instance)
+                   (equal (hermes-dashboard-transport--normalize-base-url
+                           (hermes-instance-url instance))
+                          (hermes-dashboard-transport--api-client-base-url existing)))
+               existing))
          (client (or existing
                      (let ((hermes-instance instance)
                            (hermes-dashboard-transport-url
@@ -351,7 +368,7 @@ constructor claim to an unclaimed origin."
         (mapcar (lambda (variable)
                   (cons variable (hermes-browser--copy-identity
                                   (symbol-value variable))))
-                variables)))
+                (cons 'hermes-browser--pinned-instance variables))))
 
 (defun hermes-browser--owner-current-p (owner)
   "Return non-nil if captured OWNER retains its request and exact claim."
@@ -434,13 +451,13 @@ Retain resolution authority separately from the raw buffer-local owner."
         ;; legacy resolver ignores that owner; an unowned multi-instance entry
         ;; instead retains its catalogue until acquisition asks for a choice.
         (endpoint (hermes-browser--copy-identity
-                   (or (hermes-instance-context) (hermes-instance-configured))))
+                   (or (hermes-browser--instance t) (hermes-instance-configured))))
         (identity (and selection (hermes-browser--copy-identity (funcall selection)))))
     (lambda ()
       (and (funcall owner)
            (with-current-buffer buffer
              (equal endpoint
-                    (or (hermes-instance-context) (hermes-instance-configured))))
+                    (or (hermes-browser--instance t) (hermes-instance-configured))))
            (or (null selection)
                (with-current-buffer buffer
                  (equal identity (condition-case nil (funcall selection)
@@ -835,7 +852,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          ,(format "Refresh the %s browser without re-displaying it." title)
          (if ,(plist-get body :refresh)
              (funcall ,(plist-get body :refresh))
-           (hermes-browser--own-instance (hermes-instance-resolve))
+           (hermes-browser--own-instance (hermes-browser--instance))
          (let* ((target (current-buffer))
                 (instance hermes-instance)
                 (generation (hermes-browser--next-request-generation))
