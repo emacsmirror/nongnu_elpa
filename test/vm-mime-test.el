@@ -2233,9 +2233,13 @@ picture wanting a presentation buffer and a button in it."
   (let ((sent nil))
     (cl-letf (((symbol-function 'vm-imagemagick-call-convert)
                (lambda (_infile _buffer args) (setq sent args) 1)))
-      (let ((layout (vector nil nil nil nil nil nil nil nil nil nil nil nil
-                            nil nil (make-symbol "cache") nil nil nil nil))
+      ;; the cache is slot 12, which `vm-mm-layout-cache' reads and every
+      ;; `vm-mm-layout-image-*' accessor hangs a property on: counted out by
+      ;; hand this was slot 14, the display error, leaving the cache nil and
+      ;; any write of one of those properties landing on the symbol nil
+      (let ((layout (make-vector (length vm-mime-layout-fields) nil))
             (extent nil))
+        (aset layout 12 (make-symbol "vm-mime-test-cache"))
         (with-temp-buffer
           (insert " ")
           (setq extent (vm-make-extent (point-min) (point-max)))
