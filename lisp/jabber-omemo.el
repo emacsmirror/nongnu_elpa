@@ -2100,9 +2100,7 @@ Signal encryption or file errors so the caller cannot upload plaintext."
           ;; Keep opaque ciphertext literal even for compressed file suffixes.
           (let ((jka-compr-inhibit t)
                 (coding-system-for-write 'no-conversion))
-            (with-temp-file tmp
-              (set-buffer-multibyte nil)
-              (insert ciphertext)))
+            (write-region ciphertext nil tmp nil 'silent))
         ((error quit)
          (ignore-errors (delete-file tmp))
          (signal (car err) (cdr err))))

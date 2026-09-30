@@ -2483,9 +2483,7 @@ For aesgcm:// URLs, fetches via HTTPS and decrypts with AES-256-GCM."
              ;; Preserve the original bytes, but keep handlers such as TRAMP.
              (let ((jka-compr-inhibit t)
                    (coding-system-for-write 'no-conversion))
-               (with-temp-file dest-file
-                 (set-buffer-multibyte nil)
-                 (insert plaintext)))
+               (write-region plaintext nil dest-file nil 'silent))
              (message "Downloaded and decrypted %s" dest-file))))))
    (list dest key iv)
    'silent
