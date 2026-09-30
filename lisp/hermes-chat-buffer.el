@@ -1635,10 +1635,18 @@ Only an explicit RETRY-ENTRY identical to the head may retry a rejection."
   "Clear CONTEXT when it is still the unresolved dashboard submission.
 When NO-DRAIN is non-nil, retain queued input without retrying it."
   (when (eq context hermes-chat--unsettled-submit-context)
-    (setq hermes-chat--unsettled-submit-context nil
-          hermes-chat--prepared-submit-assistant-id nil)
-    (unless no-drain
-      (hermes-chat--drain-queued-message))))
+    (let ((owner hermes-buffer--owner)
+          (lifetime hermes-chat--lifecycle-generation))
+      (setq hermes-chat--unsettled-submit-context nil
+            hermes-chat--prepared-submit-assistant-id nil)
+      ;; Admission can be the last blocker after an earlier terminal event.
+      ;; Give ordinary FIFO entries priority before waking other waiting work.
+      (unless no-drain
+        (hermes-chat--drain-queued-message))
+      (when (and (hermes-buffer--owned-p 'hermes-chat-mode)
+                 (eq owner hermes-buffer--owner)
+                 (hermes-chat--current-lifetime-p lifetime))
+        (hermes-chat--notify-state-change)))))
 
 (defun hermes-chat--queue-content (content &optional note display image-record)
   "Queue CONTENT for the next turn, inserting NOTE when non-nil.

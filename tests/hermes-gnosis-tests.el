@@ -28,6 +28,7 @@
 
 
 (require 'hermes-gnosis)
+(defvar gnosis-db)
 
 (defmacro hermes-gnosis-test-with-origin (&rest body)
   "Run BODY with a real disposable SQLite origin and an attached chat."
@@ -444,52 +445,71 @@ Use STATUS, or the installed backend's explicit successful status."
              (params . ((type . "message.complete") (session_id . "runtime")
                         (payload . ((status . ,(or status "complete"))
                                     (text . ,(hermes-gnosis--json
-                                              (hermes-gnosis--envelope request result)))))))))))
+                                              (hermes-gnosis--envelope
+                                               request result
+                                               (when-let* ((binding (seq-find
+                                                                    (lambda (entry)
+                                                                      (equal (plist-get entry :batch)
+                                                                             (plist-get request :session-id)))
+                                                                    (hermes-gnosis--chat-bindings))))
+                                                 (hermes-gnosis--association binding)))))))))))))
 
-(ert-deftest hermes-gnosis-tutor-prewarm-early-response-and-accepted-adaptation ()
+(defmacro hermes-gnosis-test-with-provider (&rest body)
+  "Run BODY with only the optional domain binding seam replaced."
+  (declare (indent 0))
+  `(let ((real-require (symbol-function 'require)) providers unbound)
+     (cl-letf (((symbol-function 'require)
+                (lambda (feature &rest args)
+                  (if (eq feature 'gnosis-agent-review) t
+                    (apply real-require feature args))))
+               ((symbol-function 'gnosis-agent-review-bind-provider)
+                (lambda (batch connection provider)
+                  (push (list batch connection provider) providers)
+                  (lambda () (push batch unbound)))))
+       ,@body)))
+
+(ert-deftest hermes-gnosis-link-existing-chat-first-request-combined-no-initialize ()
   (hermes-gnosis-test-with-origin
     (setq mode "agent-review" status "running")
-    (let* ((tutor (hermes-gnosis--tutor (current-buffer)))
-           (init (hermes-gnosis-test-request "initialize"))
-           (request (hermes-gnosis-test-request)) resolved rejected)
-      (hermes-gnosis--tutor-attach tutor "batch" db)
-      (setf (plist-get tutor :initialize) (hermes-gnosis--tutor-op init nil nil))
-      (insert "untouched tutor draft")
-      (hermes-gnosis-test-tick tutor)
-      (let ((init-frame (car (hermes-gnosis-test-work-frames frames))))
-        (should (string-search "Initialize once" (alist-get 'text (alist-get 'params init-frame))))
-        (should-error (hermes-chat-send) :type 'user-error)
-        (hermes-gnosis--tutor-provider tutor request (lambda (x) (push x resolved))
-                                      (lambda (x) (push x rejected)))
+    (hermes-gnosis-test-with-provider
+      (insert "untouched ordinary draft")
+      (let* ((handle (hermes-gnosis-link-review "batch" db (current-buffer)))
+             (binding (hermes-gnosis--find-binding "batch" db))
+             (tutor (plist-get binding :tutor))
+             (request (hermes-gnosis-test-request))
+             (result '(:api-version 2 :evaluation (:verdict "fail" :explanation "Correction")
+                       :adjustment (:agent-note "Done" :context nil :remaining [] :done t)))
+             resolved rejected)
+        (should (equal handle (hermes-gnosis-link-review "batch" db (current-buffer))))
+        (should (= 1 (length providers)))
+        (hermes-gnosis-test-tick tutor)
+        (should-not frames)
+        (setf (plist-get request :api-version) 2)
+        (funcall (nth 2 (car providers)) request (lambda (x) (setq resolved x))
+                 (lambda (x) (setq rejected x)))
         (hermes-gnosis-test-tick tutor)
         (should (= 1 (length (hermes-gnosis-test-work-frames frames))))
-        (hermes-gnosis-test-terminal client init '(:ready t))
-        (hermes-gnosis-test-tick tutor)
-        (should (= 1 (length (hermes-gnosis-test-work-frames frames))))
-        (hermes-gnosis-test-reply client init-frame '((status . "streaming")))
-        (hermes-gnosis-test-tick tutor)
-        (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
-        (should-not (string-search "Initialize once" (alist-get 'text (alist-get 'params (car (hermes-gnosis-test-work-frames frames))))))
-        (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
-        (hermes-gnosis-test-terminal client request '(:verdict "fail" :explanation "Define the missing quantity."))
-        (hermes-gnosis-test-tick tutor)
-        (should (= 1 (length resolved)))
-        (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
-        (let ((adapt (hermes-gnosis-test-request "adapt")))
-          (setf (plist-get adapt :request-id) "adapt"
-                (plist-get adapt :accepted) '(:outcome "success" :override t))
-          (hermes-gnosis--tutor-provider tutor adapt (lambda (x) (push x resolved))
-                                        (lambda (x) (push x rejected)))
+        (let* ((frame (car frames)) (text (alist-get 'text (alist-get 'params frame))))
+          (should (equal "prompt.submit" (alist-get 'method frame)))
+          (should (string-search "adjustment" text))
+          (should (string-search "Typed questions" text))
+          (should-not (string-search "\"phase\":\"initialize\"" text))
+          (hermes-gnosis-test-terminal client request result)
           (hermes-gnosis-test-tick tutor)
-          (should (= 3 (length (hermes-gnosis-test-work-frames frames))))
-          (should (string-search "\"override\":true" (alist-get 'text (alist-get 'params (car (hermes-gnosis-test-work-frames frames))))))
-          (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
-          (hermes-gnosis-test-terminal client adapt '(:agent-note "Finite block done" :context nil :remaining [] :done t))
-          (hermes-gnosis-test-tick tutor)
-          (should (= 2 (length resolved))))
+          (should-not resolved)
+          (hermes-gnosis-test-reply client frame '((status . "streaming")))
+          (hermes-gnosis-test-tick tutor))
+        (should (equal result resolved))
         (should-not rejected)
         (should (equal "stored" hermes-chat--session-id))
-        (should (equal "untouched tutor draft" (hermes-chat-input-string)))))))
+        (should (eq client hermes-chat--dashboard-client))
+        (should (equal "untouched ordinary draft" (hermes-chat-input-string)))
+        (hermes-gnosis-unbind handle)
+        (should (equal unbound '("batch")))
+        (should (buffer-live-p (current-buffer)))
+        (hermes-chat-send)
+        (should (equal "untouched ordinary draft"
+                       (alist-get 'text (alist-get 'params (car frames)))))))))
 
 (ert-deftest hermes-gnosis-tutor-envelope-and-explicit-success-are-required ()
   (let* ((request (hermes-gnosis-test-request))
@@ -593,6 +613,10 @@ Use STATUS, or the installed backend's explicit successful status."
            (request (hermes-gnosis-test-request)))
       (hermes-gnosis--tutor-attach tutor "batch" db)
       (setf (plist-get tutor :state) 'ready)
+      (setq hermes-chat--restored-history
+            (cons "stored" `((messages . [((role . "user")
+                                           (text . ,(hermes-gnosis--tutor-prompt
+                                                     (plist-get tutor :binding) request)))]))))
       (hermes-chat--dashboard-restore-inflight-turn client)
       (hermes-chat--dashboard-bind-stream-callback client hermes-chat--pending-assistant-id)
       (hermes-gnosis--recover-turn tutor request)
@@ -677,7 +701,7 @@ Use STATUS, or the installed backend's explicit successful status."
       (should-not frames)
       (should-error (hermes-gnosis--tutor-provider tutor (hermes-gnosis-test-request) #'ignore #'ignore))
       (cl-letf (((symbol-function 'hermes-chat--pending-prompt-p) (lambda () t)))
-        (should-not (hermes-gnosis--tutor-inhibit)))
+        (should-not (hermes-chat--submit-inhibit-reason)))
       (hermes-gnosis-unbind)
       (should-not (plist-get tutor :pending))
       (should-not (plist-get tutor :timer))
@@ -751,7 +775,7 @@ Use STATUS, or the installed backend's explicit successful status."
         (let ((cancel (hermes-gnosis--tutor-provider tutor request #'ignore #'ignore)))
           (hermes-gnosis-test-tick tutor)
           (let* ((old (plist-get tutor :active))
-                 (frame (car frames))
+                 (frame (car (hermes-gnosis-test-work-frames frames)))
                  (old-result '(:verdict "fail" :explanation "Old answer feedback")))
             (unless (eq completion 'uncertain)
               (hermes-gnosis-test-reply client frame '((status . "streaming"))))
@@ -774,16 +798,493 @@ Use STATUS, or the installed backend's explicit successful status."
               (should-not rejected)
               (should-not resolved)
               (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
-              (should (string-search "Edited answer" (alist-get 'text (alist-get 'params (car frames)))))
+              (should (string-search "Edited answer" (alist-get 'text (alist-get 'params (car (hermes-gnosis-test-work-frames frames))))))
               ;; An already scheduled callback from the cancelled operation
               ;; cannot settle its successor or copy the old grade into it.
               (hermes-gnosis--tutor-observe tutor old (plist-get old :context) 'rejected "late")
               (should-not (plist-get (plist-get tutor :active) :error))
-              (hermes-gnosis-test-reply client (car frames) '((status . "streaming")))
+              (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
               (hermes-gnosis-test-terminal client retry '(:verdict "pass" :explanation "Edited feedback"))
               (hermes-gnosis-test-tick tutor)
               (should (equal resolved '((:verdict "pass" :explanation "Edited feedback"))))
               (should (equal hermes-chat--session-id "stored")))))))))
+
+(ert-deftest hermes-gnosis-linked-ordinary-fifo-and-sibling-requests ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "running")
+    (hermes-gnosis-test-with-provider
+      (let* ((first-handle (hermes-gnosis-link-review "batch" db (current-buffer)))
+             (first (plist-get (hermes-gnosis--find-binding "batch" db) :tutor))
+             (second-handle (hermes-gnosis-link-review "sibling" db (current-buffer)))
+             (second (plist-get (hermes-gnosis--find-binding "sibling" db) :tutor))
+             (a (hermes-gnosis-test-request)) (b (hermes-gnosis-test-request))
+             a-result b-result)
+        (setf (plist-get b :session-id) "sibling" (plist-get b :request-id) "sibling-request")
+        (insert "ordinary first")
+        (hermes-chat-send)
+        (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
+        (hermes-gnosis--tutor-provider first a (lambda (x) (setq a-result x)) #'ignore)
+        (hermes-gnosis--tutor-provider second b (lambda (x) (setq b-result x)) #'ignore)
+        (hermes-gnosis-test-tick first)
+        (hermes-gnosis-test-tick second)
+        (should (= 1 (length (hermes-gnosis-test-work-frames frames))))
+        (should-not a-result) (should-not b-result)
+        (hermes-dashboard-transport--dispatch-event
+         client '(:type done :event "message.complete" :status "complete"
+                        :session-id "runtime" :final-text "ordinary reply"))
+        (hermes-gnosis-test-tick first)
+        (hermes-gnosis-test-tick second)
+        ;; Either pending sibling can win the ordinary idle slot; identify it
+        ;; by the actual request, never by arrival assumptions.
+        (let* ((active (if (plist-get first :active) first second))
+               (other (if (eq active first) second first))
+               (request (plist-get (plist-get active :active) :request))
+               (other-request (plist-get (plist-get other :pending) :request))
+               (frame (car (hermes-gnosis-test-work-frames frames))))
+          (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
+          (insert "ordinary queued")
+          (hermes-chat-send)
+          (should (equal "ordinary queued" (plist-get (car hermes-chat--queued-messages) :content)))
+          (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
+          (hermes-gnosis-test-reply client frame '((status . "streaming")))
+          (hermes-gnosis-test-terminal client request '(:verdict "pass" :explanation "Exact"))
+          (hermes-gnosis-test-tick active)
+          ;; Existing FIFO wins before the waiting sibling, not a tutor queue.
+          (should (equal "ordinary queued" (alist-get 'text (alist-get 'params (car (hermes-gnosis-test-work-frames frames))))))
+          (hermes-gnosis-test-tick other)
+          (should (= 3 (length (hermes-gnosis-test-work-frames frames))))
+          (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
+          (hermes-dashboard-transport--dispatch-event
+           client '(:type done :event "message.complete" :status "complete"
+                          :session-id "runtime" :final-text "unrelated ordinary reply"))
+          (hermes-gnosis-test-tick other)
+          (should (= 4 (length (hermes-gnosis-test-work-frames frames))))
+          (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
+          (hermes-gnosis-test-terminal client other-request '(:verdict "fail" :explanation "Other"))
+          (hermes-gnosis-test-tick other)
+          (should a-result) (should b-result)
+          (should-not (equal a-result b-result)))
+        (hermes-gnosis-unbind first-handle)
+        (should (hermes-gnosis--current-p (plist-get second :binding)))
+        (should-not (member "sibling" unbound))
+        (should (equal second-handle (plist-get (plist-get second :binding) :handle)))
+        (should (buffer-live-p (current-buffer)))
+        (should (equal "stored" hermes-chat--session-id))))))
+
+(ert-deftest hermes-gnosis-linked-exact-origin-same-batch-and-detach-inflight ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "running")
+    (hermes-gnosis-test-with-provider
+      (let* ((other-file (make-temp-file "hermes-origin-"))
+             (other (sqlite-open other-file)))
+        (unwind-protect
+            (let* ((one (hermes-gnosis-link-review "batch" db (current-buffer)))
+                   (first (plist-get (hermes-gnosis--find-binding "batch" db) :tutor))
+                   (two (hermes-gnosis-link-review "batch" other (current-buffer)))
+                   (second (plist-get (hermes-gnosis--find-binding "batch" other) :tutor)))
+              (should-not (equal one two))
+              (hermes-gnosis--tutor-provider first (hermes-gnosis-test-request) #'ignore #'ignore)
+              (hermes-gnosis-test-tick first)
+              (let ((context hermes-chat--application-context))
+                (hermes-gnosis-unbind two)
+                (should (eq context hermes-chat--application-context))
+                (should (hermes-gnosis--current-p (plist-get first :binding)))
+                (should (eq 'failed (plist-get second :state))))
+              (hermes-gnosis-unbind one)
+              (should-not hermes-chat--application-context)
+              (should (= 1 (length frames)))
+              (should (hermes-chat--active-turn-p))
+              (should (buffer-live-p (current-buffer))))
+          (sqlite-close other)
+          (delete-file other-file))))))
+
+(ert-deftest hermes-gnosis-resume-mixed-history-does-not-adopt-ordinary-turn ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "unfinished")
+    (let* ((request (hermes-gnosis-test-request))
+           (binding (hermes-gnosis--binding "batch" db))
+           (other (hermes-gnosis--binding "sibling" db))
+           (sibling (hermes-gnosis-test-request)))
+      (setf (plist-get request :api-version) 2
+            (plist-get sibling :session-id) "sibling")
+      (setq study (list :goal (plist-get request :goal) :source (plist-get request :source)
+                        :questions (vector (plist-get request :question)) :phase "question"
+                        :current '(:id "q" :occurrence "occurrence" :response "idk")
+                        :attempts [(:request-id "request")]))
+      (setq hermes-chat--restored-history
+            (cons "stored"
+                  `((message_count . 4)
+                    (messages . [((role . "user") (text . "before attachment"))
+                                 ((role . "user") (text . ,(hermes-gnosis--tutor-prompt binding request)))
+                                 ((role . "user") (text . ,(hermes-gnosis--tutor-prompt other sibling)))
+                                 ((role . "user") (text . "ordinary latest"))]))))
+      (should (equal (list request) (hermes-gnosis--history-requests binding)))
+      (should (equal request (hermes-gnosis--checkpoint-request binding (list request))))
+      (hermes-gnosis-test-with-provider
+        (hermes-chat--dashboard-restore-inflight-turn client)
+        (hermes-chat--dashboard-bind-stream-callback client hermes-chat--pending-assistant-id)
+        (let ((tutor (hermes-gnosis--tutor (current-buffer))))
+          (hermes-gnosis--tutor-attach tutor "batch" db)
+          (setf (plist-get tutor :state) 'ready)
+          (hermes-gnosis--recover-turn tutor request)
+          (should-not hermes-chat--application-context)
+          (hermes-gnosis-test-reply client (car frames) '((count . 0) (events . [])))
+          (should (eq 'failed (plist-get tutor :state)))
+          (hermes-gnosis-test-terminal client request
+                                       '(:api-version 2 :evaluation (:verdict "pass" :explanation "Not owned") :adjustment nil))
+          (should-not (plist-get tutor :recovery))
+          (should (= 1 (length (hermes-gnosis-test-work-frames frames)))))))))
+
+(ert-deftest hermes-gnosis-start-requires-existing-chat-and-never-creates-one ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "running")
+    (hermes-gnosis-test-with-provider
+      (let ((gnosis-db db) provider)
+        (cl-letf (((symbol-function 'gnosis-agent-start-review-session)
+                   (lambda (&rest args)
+                     (setq provider (plist-get args :provider))
+                     (gnosis-agent-status "batch"))))
+          (should-error (hermes-gnosis-start-review :questions [] :goal "g" :source "s"))
+          (should-not provider)
+          (let ((hermes-chat--interrupt-request-pending-p t))
+            (should-error (hermes-gnosis-link-review "batch" db (current-buffer)))
+            (should-error (hermes-gnosis-start-review :chat (current-buffer)))
+            (should-not provider)
+            (should-not hermes-gnosis--bindings))
+          (hermes-gnosis-start-review :questions [] :goal "g" :source "s" :chat (current-buffer))
+          (should (functionp provider))
+          (hermes-gnosis-test-tick (plist-get (hermes-gnosis--find-binding "batch" db) :tutor))
+          (should-not frames)
+          (should (equal "stored" hermes-chat--session-id)))))))
+
+(ert-deftest hermes-gnosis-v2-response-origin-is-required-and-order-independent ()
+  (let* ((request (hermes-gnosis-test-request))
+         (association '(:api-version 1 :session-id "batch" :origin "origin" :tutor-session "stored"))
+         (reordered '(:origin "origin" :tutor-session "stored" :session-id "batch" :api-version 1))
+         (result '(:api-version 2 :evaluation (:verdict "pass" :explanation "Correct") :adjustment nil)))
+    (setf (plist-get request :api-version) 2)
+    (let ((event (list :event "message.complete" :type 'done :status "complete"
+                       :final-text (hermes-gnosis--json
+                                    (hermes-gnosis--envelope request result reordered)))))
+      (should (equal result (hermes-gnosis--result request event association)))
+      (dolist (key '(:origin :tutor-session :session-id))
+        (let ((wrong (copy-tree association)))
+          (setf (plist-get wrong key) "other")
+          (should-error (hermes-gnosis--result request event wrong))))
+      (should-error (hermes-gnosis--result request event nil)))))
+
+(ert-deftest hermes-gnosis-v2-cancelled-background-does-not-block-next-evaluation ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "running")
+    (let* ((tutor (hermes-gnosis--tutor (current-buffer)))
+           (adapt (hermes-gnosis-test-request "adapt"))
+           (evaluate (hermes-gnosis-test-request)) resolved rejected)
+      (setf (plist-get adapt :api-version) 2 (plist-get adapt :request-id) "adapt"
+            (plist-get evaluate :api-version) 2)
+      (hermes-gnosis--tutor-attach tutor "batch" db)
+      (setf (plist-get tutor :state) 'ready)
+      (let ((cancel (hermes-gnosis--tutor-provider tutor adapt #'ignore #'ignore)))
+        (hermes-gnosis-test-tick tutor)
+        (funcall cancel)
+        (hermes-gnosis--tutor-provider tutor evaluate (lambda (x) (setq resolved x))
+                                      (lambda (x) (setq rejected x)))
+        (hermes-gnosis-test-reply client (car frames) '((status . "streaming")))
+        (hermes-gnosis-test-terminal client adapt '(:agent-note "Proposal" :context nil :remaining [] :done t))
+        (hermes-gnosis-test-tick tutor)
+        (should-not rejected)
+        (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
+        (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
+        (hermes-gnosis-test-terminal client evaluate
+                                     '(:api-version 2 :evaluation (:verdict "pass" :explanation "Exact") :adjustment nil))
+        (hermes-gnosis-test-tick tutor)
+        (should (equal "pass" (plist-get (plist-get resolved :evaluation) :verdict)))))))
+
+(ert-deftest hermes-gnosis-v2-native-background-is-not-replayed-after-reopen ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "unfinished")
+    (let* ((request (hermes-gnosis-test-request "adapt"))
+           (binding (hermes-gnosis--binding "batch" db)))
+      (setf (plist-get request :api-version) 2)
+      (setq study (list :goal (plist-get request :goal) :source (plist-get request :source)
+                        :questions (vector (plist-get request :question)) :attempts []))
+      (should-not (hermes-gnosis--checkpoint-request binding (list request))))))
+
+(ert-deftest hermes-gnosis-existing-chat-state-hook-wakes-without-polling ()
+  (hermes-gnosis-test-with-origin
+    (setq mode "agent-review" status "running")
+    (hermes-gnosis-test-with-provider
+      (hermes-gnosis-link-review "batch" db (current-buffer))
+      (let* ((tutor (plist-get (hermes-gnosis--find-binding "batch" db) :tutor))
+             (request (hermes-gnosis-test-request)) resolved)
+        (insert "ordinary")
+        (hermes-chat-send)
+        (hermes-gnosis-test-reply client (car frames) '((status . "streaming")))
+        (hermes-gnosis--tutor-provider tutor request (lambda (x) (setq resolved x)) #'ignore)
+        (hermes-test--event-loop-barrier)
+        (should (= 1 (length (hermes-gnosis-test-work-frames frames))))
+        (should-not (plist-get tutor :timer))
+        (hermes-dashboard-transport--dispatch-event
+         client '(:type done :event "message.complete" :status "complete"
+                        :session-id "runtime" :final-text "ordinary result"))
+        (hermes-test--wait-until
+         (lambda () (= 2 (length (hermes-gnosis-test-work-frames frames)))))
+        (hermes-gnosis-test-reply client (car (hermes-gnosis-test-work-frames frames)) '((status . "streaming")))
+        (hermes-gnosis-test-terminal client request '(:verdict "pass" :explanation "Exact"))
+        (hermes-test--wait-until (lambda () resolved))
+        (should (equal "pass" (plist-get resolved :verdict)))))))
+
+(ert-deftest hermes-gnosis-ordinary-terminal-before-admission-wakes-tutor ()
+  (hermes-gnosis-test-with-origin
+   (setq mode "agent-review" status "running")
+   (hermes-gnosis-test-with-provider
+    (hermes-gnosis-link-review "batch" db (current-buffer))
+    (let* ((tutor (plist-get (hermes-gnosis--find-binding "batch" db) :tutor))
+           (request (hermes-gnosis-test-request)))
+      (insert "ordinary")
+      (hermes-chat-send)
+      (let ((ordinary-frame (car frames)))
+        (hermes-gnosis--tutor-provider tutor request #'ignore #'ignore)
+        (hermes-test--event-loop-barrier)
+        (hermes-dashboard-transport--dispatch-event
+         client '(:type done :event "message.complete" :status "complete"
+                        :session-id "runtime" :final-text "ordinary result"))
+        (hermes-test--event-loop-barrier)
+        (should (hermes-chat--active-turn-p))
+        (should-not (plist-get tutor :timer))
+        (should (= 1 (length (hermes-gnosis-test-work-frames frames))))
+        (hermes-gnosis-test-reply client ordinary-frame '((status . "streaming")))
+        (hermes-test--event-loop-barrier)
+        (should-not (plist-get tutor :pending))
+        (should (= 2 (length (hermes-gnosis-test-work-frames frames)))))))))
+
+(ert-deftest hermes-gnosis-sibling-terminal-before-admission-wakes-tutor ()
+  (dolist (queued '(nil t))
+    (hermes-gnosis-test-with-origin
+     (setq mode "agent-review" status "running")
+     (hermes-gnosis-test-with-provider
+      (hermes-gnosis-link-review "batch" db (current-buffer))
+      (hermes-gnosis-link-review "sibling" db (current-buffer))
+      (let* ((first (plist-get (hermes-gnosis--find-binding "batch" db) :tutor))
+             (second (plist-get (hermes-gnosis--find-binding "sibling" db) :tutor))
+             (a (hermes-gnosis-test-request))
+             (b (hermes-gnosis-test-request)))
+        (setf (plist-get b :session-id) "sibling" (plist-get b :request-id) "sibling-request")
+        (hermes-gnosis--tutor-provider first a #'ignore #'ignore)
+        (hermes-test--event-loop-barrier)
+        (let ((first-frame (car frames)))
+          (hermes-gnosis--tutor-provider second b #'ignore #'ignore)
+          (hermes-test--event-loop-barrier)
+          (when queued
+            (insert "ordinary FIFO first")
+            (hermes-chat-send))
+          (hermes-gnosis-test-terminal client a '(:verdict "pass" :explanation "Exact"))
+          (hermes-test--event-loop-barrier)
+          (hermes-gnosis-test-reply client first-frame '((status . "streaming")))
+          (hermes-test--event-loop-barrier)
+          (when queued
+            (should (plist-get second :pending))
+            (should-not (plist-get second :timer))
+            (let ((ordinary (car (hermes-gnosis-test-work-frames frames))))
+              (should (equal "ordinary FIFO first" (alist-get 'text (alist-get 'params ordinary))))
+              (hermes-gnosis-test-reply client ordinary '((status . "streaming")))
+              (hermes-dashboard-transport--dispatch-event
+               client '(:type done :event "message.complete" :status "complete"
+                              :session-id "runtime" :final-text "Ordinary FIFO result"))
+              (hermes-test--event-loop-barrier)))
+          (should-not (plist-get second :pending))
+          (should (= (if queued 3 2) (length (hermes-gnosis-test-work-frames frames))))))))))
+
+
+(defvar hermes-gnosis-test--db-file)
+
+(defun hermes-gnosis-test-native-question (id &optional type)
+  "Return a synthetic native or semantic question with ID and TYPE."
+  (list :id id :type (or type "basic") :question "The α valve opens."
+        :answer ["opens"] :choices [] :rubric (when type "Require opening.")
+        :hints [] :parathema nil :tags ["synthetic"] :source "Synthetic valve α"))
+
+(defun hermes-gnosis-test-native-reserve (questions)
+  "Reserve actual domain QUESTIONS without scheduling presentation."
+  (cl-letf (((symbol-function 'gnosis-agent--schedule) #'ignore))
+    (gnosis-agent-start-review-session :questions questions :goal "Recall" :source "Synthetic"))
+  (gnosis-review--read-session))
+
+(defun hermes-gnosis-test-native-answer (state)
+  "Answer STATE through native matching and explicit Next acceptance."
+  (cl-letf (((symbol-function 'gnosis--read-string-with-input-method) (lambda (&rest _) "opens"))
+            ((symbol-function 'gnosis-review--read-action) (lambda (_) ?n)))
+    (gnosis-agent-review--question-input state)))
+
+(defun hermes-gnosis-test-native-plan (&rest questions)
+  "Return a finite synthetic adjustment retaining QUESTIONS."
+  ;; Distinct contexts prevent an unrelated attempt from looking like an
+  ;; identical retry of the earlier admitted adjustment.
+  (list :agent-note "Synthetic adjustment" :context '(:topic "valve")
+        :remaining (vconcat questions) :done (if questions :false t)))
+
+(defun hermes-gnosis-test-call-with-domain (function)
+  "Call FUNCTION with a real disposable Gnosis state and review buffer.
+The optional domain source must be on `load-path'; never open learner data."
+  (unless (require 'gnosis-agent-review nil t)
+    (ert-skip "Optional Gnosis sources are not on load-path"))
+  (let* ((directory (make-temp-file "hermes-gnosis-pair-" t))
+         (file (expand-file-name "gnosis.db" directory))
+         (connection (gnosis-sqlite-open file)))
+    (cl-progv '(gnosis-dir hermes-gnosis-test--db-file gnosis-db gnosis-testing
+			   gnosis-vc-auto-push gnosis--id-cache gnosis-review-buffer-name
+			   gnosis-review-centered gnosis-agent-review--providers
+			   gnosis-agent-review--background)
+        (list (file-name-as-directory directory) file connection t nil nil
+              (generate-new-buffer-name "*paired tutor test*") nil nil nil)
+      (unwind-protect
+          (progn
+            (gnosis-db-init)
+            (let* ((state (hermes-gnosis-test-native-reserve
+                           (vector (hermes-gnosis-test-native-question "q1")
+                                   (hermes-gnosis-test-native-question "q2")
+                                   (hermes-gnosis-test-native-question "q3")
+                                   (hermes-gnosis-test-native-question "q4" "agent-eval"))))
+                   (review (gnosis-review--setup-buffer nil 'practice)))
+              (unwind-protect
+                  (with-current-buffer review
+                    (setq-local gnosis-review--state state)
+                    (funcall function state review))
+                (gnosis-agent-review--stop-background)
+                (when (buffer-live-p review) (kill-buffer review)))))
+        (gnosis-sqlite-close gnosis-db)
+        (delete-directory directory t)))))
+
+(defun hermes-gnosis-test-optional-timeout (resume)
+  "Prove optional timeout, cold reopen and RESUME or explicit link."
+  (hermes-gnosis-test-call-with-domain
+   (lambda (state review)
+     (let ((review-buffer review)
+           (batch (gnosis-review-state-session-id state))
+           (hermes-gnosis-mode t) (hermes-gnosis--bindings nil)
+           (hermes-chat--image-prior-submits (make-hash-table :test #'equal))
+           (hermes-chat--image-session-blocks (make-hash-table :test #'equal))
+           frames)
+       (cl-letf (((symbol-function 'websocket-openp) (lambda (_) t))
+                 ((symbol-function 'websocket-close) #'ignore)
+                 ((symbol-function 'websocket-send-text)
+                  (lambda (_ text) (push (json-parse-string text :object-type 'alist) frames))))
+         (hermes-test-with-chat-buffer
+          (let ((chat (current-buffer)) (client (hermes-test--dashboard-client)))
+            (setf (hermes-dashboard-transport-client-ready-p client) t
+                  (hermes-dashboard-transport-client-base-url client) "http://fixture.invalid")
+            (setq hermes-chat--dashboard-client client
+                  hermes-chat--dashboard-session-ready-p t
+                  hermes-chat--dashboard-active-session-id "runtime"
+                  hermes-chat--session-id "stored"
+                  hermes-chat--profile "study"
+                  hermes-chat--resolved-start-mode 'remote)
+            (unwind-protect
+                (progn
+                  (hermes-gnosis-link-review batch gnosis-db chat)
+                  (with-current-buffer review-buffer
+                    (hermes-gnosis-test-native-answer state)
+                    (gnosis-agent-review--start-background state))
+                  (hermes-test--event-loop-barrier)
+                  (let* ((frame (car frames))
+                         (text (alist-get 'text (alist-get 'params frame)))
+                         (request (plist-get (hermes-gnosis--parse text hermes-gnosis--tutor-prefix) :request)))
+                    ;; One genuine successful association in ordinary history.
+                    (hermes-gnosis-test-reply client frame '((status . "streaming")))
+                    (hermes-gnosis-test-terminal client request
+                                                 (hermes-gnosis-test-native-plan
+                                                  (hermes-gnosis-test-native-question "q3")
+                                                  (hermes-gnosis-test-native-question "q4" "agent-eval")))
+                    (hermes-test--wait-until
+                     (lambda () (plist-get gnosis-agent-review--background :settled)))
+                    (with-current-buffer review-buffer
+                      (gnosis-agent-review--drain-background state)
+                      (should-not gnosis-agent-review--background)
+                      (hermes-gnosis-test-native-answer state))
+                    (insert "ordinary turn keeps tutoring queued")
+                    (hermes-chat-send)
+                    (let ((ordinary (car frames)))
+                      (with-current-buffer review-buffer
+                        (gnosis-agent-review--start-background state))
+                      (hermes-test--event-loop-barrier)
+                      (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
+                      (with-current-buffer review-buffer
+                        (setf (plist-get gnosis-agent-review--background :deadline) 0)
+                        (gnosis-agent-review--drain-background state))
+                      (let ((attempt (car (last (append (plist-get (gnosis-agent-review--data state) :attempts) nil)))))
+                        (should (equal "adapt" (plist-get attempt :phase)))
+                        (should (equal "Adjustment timed out" (plist-get attempt :error)))
+                        (should-not (plist-get attempt :plan)))
+                      (hermes-gnosis-test-reply client ordinary '((status . "streaming")))
+                      (hermes-dashboard-transport--dispatch-event
+                       client '(:type done :event "message.complete" :status "complete"
+                                      :session-id "runtime" :final-text "Ordinary reply"))
+                      (hermes-test--event-loop-barrier))
+                    (hermes-gnosis-unbind)
+                    (gnosis-sqlite-close gnosis-db)
+                    (setq gnosis-db (gnosis-sqlite-open hermes-gnosis-test--db-file))
+                    (gnosis-db-init)
+                    (setq state (gnosis-review--read-session))
+                    (with-current-buffer review-buffer (setq gnosis-review--state state))
+                    (setq hermes-chat--restored-history
+                          (cons "stored" `((message_count . 3)
+                                           (messages . [((role . "user") (text . ,text))
+                                                        ((role . "user") (text . "ordinary turn keeps tutoring queued"))
+                                                        ((role . "assistant") (text . "Ordinary reply"))]))))
+                    ;; Only scheduling native presentation is suppressed on successful resume.
+                    (cl-letf (((symbol-function 'gnosis-agent--schedule) #'ignore))
+                      (if resume (hermes-gnosis-resume-review batch gnosis-db chat)
+                        (should (stringp (hermes-gnosis-link-review batch gnosis-db chat)))))
+                    (should (= 2 (length (hermes-gnosis-test-work-frames frames))))
+                    (let* ((binding (hermes-gnosis--find-binding batch gnosis-db))
+                           (tutor (plist-get binding :tutor))
+                           resolved)
+                      (should-not (plist-get tutor :recovery))
+                      (should-not (plist-get tutor :active))
+                      (with-current-buffer review-buffer
+                        (hermes-gnosis-test-native-answer state)
+                        (gnosis-agent-review--present state))
+                      (let ((next (gnosis-agent-review--request state "evaluate" "fresh-semantic" "opens")))
+                        (hermes-gnosis--tutor-provider tutor next
+                                                       (lambda (value) (setq resolved value)) #'ignore)
+                        (hermes-test--wait-until
+                         (lambda () (= 3 (length (hermes-gnosis-test-work-frames frames)))))
+                        (let* ((frame (car (hermes-gnosis-test-work-frames frames)))
+                               (sent (hermes-gnosis--parse
+                                      (alist-get 'text (alist-get 'params frame))
+                                      hermes-gnosis--tutor-prefix)))
+                          (should (equal "fresh-semantic" (plist-get (plist-get sent :request) :request-id)))
+                          (hermes-gnosis-test-reply client frame '((status . "streaming")))
+                          (hermes-gnosis-test-terminal
+                           client next '(:api-version 2 :evaluation (:verdict "pass" :explanation "Exact")
+                                                      :adjustment nil)))
+                        (hermes-test--wait-until (lambda () resolved))
+                        (should (equal "pass" (plist-get (plist-get resolved :evaluation) :verdict)))))))
+              (hermes-gnosis-unbind)
+              (hermes-dashboard-transport--reject-pending-requests client "Audit cleanup")))))))))
+
+(ert-deftest hermes-gnosis-pair-optional-timeout-link ()
+  (hermes-gnosis-test-optional-timeout nil))
+
+(ert-deftest hermes-gnosis-pair-optional-timeout-resume ()
+  (hermes-gnosis-test-optional-timeout t))
+
+(ert-deftest hermes-gnosis-error-attempts-remain-evidence-bound ()
+  (dolist (case '((nil "adapt") (2 "evaluate")))
+    (hermes-gnosis-test-with-origin
+     (setq mode "agent-review" status "unfinished")
+     (hermes-gnosis-test-with-provider
+      (let* ((request (hermes-gnosis-test-request "adapt"))
+             (binding (hermes-gnosis--binding "batch" db)))
+        (setf (plist-get request :api-version) 2)
+        (setq study (list :protocol (car case) :goal (plist-get request :goal)
+                          :source (plist-get request :source)
+                          :questions (vector (plist-get request :question))
+                          :attempts (vector (list :phase (cadr case) :error "Timed out"
+                                                  :request-id "never-admitted"))))
+        (should-error (hermes-gnosis-link-review "batch" db (current-buffer)) :type 'user-error)
+        (should-error (hermes-gnosis--checkpoint-request binding (list request)) :type 'user-error)
+        (should-not frames)
+        (should-not providers))))))
 
 (provide 'hermes-gnosis-tests)
 ;;; hermes-gnosis-tests.el ends here

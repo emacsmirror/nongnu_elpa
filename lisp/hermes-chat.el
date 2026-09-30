@@ -2300,7 +2300,8 @@ durable session continues on send."
 Answer a pending clarification instead of starting a new turn.  For a batch,
 answer only the next unanswered question; use `hermes-chat-respond-to-prompt'
 to answer all remaining questions in the minibuffer.  During an explicit
-interrupt, queue ordinary input until the interrupted turn settles.
+interrupt or an observed application turn, queue ordinary input until that
+turn settles instead of steering its response.
 During initial resume, queue input until history loads; Send retries a failed
 history read, including with empty input when a queued message is retained."
   (interactive nil hermes-chat-mode)
@@ -2328,6 +2329,7 @@ history read, including with empty input when a queued message is retained."
               (hermes-chat--handle-slash-content content)
               t)
              ((and (hermes-chat--active-turn-p)
+                   (null hermes-chat--application-context)
                    (null hermes-chat--interrupted-assistant-id)
                    (hermes-chat--dashboard-session-attached-p)
                    (null hermes-chat--queued-messages))
