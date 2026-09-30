@@ -109,6 +109,34 @@ Task details display literal Markdown with guarded programming-language
 highlighting.  Fence labels cannot select arbitrary minor or global modes;
 copying preserves markup, and outline navigation remains available.
 
+** Agent plugins
+
+=M-x hermes-list-plugins= opens the installed agent-plugin inventory.  Use
+=C= for the curated catalog, =RET= for details, =a= to install the selected
+catalog entry, and =I= to return to installed plugins.  The existing =i=
+command still accepts a plugin identifier or Git URL.
+
+Details show repository, subdirectory, tier, full catalog pin, declared
+tools/hooks/middleware, environment requirements, and supported platforms.
+Tier describes provenance, not a safety guarantee.  Installation can install
+dependencies and run code on the backend.  It targets that dashboard's
+launch-profile home, not a profile selected in another view or chat.
+
+Catalog installation resolves the entry again on the backend.  The displayed
+pin is informational: Hermes Agent 0.21.4 does not honor =ref= for catalog
+installs, so Emacs does not send an override.  Check the returned =Installed
+SHA= in details after installation.  Emacs reads back both the catalog and
+installed inventory; it does not force replacement or automatically enable
+the plugin.  Existing enablement can persist.  Configured state is not proof
+of runtime activation.
+
+If Update reports that new capabilities need consent, the Plugins header
+shows =Awaiting capability consent=.  =RET= displays an inert handoff with
+the candidate SHA and declared additions.  The receipt reports that the
+update was not applied.  Emacs sends no consent retry: review the fresh
+candidate using the backend's native workflow, or leave the review to
+decline.  Use =g= to refresh explicitly; a refresh never replays the update.
+
 ** Headless prompts
 
 =(hermes-request REQUEST RESOLVE REJECT)= returns a cancellation thunk.

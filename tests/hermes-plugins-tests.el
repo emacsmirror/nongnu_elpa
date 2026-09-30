@@ -621,5 +621,349 @@
                 (should (string-match-p "failed.*stale" hermes-plugins--status))
                 (should (= releases 2))))))))))
 
+(ert-deftest hermes-plugins-capability-consent-is-not-an-uncertain-write ()
+  "The public Update projects semantic consent without replaying a write."
+  (with-temp-buffer
+    (hermes-plugins-mode)
+    (hermes-buffer--claim 'hermes-plugins-mode)
+    (setq hermes-instance '("test" . "http://example.invalid"))
+    (hermes-plugins--render
+     '(:hermes_home "/virtual" :plugins
+       [(:name "manifest" :path "/virtual/plugins/directory" :source "git"
+         :can_update_git t)]) "Ready")
+    (goto-char (point-min))
+    (let ((client (make-hermes-dashboard-transport-client
+                   :base-url "http://example.invalid"))
+          (sha (make-string 40 ?a)) calls)
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (method path &rest args)
+                   (push (list method path (plist-get args :body)) calls)
+                   (hermes--promise-resolved
+                    `(:ok :false :consent_required t :name "catalog-name"
+                      :sha ,sha :delta (:tools ["new_tool"])
+                      :error "private raw text" :delta_lines ["private raw text"])))))
+        (call-interactively #'hermes-plugins-update)
+        (should (equal calls '(("POST" "/api/dashboard/agent-plugins/directory/update" nil))))
+        (should (string-match-p "Awaiting capability consent" hermes-plugins--status))
+        (should-not (string-match-p "may have applied" hermes-plugins--status))
+        (should hermes-plugins--snapshot-stale-p)
+        (should-not hermes-plugins--busy)
+        (should (string-match-p sha hermes-plugins--consent))
+        (should (string-match-p "new_tool" hermes-plugins--consent))
+        (should-not (string-match-p "private raw text" hermes-plugins--consent))
+        (hermes-browser--own-instance '("other" . "http://other.invalid"))
+        (should-not hermes-plugins--consent)
+        (should (= (length calls) 1))))))
+
+(ert-deftest hermes-plugins-catalog-native-entry-and-install ()
+  "Catalog installation names its mutable resolution and reads both inventories."
+  (with-temp-buffer
+    (hermes-plugins-mode)
+    (hermes-buffer--claim 'hermes-plugins-mode)
+    (setq hermes-instance '("test" . "http://example.invalid"))
+    (let* ((sha (make-string 40 ?a))
+           (entry `(:name "catalog-name" :repo "https://example.invalid/repo"
+                    :subdir "plugin" :tier "community" :sha ,sha
+                    :platforms ["linux"] :installed :false
+                    :capabilities (:provides_tools ["tool"] :provides_hooks []
+                                   :provides_middleware [] :requires_env ["TEST_KEY"])))
+           (client (make-hermes-dashboard-transport-client
+                    :base-url "http://example.invalid"))
+           installed calls prompt)
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                ((symbol-function 'yes-or-no-p)
+                 (lambda (text) (setq prompt text) t))
+                ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (method path &rest args)
+                   (push (list method path (plist-get args :body)) calls)
+                   (hermes--promise-resolved
+                    (cond ((equal method "POST") (setq installed t) '(:ok t :enabled :false))
+                          ((equal path "/api/status") '(:hermes_home "/virtual"))
+                          ((equal path "/api/dashboard/plugins/catalog")
+                           `(:entries [,(if installed
+                                            (append `(:installed t :installed_sha ,sha :runtime_status "enabled") entry)
+                                          entry)] :removed []))
+                          (t '(:plugins [(:name "manifest" :runtime_status "enabled")])))))))
+        (should (commandp (keymap-lookup hermes-plugins-mode-map "C")))
+        (call-interactively (keymap-lookup hermes-plugins-mode-map "C"))
+        (goto-char (point-min))
+        (should (equal (tabulated-list-get-id) "catalog-name"))
+        (call-interactively #'hermes-plugins-catalog-install)
+        (should (string-match-p "/virtual" prompt))
+        (should (string-match-p "dependencies.*run code" prompt))
+        (should (string-match-p "existing enablement may persist" prompt))
+        (should (equal (seq-filter (lambda (call) (equal (car call) "POST")) calls)
+                       `(("POST" "/api/dashboard/agent-plugins/install"
+                          ((identifier . "") (catalog_name . "catalog-name")
+                           (force . :false) (enable . :false))))))
+        (should (= (seq-count (lambda (call) (equal (cadr call) "/api/dashboard/plugins/catalog")) calls) 2))
+        (should (= (seq-count (lambda (call) (equal (cadr call) "/api/dashboard/plugins/hub")) calls) 2))
+        (should (string-match-p "enabled" (buffer-string)))
+        (should-not hermes-plugins--busy)))))
+
+(defun hermes-plugins-test--catalog-snapshot ()
+  "Return a fresh catalog fixture with literal provenance and capabilities."
+  (copy-tree
+   `(:hermes_home "/virtual" :plugins []
+     :catalog (:entries [(:name "catalog-name" :repo "https://example.invalid/repo"
+                          :subdir "plugin" :tier "community" :sha ,(make-string 40 ?a)
+                          :platforms ["linux"] :installed :false
+                          :capabilities (:provides_tools ["tool"] :provides_hooks ["hook"]
+                                         :provides_middleware ["middleware"] :requires_env ["TEST_KEY"]))]
+               :removed [])) t))
+
+(ert-deftest hermes-plugins-catalog-confirmation-retains-identity ()
+  "Cancellation, recursive input retirement and changed metadata never install."
+  (dolist (ending '(live decline quit generation mode instance pin removed missing-home))
+    (with-temp-buffer
+      (hermes-plugins-mode)
+      (hermes-buffer--claim 'hermes-plugins-mode)
+      (setq hermes-instance (cons "test" "http://example.invalid")
+            hermes-plugins--catalog-p t)
+      (hermes-plugins--render (hermes-plugins-test--catalog-snapshot) "Ready")
+      (goto-char (point-min))
+      (let ((row (hermes-plugins--catalog-selected)) (prompts 0) calls)
+        (pcase ending
+          ('removed (setf (plist-get (plist-get hermes-plugins--snapshot :catalog) :removed)
+                          [(:name "catalog-name")]))
+          ('missing-home (setf (plist-get hermes-plugins--snapshot :hermes_home) nil)))
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (_)
+                     (cl-incf prompts)
+                     (pcase ending
+                       ('quit (signal 'quit nil))
+                       ('generation (hermes-browser--next-request-generation))
+                       ('mode (fundamental-mode))
+                       ('instance (setq hermes-instance (cons "other" "http://other.invalid")))
+                       ('pin (aset (plist-get row :sha) 0 ?b)))
+                     (not (eq ending 'decline))))
+                  ((symbol-function 'hermes-plugins--request)
+                   (lambda (&rest args) (push args calls))))
+          (cond ((memq ending '(removed missing-home))
+                 (should-error (hermes-plugins-catalog-install) :type 'user-error)
+                 (should (zerop prompts)))
+                ((eq ending 'quit)
+                 (should (eq 'quit (condition-case err (hermes-plugins-catalog-install)
+                                     (quit (car err))))))
+                (t (call-interactively #'hermes-plugins-catalog-install)))
+          (should (= (length calls) (if (eq ending 'live) 1 0))))))))
+
+(ert-deftest hermes-plugins-catalog-auth-and-readback-are-owned ()
+  "Every HTTP dispatch is fenced, including readback authentication waits."
+  (dolist (pause '(1 2 3 4))
+    (dolist (retire '(nil t))
+      (with-temp-buffer
+        (hermes-plugins-mode)
+        (hermes-buffer--claim 'hermes-plugins-mode)
+        (setq hermes-instance (cons "test" "http://example.invalid")
+              hermes-plugins--catalog-p t)
+        (let* ((snapshot (hermes-plugins-test--catalog-snapshot))
+               (client (make-hermes-dashboard-transport-client :base-url "http://example.invalid"))
+               (auth (hermes--promise-make)) (auth-count 0) (releases 0) requests)
+          (hermes-plugins--render snapshot "Ready")
+          (goto-char (point-min))
+          (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                    ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                    ((symbol-function 'hermes-dashboard-transport-release) (lambda (_) (cl-incf releases)))
+                    ((symbol-function 'yes-or-no-p) (lambda (_) t))
+                    ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                     (lambda (&rest _)
+                       (cl-incf auth-count)
+                       (if (= pause auth-count) auth
+                         (hermes--promise-resolved '(:base-url "http://example.invalid")))))
+                    ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                     (lambda (request)
+                       (push request requests)
+                       (hermes--promise-resolved
+                        (list :body
+                              (cond ((equal (plist-get request :method) "POST") '(:ok t))
+                                    ((string-suffix-p "/catalog" (plist-get request :url))
+                                     (plist-get snapshot :catalog))
+                                    (t snapshot)))))))
+            (call-interactively #'hermes-plugins-catalog-install)
+            (should (= (length requests) (1- pause)))
+            (when retire (hermes-browser--next-request-generation))
+            (hermes--promise-resolve auth '(:base-url "http://example.invalid"))
+            (should (= (length requests) (if retire (1- pause) 4)))
+            (should (= releases 1))
+            (should-not hermes-plugins--busy)
+            (should (eq (not (null retire)) (not (null hermes-plugins--snapshot-stale-p))))))))))
+
+(ert-deftest hermes-plugins-consent-wire-shape-and-stale-owner ()
+  "Released JSON false works; incomplete and stale receipts remain inert."
+  (dolist (ending '(valid missing-sha missing-delta invalid-delta success stale))
+    (with-temp-buffer
+      (hermes-plugins-mode)
+      (hermes-buffer--claim 'hermes-plugins-mode)
+      (setq hermes-instance (cons "test" "http://example.invalid"))
+      (hermes-plugins--render
+       '(:hermes_home "/virtual" :plugins [(:name "manifest" :source "git"
+                                          :path "/virtual/plugins/directory" :can_update_git t)]) "Ready")
+      (goto-char (point-min))
+      (let* ((receipt (hermes-transport-json-parse-lossless
+                       (format "{\"ok\":false,\"consent_required\":true,\"name\":\"catalog-name\",\"sha\":\"%s\",\"delta\":{\"tools\":[\"tool\",\"https://user:secret@invalid/\",\"control\\ntext\"]}}"
+                               (make-string 40 ?a))))
+             (pending (hermes--promise-make))
+             (client (make-hermes-dashboard-transport-client :base-url "http://example.invalid"))
+             (calls 0))
+        (pcase ending
+          ('missing-sha (puthash "sha" nil receipt))
+          ('missing-delta (puthash "delta" nil receipt))
+          ('invalid-delta (puthash "delta" '((tools . "not an array")) receipt))
+          ('success (puthash "ok" t receipt)))
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                  ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                  ((symbol-function 'yes-or-no-p) (lambda (_) t))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (&rest _) (cl-incf calls) pending)))
+          (call-interactively #'hermes-plugins-update)
+          (when (eq ending 'stale) (hermes-browser--next-request-generation))
+          (hermes--promise-resolve pending receipt)
+          (should (= calls 1))
+          (should-not hermes-plugins--busy)
+          (if (eq ending 'valid)
+              (progn
+                (should hermes-plugins--consent)
+                (should (string-match-p "tools: tool, \\[withheld\\], \\[withheld\\]" hermes-plugins--consent))
+                (should-error (hermes-plugins-update) :type 'user-error))
+            (should-not hermes-plugins--consent)))))))
+
+(ert-deftest hermes-plugins-catalog-detail-is-inert-and-complete ()
+  (with-temp-buffer
+    (hermes-plugins-mode)
+    (setq hermes-plugins--catalog-p t)
+    (hermes-plugins--render (hermes-plugins-test--catalog-snapshot) "Ready")
+    (goto-char (point-min))
+    (let (review)
+      (unwind-protect
+          (cl-letf (((symbol-function 'pop-to-buffer) (lambda (buffer &rest _) (setq review buffer))))
+            (call-interactively #'hermes-plugins-detail)
+            (with-current-buffer review
+              (should (derived-mode-p 'special-mode))
+              (dolist (text '("Repository: https://example.invalid/repo" "Subdirectory: plugin"
+                              "Tier: community" "Declared tools: tool" "Declared hooks: hook"
+                              "Declared middleware: middleware" "Environment requirements: TEST_KEY"
+                              "Platforms: linux" "not a safety guarantee" "no ref is sent"))
+                (should (string-match-p (regexp-quote text) (buffer-string))))))
+        (when (buffer-live-p review) (kill-buffer review))))))
+
+(ert-deftest hermes-plugins-render-native-hook-ownership ()
+  "Native change hooks cannot lend old catalog authority to a successor."
+  (dolist (phase '(before-change-functions after-change-functions))
+    (dolist (ending '(live rename retarget retarget-empty retarget-error retarget-quit
+                          mode mode-error mode-quit roundtrip generation claim draft transport))
+      (with-temp-buffer
+        (hermes-plugins-mode)
+        (hermes-buffer--claim 'hermes-plugins-mode)
+        (setq hermes-instance (cons "A" "http://a.invalid")
+              hermes-plugins--catalog-p t)
+        (hermes-plugins--render (hermes-plugins-test--catalog-snapshot) "Ready")
+        (let ((client (make-hermes-dashboard-transport-client :base-url "http://a.invalid"))
+              (pending (hermes--promise-make))
+              fired successor-text successor-point successor-state hook
+              (writes 0) (prompts 0) (releases 0))
+          (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                    ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                    ((symbol-function 'hermes-dashboard-transport-release)
+                     (lambda (_) (cl-incf releases)))
+                    ((symbol-function 'hermes-plugins--run) (lambda (&rest _) pending)))
+            (call-interactively #'hermes-plugins-refresh)
+            (setq hook
+                  (lambda (&rest _)
+                    (remove-hook phase hook t)
+                    (setq fired t)
+                    (pcase ending
+                      ('rename (rename-buffer (generate-new-buffer-name "renamed-plugins")))
+                      ((or 'retarget 'retarget-empty 'retarget-error 'retarget-quit)
+                       (hermes-browser--own-instance (cons "B" "http://b.invalid")))
+                      ((or 'mode 'mode-error 'mode-quit) (fundamental-mode))
+                      ('roundtrip (fundamental-mode) (hermes-plugins-mode))
+                      ('generation (hermes-browser--next-request-generation))
+                      ('transport (hermes-dashboard-transport-stop client))
+                      ('claim (hermes-buffer--claim 'hermes-plugins-mode)))
+                    (unless (memq ending '(live rename))
+                      (unless (eq ending 'retarget-empty)
+                        (let ((inhibit-read-only t))
+                          (erase-buffer)
+                          (insert "Successor draft, not catalog A")
+                          (goto-char 8)))
+                      (setq hermes-plugins--status "Successor status"
+                            hermes-plugins--snapshot-stale-p t
+                            hermes-plugins--busy nil)
+                      (setq successor-text (buffer-string)
+                            successor-point (point)
+                            successor-state (list hermes-plugins--snapshot
+                                                  tabulated-list-entries
+                                                  hermes-plugins--status)))
+                    (pcase ending
+                      ((or 'retarget-error 'mode-error) (error "Hook failure"))
+                      ((or 'retarget-quit 'mode-quit) (signal 'quit nil)))))
+            (add-hook phase hook nil t)
+            (hermes--promise-resolve pending
+                                    (cons (hermes-plugins-test--catalog-snapshot) "Ready"))
+            (should fired)
+            (should (= releases 1))
+            (unless (memq ending '(live rename))
+              (should (equal-including-properties successor-text (buffer-string)))
+              (should (= successor-point (point)))
+              (should (equal successor-state
+                             (list hermes-plugins--snapshot tabulated-list-entries
+                                   hermes-plugins--status)))))
+          (goto-char (point-min))
+          (cl-letf (((symbol-function 'yes-or-no-p)
+                     (lambda (_) (cl-incf prompts) t))
+                    ((symbol-function 'hermes-plugins--request)
+                     (lambda (&rest _) (cl-incf writes))))
+            (if (memq ending '(live rename))
+                (call-interactively #'hermes-plugins-catalog-install)
+              (should-error (call-interactively #'hermes-plugins-catalog-install)
+                            :type 'user-error)))
+          (should (= writes (if (memq ending '(live rename)) 1 0)))
+          (should (= prompts writes)))))))
+
+(ert-deftest hermes-plugins-consent-raw-json-receipt-types ()
+  "Only explicit false admits non-application; no receipt retries a write."
+  (dolist (ok '("false" "null" "{}" nil "true"))
+    (with-temp-buffer
+      (hermes-plugins-mode)
+      (hermes-buffer--claim 'hermes-plugins-mode)
+      (setq hermes-instance (cons "A" "http://a.invalid"))
+      (hermes-plugins--render
+       '(:hermes_home "/virtual" :plugins [(:name "manifest" :source "git"
+                                          :path "/virtual/plugins/directory" :can_update_git t)]) "Ready")
+      (goto-char (point-min))
+      (let* ((wire (format "{%s\"consent_required\":true,\"name\":\"catalog-name\",\"sha\":\"%s\",\"delta\":{\"tools\":[\"tool\"]}}"
+                           (if ok (concat "\"ok\":" ok ",") "") (make-string 40 ?a)))
+             (client (make-hermes-dashboard-transport-client :base-url "http://a.invalid"))
+             (calls 0))
+        (cl-letf (((symbol-function 'hermes-browser--existing-client) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-acquire) (lambda (&rest _) client))
+                  ((symbol-function 'hermes-dashboard-transport-release) #'ignore)
+                  ((symbol-function 'yes-or-no-p) (lambda (_) t))
+                  ((symbol-function 'hermes-dashboard-transport-api-auth-async)
+                   (lambda () (hermes--promise-resolved '(:base-url "http://a.invalid"))))
+                  ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
+                   (lambda (_request)
+                     (cl-incf calls)
+                     (hermes--promise-resolved
+                      (list :body-text wire :body (hermes-transport-json-parse wire))))))
+          (call-interactively #'hermes-plugins-update)
+          (should (= calls 1))
+          (should hermes-plugins--snapshot-stale-p)
+          (should-not hermes-plugins--busy)
+          (if (equal ok "false")
+              (should (string-match-p "not applied" hermes-plugins--consent))
+            (should-not hermes-plugins--consent)
+            (should (string-match-p "may have applied" hermes-plugins--status))))))))
+
 (provide 'hermes-plugins-tests)
 ;;; hermes-plugins-tests.el ends here
