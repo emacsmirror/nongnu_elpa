@@ -4481,15 +4481,17 @@ Default value:
 @defopt vm-mime-charset-converter-alist
 @vindex vm-mime-charset-converter-alist
 Alist of MIME charsets and programs that can convert between them.
-If VM cannot display a particular character set, it will scan this list to
-see if the charset can be converted into a charset that it can display.
+Consulted for a charset Emacs has no coding system for, such as
+"windows-874", "x-mac-roman" or "unknown-8bit": text declaring one of
+those is guessed at rather than decoded, and a command named here converts it
+first.  A charset Emacs can decode is left alone, whatever this says.
 
 The alist format is
 
  ( ( START-CHARSET END-CHARSET COMMAND-LINE ) ... )
 
-START-CHARSET is a string specifying a MIME charset.
-Example "iso-8859-1" or "utf-8".
+START-CHARSET is a string specifying a MIME charset, one Emacs has no
+coding system for.  Example "windows-874" or "x-mac-roman".
 
 END-CHARSET is a string specifying the charset to which START-CHARSET
 will be converted.
@@ -4504,7 +4506,7 @@ use pipelines, shell variables and redirections.
 Example:
 
  (setq vm-mime-charset-converter-alist
-       '(("utf-8" "iso-2022-jp" "iconv -f utf-8 -t iso-2022-jp")))
+       '(("windows-874" "utf-8" "iconv -f cp874 -t utf-8 -c")))
 
 The first matching list element will be used.
 @end defopt
@@ -4563,45 +4565,6 @@ MIME jumble.  @code{vm-auto-decode-mime-messages} must also be set non-nil
 for this variable to have effect.
 
 Default value: @code{t}
-@end defopt
-
-@defopt vm-mime-default-face-charset-exceptions
-@vindex vm-mime-default-face-charset-exceptions
-List of character sets that cannot be displayed using the default face.
-This variable acts as an exception list for @code{vm-mime-default-face-charsets}.
-Character sets listed here will not be considered displayable using the
-default face even if they are also listed in @code{vm-mime-default-face-charsets}.
-@end defopt
-
-@defopt vm-mime-default-face-charsets
-@vindex vm-mime-default-face-charsets
-List of character sets that can be displayed using the @code{default} face.
-The default face is what you normally see when you edit text in Emacs.
-The font assigned to the default face can typically display one or two
-character sets.  For U.S. and Western European users, @code{us-ascii} and
-one of the ISO-8859 character sets usually can be displayed.  Whatever
-character sets that your default face can display should be listed as
-the value of @code{vm-mime-default-face-charsets}.  Example:
-
- (setq vm-mime-default-face-charsets
-       '("us-ascii" "ansi_x3.4-1968" "iso-8859-1"))
-
-Case is not significant in character set names.
-
-For Emacs versions with MULE or Unicode support, this variable is
-semi-obsolete and should only be used for making bogus, unregistered
-character sets that are slight variants of ISO-8859-1 visible.
-Don’t add charsets like "utf-8" that require additional decoding.
-
-A value of t means all character sets can be displayed by the
-default face.  This should only be used in combination with
-@code{vm-mime-default-face-charset-exceptions} to tell VM that most of
-the mail you receive is displayable using your default face and
-its associated font, even though the messages might arrive with
-unknown or unregistered character sets specified in the MIME
-Content-Type header.
-
-Default value: @code{("us-ascii" "ansi_x3.4-1968" "iso-8859-1")}
 @end defopt
 
 @defopt vm-mime-deletable-type-exceptions

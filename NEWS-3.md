@@ -8,6 +8,23 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **`vm-mime-charset-converter-alist` works, seventeen years after it
+    stopped** (emacs-vm/vm#879).  Both places that would have run a converter
+    asked first whether VM could display the charset, and that question has
+    answered yes for every charset on GNU Emacs since 2009, so no converter
+    ever ran while the manual documented the option.  A converter now runs
+    where Emacs has no coding system for the charset, `windows-874`,
+    `x-mac-roman` and `unknown-8bit` being three that arrive in mail: that
+    text is guessed at otherwise.  A charset Emacs can decode is left alone,
+    whatever the list says, so nothing that reads correctly today is put
+    through iconv.
+
+    `vm-mime-default-face-charsets` and
+    `vm-mime-default-face-charset-exceptions` are removed with it.  They named
+    the character sets a face could display, which was an XEmacs question;
+    nothing has read either since 2009.  Emacs draws a replacement character
+    for what a font cannot render and VM displays the message either way.
+
   * **Twelve user options are gone, eleven of which no code read**
     (emacs-vm/vm#880).  Four bounded what one fetch brings in:
     `vm-imap-messages-per-session`, `vm-imap-bytes-per-session`,

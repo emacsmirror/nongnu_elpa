@@ -115,6 +115,17 @@ default for it if it's nil.  "
 	  (t 'undecided))))
 
 
+(defun vm-mime-charset-decodable-p (charset)
+  "Whether Emacs has a coding system for CHARSET.
+Nil means `vm-mime-charset-to-coding' can answer only `undecided', so the
+text is guessed at rather than decoded: `windows-874', `x-mac-roman' and
+`unknown-8bit' all arrive in mail and all come out that way.  That is the
+one case where `vm-mime-charset-converter-alist' is consulted.
+
+Emacs shows a replacement character for what a font cannot render, so this
+is about decoding and not about display: VM displays the text either way."
+  (not (eq 'undecided (vm-mime-charset-to-coding charset))))
+
 (defun vm-get-mime-ucs-list ()
   "The value of `vm-mime-ucs-list', or a reasonable default where it is nil.
 A universal character set is one that can encode anything, so a message in
@@ -704,40 +715,37 @@ characters in the same header -- is left alone."
 	(setq match-start (match-beginning 0)
 	      match-end (match-end 0)
 	      charset (buffer-substring (match-beginning 1) (match-end 1))
-              need-conversion nil
-	      encoding (buffer-substring (match-beginning 4) (match-end 4))
+              encoding (buffer-substring (match-beginning 4) (match-end 4))
 	      start (match-beginning 5)
-	      end (copy-marker (match-end 5) t))
-	;; don't change anything if we can't display the
-	;; character set properly.
-	(if (and (not (vm-mime-charset-internally-displayable-p charset))
-		 (not (setq need-conversion
-			    (vm-mime-can-convert-charset charset))))
-	    nil
-	  ;; suppress whitespace between encoded words.
-	  (and previous-end
-	       (string-match "\\`[ \t\n]*\\'"
-			     (buffer-substring previous-end match-start))
-	       (setq match-start previous-end))
-	  (delete-region end match-end)
-	  (condition-case data
-	      (cond ((string-match "B" encoding)
-		     (vm-mime-base64-decode-region start end))
-		    ((string-match "Q" encoding)
-		     (vm-mime-Q-decode-region start end))
-		    (t (vm-mime-error "unknown encoded word encoding, %s"
-				      encoding)))
-	    (vm-mime-error (apply 'message (cdr data))
-			   (goto-char start)
-			   (insert "**invalid encoded word**")
-			   (delete-region (point) end)))
-	  (and need-conversion
-	       (setq charset (vm-mime-charset-convert-region
-			      charset start end)))
-	  (vm-mime-charset-decode-region charset start end)
-	  (goto-char end)
-	  (setq previous-end end)
-	  (delete-region match-start start))))))
+	      end (copy-marker (match-end 5) t)
+	      ;; a charset Emacs cannot decode, and a converter configured for
+	      ;; it: the one case where the converter runs
+	      need-conversion (unless (vm-mime-charset-decodable-p charset)
+				(vm-mime-can-convert-charset charset)))
+	;; suppress whitespace between encoded words.
+	(and previous-end
+	     (string-match "\\`[ \t\n]*\\'"
+			   (buffer-substring previous-end match-start))
+	     (setq match-start previous-end))
+	(delete-region end match-end)
+	(condition-case data
+	    (cond ((string-match "B" encoding)
+		   (vm-mime-base64-decode-region start end))
+		  ((string-match "Q" encoding)
+		   (vm-mime-Q-decode-region start end))
+		  (t (vm-mime-error "unknown encoded word encoding, %s"
+				    encoding)))
+	  (vm-mime-error (apply 'message (cdr data))
+			 (goto-char start)
+			 (insert "**invalid encoded word**")
+			 (delete-region (point) end)))
+	(and need-conversion
+	     (setq charset (vm-mime-charset-convert-region
+			    charset start end)))
+	(vm-mime-charset-decode-region charset start end)
+	(goto-char end)
+	(setq previous-end end)
+	(delete-region match-start start)))))
 
 (defun vm-decode-header-text-in-buffer ()
   "Decode the header text in the current buffer for display.
@@ -1791,15 +1799,10 @@ means to that function that the region is encoded already.")
 	  ((vm-mime-types-match "message" type) t)
 	  ((vm-mime-types-match "text/html" type)
 	   ;; Allow vm-mime-text/html-handler to decide if text/html parts are displayable:
-           (and (vm-mime-text/html-handler)
-		(let ((charset (or (vm-mime-get-parameter layout "charset")
-				   "us-ascii")))
-		  (vm-mime-charset-internally-displayable-p charset))))
-	  ((vm-mime-types-match "text" type)
-	   (let ((charset (or (vm-mime-get-parameter layout "charset")
-			      "us-ascii")))
-	     (or (vm-mime-charset-internally-displayable-p charset)
-		 (vm-mime-can-convert-charset charset))))
+           (and (vm-mime-text/html-handler) t))
+	  ;; every charset, decodable or not: what Emacs cannot decode is
+	  ;; displayed as it stands rather than handed to an external viewer
+	  ((vm-mime-types-match "text" type) t)
 	  (t nil))))
 
 (defun vm-mime-can-convert (type)
@@ -1958,8 +1961,7 @@ assuming that it is text."
   (let ((done nil))
     (while (and alist (not done))
       (cond ((and (vm-string-equal-ignore-case (car (car alist)) charset)
-		  (vm-mime-charset-internally-displayable-p
-		   (nth 1 (car alist))))
+		  (vm-mime-charset-decodable-p (nth 1 (car alist))))
 	     (setq done t))
 	    (t (setq alist (cdr alist)))))
     (and alist (car alist))))
@@ -2737,35 +2739,34 @@ in the text are highlighted and energized."
   (let ((start (point)) end need-conversion
 	(buffer-read-only nil)
 	(charset (or (vm-mime-get-parameter layout "charset") "us-ascii")))
-    (if (and (not (vm-mime-charset-internally-displayable-p charset))
-	     (not (setq need-conversion (vm-mime-can-convert-charset charset))))
-	(progn
-	  (vm-set-mm-layout-display-error
-	   layout (concat "Undisplayable charset: " charset))
-	  (vm-warn 0 2 "%s: %s" (buffer-name vm-mail-buffer) 
-		   (vm-mm-layout-display-error layout))
-	  nil)
-      (vm-mime-insert-mime-body layout)
-      (unless (bolp) (insert "\n"))
-      (setq end (point-marker))
-      (vm-mime-transfer-decode-region layout start end)
-      (when need-conversion
-	(setq charset (vm-mime-charset-convert-region charset start end)))
-      (vm-mime-charset-decode-region charset start end)
-      ;; Before anything looks at the line structure: the sender's line breaks
-      ;; are not all real.  What is left is one long line per paragraph, which
-      ;; the filling below then wraps to this window -- which is the point of
-      ;; the format.
-      (when (vm-mime-flowed-layout-p layout)
-	(vm-mime-unflow-region start end (vm-mime-delsp-layout-p layout)))
-      (unless no-highlighting (vm-energize-urls-in-message-region start end))
-      (when (and (or vm-word-wrap-paragraphs
-		     vm-fill-paragraphs-containing-long-lines)
-		 (not no-highlighting))
-	(vm-fill-paragraphs-containing-long-lines
-	 vm-fill-paragraphs-containing-long-lines start end))
-      (goto-char end)
-      t )))
+    ;; a charset Emacs cannot decode, and a converter configured for it: the
+    ;; one case where the converter runs.  Text in a charset Emacs has no
+    ;; coding system for and no converter for is displayed as it stands, with
+    ;; a replacement character for what cannot be rendered, which is better
+    ;; than refusing to show the message at all.
+    (setq need-conversion (unless (vm-mime-charset-decodable-p charset)
+			    (vm-mime-can-convert-charset charset)))
+    (vm-mime-insert-mime-body layout)
+    (unless (bolp) (insert "\n"))
+    (setq end (point-marker))
+    (vm-mime-transfer-decode-region layout start end)
+    (when need-conversion
+      (setq charset (vm-mime-charset-convert-region charset start end)))
+    (vm-mime-charset-decode-region charset start end)
+    ;; Before anything looks at the line structure: the sender's line breaks
+    ;; are not all real.  What is left is one long line per paragraph, which
+    ;; the filling below then wraps to this window -- which is the point of
+    ;; the format.
+    (when (vm-mime-flowed-layout-p layout)
+      (vm-mime-unflow-region start end (vm-mime-delsp-layout-p layout)))
+    (unless no-highlighting (vm-energize-urls-in-message-region start end))
+    (when (and (or vm-word-wrap-paragraphs
+		   vm-fill-paragraphs-containing-long-lines)
+	       (not no-highlighting))
+      (vm-fill-paragraphs-containing-long-lines
+       vm-fill-paragraphs-containing-long-lines start end))
+    (goto-char end)
+    t ))
 
 (defun vm-mime-display-internal-text/enriched (layout)
   (require 'enriched)
@@ -5248,13 +5249,6 @@ Returns non-NIL value M is a plain message."
   (or (vm-mime-types-match "text" (car (vm-mm-layout-type layout)))
       (vm-mime-types-match "message" (car (vm-mm-layout-type layout)))))
 
-
-(defun vm-mime-charset-internally-displayable-p (_name)
-  "Whether VM can display the MIME charset NAME inside Emacs.  Always.
-Emacs shows a replacement character for what it cannot render, which is
-better than sending the part to an external viewer.  It answered per
-charset when it had to serve XEmacs on a tty as well."
-  t)
 
 (defun vm-mime-find-message/partials (layout id)
   (let ((list nil)

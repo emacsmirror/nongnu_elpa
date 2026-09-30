@@ -542,8 +542,7 @@ exactly where someone is reading the output and wondering what went wrong."
     (vm-trust-content-length . nil)
     (vm-display-using-mime . t)
     (vm-auto-decode-mime-messages . t)
-    (vm-mime-charset-converter-alist . nil)
-    (vm-mime-default-face-charsets . nil))
+    (vm-mime-charset-converter-alist . nil))
   "Default variable bindings for test folder buffers.")
 
 (defun vm-test-init-folder-variables ()
