@@ -603,14 +603,18 @@ a parsed `:body' alone cannot preserve the types needed for a full-config PUT.")
          cancel-setter cancel-expected)
   "Request URL as JSON asynchronously using METHOD, HEADERS, BODY, and SECRETS.
 Return a promise of the response plist.  TIMEOUT overrides the default.
+Encode BODY as UTF-8 bytes before handing it to the HTTP executor.
 CANCEL-SETTER replaces CANCEL-EXPECTED while this request owns its slot."
   (apply hermes-dashboard-transport-http-request-async-function
          url
          (append
           (list :method method
                 :headers (append '(("Accept" . "application/json")) headers)
-                :data (and body (json-serialize body :false-object :false
-                                                :null-object :null))
+                ;; Emacs 29 serializes characters; url.el requires bytes.
+                :data (and body (encode-coding-string
+                                 (json-serialize body :false-object :false
+                                                 :null-object :null)
+                                 'utf-8 t))
                 :secrets secrets)
           (and timeout (list :timeout timeout))
           (and cancel-setter

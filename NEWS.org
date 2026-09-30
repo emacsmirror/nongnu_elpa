@@ -2,6 +2,10 @@
 
 * Version 0.7.1 (unreleased)
 
+- Added optional client-local dictation and read-aloud through the owning
+  backend's audio relays.  Recording requires consent; transcription stays
+  in the draft or a manual recovery buffer and is never sent automatically.
+
 - Made buffer-specific commands context-aware in native =M-x= completion,
   while keeping launchers available globally.  Filtering follows the user's
   =read-extended-command-predicate= setting; Hermes does not change it.
