@@ -778,20 +778,12 @@ mailbox.  The retrieved messages can be automatically removed from the
 
 VM retrieves the messages while you carry on reading: the fetch is started
 and Emacs comes straight back to you, the messages arrive a bunch at a time,
-and the mode line says how far it has got.  Two options bound what one
-session fetches, which is worth setting for a mailbox large enough that you
-would rather have it in pieces:
-
-@vindex vm-pop-bytes-per-session
-Neither is set by default, so VM retrieves whatever the mailbox holds:
-
-@vmdocvmpopmessagespersession
-
-@vmdocvmpopbytespersession
+and the mode line says how far it has got.  One fetch brings in everything
+waiting, however large the mailbox.
 
 @vindex vm-pop-max-message-size
 @findex vm-get-new-mail
-You can also say how large a message VM will fetch at all.  If you set
+You can say how large a message VM will fetch at all.  If you set
 @code{vm-pop-max-message-size} to a positive numeric value, VM leaves a
 message larger than that on the server and says how large it was and what the
 limit is; raise the limit and the next @code{vm-get-new-mail} brings it in.
@@ -863,23 +855,15 @@ retained until a later expunge operation.
 
 VM retrieves the messages while you carry on reading: the fetch is started
 and Emacs comes straight back to you, the messages arrive a bunch at a time,
-and the mode line says how far it has got.  Two options bound what one
-session fetches, which is worth setting for a mailbox large enough that you
-would rather have it in pieces:
-
-@vindex vm-imap-bytes-per-session
-Neither is set by default, so VM retrieves whatever the mailbox holds:
-
-@vmdocvmimapmessagespersession
-
-@vmdocvmimapbytespersession
+and the mode line says how far it has got.  One fetch brings in everything
+waiting, however large the mailbox.
 
 @vindex vm-imap-max-message-size
 @findex vm-get-new-mail
-Another way to reduce the amount of wait is to control how the large messages
-should be handled.  If you set @code{vm-imap-max-message-size} to a positive
-numeric value, VM will not retrieve messages larger than this size from a
-maildrop.  Each one is left on the server, and VM says how large it was and
+You can say how large a message VM will fetch at all.  If you set
+@code{vm-imap-max-message-size} to a positive numeric value, VM will not
+retrieve messages larger than this size from a maildrop.  Each one is left
+on the server, and VM says how large it was and
 what the limit is; raise the limit and the next @code{vm-get-new-mail} brings
 it in.  In earlier releases VM asked, message by message, whether to retrieve
 it, delete it or leave it, and showed you its headers to decide by.
@@ -2171,7 +2155,6 @@ synchronized every time @code{vm-get-new-mail} is invoked.  This involves
 the attributes and labels in the cache folder based on the server data,
 (iii) expunging messages in the cache folder that have been expunged on the
 server, and finally, (iv) retrieving any new messages on the server.
-@vmdocvmimapsynconget
 
 VM remembers the @acronym{UID} of every message it has retrieved, in the
 cache folder's own @code{X-VM-IMAP-Retrieved} header, and step (iv) passes
@@ -4857,8 +4840,6 @@ syntax, which is of the form @code{=?charset?encoding?encoded text?=}.
 @vmdocvmmimeencodeheadersregexp
 
 @vmdocvmmimeencodeheaderstype
-
-@vmdocvmmimeencodewordsregexp
 
 @vmdocvmmimeencodeheaderswordsregexp
 
@@ -8175,29 +8156,17 @@ download mail from IMAP mail boxes into local folders.
 Recall that @code{vm-get-new-mail} and @code{vm-save-folder} each do half of
 that, in one direction.
 
-@vmdocvmimapconnectionmode
-
-@noindent
-So under @code{offline}, @code{vm-save-folder} writes your changes to the
-local copy on disk (the cache folder) and @code{vm-visit-imap-folder}
-visits that copy.
-
-You can set @code{vm-imap-connection-mode} to @code{autoconnect} if you have
-intermittent problems with the network.  In this mode, doing
-@code{vm-get-new-mail} attempts to connect to the network.  If it succeeds
-then @code{vm-imap-connection-mode} turns into @code{online}.
-
 @findex vm-imap-synchronize
-When the @acronym{IMAP} server is connected again, you should run @kbd{C-u
-M-x vm-imap-synchronize}, i.e., call it with a @emph{prefix argument}.  This
-causes @emph{all} the message attributes and labels to be written to the
-server, since it may not be known which of them have actually changed during
-the offline operation.
+A folder whose server could not be reached is read and changed in its cache
+on disk, and the changes go out when the server is there again.  Run @kbd{C-u
+M-x vm-imap-synchronize} then, that is with a @emph{prefix argument}, which
+writes @emph{all} the message attributes and labels to the server: which of
+them changed while the server was away is not recorded.
 
-The messages you expunged while offline are expunged on the server whether you
-give the prefix argument or not: VM records each one as you expunge it and
-keeps the record in the folder, so it survives a session that could not reach
-the server.  A prefix argument used to mean something more than that: every
+The messages you expunged while the server was away are expunged on it
+whether you give the prefix argument or not: VM records each one as you
+expunge it and keeps the record in the folder, so it survives a session that
+could not reach the server.  A prefix argument used to mean something more than that: every
 message the mailbox had and the cache did not was deleted on the server, so
 a cache that had been truncated, restored from a partial backup or read under
 the wrong folder type looked exactly like a folder you had expunged, so the
@@ -10921,8 +10890,7 @@ fetch messages on demand.
 
 When an IMAP session is inactive for a certain period, IMAP server is likely
 to forcibly close it.  To ensure that an IMAP session is active when VM
-tries to talk to the server, it first checks that the session is active.
-(This can be disabled by setting @code{vm-imap-ensure-active-sessions}.)  If
+tries to talk to the server, it first checks that the session is active.  If
 the server has forcibly closed the connection, it would not respond, and
 Emacs networking code times out after a certain period.  During this
 process, VM will appear to ``hang.''  In reality, it is waiting for the

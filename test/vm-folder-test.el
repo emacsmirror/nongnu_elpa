@@ -5785,10 +5785,7 @@ The driver is the only path, so it is what is measured (emacs-vm/vm#822)."
   "`vm-get-spooled-mail' hands FULL on when it is asked to, and nil otherwise.
 FULL is what reaches the branch in `vm-imap-get-synchronization-data' that
 fetches a message the folder was given once and no longer holds, rather than
-passing it over.
-
-`vm-imap-sync-on-get' no longer decides anything here: it chose between two
-shapes of blocking synchronisation, and there is one path now."
+passing it over."
   (vm-test-with-folder (vm-folder-test--write-folder-content 1)
     (setq vm-folder-access-method 'imap)
     (let ((vm-block-new-mail nil))

@@ -835,8 +835,7 @@ waits for the connect, which is what `:nowait' is for."
   "Fetch from MOCK what RETRIEVED does not have, and answer with the result."
   (let ((answer 'not-called)
         (vm-pop-server-timeout 3)
-        (vm-pop-max-message-size nil)
-        (vm-pop-messages-per-session nil))
+        (vm-pop-max-message-size nil))
     (vm-pop-net-fetch (vm-pop-mock-spec mock) retrieved
                       (lambda (result) (setq answer result)))
     (vm-pop-net-test--wait-until (lambda () (not (eq answer 'not-called)))
@@ -915,30 +914,13 @@ deletes them is `vm-pop-net-delete-fetched', once the crash box is on disk."
       (should-not (vm-pop-mock-received-p mock "\\`DELE"))
       (should (vm-pop-mock-received-p mock "\\`QUIT")))))
 
-(ert-deftest vm-pop-net-test-fetching-stops-at-the-session-limit ()
-  "`vm-pop-messages-per-session' bounds one session's work: a maildrop with
-a great many messages in it should not be one command that runs for ever."
-  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
-                                                    vm-pop-net-test--bob))
-    (let ((answer 'not-called)
-          (vm-pop-server-timeout 3)
-          (vm-pop-max-message-size nil)
-          (vm-pop-messages-per-session 1))
-      (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
-                        (lambda (result) (setq answer result)))
-      (let ((deadline (+ (float-time) 20)))
-        (while (and (eq answer 'not-called) (< (float-time) deadline))
-          (accept-process-output nil 0.05)))
-      (should (equal (length answer) 1)))))
-
 (ert-deftest vm-pop-net-test-fetching-passes-over-a-message-too-big ()
   "`vm-pop-max-message-size' is asked before RETR, not after: the size comes
 from LIST, so an enormous message is never pulled down to be measured."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
     (let ((answer 'not-called)
           (vm-pop-server-timeout 3)
-          (vm-pop-max-message-size 10)
-          (vm-pop-messages-per-session nil))
+          (vm-pop-max-message-size 10))
       (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
                         (lambda (result) (setq answer result)))
       (let ((deadline (+ (float-time) 20)))
@@ -968,8 +950,7 @@ an empty list that reads as an empty maildrop."
   "Fetch from MOCK into CRASH from the current folder, and answer the result."
   (let ((answer 'not-called)
         (vm-pop-server-timeout 3)
-        (vm-pop-max-message-size nil)
-        (vm-pop-messages-per-session nil))
+        (vm-pop-max-message-size nil))
     (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash
                          (lambda (result) (setq answer result)))
     (vm-pop-net-test--wait-until (lambda () (not (eq answer 'not-called)))
@@ -1574,8 +1555,7 @@ a reader who is told it is there.  The IMAP side says the same
       (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
         (let ((answer 'not-called)
               (vm-pop-server-timeout 3)
-              (vm-pop-max-message-size 10)
-              (vm-pop-messages-per-session nil))
+              (vm-pop-max-message-size 10))
           (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
                             (lambda (result) (setq answer result)))
           (let ((deadline (+ (float-time) 20)))
