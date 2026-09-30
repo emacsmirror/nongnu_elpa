@@ -137,6 +137,34 @@ Source toggling and zoom wait for a pending read; use =C-g= to cancel it first.
 File paths refer to current content, not historical versions:
 the backend does not publish reliable artifact revisions.
 
+** Skills: installed content and Hub previews
+
+In the Skills inventory, =RET= or =f= opens the selected skill's =SKILL.md=
+from that backend's launch profile.  The text is read-only until =C-c C-e=
+(Edit).  Use =C-c C-c= to save, =C-c C-k= to discard local edits, and
+=C-c C-h= for help.  Save replaces the whole document: it can overwrite
+concurrent changes.  A matching backend readback confirms the save; errors,
+validation refusals and uncertain outcomes leave your draft intact.  Nothing
+retries a write automatically.  =C-c C-g= reads again after local edits have
+been saved or discarded.  Backend paths are labels, not local file targets.
+These controls do not create skills or edit supporting files, and saving
+does not claim to activate changes in a running session.
+
+=H= in inventory, or =M-x hermes-skills-hub=, opens the separate optional
+Skill Hub.  Use =n/p= to move, =f= or =RET= to preview, =b= to return,
+=s= to search configured sources, =S= to inspect source availability, and
+=P= to choose a backend profile.  Rows retain their source and identifier,
+even when names match.  Search is bounded; timed-out sources are reported as
+partial results.  Preview shows inert =SKILL.md= text and supporting file
+names only—not a review of those files.
+
+In a preview, =S= requests a scan only after confirmation.  Scanning can
+fetch and quarantine files on the backend and run an optional external
+scanner.  Allow, ask and block are policy results, not safety guarantees;
+an absent or failed advisory scan is not a pass.  Browsing and previewing
+never install, enable or execute a skill.  These views require backend REST
+support and have no local command fallback.
+
 ** Live tasks
 
 Use /Workspace → Live tasks/ in the chat actions menu, or
