@@ -2214,20 +2214,26 @@ Toot must be on you own."
         (mastodon-url-lookup (map-nested-elt quote '(quoted_status uri)))
       (user-error "No quote in this toot?"))))
 
-
 (defun mastodon-tl-view-toot-quotes ()
-  "View the toots that quote the toot at point.
-Also works if a quote toot is at point."
+  "View the toots that quote the toot at point."
   (interactive)
   (mastodon-tl--do-if-item
-   (let ((id ;; quote:
-          (if-let* ((data (alist-get 'quote (mastodon-tl--property 'item-json))))
-              (map-nested-elt data '(quoted_status id))
-            ;; boost or toot:
-            (mastodon-tl--property 'base-item-id :no-move))))
+   (let ((id (mastodon-tl--property 'base-item-id :no-move)))
      (mastodon-tl--init "toot-quotes"
              (format "/statuses/%s/quotes" id)
              'mastodon-tl--timeline nil))))
+
+(defun mastodon-tl-view-quoted-toot-quotes ()
+  "View the toots that also quote the toot quoted by the toot at point."
+  (interactive)
+  (mastodon-tl--do-if-item
+   (if-let* ((data (alist-get 'quote (mastodon-tl--property 'item-json)))
+             (id (map-nested-elt data '(quoted_status id))))
+       (mastodon-tl--init "toot-quotes"
+               (format "/statuses/%s/quotes" id)
+               'mastodon-tl--timeline nil)
+     (user-error "Toot at point doesn't contain a quote?"))))
+
 
 ;;; INSERT TOOTS 2
 
