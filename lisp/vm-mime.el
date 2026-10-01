@@ -1998,17 +1998,31 @@ assuming that it is text."
 	    (setq ex (call-process-region 
 		      (point-min) (point-max) shell-file-name
 		      t t nil shell-command-switch (nth 2 ooo))))
-	  (unless (eq ex 0)
-	    (vm-warn 0 1 "Conversion from %s to %s signalled exit code %s"
-		     (nth 0 ooo) (nth 1 ooo) ex))
-	  ;; This cannot possibly safe.  USR, 2011-02-11
-	  (setq start (point-min) end (point-max))
-	  (with-current-buffer b
-	    (save-excursion
-	      (goto-char b-start)
-	      (insert-buffer-substring work-buffer start end)
-	      (delete-region (point) (+ (point) oldsize))))
-	  (nth 1 ooo))
+	  (cond
+	   ((eq ex 0)
+	    ;; This cannot possibly safe.  USR, 2011-02-11
+	    (setq start (point-min) end (point-max))
+	    (with-current-buffer b
+	      (save-excursion
+		(goto-char b-start)
+		(insert-buffer-substring work-buffer start end)
+		(delete-region (point) (+ (point) oldsize))))
+	    (nth 1 ooo))
+	   (t
+	    ;; The region is left as it was, and the caller decodes it with
+	    ;; the charset it already had.  A converter that stops part way
+	    ;; has written only what it managed, and copying that back cuts
+	    ;; the message off there: iconv without -c does it on the first
+	    ;; byte it cannot map.  Unconverted text is mojibake at worst,
+	    ;; where a truncated message has lost what it does not show
+	    ;; (emacs-vm/vm#886).
+	    (vm-warn 0 2
+		     (concat "Converting from %s to %s failed with exit code"
+			     " %s; showing the text unconverted.  Check the"
+			     " command in vm-mime-charset-converter-alist,"
+			     " which iconv needs -c for")
+		     (nth 0 ooo) (nth 1 ooo) ex)
+	    charset)))
       ;; unwind-protection
       (when work-buffer (kill-buffer work-buffer)))))
 

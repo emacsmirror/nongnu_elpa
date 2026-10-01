@@ -589,6 +589,37 @@ search goes on to the next entry."
          '(("x-weird" "x-stranger" "tr abc xyz"))))
     (should (equal "Subject: abc\n" (vm-mime-test--decoded-header "x-weird")))))
 
+(ert-deftest vm-mime-test-a-converter-that-fails-leaves-the-text-alone ()
+  "A converter that stops part way has written only what it managed, and
+copying that back cut the message off there: `iconv' without -c does it on
+the first byte it cannot map, and all the reader got was a warning that had
+gone by the time they looked.  The text was readable before the conversion,
+so it is left as it was and decoded with the charset it already had
+(emacs-vm/vm#886)."
+  (let ((vm-mime-charset-converter-alist
+         ;; writes the first two characters and then fails
+         '(("x-weird" "utf-8" "head -c 2; exit 3"))))
+    (should (equal "Subject: abc\n" (vm-mime-test--decoded-header "x-weird"))))
+  ;; and the answer is the charset the text still has, so the caller decodes
+  ;; it as what it is rather than as the conversion's target
+  (let ((vm-mime-charset-converter-alist
+         '(("x-weird" "utf-8" "head -c 2; exit 3"))))
+    (with-temp-buffer
+      (insert "abcdef")
+      (should (equal (vm-mime-charset-convert-region
+                      "x-weird" (point-min) (point-max))
+                     "x-weird"))
+      (should (equal (buffer-string) "abcdef"))))
+  ;; a converter that succeeds still converts
+  (let ((vm-mime-charset-converter-alist
+         '(("x-weird" "utf-8" "tr abc xyz"))))
+    (with-temp-buffer
+      (insert "abcdef")
+      (should (equal (vm-mime-charset-convert-region
+                      "x-weird" (point-min) (point-max))
+                     "utf-8"))
+      (should (equal (buffer-string) "xyzdef")))))
+
 ;;; vm-mime-charset-decode-region tests
 
 (ert-deftest vm-mime-test-charset-decode-region-utf8 ()
