@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Set, or check, the version in every file of the VM tree that carries one.
+
+Four files do, and `dev/docs/release.org' lists them:
+
+    configure.ac      AC_INIT([VM],[VERSION],...)
+    lisp/vm.el        ;; Version: VERSION
+    NEWS-3.md         ## VM VERSION released [DATE]
+    info/vm.texinfo   @item Version VERSION, ...
+
+A plain `sed' cannot do this.  lisp/ holds dozens of occurrences of the
+current version inside obsolescence markers, which say which release
+deprecated a name and must not move when the tree's version does; 53 of them
+named 8.3.3 or 8.4.0, releases that never existed, which is what made the
+hand edit worth replacing.  This touches the four places and nothing else.
+
+A version is either a release, `9.0.0', or a snapshot, `9.0.1snapshot'.  The
+two take different forms, and the two steps release.org asks for are:
+
+    vm-set-version 9.0.0           date the release
+      configure.ac      9.0.0
+      lisp/vm.el        9.0.0
+      NEWS-3.md         ## VM 9.0.0 released 2026-10-01
+      info/vm.texinfo   @item Version 9.0.0, released 1 October 2026
+
+    vm-set-version 9.0.1snapshot   open the next one
+      configure.ac      9.0.1snapshot
+      lisp/vm.el        9.0.1snapshot
+      NEWS-3.md         ## VM 9.0.1 released        (new, above the last)
+      info/vm.texinfo   @item Version 9.0.1snapshot, from git   (new, below)
+
+NEWS and the manual are histories: an entry for a version already there is
+rewritten, and an entry for a version that is not is added in the place that
+history keeps it.  NEWS runs newest first and the manual oldest first, so
+the two are added at opposite ends.
+"""
+
+import argparse
+import datetime
+import re
+import sys
+from pathlib import Path
+
+SNAPSHOT = "snapshot"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("version", nargs="?",
+                        help="the version to set, e.g. 9.0.0 or 9.0.1snapshot")
+    parser.add_argument("--check", action="store_true",
+                        help="report what each file says and whether they agree;"
+                             " change nothing")
+    parser.add_argument("--date", metavar="YYYY-MM-DD",
+                        help="the release date (default: today)")
+    parser.add_argument("--root", metavar="DIR",
+                        help="the top of the VM tree (default: this script's)")
+    args = parser.parse_args()
+    if not args.check and not args.version:
+        parser.error("give a version to set, or --check to read what is there")
+    return args
+
+
+def tree_root(given):
+    if given:
+        return Path(given)
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def base_version(version):
+    """The release number inside VERSION, with any snapshot suffix removed."""
+    return version[:-len(SNAPSHOT)] if version.endswith(SNAPSHOT) else version
+
+
+def is_snapshot(version):
+    return version.endswith(SNAPSHOT)
+
+
+def configure_line(version, _date):
+    return f"AC_INIT([VM],[{version}]"
+
+
+def vm_el_line(version, _date):
+    return f";; Version: {version}"
+
+
+def news_line(version, date):
+    """The NEWS heading: dated once the version is released, bare until then."""
+    if is_snapshot(version):
+        return f"## VM {base_version(version)} released"
+    return f"## VM {base_version(version)} released {date.isoformat()}"
+
+
+def manual_line(version, date):
+    if is_snapshot(version):
+        return f"@item Version {version}, from git"
+    return (f"@item Version {version}, released"
+            f" {date.day} {date.strftime('%B')} {date.year}")
+
+
+class Site:
+    """One file's version line: how to find it, write it, and add a new one.
+
+    WHICH says which match is the current version where a file holds several:
+    the manual lists every release oldest first, so its last @item is the one
+    this tree is, while NEWS runs newest first and its first heading is.
+    ADD says where an entry for a version not yet in the file goes, and is
+    None for a file that carries one version and never a history.
+    """
+
+    def __init__(self, name, path, pattern, make_line, which="first", add=None):
+        self.name = name
+        self.path = path
+        self.pattern = pattern
+        self.make_line = make_line
+        self.which = which
+        self.add = add
+
+    def text(self):
+        if not self.path.exists():
+            raise SystemExit(f"vm-set-version: {self.path} is missing;"
+                             f" run this in a VM tree or give --root")
+        return self.path.read_text()
+
+    def match(self, text=None):
+        """The match for the version this tree is, or None where there is none."""
+        found = list(re.finditer(self.pattern, text or self.text(), re.M))
+        if not found:
+            return None
+        return found[0] if self.which == "first" else found[-1]
+
+    def version(self):
+        found = self.match()
+        return found.group(1) if found else None
+
+
+def version_sites(root):
+    return [
+        Site("configure.ac", root / "configure.ac",
+             r"^AC_INIT\(\[VM\],\[([^]]+)\]", configure_line),
+        Site("lisp/vm.el", root / "lisp" / "vm.el",
+             r"^;; Version: *(\S+)", vm_el_line),
+        Site("NEWS-3.md", root / "NEWS-3.md",
+             r"^## VM (\S+) released.*$", news_line, which="first", add="before"),
+        Site("info/vm.texinfo", root / "info" / "vm.texinfo",
+             r"^@item Version (\S+?),(?: released| from git).*$", manual_line,
+             which="last", add="after"),
+    ]
+
+
+def disagreements(sites):
+    """The names whose release number is not the one most of the files carry.
+
+    The comparison is on the release number throughout: NEWS heads its section
+    without a snapshot suffix, the section not having been released yet.
+    """
+    bases = {s.name: (base_version(v) if v else None)
+             for s, v in ((s, s.version()) for s in sites)}
+    settled = [b for b in bases.values() if b]
+    if not settled:
+        return list(bases)
+    agreed = max(set(settled), key=settled.count)
+    return [name for name, b in bases.items() if b != agreed]
+
+
+def report(sites):
+    """Print what each file says.  Answers the exit status."""
+    width = max(len(s.name) for s in sites)
+    for site in sites:
+        print(f"  {site.name:<{width}}  {site.version() or '(none found)'}")
+    wrong = disagreements(sites)
+    if wrong:
+        print("vm-set-version: these do not agree with the rest: "
+              + ", ".join(wrong), file=sys.stderr)
+        print("vm-set-version: `vm-set-version VERSION' sets all four",
+              file=sys.stderr)
+        return 1
+    print(f"vm-set-version: all four say {sites[0].version()}")
+    return 0
+
+
+def rewritten(text, found, line):
+    return text[:found.start()] + line + text[found.end():]
+
+
+def added(text, found, line, where):
+    """TEXT with LINE put before or after the line FOUND matched."""
+    if where == "before":
+        return text[:found.start()] + line + "\n\n" + text[found.start():]
+    return text[:found.end()] + "\n" + line + text[found.end():]
+
+
+def apply_to(site, version, date):
+    """Write SITE's version line.  Answers what it did, for the report."""
+    text = site.text()
+    found = site.match(text)
+    if not found:
+        raise SystemExit(f"vm-set-version: no version line in {site.path};"
+                         f" the file's format has changed and this script's"
+                         f" pattern needs updating")
+    line = site.make_line(version, date)
+    new_version = site.add and base_version(found.group(1)) != base_version(version)
+    if new_version:
+        site.path.write_text(added(text, found, line, site.add))
+        return f"added  {line}"
+    if found.group(0) == line:
+        return "already right"
+    site.path.write_text(rewritten(text, found, line))
+    return f"set    {line}"
+
+
+def set_version(sites, version, date):
+    width = max(len(s.name) for s in sites)
+    for site in sites:
+        print(f"  {site.name:<{width}}  {apply_to(site, version, date)}")
+
+
+def main():
+    args = parse_args()
+    sites = version_sites(tree_root(args.root))
+    if args.check:
+        return report(sites)
+    date = (datetime.date.fromisoformat(args.date) if args.date
+            else datetime.date.today())
+    set_version(sites, args.version, date)
+    print(f"vm-set-version: set to {args.version}")
+    print("vm-set-version: `make -C info check-reference' next, then commit")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,95 @@
+#!/bin/sh
+#
+# Build and install VM the way a person installing it does, in a copy of the
+# tree and into a prefix that is thrown away afterwards.
+#
+# `dev/docs/release.org' asks for "make distclean, autoconf, ./configure,
+# make, make install" before a release.  Done in the tree itself that replaces
+# the maintainer's Makefiles and installs over whatever is in the configured
+# prefix, so it is done here on a copy instead, which also proves the release
+# builds from what git holds rather than from what happens to be lying about.
+#
+# test/build-check is a different question and runs separately: it reads what
+# configure writes without building, so it can check cases a build cannot
+# reach, such as what the recipes do when makeinfo is missing.
+
+set -eu
+
+progname=$(basename "$0")
+root=$(cd "$(dirname "$0")/../.." && pwd)
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/vm-build-from-clean.XXXXXX")
+trap 'rm -rf "$work"' 0
+
+src="$work/src"
+prefix="$work/prefix"
+mkdir -p "$src" "$prefix"
+
+fail () {
+    echo "$progname: $*" >&2
+    exit 1
+}
+
+# From git, not from the working tree: a release is built from what is
+# committed, and a file that is present but untracked would otherwise make a
+# build pass that nobody else can reproduce.
+echo "$progname: exporting HEAD into $src"
+(cd "$root" && git archive --format=tar HEAD) | (cd "$src" && tar -xf -) \
+    || fail "git archive failed; is $root a git tree with a commit in it?"
+
+cd "$src"
+
+echo "$progname: autoconf"
+autoconf || fail "autoconf failed; it is needed to build from a git export"
+
+echo "$progname: configure --prefix=$prefix"
+./configure --prefix="$prefix" >"$work/configure.log" 2>&1 \
+    || { tail -20 "$work/configure.log" >&2
+         fail "configure failed; its output is above and in $work/configure.log"; }
+
+echo "$progname: make"
+make >"$work/make.log" 2>&1 \
+    || { tail -20 "$work/make.log" >&2
+         fail "make failed; its output is above and in $work/make.log"; }
+
+echo "$progname: make install"
+make install >"$work/install.log" 2>&1 \
+    || { tail -20 "$work/install.log" >&2
+         fail "make install failed; its output is above and in $work/install.log"; }
+
+# What was installed, rather than only that make said nothing.  An install
+# that writes no manual still exits 0: emacs-vm/vm#718 was exactly that.
+echo "$progname: checking what landed in the prefix"
+
+installed_count () {
+    find "$prefix" -name "$1" 2>/dev/null | wc -l | tr -d ' '
+}
+
+[ "$(installed_count 'vm.elc')" -gt 0 ] \
+    || fail "no vm.elc under $prefix; the lisp did not install"
+[ "$(installed_count 'vm-autoloads.el')" -gt 0 ] \
+    || fail "no vm-autoloads.el under $prefix; nothing would load"
+[ "$(installed_count 'vm.info*')" -gt 0 ] \
+    || fail "no vm.info under $prefix; the manual did not install (see #718)"
+
+# It loads.  A build that produces files Emacs then refuses is not a build.
+emacs_prog=${EMACS:-}
+if [ -z "$emacs_prog" ] && [ -f "$root/test/Makefile" ]; then
+    emacs_prog=$(sed -n 's/^EMACS_PROG *= *//p' "$root/test/Makefile" | head -1)
+fi
+emacs_prog=${emacs_prog:-emacs}
+
+lisp_dir=$(dirname "$(find "$prefix" -name vm-autoloads.el | head -1)")
+echo "$progname: loading what was installed, from $lisp_dir"
+"$emacs_prog" -batch -Q -L "$lisp_dir" \
+    --eval '(require (quote vm-autoloads))' \
+    --eval '(require (quote vm))' \
+    --eval '(message "loaded VM %s" (vm-version))' >"$work/load.log" 2>&1 \
+    || { tail -20 "$work/load.log" >&2
+         fail "the installed VM does not load; its output is above"; }
+
+grep -q "^loaded VM" "$work/load.log" \
+    || fail "the installed VM loaded without reporting a version; see $work/load.log"
+
+sed -n 's/^loaded VM /'"$progname"': installed and loaded VM /p' "$work/load.log"
+echo "$progname: a clean tree builds, installs and loads"
