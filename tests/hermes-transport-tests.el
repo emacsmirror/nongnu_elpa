@@ -896,6 +896,25 @@
             '("session.cwd.set" (session_id . "sid")
               (cwd . "/tmp/project"))))))
 
+(ert-deftest hermes-dashboard-rpc-session-create-omits-unreleased-cwd-explicit ()
+  "Keep cwd while dropping an unsupported key through actual JSON encoding."
+  (dolist (explicit '(nil t :false))
+    (let (request)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                 (lambda (_client method params &rest _)
+                   (setq request
+                         (hermes-dashboard-transport--decode-frame
+                          (hermes-dashboard-transport--encode-frame
+                           `((method . ,method) (params . ,params))))))))
+        (hermes-dashboard-transport-session-create
+         'client :cwd "/selected" :cwd-explicit explicit :profile "default"))
+      (let ((params (hermes-transport--get request 'params)))
+        (should (equal (hermes-transport--get request 'method) "session.create"))
+        (should (equal (hermes-transport--get params 'cwd) "/selected"))
+        (should (equal (hermes-transport--get params 'profile) "default"))
+        (should (equal (hermes-transport--get params 'source) "emacs"))
+        (should-not (hermes-transport--field-present-p params 'cwd_explicit))))))
+
 (ert-deftest hermes-dashboard-rpc-session-compress-sends-session-and-focus ()
   "`session.compress' sends the live session id and optional focus topic."
   (let (requests)

@@ -1927,14 +1927,14 @@ session-scoped mutation path after also seeding the fresh build at creation;
   "Non-nil when the user deliberately selected this chat's workspace.")
 
 (defun hermes-chat--dashboard-create-params ()
-  "Return fresh-session parameters from this buffer's metadata and runtime."
+  "Return fresh-session parameters from this buffer's metadata and runtime.
+Only a deliberate workspace overrides the backend profile default."
   (append
    (list :cols (hermes-chat--dashboard-cols)
          :title (hermes-chat--dashboard-create-title)
          :profile hermes-chat--profile
-         :cwd (hermes-chat--current-working-directory)
-         :cwd-explicit (and (hermes-chat--current-working-directory)
-                            (if hermes-chat--cwd-explicit-p t :false)))
+         :cwd (and hermes-chat--cwd-explicit-p
+                   (hermes-chat--current-working-directory)))
    (and hermes-chat--dashboard-create-model
         (list :model hermes-chat--dashboard-create-model
               :provider hermes-chat--dashboard-create-provider))

@@ -2429,7 +2429,8 @@
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
          (setq default-directory "/tmp/local-editor/"
-               hermes-chat--working-directory "/srv/remote-project")
+               hermes-chat--working-directory "/srv/remote-project"
+               hermes-chat--cwd-explicit-p t)
          (insert "hi")
          (hermes-chat-send)
          (should (equal create-cwd "/srv/remote-project")))))))
@@ -3560,7 +3561,7 @@
           (mapc #'kill-buffer (hermes-test--side-question-documents)))))))
 
 (ert-deftest hermes-chat-profile-cwd-wire-intent ()
-  "Unknown remote cwd is omitted; inherited spawn cwd is never explicit."
+  "Omit unknown cwd and unsupported explicitness from released requests."
   (hermes-test-with-chat-buffer
    (let ((client (hermes-test--dashboard-client)) wire)
      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
@@ -3573,11 +3574,63 @@
          (apply #'hermes-dashboard-transport-session-create client
                 (hermes-chat--dashboard-create-params))
          (should (equal (alist-get 'profile wire) "selected"))
-         (if (eq choice 'unknown)
-             (progn (should-not (assq 'cwd wire)) (should-not (assq 'cwd_explicit wire)))
-           (should (equal (alist-get 'cwd wire) "/selected"))
-           (should (eq (alist-get 'cwd_explicit wire)
-                       (if (eq choice 'explicit) t :false)))))))))
+         (should-not (assq 'cwd_explicit wire))
+         (if (eq choice 'explicit)
+             (should (equal (alist-get 'cwd wire) "/selected"))
+           (should-not (assq 'cwd wire))))))))
+
+(ert-deftest hermes-chat-profile-cwd-inherited-create-paths ()
+  "Prompt, control and queued bootstrap omit inherited cwd on the real wire."
+  (dolist (path '(prompt control queued))
+    (let ((client (hermes-test--dashboard-client)) wire action)
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--resolved-start-mode 'remote
+             hermes-chat--profile "selected"
+             hermes-chat--working-directory "/launch/inherited"
+             hermes-chat--cwd-explicit-p nil
+             hermes-chat--dashboard-client client)
+       (let ((editor-directory default-directory))
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                    (lambda (_client method params resolve _reject)
+                      (should (equal method "session.create"))
+                      (setq wire params)
+                      (funcall resolve
+                               '((session_id . "selected-session")
+                                 (info . ((cwd . "/selected/workspace")))))))
+                   ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                    (lambda (&rest _) (ert-fail "No launch cwd HTTP lookup")))
+                   ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+                   ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                    (lambda (&rest _) (setq action t))))
+           (if (eq path 'control)
+               (hermes-chat--dashboard-ensure-session-action
+                client (current-buffer) (lambda (_client) (setq action t)))
+             (hermes-chat--dashboard-ensure-session
+              client "literal prompt" (current-buffer) nil nil (eq path 'queued)))
+           (should action)
+           (should (equal (alist-get 'profile wire) "selected"))
+           (should-not (assq 'cwd wire))
+           (should-not (assq 'cwd_explicit wire))
+           (should (equal hermes-chat--working-directory "/selected/workspace"))
+           (should (equal default-directory editor-directory))
+           (should (string-match-p "workspace" (buffer-name)))
+           (should (equal (hermes-chat--directory-basename) "workspace"))))))))
+
+(ert-deftest hermes-chat-profile-cwd-local-launch-is-deliberate ()
+  "The public constructor retains deliberate local placement, not remote defaults."
+  (dolist (mode '(spawn remote))
+    (let ((default-directory "/deliberate/local/") buffer)
+      (cl-letf (((symbol-function 'hermes-chat--instance-start-mode)
+                 (lambda (_) mode))
+                ((symbol-function 'pop-to-buffer-same-window) #'set-buffer))
+        (unwind-protect
+            (progn
+              (setq buffer (hermes-chat--new-buffer "selected" nil '("test" . "http://test")))
+              (with-current-buffer buffer
+                (should (eq hermes-chat--cwd-explicit-p (eq mode 'spawn)))
+                (should (equal (plist-get (hermes-chat--dashboard-create-params) :cwd)
+                               (and (eq mode 'spawn) "/deliberate/local/")))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (ert-deftest hermes-chat-btw-foreign-and-retired-frames-stay-quiet ()
   (hermes-test-with-dashboard-prompt-session (client)

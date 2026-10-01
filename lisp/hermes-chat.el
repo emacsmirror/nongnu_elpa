@@ -1923,7 +1923,10 @@ entry point funnels through."
       (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
-            hermes-chat--cwd-explicit-p (and project-root t)
+            ;; Local launch deliberately places the chat in the editor cwd.
+            ;; Remote inherited cwd remains display data, not a create override.
+            hermes-chat--cwd-explicit-p (or (and project-root t)
+                                          (eq start-mode 'spawn))
             hermes-chat--pinned-url (and pinned-url (copy-sequence pinned-url))
             hermes-chat--resolved-start-mode start-mode
             hermes-chat--working-directory

@@ -80,17 +80,26 @@ nil values are dropped.  RESOLVE and REJECT keys are always added."
        (hermes-dashboard-transport-request
         client ,method ,params resolve reject))))
 
-(hermes-dashboard-transport-define-rpc
-    hermes-dashboard-transport-session-create "session.create"
+(cl-defun hermes-dashboard-transport-session-create
+    (client &key cols messages title profile cwd cwd-explicit model provider
+            reasoning-effort fast hidden close-on-disconnect follow-profile-config
+            resolve reject)
   "Send a `session.create' request for CLIENT.
-COLS, MESSAGES, TITLE, PROFILE, CWD, HIDDEN, FOLLOW-PROFILE-CONFIG,
-CLOSE-ON-DISCONNECT, and optional
-runtime choices become request
+COLS, MESSAGES, TITLE, PROFILE, CWD, MODEL, PROVIDER, REASONING-EFFORT,
+FAST, HIDDEN, CLOSE-ON-DISCONNECT, and FOLLOW-PROFILE-CONFIG become request
 parameters.  The request identifies its source as `emacs'.  RESOLVE and REJECT
-receive the asynchronous result or error."
-  :keys (cols messages title profile cwd cwd-explicit model provider reasoning-effort fast
-               hidden close-on-disconnect follow-profile-config)
-  :params ((source . "emacs")))
+receive the asynchronous result or error.  CWD-EXPLICIT is retained for caller
+compatibility but is not a released backend request parameter."
+  (ignore cwd-explicit)
+  (hermes-dashboard-transport-request
+   client "session.create"
+   (hermes-dashboard-transport--alist-without-nil
+    `((cols . ,cols) (messages . ,messages) (title . ,title)
+      (profile . ,profile) (cwd . ,cwd) (model . ,model) (provider . ,provider)
+      (reasoning_effort . ,reasoning-effort) (fast . ,fast) (hidden . ,hidden)
+      (close_on_disconnect . ,close-on-disconnect)
+      (follow_profile_config . ,follow-profile-config) (source . "emacs")))
+   resolve reject))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-branch "session.branch"
