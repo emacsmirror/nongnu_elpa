@@ -1,6 +1,61 @@
 #+title: emacs-hermes Changelog
 
-* Version 0.7.1 (unreleased)
+* Version 0.8.0 (2026-10-01)
+
+- Negotiated server-to-client JSON-RPC requests for approvals, clarifications,
+  sudo and secret prompts.  Native readers answer the captured request once;
+  expired or disconnected requests cannot affect a replacement session.
+  Legacy prompt handling remains available.  Terminal-read requests remain
+  unsupported.
+- Added native browser-vault login, unlock and verification-code readers.
+  Sensitive responses bypass the chat transcript and shared kill history;
+  credential views are excluded from optional buffer capability reads.
+- Added =hermes-chat-attach-file= for bounded UTF-8 text/source files up to
+  2 MiB.  It uploads into the owning session's gateway-host workspace, verifies
+  byte readback, and inserts the returned reference only while the original
+  draft is unchanged.  Failure or uncertainty retains bytes and draft text for
+  manual recovery, with no automatic upload replay or remote rollback.
+  PDF extraction and arbitrary binary files are unsupported; gateway paths
+  do not establish terminal-backend filesystem equivalence.
+- Preserved selected-profile workspace defaults during session creation and
+  reconciled deliberately chosen directories before overrides or first input.
+  Passive backend directory updates do not change the editor's directory.
+- Added explicit import of foreign histories and an on-demand context-budget
+  view.  Import retains the serving backend and profile; estimates and partial
+  file manifests are labelled rather than presented as reconciled usage.
+- Added backend-owned hosted Group Chats with typed history, activity and
+  explicit room/work actions.  Reading a room does not start work; mutations
+  require the advertised protocol and current gateway authority.
+- Added canonical profile Bot Chats and scoped routine navigation.  Opening
+  a routine neither creates a replacement session nor triggers its job.
+- Added an optional Gnosis handoff and native tutoring linked to an existing
+  ordinary conversation.  Gnosis owns questions, grading and accepted results;
+  Hermes supplies teaching through normal chat without replacing its draft.
+- Added installed skill-content editing and source-qualified Skill Hub
+  previews and scans.  General Hub installation remains disabled until the
+  backend can prove target scope and installation outcome.
+- Added plugin catalog browsing and an explicit capability-consent handoff.
+  Enabling, updating and removing plugins retain their original instance and
+  verified target; catalog tiers do not imply a security guarantee.
+- Added named endpoint saving, probing and explicit activation as separate
+  actions.  An inert gateway-restart handoff shows operator guidance; it does
+  not restart a remote service or replay work.
+- Discovered dashboard tokens only for explicitly configured literal IPv4
+  loopback endpoints, without redirects, cookies or disk caching.  Configured
+  credentials remain authoritative.  Failed read authentication can recover
+  once; mutations are never automatically replayed.
+- Refreshed chat and profile model catalogues when opening their pickers and
+  rejected stale choices or receipts.  Streaming replies append text without
+  unnecessary full redraws.
+- Kept chat commands, worker controls, Kanban task-body edits and managed-file
+  views tied to their owning session, connection and constructor claim.
+  Accepted busy-input history durability still depends on backend guarantees.
+- Preserved initialized keymaps and customized direct, popup and buffer-local
+  maps during coherent source reload.  Incompatible retained transport or
+  event-tail layouts refuse loading before mutation and require a restart.
+- Restored strict Emacs 29.1 checks and markdown-mode 2.6 fence compatibility;
+  bounded reconnect attempts across flapping connections and optional eval
+  requests, and preserved literal recovery after interrupted restoration.
 
 - Preserved empty prompts when editing skills-only and script-only cron jobs;
   ordinary edits now send only changed fields.
@@ -18,6 +73,8 @@
 - Added optional client-local dictation and read-aloud through the owning
   backend's audio relays.  Recording requires consent; transcription stays
   in the draft or a manual recovery buffer and is never sent automatically.
+
+* Version 0.7.1 (unreleased)
 
 - Made buffer-specific commands context-aware in native =M-x= completion,
   while keeping launchers available globally.  Filtering follows the user's
