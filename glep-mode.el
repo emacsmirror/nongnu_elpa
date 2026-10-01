@@ -39,8 +39,7 @@
 
 (defcustom glep-mode-update-last-modified t
   "If non-nil, update Last-Modified date before writing a file."
-  :type 'boolean
-  :group 'glep)
+  :type 'boolean)
 
 (defvar glep-mode-font-lock-keywords
   (eval-when-compile

@@ -49,37 +49,32 @@
 (defcustom ebuild-mode-full-name
   user-full-name
   "Full name of user, to be used in ebuild repositories."
-  :type 'string
-  :group 'ebuild)
+  :type 'string)
 
 (defcustom ebuild-mode-mail-address
   user-mail-address
   "E-mail address of user, to be used in ebuild repositories."
-  :type 'string
-  :group 'ebuild)
+  :type 'string)
 
 (defcustom ebuild-mode-portdir
   (cond ((file-directory-p "/var/db/repos/gentoo") "/var/db/repos/gentoo")
 	((file-directory-p "/usr/portage") "/usr/portage")
 	(t "/var/db/repos/gentoo"))
   "Location of the ebuild repository."
-  :type 'string
-  :group 'ebuild)
+  :type 'string)
 
 (defcustom ebuild-mode-portage-tmpdir
   (cond ((file-directory-p "/var/tmp/portage") "/var/tmp/portage")
 	((file-directory-p "/tmp/portage") "/tmp/portage")
 	(t "/var/tmp/portage"))
   "Location Portage will use for compilations and temporary storage."
-  :type 'string
-  :group 'ebuild)
+  :type 'string)
 
 (defcustom ebuild-mode-eapi-list
   '("7" "8" "9")
   "List of supported EAPIs.
 The most recent EAPI is listed last."
-  :type '(repeat string)
-  :group 'ebuild)
+  :type '(repeat string))
 
 (defcustom ebuild-mode-fix-whitespace 'ebuild
   "If non-nil, fix whitespace before writing a file.
@@ -90,8 +85,7 @@ be applied to ebuilds but not to eclasses."
   :type '(choice (const :tag "Yes" t)
 		 (const :tag "No" nil)
 		 (const :tag "Ebuilds only" ebuild))
-  :safe (lambda (x) (memq x '(t nil ebuild)))
-  :group 'ebuild)
+  :safe (lambda (x) (memq x '(t nil ebuild))))
 
 (defcustom ebuild-mode-update-copyright t
   "Whether to update the copyright notice before writing a file.
@@ -102,26 +96,22 @@ If nil, don't update."
   :type '(choice boolean
 		 (list (boolean :tag "Year")
 		       (boolean :tag "Author")))
-  :safe #'booleanp
-  :group 'ebuild)
+  :safe #'booleanp)
 
 (defcustom ebuild-mode-delete-cvs-line nil
   "If non-nil, delete any CVS $Id$ or $Header$ line before writing a file."
   :type 'boolean
-  :safe #'booleanp
-  :group 'ebuild)
+  :safe #'booleanp)
 
 (defcustom ebuild-mode-xml-indent-tabs nil
   "If non-nil, use tab characters for indenting of XML.
 If nil, use two spaces."
   :type 'boolean
-  :safe #'booleanp
-  :group 'ebuild)
+  :safe #'booleanp)
 
 (defcustom ebuild-mode-enable-bug-reference t
   "If non-nil, enable `bug-reference-prog-mode' in `ebuild-repo-mode'."
-  :type 'boolean
-  :group 'ebuild)
+  :type 'boolean)
 
 (defcustom ebuild-mode-process-environment
   (unless (fboundp 'ansi-color-compilation-filter)
@@ -129,8 +119,7 @@ If nil, use two spaces."
   "List of additional environment variables for subprocesses.
 Each element should be a string of the form NAME=VALUE.  This will
 be prepended to `process-environment' when calling a subprocess."
-  :type '(repeat string)
-  :group 'ebuild)
+  :type '(repeat string))
 
 (defun ebuild-mode-arch-lessp (a b)
   "Predicate function for comparison of architecture keywords.

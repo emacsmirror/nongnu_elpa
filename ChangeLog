@@ -1,5 +1,10 @@
 2026-10-01  Ulrich Müller  <ulm@gentoo.org>
 
+	* ebuild-mode.el:
+	* devbook-mode.el:
+	* glep-mode.el: Drop :group keyword from defcustom declarations;
+	it is implied by the defgroup above.  Thanks to Philip Kaludercic.
+
 	* Version 1.87 released.
 
 2026-09-29  Ulrich Müller  <ulm@gentoo.org>
