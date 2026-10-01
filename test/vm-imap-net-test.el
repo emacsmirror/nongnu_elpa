@@ -3542,6 +3542,42 @@ request is satisfied, so there is nothing to resume and no state to keep."
         (should (vm-imap-response-matches tokens '* 'atom 'FETCH 'list))
         (should (> vm-imap-net-read-point read-point))))))
 
+(ert-deftest vm-imap-net-test-a-quoted-string-keeps-its-escaped-characters ()
+  "RFC 3501 4.3: a backslash quotes the character after it.  The parser
+stopped at the first quote whatever was in front of it, so a mailbox name
+holding one was cut short and the rest of the line read as stray tokens; and
+the escapes were handed on in the text, so a name with a backslash in it came
+back doubled.  `vm-imap-quote-mailbox-name' escapes both, so VM was writing
+names it could not read back (emacs-vm/vm#894)."
+  (with-temp-buffer
+    (vm-imap-net-init)
+    (insert "* LIST () \"/\" \"INBOX\\\\Sent\"\r\n")
+    (let ((response (vm-imap-net-parse-response)))
+      (should (vm-imap-response-matches response '* 'LIST 'list))
+      (should (equal (vm-imap-net-token-text (nth 4 response)) "INBOX\\Sent"))))
+  (with-temp-buffer
+    (vm-imap-net-init)
+    ;; the mailbox is   say "hi"
+    (insert "* LIST () \"/\" \"say \\\"hi\\\"\"\r\n")
+    (let ((response (vm-imap-net-parse-response)))
+      ;; five tokens and no sixth: the name is one string, not a string and
+      ;; an atom left over
+      (should (equal (length response) 5))
+      (should (equal (vm-imap-net-token-text (nth 4 response)) "say \"hi\"")))))
+
+(ert-deftest vm-imap-net-test-a-literal-keeps-its-backslashes ()
+  "Only a quoted string carries escapes.  A literal is octets as they came,
+so a body with a backslash in it must come out with the backslash."
+  (let ((text "a\\b\\\\c"))
+    (with-temp-buffer
+      (vm-imap-net-init)
+      (insert (format "* 1 FETCH (UID 7 BODY[] {%d}\r\n%s)\r\n"
+                      (string-bytes text) text))
+      (let* ((response (vm-imap-net-parse-response))
+             (items (cdr (nth 3 response))))
+        (should (vm-imap-response-matches response '* 'atom 'FETCH 'list))
+        (should (equal (vm-imap-net-token-text (nth 4 items)) text))))))
+
 (ert-deftest vm-imap-net-test-a-split-literal-is-waited-for-once ()
   "A literal's octets are waited for by position, not by whatever arrives.
 The count comes before the octets, so the wait knows where they end: a body
