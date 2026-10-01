@@ -3787,7 +3787,16 @@ describing the image type.                             USR, 2011-03-25"
 (defun vm-mime-display-internal-image-fsfemacs-xxxx (layout image-type name)
   "Display the image object described by LAYOUT internally.
 IMAGE-TYPE is its image type (png, jpeg etc.).  NAME is a string
-describing the image type.                            USR, 2011-03-25"
+describing the image type.                            USR, 2011-03-25
+
+A picture the reader has rotated, mirrored or scaled is a PNG whatever the
+part was, `vm-mime-frob-image-xxxx' having written it with ImageMagick's
+\"png:-\", and it is the cached file that is displayed from then on.  So the
+part's own type is not what the file holds, and IMAGE-TYPE is PNG for as
+long as the picture stays frobbed (emacs-vm/vm#885)."
+  (when (vm-mm-layout-image-modified layout)
+    (setq image-type 'png
+	  name "PNG"))
   (if (and (vm-images-possible-here-p)
 	   (vm-image-type-available-p image-type))
       (let (start end tempfile image work-buffer
