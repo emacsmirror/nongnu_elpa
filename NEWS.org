@@ -74,7 +74,7 @@
   backend's audio relays.  Recording requires consent; transcription stays
   in the draft or a manual recovery buffer and is never sent automatically.
 
-* Version 0.7.1 (unreleased)
+* Version 0.7.1 (2026-09-17)
 
 - Made buffer-specific commands context-aware in native =M-x= completion,
   while keeping launchers available globally.  Filtering follows the user's
@@ -100,7 +100,7 @@
   image drafts, and shared bounded validation of backend-managed file bytes.
 - Verified popup compatibility with the supported keymap-popup 0.4.0 release.
 
-* Version 0.7.0
+* Version 0.7.0 (2026-09-14)
 
 - Excluded tests and development files from ELPA packages, preventing test
   helper load errors during installation.
