@@ -2104,11 +2104,17 @@ in any order (issue #185)."
 	(setq response (vm-imap-net-verify-response
 			(vm-imap-net-read-a-response) "UID FETCH"))
 	(cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
-	       (let* ((message (vm-imap-net-fetch-message-text response))
-		      (uid (nth 0 message)))
-		 (vm-imap-net-store-body folder source uid
-					 (nth 1 message) (nth 2 message))
-		 (push uid fetched)))
+	       (let ((message (vm-imap-net-fetch-message-text response)))
+		 ;; nil for a FETCH the server sent to report a message's
+		 ;; flags rather than to answer this one, as `vm-imap-net-fetch'
+		 ;; passes over too: handing its nil UID on raised "FETCH
+		 ;; response for a UID that was not asked for" and lost the
+		 ;; rest of the fetch (emacs-vm/vm#890)
+		 (when message
+		   (let ((uid (nth 0 message)))
+		     (vm-imap-net-store-body folder source uid
+					     (nth 1 message) (nth 2 message))
+		     (push uid fetched)))))
 	      ((vm-imap-response-matches response 'VM 'OK)
 	       (setq done t)))))
     (nreverse fetched)))
