@@ -120,7 +120,7 @@
     "^# "))
 
 ;; The list of eclass function keywords below is auto-generated
-;; by keyword-generation.sh.
+;; by ebuild-mode-kw-gen.el.
 
 (defvar ebuild-mode-keywords-eclass
   '((
