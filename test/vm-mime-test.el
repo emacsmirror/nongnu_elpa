@@ -2327,6 +2327,49 @@ display reads afterwards."
           (should-not (vm-mm-layout-image-modified layout)))
       (ignore-errors (delete-file thumb)))))
 
+
+;;; A frobbed image is a PNG whatever the part was (issue #885)
+
+(defun vm-mime-test--displayed-image-spec (layout)
+  "Display LAYOUT as a JPEG and answer the image spec that reached the buffer.
+The strips path is refused so that the single-image arm runs, and
+`clear-image-cache' is stubbed: a batch Emacs has no image support and the
+function is void there."
+  (let ((vm-use-menus nil)
+        (vm-mime-use-image-strips nil))
+    (cl-letf (((symbol-function 'vm-images-possible-here-p) (lambda () t))
+              ((symbol-function 'vm-image-type-available-p) (lambda (_) t))
+              ((symbol-function 'vm-imagemagick-available-p) (lambda () nil))
+              ((symbol-function 'clear-image-cache) (lambda (&rest _) nil)))
+      (with-temp-buffer
+        (vm-mime-display-internal-image-fsfemacs-xxxx layout 'jpeg "JPEG")
+        (get-text-property (1- (point)) 'display)))))
+
+(ert-deftest vm-mime-test-a-frobbed-image-is-displayed-as-the-png-it-is ()
+  "`vm-mime-frob-image-xxxx' writes its output over the file the layout
+points at, always as PNG, and the display reuses that file whenever it is
+readable.  The image spec was built from the type the caller named, so
+`vm-mime-display-internal-image/jpeg' asked Emacs for a JPEG whose file held
+PNG: rotate an inline JPEG, move away and come back, and the picture is
+rebuilt as the wrong type.  Nothing in the display path read the modified
+flag (emacs-vm/vm#885)."
+  (let* ((file (make-temp-file "vm-mime-test-image"))
+         (layout (vm-mime-test--image-layout file)))
+    (unwind-protect
+        (progn
+          ;; untouched, it is displayed as what the part says it is
+          (should (equal (plist-get (cdr (vm-mime-test--displayed-image-spec
+                                          layout))
+                                    :type)
+                         'jpeg))
+          ;; frobbed, the file is PNG and so is what Emacs is asked for
+          (vm-set-mm-layout-image-modified layout t)
+          (should (equal (plist-get (cdr (vm-mime-test--displayed-image-spec
+                                          layout))
+                                    :type)
+                         'png)))
+      (ignore-errors (delete-file file)))))
+
 ;;; cid: references for an external viewer (issue #506)
 
 (defun vm-mime-test--find-layout (layout type)
