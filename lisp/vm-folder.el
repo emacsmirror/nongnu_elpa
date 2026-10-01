@@ -1442,7 +1442,8 @@ attributes should not be copied for BABYL folders."
 	   ;; A composition being filed has no envelope line and no message
 	   ;; struct; anything else does, or can have one built.
 	   (if message
-	       (or (vm-existing-From_-separator message)
+	       (or (vm-usable-From_-separator
+		    (vm-existing-From_-separator message) type)
 		   (vm-make-From_-separator message))
 	     (concat "From VM " (current-time-string) "\n")))
 	  ((eq type 'mmdf)
@@ -1510,6 +1511,23 @@ mboxcl2 type mail folders.")
   "Regular expression that matches the leading message separator in
 mmdf_ type mail folders.")
 
+(defun vm-usable-From_-separator (line type)
+  "LINE, if a folder of TYPE can be read back with LINE between its messages.
+Nil otherwise.
+
+The types do not agree on what an envelope line is: an mboxcl2 folder's
+separators are matched by a regexp that asks only for a line beginning with
+From and a space, where a From_ folder's asks for a digit at the end of it
+too.  So a line VM read as a separator can be one it cannot find again, and a
+message written to a From_ folder under an mboxcl2 folder's line disappears
+into the message before it (emacs-vm/vm#898)."
+  (let ((regexp (cond ((eq type 'From_)
+		       vm-leading-message-separator-regexp-From_)
+		      ((eq type 'BellFrom_)
+		       vm-leading-message-separator-regexp-BellFrom_)
+		      ((eq type 'mboxcl2)
+		       vm-leading-message-separator-regexp-mboxcl2))))
+    (and line regexp (string-match-p regexp line) line)))
 
 (defun vm-find-leading-message-separator ()
   "Find the next leading message separator in a folder.
