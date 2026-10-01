@@ -1,5 +1,10 @@
 2026-10-01  Ulrich Müller  <ulm@gentoo.org>
 
+	* ebuild-mode.el (ebuild-run-command):
+	* glep-mode.el (glep-mode-format-html): Quote arguments with
+	shell-quote-argument before passing them to the shell.
+	Thanks to Philip Kaludercic.
+
 	* ebuild-mode.el:
 	* devbook-mode.el:
 	* glep-mode.el: Drop :group keyword from defcustom declarations;

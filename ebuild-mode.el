@@ -478,7 +478,7 @@ If nil, `compilation-mode' will be used.")
   (or buffer-file-name
       (error "No file for this buffer"))
   (let* ((file (file-relative-name buffer-file-name))
-	 (cmd (format "ebuild %s %s" file command))
+	 (cmd (format "ebuild %s %s" (shell-quote-argument file) command))
 	 (process-environment (append ebuild-mode-process-environment
 				      process-environment))
 	 ;;(compilation-mode-hook (lambda () (setq truncate-lines t)))

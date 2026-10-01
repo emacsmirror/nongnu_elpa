@@ -184,7 +184,9 @@ Calls the external \"glep\" command."
       (error "No file for this buffer"))
   (let* ((src (file-relative-name buffer-file-name))
 	 (dst (concat (file-name-sans-extension src) ".html")))
-    (compile (format "glep %s %s" src dst))))
+    (compile (format "glep %s %s"
+		     (shell-quote-argument src)
+		     (shell-quote-argument dst)))))
 
 ;;; Skeleton support.
 
