@@ -499,6 +499,71 @@ landed in, which is what made this worth pinning."
                 found))))
     (should (equal nil found))))
 
+(defun vm-reference-test--version-in (file regexp which)
+  "The version REGEXP's first group finds in FILE, relative to the tree top.
+WHICH is `first' or `last': the manual lists every release oldest first, so
+its last entry is the version this tree is, while NEWS runs newest first."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name (concat "../" file) vm-test-dir))
+    (goto-char (if (eq which 'last) (point-max) (point-min)))
+    (let ((search (if (eq which 'last) #'re-search-backward #'re-search-forward)))
+      (and (funcall search regexp nil t) (match-string 1)))))
+
+(defun vm-reference-test--release-number (version)
+  "VERSION without any snapshot suffix."
+  (and version (replace-regexp-in-string "snapshot\\'" "" version)))
+
+(defun vm-reference-test--version-odd-ones-out (numbers)
+  "The names in NUMBERS whose version is not the one most of them carry.
+NUMBERS is an alist of file name against release number.  Named rather than
+counted, so a failure says which file to go and look at."
+  (let* ((versions (mapcar #'cdr numbers))
+         (agreed (car (sort (seq-uniq versions)
+                            (lambda (a b)
+                              (> (seq-count (lambda (v) (equal v a)) versions)
+                                 (seq-count (lambda (v) (equal v b)) versions)))))))
+    (mapcar #'car (seq-remove (lambda (cell) (equal (cdr cell) agreed))
+                              numbers))))
+
+(ert-deftest vm-reference-test-every-file-agrees-on-the-version ()
+  "The four files that carry the version say the same one.
+
+`dev/docs/release.org' lists them: configure.ac, the `Version:' header of
+lisp/vm.el, the heading of the newest NEWS file, and the manual's release
+list.  Nothing compared them, so a bump half done shipped half done, and the
+9.0.0 tree once said two things at once: 53 obsolescence markers named 8.3.3
+or 8.4.0, neither of which was ever released.  `dev/tools/vm-set-version'
+writes all four; this is what notices when something else has not.
+
+The comparison is on the release number: NEWS heads the section being
+accumulated without a snapshot suffix, that section not having been released
+yet, where the other three carry the suffix the tree is built with."
+  (let* ((found
+          (list (cons "configure.ac"
+                      (vm-reference-test--version-in
+                       "configure.ac" "^AC_INIT(\\[VM\\],\\[\\([^]]+\\)\\]" 'first))
+                (cons "lisp/vm.el"
+                      (vm-reference-test--version-in
+                       "lisp/vm.el" "^;; Version: *\\([^ \t\n]+\\)" 'first))
+                (cons "NEWS-3.md"
+                      (vm-reference-test--version-in
+                       "NEWS-3.md" "^## VM \\([^ \t\n]+\\) released" 'first))
+                (cons "info/vm.texinfo"
+                      (vm-reference-test--version-in
+                       "info/vm.texinfo"
+                       "^@item Version \\([^ \t\n,]+\\)," 'last))))
+         (numbers (mapcar (lambda (cell)
+                            (cons (car cell)
+                                  (vm-reference-test--release-number (cdr cell))))
+                          found)))
+    ;; Each of them says something at all: a pattern that stopped matching is
+    ;; a file whose format moved, and four nils would otherwise agree.
+    (should (equal nil (mapcar #'car (seq-filter (lambda (cell) (null (cdr cell)))
+                                                 numbers))))
+    ;; Named and not counted: `(equal 1 2)' is what ert prints for a count,
+    ;; and it leaves the reader to open four files to find out which one.
+    (should (equal nil (vm-reference-test--version-odd-ones-out numbers)))))
+
 (ert-deftest vm-reference-test-the-manual-names-the-option-that-is-current ()
   "Where the manual indexes a renamed option, it names the current one too.
 Mentioning the old name is right -- someone looking it up needs to find the

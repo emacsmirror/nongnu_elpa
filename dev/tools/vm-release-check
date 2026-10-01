@@ -1,0 +1,168 @@
+#!/bin/sh
+#
+# Run every release gate that does not need a person, and say what each said.
+#
+# `dev/docs/release.org' lists these as separate commands with separate outputs,
+# two of which are expected to fail: package-lint reports every vm- name in
+# vm.el as wrongly prefixed, and relint has known cosmetic findings.  Reading
+# the result therefore means remembering which failures are the ones that do
+# not count, which is what this is for: the gates that must pass are reported
+# pass or FAILED, and the two that are read rather than passed are reported
+# with their count beside the count that was there before.
+#
+# This runs no test of its own.  test/test-runner is still the only thing that
+# runs tests, and the three test gates below are three of its passes.
+#
+# What it does NOT cover is the manual testing in release.org: real mail at
+# a real mailbox, four folder types read back outside VM, Gmail.  Nothing here
+# replaces that, and emacs-vm/vm#607 is the list.
+
+set -u
+
+progname=$(basename "$0")
+root=$(cd "$(dirname "$0")/../.." && pwd)
+
+# What the two read-only lints reported when this was written.  A different
+# number is not a failure; it is a thing to look at.
+# package-lint has no total of its own, so its diagnostic lines are counted;
+# 71 of them are the prefix complaint described above.  relint prints its own.
+known_package_lint=78
+known_relint=11
+
+usage () {
+    cat <<EOF
+usage: $progname [options]
+
+With no options: every gate.  About forty minutes, most of it the three test
+passes.
+
+  --quick          everything but the three test passes and the clean build
+  --no-tests       leave out the three test passes
+  --no-build       leave out the clean build from a copy of the tree
+  --list           name the gates in order and run none of them
+
+The Emacs used comes from \$EMACS, or from the configured test/Makefile, or is
+"emacs", which is how test/test-runner chooses it too.
+EOF
+}
+
+quick=no
+no_tests=no
+no_build=no
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quick)    quick=yes; no_tests=yes; no_build=yes ;;
+        --no-tests) no_tests=yes ;;
+        --no-build) no_build=yes ;;
+        --list)     grep -E '^[[:space:]]*(run_gate|count_gate) "' "$0" \
+                        | sed -E 's/^[[:space:]]*[a-z_]+ "([^"]*)".*/  \1/'
+                    exit 0 ;;
+        -h|--help)  usage; exit 0 ;;
+        *)          echo "$progname: unknown option $1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+
+results=""
+failed=0
+
+# A gate's output goes to a file rather than the terminal: forty minutes of
+# three test runs scrolling past is not something anyone reads, and the file
+# is there to read when one fails.
+log_dir=$(mktemp -d "${TMPDIR:-/tmp}/vm-release-check.XXXXXX")
+
+note () {
+    results="$results$1\t$2\n"
+}
+
+run_gate () {
+    gate_name=$1
+    shift
+    log="$log_dir/$(echo "$gate_name" | tr ' /' '--').log"
+    printf '== %s ==\n' "$gate_name"
+    if "$@" >"$log" 2>&1; then
+        note "$gate_name" "passed"
+    else
+        note "$gate_name" "FAILED  ($log)"
+        failed=1
+        echo "$progname: $gate_name failed; its output is in $log" >&2
+        tail -15 "$log" >&2
+    fi
+}
+
+# Each tool's own count of what it found.  package-lint prints no total, so
+# its diagnostic lines are counted; relint ends with one and it is read.
+count_package_lint () {
+    grep -c "^vm\.el:[0-9]*:[0-9]*: " "$1"
+}
+
+count_relint () {
+    found=$(sed -n 's/^relint: \([0-9][0-9]*\) problems*\..*/\1/p' "$1" | tail -1)
+    echo "${found:-0}"
+}
+
+# The two lints nobody expects to be clean: report the count, never a status.
+# A number that has moved is a thing to read, not a thing that has failed, so
+# neither of these can set the exit status.
+count_gate () {
+    gate_name=$1
+    was=$2
+    counter=$3
+    shift 3
+    log="$log_dir/$(echo "$gate_name" | tr ' /' '--').log"
+    printf '== %s ==\n' "$gate_name"
+    "$@" >"$log" 2>&1
+    now=$("$counter" "$log")
+    if [ "$now" -eq "$was" ]; then
+        note "$gate_name" "$now, as before"
+    else
+        note "$gate_name" "$now, was $was  ($log)"
+    fi
+}
+
+in_root () {
+    cd "$root" && "$@"
+}
+
+run_gate "the version in every file that carries one" \
+    "$root/dev/tools/vm-set-version" --check
+
+run_gate "the committed reference appendix" \
+    in_root make -C info check-reference
+
+run_gate "byte compilation" in_root make byte-compile-lint
+run_gate "native compilation" in_root make native-compile-lint
+run_gate "every file compiles on its own" in_root make cross-file-lint
+
+count_gate "package-lint, which is never clean" "$known_package_lint" \
+    count_package_lint in_root make package-lint
+count_gate "relint" "$known_relint" \
+    count_relint in_root make relint-lint
+
+if [ "$no_tests" = no ]; then
+    run_gate "the test suite, every pass" "$root/test/test-runner"
+    run_gate "the suite with VM's assertions on" "$root/test/test-runner" --assert
+    run_gate "what a run leaves behind" "$root/test/test-runner" --leaks
+fi
+
+if [ "$no_build" = no ]; then
+    run_gate "a build from a clean tree" "$root/dev/tools/vm-build-from-clean"
+fi
+
+echo
+echo "== summary =="
+printf '%b' "$results" | while IFS="$(printf '\t')" read -r gate state; do
+    printf '  %-45s %s\n' "$gate" "$state"
+done
+
+if [ "$quick" = yes ] || [ "$no_tests" = yes ] || [ "$no_build" = yes ]; then
+    echo
+    echo "$progname: gates were left out; this is not a release check"
+fi
+
+echo
+echo "$progname: the manual testing in dev/docs/release.org is still to do"
+echo "$progname: output of every gate is under $log_dir"
+
+exit $failed

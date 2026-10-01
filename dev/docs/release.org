@@ -1,0 +1,137 @@
+Releasing VM
+
+A checklist.  =dev/tools/vm-release-check= runs everything under "Gates"; the
+rest is by hand.
+
+* Gates
+
+- [ ] =dev/tools/vm-release-check=.  About forty minutes, most of it the three
+      test passes.  =--quick= leaves out the test passes and the clean build.
+- [ ] Anything the probe reports missing is coverage this release did not get:
+      a server unconfigured, mail unsendable, an optional package absent.
+
+What it runs, if you want them one at a time:
+
+| gate | command |
+|------+---------|
+| version in all four files | =dev/tools/vm-set-version --check= |
+| reference appendix | =make -C info check-reference= |
+| compilation | =make byte-compile-lint native-compile-lint cross-file-lint= |
+| package-lint | =make package-lint= |
+| relint | =make relint-lint= |
+| tests | =cd test && ./test-runner=, then =--assert=, then =--leaks= |
+| clean build | =dev/tools/vm-build-from-clean= |
+
+- package-lint is never clean: it takes the package prefix from
+  vm-autoloads.el and reports every vm- name in vm.el as wrongly prefixed, 71
+  of 78 findings.  The question is whether the count moved.
+- relint's findings are cosmetic, 11 of them.
+- The reference appendix is generated from docstrings but committed, because
+  vm.texinfo @includes it and makeinfo writes no manual without it, and an
+  ELPA build never runs make.  See dev-guide.org.
+
+* Manual testing
+
+The suite reads no real mailbox.  Every test stubs =mail-send= except the
+sending pass.  emacs-vm/vm#607 is the live list; add anything the NEWS section
+for this release describes as changed behaviour.
+
+Sending, the first four covered by =./test-runner --send= when configured:
+
+- [ ] to yourself with an Fcc: copy filed, in the folder's own format,
+      composition keeps its Fcc header
+- [ ] a line past 998 characters, read back in something that is not VM
+- [ ] a non-ASCII Subject, once with =vm-send-using-mime= nil and once on
+- [ ] an Fcc naming an IMAP maildrop, against a real account
+- [ ] an attachment, and a message with no body
+- [ ] signed and encrypted with vm-epg, and with an Fcc alongside
+- [ ] reading what arrived in something that is not VM
+
+Reading:
+
+- [ ] an HTML part, internally and in an external viewer with pictures
+- [ ] a long recipient list, for shrunken headers
+- [ ] headers arriving as raw 8-bit bytes
+
+Folders:
+
+- [ ] From_, mboxcl2, mmdf, babyl: visit, save, expunge, read back outside VM.
+      The type is written into the index file, so a type change is not only
+      about parsing
+- [ ] a folder reached through a symbolic link
+- [ ] a Thunderbird folder, then opened in Thunderbird
+
+Servers, real accounts rather than the test dovecot:
+
+- [ ] IMAP: get mail, save between folders, labels, expunge, disconnected mode
+- [ ] Gmail, the awkward one: its IMAP does not keep keywords
+- [ ] POP
+
+Anything found gets an issue of its own before the release goes out.
+
+* Version
+
+- [ ] =dev/tools/vm-set-version 9.0.0= writes all four places: configure.ac,
+      lisp/vm.el, the NEWS-3.md heading, the manual's release list
+- [ ] =make -C info check-reference=, then commit
+
+Never with sed.  lisp/ holds dozens of occurrences of the current version
+inside obsolescence markers, which say which release deprecated a name and
+must not move.  53 once named 8.3.3 or 8.4.0, neither ever released.
+
+Every compiled file carries the version it was built against, so a bump
+invalidates all of them.  A release build runs make distclean anyway.
+
+Start NEWS-4.md when NEWS-3.md grows unwieldy.  Older NEWS files are never
+renamed.
+
+* Release
+
+- [ ] build in the fork first, then merge to make it official
+- [ ] =package-vc-install= from the local repo, everything committed:
+
+      #+begin_src elisp
+      (package-vc-install '(vm :url "file:///Users/markd/projs/emacs/vm/vm-markd"
+                               :lisp-dir "lisp"))
+      #+end_src
+
+      As of Emacs 30.2 it does not generate a correct description or commit.
+- [ ] commit and tag.  The tag is =9.0.0=, no prefix.  A branch is made only
+      if changes are needed relative to a tag
+- [ ] =package-vc-install= from the fork, =:branch "9.0.0"=
+- [ ] push, then the same from =https://gitlab.com/emacs-vm/vm.git=
+- [ ] make the GitLab release from the tag
+- [ ] =dev/tools/vm-set-version 9.0.1snapshot= to open the next one
+
+* NonGNU ELPA
+
+- [ ] wait for =vm/main= to appear at https://elpa.nongnu.org/nongnu-devel/vm.html
+      and test installing from it.  About 12 hours.
+
+      #+begin_src elisp
+      (add-to-list 'package-archives
+                   '("nongnu-devel" . "https://elpa.nongnu.org/nongnu-devel/"))
+      #+end_src
+- [ ] once vm.el carries a release number, it reaches
+      https://elpa.nongnu.org/nongnu/vm.html
+- [ ] emacs-vm/vm#833: check the ELPA tarball carries the reference appendix
+
+* Packagers
+
+Most distributions still ship 8.2.0b from 2011: their new-version checks point
+at Launchpad, which VM left.  emacs-vm/vm#478 has what each watches.  Until
+that is corrected they learn of a release only by being told.
+
+Name the release number, never a snapshot.  =9.0.0snapshot= is not something
+anyone should ship.
+
+- [ ] Fedora: @goeran packages it and builds from git.  Tell him the tag exists
+- [ ] Debian: reply on https://bugs.debian.org/1134674.  Ubuntu, Devuan, Kali,
+      Parrot, PureOS, Raspbian, Trisquel, Pardus and Deepin all rebuild Debian,
+      so it is the only one of these worth a conversation
+- [ ] Gentoo gnu-emacs@gentoo.org, pkgsrc pkgsrc-users@NetBSD.org, openSUSE
+      (devel project =editors=, package =emacs-vm=): a version-bump bug each
+- [ ] Nix needs nothing, it follows NonGNU ELPA
+- [ ] a couple of weeks later, https://repology.org/project/emacs:vm/versions
+      shows every distribution's version on one page: both the check that the
+      release landed and the check that the watch-file corrections took
