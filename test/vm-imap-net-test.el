@@ -1741,6 +1741,26 @@ messages that are arriving from arriving."
                                        vm-message-list))
                    5))))
 
+(ert-deftest vm-imap-net-test-a-fetch-of-no-messages-is-not-an-error ()
+  "`vm-imap-net-load-bodies\=' drops the messages the folder no longer holds,
+which can leave it nothing to fetch: the work is deferred until the session in
+front of it is done, and an expunge can run in between.  An empty sequence set
+is not an IMAP command, so the fetch used to end in \"BAD unknown command\"
+where the right answer is that no bodies were wanted (emacs-vm/vm#893)."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (should (equal (length vm-message-list) 1))
+    (let ((gone (car vm-message-list))
+          (answer 'not-called))
+      ;; the folder loses it while the fetch waits its turn
+      (setq vm-message-list nil)
+      (vm-imap-net-load-bodies (list gone)
+                               (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 20)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should-not (vm-net-error-p answer))
+      (should (equal answer 0)))))
+
 (ert-deftest vm-imap-net-test-an-abandoned-session-runs-its-cleanup ()
   "`vm-net-abandon' closes the generator, so an `unwind-protect' in the
 protocol runs -- which is what puts the folder and the server back in step
