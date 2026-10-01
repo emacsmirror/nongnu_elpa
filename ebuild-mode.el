@@ -8,6 +8,7 @@
 ;;	Ulrich Müller <ulm@gentoo.org>
 ;; Maintainer: <emacs@gentoo.org>
 ;; Version: 1.87
+;; Package-Requires: ((emacs "26.3"))
 ;; Keywords: languages, processes
 
 ;; This file is free software: you can redistribute it and/or modify
