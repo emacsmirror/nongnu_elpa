@@ -47,6 +47,14 @@ GNU Emacs 26.3 or later, or XEmacs 21.5.35 or later.
 The package is available as =app-emacs/ebuild-mode= (GNU Emacs) and
 =app-xemacs/ebuild-mode= (XEmacs).
 
+** NonGNU ELPA
+
+The package can be installed with =package.el=:
+
+: M-x package-install RET ebuild-mode RET
+
+On Emacs 26 and 27, =nongnu= must be added to =package-archives= first.
+
 * Documentation
 
 See the Info manual (~C-h i m ebuild-mode RET~) for the full
