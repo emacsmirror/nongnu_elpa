@@ -1977,6 +1977,30 @@ which is what `vm-imap-net-note-expunged' says of the folder\\='s own list."
       (should (null (vm-imap-mock-messages mock "INBOX")))
       (should-not vm-imap-retrieved-messages))))
 
+(ert-deftest vm-imap-net-test-a-check-refuses-a-mailbox-of-another-validity ()
+  "REGRESSION: the mail check rewrote the folder's UID tables with no guard.
+Issue #892.  `vm-imap-net-check' plans against what the server answered, and
+planning installs those UIDs into the folder's own tables.  The fetch refuses
+a mailbox whose UIDVALIDITY is not the folder's; the check did not, though
+SELECT had told it.  So after a mailbox was recreated on the server the folder
+held the new mailbox's UIDs under the old validity, and the next write of the
+flags sent UID STORE for UIDs that now name other messages.  A check runs from
+a timer, so it happened with nobody watching.
+
+The folder's recorded validity is changed here rather than the server's, which
+is the same disagreement from the other side."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob))
+    (let ((uids-before (vm-folder-imap-uid-list))
+          (waiting-before vm-spooled-mail-waiting))
+      (vm-set-folder-imap-uid-validity "999")
+      (should (vm-imap-net-folder-check-mail))
+      (vm-imap-net-wait nil 30)
+      ;; the tables are as they were
+      (should (equal (vm-folder-imap-uid-list) uids-before))
+      ;; and nothing was claimed about the mail waiting
+      (should (equal vm-spooled-mail-waiting waiting-before)))))
+
 (ert-deftest vm-imap-net-test-a-warning-does-not-stop-the-fetch ()
   "A session that has something to warn about does not hold Emacs to say it.
 

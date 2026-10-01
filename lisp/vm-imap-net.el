@@ -3706,17 +3706,31 @@ Signals `vm-imap-net-no-password' where VM has no password yet."
   "Say whether MAILBOX holds mail FOLDER has not got.
 Answers the number of messages to be fetched.  The same comparison the fetch
 itself makes -- the UIDs the server has against the UIDs the folder has --
-since a count of what is there says nothing about what is new."
+since a count of what is there says nothing about what is new.
+
+Refuses a mailbox whose UIDVALIDITY is not the folder's, as the fetch does.
+Planning installs the UIDs it was given into the folder's own tables, so a
+check that went on would leave the folder holding the new mailbox's UIDs
+under the old validity, and the next write of the flags would send UID STORE
+for UIDs that now name other messages.  A check runs from a timer, so that
+happened with nobody watching (emacs-vm/vm#892)."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
 	(let* ((select (iter-yield-from (vm-imap-net-select mailbox t)))
 	       (count (nth 0 select))
-	       (data (if (zerop count)
-			 nil
-		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
-	  (with-current-buffer folder
-	    (length (nth 0 (vm-imap-net-plan data count))))))
+	       (uid-validity (nth 2 select))
+	       (known (with-current-buffer folder
+			(vm-folder-imap-uid-validity))))
+	  (when (and known uid-validity (not (equal known uid-validity)))
+	    (vm-imap-normal-error
+	     "UID VALIDITY of %s has changed on the server; refresh it with vm-imap-synchronize"
+	     mailbox))
+	  (let ((data (if (zerop count)
+			  nil
+			(iter-yield-from (vm-imap-net-message-data 1 count)))))
+	    (with-current-buffer folder
+	      (length (nth 0 (vm-imap-net-plan data count)))))))
     (vm-imap-net-logout)))
 
 (defun vm-imap-net-folder-check-mail ()
