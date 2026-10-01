@@ -1729,6 +1729,20 @@ means to that function that the region is encoded already.")
 
 	"7bit"))))
 
+(defun vm-mime-encapsulation-transfer-encoding (beg end)
+  "The transfer encoding for a message or multipart body between BEG and END.
+Only 7bit, 8bit and binary may appear on one (RFC 2045 6.4), so these cannot
+take the sentinel `vm-mime-long-lines-encoding' and cannot take the
+quoted-printable it stands for either.  A line too long to send as it stands
+makes the body binary, there being no encoding open to it that would shorten
+the line: the parts inside carry their own, and a header written here is
+written as it stands rather than handed to
+`vm-mime-transfer-encode-region'."
+  (let ((encoding (vm-determine-proper-content-transfer-encoding beg end)))
+    (if (equal encoding vm-mime-long-lines-encoding)
+	"binary"
+      encoding)))
+
 ;;----------------------------------------------------------------------------
 ;;; Predicates on MIME types and layouts
 ;;----------------------------------------------------------------------------
@@ -5723,8 +5737,7 @@ DESCRIPTION."
 	       "multipart/digest" (list (concat "boundary=\"" boundary "\"")))
 	      "\n")
       (insert "Content-Transfer-Encoding: "
-	      (vm-determine-proper-content-transfer-encoding
-	       (point) (point-max))
+	      (vm-mime-encapsulation-transfer-encoding (point) (point-max))
 	      "\n\n"))
     (when description 
       (setq description (vm-mime-scrub-description description)))
