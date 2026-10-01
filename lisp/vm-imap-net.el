@@ -2095,28 +2095,34 @@ and the UID in each response says which message it is: a server may answer
 in any order (issue #185)."
   (let ((source (current-buffer))
 	(fetched nil))
-    (vm-imap-net-send
-     (format "UID FETCH %s %s" (mapconcat #'identity uids ",")
-	     (if body-peek "(UID BODY.PEEK[])" "(UID RFC822.PEEK)")))
-    (let ((done nil)
-	  response)
-      (while (not done)
-	(setq response (vm-imap-net-verify-response
-			(vm-imap-net-read-a-response) "UID FETCH"))
-	(cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
-	       (let ((message (vm-imap-net-fetch-message-text response)))
-		 ;; nil for a FETCH the server sent to report a message's
-		 ;; flags rather than to answer this one, as `vm-imap-net-fetch'
-		 ;; passes over too: handing its nil UID on raised "FETCH
-		 ;; response for a UID that was not asked for" and lost the
-		 ;; rest of the fetch (emacs-vm/vm#890)
-		 (when message
-		   (let ((uid (nth 0 message)))
-		     (vm-imap-net-store-body folder source uid
-					     (nth 1 message) (nth 2 message))
-		     (push uid fetched)))))
-	      ((vm-imap-response-matches response 'VM 'OK)
-	       (setq done t)))))
+    ;; No UIDs is no work: every message the plan was made from has gone from
+    ;; the folder while this waited behind another session.  An empty sequence
+    ;; set is not a command -- "UID FETCH  (UID BODY.PEEK[])" is answered BAD,
+    ;; which reached the reader as an IMAP error for a fetch that had nothing
+    ;; to fetch (emacs-vm/vm#893).
+    (when uids
+      (vm-imap-net-send
+       (format "UID FETCH %s %s" (mapconcat #'identity uids ",")
+	       (if body-peek "(UID BODY.PEEK[])" "(UID RFC822.PEEK)")))
+      (let ((done nil)
+	    response)
+	(while (not done)
+	  (setq response (vm-imap-net-verify-response
+			  (vm-imap-net-read-a-response) "UID FETCH"))
+	  (cond ((vm-imap-response-matches response '* 'atom 'FETCH 'list)
+		 (let ((message (vm-imap-net-fetch-message-text response)))
+		   ;; nil for a FETCH the server sent to report a message's
+		   ;; flags rather than to answer this one, as
+		   ;; `vm-imap-net-fetch' passes over too: handing its nil UID
+		   ;; on raised "FETCH response for a UID that was not asked
+		   ;; for" and lost the rest of the fetch (emacs-vm/vm#890)
+		   (when message
+		     (let ((uid (nth 0 message)))
+		       (vm-imap-net-store-body folder source uid
+					       (nth 1 message) (nth 2 message))
+		       (push uid fetched)))))
+		((vm-imap-response-matches response 'VM 'OK)
+		 (setq done t))))))
     (nreverse fetched)))
 
 (defun vm-imap-net-message-by-uid (folder uid)
