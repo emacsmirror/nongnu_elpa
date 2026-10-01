@@ -267,8 +267,7 @@ Returns non-nil if A is less than B by Gentoo keyword ordering."
       (declare (indent 2))
       (if (eval cond)
 	  then
-	`(progn ,@else)))
-    ))
+	`(progn ,@else)))))
 
 ;;; Font-lock.
 
@@ -297,8 +296,7 @@ of the elements."
 		(push (cons p (cdr c)) dst)
 		(and (setq p (nthcdr (1- limit) p))
 		     (setq p (prog1 (cdr p) (setcdr p nil))))))))))
-      (nreverse dst)))
-  )
+      (nreverse dst))))
 
 (eval-when-compile
   (require 'ebuild-mode-keywords))
