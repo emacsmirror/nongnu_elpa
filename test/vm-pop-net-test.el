@@ -956,6 +956,37 @@ deletes them is `vm-pop-net-delete-fetched', once the crash box is on disk."
       (should-not (vm-pop-mock-received-p mock "\\`DELE"))
       (should (vm-pop-mock-received-p mock "\\`QUIT")))))
 
+(ert-deftest vm-pop-net-test-stopping-a-folder-leaves-nothing-running ()
+  "REGRESSION: stopping a POP folder could start a session nobody could see.
+Issue #891.  `vm-pop-net-stop' abandoned the session and then cleared
+`vm-pop-net-session', and abandoning runs the session to its end, which runs
+the next thing queued, which becomes the folder's session.  Clearing the
+variable afterwards orphaned that one: `vm-pop-net-busy-p' answered nil, the
+mode line showed nothing, and a second stop had nothing to stop, while a
+connection went on writing into a folder that is being killed.
+
+`vm-imap-net-stop' empties its queue before abandoning, which is the order
+this now has."
+  (vm-pop-net-test--in-a-folder-with-spool
+      (mock :messages (list vm-pop-net-test--alice vm-pop-net-test--bob))
+    (let ((crash (nth 2 (car vm-spool-files))))
+      (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash #'ignore)
+      (vm-pop-net-when-free
+       "a second fetch"
+       (lambda () (vm-pop-net-get-mail (vm-pop-mock-spec mock) crash #'ignore)))
+      (should (vm-pop-net-busy-p))
+      (should (equal (length vm-pop-net-waiting) 1))
+      (vm-pop-net-stop)
+      (should-not (vm-pop-net-busy-p))
+      ;; and nothing of VM's is still talking to the server: the mock's own
+      ;; process is the only one left.  Case matters here, VM's session is
+      ;; "POP fetch" and the mock is "vm-pop-mock"
+      (let ((case-fold-search nil))
+        (should (equal nil (seq-filter
+                            (lambda (process)
+                              (string-match-p "POP" (process-name process)))
+                            (process-list))))))))
+
 (ert-deftest vm-pop-net-test-fetching-passes-over-a-message-too-big ()
   "`vm-pop-max-message-size' is asked before RETR, not after: the size comes
 from LIST, so an enormous message is never pulled down to be measured."

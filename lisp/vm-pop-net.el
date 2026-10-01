@@ -991,12 +991,24 @@ How far it has got is there once it knows: \" fetching 24/340\"."
     (vm-update-summary-and-mode-line)))
 
 (defun vm-pop-net-stop ()
-  "Stop what this folder is doing with its server.
-For a folder that is going away; see `vm-imap-net-stop'."
-  (let ((session vm-pop-net-session))
+  "Stop what this folder is doing with its server, and forget what is queued.
+For a folder that is going away; see `vm-imap-net-stop'.
+
+The queue is emptied before the session is abandoned, and that order is the
+point: abandoning runs the session to its end, which starts the next thing
+waiting, which becomes the folder's session.  Clearing the variable
+afterwards then left that one running with nothing pointing at it, so
+`vm-pop-net-busy-p' could not see it, the mode line did not show it, and a
+second stop could not stop it (emacs-vm/vm#891)."
+  (let ((session vm-pop-net-session)
+	(waiting (length vm-pop-net-waiting)))
+    (setq vm-pop-net-waiting nil)
     (when (and session (vm-net-session-live-p session))
-      (vm-net-inform 5 "%s: stopping %s" (buffer-name)
-		 (or (vm-net-session-name session) "the session"))
+      (vm-net-inform 5 "%s: stopping %s%s" (buffer-name)
+		 (or (vm-net-session-name session) "the session")
+		 (if (> waiting 0)
+		     (format " and %d more" waiting)
+		   ""))
       (vm-net-abandon session))
     (setq vm-pop-net-session nil)
     (setq vm-ml-session nil)))
