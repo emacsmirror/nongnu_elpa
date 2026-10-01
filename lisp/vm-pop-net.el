@@ -201,9 +201,13 @@ wire in clear, which is the thing APOP was asked for to avoid."
 
 (iter-defun vm-pop-net-uidl ()
   "Answer with the UIDs of the maildrop, as (NUMBER . UID) in server order.
-Answers nil when the server has no UIDL: a maildrop VM cannot identify
-messages in is one it must not delete from, and that is the caller's
-decision to make."
+
+Answers `unsupported' where the server has no UIDL: a maildrop VM cannot
+identify messages in is one it must not delete from, and that is the
+caller's decision to make.  A maildrop that is simply empty answers the
+empty list.  The two were one answer until emacs-vm/vm#888, so a POP
+maildrop with nothing new in it was reported as a server with no UIDL, which
+is every check of a maildrop whose mail is deleted as it is fetched."
   ;; a named variable and a handler body that is not nil: inside an
   ;; iter-defun, (condition-case nil FORM (err nil)) answers with the error
   ;; object rather than nil, which is generator.el's CPS transform and not
@@ -217,7 +221,7 @@ decision to make."
 			    (cons (string-to-number (car fields))
 				  (cadr fields)))))
 		      lines)))
-    (vm-pop-net-error nil)))
+    (vm-pop-net-error 'unsupported)))
 
 (iter-defun vm-pop-net-retrieve (n)
   "Answer with message N as it arrived, headers and body."
@@ -475,7 +479,7 @@ has already seen, and saying \"no mail\" would be a guess."
 	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))
 	  (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	(let ((uids (iter-yield-from (vm-pop-net-uidl))))
-	  (when uids
+	  (unless (eq uids 'unsupported)
 	    (let ((count 0))
 	      (dolist (pair uids)
 		(let ((seen (assoc (cdr pair) retrieved)))
@@ -574,7 +578,7 @@ stays on the server, so raising the limit is all it takes."
     (nreverse wanted)))
 
 (iter-defun vm-pop-net-fetch-new (folder user password source retrieved)
-  "Fetch the messages of this maildrop that are not in RETRIEVED.
+	    "Fetch the messages of this maildrop that are not in RETRIEVED.
 
 RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
 its password, which is how an entry there names where it came from.
@@ -592,51 +596,55 @@ the crash box is on disk, in a session of its own and by UID.
 Passes over a message bigger than `vm-pop-max-message-size', which the
 blocking implementation honoured too: a local folder cannot go back to the
 server for a body later."
-  (unwind-protect
-      (progn
-	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))
-	  (iter-yield-from (vm-pop-net-authenticate user password greeting)))
-	(let* ((uids (iter-yield-from (vm-pop-net-uidl)))
-	       (sizes (and uids (iter-yield-from (vm-pop-net-sizes))))
-	       (wanted (vm-pop-net-messages-to-fetch uids sizes retrieved source))
-	       (total (length wanted))
-	       (fetched nil)
-	       (count 0))
-	  (unless uids
-	    ;; UIDL is what tells one message from another between sessions.
-	    ;; Without it nothing here can say which of these has been fetched
-	    ;; before, so nothing is fetched -- and a maildrop that quietly
-	    ;; never arrives is worse than one that says why.  The blocking
-	    ;; path deletes each message as it takes it instead, which is the
-	    ;; other way to keep count and not one to start from a filter.
-	    (signal 'vm-pop-net-error
-		    (list (format (concat "%s: the server has no UIDL, so VM"
-					  " cannot tell what it has already"
-					  " fetched; no mail was retrieved")
-				  (vm-safe-popdrop-string source)))))
-	  (vm-pop-net-note-progress folder 0 total)
-	  ;; the start, said once: a fetch nobody is frozen out of looks like
-	  ;; nothing happening unless VM says it began
-	  (unless (zerop total)
-	    (vm-net-inform 5 "%s: retrieving %d message%s..."
-			   (vm-safe-popdrop-string source) total
-			   (if (= total 1) "" "s")))
-	  (dolist (pair wanted)
-	    (push (cons (cdr pair)
-			(iter-yield-from (vm-pop-net-retrieve (car pair))))
-		  fetched)
-	    (setq count (1+ count))
-	    ;; level 6, so it is logged and not shown: the mode line carries the
-	    ;; count live, and a line per bunch in the echo area is in the way of
-	    ;; whoever is using Emacs while the fetch runs -- which is the point of
-	    ;; the fetch not freezing them out.  The start and the end are said.
-	    (vm-pop-net-note-progress folder count total)
-	    (vm-net-inform 6 "%s: %d of %d messages retrieved"
-		       (vm-safe-popdrop-string source) count total))
-	  (nreverse fetched)))
-    (let ((process (get-buffer-process (current-buffer))))
-      (when (process-live-p process)
-	(process-send-string process "QUIT\r\n")))))
+	    (unwind-protect
+		(progn
+		  (let ((greeting (iter-yield-from (vm-pop-net-greeting))))
+		    (iter-yield-from (vm-pop-net-authenticate user password greeting)))
+		  (let ((uids (iter-yield-from (vm-pop-net-uidl))))
+		    (when (eq uids 'unsupported)
+		      ;; UIDL is what tells one message from another between sessions.
+		      ;; Without it nothing here can say which of these has been fetched
+		      ;; before, so nothing is fetched -- and a maildrop that quietly
+		      ;; never arrives is worse than one that says why.  The blocking
+		      ;; path deletes each message as it takes it instead, which is the
+		      ;; other way to keep count and not one to start from a filter.
+		      ;;
+		      ;; An empty maildrop is not this: it answers the empty list, and
+		      ;; asking a server that has nothing for its sizes is pointless but
+		      ;; not an error (emacs-vm/vm#888).
+		      (signal 'vm-pop-net-error
+			      (list (format (concat "%s: the server has no UIDL, so VM"
+						    " cannot tell what it has already"
+						    " fetched; no mail was retrieved")
+					    (vm-safe-popdrop-string source)))))
+		    (let* ((sizes (and uids (iter-yield-from (vm-pop-net-sizes))))
+			   (wanted (vm-pop-net-messages-to-fetch uids sizes retrieved source))
+			   (total (length wanted))
+			   (fetched nil)
+			   (count 0))
+		      (vm-pop-net-note-progress folder 0 total)
+		      ;; the start, said once: a fetch nobody is frozen out of looks like
+		      ;; nothing happening unless VM says it began
+		      (unless (zerop total)
+			(vm-net-inform 5 "%s: retrieving %d message%s..."
+				       (vm-safe-popdrop-string source) total
+				       (if (= total 1) "" "s")))
+		      (dolist (pair wanted)
+			(push (cons (cdr pair)
+				    (iter-yield-from (vm-pop-net-retrieve (car pair))))
+			      fetched)
+			(setq count (1+ count))
+			;; level 6, so it is logged and not shown: the mode line carries the
+			;; count live, and a line per bunch in the echo area is in the way of
+			;; whoever is using Emacs while the fetch runs -- which is the point of
+			;; the fetch not freezing them out.  The start and the end are said.
+			(vm-pop-net-note-progress folder count total)
+			(vm-net-inform 6 "%s: %d of %d messages retrieved"
+				       (vm-safe-popdrop-string source) count total))
+		      (nreverse fetched))))
+	      (let ((process (get-buffer-process (current-buffer))))
+		(when (process-live-p process)
+		  (process-send-string process "QUIT\r\n")))))
 
 (iter-defun vm-pop-net-sizes ()
   "Answer with the sizes of the maildrop, as (NUMBER . OCTETS).
@@ -1145,9 +1153,11 @@ does whether this runs to the end or is abandoned."
 	    (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	  (let ((numbers (iter-yield-from (vm-pop-net-uidl)))
 		(deleted nil))
-	    (unless numbers
+	    (when (eq numbers 'unsupported)
 	      ;; without UIDL there is no telling which message is which, and
-	      ;; deleting the wrong one is worse than deleting none
+	      ;; deleting the wrong one is worse than deleting none.  An empty
+	      ;; maildrop is not that: everything owed is gone already, which
+	      ;; is what the `:gone' answer below is for (emacs-vm/vm#888)
 	      (signal 'vm-pop-net-error
 		      (list "server has no UIDL; nothing deleted")))
 	    (dolist (pair numbers)

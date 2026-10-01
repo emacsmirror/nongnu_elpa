@@ -94,14 +94,52 @@ resumed in the filter when its line arrived."
 (ert-deftest vm-pop-net-test-uidl-answers-nothing-without-support ()
   "A server with no UIDL answers -ERR, which is not a failed session: it is
 a maildrop VM cannot identify messages in, and the caller decides what that
-means."
+means.  It says so with `unsupported\=', which an empty maildrop does not
+(emacs-vm/vm#888)."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
                                     :no-uidl t)
     (let ((session (vm-pop-net-test--run
                     mock (vm-pop-net-test--uidl (vm-pop-mock-user mock)
                                                 (vm-pop-mock-password mock)))))
       (should (eq (vm-net-session-state session) 'done))
-      (should-not (vm-net-session-value session)))))
+      (should (eq (vm-net-session-value session) 'unsupported)))))
+
+(ert-deftest vm-pop-net-test-an-empty-maildrop-is-not-a-server-without-uidl ()
+  "REGRESSION: an empty maildrop was reported as a server with no UIDL.
+Issue #888.  `vm-pop-net-uidl\=' answered nil both for a server that refuses
+UIDL and for a maildrop with nothing in it, and `vm-pop-net-fetch-new\=' read
+that as the first:
+
+  the server has no UIDL, so VM cannot tell what it has already fetched;
+  no mail was retrieved
+
+which is a claim about the server that is not true, on the most ordinary
+event there is.  A reader whose maildrop is emptied as it is fetched, which
+is what `vm-pop-expunge-after-retrieving\=' does, met it on every check."
+  (vm-pop-net-test--with-mock (mock :messages nil)
+    (let ((session (vm-pop-net-test--run
+                    mock (vm-pop-net-test--uidl (vm-pop-mock-user mock)
+                                                (vm-pop-mock-password mock)))))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (equal (vm-net-session-value session) nil))
+      (should-not (eq (vm-net-session-value session) 'unsupported)))))
+
+(ert-deftest vm-pop-net-test-fetching-an-empty-maildrop-says-nothing ()
+  "Fetching from an empty maildrop answers no messages and warns about
+nothing.  Issue #888: it answered with the no-UIDL error instead."
+  (vm-pop-net-test--with-mock (mock :messages nil)
+    (let ((answer 'not-called)
+          (vm-pop-server-timeout 3)
+          (vm-pop-max-message-size nil))
+      (vm-pop-net-fetch (vm-pop-mock-spec mock) nil
+                        (lambda (result) (setq answer result)))
+      (let ((deadline (+ (float-time) 20)))
+        (while (and (eq answer 'not-called) (< (float-time) deadline))
+          (accept-process-output nil 0.05)))
+      (should-not (eq answer 'not-called))
+      (should-not answer))))
+
+
 
 (iter-defun vm-pop-net-test--retrieve (user password n)
   (iter-yield-from (vm-pop-net-greeting))
