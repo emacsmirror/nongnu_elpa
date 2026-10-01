@@ -1867,6 +1867,18 @@ written when the messages arrive, and the folder gobbles it then."
     ;; and the crash box was taken in, not left lying about
     (should-not (file-exists-p (nth 2 (car vm-spool-files))))))
 
+(ert-deftest vm-imap-net-test-a-maildrop-spool-says-the-fetch-started ()
+  "`vm-get-new-mail\=' tells the reader `getting new mail...\=' for `started\=' and
+`No new mail\=' for nil.  The spool loop answered nil for the arm that had just
+started a session, so a folder fed from an IMAP maildrop was told there was
+no mail while the session ran, and the mail turned up seconds later with no
+further word (emacs-vm/vm#897)."
+  (vm-imap-net-test--spooling (mock :messages (list vm-imap-net-test--alice))
+    (should (null vm-message-list))
+    (should (eq (vm-get-spooled-mail t) 'started))
+    (should (vm-imap-net-wait nil 90))
+    (should (equal (length vm-message-list) 1))))
+
 (ert-deftest vm-imap-net-test-a-maildrop-message-is-not-fetched-twice ()
   "The UIDs fetched are remembered with the UIDVALIDITY they were valid
 under, so a second run brings only what arrived since -- and a UID means
