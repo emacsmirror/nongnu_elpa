@@ -5480,6 +5480,7 @@ unknown whether anything reached the crash box."
 	  (case-fold-search nil)
 	  non-file-maildrop crash in safe-maildrop maildrop ;; popdrop
 	  retrieval-function
+	  (started nil)
 	  (got-mail nil))
       (if (and (not (verify-visited-file-modtime (current-buffer)))
 	       (or (null interactive)
@@ -5530,7 +5531,10 @@ unknown whether anything reached the crash box."
 	      (when (cond
 		     ((vm-start-spooled-mail retrieval-function maildrop
 					     crash safe-maildrop)
-		      ;; on its way; the crash box is gobbled when it lands
+		      ;; on its way; the crash box is gobbled when it lands,
+		      ;; and the answer says so rather than letting the folder
+		      ;; report no new mail while a session is running
+		      (setq started t)
 		      nil)
 		     ((memq retrieval-function '(imap pop))
 		      ;; The driver did not start, which for a network maildrop
@@ -5559,7 +5563,14 @@ unknown whether anything reached the crash box."
 	     (vm-warn 0 2
 	      "Ignoring error while running vm-retrieved-spooled-mail-hook. %S"
 	      errmsg)))
-          (vm-assimilate-new-messages :read-attributes nil))))))
+          (vm-assimilate-new-messages :read-attributes nil))
+	;; `started' and not t, which is what `vm-get-new-mail' tells apart:
+	;; mail is on its way and the folder holds what it held before, so
+	;; there is nothing yet to present (emacs-vm/vm#825).  Said plainly
+	;; rather than left to be whatever `vm-assimilate-new-messages'
+	;; answered with.
+	(cond (got-mail t)
+	      (started 'started))))))
 
 ;;;###autoload
 (defun vm-folder-name ()
