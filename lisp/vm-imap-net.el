@@ -196,15 +196,35 @@ once."
     (list 'string start (point))))
 
 (defun vm-imap-net-parse-quoted ()
-  "Parse a quoted string, the opening quote having been read."
+  "Parse a quoted string, the opening quote having been read.
+A backslash quotes the character after it (RFC 3501 4.3), so the closing
+quote is the first one not written with a backslash in front of it.  The
+escapes are still in the text the token points at; `vm-imap-net-token-text'
+is what takes them out, and it is the only reader that may."
   (let ((start (point))
 	(end nil))
-    (skip-chars-forward "^\042")
+    (while (progn
+	     (skip-chars-forward "^\042\\\\")
+	     (eq (char-after) ?\\))
+      ;; the backslash and the character it quotes, which may not be here yet
+      (when (< (- (point-max) (point)) 2)
+	(throw 'vm-imap-net-need (vm-net-request-growth)))
+      (forward-char 2))
     (setq end (point))
     (unless (looking-at "\042")
       (throw 'vm-imap-net-need (vm-net-request-growth)))
     (forward-char 1)
-    (list 'string start end)))
+    (list 'string start end 'quoted)))
+
+(defun vm-imap-net-token-text (token)
+  "The text TOKEN stands for, read from the process buffer.
+A quoted string's backslash escapes are undone; a literal carries its octets
+as they came and has none, so only the quoted ones are touched.  Must be
+called with the process buffer current, a token holding positions in it."
+  (let ((text (buffer-substring (nth 1 token) (nth 2 token))))
+    (if (eq (nth 3 token) 'quoted)
+	(replace-regexp-in-string "\\\\\\(.\\)" "\\1" text t)
+      text)))
 
 (defun vm-imap-net-parse-atom ()
   "Parse an atom, up to the first character that cannot be part of one."
@@ -2481,8 +2501,7 @@ the directories of a hierarchy and not mailboxes to be read."
 	  (when (and (memq (car name) '(atom string))
 		     (not (and selectable-only
 			       (vm-imap-scan-list-for-flag flags "\\Noselect"))))
-	    (push (vm-imap-decode-mailbox-name
-		   (buffer-substring (nth 1 name) (nth 2 name)))
+	    (push (vm-imap-decode-mailbox-name (vm-imap-net-token-text name))
 		  names)))))
     (nreverse names)))
 
