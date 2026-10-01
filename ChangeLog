@@ -1,5 +1,7 @@
 2026-10-01  Ulrich Müller  <ulm@gentoo.org>
 
+	* Version 1.88 released.
+
 	* ebuild-mode.el (ebuild-mode-prefix-map, ebuild-mode-map)
 	(ebuild-repo-mode-map):
 	* gentoo-newsitem-mode.el (gentoo-newsitem-mode-map):

@@ -7,7 +7,7 @@
 ;;	Christian Faulhammer <fauli@gentoo.org>
 ;;	Ulrich Müller <ulm@gentoo.org>
 ;; Maintainer: <emacs@gentoo.org>
-;; Version: 1.87
+;; Version: 1.88
 ;; Package-Requires: ((emacs "26.3"))
 ;; Keywords: languages, processes
 
