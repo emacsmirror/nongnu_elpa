@@ -2333,8 +2333,15 @@ speak."
 EXAMINE rather than SELECT: nothing here writes to the mailbox, and this
 session is the save's own, so selecting in it takes no folder's mailbox
 away.  A mailbox that cannot be examined answers nil, which sends the flags
-a server is obliged to keep and no others."
-  (condition-case nil
+a server is obliged to keep and no others.
+
+A named variable, and not `(condition-case nil ...)': inside an `iter-defun'
+whose protected form yields, that answers with the error object rather than
+with the handler's value, which is generator.el's CPS transform and not what
+the same code means outside one.  A mailbox that could not be
+examined therefore looked like one that keeps no keywords, and every label
+was dropped from the APPEND (emacs-vm/vm#889)."
+  (condition-case _err
       (nth 5 (iter-yield-from (vm-imap-net-select mailbox 'examine)))
     (vm-imap-normal-error nil)))
 

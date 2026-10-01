@@ -1430,6 +1430,38 @@ PERMANENTFLAGS, which is a server saying it keeps keywords of its own."
         ;; and the label, which the mailbox says it keeps
         (should (member "urgent" flags))))))
 
+(iter-defun vm-imap-net-test--permanent-flags (user password mailbox)
+  "Log in and ask what MAILBOX keeps."
+  (iter-yield-from (vm-imap-net-greeting))
+  (iter-yield-from (vm-imap-net-login user password))
+  (iter-yield-from (vm-imap-net-mailbox-permanent-flags mailbox)))
+
+(ert-deftest vm-imap-net-test-a-mailbox-that-cannot-be-examined-keeps-the-labels ()
+  "REGRESSION: a failed EXAMINE dropped every label from a save.
+Issue #889.  `vm-imap-net-mailbox-permanent-flags' answers nil where the
+mailbox will not say what it keeps, which sends the flags a server is obliged
+to keep and the keywords as well.  It was written `(condition-case nil ...)',
+and inside an `iter-defun' whose protected form yields, that answers with the
+error object rather than with the handler's value: generator.el's CPS
+transform does not treat the two spellings alike.
+
+So the answer was `(vm-imap-normal-error \"server says - NO ...\")', which
+`vm-imap-net-flags-a-mailbox-takes' read as a PERMANENTFLAGS list without
+`\\*' in it, and every label was filtered out of the APPEND, with a warning
+naming flags the server had said nothing about.  Which is emacs-vm/vm#828
+over again, by another route."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
+                           :refuse "EXAMINE")
+    (let* ((session (vm-imap-net-test--run
+                     mock (vm-imap-net-test--permanent-flags
+                           "vmtest" "secret" "Nowhere")))
+           (answer (vm-net-session-value session)))
+      (should (eq (vm-net-session-state session) 'done))
+      (should-not answer)
+      ;; and so the keyword survives the filter
+      (should (equal (vm-imap-net-flags-a-mailbox-takes '("\\Seen" "todo") answer)
+                     '("\\Seen" "todo"))))))
+
 (ert-deftest vm-imap-net-test-a-mailbox-that-keeps-no-keywords-gets-none ()
   "REGRESSION: the copy arrives whole where the destination refuses keywords.
 RFC 3501 has a server answer NO to an APPEND naming a flag it does not
