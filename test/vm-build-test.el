@@ -74,6 +74,36 @@ A word that is a glob has to match something rather than name something,
           (push file missing))))
     (should (equal missing nil))))
 
+(ert-deftest vm-build-test-every-rm-names-a-directory-that-exists ()
+  "REGRESSION: `byte-compile-lint' cleared no stale .elc for nine months.
+Its recipe said `rm -f list/*.elc', and there is no list/ directory, so the
+target byte-compiled lisp/ with whatever stale .elc files were already there.
+VM's files require one another, so the compiling Emacs loads them, which is
+the one hazard the lint was clearing them to avoid (emacs-vm/vm#899).
+
+A removal that names nothing is silent twice over: `rm -f' says nothing about
+a path that is not there, and the recipe goes on to succeed."
+  (let ((wrong nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward "^[ \t]*@?rm -[rf]*f[rf]*[ \t]+\\([^ \t\n;|&]+\\)"
+                                  nil t)
+          (let* ((path (match-string 1))
+                 (dir (file-name-directory path)))
+            ;; Only a relative path inside the tree can be checked: an
+            ;; absolute one or one holding a make variable is the build
+            ;; directory's business, not this tree's.
+            (when (and dir
+                       (not (string-match-p "[$(]" path))
+                       (not (file-name-absolute-p path))
+                       (not (file-exists-p
+                             (expand-file-name dir (file-name-directory file)))))
+              (push (cons (file-relative-name file vm-build-test--root) path)
+                    wrong))))))
+    (should (equal wrong nil))))
+
 (ert-deftest vm-build-test-no-elc-for-never-compiled-lisp ()
   "REGRESSION: no .elc is listed for lisp that is never byte-compiled.
 `vm-custom-make-dependencies' writes vm-cus-load.el with a
