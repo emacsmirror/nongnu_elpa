@@ -956,6 +956,53 @@ one format into a folder of another is how a folder stops being readable."
             (should (string-match-p "Subject: msg 1" (buffer-string)))
             (should (string-match-p "^Content-Length:" (buffer-string)))))))))
 
+(ert-deftest vm-save-test-a-converted-message-keeps-a-separator-the-reader-finds ()
+  "An mboxcl2 folder's separators are matched by a regexp that asks only for
+a line beginning with From and a space; a From_ folder's asks for a digit at
+the end of it too.  Converting reused the message's own line, so saving an
+mboxcl2 message whose envelope line ends in a time zone name wrote a From_
+folder that read back as empty, with every message's text in it
+(emacs-vm/vm#898)."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-save-sep" t)))
+         (source (expand-file-name "src.mboxcl2" dir))
+         (target (expand-file-name "dest.mbox" dir))
+         (vm-folder-directory dir)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-check-folder-types t)
+         (vm-convert-folder-types t)
+         (before (buffer-list)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore)
+                  ((symbol-function 'vm-present-current-message) #'ignore))
+          (with-temp-buffer
+            (dolist (n '(1 2))
+              (let ((body (format "Body %d.\n" n)))
+                (insert (format "From s%d@example.com Mon Jan  1 00:0%d:00 2024 PST\n"
+                                n n)
+                        "From: s@example.com\nTo: me@example.com\n"
+                        (format "Subject: msg %d\n" n)
+                        (format "Content-Length: %d\n" (length body))
+                        "\n" body)))
+            (write-region (point-min) (point-max) source nil 'quiet))
+          (vm-visit-folder source)
+          (should (eq vm-folder-type 'mboxcl2))
+          (should (equal (length vm-message-list) 2))
+          (setq vm-message-pointer vm-message-list)
+          (vm-save-message target 2)
+          ;; both are in the file
+          (should (equal (vm-save-test--folder-subjects target) '("msg 1" "msg 2")))
+          ;; and both are where the From_ reader will find them
+          (vm-visit-folder target)
+          (should (eq vm-folder-type 'From_))
+          (should (equal (length vm-message-list) 2)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 ;;; Archiving by the auto-folder rules
 
 (defun vm-save-test--folder-subjects (file)

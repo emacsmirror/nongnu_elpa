@@ -5724,6 +5724,25 @@ rather than of a buffer nobody asked about."
            (err (should-error (vm-check-folder file) :type 'error)))
       (should (string-match-p "notes\\.txt has no folder type" (cadr err))))))
 
+(ert-deftest vm-folder-test-only-a-separator-the-type-reads-is-usable ()
+  "`vm-usable-From_-separator\\=' answers with the line only where a folder of
+that type can be read back with it.  The From_ and BellFrom_ readers ask for
+a digit at the end of the line and the mboxcl2 reader does not, so the same
+line is usable in one and not the other (emacs-vm/vm#898)."
+  (let ((dated "From s@example.com Mon Jan  1 00:01:00 2024\n")
+        (zoned "From s@example.com Mon Jan  1 00:01:00 2024 PST\n")
+        (bare  "From s@example.com\n"))
+    (dolist (type '(From_ BellFrom_))
+      (should (equal (vm-usable-From_-separator dated type) dated))
+      (should-not (vm-usable-From_-separator zoned type))
+      (should-not (vm-usable-From_-separator bare type)))
+    ;; mboxcl2 asks for nothing after the address, so all three serve
+    (dolist (line (list dated zoned bare))
+      (should (equal (vm-usable-From_-separator line 'mboxcl2) line)))
+    ;; and nothing is usable without a line, or for a type with no From_ line
+    (should-not (vm-usable-From_-separator nil 'From_))
+    (should-not (vm-usable-From_-separator dated 'babyl))))
+
 (ert-deftest vm-folder-test-a-name-can-say-plain-mbox ()
   "A folder named .mbox is From_, whatever `vm-default-folder-type' says.
 That is what everything outside VM means by an mbox file, and a folder that
