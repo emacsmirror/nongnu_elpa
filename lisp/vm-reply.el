@@ -1567,9 +1567,8 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 	       (insert "MIME-Version: 1.0\n")
 	       (insert "Content-Type: message/rfc822\n")
 	       (insert "Content-Transfer-Encoding: "
-		       (vm-determine-proper-content-transfer-encoding
-			(point)
-			(point-max))
+		       (vm-mime-encapsulation-transfer-encoding (point)
+							       (point-max))
 		       "\n")
 	       (insert "Content-Description: forwarded message\n")
 	       ;; eight bit chars will get \201 prepended if we
@@ -1820,9 +1819,8 @@ included in the digest."
 		       "Content-Type: multipart/digest;\n\tboundary=\"")
 		     boundary "\"\n")
 	     (insert "Content-Transfer-Encoding: "
-		     (vm-determine-proper-content-transfer-encoding
-		      (point)
-		      (point-max))
+		     (vm-mime-encapsulation-transfer-encoding (point)
+							     (point-max))
 		     "\n"))
 	    ((equal vm-digest-send-type "rfc934")
 	     (vm-rfc934-encapsulate-messages

@@ -695,6 +695,89 @@ is what RFC 934 asks for and what the fix restores."
       (should (equal (cons type t)
                      (cons type (and (string-match-p "^after$" composition) t)))))))
 
+
+;;; Only the encodings RFC 2045 allows on an encapsulation (emacs-vm/vm#895)
+
+(defun vm-digest-test--attached-encoding (thunk)
+  "Run THUNK and answer the Content-Transfer-Encoding of the buffer it attached.
+The header goes on a work buffer, which the composition then carries as an
+attached object, so it is not in the composition's own text."
+  (let ((encoding nil)
+        (attach (symbol-function 'vm-attach-object)))
+    (cl-letf (((symbol-function 'vm-attach-object)
+               (lambda (object &rest args)
+                 (when (and (bufferp object) (null encoding))
+                   (with-current-buffer object
+                     (save-excursion
+                       (goto-char (point-min))
+                       (when (re-search-forward
+                              "^Content-Transfer-Encoding: \\(.*\\)$" nil t)
+                         (setq encoding (match-string 1))))))
+                 (apply attach object args))))
+      (funcall thunk))
+    encoding))
+
+(defun vm-digest-test--send-digest (type body)
+  "Send a two-message digest of TYPE whose messages have BODY as their text."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-send-digest" t)))
+         (inbox (expand-file-name "inbox" dir))
+         (vm-folder-directory dir)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-digest-send-type type)
+         (vm-mail-mode-hook nil)
+         (vm-send-digest-hook nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-display) #'ignore)
+                  ((symbol-function 'vm-present-current-message) #'ignore)
+                  ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+          (with-temp-buffer
+            (dolist (n '(1 2))
+              (insert (format "From s@example.com Mon Jan  1 00:0%d:00 2024\n" n)
+                      "From: s@example.com\nTo: me@example.com\n"
+                      (format "Subject: msg%d\n" n)
+                      "Date: Mon, 1 Jan 2024 10:00:00 +0000\n\n" body "\n\n"))
+            (write-region (point-min) (point-max) inbox nil 'quiet))
+          (vm-visit-folder inbox)
+          (setq vm-message-pointer vm-message-list)
+          (vm-send-digest))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(defconst vm-digest-test--over-the-line-limit
+  (concat "short\n" (make-string 1200 ?x))
+  "A body with a line too long to be sent as it stands.
+`vm-mime-max-text-line-length' defaults to the 998 of RFC 5322.")
+
+(ert-deftest vm-digest-test-a-forwarded-long-line-keeps-a-real-encoding ()
+  "A MIME forward writes its own Content-Transfer-Encoding and sends it as
+it stands.  `vm-determine-proper-content-transfer-encoding' answers the
+sentinel `long-lines\\=' for a line over the limit, which is no encoding at
+all, and the header went out saying it (emacs-vm/vm#895).  A message body
+may carry only 7bit, 8bit or binary (RFC 2045 6.4), so binary is what a
+line too long to send makes it."
+  (let ((encoding (vm-digest-test--attached-encoding
+                   (lambda ()
+                     (vm-digest-test--forward
+                      "mime" vm-digest-test--over-the-line-limit)))))
+    (should (member encoding '("7bit" "8bit" "binary")))
+    (should (equal encoding "binary"))))
+
+(ert-deftest vm-digest-test-a-digest-of-a-long-line-keeps-a-real-encoding ()
+  "The same for `vm-send-digest\\=', whose multipart body may carry only the
+same three encodings."
+  (let ((encoding (vm-digest-test--attached-encoding
+                   (lambda ()
+                     (vm-digest-test--send-digest
+                      "mime" vm-digest-test--over-the-line-limit)))))
+    (should (member encoding '("7bit" "8bit" "binary")))
+    (should (equal encoding "binary"))))
+
 (provide 'vm-digest-test)
 
 ;;; vm-digest-test.el ends here

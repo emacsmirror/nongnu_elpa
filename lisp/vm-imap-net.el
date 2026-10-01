@@ -2117,7 +2117,7 @@ in any order (issue #185)."
 	(fetched nil))
     ;; No UIDs is no work: every message the plan was made from has gone from
     ;; the folder while this waited behind another session.  An empty sequence
-    ;; set is not a command -- "UID FETCH  (UID BODY.PEEK[])" is answered BAD,
+    ;; set is not a command: "UID FETCH  (UID BODY.PEEK[])" is answered BAD,
     ;; which reached the reader as an IMAP error for a fetch that had nothing
     ;; to fetch (emacs-vm/vm#893).
     (when uids

@@ -2996,6 +2996,38 @@ and what Gmail encodes to."
                            (concat (make-string 1200 ?x) "\n")))
                      "quoted-printable")))))
 
+(ert-deftest vm-mime-test-an-encapsulation-takes-only-three-encodings ()
+  "RFC 2045 6.4 allows only 7bit, 8bit and binary on a `message/*\\=' or
+`multipart/*\\=' body, so neither the sentinel `long-lines\\=' nor the
+quoted-printable it stands for is open to one.  A line too long to send as
+it stands makes the body binary, the parts inside carrying their own
+encodings (emacs-vm/vm#895)."
+  (with-temp-buffer
+    (insert "a short line\n" (make-string 1200 ?x) "\n")
+    ;; what the ordinary chooser says, which is why this exists
+    (should (equal (vm-determine-proper-content-transfer-encoding
+                    (point-min) (point-max))
+                   vm-mime-long-lines-encoding))
+    (should (equal (vm-mime-encapsulation-transfer-encoding
+                    (point-min) (point-max))
+                   "binary")))
+  ;; and it answers the ordinary three unchanged
+  (with-temp-buffer
+    (insert "a short line\n")
+    (should (equal (vm-mime-encapsulation-transfer-encoding
+                    (point-min) (point-max))
+                   "7bit")))
+  (with-temp-buffer
+    (insert "a line with ä in it\n")
+    (should (equal (vm-mime-encapsulation-transfer-encoding
+                    (point-min) (point-max))
+                   "8bit")))
+  (with-temp-buffer
+    (insert "a line with \000 in it\n")
+    (should (equal (vm-mime-encapsulation-transfer-encoding
+                    (point-min) (point-max))
+                   "binary"))))
+
 (ert-deftest vm-mime-test-quoted-printable-folds-its-output ()
   "No line of a quoted-printable part is longer than the 76 of RFC 2045.
 `quoted-printable-encode-region' folds only when told to, and VM did not
