@@ -2141,22 +2141,33 @@ TOOT is the data for the quoting toot."
           ((string= state "pending")
            (mastodon-tl--format-quote-non-display "quote pending" .url))
           (t
-           (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri)))
+           (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri))
+                 (nested-quote (alist-get 'quote quoted)))
              (concat
               "\n" (mastodon-tl--quote-symbol-str) "\n"
               ;; author byline without horiz bar/stats:
-              (concat
-               (mastodon-tl--byline-author quoted nil nil :base)
-               " "
-               ;; byline date as link to original:
-               (mastodon-tl-prop-quote (mastodon-tl-format-timestamp parsed-time)
-                                       .uri :nomatch)
-               "\n"
-               ;; quoted text:
-               (if foldable
-                   (mastodon-tl--fold-body quote-rendered
-                                           (mastodon-search--format-heading "click for full toot"))
-                 quote-rendered))))))
+              (mastodon-tl--byline-author quoted nil nil :base)
+              " "
+              ;; byline date as link to original:
+              (mastodon-tl-prop-quote (mastodon-tl-format-timestamp parsed-time)
+                           .uri :nomatch)
+              "\n"
+              ;; quoted text:
+              (if foldable
+                  (mastodon-tl--fold-body quote-rendered
+                               (mastodon-search--format-heading "click for full toot"))
+                quote-rendered)
+              (when nested-quote
+                (propertize
+                 ;; web UI shows handle of nested quote here, but the data
+                 ;; of the outermost quoting toot doesn't contain account
+                 ;; data for the nested quoted toot. it just contains
+                 ;; "quoted_toot_id"
+                 "[quotes another toot]"
+                 ;; (format "[quotes toot by %s]"
+                 ;;         (map-nested-elt nested-quote
+                 ;;                         '(quoted_status account acct)))
+                 'face 'font-lock-comment-face))))))
          'line-prefix bar
          'wrap-prefix bar
          'mastodon-content-warning-body (when cw t)
