@@ -327,6 +327,36 @@ tool selection is not a no-tools guarantee on the supported gateway.  For
 evaluation that must not affect the host, use an independently isolated
 backend.  Profile configuration alone is not a sandbox.
 
+** Local text/source attachments
+
+Use /Compose → Attachments → Upload text\/source/ or
+=M-x hermes-chat-attach-file= in an already connected, attached chat.  This
+separate action leaves image attachment and path completion unchanged.  It
+accepts up to 2 MiB of local UTF-8 text/source with a supported suffix; PDF
+extraction and arbitrary binary files are unsupported.  Local reads are
+bounded; the underlying HTTP response retrieval is not streaming-bounded.
+
+The command captures the owning session's gateway-host working directory,
+requires managed Files policy admission, and asks before attempting a write
+there.  Upload checks write permission.  This does not establish equivalence
+with a remote terminal backend.  A generated filename reduces collisions but
+=overwrite:false= is a non-atomic backend precheck, not exclusive creation.
+Exact byte readback precedes the owning session's =file.attach(path)= call.
+Only its validated reference is appended to an unchanged composer; nothing is
+sent.  Paths refer to current content and can change before a later Send.
+
+A native recovery view retains the original literal draft, bounded bytes and
+any returned reference.  Oversized files retain only an explicitly labelled
+incomplete prefix of 2 MiB plus one byte; the unread tail is not recovered.
+Newer draft edits, cancellation, ownership changes
+and uncertain failures never replace text, retry an upload, or delete a remote
+file.  Use =s= in recovery to save exact bytes to a *new* local file, then copy
+a reference manually if appropriate.  /Attachments → Reopen retained recovery/
+opens retained data afresh without repainting a view reused for notes.  Data
+is retained in memory only: save it before closing recovery views or Emacs.
+At most eight live recovery views are retained per chat.  Uploaded files may
+remain after failure or cancellation; cleanup is a separate explicit action.
+
 ** Output previews
 
 Completed tool outputs with published file paths, and closed HTML/SVG code

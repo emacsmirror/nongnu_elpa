@@ -152,6 +152,7 @@ Inside a project, its root basename becomes the canonical session label."
 (require 'hermes-chat-draft)
 (require 'hermes-chat-prompts)
 (require 'hermes-chat-images)
+(require 'hermes-chat-attachments)
 (require 'hermes-chat-todos)
 (require 'hermes-chat-dashboard)
 (require 'hermes-chat-models)
@@ -2711,6 +2712,18 @@ Do not wrap into the composer or modify its draft."
 
 (put 'hermes-chat-images-map-popup 'command-modes '(hermes-chat-mode))
 
+(keymap-popup-define hermes-chat-files-map
+  "Attach local text/source through the gateway workspace."
+  :description #'hermes-chat--popup-title
+  :popup-key "?"
+  :exit-key "q"
+  :group "Attachments"
+  "f" ("Upload text/source" hermes-chat-attach-file)
+  "r" ("Reopen retained recovery" hermes-chat-attachment-recovery)
+  "c" ("Cancel local work" hermes-chat-attachment-cancel))
+
+(put 'hermes-chat-files-map-popup 'command-modes '(hermes-chat-mode))
+
 (defvar-keymap hermes-chat-images-mode-line-map
   :doc "Mouse access to the owning composer's image actions."
   "<mode-line> <mouse-1>"
@@ -2830,6 +2843,7 @@ Do not wrap into the composer or modify its draft."
   "j" ("Go to composer" hermes-chat-go-to-composer)
   "Q" ("Quote region" hermes-chat-quote-region)
   "I" ("Images" :keymap hermes-chat-images-map)
+  "F" ("Attachments" :keymap hermes-chat-files-map)
   :row
   :group "Configure"
   "S" ("Session" :keymap hermes-chat-sess-map)
