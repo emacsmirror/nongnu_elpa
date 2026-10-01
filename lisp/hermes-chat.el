@@ -2332,6 +2332,7 @@ history read, including with empty input when a queued message is retained."
               (hermes-chat--handle-slash-content content)
               t)
              ((and (hermes-chat--active-turn-p)
+                   (null hermes-chat--session-bootstrap)
                    (null hermes-chat--application-context)
                    (null hermes-chat--interrupted-assistant-id)
                    (hermes-chat--dashboard-session-attached-p)

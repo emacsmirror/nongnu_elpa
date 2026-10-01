@@ -198,6 +198,22 @@ The buffer is captured by object so teardown still kills it after a rename."
    :pending (make-hash-table :test #'equal)
    :callback #'ignore))
 
+(defun hermes-test--released-create-args (args)
+  "Return fixture ARGS with a released create-time cwd readback.
+Only complete an omitted cwd when this fixture accepted a deliberate request;
+retain explicitly supplied readback, including a differing workspace."
+  (let ((resolve (plist-get args :resolve))
+        (cwd (plist-get args :cwd)))
+    (if (not (and resolve cwd)) args
+      (plist-put
+       (copy-sequence args) :resolve
+       (lambda (result)
+         (funcall resolve
+                  (if (hermes-chat--dashboard-result-cwd result) result
+                    (cons (cons 'info (cons (cons 'cwd cwd)
+                                           (hermes-transport--get result 'info)))
+                          (assq-delete-all 'info (copy-tree result))))))))))
+
 (defun hermes-test--control-content-preserved-p (&rest candidates)
   "Return non-nil when a busy-control CANDIDATE is still recoverable."
   (or (cl-some (lambda (content) (member content candidates))
@@ -218,6 +234,7 @@ The buffer is captured by object so teardown still kills it after a rename."
                   ,client))
                ((symbol-function 'hermes-dashboard-transport-session-create)
                 (lambda (_client &rest args)
+                  (setq args (hermes-test--released-create-args args))
                   (funcall (plist-get args :resolve)
                            '((session_id . "sid-prompt")
                              (stored_session_id . "sid-stored")))))

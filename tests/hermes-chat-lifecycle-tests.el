@@ -244,6 +244,7 @@
                  client))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-active")))))
               ((symbol-function 'hermes-dashboard-transport-prompt-submit)

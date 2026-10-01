@@ -1397,7 +1397,8 @@
 
 (defun hermes-test--resolve-new-dashboard-session (_client &rest args)
   "Resolve ARGS as a fresh dashboard session."
-  (funcall (plist-get args :resolve) '((session_id . "sid-new"))))
+  (funcall (plist-get (hermes-test--released-create-args args) :resolve)
+           '((session_id . "sid-new"))))
 
 (defun hermes-test--confirming-config-set (record)
   "Return a `config.set' stub that calls RECORD and requires confirmation."
@@ -1937,6 +1938,7 @@
                (lambda (&rest _) client))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq create-args args)
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-new")))))
@@ -1974,6 +1976,7 @@
                (lambda (&rest _) client))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq built-model (or (plist-get args :model) "profile-default"))
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-new")))))
@@ -2031,6 +2034,7 @@
         (answers '(nil t)) action rejected calls create-model)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq create-model (plist-get args :model))
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-new")))))
@@ -2096,6 +2100,7 @@
         calls resolve first-action second-action first-reject second-reject)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (funcall (plist-get args :resolve) '((session_id . "sid")))))
               ((symbol-function 'hermes-dashboard-transport-config-set)
                (lambda (_client _key _value &rest args)
@@ -2146,6 +2151,7 @@
                        ('malformed (hermes--promise-resolved '((cwd . "")))))))
                   ((symbol-function 'hermes-dashboard-transport-session-create)
                    (lambda (_client &rest args)
+                     (setq args (hermes-test--released-create-args args))
                      (setq create-cwd (plist-get args :cwd))
                      (funcall (plist-get args :resolve) '((session_id . "sid")))))
                   ((symbol-function 'hermes-dashboard-transport-prompt-submit)
@@ -2180,6 +2186,7 @@
                  preflight))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq create-calls (1+ (or create-calls 0))
                        create-resolve (plist-get args :resolve))))
               ((symbol-function 'hermes-dashboard-transport-config-set)
@@ -2243,6 +2250,7 @@
                          (hermes--promise-rejected "missing"))))
                     ((symbol-function 'hermes-dashboard-transport-session-create)
                      (lambda (_client &rest args)
+                       (setq args (hermes-test--released-create-args args))
                        (if (eq failure 'sync)
                            (error "create boom")
                          (setq create-reject (plist-get args :reject)))))
@@ -2281,6 +2289,7 @@
                  (lambda (&rest _) preflight))
                 ((symbol-function 'hermes-dashboard-transport-session-create)
                  (lambda (_client &rest args)
+                   (setq args (hermes-test--released-create-args args))
                    (setq create-resolve (plist-get args :resolve))))
                 ((symbol-function 'hermes-dashboard-transport-config-set)
                  (lambda (_client _key _value &rest args)
@@ -2421,6 +2430,7 @@
                (lambda (&rest _) client))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq create-cwd (plist-get args :cwd))
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-new")))))
@@ -2435,6 +2445,225 @@
          (hermes-chat-send)
          (should (equal create-cwd "/srv/remote-project")))))))
 
+(ert-deftest hermes-chat-dashboard-workspace-reconciles-before-first-prompt ()
+  "A deliberate cwd is accepted before runtime overrides and the first prompt."
+  (let ((client (hermes-test--dashboard-client)) requests cwd-resolve)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--resolved-start-mode 'remote
+           hermes-chat--working-directory "/chosen"
+           hermes-chat--cwd-explicit-p t
+           hermes-chat--dashboard-create-reasoning-effort "high")
+     (let ((editor-directory default-directory))
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                  (lambda (_client method params resolve _reject)
+                    (push (cons method params) requests)
+                    (pcase method
+                      ("session.create"
+                       (funcall resolve '((session_id . "sid")
+                                          (info . ((cwd . "/profile-default"))))))
+                      ("session.cwd.set" (setq cwd-resolve resolve))
+                      ("config.set" (funcall resolve '((ok . t)))))))
+                 ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+                 ((symbol-function 'hermes-chat--dashboard-submit-prompt)
+                  (lambda (&rest _) (push '(prompt) requests))))
+         (hermes-chat--dashboard-ensure-session client "hello" (current-buffer))
+         (should (equal (mapcar #'car (reverse requests))
+                        '("session.create" "session.cwd.set")))
+         (should (equal (cdr (car requests))
+                        '((session_id . "sid") (cwd . "/chosen"))))
+         (should hermes-chat--session-bootstrap)
+         (should-not (equal hermes-chat--working-directory "/chosen"))
+         (funcall cwd-resolve '((cwd . "/canonical/chosen")))
+         (should (equal (mapcar #'car (reverse requests))
+                        '("session.create" "session.cwd.set" "config.set" prompt)))
+         (should (equal hermes-chat--working-directory "/canonical/chosen"))
+         (should (equal default-directory editor-directory))
+         (should-not hermes-chat--session-bootstrap))))))
+
+(ert-deftest hermes-chat-dashboard-workspace-failure-retries-the-same-session ()
+  "A failed workspace receipt retains intent without sending or recreating."
+  (let ((client (hermes-test--dashboard-client)) requests cwd-reject cwd-resolve)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--working-directory "/chosen"
+           hermes-chat--cwd-explicit-p t)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                (lambda (_client method _params resolve reject)
+                  (push method requests)
+                  (pcase method
+                    ("session.create"
+                     (funcall resolve '((session_id . "sid")
+                                        (info . ((cwd . "/profile-default"))))))
+                    ("session.cwd.set"
+                     (setq cwd-resolve resolve cwd-reject reject)))))
+               ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+               ((symbol-function 'hermes-chat--dashboard-submit-prompt)
+                (lambda (&rest _) (push 'prompt requests))))
+       (hermes-chat--dashboard-ensure-session
+        client "first" (current-buffer) nil #'ignore)
+       (should cwd-reject)
+       (funcall cwd-reject "unavailable")
+       (should-not hermes-chat--session-bootstrap)
+       (should (equal hermes-chat--create-overrides-retry-session-id "sid"))
+       (hermes-chat--dashboard-ensure-session
+        client "retry" (current-buffer) nil #'ignore)
+       (funcall cwd-resolve '((cwd . "/chosen")))
+       (should (equal (reverse requests)
+                      '("session.create" "session.cwd.set" "session.cwd.set" prompt)))
+       (should-not hermes-chat--create-overrides-retry-session-id)))))
+
+(ert-deftest hermes-chat-dashboard-workspace-missing-receipt-cannot-release ()
+  "Malformed acceptance never releases pending deliberate workspace intent."
+  (dolist (receipt '(nil ((cwd . ""))))
+    (let ((client (hermes-test--dashboard-client)) continued rejected)
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid"
+             hermes-chat--dashboard-create-cwd "/chosen")
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                  (lambda (_client method _params resolve _reject)
+                    (should (equal method "session.cwd.set"))
+                    (funcall resolve receipt))))
+         (hermes-chat--dashboard-apply-create-overrides
+          client (lambda () (setq continued t)) hermes-chat--lifecycle-generation
+          (lambda (message) (setq rejected message)))
+         (should rejected)
+         (should-not continued)
+         (should (equal hermes-chat--dashboard-create-cwd "/chosen"))
+         (should (equal hermes-chat--create-overrides-retry-session-id "sid")))))))
+
+(ert-deftest hermes-chat-dashboard-workspace-public-send-keeps-fifo ()
+  "Send reserves workspace acceptance while a second input stays in FIFO."
+  (let ((client (hermes-test--dashboard-client)) cwd-resolve prompts)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params resolve _reject)
+                 (pcase method
+                   ("session.create"
+                    (funcall resolve '((session_id . "sid")
+                                       (info . ((cwd . "/profile"))))))
+                   ("session.cwd.set" (setq cwd-resolve resolve))
+                   ("prompt.submit"
+                    (push (hermes-transport--get params 'text) prompts)
+                    (funcall resolve '((accepted . t))))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--working-directory "/chosen"
+               hermes-chat--cwd-explicit-p t)
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (should-not prompts)
+         (should (equal (hermes-test--queued-contents) '("second")))
+         (funcall cwd-resolve '((cwd . "/chosen")))
+         (should (equal prompts '("first")))
+         (hermes-dashboard-transport--handle-frame
+          client (hermes-dashboard-transport--encode-frame
+                  '((jsonrpc . "2.0") (method . "event")
+                    (params . ((type . "message.complete") (session_id . "sid")
+                               (payload . ((text . "done") (status . "completed"))))))))
+         (should (equal (reverse prompts) '("first" "second")))
+         (should-not hermes-chat--queued-messages))))))
+
+(ert-deftest hermes-chat-dashboard-workspace-control-waits-for-acceptance ()
+  "Fresh control actions cannot pass a pending workspace reservation."
+  (let ((client (hermes-test--dashboard-client)) cwd-resolve action)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--working-directory "/chosen"
+           hermes-chat--cwd-explicit-p t)
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                (lambda (_client method _params resolve _reject)
+                  (pcase method
+                    ("session.create"
+                     (funcall resolve '((session_id . "sid")
+                                        (info . ((cwd . "/profile"))))))
+                    ("session.cwd.set" (setq cwd-resolve resolve)))))
+               ((symbol-function 'hermes-chat--dashboard-refresh-goal) #'ignore))
+       (hermes-chat--dashboard-ensure-session-action
+        client (current-buffer) (lambda (_) (setq action t)))
+       (should-not action)
+       (should (eq (plist-get hermes-chat--session-bootstrap :kind) 'control))
+       (funcall cwd-resolve '((cwd . "/chosen")))
+       (should action)
+       (should-not hermes-chat--session-bootstrap)))))
+
+(ert-deftest hermes-chat-dashboard-workspace-native-readiness-and-receipts ()
+  "Native RPCs fence held dispatch and late readback against retired owners."
+  (dolist (schedule '(current connection session lifetime owner))
+    (let ((client (hermes-test--dashboard-client)) ready frames continued)
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid"
+             hermes-chat--dashboard-create-cwd "/chosen")
+       (let ((hermes-dashboard-transport-request-owner (current-buffer))
+             (hermes-dashboard-transport-websocket-send-function
+              (lambda (_socket text)
+                (push (hermes-dashboard-transport--decode-frame text) frames))))
+         (cl-letf (((symbol-function 'hermes-dashboard-transport--when-ready)
+                    (lambda (_client resolve _reject) (setq ready resolve))))
+           (hermes-chat--dashboard-apply-create-overrides
+            client (lambda () (setq continued t))
+            hermes-chat--lifecycle-generation #'ignore))
+         (let* ((pending (hermes-dashboard-transport-client-pending client))
+                (id (car (hash-table-keys pending))))
+           (should (eq (plist-get (gethash id pending) :owner) (current-buffer)))
+           (pcase schedule
+             ('connection (cl-incf (hermes-dashboard-transport-client-generation client)))
+             ('session (setq hermes-chat--dashboard-active-session-id "successor"))
+             ('lifetime (setq hermes-chat--lifecycle-generation
+                              (hermes-chat--next-lifetime-token)))
+             ('owner (setq hermes-chat--create-override-owner nil)))
+           (funcall ready)
+           (if (eq schedule 'current)
+               (progn
+                 (should (equal (hermes-transport--get (car frames) 'method)
+                                "session.cwd.set"))
+                 (should-not continued)
+                 (hermes-dashboard-transport--handle-frame
+                  client (hermes-dashboard-transport--encode-frame
+                          `((jsonrpc . "2.0") (id . ,id)
+                            (result . ((cwd . "/accepted"))))))
+                 (should continued)
+                 (should (equal hermes-chat--working-directory "/accepted")))
+             (should-not frames)
+             (should-not continued))
+           (should-not (gethash id pending))))))))
+
+(ert-deftest hermes-chat-dashboard-workspace-native-late-receipt ()
+  "A dispatched old workspace reply cannot rename or release its successor."
+  (let ((client (hermes-test--dashboard-client)) frames continued)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-client client
+           hermes-chat--dashboard-active-session-id "sid"
+           hermes-chat--dashboard-create-cwd "/chosen")
+     (let ((hermes-dashboard-transport-websocket-send-function
+            (lambda (_socket text)
+              (push (hermes-dashboard-transport--decode-frame text) frames))))
+       (cl-letf (((symbol-function 'hermes-dashboard-transport--when-ready)
+                  (lambda (_client resolve _reject) (funcall resolve))))
+         (hermes-chat--dashboard-apply-create-overrides
+          client (lambda () (setq continued t))
+          hermes-chat--lifecycle-generation #'ignore))
+       (let ((id (hermes-transport--get (car frames) 'id))
+             (successor (list :successor t)))
+         (setq hermes-chat--create-override-owner successor
+               hermes-chat--working-directory "/successor")
+         (hermes-dashboard-transport--handle-frame
+          client (hermes-dashboard-transport--encode-frame
+                  `((jsonrpc . "2.0") (id . ,id)
+                    (result . ((cwd . "/old"))))))
+         (should (eq hermes-chat--create-override-owner successor))
+         (should (equal hermes-chat--working-directory "/successor"))
+         (should-not continued))))))
+
 (ert-deftest hermes-chat-dashboard-remote-create-omits-unknown-cwd ()
   "A detached remote chat never submits its editor directory as gateway cwd."
   (let ((client (hermes-test--dashboard-client)) create-args)
@@ -2446,6 +2675,7 @@
                (lambda (&rest _) (hermes--promise-rejected "unavailable")))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq create-args args)
                  (funcall (plist-get args :resolve) '((session_id . "sid")))))
               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
@@ -2856,6 +3086,7 @@
                (lambda (&rest _) client))
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (_client &rest args)
+                 (setq args (hermes-test--released-create-args args))
                  (setq create-args args)
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-new")))))

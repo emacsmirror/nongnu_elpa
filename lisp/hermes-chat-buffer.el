@@ -150,6 +150,11 @@ sharing one dashboard socket each create their own session with their own
 runtime.")
 (defvar-local hermes-chat--dashboard-create-provider nil
   "Buffer-local provider override applied after the next `session.create'.")
+(defvar-local hermes-chat--dashboard-create-cwd nil
+  "Deliberate workspace pending authoritative post-create acceptance.
+Retain the chosen path across create readback and failed override retries.")
+(defvar-local hermes-chat--cwd-explicit-p nil
+  "Non-nil when the user deliberately selected this chat's workspace.")
 (defvar-local hermes-chat--dashboard-create-reasoning-effort nil
   "Buffer-local reasoning effort applied after the next `session.create'.")
 (defvar-local hermes-chat--dashboard-create-fast-p nil

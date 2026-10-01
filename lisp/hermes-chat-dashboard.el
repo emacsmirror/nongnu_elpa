@@ -1288,7 +1288,9 @@ shared client."
         (setq hermes-chat--dashboard-running-p
               (eq (hermes-transport--get result 'running) t)))
       (when-let* ((cwd (hermes-chat--dashboard-result-cwd result)))
-        (hermes-chat--record-working-directory cwd))
+        (hermes-chat--record-working-directory cwd)
+        (when (equal cwd hermes-chat--dashboard-create-cwd)
+          (setq hermes-chat--dashboard-create-cwd nil)))
       (when (hermes-dashboard-transport-client-p client)
         (hermes-chat--work-bind
          client active-id (hermes-transport-work-string result 'session_key))
@@ -1381,6 +1383,9 @@ Omit an unselected remote cwd: only the backend knows the selected
 profile's workspace.  Keep the reservation through create and overrides."
   (hermes-chat--in-buffer buffer
     (when (hermes-chat--dashboard-bootstrap-current-p owner)
+      (setq hermes-chat--dashboard-create-cwd
+            (and hermes-chat--cwd-explicit-p
+                 (hermes-chat--current-working-directory)))
       (setf (plist-get owner :phase) 'create)
       (condition-case err
           (let* ((previous-guard hermes-dashboard-transport-dispatch-guard)
@@ -1844,9 +1849,9 @@ RESOLVE and REJECT receive the asynchronous request result."
   "Record CLIENT session RESULT and submit PROMPT.
 When RESUME-P is non-nil and RESULT reports a live turn, keep local busy
 state instead of submitting another prompt into that durable session.  On a
-fresh session, pending create-time runtime overrides are applied through
-`config.set' before the prompt is submitted.  RESOLVE and REJECT receive the
-prompt request result.  QUEUED-P means a local FIFO entry owns the request.
+fresh session, pending workspace and runtime overrides are applied before
+submission.  RESOLVE and REJECT receive the prompt request result.
+QUEUED-P means a local FIFO entry owns the request.
 GENERATION scopes asynchronous create-time overrides."
   (hermes-chat--dashboard-record-session client result)
   (hermes-chat--dashboard-claim-submit-context client)
@@ -1907,12 +1912,15 @@ local FIFO submission."
                  hermes-chat--dashboard-client)))))
 
 (defun hermes-chat--dashboard-create-config-cells ()
-  "Return pending (KEY . VALUE) `config.set' cells for this buffer.
-The cells carry the `hermes-chat--dashboard-create-*' runtime overrides
+  "Return pending workspace and runtime (KEY . VALUE) cells for this buffer.
+The cells carry the `hermes-chat--dashboard-create-*' overrides
 picked before the session existed.  They gate the first prompt through the
 session-scoped mutation path after also seeding the fresh build at creation;
-`session.resume' owns its stored runtime and must not receive them."
+`session.resume' owns its stored runtime and must not receive new overrides.
+Use `session.cwd.set' for workspace cells and `config.set' for runtime cells."
   (append
+   (and hermes-chat--dashboard-create-cwd
+        (list (cons "cwd" hermes-chat--dashboard-create-cwd)))
    (and hermes-chat--dashboard-create-model
         (list (cons "model"
                     (hermes-chat--model-config-value
@@ -1922,9 +1930,6 @@ session-scoped mutation path after also seeding the fresh build at creation;
         (list (cons "reasoning" hermes-chat--dashboard-create-reasoning-effort)))
    (and hermes-chat--dashboard-create-fast-p
         (list (cons "fast" "fast")))))
-
-(defvar-local hermes-chat--cwd-explicit-p nil
-  "Non-nil when the user deliberately selected this chat's workspace.")
 
 (defun hermes-chat--dashboard-create-params ()
   "Return fresh-session parameters from this buffer's metadata and runtime.
@@ -1946,6 +1951,7 @@ Only a deliberate workspace overrides the backend profile default."
 (defun hermes-chat--dashboard-clear-create-overrides ()
   "Reset this buffer's create-time runtime override variables."
   (setq hermes-chat--dashboard-create-model nil
+        hermes-chat--dashboard-create-cwd nil
         hermes-chat--dashboard-create-provider nil
         hermes-chat--dashboard-create-reasoning-effort nil
         hermes-chat--dashboard-create-fast-p nil
@@ -1964,6 +1970,11 @@ Only a deliberate workspace overrides the backend profile default."
 (defun hermes-chat--create-override-submit-inhibit-reason ()
   "Return the submission guard while create-time overrides are being applied."
   (and hermes-chat--create-override-owner
+       ;; Workspace reconciliation extends the first prompt's reservation.
+       ;; Admit subsequent input to its FIFO, never a second submission.
+       (not (and hermes-chat--dashboard-create-cwd
+                 (memq (plist-get hermes-chat--session-bootstrap :kind)
+                       '(prompt queued))))
        "Pre-session runtime configuration is in progress"))
 
 (defun hermes-chat--clear-create-override-owner ()
@@ -2010,17 +2021,51 @@ Only a deliberate workspace overrides the backend profile default."
     ((error quit)
      (hermes--promise-reject promise (error-message-string err)))))
 
+(defun hermes-chat--dashboard-create-cwd-promise
+    (owner client cwd session-id generation)
+  "Return OWNER's promise accepting CWD for CLIENT's exact SESSION-ID.
+Use the released setter instead of guessing support for `cwd_explicit'.
+Keep the same connection, request owner and dispatch guard through readiness."
+  (let* ((buffer (current-buffer))
+         (connection (hermes-dashboard-transport-client-generation client))
+         (previous-guard hermes-dashboard-transport-dispatch-guard)
+         (current-p
+          (lambda ()
+            (and (buffer-live-p buffer)
+                 (= connection (hermes-dashboard-transport-client-generation client))
+                 (with-current-buffer buffer
+                   (hermes-chat--dashboard-create-owner-current-p
+                    owner client generation session-id))
+                 (or (null previous-guard) (funcall previous-guard)))))
+         (hermes-dashboard-transport-dispatch-guard current-p))
+    (hermes--promise-then
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-session-cwd-set client cwd :session-id session-id)
+     (lambda (result)
+       (unless (funcall current-p)
+         (error "Workspace choice was superseded"))
+       (let ((accepted (hermes-chat--dashboard-result-cwd result)))
+         (unless accepted (error "Workspace response omitted its directory"))
+         (with-current-buffer buffer
+           (hermes-chat--record-working-directory accepted)))
+       result))))
+
 (defun hermes-chat--dashboard-create-config-promise
     (owner client cell session-id generation)
   "Return OWNER's promise applying CELL to CLIENT's SESSION-ID at GENERATION."
-  (if (equal (car cell) "model")
-      (let ((promise (hermes--promise-make)))
-        (hermes-chat--dashboard-request-create-model
-         promise owner (current-buffer) client (cdr cell) session-id generation)
-        promise)
+  (cond
+   ((equal (car cell) "cwd")
+    (hermes-chat--dashboard-create-cwd-promise
+     owner client (cdr cell) session-id generation))
+   ((equal (car cell) "model")
+    (let ((promise (hermes--promise-make)))
+      (hermes-chat--dashboard-request-create-model
+       promise owner (current-buffer) client (cdr cell) session-id generation)
+      promise))
+   (t
     (hermes-dashboard-transport-call-fn
      #'hermes-dashboard-transport-config-set
-     client (car cell) (cdr cell) :session-id session-id)))
+     client (car cell) (cdr cell) :session-id session-id))))
 
 (defun hermes-chat--dashboard-fail-create-overrides
     (owner session-id message abort)
