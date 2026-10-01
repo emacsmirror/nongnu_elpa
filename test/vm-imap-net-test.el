@@ -1303,6 +1303,38 @@ were asked for."
                                   (vm-imap-mock-commands mock))
                      1)))))
 
+(ert-deftest vm-imap-net-test-a-body-fetch-survives-an-unsolicited-flag-report ()
+  "REGRESSION: another client changing a flag aborted a body fetch.
+Issue #890.  A server reports a message's flags whenever it next can when
+somebody else changes them (RFC 3501 7.4.1), and that FETCH carries no UID.
+`vm-imap-net-fetch' passes one over; `vm-imap-net-fetch-bodies' did not, and
+handed the nil UID to `vm-imap-net-store-body', which found no message for it
+and signalled \"FETCH response for a UID that was not asked for\".  The whole
+fetch failed, and the reader got a protocol error for somebody else reading
+their mail."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
+                                                    vm-imap-net-test--bob)
+                                    :unsolicited-flags t)
+    (let ((vm-enable-external-messages '(imap))
+          (messages vm-message-list)
+          (warned nil))
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (_level _seconds &rest args)
+                   (push (apply #'format args) warned))))
+        (vm-unload-message 2 t)
+        (should (vm-imap-net-load-message-bodies messages))
+        (should (vm-imap-net-wait nil 90)))
+      (should (string-match-p "The first body"
+                              (vm-imap-net-test--body-of (car messages))))
+      (should (string-match-p "The second body"
+                              (vm-imap-net-test--body-of (cadr messages))))
+      ;; and nothing was said about it: the mock sends its report after the
+      ;; bodies, so what the fault cost here is the warning.  A server that
+      ;; sends one first costs the bodies after it
+      (should (equal nil (seq-filter
+                          (lambda (line) (string-match-p "protocol error" line))
+                          warned))))))
+
 (ert-deftest vm-imap-net-test-load-message-goes-through-the-driver ()
   "The command `vm-load-message' itself takes the same path, so a body that
 takes a minute to arrive does not stop Emacs for a minute."
