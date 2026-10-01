@@ -1064,17 +1064,17 @@ in a Gentoo profile."
 (defvar ebuild-mode-prefix-map
   (let ((map (make-sparse-keymap)))
     ;; C-<letter> keys for general commands
-    (define-key map "\C-e" #'ebuild-run-command)
-    (define-key map "\C-p" #'ebuild-mode-run-pkgdev)
-    (define-key map "\C-c" #'ebuild-mode-run-pkgcheck)
-    (define-key map "\C-w" #'ebuild-mode-find-workdir)
-    (define-key map "\C-s" #'ebuild-mode-find-s)
-    (define-key map "\C-d" #'ebuild-mode-find-image-dir)
-    (define-key map "\C-l" #'ebuild-mode-find-build-log)
-    (define-key map "\C-k" #'ebuild-mode-keyword)
-    (define-key map "\C-y" #'ebuild-mode-ekeyword)
-    (define-key map "\C-u" #'ebuild-mode-all-keywords-unstable)
-    (define-key map "\C-n" #'ebuild-mode-insert-skeleton)
+    (define-key map (kbd "C-e") #'ebuild-run-command)
+    (define-key map (kbd "C-p") #'ebuild-mode-run-pkgdev)
+    (define-key map (kbd "C-c") #'ebuild-mode-run-pkgcheck)
+    (define-key map (kbd "C-w") #'ebuild-mode-find-workdir)
+    (define-key map (kbd "C-s") #'ebuild-mode-find-s)
+    (define-key map (kbd "C-d") #'ebuild-mode-find-image-dir)
+    (define-key map (kbd "C-l") #'ebuild-mode-find-build-log)
+    (define-key map (kbd "C-k") #'ebuild-mode-keyword)
+    (define-key map (kbd "C-y") #'ebuild-mode-ekeyword)
+    (define-key map (kbd "C-u") #'ebuild-mode-all-keywords-unstable)
+    (define-key map (kbd "C-n") #'ebuild-mode-insert-skeleton)
     ;; <letter> for ebuild subcommands
     (define-key map "l" 'ebuild-run-command-clean)
     (define-key map "c" 'ebuild-run-command-compile)
@@ -1091,8 +1091,8 @@ in a Gentoo profile."
     map)
   "Keymap for `ebuild-mode' specific commands.")
 
-(define-key ebuild-mode-map "\C-c\C-e" ebuild-mode-prefix-map)
-(define-key ebuild-repo-mode-map "\C-c-" #'ebuild-mode-insert-tag-line)
+(define-key ebuild-mode-map (kbd "C-c C-e") ebuild-mode-prefix-map)
+(define-key ebuild-repo-mode-map (kbd "C-c -") #'ebuild-mode-insert-tag-line)
 
 ;; Menu support for both Emacs and XEmacs.
 (easy-menu-define ebuild-mode-menu ebuild-mode-map

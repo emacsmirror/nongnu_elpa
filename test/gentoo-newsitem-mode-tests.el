@@ -80,11 +80,11 @@
 		     "News-Item-Format: 2.0\n\n")))))
 
 (ert-deftest gentoo-newsitem-test-keybindings ()
-  (should (equal (lookup-key gentoo-newsitem-mode-map "\C-c\C-n")
+  (should (equal (lookup-key gentoo-newsitem-mode-map (kbd "C-c C-n"))
 		 'gentoo-newsitem-insert-skeleton))
   (with-temp-buffer
     (gentoo-newsitem-mode)
-    (should (equal (local-key-binding "\C-c\C-n")
+    (should (equal (local-key-binding (kbd "C-c C-n"))
 		   'gentoo-newsitem-insert-skeleton))))
 
 (provide 'gentoo-newsitem-mode-tests)

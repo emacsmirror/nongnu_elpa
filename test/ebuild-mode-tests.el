@@ -374,9 +374,9 @@
 		"# Larry the Cow <larry@example.org> (2024-08-10)\n"))))))
 
 (ert-deftest ebuild-mode-test-keybindings ()
-  (should (equal (lookup-key ebuild-mode-map "\C-c\C-e\C-k")
+  (should (equal (lookup-key ebuild-mode-map (kbd "C-c C-e C-k"))
 		 'ebuild-mode-keyword))
-  (should (equal (lookup-key ebuild-repo-mode-map "\C-c-")
+  (should (equal (lookup-key ebuild-repo-mode-map (kbd "C-c -"))
 		 'ebuild-mode-insert-tag-line))
   (with-temp-buffer
     (ebuild-mode-test-run-silently

@@ -226,7 +226,7 @@ between the element name and its first attribute."
   "</chapter>\n"
   "</devbook>\n")
 
-(define-key devbook-mode-map "\C-c\C-e\C-n" #'devbook-insert-skeleton)
+(define-key devbook-mode-map (kbd "C-c C-e C-n") #'devbook-insert-skeleton)
 
 (easy-menu-define devbook-mode-menu devbook-mode-map
   "Menu for `devbook-mode'."

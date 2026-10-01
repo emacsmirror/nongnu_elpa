@@ -384,8 +384,8 @@ https://creativecommons.org/licenses/by-sa/4.0/.
 ")
 
 ;; rst-mode already uses the following C-c C-<letter> keys: aclrt
-(define-key glep-mode-map "\C-c\C-n" #'glep-mode-insert-skeleton)
-(define-key glep-mode-map "\C-c\C-f" #'glep-mode-format-html)
+(define-key glep-mode-map (kbd "C-c C-n") #'glep-mode-insert-skeleton)
+(define-key glep-mode-map (kbd "C-c C-f") #'glep-mode-format-html)
 
 (easy-menu-define glep-mode-menu glep-mode-map
   "Menu for `glep-mode'."

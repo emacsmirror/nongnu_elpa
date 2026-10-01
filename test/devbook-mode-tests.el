@@ -175,12 +175,12 @@
 			    (concat buf1 buf2))))))
 
 (ert-deftest devbook-mode-test-keybindings ()
-  (should (equal (lookup-key devbook-mode-map "\C-c\C-e\C-n")
+  (should (equal (lookup-key devbook-mode-map (kbd "C-c C-e C-n"))
 		 'devbook-insert-skeleton))
   (with-temp-buffer
     (devbook-mode-test-run-silently
      (devbook-mode))
-    (should (equal (local-key-binding "\C-c\C-e\C-n")
+    (should (equal (local-key-binding (kbd "C-c C-e C-n"))
 		   'devbook-insert-skeleton))))
 
 (provide 'devbook-mode-tests)

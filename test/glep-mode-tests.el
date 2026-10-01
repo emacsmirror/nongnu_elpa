@@ -130,11 +130,11 @@
     (should-not (glep-mode-in-preamble-p (point)))))
 
 (ert-deftest glep-mode-test-keybindings ()
-  (should (equal (lookup-key glep-mode-map "\C-c\C-n")
+  (should (equal (lookup-key glep-mode-map (kbd "C-c C-n"))
 		 'glep-mode-insert-skeleton))
   (with-temp-buffer
     (glep-mode)
-    (should (equal (local-key-binding "\C-c\C-n")
+    (should (equal (local-key-binding (kbd "C-c C-n"))
 		   'glep-mode-insert-skeleton))))
 
 (provide 'glep-mode-tests)

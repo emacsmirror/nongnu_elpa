@@ -1,5 +1,17 @@
 2026-10-01  Ulrich Müller  <ulm@gentoo.org>
 
+	* ebuild-mode.el (ebuild-mode-prefix-map, ebuild-mode-map)
+	(ebuild-repo-mode-map):
+	* gentoo-newsitem-mode.el (gentoo-newsitem-mode-map):
+	* devbook-mode.el (devbook-mode-map):
+	* glep-mode.el (glep-mode-map):
+	* test/ebuild-mode-tests.el (ebuild-mode-test-keybindings):
+	* test/gentoo-newsitem-mode-tests.el
+	(gentoo-newsitem-test-keybindings):
+	* test/devbook-mode-tests.el (devbook-mode-test-keybindings):
+	* test/glep-mode-tests.el (glep-mode-test-keybindings): Use kbd
+	to convert key sequences.
+
 	* ebuild-mode.el (ebuild-run-command):
 	* glep-mode.el (glep-mode-format-html): Quote arguments with
 	shell-quote-argument before passing them to the shell.

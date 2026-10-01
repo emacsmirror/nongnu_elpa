@@ -121,7 +121,7 @@ Buffer position LIMIT limits the search."
 
 
 (define-key gentoo-newsitem-mode-map
-	    "\C-c\C-n" #'gentoo-newsitem-insert-skeleton)
+	    (kbd "C-c C-n") #'gentoo-newsitem-insert-skeleton)
 
 (easy-menu-define gentoo-newsitem-mode-menu gentoo-newsitem-mode-map
   "Menu for `gentoo-newsitem-mode'."
