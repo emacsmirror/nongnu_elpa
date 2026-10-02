@@ -92,14 +92,22 @@ columns for the continuation glyph and rounding on graphical displays."
         78))))
 
 (defun hermes-chat--insert-table (source width)
-  "Insert SOURCE as a navigable grid within WIDTH, with a source-copy button."
-  (let ((start (point)))
-    (insert (hermes-chat--format-table source width))
-    (insert-text-button
-     "[Copy source]" 'face '(fixed-pitch link) 'follow-link t
-     'help-echo "Copy the original Markdown, not the wrapped presentation"
-     'hermes-chat-table source 'action #'hermes-chat--copy-table-button)
-    (insert "\n")
+  "Insert SOURCE as a navigable grid within WIDTH, with a source-copy button.
+A streaming table retains its source and compact allocation in a plist;
+its ordinary window reflow shares this same layout owner."
+  (let* ((start (point))
+         (streaming (consp source))
+         (text (if streaming (plist-get source :source) source))
+         (widths (and streaming
+                     (hermes-chat--stream-table-widths (plist-get source :cells) width))))
+    (insert (hermes-chat--format-table text width widths))
+    (if streaming
+        (setf (plist-get source :widths) widths (plist-get source :width) width)
+      (insert-text-button
+       "[Copy source]" 'face '(fixed-pitch link) 'follow-link t
+       'help-echo "Copy the original Markdown, not the wrapped presentation"
+       'hermes-chat-table source 'action #'hermes-chat--copy-table-button)
+      (insert "\n"))
     (add-text-properties start (point)
                          (list 'hermes-chat-inline-table source
                                'hermes-chat-table-width width

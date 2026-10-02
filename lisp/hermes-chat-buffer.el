@@ -109,6 +109,19 @@ without each one repeating the liveness guard."
   "EWOC displaying chat transcript entries.")
 (defvar-local hermes-chat--input-marker nil
   "Marker at the beginning of the writable chat input tail.")
+(defcustom hermes-chat-stream-format-delay 0.1
+  "Seconds between progressive Markdown passes on a streaming reply.
+Use a regular timer so formatting also progresses while typing.  Completed
+paragraphs and fenced blocks are formatted once.  Table rows append unless
+their compact column allocation grows or the viewport changes; the unfinished
+tail stays literal until more source arrives or the backend completes."
+  :type 'number
+  :group 'hermes)
+
+(defvar-local hermes-chat--stream-formats nil
+  "Entry IDs mapped to incremental presentation cursors and owned timers.
+Raw source and backend lifecycle remain exclusively in EWOC entry data.")
+
 (defvar-local hermes-chat--nodes nil
   "Hash table mapping Hermes entry ids to EWOC nodes.")
 (defvar-local hermes-chat--pending-assistant-id nil
@@ -470,8 +483,9 @@ the thinking disclosure; diffs become View Diff links."
 
 (defun hermes-chat--insert-entry-content (content &optional streaming)
   "Insert assistant or system CONTENT.
-While STREAMING, insert CONTENT as plain text so a long reply is not
-re-fontified on every delta.  Once the entry settles, render CONTENT as
+While STREAMING, insert CONTENT literally; a throttled regular timer promotes
+completed units without re-fontifying prior output.  Once the entry settles,
+render CONTENT as
 markdown with diff blocks replaced by View Diff links and embedded images
 lifted into inline images."
   (if streaming
@@ -669,29 +683,46 @@ these same tails.  Markers already follow the transcript edits themselves."
   (declare (indent 0) (debug t))
   `(save-restriction
      (widen)
-     (let* ((position (hermes-chat--input-position))
+     (let* ((marker hermes-chat--input-marker)
+            (position (hermes-chat--input-position))
             (offset (and (hermes-chat--point-in-input-p)
                          (- (point) position))))
        (unwind-protect
            (progn ,@body)
-         (hermes-chat--adjust-draft-undo position)
-         (hermes-chat--protect-transcript)
-         (when offset
-           (goto-char (min (point-max)
-                           (+ (hermes-chat--input-position) offset))))))))
+         ;; Native change observers can retire the mode or its composer.
+         (when (and (eq marker hermes-chat--input-marker)
+                    (markerp marker) (marker-buffer marker))
+           (hermes-chat--adjust-draft-undo position)
+           (hermes-chat--protect-transcript)
+           (when offset
+             (goto-char (min (point-max)
+                             (+ (hermes-chat--input-position) offset)))))))))
 
 (defun hermes-chat--reflow-table-windows ()
   "Reflow this chat's tables after a window configuration change.
 The buffer-local hook also runs when another window stops showing this
 chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   (when (and (derived-mode-p 'hermes-chat-mode)
+             (not (hermes-buffer--retired-p))
              (hermes-chat--input-position)
              (get-buffer-window (current-buffer) t))
     (hermes-chat--preserve-input-point
       (let ((inhibit-read-only t)
             (buffer-undo-list t))
         (hermes-chat--reflow-tables hermes-chat--input-marker
-                                    (hermes-chat--table-window-width))))))
+                                    (hermes-chat--table-window-width))
+        ;; The native table owner can change presentation lengths on resize.
+        (when (hash-table-p hermes-chat--stream-formats)
+          (maphash
+           (lambda (id state)
+             (when-let* ((node (gethash id hermes-chat--nodes)))
+               (let* ((next (ewoc-next hermes-chat--ewoc node))
+                      (end (if next (ewoc-location next)
+                             (- (hermes-chat--input-position)
+                                (length (cdr (ewoc-get-hf hermes-chat--ewoc)))))))
+                 (setf (plist-get state :display-length)
+                       (- end (ewoc-location node) 1)))))
+           hermes-chat--stream-formats))))))
 
 (defun hermes-chat--separator ()
   "Return a full-width rule string separating the transcript from the input."
@@ -702,6 +733,8 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   ;; Selective undo owns a separate list.  Keep it local so an asynchronous
   ;; transcript update cannot rebase another buffer's pending undo sequence.
   (setq-local pending-undo-list nil)
+  (hermes-chat--stream-format-retire)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-chat--stream-format-retire nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
   (setq buffer-undo-list nil)
   (let ((inhibit-read-only t)
@@ -871,6 +904,7 @@ Stage all text before writing; errors and quits leave input ownership intact."
 With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   (cl-incf hermes-chat--transport-generation)
   (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
+  (hermes-chat--stream-format-retire)
   ;; Teardown must not publish through display hooks before resource release.
   (hermes-chat--reasoning-row hermes-chat--pending-assistant-id nil t)
   (hermes-chat--application-retire)
@@ -936,6 +970,7 @@ agent's reply can stay last while tool/status/diff entries land above it."
                                                  before-node entry)
                             (ewoc-enter-last hermes-chat--ewoc entry)))))
               (hermes-chat--register-node entry node))))))
+    (hermes-chat--stream-format-schedule node)
     (hermes-chat--notify-state-change)
     node))
 
@@ -943,12 +978,210 @@ agent's reply can stay last while tool/status/diff entries land above it."
   "Return chat entries from the current buffer in display order."
   (ewoc-collect hermes-chat--ewoc #'identity))
 
+(defun hermes-chat--stream-format-retire (&optional id)
+  "Cancel progressive presentation for ID, or every entry when ID is nil."
+  (when (hash-table-p hermes-chat--stream-formats)
+    (if id
+        (progn
+          (when-let* ((timer (plist-get (gethash id hermes-chat--stream-formats) :timer)))
+            (cancel-timer timer))
+          (remhash id hermes-chat--stream-formats))
+      (maphash (lambda (key _) (hermes-chat--stream-format-retire key))
+               hermes-chat--stream-formats))))
+
+(defun hermes-chat--stream-format-schedule (node)
+  "Schedule one regular formatting pass for streaming assistant NODE."
+  (let* ((entry (ewoc-data node))
+         (id (plist-get entry :id)))
+    (when (and (eq (plist-get entry :role) 'assistant)
+               (eq (plist-get entry :status) 'streaming)
+               (not (hermes-buffer--retired-p)))
+      (unless hermes-chat--stream-formats
+        (setq hermes-chat--stream-formats (make-hash-table :test #'equal)))
+      (let ((state (or (gethash id hermes-chat--stream-formats)
+                       (puthash id (list :end 0 :scan 0 :searched 0 :fence nil
+                                        :header nil :table nil :updates nil :rewrite nil :timer nil
+                                        :display-length (length (plist-get entry :content)))
+                                hermes-chat--stream-formats))))
+        (unless (plist-get state :timer)
+          (setf (plist-get state :timer)
+                (run-at-time (max 0.01 hermes-chat-stream-format-delay) nil
+                             #'hermes-chat--stream-format-deliver
+                             (current-buffer) hermes-chat--lifecycle-generation
+                             node state)))))))
+
+(defun hermes-chat--stream-format-table (text line end state width)
+  "Promote table LINE through END in TEXT using STATE and viewport WIDTH.
+Append stable single-grid rows; repaint only the active table for width
+changes or column panels, reusing cached fontified rows for the latter."
+  (let* ((table (plist-get state :table))
+         (old (or (cdr (assq table (plist-get state :updates))) table))
+         (cells (hermes-chat--table-cells (hermes-chat--fontify-markdown-string line)))
+         (rows (cons cells (plist-get old :rows)))
+         (natural (cl-loop for i below (max (length cells) (length (plist-get old :cells)))
+                           for a = (or (nth i cells) "")
+                           for b = (or (nth i (plist-get old :cells)) "")
+                           collect (if (> (string-width a) (string-width b)) a b)))
+         (widths (hermes-chat--stream-table-widths natural width))
+         (source (substring text (plist-get old :start) end))
+         (changed (not (equal widths (plist-get old :widths))))
+         (panels (> (+ 1 (* 3 (length widths)) (apply #'+ widths)) width))
+         (next (list :start (plist-get old :start) :source source :cells natural
+                     :rows rows :widths widths :width width))
+         (grid (cond
+                (panels (hermes-chat--stream-table-row cells widths width (reverse rows)))
+                (changed (hermes-chat--format-table source width widths))
+                (t (hermes-chat--stream-table-row cells widths width)))))
+    (setf (alist-get table (plist-get state :updates) nil nil #'eq) next
+          (plist-get state :end) end)
+    (when (or changed panels) (setf (plist-get state :rewrite) table))
+    (add-text-properties 0 (length grid)
+                         (list 'hermes-chat-inline-table table
+                               'hermes-chat-table-width width 'rear-nonsticky t) grid)
+    grid))
+
+(defun hermes-chat--stream-format-line (text start end state width)
+  "Consume a complete TEXT line at START through END in STATE using WIDTH.
+Return newly completed presentation, updating only the copied cursor."
+  (let* ((line (substring text start (1- end)))
+         (begin (plist-get state :end))
+         (fence (plist-get state :fence))
+         (header (plist-get state :header))
+         (table (plist-get state :table))
+         (opening (and (not fence) (hermes-chat--stream-fence line))))
+    (cond
+     (fence
+      (when (string-match-p
+             (concat "\\`[[:blank:]]*" (regexp-quote fence) "+[[:blank:]]*\\'") line)
+        (setf (plist-get state :fence) nil (plist-get state :end) end)
+        (hermes-chat--fontify-markdown-string (substring text begin end))))
+     (opening
+      (setf (plist-get state :fence) opening
+            (plist-get state :header) nil (plist-get state :table) nil
+            (plist-get state :end) start)
+      (when (> start begin)
+        (hermes-chat--fontify-markdown-string (substring text begin start))))
+     ((and header (markdown--is-delimiter-row line))
+      (setf (plist-get state :table)
+            (list :start begin :source nil :cells nil :rows nil :widths nil :width nil)
+            (plist-get state :header) nil)
+      (hermes-chat--stream-format-table text header end state width))
+     ((and table (string-match-p markdown-table-line-regexp line))
+      (hermes-chat--stream-format-table text line end state width))
+     ((string-match-p "\\`[ \t]*\\'" line)
+      (setf (plist-get state :end) end (plist-get state :header) nil
+            (plist-get state :table) nil)
+      (hermes-chat--fontify-markdown-string (substring text begin end)))
+     (t
+      (setf (plist-get state :table) nil (plist-get state :header) nil)
+      (when (and (string-match-p markdown-table-line-regexp line)
+                 (hermes-chat--table-cells line))
+        (setf (plist-get state :header) line (plist-get state :end) start)
+        (when (> start begin)
+          (hermes-chat--fontify-markdown-string (substring text begin start))))))))
+
+(defun hermes-chat--stream-format-scan (text state width)
+  "Scan only newly arrived TEXT lines in STATE at WIDTH.
+The search watermark also advances across incomplete lines, avoiding repeated
+scans of a long literal fragment.  Return just the newly formatted units."
+  (let ((search (plist-get state :searched))
+        (old-end (plist-get state :end)) rewrite parts)
+    (setf (plist-get state :updates) nil (plist-get state :rewrite) nil)
+    (while (string-match "\n" text search)
+      (let ((end (match-end 0)))
+        (when-let* ((part (hermes-chat--stream-format-line
+                          text (plist-get state :scan) end state width)))
+          (when-let* ((table (plist-get state :rewrite)))
+            ;; Active-table replacement supersedes only its earlier pieces.
+            (setq parts (seq-remove
+                         (lambda (piece)
+                           (eq table (get-text-property 0 'hermes-chat-inline-table piece)))
+                         parts))
+            (when (< (plist-get table :start) old-end) (setq rewrite table))
+            (setf (plist-get state :rewrite) nil))
+          (push part parts))
+        (setq search end)
+        (setf (plist-get state :scan) end)))
+    (setf (plist-get state :searched) (length text)
+          (plist-get state :rewrite) rewrite)
+    (apply #'concat (nreverse parts))))
+
+(defun hermes-chat--stream-format-deliver (buffer lifetime node state)
+  "Promote completed units for NODE's exact STATE in BUFFER LIFETIME."
+  (hermes-chat--in-lifetime buffer lifetime
+    (let* ((entry (ewoc-data node))
+           (id (plist-get entry :id)))
+      (when (and (derived-mode-p 'hermes-chat-mode)
+                 (not (hermes-buffer--retired-p))
+                 (eq (gethash id hermes-chat--nodes) node)
+                 (eq (gethash id hermes-chat--stream-formats) state)
+                 (eq (plist-get entry :status) 'streaming))
+        (setf (plist-get state :timer) nil)
+        (let* ((text (plist-get entry :content))
+               (cursor (copy-sequence state))
+               (formatted (hermes-chat--stream-format-scan
+                           text cursor (hermes-chat--table-window-width)))
+               (old-end (plist-get state :end))
+               (new-end (plist-get cursor :end)))
+          (if (= old-end new-end)
+              (puthash id cursor hermes-chat--stream-formats)
+            (hermes-chat--stream-format-replace
+             node entry state cursor formatted old-end new-end)))))))
+
+(defun hermes-chat--stream-format-replace (node entry state cursor text start end)
+  "Replace NODE ENTRY's literal START..END with TEXT, publishing CURSOR.
+STATE and the native change tick fence before-change observers too.
+Native diff markers retain unchanged reader prefixes and literal suffixes."
+  (hermes-chat--preserve-input-point
+    (let* ((inhibit-read-only t) (buffer-undo-list t)
+           (id (plist-get entry :id))
+           (tick (buffer-chars-modified-tick))
+           (boundary (+ (ewoc-location node)
+                        (- (plist-get state :display-length)
+                           (- (length (plist-get entry :content)) start))))
+           (table (plist-get cursor :rewrite))
+           (position (if table
+                         (text-property-any (ewoc-location node) boundary
+                                            'hermes-chat-inline-table table)
+                       boundary))
+           (limit (+ boundary (- end start))))
+      (catch 'superseded
+        (combine-change-calls position limit
+          (unless (and (hash-table-p hermes-chat--nodes)
+                       (eq (gethash id hermes-chat--nodes) node)
+                       (eq (ewoc-data node) entry)
+                       (eq (gethash id hermes-chat--stream-formats) state)
+                       (= tick (buffer-chars-modified-tick))
+                       (not (hermes-buffer--retired-p)))
+            (throw 'superseded nil))
+          (let ((inhibit-modification-hooks t))
+            (save-excursion
+              (replace-region-contents position limit (lambda () text))
+              ;; Native diff replacement does not refresh matched properties.
+              (let ((offset 0))
+                (while (< offset (length text))
+                  (let ((next (next-property-change offset text (length text))))
+                    (set-text-properties (+ position offset) (+ position next)
+                                         (text-properties-at offset text))
+                    (setq offset next)))))
+            (dolist (update (plist-get cursor :updates))
+              (dolist (key '(:source :cells :rows :widths :width))
+                (setf (plist-get (car update) key) (plist-get (cdr update) key))))
+            (setf (plist-get cursor :display-length)
+                  (+ (plist-get state :display-length) (length text) (- position limit))
+                  (plist-get cursor :updates) nil (plist-get cursor :rewrite) nil)
+            (puthash id cursor hermes-chat--stream-formats)))))))
+
 (defun hermes-chat--insert-stream-suffix (node entry prefix)
   "Insert ENTRY's suffix after PREFIX only while NODE still owns its extent."
   (let ((buffer (current-buffer))
         (ewoc hermes-chat--ewoc)
         (tick (buffer-chars-modified-tick))
-        (position (+ (ewoc-location node) (length prefix))))
+        (position (+ (ewoc-location node)
+                     (or (plist-get (and hermes-chat--stream-formats
+                                         (gethash (plist-get entry :id)
+                                                  hermes-chat--stream-formats)) :display-length)
+                         (length prefix)))))
     (catch 'hermes-chat--superseded-append
       (save-excursion
         (combine-change-calls position position
@@ -962,10 +1195,14 @@ agent's reply can stay last while tool/status/diff entries land above it."
             (throw 'hermes-chat--superseded-append nil))
           (let ((inhibit-modification-hooks t))
             (goto-char position)
-            (insert (substring (plist-get entry :content) (length prefix)))))))))
+            (insert (substring (plist-get entry :content) (length prefix)))
+            (when-let* ((state (and hermes-chat--stream-formats
+                                   (gethash (plist-get entry :id) hermes-chat--stream-formats))))
+              (cl-incf (plist-get state :display-length)
+                       (- (length (plist-get entry :content)) (length prefix))))))))))
 
 (defun hermes-chat--append-stream-entry (node entry)
-  "Append only new plain text when NODE can display ENTRY without replacement.
+  "Append only the new literal suffix when NODE can display ENTRY in place.
 Return non-nil on success.  Empty placeholders, changed prefixes and all
 settled content use the full printer.  Native markers preserve readers on
 this non-destructive path; logical reader anchors belong to replacement.
@@ -973,6 +1210,8 @@ This bounds buffer insertion, not accumulated string copying or scanning."
   (let* ((old (ewoc-data node))
          (prefix (plist-get old :content))
          (text (plist-get entry :content))
+         (state (and hermes-chat--stream-formats
+                     (gethash (plist-get old :id) hermes-chat--stream-formats)))
          (next (ewoc-next hermes-chat--ewoc node))
          (end (if next (ewoc-location next)
                 (- (hermes-chat--input-position)
@@ -980,7 +1219,8 @@ This bounds buffer insertion, not accumulated string copying or scanning."
     (when (and (eq (plist-get old :role) 'assistant)
                (eq (plist-get old :status) 'streaming)
                (stringp prefix) (not (string-empty-p prefix))
-               (= end (+ (ewoc-location node) (length prefix) 1))
+               (= end (+ (ewoc-location node)
+                         (or (plist-get state :display-length) (length prefix)) 1))
                (eq (char-before end) ?\n)
                (stringp text) (string-prefix-p prefix text)
                (equal entry (hermes-chat--entry-with old :content text)))
@@ -1002,10 +1242,12 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
                         (buffer-undo-list t)
                         (entry (funcall function (ewoc-data node))))
                     (unless (hermes-chat--append-stream-entry node entry)
+                      (hermes-chat--stream-format-retire id)
                       (hermes-chat--preserve-readers
                         (ewoc-set-data node entry)
                         (ewoc-invalidate hermes-chat--ewoc node)))
                     entry))))
+      (hermes-chat--stream-format-schedule node)
       (unless quiet (hermes-chat--notify-state-change))
       entry)))
 
@@ -1013,6 +1255,7 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
   "Remove chat entry ID from the EWOC and node table.
 With QUIET, leave state-change notification to the caller."
   (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+    (hermes-chat--stream-format-retire id)
     ;; Include transcript protection in the activity mutation, not publication.
     (let ((inhibit-modification-hooks
            (or inhibit-modification-hooks

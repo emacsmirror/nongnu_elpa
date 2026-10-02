@@ -614,6 +614,34 @@ languages in owned buffers with mode hooks suppressed."
         (buffer-string))
     (error text)))
 
+(defun hermes-chat--stream-fence (line)
+  "Return LINE's opening Markdown fence delimiter, or nil."
+  (when (or (string-match markdown-regex-gfm-code-block-open line)
+            (string-match markdown-regex-tilde-fence-begin line))
+    (match-string 1 line)))
+
+(defun hermes-chat--stream-table-row (cells widths width &optional rows)
+  "Return fontified CELLS within WIDTH using established WIDTHS.
+With ROWS, render the complete cached table instead of a single-row suffix;
+column panels need their headers beside every subsequent data row."
+  (let ((grid (hermes-chat--table-grid
+               (or rows
+                   (list (append cells (make-list (- (length widths) (length cells)) ""))))
+               width widths)))
+    ;; Only a single-grid suffix shares the preceding row's opening rule.
+    (unless rows (setq grid (substring grid (1+ (string-match "\n" grid)))))
+    (remove-text-properties 0 (length grid)
+                            '(invisible nil display nil hermes-chat-table nil) grid)
+    (add-face-text-property 0 (length grid) 'fixed-pitch nil grid)
+    grid))
+
+(defun hermes-chat--stream-table-widths (cells width)
+  "Return compact widths for maximum CELLS within viewport WIDTH."
+  (hermes-chat--table-widths
+   (list cells) width
+   (cl-loop for cell in cells maximize
+            (apply #'max 2 (mapcar #'string-width (string-glyph-split cell))))))
+
 (defun hermes-chat--table-cell-lines (text width)
   "Split TEXT into literal-preserving lines of at most WIDTH columns.
 Prefer whitespace boundaries, keeping the whitespace itself.  Never split
@@ -673,8 +701,9 @@ Give each column at least MINIMUM columns, then share the remaining space."
                " |\n"))
      (number-sequence 0 (1- (apply #'max (mapcar #'length lines)))) "")))
 
-(defun hermes-chat--table-grid (rows width)
+(defun hermes-chat--table-grid (rows width &optional fixed-widths)
   "Return a wrapped grid for fontified ROWS bounded by WIDTH.
+FIXED-WIDTHS retains a streaming table's established column allocation.
 When columns cannot fit their widest glyphs, use consecutive column panels
 with their respective headers rather than splitting glyphs or losing cells."
   (let* ((count (apply #'max (mapcar #'length rows)))
@@ -693,9 +722,10 @@ with their respective headers rather than splitting glyphs or losing cells."
                       (seq-subseq row (min start (length row))
                                   (min (+ start panel-size) (length row))))
                     rows)
-            width))
+            width (and fixed-widths
+                       (seq-subseq fixed-widths start (min (+ start panel-size) count)))))
          (number-sequence 0 (1- count) panel-size) "\n")
-      (let* ((widths (hermes-chat--table-widths rows width minimum))
+      (let* ((widths (or fixed-widths (hermes-chat--table-widths rows width minimum)))
              (rule (concat "+-" (mapconcat (lambda (w) (make-string w ?-))
                                           widths "-+-") "-+\n")))
         (concat rule
@@ -723,16 +753,17 @@ substring so inline code and emphasis retain their original table context."
             (mapcar #'string-trim-right
                     (markdown--table-line-to-columns (concat line " "))))))
 
-(defun hermes-chat--format-table (source width)
+(defun hermes-chat--format-table (source width &optional fixed-widths)
   "Return SOURCE as a fontified literal grid within WIDTH columns.
 Use Markdown's native column parser, including escaped and code-span pipes.
-Tabs become spaces in the presentation; SOURCE itself is never modified."
+Tabs become spaces in the presentation; SOURCE itself is never modified.
+FIXED-WIDTHS retains a streaming table's established column allocation."
   (let* ((text (hermes-chat--fontify-markdown-string source))
          (rows (mapcar #'hermes-chat--table-cells
                        (seq-remove #'markdown--is-delimiter-row
                                    (split-string text "\n" t))))
          (grid (if (seq-some #'identity rows)
-                   (hermes-chat--table-grid rows (max 6 width))
+                   (hermes-chat--table-grid rows (max 6 width) fixed-widths)
                  text)))
     ;; Native markup hiding/display substitutions would invalidate widths.
     (remove-text-properties 0 (length grid)
