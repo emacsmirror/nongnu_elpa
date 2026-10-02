@@ -1,8 +1,29 @@
 #+TITLE: Changelog
 
-* Unreleased
+* [0.15.0]
+#+date: 2026-10-02
+
+** Changed
+- Synchronize server blocklists before fetching peer OMEMO keys; ignore stale
+  blocklist replies and recheck blocked recipients before sending.
+- Verify received OpenPGP messages against the expected sender's signing key.
+- Test the declared minimum Emacs, pinned upstream Emacs and Thanos Emacs fork.
 
 ** Fixes
+- Preserve chat drafts, undo history and reply navigation while updating the
+  transcript; failed sends cannot restore stale text over a newer draft.
+- Keep popup help bindings and user keymap customizations across Lisp reloads.
+- Preserve encrypted attachment bytes under compressed filename suffixes.
+- Keep connection attempts, transport callbacks and queued stanza order attached
+  to the session that owns them.
+- Retain archive query outcomes and pagination progress until storage commits;
+  preserve unfetched history and reject conflicting message identities.
+- Preserve OMEMO trust and sessions on identity conflicts; keep encrypted room
+  recipients attached to the current membership snapshot.
+- Preserve reply targets, retractions, reactions and receipt boundaries during
+  live-message and archive replay.
+- Stop link-preview scanning from revisiting rejected URLs.
+- Exclude development administration files from ELPA archives.
 - Speed up archive duplicate lookup with indexed message identities instead of
   scanning a contact's history; preserve ambiguous-message and archive-UID checks.
 - Upgrade existing message databases non-destructively with origin-ID and room-ID
@@ -399,6 +420,7 @@
 :PROPERTIES:
 :CUSTOM_ID: v0.9.0
 :END:
+#+date: 2025-03-09
 ** Enable carbons by default
 :PROPERTIES:
 :CUSTOM_ID: enable-carbons-by-default
