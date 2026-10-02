@@ -321,7 +321,9 @@ Return a list of user, password/secret, and the item's save-function."
          (source
           (car
            (auth-source-search :host host :user user
-                               :require '(:user :secret)
+                               ;; XXX: :secret only works here for
+                               ;; encrypted authinfo!:
+                               :require '(:user :host)
                                :secret (if token token nil)
                                ;; "create" alone doesn't work here!:
                                :create (if create t nil)))))
