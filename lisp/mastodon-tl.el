@@ -2165,7 +2165,7 @@ TOOT is the data for the quoting toot."
                  ;; of the outermost quoting toot doesn't contain account
                  ;; data for the nested quoted toot. it just contains
                  ;; "quoted_toot_id"
-                 "[quotes another toot]"
+                 "[quotes another toot]\n"
                  ;; (format "[quotes toot by %s]"
                  ;;         (map-nested-elt nested-quote
                  ;;                         '(quoted_status account acct)))
@@ -2189,7 +2189,7 @@ When NO-PROP, don't add properties, just format the string."
        str
      (apply #'propertize str
             (mastodon-tl-quote-props-list url)))
-   "]"))
+   "]\n"))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
 (defun mastodon-tl--change-post-quote-policy ()
