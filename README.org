@@ -40,12 +40,22 @@ features inspired by these packages:
   compatible with the vanilla Emacs and third-party packages keymaps,/
   /without the need to modify them or reinvent the wheel./
 
-* [[file:GET_STARTED.org][Get started]]
+* Get started
 
-For install and use ~standard-keys-mode~, see the [[file:GET_STARTED.org][GET_STARTED.org]] file,
-which additionally provides a simple and documented template
-configuration with several tips to help you get started with Emacs and
-standard-keys easily.
+~standard-keys-mode~ requires Emacs 29.1 or greater
+
+For install it, you can run:
+
++ =M-x package-install RET standard-keys-mode RET=
+
++ Alternatively using ~use-package~ keyword:
+
+#+begin_src emacs-lisp
+(use-package standard-keys-mode
+  :ensure t :hook after-init)
+#+end_src
+
+Once you have it installed you can enable it with =M-x standard-keys-mode=
 
 * Configuration
 
