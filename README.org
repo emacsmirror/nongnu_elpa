@@ -204,7 +204,7 @@ commands keybindings.
 
 ** I cannot rebind =C-g= properly
 
-It is not possible to remap =C-g= properly.
+It is not possible to remap =C-g=.
 
 Although solutions such as this can be used:
 
@@ -221,7 +221,7 @@ not quit from current loop.
 
 * Alternatives
 
-** [[http://ergoemacs.github.io/][ergoemacs]].
+** [[http://ergoemacs.github.io/][ergoemacs]]
 #+begin_quote
 A minor-mode that aims to:
 - Use/Create ergonomic keybindings in emacs that will reduce RSI
@@ -235,7 +235,9 @@ work properly in recent versions of Emacs.
 
 But if you don't care about this, you can try it.
 
-** [[https://www.gnu.org/software/emacs/manual/html_node/emacs/CUA-Bindings.html][cua-mode]] (built-in in Emacs).
+(comment written on: 2025-08-28, this may no longer apply in the future)
+
+** [[https://www.gnu.org/software/emacs/manual/html_node/emacs/CUA-Bindings.html][cua-mode]] (built-in in Emacs)
 #+begin_quote
 CUA mode is a global minor mode.  When enabled, typed text
 replaces the active selection, and you can use C-z, C-x, C-c, and
@@ -261,7 +263,7 @@ point of this mode it to leverage common shortcuts that you are used
 to while making it easy to learn Emacs.
 #+end_quote
 
-wakib-keys was the inspiration for package.
+wakib-keys was the inspiration for this package.
 
 Like standard-keys-mode, wakib rebinds the C-x/C-c prefixes to C-e/C-d
 respectively.  However wakib has been somewhat outdated, with some
@@ -270,6 +272,23 @@ bugs in recent versions of Emacs.
 If you are using an older Emacs version (prior 29.x), you can use
 wakib-keys instead of standard-keys-mode.
 
+(comment written on: 2025-08-28, this may no longer apply in the future)
+
+** [[https://github.com/BenediktChlopik/mortal-mode][mortal-mode]]
+#+begin_quote
+A basic Emacs configuration for users accustomed to modern editors
+like Kate, VS Code, Notepad++, Sublime Text, PyCharm, and many
+others. This config tries to make vanilla Emacs feel more like one of
+those editors. It gives you a familiar starting point for your own
+Emacs configuration adventures without having to unlearn years of
+muscle memory.
+#+end_quote
+
+I have no comments, because I haven't used it, but analyzing the code,
+it doesn't appear to be compatible with the C-x and C-c prefixes,
+despite trying to remap them.
+
+(comment written on: 2026-10-02, this may no longer apply in the future)
 -----
 Thanks to Abdulla Bubshait (darkstego) for creating wakib-keys, which
 was the inspiration for this package.
