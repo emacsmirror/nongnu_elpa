@@ -662,7 +662,8 @@ With a double PREFIX arg, limit results to your own instance."
     (mastodon-tl--show-tag-timeline prefix tag)))
 
 (defun mastodon-tl-tag-prefix-arg (prefix)
-  "Handle PREFIX arg for tag timelines."
+  "Handle PREFIX arg for tag timelines.
+Single prefix = only media, double = local only."
   `(("limit" . ,mastodon-tl--timeline-posts-count)
     ,@(when (equal prefix '(4))
         '(("only_media" . "true")))
@@ -1372,7 +1373,8 @@ LINK-TYPE is the type of link to produce."
 
 (defun mastodon-tl-do-link-action-at-point (pos &optional prefix)
   "Do the action of the link at POS.
-Used for hitting RET on a given link."
+Used for hitting RET on a given link.
+If given, PREFIX is sent to `mastodon-url-lookup' as FORCE arg."
   (interactive "d\nP")
   (let ((link-type (get-text-property pos 'mastodon-tab-stop))
         (cont-thread (mastodon-tl--property 'continued-thread :nomove))
@@ -2443,7 +2445,8 @@ mastodon-content-warning-body."
 
 (defun mastodon-tl--fold-body (body &optional heading)
   "Fold toot BODY if it is very long.
-Folding decided by `mastodon-tl--fold-toots-at-length'."
+Folding decided by `mastodon-tl--fold-toots-at-length'.
+HEADING is a string to make an (un)fold heading with."
   (let* ((invis (get-text-property (1- (length body)) 'invisible body))
          (cw (get-text-property (1- (length body))
                                 'mastodon-content-warning-body body))
@@ -3706,7 +3709,9 @@ tags followed. For a faster alternative, consider
 Returns up to 20 items for every 4 tags followed.
 Pagination (adding more items at bottom of buffer) works, but because we
 do the requests then sort by recency client-side, items will not be in
-strictly reverse chronological order."
+strictly reverse chronological order.
+With a single PREFIX arg, only show posts with media.
+With a double PREFIX arg, limit results to your own instance."
   (interactive "P")
   (if (not mastodon-tl--tags-groups)
       (user-error "Set `mastodon-tl--tags-groups' to view tag group timelines")
