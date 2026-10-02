@@ -216,7 +216,7 @@ Used to help users switch to the new encrypted auth token flow."
   (when
       (mastodon-auth--plstore-access-token-member auth-source)
     (if auth-source
-        (user-error "Auth source storage of tokens is enabled,\
+        (warn "Auth source storage of tokens is enabled,\
  but there is also an access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and try again.
@@ -224,7 +224,7 @@ Used to help users switch to the new encrypted auth token flow."
  also set `mastodon-auth-use-auth-source' to nil.\
  If this message is in error, contact us on the mastodon.el repo")
       (when mastodon-auth-encrypt-tokens-plstore
-        (user-error "Unencrypted access token in your plstore.\
+        (warn "Unencrypted access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and log in again.
 Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
