@@ -359,36 +359,39 @@ STATUS is the status's JSON.
 ACCOUNTS is data of the accounts that have reacted to the notification."
   (let ((folded nil))
     ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
-    (let-alist group
-      (let* ((type (intern .type))
-             (profile-note
-              (when (member type '(follow_request))
-                (let ((str (mastodon-tl--field 'note (car accounts))))
-                  (if mastodon-profile-note-in-foll-reqs-max-length
-                      (string-limit str mastodon-profile-note-in-foll-reqs-max-length)
-                    str))))
-             (follower (when (member type '(follow follow_request))
-                         (car accounts)))
-             (follower-name (mastodon-notifications--follower-name follower))
-             (filtered (mastodon-tl--field 'filtered status))
-             (filters (when filtered
-                        (mastodon-tl--current-filters filtered))))
-        (unless (and filtered (assoc "hide" filters))
-          (mastodon-notifications--insert-note
-           ;; toot
-           (if (member type '(follow follow_request))
-               follower
-             status)
-           ;; body
-           (mastodon-notifications--body-arg
-            type filters status profile-note follower-name group)
-           ;; action-byline
-           (mastodon-notifications--action-byline
-            type accounts group)
-           ;; base toot (no need for update/poll/?)
-           (when (member type '(favourite reblog))
-             status)
-           folded group accounts))))))
+    (let* ((type (intern (alist-get 'type group)))
+           (profile-note
+            (when (member type '(follow_request))
+              (let ((str (mastodon-tl--field 'note (car accounts))))
+                (if mastodon-profile-note-in-foll-reqs-max-length
+                    (string-limit str mastodon-profile-note-in-foll-reqs-max-length)
+                  str))))
+           (follower (when (member type '(follow follow_request))
+                       (car accounts)))
+           (follower-name (mastodon-notifications--follower-name follower))
+           (filtered (mastodon-tl--field 'filtered status))
+           (filters (when filtered
+                      (mastodon-tl--current-filters filtered))))
+      (unless (or ;; skip filtered items type "hide"
+               (and filtered (assoc "hide" filters))
+               ;; skip edits if they have no status (seen in the wild):
+               (and (eq type 'update) (not status)
+                    (not (alist-get 'status_id group))))
+        (mastodon-notifications--insert-note
+         ;; toot
+         (if (member type '(follow follow_request))
+             follower
+           status)
+         ;; body
+         (mastodon-notifications--body-arg
+          type filters status profile-note follower-name group)
+         ;; action-byline
+         (mastodon-notifications--action-byline
+          type accounts group)
+         ;; base toot (no need for update/poll/?)
+         (when (member type '(favourite reblog))
+           status)
+         folded group accounts)))))
 
 (defun mastodon-notifications--follower-name (follower)
   "Return display_name or username of FOLLOWER."
