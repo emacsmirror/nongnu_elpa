@@ -3,6 +3,10 @@
 * Unreleased
 
 ** Fixes
+- Speed up archive duplicate lookup with indexed message identities instead of
+  scanning a contact's history; preserve ambiguous-message and archive-UID checks.
+- Upgrade existing message databases non-destructively with origin-ID and room-ID
+  indexes while retaining message, archive and encryption state.
 - Drop rejected incoming message corrections silently, including missing or
   ambiguous archive targets, instead of flooding =*Messages*=.
 - Keep contact names, presence, subscriptions, avatars and resource capabilities

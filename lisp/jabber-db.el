@@ -252,9 +252,17 @@ END"
   "Archive coverage and occurrence schema; empty scope means all peers.
 An absent start records an unbounded scan, not an inferred history date.")
 
+(defconst jabber-db--identity-index-ddl
+  '("CREATE INDEX IF NOT EXISTS idx_msg_origin_id
+  ON message(account, origin_id) WHERE origin_id IS NOT NULL"
+    "CREATE INDEX IF NOT EXISTS idx_msg_room_id
+  ON message(account, room_id) WHERE room_id IS NOT NULL")
+  "Nonunique identity indexes; collisions must remain visible to admission.")
+
 (defun jabber-db--init-schema (db)
   "Initialize the database schema in DB."
-  (dolist (ddl (append jabber-db--schema-ddl jabber-db--archive-ddl))
+  (dolist (ddl (append jabber-db--schema-ddl jabber-db--archive-ddl
+                      jabber-db--identity-index-ddl))
     (sqlite-execute db ddl)))
 
 (defun jabber-db--table-exists-p (db table)
@@ -313,7 +321,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 12
+(defconst jabber-db--schema-version 13
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -558,6 +566,13 @@ Never reinterpret historical server IDs or invent historical scan coverage."
       (sqlite-execute db ddl))
     (sqlite-execute db "PRAGMA user_version=12")))
 
+(defun jabber-db--migrate-v12-to-v13 (db)
+  "Index origin and room duplicate candidates atomically in DB."
+  (jabber-db--with-savepoint db
+    (dolist (ddl jabber-db--identity-index-ddl)
+      (sqlite-execute db ddl))
+    (sqlite-execute db "PRAGMA user_version=13")))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (jabber-db--with-savepoint db
@@ -602,6 +617,9 @@ Never reinterpret historical server IDs or invent historical scan coverage."
         (jabber-db--migrate-v11-to-v12 db)
         (setq version 12))
       (when (= version 12)
+        (jabber-db--migrate-v12-to-v13 db)
+        (setq version 13))
+      (when (= version 13)
         (jabber-db--repair-reaction-actors db)))))
 
 (defun jabber-db-ensure-open ()
@@ -761,19 +779,24 @@ not unique.  Content matching requires one row with equal TIMESTAMP,
 BODY, RESOURCE and OCCUPANT-ID, and missing IDs.  An ID-less outgoing
 non-MUC row may lack the archive sender's resource.  A matching MUC client
 ID may be upgraded only when the replay supplies a SERVER-ID."
-  (let ((matches
-         (sqlite-select
-          db "SELECT id FROM message
+  (let* ((scope "SELECT id FROM message
 WHERE account = ? AND peer = ? AND type IS ?
 AND (direction = ? OR (type = 'groupchat' AND server_id = ?
      AND stanza_id = ? AND occupant_id = ? AND resource IS ?))
 AND (? IS NULL OR stanza_id IS NULL OR stanza_id = ?)
 AND (? IS NULL OR server_id IS NULL OR server_id = ?)
 AND (? IS NULL OR occupant_id IS NULL OR occupant_id = ?)
-AND (server_id = ? OR (? != 'groupchat' AND stanza_id = ?)) LIMIT 2"
+AND ")
+         (parameters
           (list account peer type direction server-id stanza-id occupant-id resource
-                stanza-id stanza-id server-id server-id occupant-id occupant-id
-                server-id type stanza-id))))
+                stanza-id stanza-id server-id server-id occupant-id occupant-id))
+         ;; Separate indexed branches avoid a peer-wide scan for the ID OR.
+         ;; UNION counts one row matching both IDs only once; LIMIT is global.
+         (matches
+          (sqlite-select
+           db (concat scope "server_id = ? UNION "
+                      scope "? != 'groupchat' AND stanza_id = ? LIMIT 2")
+           (append parameters (list server-id) parameters (list type stanza-id)))))
     (if matches
         (and (null (cdr matches)) (caar matches))
       ;; Without an ID, identical messages may be independent sends.
@@ -1058,11 +1081,19 @@ of rebinding its UID."
                           (caar (sqlite-select db
                            "SELECT message_id FROM message_archive
 WHERE account = ? AND archive = ? AND uid = ?" (list account archive uid)))))
-         (strong (mapcar #'car (sqlite-select db
-                   "SELECT id FROM message WHERE account = ? AND peer = ?
+         (scope "SELECT id FROM message WHERE account = ? AND peer = ?
 AND type IS ? AND (direction = ? OR (type = 'groupchat' AND room_id = ?))
-AND ((type != 'groupchat' AND origin_id = ?) OR room_id = ? OR id = ?)"
-                   (list account peer type direction room origin room occurrence))))
+AND ")
+         (parameters (list account peer type direction room))
+         ;; Retain incompatible strong candidates for ambiguity/conflict checks.
+         ;; Keep SQL's NULL type semantics in the non-MUC origin branch.
+         (strong (and (or origin room occurrence)
+                      (mapcar #'car
+                              (sqlite-select
+                               db (concat scope "type != 'groupchat' AND origin_id = ? UNION "
+                                          scope "room_id = ? UNION " scope "id = ?")
+                               (append parameters (list origin) parameters (list room)
+                                       parameters (list occurrence))))))
          ;; A populated unknown legacy server_id is not room evidence.
          ;; A partial live row, however, can acquire its first room ID when
          ;; the scoped detector also proved an equal transport ID.  Body

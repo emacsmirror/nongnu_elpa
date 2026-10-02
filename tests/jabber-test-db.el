@@ -109,6 +109,136 @@ and tears down on exit."
                jabber-db--connection
                "SELECT name FROM pragma_table_info('message_thread')"))))))
 
+;;; Indexed duplicate lookup
+
+(defun jabber-test-db--duplicate-plans (function)
+  "Return native query plans for message candidate queries in FUNCTION."
+  (let ((select (symbol-function 'sqlite-select)) queries)
+    (cl-letf (((symbol-function 'sqlite-select)
+               (lambda (db sql &rest args)
+                 (when (string-prefix-p "SELECT id FROM message" sql)
+                   (push (cons sql (car args)) queries))
+                 (apply select db sql args))))
+      (funcall function))
+    (mapcan (lambda (query)
+              (mapcar (lambda (row) (nth 3 row))
+                      (funcall select jabber-db--connection
+                               (concat "EXPLAIN QUERY PLAN " (car query))
+                               (cdr query))))
+            queries)))
+
+(defun jabber-test-db--assert-indexed-duplicates (plans)
+  "Reject history-wide message scans in PLANS, including peer-only searches."
+  (should plans)
+  (dolist (plan plans)
+    (should-not (string-match-p "SCAN message" plan))
+    (when (string-match-p "SEARCH message" plan)
+      (should (string-match-p
+               "\\(?:rowid\\|stanza_id\\|server_id\\|origin_id\\|room_id\\|timestamp\\)=?"
+               plan)))))
+
+(ert-deftest jabber-test-db-duplicate-legacy-indexed-plan ()
+  "Seek transport/server IDs and the legacy timestamp, not the peer's history."
+  (jabber-test-db-with-db
+    (let ((plans
+           (jabber-test-db--duplicate-plans
+            (lambda ()
+              (should-not
+               (jabber-db--detect-duplicate
+                jabber-db--connection "me" "peer" 1 "body" "transport" "server"
+                "chat" "in" "phone" nil))))))
+      (jabber-test-db--assert-indexed-duplicates plans)
+      (dolist (key '("server_id=?" "stanza_id=?" "timestamp=?"))
+        (should (seq-some (lambda (plan) (string-search key plan)) plans))))))
+
+(ert-deftest jabber-test-db-duplicate-strong-indexed-plan ()
+  "Seek origin/room/occurrence candidates without a peer-wide scan."
+  (jabber-test-db-with-db
+    (let ((plans
+           (jabber-test-db--duplicate-plans
+            (lambda ()
+              (should-not
+               (jabber-db--identity-duplicate
+                jabber-db--connection "me" "peer" "in" "chat" nil nil "phone" nil
+                '(:origin-id "origin" :room-id "room" :archive "archive"
+                  :archive-id "uid") nil))))))
+      (jabber-test-db--assert-indexed-duplicates plans)
+      (dolist (key '("origin_id=?" "room_id=?" "rowid=?"))
+        (should (seq-some (lambda (plan) (string-search key plan)) plans))))))
+
+(ert-deftest jabber-test-db-duplicate-union-counts-rows-not-branches ()
+  "Count two eligible rows as ambiguous, but one row with both IDs once."
+  (jabber-test-db-with-db
+    (let ((id (jabber-db-store-message "me" "peer" "in" "chat" "body" 1
+                                       "phone" "transport" "server")))
+      (should (= id (jabber-db-store-message "me" "peer" "in" "chat" "body" 1
+                                             "phone" "transport" "server")))
+      (sqlite-execute jabber-db--connection "INSERT INTO message
+(account,peer,direction,type,resource,body,timestamp,stanza_id)
+VALUES ('me','peer','in','chat','phone','other',2,'transport')")
+      (should-not (jabber-db--detect-duplicate
+                   jabber-db--connection "me" "peer" 1 "body" "transport" "server"
+                   "chat" "in" "phone" nil)))))
+
+(ert-deftest jabber-test-db-duplicate-strong-conflicting-candidates ()
+  "Do not remove incompatible strong candidates before checking ambiguity."
+  (jabber-test-db-with-db
+    (let ((id (jabber-db-store-message "me" "peer" "in" "chat" "body" 1 "phone"
+                                       nil nil nil nil nil nil nil
+                                       '(:origin-id "origin" :room-id "room"
+                                         :archive "archive" :archive-id "uid"))))
+      ;; The same row appears in all three branches, but remains one candidate.
+      (should (= id (jabber-db--identity-duplicate
+                     jabber-db--connection "me" "peer" "in" "chat" nil nil "phone" nil
+                     '(:origin-id "origin" :room-id "room"
+                       :archive "archive" :archive-id "uid") nil)))
+      (sqlite-execute jabber-db--connection "INSERT INTO message
+(account,peer,direction,type,resource,body,timestamp,origin_id)
+VALUES ('me','peer','in','chat','incompatible','other',2,'origin')")
+      (should-not (jabber-db--identity-duplicate
+                   jabber-db--connection "me" "peer" "in" "chat" nil nil "phone" nil
+                   '(:origin-id "origin" :room-id "room") nil))
+      (let ((before (sqlite-select jabber-db--connection "SELECT * FROM message")))
+        (should-error
+         (jabber-db-store-message "me" "peer" "in" "chat" "replacement" 3 "phone"
+                                  nil nil nil nil nil nil nil
+                                  '(:origin-id "origin" :archive "archive" :archive-id "uid")))
+        (should (equal before (sqlite-select jabber-db--connection "SELECT * FROM message")))))))
+
+(ert-deftest jabber-test-db-duplicate-null-type-keeps-sql-semantics ()
+  "A NULL kind admits server/room IDs, but not non-MUC transport/origin IDs."
+  (jabber-test-db-with-db
+    (let ((id (jabber-db-store-message "me" "peer" "in" nil "body" 1 "phone"
+                                       "transport" "server" nil nil nil nil nil
+                                       '(:origin-id "origin" :room-id "room"))))
+      (should-not (jabber-db--detect-duplicate
+                   jabber-db--connection "me" "peer" 2 "different" "transport" nil
+                   nil "in" "phone" nil))
+      (should (= id (jabber-db--detect-duplicate
+                     jabber-db--connection "me" "peer" 2 "different" nil "server"
+                     nil "in" "phone" nil)))
+      (should-not (jabber-db--identity-duplicate
+                   jabber-db--connection "me" "peer" "in" nil nil nil "phone" nil
+                   '(:origin-id "origin") nil))
+      (should (= id (jabber-db--identity-duplicate
+                     jabber-db--connection "me" "peer" "in" nil nil nil "phone" nil
+                     '(:room-id "room") nil))))))
+
+(ert-deftest jabber-test-db-duplicate-empty-identity-keeps-legacy ()
+  "Missing strong evidence skips its SQL without bypassing legacy admission."
+  (jabber-test-db-with-db
+    (let ((id (jabber-db-store-message "me" "peer" "in" "chat" "body" 1
+                                       "phone" "transport")))
+      (should-not
+       (jabber-test-db--duplicate-plans
+        (lambda ()
+          (should (= id (jabber-db--identity-duplicate
+                         jabber-db--connection "me" "peer" "in" "chat" "transport"
+                         nil "phone" nil '(:origin-id nil) id))))))
+      (should (= id (jabber-db-store-message "me" "peer" "in" "chat" "body" 1 "phone"
+                                             "transport" nil nil nil nil nil nil
+                                             '(:origin-id nil)))))))
+
 ;;; Group 2: Store and retrieve
 
 (ert-deftest jabber-test-db-store-and-query ()
@@ -2028,7 +2158,7 @@ FROM pragma_table_info('message') WHERE name = 'retracted'")))
          (delete-directory jabber-test-db--dir t)))))
 
 (defconst jabber-test-db--v3-ddl
-  '("CREATE TABLE message (id INTEGER PRIMARY KEY, retracted_by TEXT)"
+  '("CREATE TABLE message (id INTEGER PRIMARY KEY, account TEXT, retracted_by TEXT)"
     "CREATE TABLE omemo_store (
   account TEXT PRIMARY KEY,
   store_blob BLOB NOT NULL)")
@@ -2045,7 +2175,7 @@ FROM pragma_table_info('message') WHERE name = 'retracted'")))
   "Minimal valid tables needed to migrate a v4 database.")
 
 (defconst jabber-test-db--v7-reaction-ddl
-  '("CREATE TABLE message (id INTEGER PRIMARY KEY, retracted_by TEXT)"
+  '("CREATE TABLE message (id INTEGER PRIMARY KEY, account TEXT, retracted_by TEXT)"
     "CREATE TABLE message_reaction (
   message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
   sender TEXT NOT NULL,
