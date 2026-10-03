@@ -15,11 +15,14 @@
   (let ((mastodon-auth-encrypt-tokens-plstore nil)
         ;; else we are interactively asked to save to ~/authinfo.gpg:
         (mastodon-auth-use-auth-source nil))
-    (should
-     (string=
-      "foo"
-      (mastodon-auth--handle-token-response
-       '(:access_token "foo" :token_type "Bearer" :scope "read write follow" :created_at 0))))))
+    (with-mock
+      ;; ensure no actual POST request (works offline):
+      (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+      (should
+       (string=
+        "foo"
+        (mastodon-auth--handle-token-response
+         '(:access_token "foo" :token_type "Bearer" :scope "read write follow" :created_at 0)))))))
 
 (ert-deftest mastodon-auth--handle-token-response--unknown ()
   "Should throw an error when the response is unparsable."
