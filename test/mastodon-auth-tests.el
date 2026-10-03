@@ -151,23 +151,32 @@ sources, we create a new file then delete it."
                :client_secret "secret"
                :access_token "token"))))
     ;; setup plstore: store access token, using auth source:
-    (let ((mastodon-auth-use-auth-source t)
-          (auth-source-do-cache nil)
-          (auth-sources "fixture/auth-info-check"))
+    (let* ((mastodon-auth-use-auth-source t)
+           (auth-source-do-cache nil)
+           (auth-sources '("fixture/auth-info-check"))
+           (auth-source-save-behavior t) ;; disable prompting
+           (file (car auth-sources))
+           (filename (nth 1 (split-string file
+                                          "/"))))
       (auth-source-forget-all-cached)
+      ;; create auth source file:
+      (find-file-noselect file)
+      ;; save and kill it:
+      (with-current-buffer filename
+        (save-buffer)
+        (kill-buffer filename))
       (with-mock
         (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
-        ;; FIXME: storing fails, auth-source returns no :save-function to
-        ;; call:
         (mastodon-client--store-access-token "token")
         ;; should nil if we don't check with auth source
         ;; because we saved in auth-source instead:
         (let ((mastodon-auth-use-auth-source nil))
           (should (equal
                    (mastodon-auth--plstore-access-token-member)
-                   nil))))
-      ;; NB: if we error in `mastodon-auth-source-get', this won't run:
-      (delete-file mastodon-client--token-file))))
+                   nil)))
+        ;; NB: if we error in `mastodon-auth-source-get', this won't run:
+        (delete-file mastodon-client--token-file)
+        (delete-file file)))))
 
 (ert-deftest mastodon-auth-auth-source-search-only ()
   "Test searching an existing auth-source file.
