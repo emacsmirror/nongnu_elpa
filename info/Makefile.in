@@ -181,8 +181,14 @@ remove-stale-info:
 	done
 
 ##############################################################################
+# $(GENERATED_TEXINFO) is not removed.  Those two are generated from the
+# docstrings and committed: vm.texinfo @includes them, makeinfo writes no
+# manual at all when they are missing, and an ELPA build never runs make.
+# Removing one left a deleted tracked file in the working tree for someone to
+# commit by accident (emacs-vm/vm#902).  `make' rewrites them and
+# `check-reference' is what notices when they are stale.
 clean:
-	-$(RM) -f version.texinfo $(REFERENCE_FILE) $(REFERENCE_FILE).tmp \
+	-$(RM) -f version.texinfo $(REFERENCE_FILE).tmp $(MACROS_FILE).tmp \
 		*.info *.info-[0-9]
 
 distclean: clean

@@ -104,6 +104,83 @@ a path that is not there, and the recipe goes on to succeed."
                     wrong))))))
     (should (equal wrong nil))))
 
+(defun vm-build-test--tracked-files ()
+  "Every file git has, relative to the top of the tree, or nil outside one."
+  (let ((default-directory vm-build-test--root))
+    (when (file-directory-p (expand-file-name ".git" vm-build-test--root))
+      (split-string (shell-command-to-string "git ls-files") "\n" t))))
+
+(defun vm-build-test--expand-make-variables (word file)
+  "WORD with each $(VAR) replaced by what FILE assigns VAR, where it can be.
+One level is enough: these makefiles name a file through at most one
+variable.  A reference that cannot be resolved is left as it stands, and the
+caller passes over anything still holding a $."
+  (let ((expanded word)
+        (guard 0))
+    (while (and (< guard 8)
+                (string-match "\\$(\\([A-Za-z_][A-Za-z0-9_]*\\))" expanded))
+      ;; The positions are read before `vm-build-test--make-variable' runs: it
+      ;; searches a buffer of its own, which leaves its own match data behind,
+      ;; and `replace-match' would then cut the string at the wrong place.
+      (let* ((start (match-beginning 0))
+             (end (match-end 0))
+             (name (match-string 1 expanded))
+             (value (vm-build-test--make-variable file name))
+             ;; unresolvable, or several words: a bare $ so the caller passes
+             ;; over the word and this loop does not meet it again
+             (text (if (and value (null (cdr value))) (car value) "$")))
+        (setq expanded (concat (substring expanded 0 start) text
+                               (substring expanded end))))
+      (setq guard (1+ guard)))
+    expanded))
+
+(defun vm-build-test--removed-by-clean (file)
+  "Every path the clean rules of makefile FILE remove, with variables expanded."
+  (let (paths)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      ;; a recipe line of a clean target, including its backslash continuations
+      (while (re-search-forward "^\\(distclean\\|clean\\|mostlyclean\\)[^:\n]*:"
+                                nil t)
+        (forward-line 1)
+        (while (looking-at "^\t")
+          (let ((line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position))))
+            (when (string-match-p "\\$(RM)\\|\\brm\\b" line)
+              (dolist (word (split-string line "[ \t]+" t))
+                (let ((name (vm-build-test--expand-make-variables word file)))
+                  ;; a flag, an unresolved variable, a configure substitution,
+                  ;; or the remove command itself
+                  (unless (string-match-p "\\`[-\\\\]\\|[$@]\\|\\`rm\\'" name)
+                    (push name paths))))))
+          (forward-line 1))))
+    paths))
+
+(ert-deftest vm-build-test-no-clean-rule-removes-a-tracked-file ()
+  "REGRESSION: `make clean' deleted the committed info/vm-reference.texinfo.
+
+emacs-vm/vm#902.  It is generated from the docstrings and committed anyway,
+because vm.texinfo @includes it and makeinfo writes no manual at all when it
+is missing, and an ELPA build never runs make.  Removing it left a deleted
+tracked file in the working tree for someone to commit by accident, and
+`make distclean' is the first step of the test build in dev/docs/release.org.
+
+A literal name only: a clean rule may remove a glob or a make variable, and
+neither can be resolved by reading."
+  (let ((tracked (vm-build-test--tracked-files))
+        (offenders nil))
+    (skip-unless tracked)
+    (dolist (file (vm-build-test--makefile-templates))
+      (let ((dir (file-name-directory (file-relative-name
+                                       file vm-build-test--root))))
+        (dolist (path (vm-build-test--removed-by-clean file))
+          (unless (string-match-p "[*?[]" path)
+            (let ((named (concat (or dir "") path)))
+              (when (member named tracked)
+                (push named offenders)))))))
+    (should (equal nil offenders))))
+
 (ert-deftest vm-build-test-no-elc-for-never-compiled-lisp ()
   "REGRESSION: no .elc is listed for lisp that is never byte-compiled.
 `vm-custom-make-dependencies' writes vm-cus-load.el with a
