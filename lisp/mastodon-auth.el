@@ -211,33 +211,36 @@ Used to help users switch to the new encrypted auth token flow."
   ;; e.g. inside of `mastodon-client--active-user'? the issue is that
   ;; ideally we want to test "user-" entry, even if fetching "active-user"
   ;; entry, so we would have to re-do the plstore read functions.
-  (when
-      (mastodon-auth--plstore-access-token-member)
-    (if auth-source
-        (warn "Auth source storage of tokens is enabled,\
+  (cond
+   ((and mastodon-auth-use-auth-source
+         (mastodon-auth--plstore-access-token-member :secret))
+    (user-error "Auth source storage of tokens is enabled,\
  but there is also an access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and try again.
  If you don't want to use auth sources,\
- also set `mastodon-auth-use-auth-source' to nil.\
- If this message is in error, contact us on the mastodon.el repo")
-      (when mastodon-auth-encrypt-tokens-plstore
-        (warn "Unencrypted access token in your plstore.\
+ then set `mastodon-auth-use-auth-source' to nil.\
+ If this message is in error, contact us on the mastodon.el repo"))
+   ((and mastodon-auth-encrypt-tokens-plstore
+         (mastodon-auth--plstore-access-token-member))
+    (user-error "Unencrypted access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and log in again.
 Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
- If this message is in error, contact us on the mastodon.el repo")))))
+ If this message is in error, contact us on the mastodon.el repo"))))
 
-(defun mastodon-auth--plstore-access-token-member ()
+(defun mastodon-auth--plstore-access-token-member (&optional secret)
   "Return non-nil if the user entry of the plstore contains :access_token.
-Also check for :secret-access_token."
+If SECRET, also for :secret-access_token only."
   (let* ((plstore (plstore-open mastodon-client--token-file))
          (name (concat "user-" (mastodon-client--form-user-from-vars)))
          ;; get alist like plstore.el does, so that keys will display with
          ;; ":secret-" prefix if encrypted:
          (alist (assoc name (plstore--get-merged-alist plstore))))
-    (or (member :access_token alist)
-        (member :secret-access_token alist))))
+    (if secret
+        (or (member :secret-access_token alist)
+            (member :access_token alist))
+      (member :access_token alist))))
 
 (defun mastodon-auth--access-token ()
   "Return the access token to use with `mastodon-instance-url'.
