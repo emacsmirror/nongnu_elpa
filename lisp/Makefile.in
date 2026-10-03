@@ -41,6 +41,7 @@ SOURCES += vm-postpone.el
 SOURCES += vm-pop.el
 SOURCES += vm-pop-net.el
 SOURCES += vm-ps-print.el
+SOURCES += vm-renamed.el
 SOURCES += vm-reply.el
 SOURCES += vm-dired.el
 SOURCES += vm-save.el

@@ -1366,8 +1366,9 @@ current message is selected as the recipient of the new composition."
 	     vm-virtual-folder-alist	; ditto
 	     ;; vm-mail-fcc-default - is this private?
 	     vm-pcrisis-actions vm-pcrisis-conditions 
-	     vmpc-actions-alist vmpc-reply-alist vmpc-forward-alist
-	     vmpc-resend-alist vmpc-newmail-alist vmpc-automorph-alist
+	     vm-pcrisis-default-rules vm-pcrisis-reply-rules
+	     vm-pcrisis-forward-rules vm-pcrisis-resend-rules
+	     vm-pcrisis-newmail-rules vm-pcrisis-automorph-rules
 	     ;; email addresses
 	     vm-mail-header-from
 	     vm-mail-return-receipt-to

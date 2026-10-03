@@ -127,21 +127,20 @@ file that is loaded later, so this asks an Emacs that has loaded them all."
   (dolist (pair vm-custom-test--corrected-names)
     (should-not (boundp (car pair)))))
 
-(ert-deftest vm-custom-test-confusing-names-keep-an-alias ()
-  "A name renamed for being confusing keeps its old name for good.
-Unlike the misspellings above, which were dropped: a name someone chose and
-typed on purpose stays working, and there is no plan to remove it.  Issue
-#466 renamed `From_-with-Content-Length' to `mboxcl2' and this option with
-it."
+(ert-deftest vm-custom-test-a-confusing-name-says-what-it-is-now ()
+  "A name renamed for being confusing signals and names the new one.
+Issue #466 renamed `From_-with-Content-Length' to `mboxcl2' and this option
+with it.  It was an alias until 9.0.0, which told a reader nothing: an alias
+warns only where the file naming it is byte-compiled, and an init file is
+not (emacs-vm/vm#901)."
   (require 'vm-vars)
-  (should (boundp 'vm-trust-From_-with-Content-Length))
-  (should (eq 'vm-trust-content-length
-              (indirect-variable 'vm-trust-From_-with-Content-Length)))
-  (should (get 'vm-trust-From_-with-Content-Length 'byte-obsolete-variable))
-  (let ((vm-trust-content-length nil))
-    (with-no-warnings
-      (setq vm-trust-From_-with-Content-Length t))
-    (should (eq t vm-trust-content-length))))
+  (should-not (boundp 'vm-trust-From_-with-Content-Length))
+  (let ((err (should-error (set 'vm-trust-From_-with-Content-Length t)
+                           :type 'error)))
+    (should (string-match-p "vm-trust-content-length"
+                            (error-message-string err))))
+  ;; and the attempt leaves the current option alone
+  (should (boundp 'vm-trust-content-length)))
 
 (ert-deftest vm-custom-test-the-oldest-renames-are-gone ()
   "The compatibility aliases from 8.1.1 and before are no longer defined.

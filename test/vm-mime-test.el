@@ -2706,14 +2706,14 @@ nothing, so the reader saw neither the picture nor a button for it."
 (defun vm-mime-test--present (message method exceptions)
   "Visit a folder holding MESSAGE and return its presentation text.
 METHOD is `vm-mime-alternative-show-method' and EXCEPTIONS
-`vm-auto-displayed-mime-content-type-exceptions'."
+`vm-mime-auto-displayed-content-type-exceptions'."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-alt" t)))
          (file (expand-file-name "folder" dir))
          (vm-init-file nil)
          (vm-preferences-file nil)
          (vm-confirm-quit nil)
          (vm-mime-alternative-show-method method)
-         (vm-auto-displayed-mime-content-type-exceptions exceptions)
+         (vm-mime-auto-displayed-content-type-exceptions exceptions)
          (vm-mime-text/html-handler 'lynx)
          (vm-folder-history vm-folder-history)
          (vm-last-visit-folder vm-last-visit-folder)

@@ -808,7 +808,7 @@ given SELECTORS."
 	(result nil) selector arglist function)
     (while selectors
       (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
+	    function (cdr (assq selector vm-vs-alist)))
       (if (null function)
 	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
 	(setq arglist (cdr (car selectors))
@@ -825,7 +825,7 @@ given SELECTORS."
 	(result t) selector arglist function)
     (while selectors
       (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
+	    function (cdr (assq selector vm-vs-alist)))
       (if (null function)
 	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
 	(setq arglist (cdr (car selectors))
@@ -845,7 +845,7 @@ negating a result it never got."
 	(selectorlist (cdr selector))
 	function
 	(result nil))
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
+    (setq function (cdr (assq selector vm-vs-alist)))
     (if (null function)
 	(vm-warn 0 2 "Invalid virtual selector: %s" selector)
       (setq result (not (apply function m selectorlist)))
@@ -876,7 +876,7 @@ message in a thread."
 	(root (vm-thread-root m))
 	tree function)
     (setq tree (vm-thread-subtree-safe root))
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
+    (setq function (cdr (assq selector vm-vs-alist)))
     (vm-find tree
 	     (lambda (m)
 	       (apply function m selectorlist)))))
@@ -889,7 +889,7 @@ messages in a thread."
 	(root (vm-thread-root m))
 	tree function)
     (setq tree (vm-thread-subtree-safe root))
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
+    (setq function (cdr (assq selector vm-vs-alist)))
     (vm-for-all tree
 	     (lambda (m)
 	       (apply function m selectorlist)))))
@@ -1024,8 +1024,8 @@ any) for this selector to detect the occurrences in the text."
 (defun vm-vs-spam-score (m min &optional max)
   "Virtual selector to check if the spam score is >= MIN and
 optionally <= MAX.  The headers that will be checked are those
-listed in `vm-vs-spam-score-headers'."
-  (let ((spam-headers vm-vs-spam-score-headers)
+listed in `vm-spam-score-headers'."
+  (let ((spam-headers vm-spam-score-headers)
         it-is-spam)
     (while spam-headers
       (let* ((spam-selector (car spam-headers))
@@ -1211,7 +1211,7 @@ folders currently being viewed."
 (defun vm-read-virtual-selector (prompt)
   (let (selector (arg nil))
     (setq selector
-	  (vm-read-string prompt vm-supported-interactive-virtual-selectors)
+	  (vm-read-string prompt vm-vs-interactive)
 	  selector (intern selector))
     (let ((arg-type (get selector 'vm-virtual-selector-arg-type)))
       (if (null arg-type)

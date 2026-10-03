@@ -212,8 +212,8 @@ is showing, which is not what a selector needs.  Issue #567.")
 
 ;;-----------------------------------------------------------------------------
 (defun vm-avirtual-add-selectors (selectors)
-  (let ((alist 'vm-virtual-selector-function-alist)
-        (sup-alist 'vm-supported-interactive-virtual-selectors)
+  (let ((alist 'vm-vs-alist)
+        (sup-alist 'vm-vs-interactive)
         sel)
     
     (while selectors
@@ -247,9 +247,9 @@ is showing, which is not what a selector needs.  Issue #567.")
   "Check if there are selectors missing for either vm-mode or mail-mode."
   (interactive "P")
   (let ((a (if arg vm-mail-virtual-selector-function-alist
-             vm-virtual-selector-function-alist))
+             vm-vs-alist))
         (b (mapcar (lambda (s) (car s))
-                   (if arg vm-virtual-selector-function-alist
+                   (if arg vm-vs-alist
                      vm-mail-virtual-selector-function-alist)))
         l)
     (while a
@@ -1484,9 +1484,6 @@ The element gets added to the `element-name' sublist of the
         ))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define-obsolete-function-alias 'vmpc-virtual-check-selector
-  'vm-pcrisis-virtual-check-selector "9.0.0")
 
 (provide 'vm-avirtual)
 ;;; vm-avirtual.el ends here

@@ -846,11 +846,11 @@ signals void-variable and takes the whole compose command down with it."
     (let ((symbol (intern (format "vm-pcrisis-%s-rules" state))))
       (should (boundp symbol)))))
 
-(ert-deftest vm-pcrisis-test-legacy-alist-names-are-aliases ()
-  "The pre-8.3 `vmpc-*-alist' names still reach the `vmpc-*-rules' variables.
-The rules variables were renamed; a VM 8.2.0 configuration setting the old
-names has to keep working, or its rules are silently never consulted, which
-is what #451 looked like from the outside."
+(ert-deftest vm-pcrisis-test-a-legacy-alist-name-says-what-it-is-now ()
+  "The pre-8.3 `vmpc-*-alist' names signal and name the rules variable.
+They were a bare `defvaralias', which cannot warn even when the file naming
+one is byte-compiled, so a VM 8.2.0 configuration setting them was never told
+anything at all (emacs-vm/vm#901)."
   (dolist (pair '((vmpc-actions-alist   . vm-pcrisis-default-rules)
                   (vmpc-reply-alist     . vm-pcrisis-reply-rules)
                   (vmpc-forward-alist   . vm-pcrisis-forward-rules)
@@ -858,13 +858,11 @@ is what #451 looked like from the outside."
                   (vmpc-mail-alist      . vm-pcrisis-mail-rules)
                   (vmpc-newmail-alist   . vm-pcrisis-newmail-rules)
                   (vmpc-automorph-alist . vm-pcrisis-automorph-rules)))
-    (should (eq (indirect-variable (car pair)) (cdr pair)))))
-
-(ert-deftest vm-pcrisis-test-legacy-alist-value-reaches-rules ()
-  "Setting a legacy `vmpc-*-alist' name is visible under the new name."
-  (let ((vm-pcrisis-newmail-rules nil))
-    (setq vmpc-newmail-alist '(("cond" "act")))
-    (should (equal vm-pcrisis-newmail-rules '(("cond" "act"))))))
+    (let ((err (should-error (set (car pair) '(("cond" "act"))) :type 'error)))
+      (should (string-match-p (regexp-quote (symbol-name (cdr pair)))
+                              (error-message-string err))))
+    ;; and the rules variable it names is untouched by the attempt
+    (should (boundp (cdr pair)))))
 
 (defvar vm-pcrisis-test--fired nil
   "Set by the action in `vm-pcrisis-test-rule-dispatch-runs-action-per-state'.
@@ -1422,81 +1420,67 @@ worse than the mistake it is warning about."
 replying, forwarding, resending and starting a message all end there."
   (should (memq 'vm-pcrisis-warn-if-off (default-value 'vm-mail-mode-hook))))
 
-;;; The old vmpc- names (emacs-vm/vm#657)
+;;; The old vmpc- names (emacs-vm/vm#657, emacs-vm/vm#901)
 
-(ert-deftest vm-pcrisis-test-every-published-name-has-its-old-one ()
-  "Everything a reader's init file can name is still reachable as vmpc-.
+(ert-deftest vm-pcrisis-test-an-old-name-says-what-it-is-now ()
+  "Every renamed name signals, and the signal names the new one.
 
-The options are what customize saved, and the conditions and actions are
-written into the rules as data, so a configuration names them without
-calling them.  Renaming those without aliases would silently stop a
-configuration from doing anything -- the rules would name functions that no
-longer exist, and the error would come at composition time."
-  (dolist (old '(;; options
-                 vmpc-conditions vmpc-actions vmpc-default-rules
-                 vmpc-reply-rules vmpc-forward-rules vmpc-resend-rules
-                 vmpc-mail-rules vmpc-newmail-rules vmpc-automorph-rules
-                 vmpc-auto-profiles-file vmpc-auto-profiles-expunge-days
-                 vmpc-default-profile vmpc-prompt-for-profile-headers
-                 vmpc-expect-default-signature))
-    (should (boundp old))
-    (should (eq (indirect-variable old)
-                (intern (concat "vm-pcrisis-" (substring (symbol-name old) 5))))))
-  (dolist (old '(;; conditions and actions, named in rules as data
-                 vmpc-header-match vmpc-body-match vmpc-folder-match
-                 vmpc-folder-account-match vmpc-only-from-match
-                 vmpc-other-cond vmpc-none-true-yet
-                 vmpc-add-header vmpc-delete-header vmpc-insert-header
-                 vmpc-substitute-header vmpc-substitute-replied-header
-                 vmpc-signature vmpc-pre-signature vmpc-pre-function
-                 vmpc-my-identities vmpc-prompt-for-profile
-                 ;; and the commands
-                 vmpc-mode vmpc-automorph vmpc-toggle-no-automorph
-                 vmpc-fix-auto-profiles-file))
-    (should (fboundp old))
-    (should (eq (indirect-function old)
-                (indirect-function
-                 (intern (concat "vm-pcrisis-"
-                                 (substring (symbol-name old) 5))))))))
+They were aliases until 9.0.0, and an alias told the reader nothing:
+`define-obsolete-variable-alias' warns when the file naming the old name is
+byte-compiled, and nobody byte-compiles ~/.vm.  So a configuration went on
+working under the old names and its author never learned they had moved.
+See `vm-renamed-variables' and the Commentary of vm-renamed.el."
+  (dolist (pair vm-renamed-variables)
+    (let* ((old (car pair))
+           (new (cdr pair))
+           (err (should-error (set old 'anything) :type 'error)))
+      (should (string-match-p (regexp-quote (symbol-name new))
+                              (error-message-string err)))
+      (should (string-match-p "rename it in your configuration"
+                              (error-message-string err)))))
+  (dolist (pair vm-renamed-functions)
+    (let* ((old (car pair))
+           (new (cdr pair))
+           (err (should-error (funcall old) :type 'error)))
+      (should (string-match-p (regexp-quote (symbol-name new))
+                              (error-message-string err))))))
 
-(ert-deftest vm-pcrisis-test-an-action-of-your-own-can-still-read-the-state ()
-  "REGRESSION: the two variables an action of one's own reads answer to
-their old names.
+(ert-deftest vm-pcrisis-test-an-old-name-is-not-a-variable-holding-nil ()
+  "Reading an old name signals `void-variable' rather than answering nil.
+An alias to an unset variable answers nil, so a configuration that reads one
+cannot tell an unset option from a name that has moved."
+  (dolist (pair vm-renamed-variables)
+    (should-not (boundp (car pair)))))
 
-`vm-pcrisis-actions' holds Lisp, so writing an action is ordinary, and one
-has to test `vm-pcrisis-current-buffer' to know whether the composition
-exists yet.  Neither variable is named in the manual, so the rename in #657
-left them without aliases and such an action signalled void-variable at
-composition time -- after the alias-carrying functions around it had
-already been renamed successfully."
-  (dolist (old '(vmpc-current-state vmpc-current-buffer))
-    (should (boundp old))
-    (should (eq (indirect-variable old)
-                (intern (concat "vm-pcrisis-" (substring (symbol-name old) 5))))))
-  ;; and the value follows, which is what the action tests
-  (let ((vm-pcrisis-current-buffer 'composition))
-    (should (eq vmpc-current-buffer 'composition)))
-  (let ((vmpc-current-state 'reply))
-    (should (eq vm-pcrisis-current-state 'reply))))
+(ert-deftest vm-pcrisis-test-every-new-name-exists ()
+  "Each name the table points at is one this VM has.
+A table entry naming nothing would send a reader after a name that is not
+there, which is worse than the old name they started with."
+  (dolist (pair vm-renamed-variables)
+    (should (or (boundp (cdr pair))
+                (get (cdr pair) 'standard-value)
+                (get (cdr pair) 'variable-documentation))))
+  (dolist (pair vm-renamed-functions)
+    (should (fboundp (cdr pair)))))
 
-(ert-deftest vm-pcrisis-test-an-old-option-carries-its-value-across ()
-  "A value set under the old name is what the new name reads, which is what
-makes a customize file written years ago still describe this VM."
-  (let ((vmpc-conditions '(("mine" (vm-pcrisis-header-match "From" "me")))))
-    (should (equal vm-pcrisis-conditions vmpc-conditions)))
-  (let ((vm-pcrisis-actions '(("sign" (vm-pcrisis-signature "~/.sig")))))
-    (should (equal vmpc-actions vm-pcrisis-actions))))
-
-(ert-deftest vm-pcrisis-test-rules-written-with-old-names-still-run ()
-  "A rule naming the old function runs it: the actions are looked up by
-name at composition time, so the alias is what keeps an old configuration
-working."
-  (let ((ran nil))
-    (cl-letf (((symbol-function 'vm-pcrisis-add-header)
-               (lambda (&rest args) (setq ran args))))
-      (let ((vm-pcrisis-actions '(("add" (vmpc-add-header "X-Test: yes")))))
-        (vm-pcrisis-run-action "add"))
-      (should (equal ran '("X-Test: yes"))))))
+(ert-deftest vm-pcrisis-test-the-old-names-are-all-in-one-place ()
+  "No alias is left behind in the lisp: the table is the whole of it, so
+ending the grace period is deleting one file."
+  (let ((offenders nil))
+    (dolist (file (directory-files
+                   (expand-file-name "../lisp" vm-test-dir) t
+                   "\\`vm-.*\\.el\\'"))
+      (unless (member (file-name-nondirectory file)
+                      '("vm-renamed.el" "vm-autoloads.el"))
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward
+                  "^(\\(define-obsolete-variable-alias\\|defvaralias\\) '\\([^ \t\n]+\\)"
+                  nil t)
+            (push (cons (file-name-nondirectory file) (match-string 2))
+                  offenders)))))
+    (should (equal nil offenders))))
 
 (ert-deftest vm-pcrisis-test-the-profiles-file-keeps-its-name ()
   "The auto-profiles file is data on disk, so it is still ~/.vmpc-auto-profiles.
@@ -1923,14 +1907,14 @@ questions put and `vm-pcrisis-test--saved' what was written."
 (ert-deftest vm-pcrisis-test-an-action-that-asks-is-recognised ()
   "`vm-pcrisis-prompting-action-p' knows an action that asks from one that acts.
 It looks through the action's forms for the function, so the argument it is
-given does not matter, and the old `vmpc-' name counts too."
+given does not matter.  The old `vmpc-' name is not looked for: it signals
+when the action runs, and the signal names the current one
+(emacs-vm/vm#901)."
   (let ((vm-pcrisis-actions
          (append vm-pcrisis-test--asking-actions
-                 '(("old-name" (vmpc-prompt-for-profile 'prompt))
-                   ("nested" (progn (message "x")
+                 '(("nested" (progn (message "x")
                                     (vm-pcrisis-prompt-for-profile t t)))))))
     (should (vm-pcrisis-prompting-action-p "ask-which-identity"))
-    (should (vm-pcrisis-prompting-action-p "old-name"))
     (should (vm-pcrisis-prompting-action-p "nested"))
     (should-not (vm-pcrisis-prompting-action-p "from-ucsc"))
     (should-not (vm-pcrisis-prompting-action-p "no such action"))))

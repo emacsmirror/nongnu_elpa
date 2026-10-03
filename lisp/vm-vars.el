@@ -23,6 +23,10 @@
 ;;; Code:
 
 (require 'vm-macro)
+;; The names that moved, each signalling what to write instead.  Required
+;; here because every VM file requires this one, so the signals are in place
+;; before ~/.vm is read.  Delete the require with the file (emacs-vm/vm#901).
+(require 'vm-renamed)
 
 ;; Say so if this file's compiled form outlives the VM it was built
 ;; against; see `vm-assert-version' (#791).
@@ -246,8 +250,6 @@ must be used to load the externally stored message bodies."
   :type '(choice (const :tag "No automatic fetching" nil)
 		(const :tag "Automatic fetching" t)))
 
-(defvaralias 'vm-fetched-message-limit 
-  'vm-external-fetched-message-limit)
 (defcustom vm-external-fetched-message-limit 10
   "Should be an integer representing the maximum number of messages
 that VM should keep in the Folder buffer when the messages are
@@ -915,9 +917,6 @@ consulted."
   :group 'vm-folders
   :type 'boolean)
 
-(define-obsolete-variable-alias 'vm-trust-From_-with-Content-Length
-  'vm-trust-content-length "9.0.0")
-
 (defcustom vm-trust-content-length
   (eq vm-default-folder-type 'mboxcl2)
   "*Non-nil means decide that a From_ folder is mboxcl2 by looking at it.
@@ -1472,8 +1471,6 @@ MIME messages."
   :group 'vm-mime
   :type 'boolean)
 
-(defvaralias 'vm-honor-mime-content-disposition
-  'vm-mime-honor-content-disposition)
 (defcustom vm-mime-honor-content-disposition nil
   "Non-nil value means use information from the Content-Disposition
 header to display MIME messages.  Possible values are `t', to mean that the
@@ -1515,8 +1512,6 @@ for this variable to have effect."
   "*Control variable that says whether MIME messages should be decoded
 for showing the message, in addition to decoding for preview.")
 
-(defvaralias 'vm-auto-displayed-mime-content-types
-  'vm-mime-auto-displayed-content-types)
 (defcustom vm-mime-auto-displayed-content-types 
   '("text" "image" "message/rfc822")
   "List of MIME content types that should be displayed immediately
@@ -1553,8 +1548,6 @@ object to a file."
                  (const nil)
                  (repeat string)))
 
-(defvaralias 'vm-auto-displayed-mime-content-type-exceptions
-  'vm-mime-auto-displayed-content-type-exceptions)
 (defcustom vm-mime-auto-displayed-content-type-exceptions nil
   "List of MIME content types that should not be displayed immediately
 after decoding.  These types will be displayed as a button that you
@@ -2116,8 +2109,6 @@ deleting a MIME object with `vm-delete-mime-object'."
 ;; `vm-attach-files-in-directory', which were never marked anything.
 
 
-(defvaralias 'vm-mime-savable-types
-  'vm-mime-saveable-types)
 (defcustom vm-mime-saveable-types
   (append
    '("application" "x-unknown" "application/x-gzip")
@@ -2128,8 +2119,6 @@ deleting a MIME object with `vm-delete-mime-object'."
     :group 'vm-mime
     :type '(repeat (string :tag "MIME type" nil)))
 
-(defvaralias 'vm-mime-savable-type-exceptions
-  'vm-mime-saveable-type-exceptions)
 (defcustom vm-mime-saveable-type-exceptions
   '("text")
   "List of MIME types which should not be saved."
@@ -3995,8 +3984,6 @@ by what would be shown by the %T and %t specifiers respectively."
   :group 'vm-summary
   :type '(choice (const nil) regexp))
 
-(defvaralias 'vm-summary-uninteresting-senders-arrow
-  'vm-summary-recipient-marker)
 (defcustom vm-summary-recipient-marker "To: "
   "String to display before the recipients when displayed instead of an
 \"uninteresting\" sender.  See `vm-summary-uninteresting-senders'."
@@ -4187,8 +4174,6 @@ subject are significant."
   :type '(choice (const :tag "All Characters" nil) 
 		 (integer :tag "Number of characters")))
 
-(defvaralias 'vm-mutable-windows 
-  'vm-mutable-window-configuration)
 (defcustom vm-mutable-window-configuration pop-up-windows
   "This variable's value controls VM's window usage.
 
@@ -4201,8 +4186,6 @@ nor will it resize its own window."
   :group 'vm-frames
   :type 'boolean)
 
-(defvaralias 'vm-mutable-frames 
-  'vm-mutable-frame-configuration)
 (defcustom vm-mutable-frame-configuration t
   "Non-nil value means VM is allowed to create and destroy frames
 to display and undisplay buffers.  Whether VM actually does
@@ -6444,9 +6427,6 @@ list, of what VM can read.")
   :group 'vm-folders
   :type 'file)
 
-(defvaralias 'vm-vs-spam-score-headers
-  'vm-spam-score-headers)
-
 (defcustom vm-spam-score-headers
   '(("X-Spam-Score:"  "[-+]?[0-9]*\\.?[0-9]+"  string-to-number)
     ("X-Spam-Status:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number)
@@ -6478,9 +6458,6 @@ header line in email messages,
     "byte-count" "reversed-byte-count"
     "spam-score" "reversed-spam-score"
     "physical-order" "reversed-physical-order"))
-
-(defvaralias 'vm-supported-interactive-virtual-selectors
-  'vm-vs-interactive)
 
 (defconst vm-vs-interactive
   '(("any")
@@ -6543,9 +6520,6 @@ header line in email messages,
 virtual folders (search folders) interactively.  You can get
 individual help on each selector by checking the function
 `vm-vs-SELECTOR', e.g., `vm-vs-spam-score' for the spam-score selector.")
-
-(defvaralias 'vm-virtual-selector-function-alist
-  'vm-vs-alist)
 
 (defconst vm-vs-alist
   '((any . vm-vs-any)

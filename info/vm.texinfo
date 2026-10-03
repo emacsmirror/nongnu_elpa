@@ -1667,12 +1667,11 @@ messages are no longer altered on the way in.
 
 @cindex From_-with-Content-Length
 The folder type was called @code{From_-with-Content-Length} until then,
-after the mechanism rather than the format, and the option below was
-@code{vm-trust-From_-with-Content-Length}.  Both old names still work: the
-type wherever one is given: in @code{vm-default-folder-type}, by
-@code{vm-change-folder-type}, and in an index file written before the change
--- and the option as an alias.  Nothing has to be altered, and the old names
-are not going to be removed.
+after the mechanism rather than the format.  The old type name still works
+wherever a type is given: in @code{vm-default-folder-type}, by
+@code{vm-change-folder-type}, and in an index file written before the change.
+It is not going to be removed.  The option was renamed with it, and setting
+it under its old name reports the current one.
 
 @cindex archiving mail
 The reason to care is that the first three change the message.  A folder
@@ -3637,8 +3636,8 @@ usually a faster operation of VM.
 
 @vindex vm-mime-deletable-types
 @vindex vm-mime-deletable-type-exceptions
-@vindex vm-mime-savable-types
-@vindex vm-mime-savable-type-exceptions
+@vindex vm-mime-saveable-types
+@vindex vm-mime-saveable-type-exceptions
 @vmdocvmsaveallattachments
 
 @vmdocvmdeleteallattachments
@@ -4173,14 +4172,14 @@ in turn and shows the first alternative that matches one and can be
 displayed.  @code{favorite-internal} in place of @code{favorite} takes the
 first that VM can display itself.
 
-@vindex vm-auto-displayed-mime-content-type-exceptions
+@vindex vm-mime-auto-displayed-content-type-exceptions
 @cindex @acronym{MIME} alternative, as a button
 To read one alternative and keep the others within reach, ask for @code{all}
 and then say which types are not to be displayed:
 
 @example
 (setq vm-mime-alternative-show-method 'all)
-(setq vm-auto-displayed-mime-content-type-exceptions '("text/html"))
+(setq vm-mime-auto-displayed-content-type-exceptions '("text/html"))
 @end example
 
 @noindent Every alternative is then part of the message, and the ones excluded
@@ -4302,7 +4301,7 @@ It is also
 possible to auto-decrypt whenever you read the message by adding
 @code{"application/x-pkcs7-mime"} and @code{"application/pkcs7-mime"} to
 the
-variable @code{vm-auto-displayed-mime-content-types} But beware that, at
+variable @code{vm-mime-auto-displayed-content-types} But beware that, at
 present, the @samp{smime.el} library always asks for a private key passcode,
 even for non-encrypted private keys.
 So, you will be prompted while
@@ -5507,12 +5506,10 @@ In earlier releases the advice was installed merely by loading the file, so
 switch it off.  That still loads the file but no longer changes how VM behaves,
 so an init file saying only @code{(require 'vm-pcrisis)} needs the line above.
 
-Everything here was called @code{vmpc-} something in earlier releases, and
-still answers to that name: an option keeps a value you saved under the old name,
-and a rule that names @code{vmpc-signature} or @code{vmpc-header-match} runs
-what @code{vm-pcrisis-signature} and @code{vm-pcrisis-header-match} now are.
-The file @file{~/.vmpc-auto-profiles} keeps its name as well, being a file
-and not a symbol.
+Everything here was named differently in earlier releases.  An old name is
+no longer an alias: setting one, or naming one in a rule, reports what to
+write instead.  The file @file{~/.vmpc-auto-profiles} keeps its name, being a
+file and not a symbol.
 
 @findex vm-pcrisis-my-identities
 As a quick start, one line defines a set of identities:
@@ -7082,7 +7079,6 @@ exactly that width.
 
 @vindex vm-summary-uninteresting-senders
 @vindex vm-summary-recipient-marker
-@vindex vm-summary-uninteresting-senders-arrow
 If you save copies of all your outbound messages in a folder and
 later visit that folder, the @samp{%F} format specifier will normally
 display your own name.  If you would rather see the recipient
@@ -7103,7 +7099,7 @@ header.
 
 (For compatibility with older versions, the variable
 @code{vm-summary-recipient-marker} is also referred to by its old name,
-@code{vm-summary-uninteresting-senders-arrow}.)
+@code{vm-summary-recipient-marker}.)
 
 The summary format need not be one line per message but it must end with
 a newline, otherwise the message pointer will not be displayed correctly
@@ -8205,22 +8201,18 @@ commands and classes of commands by using VM's window configuration
 facilities.
 
 @vindex vm-mutable-frame-configuration
-@vindex vm-mutable-frames
 To use VM's frame configuration features, the variable
 @code{vm-mutable-frame-configuration} must be set non-@code{nil}.  This is
 the default.  If @code{vm-mutable-frame-configuration} is set to @code{nil}
 VM will only use the current frame, and VM will not create, delete or resize
-frames.  (This variable was called @code{vm-mutable-frames} in versions
-prior to 8.2.)
+frames.
 
 @vindex vm-mutable-window-configuration
-@vindex vm-mutable-windows
 To use window configurations, the variable
 @code{vm-mutable-window-configuration} must be set non-@code{nil}.  If
 @code{vm-mutable-window-configuration} is set to @code{nil}, VM will only
 use the selected window, and will not create, delete or resize windows.
-(This variable was called @code{vm-mutable-windows} in versions
-prior to 8.2.)
+
 
 @menu
 * Frame Configuration::         How to configure frame use and appearance.
@@ -11243,9 +11235,9 @@ the email address of the author (@code{vm-su-from}).
 The @code{author} selector is then registered in four places:
 
 @itemize
-@inindex vm-virtual-selector-function-alist
+@inindex vm-vs-alist
 @item 
-The variable @code{vm-virtual-selector-function-alist}, which contains pairs
+The variable @code{vm-vs-alist}, which contains pairs
 of the form @samp{(@var{SELECTOR} . @var{FUNCTION})}.  For the @code{author}
 selector, the pair is @code{(author . vm-vs-author)}.
 
@@ -11259,9 +11251,9 @@ requires:
 (put 'author 'vm-virtual-selector-arg-type 'string)
 @end example
 
-@inindex vm-supported-interactive-virtual-selectors
+@inindex vm-vs-interactive
 @item
-The variable @code{vm-supported-interactive-virtual-selectors}, which
+The variable @code{vm-vs-interactive}, which
 contains lists of strings, each string being the name of a virtual
 selector.  For the @code{author} selector, the list is @code{("author")}.
 Including the selector in this variable allows it to be used in creating
