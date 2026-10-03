@@ -147,10 +147,12 @@
     ;; setup plstore: store access token, using auth source:
     (let ((mastodon-auth-use-auth-source t)
           (auth-source-do-cache nil)
-          (auth-sources "fixture/auth-source-stub"))
+          (auth-sources "fixture/auth-info-check"))
+      (auth-source-forget-all-cached)
       (with-mock
         (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
-        ;; FIXME: storing fails, auth-source returns no :save-function to call:
+        ;; FIXME: storing fails, auth-source returns no :save-function to
+        ;; call:
         (mastodon-client--store-access-token "token")
         ;; should nil if we don't check with auth source
         ;; because we saved in auth-source instead:
@@ -167,7 +169,7 @@
          (mastodon-active-user "test8000")
          (host (url-domain
                 (url-generic-parse-url mastodon-instance-url)))
-         (auth-sources '("fixture/auth-source-stub"))
+         (auth-sources '("fixture/auth-source-search-only"))
          (mastodon-auth-use-auth-source t)
          (auth-source-do-cache nil)
          (token "12341234")
