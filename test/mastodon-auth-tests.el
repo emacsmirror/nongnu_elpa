@@ -187,3 +187,39 @@
             (mastodon-auth-source-token mastodon-instance-url
                            (concat mastodon-active-user "@" host)
                            :token)))))
+
+(ert-deftest mastodon-auth-auth-source-save-check ()
+  (auth-source-forget-all-cached)
+  (let* ((mastodon-instance-url "https://mastodon.example")
+         (mastodon-active-user "test8000")
+         (host (url-domain
+                (url-generic-parse-url mastodon-instance-url)))
+         (auth-sources '("fixture/auth-source-save-check"))
+         (file (car auth-sources))
+         (filename (nth 1 (split-string file
+                                        "/")))
+         (mastodon-auth-use-auth-source t)
+         (auth-source-do-cache nil)
+         (auth-source-save-behavior t) ;; disable prompting
+         (backup-inhibited t)
+         (token "12341234"))
+    ;; create auth source file:
+    (find-file-noselect file)
+    ;; save and kill it:
+    (with-current-buffer filename
+      (save-buffer)
+      (kill-buffer filename))
+    ;; create entry:
+    (let ((result
+           (mastodon-auth-source-get mastodon-active-user
+                        mastodon-instance-url
+                        token :create)))
+      ;; should return list of user, token, (non-empty) save-fun:
+      (should
+       (= 3 (length result)))
+      (should
+       (equal token (nth 1 result)))
+      ;; third elt should be (save) fun, non-nil:
+      (should
+       (functionp (nth 2 result))))
+    (delete-file file)))
