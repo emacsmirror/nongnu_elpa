@@ -249,50 +249,45 @@ Also try to fetch token from `mastodon-auth-use-auth-source' if it is enabled.
 Note that this means it should be possible for a user to copy an
 existing token to their authinfo file manually, and mastodon.el will
 work, with no need for auth flow/JS-capable browser."
-  (cond
-   (mastodon-auth--token-alist
-    ;; user variables are known and initialised.
-    (alist-get mastodon-instance-url
-               mastodon-auth--token-alist nil nil #'string=))
-   ;; if auth source enabled, but we have an access token in plstore,
-   ;; error out and tell user to remove plstore and start over or disable
-   ;; auth source:
-   ((mastodon-auth--plstore-token-check))
-   ;; FIXME: remove :access_token from "active user" when auth-source:
-   ((plist-get (mastodon-client--active-user) :access_token)
-    ;; user variables need to be read from plstore active-user entry.
-    (push (cons mastodon-instance-url
-                (plist-get (mastodon-client--active-user) :access_token))
-          mastodon-auth--token-alist)
-    (alist-get mastodon-instance-url
-               mastodon-auth--token-alist nil nil #'string=))
-   ((null mastodon-active-user)
-    ;; user not aware of 2FA-related changes and has not set
-    ;; `mastodon-active-user'. Make user aware and error out.
-    (mastodon-auth--show-notice mastodon-auth--user-unaware
-                                "*mastodon-notice*")
-    (user-error "Variables not set properly"))
-   ;; Check auth-source for a token:
-   ((and mastodon-auth-use-auth-source
-         ;; nil if we have no entry (i.e. if we fail, don't error out, but
-         ;; continue to auth flow):
-         (mastodon-auth-source-get
-          mastodon-active-user
-          (url-domain
-           (url-generic-parse-url mastodon-instance-url))))
-    ;; if entry token is incorrect, we error in
-    ;; `mastodon-return-account-credentials'
-    (let ((token (cadr
-                  (mastodon-auth-source-get
-                   mastodon-active-user
-                   (url-domain
-                    (url-generic-parse-url mastodon-instance-url))))))
-      (push `(,mastodon-instance-url . ,token) mastodon-auth--token-alist)
-      token))
-   (t
-    ;; user access-token needs to fetched from the server and
-    ;; stored and variables initialised.
-    (mastodon-auth--handle-token-response (mastodon-auth--get-token)))))
+  (let ((host (url-domain
+               (url-generic-parse-url mastodon-instance-url))))
+    (cond
+     (mastodon-auth--token-alist
+      ;; user variables are known and initialised.
+      (alist-get mastodon-instance-url
+                 mastodon-auth--token-alist nil nil #'string=))
+     ;; if auth source enabled, but we have an access token in plstore,
+     ;; error out and tell user to remove plstore and start over or disable
+     ;; auth source:
+     ((mastodon-auth--plstore-token-check))
+     ;; FIXME: remove :access_token from "active user" when auth-source:
+     ((plist-get (mastodon-client--active-user) :access_token)
+      ;; user variables need to be read from plstore active-user entry.
+      (push (cons mastodon-instance-url
+                  (plist-get (mastodon-client--active-user) :access_token))
+            mastodon-auth--token-alist)
+      (alist-get mastodon-instance-url
+                 mastodon-auth--token-alist nil nil #'string=))
+     ((null mastodon-active-user)
+      ;; user not aware of 2FA-related changes and has not set
+      ;; `mastodon-active-user'. Make user aware and error out.
+      (mastodon-auth--show-notice mastodon-auth--user-unaware
+                     "*mastodon-notice*")
+      (user-error "Variables not set properly"))
+     ;; Check auth-source for a token:
+     ((and mastodon-auth-use-auth-source
+           ;; nil if we have no entry (i.e. if we fail, don't error out,
+           ;; but continue to auth flow):
+           (mastodon-auth-source-get mastodon-active-user host))
+      ;; if entry token is incorrect, we error in
+      ;; `mastodon-return-account-credentials'
+      (let ((token (cadr (mastodon-auth-source-get mastodon-active-user host))))
+        (push `(,mastodon-instance-url . ,token) mastodon-auth--token-alist)
+        token))
+     (t
+      ;; user access-token needs to fetched from the server and
+      ;; stored and variables initialised.
+      (mastodon-auth--handle-token-response (mastodon-auth--get-token))))))
 
 (defun mastodon-auth--handle-token-response (response)
   "Add token RESPONSE to `mastodon-auth--token-alist'.
