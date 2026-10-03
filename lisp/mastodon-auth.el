@@ -204,17 +204,15 @@ When ASK is absent return nil."
           (json-string (buffer-substring-no-properties (point) (point-max))))
       (json-read-from-string json-string))))
 
-(defun mastodon-auth--plstore-token-check (&optional auth-source)
+(defun mastodon-auth--plstore-token-check ()
   "Signal an error if plstore contains unencrypted access-token.
-If AUTH-SOURCE, and if `mastodon-auth-use-auth-source' is non-nil,
-return non-nil if it contains any access token.
 Used to help users switch to the new encrypted auth token flow."
   ;; FIXME: is it poss to move this plstore read to have one less read?
   ;; e.g. inside of `mastodon-client--active-user'? the issue is that
   ;; ideally we want to test "user-" entry, even if fetching "active-user"
   ;; entry, so we would have to re-do the plstore read functions.
   (when
-      (mastodon-auth--plstore-access-token-member auth-source)
+      (mastodon-auth--plstore-access-token-member)
     (if auth-source
         (warn "Auth source storage of tokens is enabled,\
  but there is also an access token in your plstore.\
@@ -230,18 +228,16 @@ Used to help users switch to the new encrypted auth token flow."
 Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
  If this message is in error, contact us on the mastodon.el repo")))))
 
-(defun mastodon-auth--plstore-access-token-member (&optional auth-source)
+(defun mastodon-auth--plstore-access-token-member ()
   "Return non-nil if the user entry of the plstore contains :access_token.
-If AUTH-SOURCE, also check if it contains :secret-access_token."
+Also check for :secret-access_token."
   (let* ((plstore (plstore-open mastodon-client--token-file))
          (name (concat "user-" (mastodon-client--form-user-from-vars)))
          ;; get alist like plstore.el does, so that keys will display with
          ;; ":secret-" prefix if encrypted:
          (alist (assoc name (plstore--get-merged-alist plstore))))
-    (if (and auth-source mastodon-auth-use-auth-source)
-        (or (member :access_token alist)
-            (member :secret-access_token alist))
-      (member :access_token alist))))
+    (or (member :access_token alist)
+        (member :secret-access_token alist))))
 
 (defun mastodon-auth--access-token ()
   "Return the access token to use with `mastodon-instance-url'.

@@ -122,7 +122,7 @@ saving, but before fetching."
       (let ((mastodon-auth-use-auth-source t))
         (should
          (equal
-          (mastodon-auth--plstore-access-token-member :auth-source)
+          (mastodon-auth--plstore-access-token-member)
           ;; if clause so we can not lose the encrypted plist structure:
           (if mastodon-auth-encrypt-tokens-plstore
               '(:secret-access_token t :username "test8000@mastodon.example"
