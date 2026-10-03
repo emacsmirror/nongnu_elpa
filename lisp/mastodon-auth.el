@@ -313,14 +313,23 @@ Return a list of user, password/secret, and the item's save-function."
   (let* ((auth-source-creation-prompts
           '((secret . "%u access token: ")))
          (source
-          (car
-           (auth-source-search :host host :user user
-                               ;; XXX: :secret only works here for
-                               ;; encrypted authinfo!:
-                               :require '(:user :host)
-                               :secret (if token token nil)
-                               ;; "create" alone doesn't work here!:
-                               :create (if create t nil)))))
+          (auth-source-search :host host :user user
+                              ;; XXX: :secret only works here for
+                              ;; encrypted authinfo!:
+                              :require '(:user :host)
+                              :max 2
+                              :secret (if token token nil)
+                              ;; "create" alone doesn't work here!:
+                              :create (if create t nil)))
+         (source
+          (if (< 1 (length source))
+              ;; if multi entries, try to return :port entry:
+              (or (car
+                   (cl-remove-if-not (lambda (x)
+                                       (cl-member :port x))
+                                     source))
+                  (car source)) ;; fallback
+            (car source)))) ;; else just get entry
     (when source
       (let ((creds
              `(,(plist-get source :user)
