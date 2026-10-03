@@ -1,5 +1,13 @@
 #+TITLE: Changelog
 
+* Unreleased
+
+** Fixes
+- Leave the published OMEMO device list and bundles unchanged when fetching
+  our own device list fails; distinguish authoritative empty lists from errors.
+- Preserve binary OMEMO module inputs on Neomacs runtimes that reject unibyte
+  strings through the native string-copy API; keep GNU Emacs behavior unchanged.
+
 * [0.15.0]
 #+date: 2026-10-02
 

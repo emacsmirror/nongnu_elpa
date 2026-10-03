@@ -215,12 +215,89 @@ make_unibyte(emacs_env *env, const uint8_t *buf, size_t len)
     return env->make_unibyte_string(env, (const char *)buf, len);
 }
 
+/* Neomacs currently rejects non-ASCII unibyte strings in its module
+   copy_string_contents implementation.  Read their byte-valued characters
+   through the Lisp/vector API instead; never transcode cryptographic data.
+   GNU Emacs and multibyte strings retain the native API's UTF-8 semantics. */
+static bool unibyte_copy_workaround;
+
+static bool
+copy_string_contents(emacs_env *env, emacs_value arg,
+                     char *buf, ptrdiff_t *len)
+{
+    if (env->non_local_exit_check(env))
+        return false;
+    if (!unibyte_copy_workaround)
+        return env->copy_string_contents(env, arg, buf, len);
+
+    emacs_value stringp = env->funcall(env, env->intern(env, "stringp"),
+                                     1, &arg);
+    if (env->non_local_exit_check(env))
+        return false;
+    if (!env->is_not_nil(env, stringp))
+        return env->copy_string_contents(env, arg, buf, len);
+    emacs_value multibyte = env->funcall(env,
+                                       env->intern(env, "multibyte-string-p"),
+                                       1, &arg);
+    if (env->non_local_exit_check(env))
+        return false;
+    if (env->is_not_nil(env, multibyte))
+        return env->copy_string_contents(env, arg, buf, len);
+
+    emacs_value size = env->funcall(env, env->intern(env, "length"), 1, &arg);
+    if (env->non_local_exit_check(env))
+        return false;
+    intmax_t n = env->extract_integer(env, size);
+    if (env->non_local_exit_check(env))
+        return false;
+    if (n < 0 || n >= PTRDIFF_MAX) {
+        signal_error(env, OMEMO_EPARAM, "string is too large to copy");
+        return false;
+    }
+    ptrdiff_t required = (ptrdiff_t)n + 1;
+    if (!buf) {
+        *len = required;
+        return true;
+    }
+    if (*len < required) {
+        emacs_value sizes[] = { env->make_integer(env, *len),
+                                env->make_integer(env, required) };
+        *len = required;
+        emacs_value data = env->funcall(env, env->intern(env, "list"), 2, sizes);
+        if (!env->non_local_exit_check(env))
+            env->non_local_exit_signal(env,
+                                       env->intern(env, "memory-buffer-too-small"),
+                                       data);
+        return false;
+    }
+
+    emacs_value bytes = env->funcall(env, env->intern(env, "vconcat"), 1, &arg);
+    if (env->non_local_exit_check(env))
+        return false;
+    for (ptrdiff_t i = 0; i < (ptrdiff_t)n; i++) {
+        emacs_value value = env->vec_get(env, bytes, i);
+        if (env->non_local_exit_check(env))
+            return false;
+        intmax_t byte = env->extract_integer(env, value);
+        if (env->non_local_exit_check(env))
+            return false;
+        if (byte < 0 || byte > UINT8_MAX) {
+            signal_error(env, OMEMO_EPARAM, "invalid unibyte character");
+            return false;
+        }
+        buf[i] = (char)(uint8_t)byte;
+    }
+    buf[n] = '\0';
+    *len = required;
+    return true;
+}
+
 static int
 extract_unibyte(emacs_env *env, emacs_value arg,
                 uint8_t *buf, size_t bufsize, size_t *outlen)
 {
     ptrdiff_t len = (ptrdiff_t)bufsize;
-    if (!env->copy_string_contents(env, arg, (char *)buf, &len))
+    if (!copy_string_contents(env, arg, (char *)buf, &len))
         return -1;
     /* copy_string_contents appends a NUL; actual length is len-1. */
     if (outlen)
@@ -233,7 +310,7 @@ extract_exact_unibyte(emacs_env *env, emacs_value arg, uint8_t *buf,
                       size_t expected, const char *message)
 {
     ptrdiff_t len = 0;
-    env->copy_string_contents(env, arg, NULL, &len);
+    copy_string_contents(env, arg, NULL, &len);
     if (env->non_local_exit_check(env))
         return -1;
     if (len != (ptrdiff_t)expected + 1) {
@@ -353,7 +430,7 @@ F_deserialize_store(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     /* Get size of the blob. */
     ptrdiff_t bloblen = 0;
-    env->copy_string_contents(env, args[0], NULL, &bloblen);
+    copy_string_contents(env, args[0], NULL, &bloblen);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -362,7 +439,7 @@ F_deserialize_store(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[0], (char *)blob, &bloblen);
+    copy_string_contents(env, args[0], (char *)blob, &bloblen);
     if (env->non_local_exit_check(env)) {
         skipped_clear(blob, (size_t)bloblen);
         free(blob);
@@ -574,7 +651,7 @@ F_encrypt_message(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     /* Get plaintext size */
     ptrdiff_t ptlen = 0;
-    env->copy_string_contents(env, args[0], NULL, &ptlen);
+    copy_string_contents(env, args[0], NULL, &ptlen);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -583,7 +660,7 @@ F_encrypt_message(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[0], (char *)plaintext, &ptlen);
+    copy_string_contents(env, args[0], (char *)plaintext, &ptlen);
     if (env->non_local_exit_check(env)) {
         free(plaintext);
         return Qnil_v;
@@ -643,7 +720,7 @@ F_decrypt_message(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     /* Extract ciphertext */
     ptrdiff_t ctlen_raw = 0;
-    env->copy_string_contents(env, args[2], NULL, &ctlen_raw);
+    copy_string_contents(env, args[2], NULL, &ctlen_raw);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -652,7 +729,7 @@ F_decrypt_message(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[2], (char *)ciphertext, &ctlen_raw);
+    copy_string_contents(env, args[2], (char *)ciphertext, &ctlen_raw);
     if (env->non_local_exit_check(env)) {
         free(ciphertext);
         return Qnil_v;
@@ -834,7 +911,7 @@ F_deserialize_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     (void)nargs; (void)data;
 
     ptrdiff_t bloblen = 0;
-    env->copy_string_contents(env, args[0], NULL, &bloblen);
+    copy_string_contents(env, args[0], NULL, &bloblen);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -843,7 +920,7 @@ F_deserialize_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[0], (char *)blob, &bloblen);
+    copy_string_contents(env, args[0], (char *)blob, &bloblen);
     if (env->non_local_exit_check(env)) {
         free(blob);
         return Qnil_v;
@@ -914,7 +991,7 @@ F_legacy_session_blob_p(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     (void)nargs; (void)data;
 
     ptrdiff_t bloblen = 0;
-    env->copy_string_contents(env, args[0], NULL, &bloblen);
+    copy_string_contents(env, args[0], NULL, &bloblen);
     if (env->non_local_exit_check(env))
         return Qnil_v;
     uint8_t *blob = malloc((size_t)bloblen);
@@ -922,7 +999,7 @@ F_legacy_session_blob_p(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    if (!env->copy_string_contents(env, args[0], (char *)blob, &bloblen)) {
+    if (!copy_string_contents(env, args[0], (char *)blob, &bloblen)) {
         free(blob);
         return Qnil_v;
     }
@@ -990,7 +1067,7 @@ F_decrypt_key(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     /* Extract encrypted message */
     ptrdiff_t msglen_raw = 0;
-    env->copy_string_contents(env, args[3], NULL, &msglen_raw);
+    copy_string_contents(env, args[3], NULL, &msglen_raw);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -999,7 +1076,7 @@ F_decrypt_key(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[3], (char *)msgbuf, &msglen_raw);
+    copy_string_contents(env, args[3], (char *)msgbuf, &msglen_raw);
     if (env->non_local_exit_check(env)) {
         free(msgbuf);
         return Qnil_v;
@@ -1305,7 +1382,7 @@ F_aesgcm_decrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     /* Extract ciphertext + 16-byte GCM auth tag */
     ptrdiff_t ct_raw = 0;
-    env->copy_string_contents(env, args[2], NULL, &ct_raw);
+    copy_string_contents(env, args[2], NULL, &ct_raw);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -1314,7 +1391,7 @@ F_aesgcm_decrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[2], (char *)ctbuf, &ct_raw);
+    copy_string_contents(env, args[2], (char *)ctbuf, &ct_raw);
     if (env->non_local_exit_check(env)) {
         free(ctbuf);
         return Qnil_v;
@@ -1367,7 +1444,7 @@ F_aesgcm_encrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
 
     /* Extract plaintext */
     ptrdiff_t pt_raw = 0;
-    env->copy_string_contents(env, args[0], NULL, &pt_raw);
+    copy_string_contents(env, args[0], NULL, &pt_raw);
     if (env->non_local_exit_check(env))
         return Qnil_v;
 
@@ -1376,7 +1453,7 @@ F_aesgcm_encrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
         signal_error(env, -1, "malloc failed");
         return Qnil_v;
     }
-    env->copy_string_contents(env, args[0], (char *)ptbuf, &pt_raw);
+    copy_string_contents(env, args[0], (char *)ptbuf, &pt_raw);
     if (env->non_local_exit_check(env)) {
         free(ptbuf);
         return Qnil_v;
@@ -1465,6 +1542,32 @@ emacs_module_init(struct emacs_runtime *runtime)
     GLOBAL_SYM(Qpre_key_p,         ":pre-key-p");
 
 #undef GLOBAL_SYM
+
+    /* Detect the binary-copy limitation, not the editor's name.  Neomacs
+       does not provide its `neomacs' feature in batch mode.  Clear only
+       the known unicode-string-p rejection of a valid unibyte probe. */
+    emacs_value wrong_type = env->intern(env, "wrong-type-argument");
+    emacs_value unicode_string = env->intern(env, "unicode-string-p");
+    emacs_value car = env->intern(env, "car");
+    emacs_value probe = env->make_unibyte_string(env, "\200", 1);
+    if (env->non_local_exit_check(env))
+        return 3;
+    ptrdiff_t probe_size = 0;
+    if (!env->copy_string_contents(env, probe, NULL, &probe_size)) {
+        emacs_value symbol, data;
+        if (env->non_local_exit_get(env, &symbol, &data) != emacs_funcall_exit_signal)
+            return 3;
+        env->non_local_exit_clear(env);
+        emacs_value predicate = env->funcall(env, car, 1, &data);
+        if (env->non_local_exit_check(env))
+            return 3;
+        if (!env->eq(env, symbol, wrong_type) ||
+            !env->eq(env, predicate, unicode_string)) {
+            env->non_local_exit_signal(env, symbol, data);
+            return 3;
+        }
+        unibyte_copy_workaround = true;
+    }
 
     /* Define error symbol */
     Qjabber_omemo_error = env->make_global_ref(

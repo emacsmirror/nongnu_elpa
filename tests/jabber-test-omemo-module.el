@@ -44,6 +44,56 @@
 
 ;;; Group 2: Store lifecycle
 
+(ert-deftest jabber-test-omemo-module-all-byte-values-round-trip ()
+  "Native crypto consumes every byte value without UTF-8 conversion."
+  (let ((bytes (apply #'unibyte-string (number-sequence 0 255))))
+    (dolist (functions '((jabber-omemo--encrypt-message
+                         jabber-omemo--decrypt-message)
+                        (jabber-omemo--aesgcm-encrypt
+                         jabber-omemo--aesgcm-decrypt)))
+      (dolist (plaintext (list "" bytes (concat bytes bytes "\0")))
+        (let* ((encrypted (funcall (car functions) plaintext))
+               (decrypted (funcall (cadr functions)
+                                   (plist-get encrypted :key)
+                                   (plist-get encrypted :iv)
+                                   (plist-get encrypted :ciphertext))))
+          (should-not (multibyte-string-p decrypted))
+          (should (equal plaintext decrypted)))))))
+
+(ert-deftest jabber-test-omemo-module-multibyte-utf8-semantics ()
+  "Multibyte input still follows the module API's UTF-8 encoding."
+  (let* ((text "Greek: Ελληνικά; NUL: \0; emoji: λ🙂")
+         (encrypted (jabber-omemo--aesgcm-encrypt text)))
+    (should (equal (encode-coding-string text 'utf-8)
+                   (jabber-omemo--aesgcm-decrypt
+                    (plist-get encrypted :key)
+                    (plist-get encrypted :iv)
+                    (plist-get encrypted :ciphertext))))))
+
+(ert-deftest jabber-test-omemo-module-non-string-inputs ()
+  "The string boundary rejects non-strings rather than coercing sequences."
+  (dolist (input '(nil 42 [0 255] (0 255)))
+    (dolist (function '(jabber-omemo--deserialize-store
+                       jabber-omemo--deserialize-session
+                       jabber-omemo--legacy-session-blob-p
+                       jabber-omemo--encrypt-message
+                       jabber-omemo--aesgcm-encrypt))
+      (should-error (funcall function input) :type 'wrong-type-argument))))
+
+(ert-deftest jabber-test-omemo-module-fixed-size-all-byte-values ()
+  "Fixed-size native inputs preserve all byte values, including NUL."
+  (let ((bytes (apply #'unibyte-string (number-sequence 0 255)))
+        (session (jabber-omemo--make-session)))
+    (dotimes (i 8)
+      (let* ((key (substring bytes (* i 32) (* (1+ i) 32)))
+             (entries (list (list i key key))))
+        (jabber-omemo--session-set-skipped-keys session entries)
+        (should (equal entries (jabber-omemo--session-skipped-keys session)))
+        (should (equal entries
+                       (jabber-omemo--session-skipped-keys
+                        (jabber-omemo--deserialize-session
+                         (jabber-omemo--serialize-session session)))))))))
+
 (ert-deftest jabber-test-omemo-module-setup-store-returns-unibyte ()
   "setup-store returns a non-empty unibyte string."
   (let ((blob (jabber-omemo--setup-store)))

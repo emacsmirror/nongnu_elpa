@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'jabber-blocking)
 (require 'hex-util)
 (require 'jabber-util)
@@ -541,6 +542,122 @@ Updates the in-memory cache and database."
        (funcall callback nil)))
    callback))
 
+(defun jabber-omemo--own-list-element-p (node namespace inherited)
+  "Return non-nil if NODE has element-only content in NAMESPACE.
+Use INHERITED when NODE has no explicit namespace.  Ignore XML whitespace."
+  (and (equal (or (jabber-xml-get-attribute node 'xmlns) inherited) namespace)
+       (cl-every (lambda (child)
+                   (or (consp child)
+                       (and (stringp child)
+                            (string-match-p "\\`[ \t\r\n]*\\'" child))))
+                 (jabber-xml-node-children node))))
+
+(defun jabber-omemo--own-device-list-result (xml)
+  "Return (t . IDS) for a complete own device-list result in XML.
+Return nil for an uncertain or malformed result, not an empty snapshot."
+  (let* ((pubsubs (jabber-xml-get-children xml 'pubsub))
+         (pubsub (car pubsubs))
+         (items-nodes (jabber-xml-get-children pubsub 'items))
+         (items-node (car items-nodes))
+         (items (seq-filter #'consp (jabber-xml-node-children items-node)))
+         (lists (jabber-xml-get-children (car items) 'list))
+         (list-node (car lists))
+         (devices (seq-filter #'consp (jabber-xml-node-children list-node))))
+    (when (and (eq (jabber-xml-node-name xml) 'iq)
+               (equal (jabber-xml-get-attribute xml 'type) "result")
+               (not (jabber-iq-error xml))
+               (jabber-omemo--own-list-element-p
+                xml (jabber-xml-get-attribute xml 'xmlns) nil)
+               (= (length pubsubs) 1)
+               (= (length (seq-filter #'consp (jabber-xml-node-children xml))) 1)
+               (jabber-omemo--own-list-element-p
+                pubsub jabber-pubsub-xmlns (jabber-xml-get-attribute xml 'xmlns))
+               (= (length items-nodes) 1)
+               (= (length (seq-filter #'consp (jabber-xml-node-children pubsub))) 1)
+               (jabber-omemo--own-list-element-p
+                items-node jabber-pubsub-xmlns jabber-pubsub-xmlns)
+               (equal (jabber-xml-get-attribute items-node 'node)
+                      jabber-omemo-devicelist-node)
+               (or (null items)
+                   (and (= (length items) 1)
+                        (eq (jabber-xml-node-name (car items)) 'item)
+                        (jabber-omemo--own-list-element-p
+                         (car items) jabber-pubsub-xmlns jabber-pubsub-xmlns)
+                        (= (length lists) 1)
+                        (= (length (seq-filter #'consp
+                                               (jabber-xml-node-children (car items)))) 1)
+                        (jabber-omemo--own-list-element-p
+                         list-node jabber-omemo-xmlns jabber-pubsub-xmlns)
+                        (cl-every
+                         (lambda (device)
+                           (let ((id (jabber-xml-get-attribute device 'id)))
+                             (and (eq (jabber-xml-node-name device) 'device)
+                                  (jabber-omemo--own-list-element-p
+                                   device jabber-omemo-xmlns jabber-omemo-xmlns)
+                                  (not (seq-some #'consp
+                                                 (jabber-xml-node-children device)))
+                                  (stringp id)
+                                  (string-match-p "\\`[0-9]+\\'" id)
+                                  (< 0 (string-to-number id) (ash 1 31)))))
+                         devices))))
+      (cons t (jabber-omemo--parse-device-list items)))))
+
+(defun jabber-omemo--fetch-own-device-list (jc callback)
+  "Fetch an authoritative own device list via JC, then call CALLBACK with IDs.
+A successful empty result or standard `item-not-found' error supplies nil
+IDs.  Other failures, cancellation, malformed or retired replies do not
+call CALLBACK or modify the cache or database.  Preserve the legacy peer
+callback contract of `jabber-omemo--fetch-device-list' separately."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (current-p (jabber-blocking--session-predicate jc))
+         (settled nil)
+         (admitted-p
+          (lambda (received-jc xml)
+            (and (eq received-jc jc) (funcall current-p)
+                 (let ((from (jabber-xml-get-attribute xml 'from)))
+                   (or (null from) (equal from account))))))
+         (accept
+          (lambda (ids)
+            (puthash (jabber-omemo--device-list-key account account)
+                     ids jabber-omemo--device-lists)
+            (dolist (id ids)
+              (jabber-omemo-store-save-device account account id))
+            (jabber-omemo--deactivate-stale-devices account account ids)
+            (funcall callback ids))))
+    (condition-case err
+        (jabber-omemo--request-peer
+         jc account jabber-omemo-devicelist-node
+         (lambda (received-jc xml _closure)
+           (unless settled
+             (setq settled t)
+             (when (funcall admitted-p received-jc xml)
+               (if-let* ((result (jabber-omemo--own-device-list-result xml)))
+                   (funcall accept (cdr result))
+                 (message "OMEMO: refusing malformed own device list")))))
+         (lambda (received-jc xml _closure)
+           (unless settled
+             (setq settled t)
+             (when (funcall admitted-p received-jc xml)
+               (if (and (equal (jabber-xml-get-attribute xml 'type) "error")
+                        (= (length (jabber-xml-get-children xml 'error)) 1)
+                        (equal
+                         (mapcar #'jabber-xml-node-name
+                                 (seq-filter
+                                  (lambda (child)
+                                    (and (equal (jabber-xml-get-attribute child 'xmlns)
+                                                jabber-stanzas-xmlns)
+                                         (not (eq (jabber-xml-node-name child) 'text))))
+                                  (jabber-xml-node-children (jabber-iq-error xml))))
+                         '(item-not-found)))
+                   ;; XEP-0060 6.5.9.11: a nonexistent node, not a failed snapshot.
+                   (funcall accept nil)
+                 (message "OMEMO: own device-list fetch failed; leaving server state unchanged")))))
+         (lambda (_result) (setq settled t)))
+      ((error quit)
+       ;; A synchronous unwind can leave callbacks retained by the transport.
+       (setq settled t)
+       (signal (car err) (cdr err))))))
+
 (defun jabber-omemo--handle-publish-conflict (jc node item-id payload
                                                  options xml-data label)
   "Handle a PubSub publish error for LABEL.
@@ -590,10 +707,10 @@ publish-options alist, and XML-DATA is the error IQ stanza."
 Fetches the current list, adds our ID if missing, re-publishes.
 When our ID was missing (new installation), also checks other
 listed devices for stale copies sharing our identity key and
-removes them."
+removes them.  Leave server state unchanged if the fetch fails."
   (let ((our-id (jabber-omemo--get-device-id jc)))
-    (jabber-omemo--fetch-device-list
-     jc (jabber-connection-bare-jid jc)
+    (jabber-omemo--fetch-own-device-list
+     jc
      (lambda (ids)
        (if (memq our-id ids)
            ;; Already listed, nothing to do.
@@ -607,11 +724,13 @@ removes them."
   "Remove devices from OTHER-IDS that share our identity key.
 JC is the Jabber connection.  Fetches the bundle for each device
 in OTHER-IDS, collects stale device IDs, then removes them all in
-a single device list republish to avoid race conditions."
+a single device list republish to avoid race conditions.
+Ignore bundle replies from a retired connection or session."
   (let* ((store (jabber-omemo--get-store jc))
          (our-bundle (jabber-omemo-get-bundle store))
          (our-ik (plist-get our-bundle :identity-key))
          (own-jid (jabber-connection-bare-jid jc))
+         (current-p (jabber-blocking--session-predicate jc))
          (remaining (length other-ids))
          (stale nil))
     (if (zerop remaining)
@@ -625,19 +744,20 @@ a single device list republish to avoid race conditions."
                          ((string= ik our-ik)))
                (push did stale))
              (cl-decf remaining)
-             (when (zerop remaining)
+             (when (and (zerop remaining) (funcall current-p))
                (jabber-omemo--remove-stale-devices jc stale)))))))))
 
 
 (defun jabber-omemo--remove-stale-devices (jc stale-ids)
   "Remove STALE-IDS from the device list and delete their bundles.
 JC is the Jabber connection.  Does a single fetch-filter-republish
-for all stale devices, then deletes each bundle node."
+for all stale devices, then deletes each bundle node.
+Leave the list and bundles unchanged if the fetch fails."
   (when stale-ids
     (message "OMEMO: removing %d stale device(s): %s"
              (length stale-ids) stale-ids)
-    (jabber-omemo--fetch-device-list
-     jc (jabber-connection-bare-jid jc)
+    (jabber-omemo--fetch-own-device-list
+     jc
      (lambda (ids)
        (let ((new-ids (cl-remove-if (lambda (id) (memq id stale-ids)) ids)))
          (jabber-omemo--publish-device-list jc new-ids)
@@ -657,9 +777,10 @@ for all stale devices, then deletes each bundle node."
 (defun jabber-omemo--remove-device (jc device-id &optional callback)
   "Remove DEVICE-ID from JC's published device list and delete its bundle.
 Fetches the current list, filters out DEVICE-ID, re-publishes,
-then deletes the bundle PubSub node.  Calls CALLBACK when done."
-  (jabber-omemo--fetch-device-list
-   jc (jabber-connection-bare-jid jc)
+then deletes the bundle PubSub node.  Calls CALLBACK when done.
+Leave server state unchanged and do not call CALLBACK if the fetch fails."
+  (jabber-omemo--fetch-own-device-list
+   jc
    (lambda (ids)
      (let ((new-ids (cl-remove device-id ids)))
        (jabber-omemo--publish-device-list jc new-ids)

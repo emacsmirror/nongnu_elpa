@@ -8,6 +8,7 @@
 
 (require 'ert)
 (require 'jabber-omemo-store)
+(require 'jabber-omemo-core)
 
 ;;; Test infrastructure
 
@@ -49,6 +50,22 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
     (should t)))
 
 ;;; Group 2: Store blob CRUD
+
+(ert-deftest jabber-test-omemo-store-native-blob-close-reopen ()
+  "A generated native store remains consumable after SQLite close/reopen."
+  (jabber-test-omemo-store-with-db
+    (let ((blob (jabber-omemo--setup-store)))
+      (jabber-omemo-store-save "fixture@example.invalid" blob)
+      (jabber-db-close)
+      (jabber-db-ensure-open)
+      (let ((reloaded (jabber-omemo-store-load "fixture@example.invalid")))
+        (should (equal blob reloaded))
+        (should (equal '(("ok"))
+                       (sqlite-select jabber-db--connection
+                                      "PRAGMA integrity_check")))
+        (should (equal blob
+                       (jabber-omemo--serialize-store
+                        (jabber-omemo--deserialize-store reloaded))))))))
 
 (ert-deftest jabber-test-omemo-store-save-load-roundtrip ()
   "Save + load round-trips a unibyte blob."

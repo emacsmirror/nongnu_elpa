@@ -154,6 +154,7 @@
   "tests/jabber-test-omemo-admission.el",
   "tests/jabber-test-omemo-message.el",
   "tests/jabber-test-omemo-module.el",
+  "tests/jabber-test-omemo-own-list.el",
   "tests/jabber-test-omemo-protocol.el",
   "tests/jabber-test-omemo-store.el",
   "tests/jabber-test-omemo-trust.el",
