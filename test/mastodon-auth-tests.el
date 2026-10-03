@@ -86,6 +86,11 @@
       (should-error (mastodon-auth--access-token)))))
 
 (ert-deftest mastodon-auth-plstore-token-check ()
+  "Check that saving token to plstore and fetching works.
+Store with `mastodon-client--store-access-token'.
+Fetch with `mastodon-auth--plstore-access-token-member'.
+We also check that fetching works `mastodon-auth-use-auth-source' is enabled after
+saving, but before fetching."
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
          (mastodon-client--token-file "stubfile.plstore")
@@ -120,14 +125,15 @@
               '(:secret-access_token t :username "test8000@mastodon.example"
                                      :instance "https://mastodon.example")
             '(:access_token "token")))))
-      ;; FIXME: ideally we would also mock up a non-encrypted plstore and
-      ;; test against it too, as that's the work we really want
-      ;; `mastodon-auth--plstore-access-token-member' to do
-      ;; but we don't currently have a way to mock one up.
       (delete-file "stubfile.plstore"))))
 
 (ert-deftest mastodon-auth-plstore-token-check-auth-source ()
   ;; :expected-result :failed
+  "Test that, when auth-source enabled,
+`mastodon-client--store-access-token' does not store a token in
+`mastodon-client--token-file'. We call `mastodon-auth--plstore-access-token-member'
+to check if the token is present. To ensure we actually save to auth
+sources, we create a new file then delete it."
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
          (mastodon-client--token-file "fixture/stubfile-auth-source.plstore")
@@ -164,6 +170,10 @@
       (delete-file mastodon-client--token-file))))
 
 (ert-deftest mastodon-auth-auth-source-search-only ()
+  "Test searching an existing auth-source file.
+We test that fetching works, result is 3-elt list, with elt 2 a token.
+Test also that token is same as fetching it from same file using
+`mastodon-auth-source-token'."
   ;; :expected-result :failed
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
@@ -189,6 +199,10 @@
                            :token)))))
 
 (ert-deftest mastodon-auth-auth-source-save-check ()
+  "Test that we can save an (unencrypted) auth-source entry.
+Test that creating a new entry works.
+Test that doing so returns a three element list, with elt 2 as token and
+elt three is a function."
   (auth-source-forget-all-cached)
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
@@ -203,6 +217,9 @@
          (auth-source-save-behavior t) ;; disable prompting
          (backup-inhibited t)
          (token "12341234"))
+    ;; to reliably add an entry to auth-source, we seem to need to create
+    ;; an empty file (deleting is unreliable/doesn't work). this way we
+    ;; know that auth-source won't withhold an entry's save-function:
     ;; create auth source file:
     (find-file-noselect file)
     ;; save and kill it:
