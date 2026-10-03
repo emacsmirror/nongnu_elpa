@@ -309,7 +309,9 @@ Handle any errors from the server."
 If CREATE, use TOKEN or prompt for it, and save it if there is no such entry.
 If not CREATE, but only fetching, TOKEN must be non-nil (e.g. a flag) to
 return to return token.
-Return a list of user, password/secret, and the item's save-function."
+Return a list of user, password/secret, and the item's save-function.
+If multiple matching entries are found, try to return entry with a port
+field matching \"mastodon-el\", else just return first entry."
   (let* ((auth-source-creation-prompts
           '((secret . "%u access token: ")))
          (source
@@ -323,11 +325,14 @@ Return a list of user, password/secret, and the item's save-function."
                               :create (if create t nil)))
          (source
           (if (< 1 (length source))
-              ;; if multi entries, try to return :port entry:
+              ;; if multi entries, try to return entry with :port =
+              ;; mastodon.el:
               (or (car
-                   (cl-remove-if-not (lambda (x)
-                                       (cl-member :port x))
-                                     source))
+                   (cl-remove-if-not
+                    (lambda (x)
+                      (when-let* ((entry (cl-member :port x)))
+                        (string= "mastodon.el" (plist-get entry :port))))
+                    source))
                   (car source)) ;; fallback
             (car source)))) ;; else just get entry
     (when source
@@ -335,7 +340,6 @@ Return a list of user, password/secret, and the item's save-function."
              `(,(plist-get source :user)
                ,(auth-info-password source)
                ,(plist-get source :save-function))))
-        ;; FIXME: save-function is nil if auth-sources is ~/authinfo:
         (when create ;; call save function:
           (if (functionp (nth 2 creds))
               (funcall (nth 2 creds))
