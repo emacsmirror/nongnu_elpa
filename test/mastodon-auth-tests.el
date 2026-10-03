@@ -132,7 +132,7 @@ saving, but before fetching."
 
 (ert-deftest mastodon-auth-plstore-token-check-auth-source ()
   ;; :expected-result :failed
-  "Test that, when auth-source enabled,
+  "Test that, when `mastodon-auth-use-auth-source',
 `mastodon-client--store-access-token' does not store a token in
 `mastodon-client--token-file'. We call `mastodon-auth--plstore-access-token-member'
 to check if the token is present. To ensure we actually save to auth
