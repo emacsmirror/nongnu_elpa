@@ -75,9 +75,9 @@
   "Use BACKEND for new Codex sessions."
   (interactive
    (list (intern (completing-read
-                  "Terminal backend: " '("eat" "vterm") nil t nil nil
-                  (symbol-name codex-ide-terminal-backend)))))
-  (setq codex-ide-terminal-backend backend)
+                  "Terminal backend: " '("eat" "vterm" "neo-term") nil t nil nil
+                  (symbol-name (codex-ide-term--selected-backend))))))
+  (customize-set-variable 'codex-ide-terminal-backend backend)
   (codex-ide-log "Terminal backend set to %s" backend))
 
 

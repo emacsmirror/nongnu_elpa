@@ -2,6 +2,23 @@
 
 * Version 0.1.4 (unreleased)
 
+- Select native neo-term automatically in Neomacs, preserving explicit
+  customization and existing session backends. Eat is now a lazy optional
+  dependency and remains the GNU Emacs default.
+- Register Neomacs' existing native MCP tools via its stdio relay and exact
+  active socket, without a GNU MCP fallback or persistent config writes.
+- Refuse inherited native HTTP transport conflicts before launch, preserve
+  native enablement/tool policy, and disable inherited GNU MCP only for the
+  native session. Explicit persistent setup warns about policy replacement.
+- Preserve explicit GNU bridge enablement overrides in native sessions and
+  refuse uninspected profile/config/cwd or remote extra CLI arguments before
+  automatic native MCP launch.
+- Compile all optional adapters without Eat, diagnose missing Eat at selection,
+  and preserve errors loading installed backends.
+- Track native PTY resources and settlement hooks for session recovery,
+  literal prompt input and owner-scoped cleanup.
+- Add an inexpensive installed-Neomacs source/bytecode verification target.
+
 - Label and rename live sessions, and restore project session panels per tab.
 - Register custom Emacs MCP tools.
 - Review editable proposals asynchronously with Ediff, including submission

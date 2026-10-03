@@ -23,7 +23,8 @@
 
 ;;; Commentary:
 
-;; Local streamable-HTTP MCP endpoint for Codex sessions.  The bridge exposes
+;; GNU Emacs uses a local streamable-HTTP endpoint.  Neomacs instead uses
+;; its native tool catalog and stdio relay.  The GNU bridge exposes
 ;; Emacs tools for harness context, live-buffer editing, async jobs, recent
 ;; events, and Emacs Lisp evaluation.
 ;; Codex sessions register it by adding a transient
@@ -49,6 +50,7 @@
 (require 'codex-ide-mcp-tools)
 (require 'codex-ide-mcp-protocol)
 (require 'codex-ide-mcp-server)
+(require 'codex-ide-mcp-neo)
 
 ;;; Public commands
 
@@ -63,28 +65,30 @@
 
 (defun codex-ide-mcp--status-message ()
   "Return user-facing MCP server status text."
-  (let* ((running (codex-ide-mcp--running-p))
-         (url (and running (codex-ide-mcp--url))))
-    (string-join
-     (delq nil
-           (list (if running
-                     "Codex MCP tools server: running"
-                   "Codex MCP tools server: stopped")
-                 (when url (format "URL: %s" url))
-                 (format "Port: %s"
-                         (if (codex-ide-mcp--ephemeral-port-p)
-                             "ephemeral"
-                           "fixed"))
-                 (format "Server key: %s" codex-ide-mcp--server-name)
-                 (format "Codex namespace: %s"
-                         (codex-ide-mcp--namespace))
-                 (format "Example tool: %s"
-                         (codex-ide-mcp--callable-tool-name
-                          "emacs_context"))
-                 (format "Harness tools: %s"
-                         (string-join (codex-ide-mcp-tool-names) ", "))
-                 (when url (codex-ide-mcp--setup-message url))))
-     "\n")))
+  (if (featurep 'neomacs)
+      (codex-ide-mcp-neo--status-message)
+    (let* ((running (codex-ide-mcp--running-p))
+           (url (and running (codex-ide-mcp--url))))
+      (string-join
+       (delq nil
+             (list (if running
+                       "Codex MCP tools server: running"
+                     "Codex MCP tools server: stopped")
+                   (when url (format "URL: %s" url))
+                   (format "Port: %s"
+                           (if (codex-ide-mcp--ephemeral-port-p)
+                               "ephemeral"
+                             "fixed"))
+                   (format "Server key: %s" codex-ide-mcp--server-name)
+                   (format "Codex namespace: %s"
+                           (codex-ide-mcp--namespace))
+                   (format "Example tool: %s"
+                           (codex-ide-mcp--callable-tool-name
+                            "emacs_context"))
+                   (format "Harness tools: %s"
+                           (string-join (codex-ide-mcp-tool-names) ", "))
+                   (when url (codex-ide-mcp--setup-message url))))
+       "\n"))))
 
 (defun codex-ide-mcp--run-install-command (args)
   "Run the Codex MCP add command described by ARGS."
@@ -97,16 +101,16 @@
 
 ;;;###autoload
 (defun codex-ide-mcp-start ()
-  "Start the local Codex MCP tools server."
+  "Start GNU MCP, or verify the existing native Neomacs endpoint."
   (interactive)
-  (codex-ide-mcp-ensure-server)
-  (codex-ide-log "Codex MCP tools server started on %s"
-                 (codex-ide-mcp--url)))
+  (codex-ide-log "Codex MCP endpoint: %s" (codex-ide-mcp-ensure-server)))
 
 ;;;###autoload
 (defun codex-ide-mcp-stop ()
-  "Stop the local Codex MCP tools server."
+  "Stop the GNU MCP server; refuse to stop Neomacs' shared listener."
   (interactive)
+  (when (featurep 'neomacs)
+    (user-error "Native MCP is shared; use neomacs-mcp-stop explicitly to stop it"))
   (codex-ide-mcp--stop-server)
   (codex-ide-log "Codex MCP tools server stopped"))
 
@@ -120,14 +124,24 @@
 
 ;;;###autoload
 (defun codex-ide-mcp-install-codex-config ()
-  "Add the running Emacs MCP server to Codex config after confirmation."
+  "Add the running Emacs MCP server to Codex config after confirmation.
+Native setup can replace an existing entry and discard its tool policy."
   (interactive)
   (let* ((url (codex-ide-mcp-ensure-server))
-         (args (codex-ide-mcp--install-command-args url))
-         (command (codex-ide-mcp--install-command url))
-         (setup (codex-ide-mcp--setup-message url)))
+         (args (if (featurep 'neomacs)
+                   (codex-ide-mcp-neo--install-command-args url)
+                 (codex-ide-mcp--install-command-args url)))
+         (command (if (featurep 'neomacs)
+                      (mapconcat #'shell-quote-argument args " ")
+                    (codex-ide-mcp--install-command url)))
+         (setup (if (featurep 'neomacs)
+                    (concat command "\nPersistent setup targets this exact native socket.\n"
+                            "This can replace mcp_servers.neomacs and discard enabled, enabled_tools and disabled_tools policy.")
+                  (codex-ide-mcp--setup-message url))))
     (codex-ide-log "%s" setup)
-    (if (y-or-n-p (format "Run `%s'? " command))
+    (if (y-or-n-p (if (featurep 'neomacs)
+                     (format "Run `%s' (can replace neomacs and discard enabled, enabled_tools and disabled_tools policy)? " command)
+                   (format "Run `%s'? " command)))
         (progn
           (codex-ide-mcp--run-install-command args)
           (codex-ide-log "Installed Codex MCP config with `%s'" command)

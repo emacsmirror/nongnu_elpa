@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Version: 0.1.4
-;; Package-Requires: ((emacs "29.1") (compat "29.1.4.2") (keymap-popup "0.4.0") (eat "0.9.4"))
+;; Package-Requires: ((emacs "29.1") (compat "29.1.4.2") (keymap-popup "0.4.0"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
@@ -26,8 +26,8 @@
 
 ;;; Commentary:
 
-;; Run the Codex CLI inside Emacs through Eat or optional vterm.  This is a
-;; terminal-first integration: live Codex sessions are grouped by project root
+;; Run the Codex CLI through Eat, optional vterm, or native Neomacs terminals.
+;; This is a terminal-first integration: live Codex sessions are grouped by project root
 ;; and displayed through a configurable buffer display function, with prompt
 ;; sending, session cycling, and resume.
 ;;
@@ -112,7 +112,10 @@ Example: ((\"model\" . \"o3\")
 
 (defcustom codex-ide-cli-extra-args nil
   "Extra arguments appended verbatim to the Codex command.
-Escape hatch for flags not yet modeled by a defcustom."
+Escape hatch for flags not yet modeled by a defcustom.
+Native automatic MCP registration refuses profile, config, cwd and remote
+options here.  Use `codex-ide-config-overrides' for session settings, select
+the project directory in Emacs, or disable `codex-ide-mcp-enabled'."
   :type '(repeat string)
   :group 'codex-ide)
 
@@ -274,7 +277,8 @@ Add a stable root identity when another project occupies the base name."
     (codex-ide--indexed-buffer-name name id)))
 
 (defun codex-ide--make-session (root id buffer process)
-  "Return a Codex session record for ROOT, ID, BUFFER, and PROCESS."
+  "Return a Codex session record for ROOT, ID, BUFFER, and PROCESS.
+PROCESS is an Emacs process or an exact native Neomacs terminal resource."
   (list :root root :id id :buffer buffer :process process))
 
 (defun codex-ide--raw-sessions ()
@@ -286,12 +290,10 @@ Add a stable root identity when another project occupies the base name."
     sessions))
 
 (defun codex-ide--session-live-p (session)
-  "Return non-nil when SESSION owns a live terminal process."
+  "Return non-nil when SESSION owns a live terminal resource."
   (let ((buffer (plist-get session :buffer))
         (process (plist-get session :process)))
-    (and (buffer-live-p buffer)
-         (process-live-p process)
-         (eq (get-buffer-process buffer) process))))
+    (codex-ide-term--process-live-p process buffer)))
 
 (defun codex-ide--session-by-id (root session-id)
   "Return the session for ROOT and SESSION-ID."
@@ -564,8 +566,10 @@ Includes user-provided `codex-ide-config-overrides' and any
 session-local overrides needed by enabled integration helpers."
   (append codex-ide-config-overrides
           (when codex-ide-mcp-enabled
-            (codex-ide-mcp-config-overrides
-             (codex-ide-mcp-ensure-server)))))
+            (if (featurep 'neomacs)
+                (codex-ide-mcp-neo--config-overrides
+                 (codex-ide-mcp-ensure-server) codex-ide-config-overrides)
+              (codex-ide-mcp-config-overrides (codex-ide-mcp-ensure-server))))))
 
 ;;; CLI detection
 
@@ -607,8 +611,10 @@ session-local overrides needed by enabled integration helpers."
 
 (defun codex-ide--process-command-fragments (process)
   "Return strings that may describe PROCESS's command."
-  (let ((command (ignore-errors (process-command process)))
-        (recorded (process-get process 'codex-ide--command)))
+  (let ((command (and (processp process) (process-command process)))
+        (recorded (if (processp process)
+                      (process-get process 'codex-ide--command)
+                    (plist-get process :command))))
     (append (cl-remove-if-not #'stringp command)
             (cl-remove-if-not #'stringp recorded))))
 
@@ -632,7 +638,8 @@ session-local overrides needed by enabled integration helpers."
 
 (defun codex-ide--codex-process-p (process)
   "Return non-nil when PROCESS appears to be a Codex terminal process."
-  (and (process-live-p process)
+  (and process
+       (codex-ide-term--process-live-p process (codex-ide-term--process-buffer process))
        (codex-ide--command-invokes-codex-p
         (codex-ide--process-command-fragments process))))
 
@@ -640,7 +647,7 @@ session-local overrides needed by enabled integration helpers."
   "Return non-nil when BUFFER is a live Codex terminal buffer."
   (and (buffer-live-p buffer)
        (buffer-local-value 'codex-ide-mode buffer)
-       (and-let* ((process (get-buffer-process buffer)))
+       (and-let* ((process (codex-ide-term--process buffer)))
          (codex-ide--codex-process-p process))))
 
 (defun codex-ide--recovered-session-id (root buffer)
@@ -660,9 +667,9 @@ session-local overrides needed by enabled integration helpers."
   "Register BUFFER as a live Codex session when needed."
   (or (and-let* ((session (codex-ide--session-by-buffer buffer)))
         (codex-ide--setup-session session))
-      (let* ((process (get-buffer-process buffer))
+      (let* ((process (codex-ide-term--process buffer))
              (root (with-current-buffer buffer
-                     (codex-ide--get-working-directory)))
+                     (or codex-ide--session-root (codex-ide--get-working-directory))))
              (session-id (codex-ide--recovered-session-id root buffer))
              (session (codex-ide--make-session
                        root session-id buffer process)))
@@ -915,13 +922,12 @@ Guard reentry for this target while allowing other sessions to clean up."
                           (codex-ide--get-buffer-name directory session-id))))
              (process (or (plist-get session :process)
                           (and (buffer-live-p buffer)
-                               (get-buffer-process buffer)))))
+                               (codex-ide-term--process buffer)))))
         (when (and (or (not expected-buffer) (eq buffer expected-buffer))
                    (or (not expected-process) (eq process expected-process)))
           (when buffer (codex-ide-diff--cancel-requests buffer process))
           (codex-ide--remove-session directory session-id)
-          (when (process-live-p process)
-            (delete-process process))
+          (codex-ide-term--stop-process process buffer)
           (when (and (not preserve-buffer) (buffer-live-p buffer))
             (let ((kill-buffer-query-functions nil))
               (kill-buffer buffer)))
@@ -935,7 +941,7 @@ Guard reentry for this target while allowing other sessions to clean up."
   (when (and codex-ide--session-root codex-ide--session-id)
     (codex-ide--cleanup-on-exit
      codex-ide--session-root codex-ide--session-id
-     (current-buffer) (get-buffer-process (current-buffer)) t)))
+     (current-buffer) (codex-ide-term--process (current-buffer)) t)))
 
 (defun codex-ide--cleanup-before-major-mode-change ()
   "Stop the current Codex session before replacing its major mode.
@@ -947,7 +953,7 @@ Reject vterm mode changes without disturbing its process or session."
   (when (and codex-ide--session-root codex-ide--session-id)
     (codex-ide--cleanup-on-exit
      codex-ide--session-root codex-ide--session-id
-     (current-buffer) (get-buffer-process (current-buffer)) t)))
+     (current-buffer) (codex-ide-term--process (current-buffer)) t)))
 
 (defun codex-ide--make-process-sentinel
     (directory session-id &optional original buffer)
@@ -978,10 +984,12 @@ terminal backend can finish its own teardown before Codex kills BUFFER."
         (process (plist-get session :process))
         (directory (plist-get session :root))
         (session-id (plist-get session :id)))
-    (set-process-query-on-exit-flag process nil)
+    (when (processp process)
+      (set-process-query-on-exit-flag process nil))
     ;; Recover/setup can re-enter for the same live process; wrap once so
     ;; Exit cleanup and the original backend sentinel each run once.
-    (unless (process-get process 'codex-ide--sentinel-installed)
+    (when (and (processp process)
+               (not (process-get process 'codex-ide--sentinel-installed)))
       (set-process-sentinel
        process (codex-ide--make-process-sentinel
                 directory session-id (process-sentinel process) buffer))
@@ -1003,7 +1011,9 @@ Returns a session record."
   (let* ((working-dir (codex-ide--get-working-directory))
          (buffer-name (codex-ide--get-buffer-name working-dir
                                                   emacs-session-id))
-         (codex-ide-config-overrides (codex-ide--session-config-overrides))
+         (codex-ide-config-overrides
+          (let ((default-directory working-dir))
+            (codex-ide--session-config-overrides)))
          (cmd (codex-ide--build-command resume-last codex-session-id))
          (program (car cmd))
          (args (cdr cmd))
@@ -1019,14 +1029,17 @@ Returns a session record."
                    (buffer-name buffer)))
           (let ((process (codex-ide-term--make-process
                           buffer program args env)))
-            (process-put process 'codex-ide--command (cons program args))
-            (codex-ide--make-session working-dir emacs-session-id
-                                     (process-buffer process) process)))
+            ;; Native launch replaces the placeholder with its own buffer.
+            ;; Retain that exact owner for failures after the spawn returns.
+            (setq buffer (codex-ide-term--process-buffer process))
+            (when (processp process)
+              (process-put process 'codex-ide--command (cons program args)))
+            (codex-ide--make-session working-dir emacs-session-id buffer process)))
       (error
        (when (buffer-live-p buffer)
          ;; Startup may fail before setup disables process exit queries.
-         (when-let* ((process (get-buffer-process buffer)))
-           (delete-process process))
+         (when-let* ((process (codex-ide-term--process buffer)))
+           (codex-ide-term--stop-process process buffer))
          (kill-buffer buffer))
        (signal (car err) (cdr err))))))
 
@@ -1267,7 +1280,9 @@ If it is not visible, display it with `codex-ide-display-buffer-function'."
                      (concat (string-remove-suffix "*" base) ":" label "*"))))
 	(rename-buffer name t)
 	(setq codex-ide--session-naming-base base
-              codex-ide--session-label (unless (string-empty-p label) label))))))
+              codex-ide--session-label (unless (string-empty-p label) label))
+        (when (eq codex-ide-term--backend 'neo-term)
+          (setf (plist-get codex-ide-term-neo--resource :name) (buffer-name)))))))
 
 ;;;###autoload
 (defun codex-ide-rename-session (&optional label)
@@ -1342,11 +1357,11 @@ ring.  Reject terminal controls except TAB and LF, and drafts over 1 MiB."
                  (eq buffer (plist-get session :buffer))
                  (eq process (plist-get session :process))
                  (buffer-live-p buffer)
-                 (process-live-p process)
-                 (eq process (get-buffer-process buffer))
+                 (codex-ide-term--process-live-p process buffer)
+                 (eq process (codex-ide-term--process buffer))
                  (with-current-buffer buffer
                    (and codex-ide-mode
-                        (derived-mode-p 'eat-mode 'vterm-mode)
+                        (derived-mode-p 'eat-mode 'vterm-mode 'neo-term-mode)
                         (eq major-mode (plist-get owner :mode))
                         (eq codex-ide-term--backend (plist-get owner :backend))
                         (equal root codex-ide--session-root)

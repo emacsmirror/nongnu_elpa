@@ -28,8 +28,9 @@
 
 (defcustom codex-ide-mcp-enabled t
   "When non-nil, start and register the local Emacs MCP tools endpoint.
-The endpoint listens on `codex-ide-mcp-host' and `codex-ide-mcp-port',
-and Codex receives it through a transient CLI config override."
+GNU Emacs listens on `codex-ide-mcp-host' and `codex-ide-mcp-port'.
+Neomacs uses its existing owner-controlled native endpoint instead.
+Codex receives either endpoint through transient CLI config overrides."
   :type 'boolean
   :group 'codex-ide)
 

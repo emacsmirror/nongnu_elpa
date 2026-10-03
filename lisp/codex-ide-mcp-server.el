@@ -20,6 +20,8 @@
 
 ;;; Code:
 
+(declare-function codex-ide-mcp-neo--ensure-server "codex-ide-mcp-neo" ())
+
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
@@ -477,10 +479,14 @@ that limit return the symbol `too-large'."
 ;;; Public server entry
 
 (defun codex-ide-mcp-ensure-server ()
-  "Ensure the local MCP HTTP server is running and return its URL."
-  (unless (codex-ide-mcp--running-p)
-    (codex-ide-mcp--start-server))
-  (codex-ide-mcp--url))
+  "Return the MCP endpoint, starting GNU HTTP only outside Neomacs."
+  (if (featurep 'neomacs)
+      (progn
+        (require 'codex-ide-mcp-neo)
+        (codex-ide-mcp-neo--ensure-server))
+    (unless (codex-ide-mcp--running-p)
+      (codex-ide-mcp--start-server))
+    (codex-ide-mcp--url)))
 
 (provide 'codex-ide-mcp-server)
 

@@ -27,9 +27,23 @@
 
 ;;; Code:
 
-(require 'eat)
 (require 'seq)
 (require 'subr-x)
+
+(declare-function eat-mode "eat" ())
+(declare-function eat-exec "eat" (buffer name command startfile switches))
+(declare-function eat-semi-char-mode "eat" ())
+(declare-function eat--synchronize-scroll "eat" (windows))
+(declare-function eat-term-display-beginning "eat" (terminal))
+(declare-function eat-term-parameter "eat" (terminal parameter))
+(declare-function eat-term-set-parameter "eat" (terminal parameter value))
+(declare-function eat-term-cursor-type "eat" (terminal))
+(declare-function eat-term-send-string "eat" (terminal string))
+
+(defvar eat-terminal)
+(defvar eat--semi-char-mode)
+(defvar eat--char-mode)
+(defvar eat--line-mode)
 
 ;;; User options
 
@@ -111,20 +125,19 @@ terminal input modes, also sync points a redraw set adrift."
   (when eat-terminal
     (let ((current (eat-term-parameter eat-terminal 'set-cursor-function)))
       (unless (eq current #'codex-ide-term-eat--set-cursor)
-        (setf (eat-term-parameter
-               eat-terminal
-               'codex-ide-term-eat--original-set-cursor-function)
-              current)
-        (setf (eat-term-parameter eat-terminal 'set-cursor-function)
-              #'codex-ide-term-eat--set-cursor))
+        (eat-term-set-parameter
+         eat-terminal 'codex-ide-term-eat--original-set-cursor-function current)
+        (eat-term-set-parameter
+         eat-terminal 'set-cursor-function #'codex-ide-term-eat--set-cursor))
       (codex-ide-term-eat--set-cursor
        eat-terminal (eat-term-cursor-type eat-terminal)))))
 
 ;;; Process lifecycle
 
 (defun codex-ide-term-eat--available-p ()
-  "Return non-nil when Eat is available."
-  t)
+  "Return non-nil when Eat can be loaded.
+Missing Eat is optional; preserve errors loading an installed library."
+  (require 'eat nil t))
 
 (defun codex-ide-term-eat--configure-buffer ()
   "Configure the current Codex Eat buffer."

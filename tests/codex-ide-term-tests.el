@@ -26,6 +26,8 @@
 (require 'ert)
 (require 'codex-ide)
 (require 'codex-ide-term)
+(require 'codex-ide-term-eat)
+(require 'eat)
 (require 'codex-ide-term-vterm)
 (require 'seq)
 

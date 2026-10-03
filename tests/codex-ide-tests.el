@@ -23,6 +23,8 @@
 
 (require 'ert)
 (require 'codex-ide)
+(require 'eat)
+(require 'codex-ide-term-eat)
 (require 'codex-ide-term)
 (require 'codex-ide-menu)
 

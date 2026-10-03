@@ -17,19 +17,23 @@ endif
 EMACS ?= emacs
 EMACS_CMD ?= $(EMACS)
 EMACSCLIENT ?= emacsclient
+NEOMACS ?= neomacs
+NEOMACS_LISP ?=
+COMPAT ?=
 KEYMAP_POPUP ?=
 
 SRCS = lisp/codex-ide-debug.el lisp/codex-ide-term-eat.el \
-       lisp/codex-ide-term-vterm.el lisp/codex-ide-term.el \
+       lisp/codex-ide-term-vterm.el lisp/codex-ide-term-neo.el lisp/codex-ide-term.el \
        lisp/codex-ide-context.el lisp/codex-ide-diff.el \
        lisp/codex-ide-mcp-core.el lisp/codex-ide-mcp-treesit.el \
        lisp/codex-ide-mcp-tools.el lisp/codex-ide-mcp-protocol.el \
-       lisp/codex-ide-mcp-server.el lisp/codex-ide-mcp.el lisp/codex-ide.el \
+       lisp/codex-ide-mcp-server.el lisp/codex-ide-mcp-neo.el lisp/codex-ide-mcp.el lisp/codex-ide.el \
        lisp/codex-ide-menu.el
 
 TESTS = tests/codex-ide-term-tests.el tests/codex-ide-tests.el \
         tests/codex-ide-context-tests.el \
-        tests/codex-ide-mcp-tests.el tests/codex-ide-diff-tests.el
+        tests/codex-ide-mcp-tests.el tests/codex-ide-diff-tests.el \
+        tests/codex-ide-neomacs-tests.el tests/codex-ide-config-merge-tests.el
 
 SELECTOR ?= t
 ERT_OPTS ?=
@@ -37,7 +41,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all compile do-compile compile-tests do-compile-tests test do-test pty-test lint do-lint native-comp do-native-comp dev do-dev check pre-commit pre-handoff-check load do-load clean
+.PHONY: all compile do-compile compile-tests do-compile-tests test do-test pty-test lint do-lint native-comp do-native-comp dev do-dev check pre-commit pre-handoff-check neomacs-check load do-load clean
 
 all: compile
 
@@ -117,6 +121,32 @@ pre-handoff-check:
 	nix --extra-experimental-features 'nix-command flakes' \
 	  flake check --no-write-lock-file
 
+# Host-dependent installed Neomacs lane, never a rebuild or live activation.
+# Both source and compiled loads run without Eat or vterm on their load-path.
+neomacs-check:
+	@test -n "$(COMPAT)" -a -n "$(KEYMAP_POPUP)" || { printf 'Set COMPAT and KEYMAP_POPUP dependency directories\n'; exit 1; }
+	@root=$$(mktemp -d "$${TMPDIR:-/tmp}/codex-ide-native.XXXXXX") && \
+	  trap 'rm -rf "$$root"' EXIT HUP INT TERM && \
+	  mkdir -p "$$root/home" "$$root/lisp" "$$root/tests" && \
+	  cp $(SRCS) "$$root/lisp/" && \
+	  cp tests/codex-ide-neomacs-tests.el tests/codex-ide-config-merge-tests.el "$$root/tests/" && \
+	  for phase in source compiled; do \
+	    printf 'Installed Neomacs: %s (%s)\n' "$(NEOMACS)" "$$phase"; \
+	    if [ "$$phase" = compiled ]; then \
+	      HOME="$$root/home" XDG_CACHE_HOME="$$root/cache" $(NEOMACS) -Q --batch \
+	        -L "$(COMPAT)" -L "$(KEYMAP_POPUP)" -L "$$root/lisp" \
+	        --eval '(setq byte-compile-error-on-warn t)' \
+	        -f batch-byte-compile "$$root"/lisp/*.el || exit 1; \
+	    fi; \
+	    HOME="$$root/home" XDG_CACHE_HOME="$$root/cache" $(NEOMACS) -Q --batch \
+	      $(if $(NEOMACS_LISP),-L $(NEOMACS_LISP)) -L "$(COMPAT)" -L "$(KEYMAP_POPUP)" \
+	      -L "$$root/lisp" -L "$$root/tests" \
+	      --eval '(progn (require (quote neo-term)) (require (quote neomacs-mcp)) (require (quote neomacs-mcp-editor)) (require (quote neomacs-mcp-companion)))' \
+	      --eval '(progn (require (quote codex-ide)) (when (featurep (quote eat)) (error "Eat was loaded")) (princ (list :runtime emacs-version :native (symbol-file (quote neo-term-exec)) :package (symbol-file (quote codex-ide)))))' \
+	      -l codex-ide-neomacs-tests -l codex-ide-config-merge-tests \
+	      -f ert-run-tests-batch-and-exit || exit 1; \
+	  done
+
 load:
 	@$(ENV_MAKE) do-load
 
@@ -128,7 +158,9 @@ do-load: clean
 	               (boundp s) (keymapp (symbol-value s))) \
 	      (makunbound s)))))" > /dev/null
 	@for f in $(SRCS); do \
-	  $(EMACSCLIENT) --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || { \
+	  $(EMACSCLIENT) --eval "(unless (and (featurep 'neomacs) \
+	    (member \"$$f\" '(\"lisp/codex-ide-term-eat.el\" \"lisp/codex-ide-term-vterm.el\"))) \
+	    (load-file \"$(CURDIR)/$$f\"))" > /dev/null || { \
 	    printf "\033[31mFAIL\033[0m $$f\n"; exit 1; }; \
 	done
 	@$(EMACSCLIENT) --eval "(dolist (buf (buffer-list)) \

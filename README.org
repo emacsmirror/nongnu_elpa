@@ -1,4 +1,4 @@
-* Codex IDE integration for GNU Emacs
+* Codex IDE integration for Emacs and Neomacs
 
 ** About
 + [[https://github.com/openai/codex][codex]] native integration for Emacs via [[https://codeberg.org/akib/emacs-eat][Eat]] by default
@@ -6,7 +6,7 @@
   + Optionally use [[https://github.com/akermu/emacs-libvterm][vterm]] when it is installed separately.
   + Resume, switch, cycle, and stop multiple live Codex sessions.
   + Optional IDE context provider and local Emacs MCP tools bridge.
-+ Requires Emacs 29.1 or newer.
++ Requires GNU Emacs 29.1 or newer, or Neomacs with the native APIs below.
 
 ** Commands
 | Command | Purpose |
@@ -37,7 +37,7 @@
   movement, search, and selection.
 + With vterm, use =M-x vterm-copy-mode= for transcript navigation.
 + =C-c C-j= restores terminal input and jumps to the live Codex frame with
-  either backend.
+  any backend.
 
 ** Context provider
 + With =codex-ide-context-auto-start= non-nil (default), new sessions
@@ -111,13 +111,14 @@ cancels pending UI while retaining results until that retention expires.
 | Variable | Default intent |
 |----------+----------------|
 | =codex-ide-cli-path= | Codex executable |
-| =codex-ide-terminal-backend= | =eat=; optionally set to =vterm= |
+| =codex-ide-terminal-backend= | GNU Emacs: =eat=; Neomacs: native unless explicitly customized |
 | =codex-ide-ask-for-approval= | Optional =--ask-for-approval= policy |
 | =codex-ide-cli-extra-args= | Extra CLI args |
 | =codex-ide-no-alt-screen= | Inline TUI mode |
 | =codex-ide-yolo= | Full control without approvals or sandbox |
 | =codex-ide-mcp-enabled= | Auto-register local MCP bridge |
-| =codex-ide-mcp-port= | 0 = ephemeral port |
+| =codex-ide-mcp-port= | GNU MCP: 0 = ephemeral port |
+| =codex-ide-neomacs-mcp-command= | Native =neomacs-mcp= stdio relay executable |
 | =codex-ide-context-auto-start= | Auto-start context IPC |
 | =codex-ide-debug= | Debug logging |
 
@@ -134,13 +135,127 @@ Install vterm separately, then select it for new sessions:
 (setq codex-ide-terminal-backend 'vterm)
 #+end_src
 
-Eat remains a required dependency and the default.  Changing the option does
-not alter already running sessions.
+Eat remains the GNU Emacs default but is now an optional package dependency.
+Install Eat 0.9.4 or newer separately when using that backend; the Nix GNU
+Emacs bundle still includes it.  Changing the option does not alter already
+running sessions.
+
+** Native Neomacs support
+When =(featurep 'neomacs)= is non-nil, an uncustomized =eat= default selects
+=neo-term= for new sessions. This also works when upgrading an already-loaded
+copy: the option itself is not overwritten, and existing sessions keep their
+backend. =setq= to the historical =eat= default is treated as automatic in
+Neomacs. Use Customize or =(customize-set-variable
+'codex-ide-terminal-backend 'eat)= to explicitly retain Eat there. Explicit
+=vterm= and =neo-term= selections are respected.
+
+The native backend requires =neo-term-exec=, =neomacs-terminal-spawn=,
+=neo-term-settled-functions= and =neo-term-create-failed-functions=. Older
+Neomacs builds without the exact-command API are not supported. It launches
+Codex with exact argv, cwd and environment, without a shell script. Input,
+resizing and teardown use the native terminal API, not an Emacs pipe process.
+Prompts and source attachments remain literal UTF-8 bracketed pastes; Return
+and Escape are separate key bytes. Native terminal exits, creation failures,
+buffer kills and mode changes remove only the owning session.
+
+With MCP enabled, start Neomacs' owner-controlled endpoint using
+=M-x neomacs-mcp-start= and an explicit private socket location. Codex IDE
+reads that active listener's actual socket and registers the native
+=neomacs-mcp= stdio relay transiently under =mcp_servers.neomacs=. The native
+editor and companion libraries supply the native catalog, including unrestricted
+owner evaluation; Codex IDE does not substitute GNU =emacs_tools=, hide native
+tools or add an evaluation restriction. Native tools are exposed in Codex's
+=mcp__neomacs= namespace, for example =mcp__neomacs__neomacs_identity=.
+
+Before native session launch, Codex IDE asks =codex mcp list --json= to inspect
+effective configuration in the session's working directory, including
+=codex-ide-config-overrides=. An inherited =emacs_tools= entry is disabled
+for that session only, unless =codex-ide-config-overrides= explicitly sets
+=mcp_servers.emacs_tools.enabled= to =true= or =false=. An explicit =true=
+deliberately retains the GNU bridge alongside native MCP. Other server entries
+are left alone. Native stdio
+=enabled=, =enabled_tools= and =disabled_tools= policy remains inherited;
+registration does not enable a disabled native server or widen its tool policy.
+Codex 0.155.1 recursively merges even whole-table =-c= overrides, so an existing
+HTTP transport under =mcp_servers.neomacs= cannot be safely replaced that way.
+Launch refuses that conflict before opening a terminal, with instructions to
+rename the conflicting entry, explicitly replace it with stdio, or disable
+automatic MCP registration. Inspection failures also refuse launch rather
+than guessing the effective configuration. No persistent entry is rewritten.
+
+Native automatic MCP registration refuses =-p=/=--profile=, =-c=/=--config=,
+=-C=/=--cd= and remote-route options (=--remote=, =--remote-auth-token-env=)
+in =codex-ide-cli-extra-args=, including joined short and =--option=value=
+forms, before creating a terminal. Those options can select uninspected config
+layers, override the inspected settings later, or bypass the local server.
+Put equivalent session settings in =codex-ide-config-overrides= and select the
+project directory in Emacs. To use these CLI options directly, disable
+=codex-ide-mcp-enabled= and manage MCP yourself. GNU sessions and native sessions
+without automatic MCP retain the verbatim extra-argument escape hatch.
+
+The relay must be available on Emacs' =exec-path=. If necessary, customize
+=codex-ide-neomacs-mcp-command= to its absolute executable filename. Missing
+native libraries, listener or relay fail explicitly rather than silently
+starting GNU MCP. =codex-ide-mcp-start= verifies the native endpoint and
+=codex-ide-mcp-status= reports its socket and catalog. =codex-ide-mcp-stop=
+refuses to stop the shared native listener; use =neomacs-mcp-stop= explicitly
+if that is intended. Disable session registration with
+=(setq codex-ide-mcp-enabled nil)=. No Codex configuration file is written
+except by the existing confirmed =codex-ide-mcp-install-codex-config= command.
+Persistent native setup targets that exact socket and must be updated if it
+moves. Its confirmation warns that =codex mcp add neomacs= can replace an
+existing entry and discard =enabled=, =enabled_tools= and =disabled_tools=
+policy. Inspect and restore those restrictions after deliberate installation.
+GNU HTTP host/port and custom tool registration apply only to GNU MCP.
+
+** Development checks
+=make dev= runs warning-fatal source compilation, checkdoc, package-lint and
+all ERT suites through the Nix development shell. Eat/vterm PTY tests run
+locally; sandbox checks may skip PTY tests. =make load= is live activation,
+not a read-only check.
+
+The opt-in config-merge suite exercises the installed Codex CLI against
+disposable configuration, checks that the fixture bytes remain unchanged,
+and never contacts an editor endpoint. To include it in GNU and native checks,
+set =CODEX_IDE_TEST_CODEX= to the absolute installed Codex executable (not a
+shim whose resolution depends on HOME). Without that variable those four
+tests are explicitly skipped. For example:
+#+begin_src sh
+CODEX_IDE_TEST_CODEX="$CODEX" make dev
+CODEX_IDE_TEST_CODEX="$CODEX" make neomacs-check NEOMACS="$NEOMACS" \
+  COMPAT="$COMPAT" KEYMAP_POPUP="$KEYMAP_POPUP"
+#+end_src
+
+=make neomacs-check= exercises an installed Neomacs without its init, in a
+disposable HOME, through source and byte-compiled package loads. Supply
+=NEOMACS= as the installed executable, =COMPAT= and =KEYMAP_POPUP= as explicit
+dependency directories, and optionally =NEOMACS_LISP= for native libraries:
+#+begin_src sh
+make neomacs-check NEOMACS="$NEOMACS" COMPAT="$COMPAT" \
+  KEYMAP_POPUP="$KEYMAP_POPUP" NEOMACS_LISP="$NEOMACS_LISP"
+#+end_src
+This inexpensive lane compiles every shipped Lisp source without Eat or vterm
+on its load path, including their optional adapters. It needs no Rust rebuild
+or GPU launch. Its deterministic
+native host fixtures verify session and input routing, not a real PTY or a real
+Codex tool call. Verify those journeys in an interactive native runtime too.
+The optional installed GNU runtime lane can use =make ENV=host EMACS_CMD=...=
+with dependency load paths; Thanos uses his own Emacs fork (*Thanos Emacs fork*),
+which is distinct from Neomacs and from the pinned Nix GNU runtime.
 
 ** Changelog
 See [[file:NEWS.org][NEWS.org]] for release notes.
 
 ** Installation
+For GNU Emacs' default backend, install Eat separately:
+#+begin_src emacs-lisp
+(use-package eat :ensure t)
+#+end_src
+Neomacs native sessions need neither Eat nor vterm at runtime.
+Every package source can also be byte-compiled without Eat. Selecting Eat
+without installing it produces an actionable error before buffer creation;
+errors from loading an installed backend are preserved for diagnosis.
+
 + Emacs 29.1 using =package-vc-install=
 #+begin_src emacs-lisp
 (unless (package-installed-p 'codex-ide)
@@ -169,7 +284,7 @@ See [[file:NEWS.org][NEWS.org]] for release notes.
 ** Source attachments
 =codex-ide-attach-source= snapshots the region (or current line), source
 path or buffer name, and line range before choosing a project session.
-It inserts one literal bracketed paste on Eat or vterm without pressing
+It inserts one literal bracketed paste on Eat, vterm or neo-term without pressing
 Return.  Review the draft in the Codex terminal before submitting it.
 Unicode, TAB and LF are supported; other control characters and drafts
 larger than 1 MiB of UTF-8 text are rejected without changing the draft

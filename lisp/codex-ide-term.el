@@ -23,27 +23,40 @@
 
 ;;; Commentary:
 
-;; Fixed dispatch between the default Eat backend and optional vterm support.
+;; Dispatch to Eat, optional vterm, or the native Neomacs terminal.
 
 ;;; Code:
 
-(require 'codex-ide-term-eat)
+(require 'codex-ide-term-neo)
 (require 'subr-x)
 
 ;;; User options
 
 (defcustom codex-ide-terminal-backend 'eat
   "Terminal backend used for new Codex sessions.
-Eat is the default.  Selecting `vterm' requires the vterm package to be
-installed separately.  Existing sessions keep the backend that created them."
+Eat is the GNU Emacs default.  In Neomacs an uncustomized Eat default
+selects `neo-term' automatically, including after upgrading a loaded copy.
+Use Customize to explicitly select Eat in Neomacs.  Selecting `vterm'
+requires vterm separately.  Existing sessions retain their backend."
   :type '(choice (const :tag "Eat" eat)
-                 (const :tag "vterm" vterm))
+                 (const :tag "vterm" vterm)
+                 (const :tag "Native Neomacs terminal" neo-term))
   :group 'codex-ide)
 
 ;;; Backend dispatch
 
 (defconst codex-ide-term--backends
-  '((eat
+  '((neo-term
+     :feature codex-ide-term-neo
+     :available codex-ide-term-neo--available-p
+     :prepare codex-ide-term-neo--prepare-buffer
+     :configure codex-ide-term-neo--configure-buffer
+     :make-process codex-ide-term-neo--make-process
+     :send-string codex-ide-term-neo--send-string
+     :send-return codex-ide-term-neo--send-return
+     :send-escape codex-ide-term-neo--send-escape
+     :return-live codex-ide-term-neo--return-live)
+    (eat
      :feature codex-ide-term-eat
      :available codex-ide-term-eat--available-p
      :prepare codex-ide-term-eat--prepare-buffer
@@ -81,7 +94,9 @@ installed separately.  Existing sessions keep the backend that created them."
       (user-error "Terminal backend `%s' is not installed" backend))
     (let ((available (plist-get (cdr spec) :available)))
       (unless (and available (funcall available))
-        (user-error "Terminal backend `%s' is not available" backend)))
+        (if (eq backend 'eat)
+            (user-error "Terminal backend `eat' is not available.  Install Eat or select an installed backend")
+          (user-error "Terminal backend `%s' is not available" backend))))
     spec))
 
 (defun codex-ide-term--operation (backend operation)
@@ -89,13 +104,46 @@ installed separately.  Existing sessions keep the backend that created them."
   (or (plist-get (cdr (codex-ide-term--load-backend backend)) operation)
       (error "Terminal backend `%s' has no %s operation" backend operation)))
 
+(defun codex-ide-term--selected-backend ()
+  "Return the backend for a new session, respecting explicit customization."
+  (if (and (featurep 'neomacs) (eq codex-ide-terminal-backend 'eat)
+           (not (get 'codex-ide-terminal-backend 'customized-value))
+           (not (get 'codex-ide-terminal-backend 'saved-value)))
+      'neo-term
+    codex-ide-terminal-backend))
+
+(defun codex-ide-term--process (buffer)
+  "Return BUFFER's terminal resource, native or Emacs-owned."
+  (if (and (buffer-live-p buffer)
+           (eq (buffer-local-value 'codex-ide-term--backend buffer) 'neo-term))
+      (buffer-local-value 'codex-ide-term-neo--resource buffer)
+    (get-buffer-process buffer)))
+
+(defun codex-ide-term--process-buffer (resource)
+  "Return the buffer owned by terminal RESOURCE."
+  (if (processp resource) (process-buffer resource) (plist-get resource :buffer)))
+
+(defun codex-ide-term--process-live-p (resource buffer)
+  "Return non-nil if terminal RESOURCE still owns live BUFFER."
+  (and (buffer-live-p buffer)
+       (if (processp resource)
+           (and (process-live-p resource) (eq resource (get-buffer-process buffer)))
+         (codex-ide-term-neo--live-p resource buffer))))
+
+(defun codex-ide-term--stop-process (resource buffer)
+  "Stop terminal RESOURCE without touching a successor in BUFFER."
+  (if (processp resource)
+      (when (process-live-p resource) (delete-process resource))
+    (when resource (codex-ide-term-neo--stop resource buffer))))
+
 (defun codex-ide-term--current-backend ()
   "Return the backend that owns the current terminal buffer."
   (or codex-ide-term--backend
       (cond
+       ((derived-mode-p 'neo-term-mode) 'neo-term)
        ((derived-mode-p 'vterm-mode) 'vterm)
        ((derived-mode-p 'eat-mode) 'eat)
-       (t codex-ide-terminal-backend))))
+       (t (codex-ide-term--selected-backend)))))
 
 (defun codex-ide-term--call (operation &rest args)
   "Call the current backend OPERATION with ARGS."
@@ -106,7 +154,7 @@ installed separately.  Existing sessions keep the backend that created them."
 
 (defun codex-ide-term--prepare-buffer (buffer-name working-dir)
   "Prepare a terminal BUFFER-NAME for WORKING-DIR."
-  (let* ((backend codex-ide-terminal-backend)
+  (let* ((backend (codex-ide-term--selected-backend))
          (prepare (codex-ide-term--operation backend :prepare))
          (buffer (funcall prepare buffer-name working-dir)))
     (with-current-buffer buffer
@@ -120,12 +168,14 @@ installed separately.  Existing sessions keep the backend that created them."
     (funcall (codex-ide-term--operation backend :configure))))
 
 (defun codex-ide-term--make-process (buffer program args env)
-  "Start PROGRAM with ARGS and ENV in prepared terminal BUFFER."
+  "Start PROGRAM with ARGS and ENV in prepared terminal BUFFER.
+Return an Emacs process or an exact native Neomacs resource."
   (with-current-buffer buffer
     (let* ((backend (codex-ide-term--current-backend))
            (make-process (codex-ide-term--operation backend :make-process))
            (process (funcall make-process buffer program args env)))
-      (setq-local codex-ide-term--backend backend)
+      (with-current-buffer (codex-ide-term--process-buffer process)
+        (setq-local codex-ide-term--backend backend))
       process)))
 
 (defun codex-ide-term--send-string (string)
@@ -142,15 +192,17 @@ installed separately.  Existing sessions keep the backend that created them."
 (defun codex-ide-term--paste-draft (process text)
   "Insert literal draft TEXT into the current terminal's captured PROCESS.
 Use one bracketed paste, without a Return key.  This operation targets the
-Codex TUI, whose input parser handles bracketed paste on both backends."
+Codex TUI, whose input parser handles bracketed paste on all backends."
   (codex-ide-term--validate-draft text)
-  (unless (and (memq (codex-ide-term--current-backend) '(eat vterm))
-               (process-live-p process)
-               (eq process (get-buffer-process (current-buffer))))
+  (unless (and (memq (codex-ide-term--current-backend) '(eat vterm neo-term))
+               (codex-ide-term--process-live-p process (current-buffer)))
     (user-error "Codex terminal process is no longer current"))
   ;; Backend yank functions can fall back to unframed input before the
   ;; terminal has seen the mode-enable sequence, turning LF into key events.
-  (process-send-string process (concat "\e[200~" text "\e[201~")))
+  (let ((paste (concat "\e[200~" text "\e[201~")))
+    (if (processp process)
+        (process-send-string process paste)
+      (codex-ide-term-neo--send-string paste))))
 
 (defun codex-ide-term--send-return ()
   "Send RET to the current terminal."
@@ -168,10 +220,12 @@ Codex TUI, whose input parser handles bracketed paste on both backends."
   "Sync BUFFER terminal dimensions to WINDOW through its resize hook."
   (when (and (buffer-live-p buffer) (window-live-p window))
     (with-current-buffer buffer
-      (when-let* ((process (get-buffer-process buffer))
-                  (adjust (process-get process 'adjust-window-size-function)))
-        (when (functionp adjust)
-          (funcall adjust process (list window)))))))
+      (if (eq (codex-ide-term--current-backend) 'neo-term)
+          (codex-ide-term-neo--sync-dimensions window)
+        (when-let* ((process (get-buffer-process buffer))
+                    (adjust (process-get process 'adjust-window-size-function)))
+          (when (functionp adjust)
+            (funcall adjust process (list window))))))))
 
 (provide 'codex-ide-term)
 
