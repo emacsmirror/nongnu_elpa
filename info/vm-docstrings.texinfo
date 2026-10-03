@@ -7426,65 +7426,6 @@ storage for attachments which are stored on disk anyway.
 
 @end macro
 
-@macro vmdocvmautodisplayedmimecontenttypeexceptions
-@defopt vm-auto-displayed-mime-content-type-exceptions
-@vindex vm-auto-displayed-mime-content-type-exceptions
-List of MIME content types that should not be displayed immediately
-after decoding.  These types will be displayed as a button that you
-must activate to display the object.  This is an exception list for
-the types listed in @code{vm-mime-auto-displayed-content-types}; all types
-listed there will be auto-displayed except those in the exception
-list.
-
-The value should be either nil or a list of strings.  The strings
-should all be types or type/subtype pairs.  Example:
-
- (setq vm-mime-auto-displayed-content-type-exceptions '("text/html"))
-
-If a top-level type is listed without a subtype, all subtypes of
-that type are assumed to be included.
-@end defopt
-
-@end macro
-
-@macro vmdocvmautodisplayedmimecontenttypes
-@defopt vm-auto-displayed-mime-content-types
-@vindex vm-auto-displayed-mime-content-types
-List of MIME content types that should be displayed immediately
-after decoding.  Other types will be displayed as a button that
-you must activate to display the object.
-
-A value of t means that all types should be displayed immediately.
-A nil value means never display MIME objects immediately; only use buttons.
-
-If the value is a list, it should be a list of strings, which
-should all be types or type/subtype pairs.  Example:
-
- (setq vm-mime-auto-displayed-content-types '("text" "image/jpeg"))
-
-If a top-level type is listed without a subtype, all subtypes of
-that type are assumed to be included.
-
-Note that all multipart types are processed specially, and this
-variable does not apply to them.  In particular,
-
-@example
-   multipart/digest messages are always displayed as a button to
-   avoid automatically visiting a new folder while you are moving
-   around in the current folder.
-
-   message/partial messages are always displayed as a button,
-   because there always needs to be a way to trigger the assembly
-   of the parts into a full message.
-
-@end example
-Any type that cannot be displayed internally or externally will
-be displayed as a button that allows you to save the body of the MIME
-object to a file.
-@end defopt
-
-@end macro
-
 @macro vmdocvmconfirmquit
 @defopt vm-confirm-quit
 @vindex vm-confirm-quit
@@ -7506,16 +7447,6 @@ Default value: @code{if-something-will-be-lost}
 Non-nil value causes VM to expunge deleted messages before
 quitting.  You can use @code{vm-quit-no-expunge} and @code{vm-quit-no-change}
 to override this behavior.
-@end defopt
-
-@end macro
-
-@macro vmdocvmfetchedmessagelimit
-@defopt vm-fetched-message-limit
-@vindex vm-fetched-message-limit
-Should be an integer representing the maximum number of messages
-that VM should keep in the Folder buffer when the messages are
-fetched on demand, or nil to signify no limit.
 @end defopt
 
 @end macro
@@ -7551,25 +7482,6 @@ stands, asked about first, or left in a composition buffer for you.
 
 A return receipt is a request, not an instruction: a sender cannot make
 your mail reader tell them you read something, and VM does not by default.
-@end defopt
-
-@end macro
-
-@macro vmdocvmhonormimecontentdisposition
-@defopt vm-honor-mime-content-disposition
-@vindex vm-honor-mime-content-disposition
-Non-nil value means use information from the Content-Disposition
-header to display MIME messages.  Possible values are @code{t}, to mean that the
-Content-Disposition header should always be honored or @code{internal-only},
-to mean that an "inline" disposition should be honored only for
-internally-displayable types. 
-
-The Content-Disposition header specifies whether a MIME object
-should be displayed inline or treated as an attachment.  For VM,
-"inline" display means displaying the object in the Emacs
-buffer, if possible.  Attachments will be displayed as a button
-that you can use mouse-2 to activate or mouse-3 to pull up a menu
-of options.
 @end defopt
 
 @end macro
@@ -7628,55 +7540,6 @@ The log runs for as long as Emacs does, so something has to bound it, and
 what a reader wants is the end: the oldest lines go first.
 
 Default value: @code{20000}
-@end defopt
-
-@end macro
-
-@macro vmdocvmmimesavabletypeexceptions
-@defopt vm-mime-savable-type-exceptions
-@vindex vm-mime-savable-type-exceptions
-List of MIME types which should not be saved.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmimesavabletypes
-@defopt vm-mime-savable-types
-@vindex vm-mime-savable-types
-List of MIME types which should be saved.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmutableframes
-@defopt vm-mutable-frames
-@vindex vm-mutable-frames
-Non-nil value means VM is allowed to create and destroy frames
-to display and undisplay buffers.  Whether VM actually does
-so depends on the value of the variables with names prefixed by
-@code{‘vm-frame-per-}’.
-
-VM can create a frame to display a buffer, and delete frame to
-undisplay a buffer.  A nil value means VM should not create or
-delete frames.
-
-This variable does not apply to the VM commands whose
-names end in -other-frame, which always create a new frame.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmutablewindows
-@defopt vm-mutable-windows
-@vindex vm-mutable-windows
-This variable’s value controls VM’s window usage.
-
-A non-nil value gives VM free run of the Emacs display; it will commandeer
-the entire screen for its purposes.
-
-A value of nil restricts VM’s window usage to the window from which
-it was invoked.  VM will not create, delete, or use any other windows,
-nor will it resize its own window.
 @end defopt
 
 @end macro
@@ -7741,15 +7604,6 @@ Default value: @code{t}
 
 @end macro
 
-@macro vmdocvmsummaryuninterestingsendersarrow
-@defopt vm-summary-uninteresting-senders-arrow
-@vindex vm-summary-uninteresting-senders-arrow
-String to display before the recipients when displayed instead of an
-"uninteresting" sender.  See @code{vm-summary-uninteresting-senders}.
-@end defopt
-
-@end macro
-
 @macro vmdocvmtempfiledirectory
 @defopt vm-temp-file-directory
 @vindex vm-temp-file-directory
@@ -7794,23 +7648,6 @@ larger number here means more talk.  The scale runs from 0 to 10:
 progress.  Nothing above 1 is a warning.
 
 Default value: @code{5}
-@end defopt
-
-@end macro
-
-@macro vmdocvmvsspamscoreheaders
-@defopt vm-vs-spam-score-headers
-@vindex vm-vs-spam-score-headers
-The value should be a list of lists, with each sublist of the form
-
-     (HEADER-REGEXP SCORE-REGEXP SCORE-FN)
-
-- HEADER-REGEXP is a regular expression matching the spam score
-header line in email messages,
-
-- SCORE-REGEXP is a regular expression matching the score, and
-
-- SCORE-FN is a function that converts the score string into a number.
 @end defopt
 
 @end macro
@@ -8304,68 +8141,6 @@ A list of condition-action rules used during reply.
 @macro vmdocvmpcrisisresendrules
 @defopt vm-pcrisis-resend-rules
 @vindex vm-pcrisis-resend-rules
-An alist associating conditions with actions from @code{vm-pcrisis-actions}
-when resending.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcactionsalist
-@defopt vmpc-actions-alist
-@vindex vmpc-actions-alist
-A default list of condition-action rules used for replying, forwarding,
-resending, composing and automorphing, unless overridden by more
-specific variables such as @code{vm-pcrisis-reply-rules}.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcautomorphalist
-@defopt vmpc-automorph-alist
-@vindex vmpc-automorph-alist
-Alist associating conditions with actions from @code{vm-pcrisis-actions}
-when automorphing.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcforwardalist
-@defopt vmpc-forward-alist
-@vindex vmpc-forward-alist
-A list of condition-action rules used when forwarding.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcmailalist
-@defopt vmpc-mail-alist
-@vindex vmpc-mail-alist
-An alist associating conditions with actions from @code{vm-pcrisis-actions}
-when composing a message starting from a folder.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcnewmailalist
-@defopt vmpc-newmail-alist
-@vindex vmpc-newmail-alist
-An alist associating conditions with actions from @code{vm-pcrisis-actions}
-when composing.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcreplyalist
-@defopt vmpc-reply-alist
-@vindex vmpc-reply-alist
-A list of condition-action rules used during reply.
-@end defopt
-
-@end macro
-
-@macro vmdocvmpcresendalist
-@defopt vmpc-resend-alist
-@vindex vmpc-resend-alist
 An alist associating conditions with actions from @code{vm-pcrisis-actions}
 when resending.
 @end defopt

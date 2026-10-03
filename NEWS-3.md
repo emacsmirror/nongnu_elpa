@@ -8,6 +8,26 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **A name VM has renamed reports the name to use** (emacs-vm/vm#901).
+    Seventy old names were aliases of their replacements, and an alias said
+    nothing: `define-obsolete-variable-alias` warns where the file naming the
+    old name is byte-compiled, and nobody byte-compiles `~/.vm` or an init
+    file.  Nineteen of the seventy were a bare `defvaralias` and could not
+    warn even then.  So a configuration went on working under names that had
+    moved and its author was never told.
+
+    Setting one of them now reports what to write instead:
+
+        vmpc-conditions was renamed to vm-pcrisis-conditions in VM 9.0.0;
+        rename it in your configuration
+
+    and so does naming one as a Personality Crisis condition or action.
+
+    **If your configuration uses an old name, rename it.**  The message names
+    the replacement, and `M-x customize` reports it rather than stopping your
+    init file.  The whole list is `vm-renamed-variables` and
+    `vm-renamed-functions` in `vm-renamed.el`.
+
   * **`%n` in a summary format is the message number, and the width does the
     padding** (emacs-vm/vm#861).  VM padded the number to three columns
     itself, so `%n` was three columns wide whatever you wrote: `%-3n` did
@@ -980,12 +1000,10 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
   * Personality Crisis is named after VM: every `vmpc-` symbol is now
     `vm-pcrisis-`, so the feature turns up when you complete `M-x vm-`, run
     `C-h a vm-`, or look through the `vm` customize tree
-    (emacs-vm/vm#657).  Everything an init file can name keeps working under
-    its old name: the options carry a value saved by customize across, and
-    the conditions and actions are aliased too, since rules name them as
-    data.  `~/.vmpc-auto-profiles` and the `vmpc-profile` field written into
-    BBDB records keep their names, being a file and a field rather than
-    symbols.
+    (emacs-vm/vm#657).  An old name is not an alias: see the entry on
+    renamed names below for what one does now.  `~/.vmpc-auto-profiles` and
+    the `vmpc-profile` field written into BBDB records keep their names,
+    being a file and a field rather than symbols.
 
   * Incoming mail can be filed and labelled by a table of virtual folder
     selectors, `vm-virtual-filter-alist` (emacs-vm/vm#542).

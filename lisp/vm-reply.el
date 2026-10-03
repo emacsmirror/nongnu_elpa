@@ -563,7 +563,7 @@ prepended to every line that is left."
 		 vm-mime-alternative-show-method))
 	    ;; include only text and message/rfc822 types
 	    ;; message/external-body should not be included
-	    (vm-auto-displayed-mime-content-types '("text" "message/rfc822"))
+	    (vm-mime-auto-displayed-content-types '("text" "message/rfc822"))
 	    ;; don't include separator for multipart
 	    (vm-mime-parts-display-separator "")
 	    ;; make MIME buttons look like text unless they are included

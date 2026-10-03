@@ -48,17 +48,17 @@
   (should (fboundp 'vm-vs-text))
   (should (fboundp 'vm-vs-header-or-text)))
 
-;;; vm-virtual-selector-function-alist tests
+;;; vm-vs-alist tests
 
 (ert-deftest vm-virtual-test-selector-alist-populated ()
-  "Test that vm-virtual-selector-function-alist has entries."
-  (should (assq 'and vm-virtual-selector-function-alist))
-  (should (assq 'or vm-virtual-selector-function-alist))
-  (should (assq 'not vm-virtual-selector-function-alist))
-  (should (assq 'any vm-virtual-selector-function-alist))
-  (should (assq 'author vm-virtual-selector-function-alist))
-  (should (assq 'subject vm-virtual-selector-function-alist))
-  (should (assq 'recipient vm-virtual-selector-function-alist)))
+  "Test that vm-vs-alist has entries."
+  (should (assq 'and vm-vs-alist))
+  (should (assq 'or vm-vs-alist))
+  (should (assq 'not vm-vs-alist))
+  (should (assq 'any vm-vs-alist))
+  (should (assq 'author vm-vs-alist))
+  (should (assq 'subject vm-vs-alist))
+  (should (assq 'recipient vm-vs-alist)))
 
 ;;; Virtual folder creation function existence
 
@@ -739,10 +739,10 @@ have been worth reading."
   (require 'vm-avirtual)
   (let* ((vm-virtual-check-diagnostics t)
          (vm-virtual-check-level 0)
-         (vm-virtual-selector-function-alist
+         (vm-vs-alist
           (append (list (cons 'yes (lambda (_m) t))
                         (cons 'no (lambda (_m) nil)))
-                  vm-virtual-selector-function-alist)))
+                  vm-vs-alist)))
     (should (equal "  and: t (yes)\n"
                    (with-output-to-string (vm-vs-and nil '(yes)))))
     (should (equal "  or: nil (no)\n"
@@ -759,7 +759,7 @@ Issue #584.  `vm-virtual-check-case-fold-search\' was read only by the copies in
 vm-avirtual.el, which lost, so the option did nothing for a folder's selectors."
   (require 'vm-avirtual)
   (let* ((seen 'unset)
-         (vm-virtual-selector-function-alist
+         (vm-vs-alist
           (list (cons 'peek (lambda (_m) (setq seen case-fold-search) t)))))
     (let ((vm-virtual-check-case-fold-search t) (case-fold-search nil))
       (vm-vs-and nil '(peek))

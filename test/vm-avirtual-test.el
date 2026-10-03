@@ -898,7 +898,7 @@ rather than saving the folder over itself."
   "Run BODY with the two selector tables bound and `message' captured.
 BODY sees REPORT, what the check said."
   (declare (indent 2) (debug t))
-  `(let ((vm-virtual-selector-function-alist ,message-side)
+  `(let ((vm-vs-alist ,message-side)
          (vm-mail-virtual-selector-function-alist ,mail-side)
          (report nil))
      (cl-letf (((symbol-function 'message)
@@ -953,11 +953,11 @@ folder, which is a difference nobody intended.
 
 Not under instrumentation: edebug evaluates a `defvar' as \[eval-defun] does,
 which resets it, so instrumenting vm-vars.el throws away the selectors this
-file adds to `vm-virtual-selector-function-alist' as it loads, and the
+file adds to `vm-vs-alist' as it loads, and the
 top-level call that added them is not re-run (emacs-vm/vm#870)."
   (skip-unless (not vm-test-instrumented))
   (let ((missing (seq-remove
-                  (lambda (name) (assq name vm-virtual-selector-function-alist))
+                  (lambda (name) (assq name vm-vs-alist))
                   (mapcar #'car vm-mail-virtual-selector-function-alist))))
     (should (equal missing nil))))
 
@@ -1193,19 +1193,19 @@ looked at."
   "`vm-avirtual-add-selectors' is how this file registers the selectors it
 defines: each name is paired with the `vm-vs-' function that answers it, and
 listed as one the interactive selector reader offers."
-  (let ((vm-virtual-selector-function-alist
-         (copy-sequence vm-virtual-selector-function-alist))
-        (vm-supported-interactive-virtual-selectors
-         (copy-sequence vm-supported-interactive-virtual-selectors)))
+  (let ((vm-vs-alist
+         (copy-sequence vm-vs-alist))
+        (vm-vs-interactive
+         (copy-sequence vm-vs-interactive)))
     (vm-avirtual-add-selectors '(badgerish))
-    (should (equal (cdr (assq 'badgerish vm-virtual-selector-function-alist))
+    (should (equal (cdr (assq 'badgerish vm-vs-alist))
                    'vm-vs-badgerish))
-    (should (member '("badgerish") vm-supported-interactive-virtual-selectors))
+    (should (member '("badgerish") vm-vs-interactive))
     ;; and adding it twice leaves one of it
     (vm-avirtual-add-selectors '(badgerish))
     (should (equal (length (seq-filter
                             (lambda (entry) (eq (car entry) 'badgerish))
-                            vm-virtual-selector-function-alist))
+                            vm-vs-alist))
                    1))))
 
 (ert-deftest vm-avirtual-test-finding-a-selector-in-a-specification ()
