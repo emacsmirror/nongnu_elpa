@@ -160,7 +160,7 @@
           (should (equal
                    (mastodon-auth--plstore-access-token-member)
                    nil))))
-      ;; FIXME: if we error in `mastodon-auth-source-get', this won't run:
+      ;; NB: if we error in `mastodon-auth-source-get', this won't run:
       (delete-file mastodon-client--token-file))))
 
 (ert-deftest mastodon-auth-auth-source-search-only ()
