@@ -127,7 +127,7 @@
       (delete-file "stubfile.plstore"))))
 
 (ert-deftest mastodon-auth-plstore-token-check-auth-source ()
-  :expected-result :failed
+  ;; :expected-result :failed
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
          (mastodon-client--token-file "fixture/stubfile-auth-source.plstore")
@@ -150,16 +150,15 @@
           (auth-sources "fixture/auth-source-stub"))
       (with-mock
         (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+        ;; FIXME: storing fails, auth-source returns no :save-function to call:
         (mastodon-client--store-access-token "token")
         ;; should nil if we don't check with auth source
         ;; because we saved in auth-source instead:
-
-        ;; FIXME: this fails because we currently DO save access-token in
-        ;; plstore even if using auth-source.
         (let ((mastodon-auth-use-auth-source nil))
           (should (equal
                    (mastodon-auth--plstore-access-token-member)
                    nil))))
+      ;; FIXME: if we error in `mastodon-auth-source-get', this won't run:
       (delete-file mastodon-client--token-file))))
 
 (ert-deftest mastodon-auth-auth-source-search-only ()

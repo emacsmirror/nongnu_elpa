@@ -336,8 +336,9 @@ Return a list of user, password/secret, and the item's save-function."
         (when create ;; call save function:
           (if (functionp (nth 2 creds))
               (funcall (nth 2 creds))
-            (user-error "Unable to save auth-source entry. \
-Create an auth-source entry yourself with token as password")))
+            (warn "Unable to save auth-source entry.
+Create an auth-source entry yourself with token as password.
+Format: machine $instance login $username password $token")))
         creds))))
 
 (defun mastodon-auth-source-token (url handle &optional token create)
