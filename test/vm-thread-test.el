@@ -1,6 +1,6 @@
 ;;; vm-thread-test.el --- Tests for vm-thread.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -517,6 +517,622 @@ Standalone message, not part of thread.
     (vm-th-set-message-of child child-msg)
     ;; vm-th-root of child should return root's message
     (should (eq (vm-th-root child) root-msg))))
+
+;;; nil-message robustness
+
+(ert-deftest vm-thread-test-build-thread-list-nil-message ()
+  "Test that `vm-build-thread-list' tolerates a nil message.
+Issue #463 reported \"Wrong type argument: arrayp, nil\" from
+`vm-so-sortable-subject' under `vm-build-thread-list' when an IMAP
+retrieval failed partway.  The null guard that fixes it landed in
+2011; this pins it so the crash cannot come back."
+  (let ((vm-thread-debug nil))
+    (should (null (vm-build-thread-list nil)))))
+
+
+;;; the cost of building threads (issue #557)
+
+(defun vm-thread-test--write-chain (file n)
+  "Write a folder of N messages to FILE, each referencing the one before it."
+  (with-temp-file file
+    (dotimes (i n)
+      (insert (format "From s%d@example.com Mon Jan  1 00:00:00 2024\n" i)
+              (format "From: S%d <s%d@example.com>\n" i i)
+              (format "Subject: msg %d\n" i)
+              (format "Message-ID: <chain-%d@example.com>\n" i)
+              (if (> i 0)
+                  (format "References: <chain-%d@example.com>\n" (1- i))
+                "")
+              "\n"
+              (format "Body %d.\n\n" i)))))
+
+(ert-deftest vm-thread-test-reference-root-memoises-the-whole-path ()
+  "REGRESSION: resolving a reference root remembers every id on the way up.
+Issue #557.  `vm-thread-subtree' needs the subject symbol of every message in a
+subtree, and finding one means climbing to the thread's root.  Climbed afresh
+each time, that costs the depth of the thread per message, and with a subtree
+computed for every message it made thread building cubic in the folder: 2000
+messages in one reference chain took a minute, and 25 000 would have taken
+hours.
+
+Asserted as the mechanism rather than as a time, because a time is a property of
+the machine.  What has to hold is that one climb populates the cache for the
+whole path it walked, so the remaining messages of that thread cost nothing.  The
+measurements are on the issue.
+
+Also checks the cache cannot change the answer: root with and without it agree
+for every message."
+  (let* ((n 200)
+         (dir (file-name-as-directory (make-temp-file "vm-thread-cost" t)))
+         (file (expand-file-name "chain" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (vm-thread-test--write-chain file n)
+          (vm-visit-folder file)
+          (should (= n (length vm-message-list)))
+          (vm-build-threads vm-message-list)
+          (let* ((deepest (vm-thread-symbol (car (last vm-message-list))))
+                 (root (vm-thread-symbol (car vm-message-list)))
+                 (cache (make-hash-table :test 'eq)))
+            ;; One climb from the deepest message ...
+            (should (eq root (vm-th-reference-root-sym deepest cache)))
+            ;; ... leaves every id it passed known, which is the whole chain.
+            (should (>= (hash-table-count cache) n))
+            ;; The answer does not depend on the cache.
+            (dolist (m vm-message-list)
+              (let ((id-sym (vm-thread-symbol m)))
+                (should (eq (vm-th-reference-root-sym id-sym)
+                            (vm-th-reference-root-sym id-sym cache)))
+                (should (eq root (vm-th-reference-root-sym id-sym cache)))))
+            ;; And the thread itself is right: the first message's subtree is
+            ;; the whole folder, and the last message is below it.
+            (should (= n (length (vm-thread-subtree (car vm-message-list)))))
+            (should (< 0 (vm-thread-indentation (car (last vm-message-list)))))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)))
+      (delete-directory dir t))))
+
+
+;;; asking rather than provoking an error (issue #476)
+
+(ert-deftest vm-thread-root-p-does-not-provoke-an-error-when-unbuilt ()
+  "REGRESSION: `vm-thread-root-p' answers without raising an error.
+Issue #476: with threads not built it used to call through to
+`vm-thread-subtree', which signals `vm-thread-error', and catch that to answer
+nil.  `vm-summary-faces-add' asks this for every summary line, so an ordinary
+folder with threading off raised and recovered an error once per line --
+expensive, and it leaves `debug-on-signal' useless for anyone debugging
+something else while reading mail.
+
+`vm-thread-subtree' is stubbed to signal if it is reached at all, so the test
+fails whichever way the old code went: by returning non-nil, or by getting
+there."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    ;; deliberately not built
+    (should-not (vectorp vm-thread-obarray))
+    (let ((reached nil))
+      (cl-letf (((symbol-function 'vm-thread-subtree)
+                 (lambda (&rest _)
+                   (setq reached t)
+                   (signal 'vm-thread-error '(vm-thread-subtree)))))
+        (should-not (vm-thread-root-p (car vm-message-list))))
+      (should-not reached))))
+
+(ert-deftest vm-thread-root-p-still-recognises-a-root ()
+  "The control: with threads built, a root is still a root and a reply is not.
+Without this, the test above could pass by answering nil for everything."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (should (vectorp vm-thread-obarray))
+    (let* ((root (car vm-message-list))
+           (reply (cadr vm-message-list)))
+      ;; the fixture is a thread, so its first message is a root with children
+      (should (> (vm-thread-count root) 1))
+      (should (vm-thread-root-p root))
+      (should-not (vm-thread-root-p reply)))))
+
+(ert-deftest vm-thread-root-p-tolerates-a-threading-error ()
+  "A genuine threading error still leaves the answer nil rather than failing.
+The documented contract is that no exception escapes, and `vm-summary-faces-add'
+relies on it: a summary line is not worth failing to draw over a threading
+problem.  Only the unbuilt case stopped going through the error path."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (cl-letf (((symbol-function 'vm-thread-root)
+               (lambda (&rest _) (signal 'vm-thread-error '(deliberate)))))
+      (should-not (vm-thread-root-p (car vm-message-list))))))
+
+
+;;; vm-thread-subtree-safe outside a folder buffer (issue #563)
+
+(ert-deftest vm-thread-subtree-safe-uses-the-whole-subtree-when-built ()
+  "REGRESSION: outside a vm-mode buffer, a built thread yields the whole subtree.
+Issue #563: the check was `(vectorp \\='vm-thread-obarray)\\=' -- the quoted symbol,
+never a vector -- where the other nine sites test the value.  So this branch could
+only ever answer \"threads have not been built\" and return the singleton, whatever
+the state of the folder.
+
+The callers are the `thread-any\\=' and `thread-all\\=' virtual folder selectors.  Taking
+the singleton would mean `thread-any\\=' matching only when the thread root matches, and
+`thread-all\\=' being trivially true whenever it does."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let* ((folder (current-buffer))
+           (root (car vm-message-list))
+           (whole (length (vm-thread-subtree root))))
+      ;; the fixture has to be a real thread or this proves nothing
+      (should (> whole 1))
+      ;; from the folder buffer, the first branch
+      (let ((major-mode 'vm-mode))
+        (should (= whole (length (vm-thread-subtree-safe root)))))
+      ;; and from anywhere else, which is the branch that was dead
+      (let ((major-mode 'vm-virtual-mode)
+            (vm-mail-buffer folder))
+        (should (= whole (length (vm-thread-subtree-safe root))))))))
+
+(ert-deftest vm-thread-subtree-safe-falls-back-when-unbuilt ()
+  "With threads unbuilt it still answers with just the message, as documented.
+The control: the fix must not turn the fallback into a call that signals."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (should-not (vectorp vm-thread-obarray))
+    (let ((folder (current-buffer))
+          (msg (car vm-message-list)))
+      (let ((major-mode 'vm-virtual-mode)
+            (vm-mail-buffer folder))
+        (should (equal (list msg) (vm-thread-subtree-safe msg)))))))
+
+;;; Rearranging threads by hand (issue #574)
+
+;; `vm-promote-subthread', `vm-demote-subthread' and `vm-attach-to-thread' let
+;; the user override what the References headers say.  None of them had a test.
+;; `vm-attach-to-thread' refuses an attach that would make a cycle, and used to
+;; refuse it after taking the message out of its thread, leaving the folder
+;; threaded differently and nothing to put it back.
+
+(defconst vm-thread-test--fork-folder
+  (mapconcat
+   (lambda (spec)
+     (let ((i (car spec)) (parent (cdr spec)))
+       (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+               "From: alice@example.com\n"
+               (format "Subject: subject %d\n" i)
+               (format "Message-ID: <fork-%d@example.com>\n" i)
+               (if parent
+                   (format "References: <fork-%d@example.com>\n" parent)
+                 "")
+               "\n" (format "Body %d.\n\n" i))))
+   '((0 . nil) (1 . 0) (2 . 1) (3 . 0) (4 . nil))
+   "")
+  "Messages structured 0 < 1 < 2 and 0 < 3, with 4 outside any thread.
+The fork matters: the damage a refused attach did showed on the second child of
+the root, not on the first.")
+
+(defmacro vm-thread-test--with-fork (&rest body)
+  "Run BODY in the fork folder with threads built and message 0 current."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder vm-thread-test--fork-folder
+     (setq major-mode 'vm-mode)
+     (setq vm-mail-buffer nil)
+     (let ((vm-summary-show-threads t))
+       (cl-letf (((symbol-function 'vm-follow-summary-cursor) #'ignore)
+                 ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+                 ((symbol-function 'vm-thread-mark-for-summary-update) #'ignore)
+                 ((symbol-function 'vm-inform) #'ignore))
+         (vm-build-threads-if-unbuilt)
+         ,@body))))
+
+(defun vm-thread-test--edit-message (n replace with)
+  "Edit message N of the current folder, replacing REPLACE with WITH.
+Drives `vm-edit-message-end', which is what discards the cached data and
+re-threads the message -- the path an edit of a Subject takes."
+  (let* ((m (nth n vm-message-list))
+         (edit-buf (generate-new-buffer " *vm-thread-test-edit*")))
+    (unwind-protect
+        (progn
+          (vm-set-edit-buffer-of m edit-buf)
+          (with-current-buffer edit-buf
+            (insert-buffer-substring (vm-buffer-of m)
+                                     (vm-headers-of m) (vm-text-end-of m))
+            (goto-char (point-min))
+            (should (search-forward replace nil t))
+            (replace-match with)
+            (setq vm-message-pointer (list m)
+                  vm-mail-buffer (vm-buffer-of m))
+            (set-buffer-modified-p t))
+          (cl-letf (((symbol-function 'vm-present-current-message) #'ignore)
+                    ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+                    ((symbol-function 'vm-display) (lambda (&rest _) nil)))
+            (with-current-buffer edit-buf (vm-edit-message-end))))
+      (when (buffer-live-p edit-buf) (kill-buffer edit-buf)))))
+
+(ert-deftest vm-thread-test-an-edited-subject-does-not-thread-a-root-under-its-child ()
+  "REGRESSION: editing a Subject leaves the message where it was in its thread.
+Issue #307, the half that was never reproduced.  `vm-unthread-message' is
+called before the cached data is wiped, so that the old message id still
+finds the right node, and it recorded the message's *old* subject on that
+node.  Nothing replaced it afterwards: `vm-build-thread-list' fills the
+field in only when it meets an older date.  `vm-ts-subject-symbol' reads
+exactly that field, so an edited message went on being sorted under the
+subject it used to have -- and joined that subject thread under whichever
+message had taken over as its root.
+
+For the root of a thread that is its own child: message 0 came out
+indented under message 3, which references message 0.  Every message in
+the thread shifted a step to the right with it, and
+`vm-check-thread-integrity' saw nothing wrong, the database being
+self-consistent."
+  (vm-thread-test--with-fork
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    (vm-thread-test--edit-message 0 "Subject: subject 0" "Subject: quite another")
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    ;; the message is in the subject thread it now names, as its root
+    (let* ((m (car vm-message-list))
+           (s-sym (vm-ts-subject-symbol (vm-th-thread-symbol m))))
+      (should (equal (symbol-name s-sym) "quite another"))
+      (should (eq (vm-ts-root-of s-sym) (vm-th-thread-symbol m))))))
+
+(ert-deftest vm-thread-test-an-edited-subject-is-what-the-thread-node-holds ()
+  "The node's oldest-subject follows the edit rather than keeping the old one.
+That field is what `vm-ts-subject-symbol' is computed from, so a stale one
+is not cosmetic."
+  (vm-thread-test--with-fork
+    (let ((m (car vm-message-list)))
+      (should (equal (vm-th-oldest-subject-of (vm-th-thread-symbol m))
+                     "subject 0"))
+      (vm-thread-test--edit-message 0 "Subject: subject 0" "Subject: quite another")
+      (should (equal (vm-th-oldest-subject-of (vm-th-thread-symbol m))
+                     "quite another")))))
+
+(defun vm-thread-test--indentations ()
+  "Return the thread indentation of each message in `vm-message-list'."
+  (mapcar #'vm-thread-indentation vm-message-list))
+
+(ert-deftest vm-thread-test-attach-to-thread-makes-a-child ()
+  "Attaching puts the current message under the one visited last.
+Message 4 is in no thread; under message 2 it is three deep."
+  (vm-thread-test--with-fork
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    (setq vm-last-message-pointer (nthcdr 2 vm-message-list))
+    (setq vm-message-pointer (nthcdr 4 vm-message-list))
+    (vm-attach-to-thread)
+    (should (equal '(0 1 2 1 3) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-attach-to-thread-refuses-a-cycle-and-changes-nothing ()
+  "REGRESSION: a refused attach leaves the threading as it was.
+Issue #574.  Attaching the root under its own descendant is a cycle.  The check
+used to run after `vm-unthread-message', so the refusal cost the root its
+children: message 3 was left at indentation 0."
+  (vm-thread-test--with-fork
+    (setq vm-last-message-pointer (nthcdr 2 vm-message-list))
+    (setq vm-message-pointer vm-message-list)
+    (should-error (vm-attach-to-thread) :type 'error)
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-attach-to-thread-needs-a-message-visited-first ()
+  "With no last message there is nothing to attach to, and nothing is changed."
+  (vm-thread-test--with-fork
+    (setq vm-last-message-pointer nil)
+    (setq vm-message-pointer (nthcdr 4 vm-message-list))
+    (should-error (vm-attach-to-thread) :type 'error)
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-demote-and-promote-move-the-whole-subtree ()
+  "Demoting indents the message and everything under it, promoting undoes it.
+Message 1 carries message 2 with it, and the messages outside the subtree do not
+move."
+  (vm-thread-test--with-fork
+    (setq vm-message-pointer (nthcdr 1 vm-message-list))
+    (vm-demote-subthread 2)
+    (should (equal '(0 3 4 1 0) (vm-thread-test--indentations)))
+    (vm-promote-subthread 1)
+    (should (equal '(0 2 3 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-demote-zero-resets-the-offset ()
+  "A count of zero to demote puts the subtree back to its natural indentation."
+  (vm-thread-test--with-fork
+    (setq vm-message-pointer (nthcdr 1 vm-message-list))
+    (vm-demote-subthread 3)
+    (should (equal '(0 4 5 1 0) (vm-thread-test--indentations)))
+    (vm-demote-subthread 0)
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-promote-zero-goes-all-the-way-to-the-left ()
+  "A count of zero to promote takes the message to indentation 0.
+Its subtree moves by the same amount rather than to 0 as well, so a message
+below it can end up left of where its parent now is.
+
+The indentations are read once first, and that is not decoration: this case
+takes its step from `vm-thread-indentation-of', the cached slot, and does
+nothing at all while that is still empty.  Drawing a threaded summary is what
+fills it in a real session."
+  (vm-thread-test--with-fork
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    (setq vm-message-pointer (nthcdr 2 vm-message-list))
+    (vm-promote-subthread 0)
+    (should (equal '(0 1 0 1 0) (vm-thread-test--indentations)))))
+
+;;; Toggling the threads display (emacs-vm/vm#632)
+
+(defconst vm-thread-test--display-folder
+  (concat
+   ;; the root comes first in the file, its reply last, and an unrelated
+   ;; message sits between them -- so threading has something to move
+   "From alice@example.com Sat Aug  8 10:00:00 2026\n"
+   "From: alice@example.com\nSubject: badgers\n"
+   "Message-ID: <root@example.com>\n\nThe root.\n\n"
+   "From carol@example.com Sat Aug  8 11:00:00 2026\n"
+   "From: carol@example.com\nSubject: the roof\n"
+   "Message-ID: <alone@example.com>\n\nNothing to do with badgers.\n\n"
+   "From bob@example.com Sat Aug  8 12:00:00 2026\n"
+   "From: bob@example.com\nSubject: Re: badgers\n"
+   "Message-ID: <reply@example.com>\n"
+   "References: <root@example.com>\n\nThe reply.\n\n")
+  "A thread of two with an unrelated message between them in the file.")
+
+(defmacro vm-thread-test--with-display-folder (&rest body)
+  "Visit `vm-thread-test--display-folder' as a real folder and run BODY.
+`vm-toggle-threads-display' sorts the folder, so this wants a folder VM has
+really visited rather than a buffer holding the text."
+  (declare (indent 0) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-thread-display" t)))
+         (before (buffer-list)))
+     (unwind-protect
+         (let ((folder (expand-file-name "incoming" dir))
+               (vm-frame-per-folder nil)
+               (vm-mutable-frame-configuration nil)
+               (vm-summary-show-threads nil))
+           (write-region vm-thread-test--display-folder nil folder nil 'quiet)
+           (cl-letf (((symbol-function 'vm-display) #'ignore))
+             (vm-visit-folder folder)
+             (setq vm-message-pointer vm-message-list)
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-thread-test-toggle-threads-display ()
+  "`vm-toggle-threads-display' turns the threads display on and off and sorts
+the folder to match: by thread activity with it on, back to the order in the
+file with it off.
+
+With threads on the reply follows its root, which in the file it does not --
+another message is between them.  Toggling back restores the file order
+exactly, so nothing is left rearranged."
+  (vm-thread-test--with-display-folder
+    (let ((physical (mapcar #'vm-su-subject vm-message-list)))
+      (should (equal physical '("badgers" "the roof" "Re: badgers")))
+      (should-not vm-summary-show-threads)
+      (vm-toggle-threads-display)
+      (should vm-summary-show-threads)
+      (let* ((threaded (mapcar #'vm-su-subject vm-message-list))
+             (root (cl-position "badgers" threaded :test #'equal))
+             (reply (cl-position "Re: badgers" threaded :test #'equal)))
+        (should (equal reply (1+ root))))
+      (vm-toggle-threads-display)
+      (should-not vm-summary-show-threads)
+      (should (equal (mapcar #'vm-su-subject vm-message-list) physical)))))
+
+(ert-deftest vm-thread-test-toggling-threads-swaps-the-sort-keys ()
+  "The toggle swaps the sort keys between physical order and activity, and
+between their reversed forms.
+
+The keys have to be set for that to be visible: a folder that has not been
+sorted has none, the swap has nothing to match, and the keys are then whatever
+the sort the toggle performs leaves behind -- which looks like the same answer
+and tests nothing."
+  (vm-thread-test--with-display-folder
+    (setq vm-ml-sort-keys "physical-order")
+    (vm-toggle-threads-display)
+    (should (equal vm-ml-sort-keys "activity"))
+    (vm-toggle-threads-display)
+    (should (equal vm-ml-sort-keys "physical-order"))
+    ;; and the reversed pair swap with each other, not with the plain ones
+    (setq vm-ml-sort-keys "reversed-activity")
+    (vm-toggle-threads-display)
+    (should (equal vm-ml-sort-keys "reversed-physical-order"))))
+
+(ert-deftest vm-thread-test-tracing-a-message-id-does-not-break-threading ()
+  "REGRESSION: `vm-traced-message-ids' is a list of message ids, and
+`vm-th-add-child' and `vm-th-delete-child' looked in its first element:
+
+  (member (symbol-name id-sym) (car vm-traced-message-ids))
+
+`member' on a string signals, so tracing any id made VM fail as soon as a
+reply was threaded -- which is on visiting the folder.  Every other place
+that consults the list has it right.
+
+`vm-trace-message-id' is how the list gets a value, so the test uses that
+rather than setting the variable itself."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((vm-traced-message-ids nil)
+          (vm-thread-debug nil))
+      (setq vm-message-pointer (cdr vm-message-list))
+      (vm-trace-message-id)
+      (should (equal vm-traced-message-ids '("<reply1@example.com>")))
+      (vm-build-threads nil)
+      (should (vm-th-parent-of (intern-soft "<reply1@example.com>"
+                                            vm-thread-obarray))))))
+
+(defun vm-thread-test--ids (args)
+  "The message ids among ARGS, as strings.
+The tracing calls pass an id, a thread symbol or the message itself."
+  (delq nil (mapcar (lambda (thing)
+                      (cond ((stringp thing) thing)
+                            ((symbolp thing) (symbol-name thing))
+                            ((vectorp thing) (vm-su-message-id thing))))
+                    args)))
+
+(ert-deftest vm-thread-test-a-traced-message-is-the-only-one-debugged ()
+  "The debugger is entered for a traced id and for no other message: for
+every message it would stop the folder being read at all."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((vm-traced-message-ids '("<reply1@example.com>"))
+          (vm-thread-debug t)
+          (vm-summary-show-threads t)
+          (traced nil))
+      (cl-letf (((symbol-function 'debug)
+                 (lambda (_what &rest args)
+                   (push (vm-thread-test--ids args) traced))))
+        (vm-build-threads nil))
+      (should traced)
+      (should-not (cl-remove-if
+                   (lambda (ids) (member "<reply1@example.com>" ids))
+                   traced)))))
+
+;;; What vm-build-reference-threads does with each of its arguments
+
+(defconst vm-thread-test--deep-reference-folder
+  (concat "From d@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: D <d@example.com>\n"
+          "Subject: Re: something long ago\n"
+          "Message-ID: <d@example.com>\n"
+          "References: <a@example.com> <b@example.com> <c@example.com>\n"
+          "\n"
+          "The only message of the thread we have.\n\n")
+  "One reply whose ancestors are named but not in the folder.")
+
+(defun vm-thread-test--sym (id)
+  "The thread symbol for message id ID, or nil if there is none."
+  (intern-soft id vm-thread-obarray))
+
+(ert-deftest vm-thread-test-an-untraced-ancestor-is-not-debugged ()
+  "The ancestors a References header names are threaded in a pass of their
+own, and the debugger is entered there for a traced id and no other."
+  (vm-test-with-folder vm-thread-test--deep-reference-folder
+    (let ((vm-traced-message-ids '("<d@example.com>"))
+          (vm-thread-debug t)
+          (vm-summary-show-threads t)
+          (traced nil))
+      (cl-letf (((symbol-function 'debug)
+                 (lambda (_what &rest args)
+                   (push (vm-thread-test--ids args) traced))))
+        (vm-build-threads nil))
+      (should traced)
+      (should-not (cl-remove-if
+                   (lambda (ids) (member "<d@example.com>" ids))
+                   traced)))))
+
+(ert-deftest vm-thread-test-references-thread-the-messages-we-lack ()
+  "A References header names the whole line of ancestors, and each one is
+recorded as the parent of the next even though none of them is in the
+folder.  That is what puts a reply under the right root when the earlier
+messages were never received or have been expunged."
+  (vm-test-with-folder vm-thread-test--deep-reference-folder
+    (vm-build-threads nil)
+    (should (eq (vm-th-parent-of (vm-thread-test--sym "<b@example.com>"))
+                (vm-thread-test--sym "<a@example.com>")))
+    (should (eq (vm-th-parent-of (vm-thread-test--sym "<c@example.com>"))
+                (vm-thread-test--sym "<b@example.com>")))
+    (should (eq (vm-th-parent-of (vm-thread-test--sym "<d@example.com>"))
+                (vm-thread-test--sym "<c@example.com>")))
+    (should-not (vm-th-parent-of (vm-thread-test--sym "<a@example.com>")))))
+
+(ert-deftest vm-thread-test-reindents-are-scheduled-only-when-asked ()
+  "SCHEDULE-REINDENTS is what says the summary is already on screen and the
+lines have to be redrawn.  Building the threads of a folder being visited
+does not ask for it, and must not throw away the thread lines it has just
+computed."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((m (car vm-message-list)))
+      (vm-set-thread-list-of m '(computed))
+      (vm-build-reference-threads (list m) nil nil)
+      (should (equal (vm-thread-list-of m) '(computed)))
+      (vm-build-reference-threads (list m) t nil)
+      (should-not (vm-thread-list-of m)))))
+
+(ert-deftest vm-thread-test-a-reply-invalidates-what-its-parent-cached ()
+  "A reply arriving into a folder whose threads are built clears the cached
+subtree of the message it answers: that subtree now has a message in it
+that was not there when it was computed."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list))
+          (reply (nth 1 vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list reply) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-initializing-leaves-the-caches-alone ()
+  "INITIALIZING says the threads database is being built from nothing, so
+there is nothing cached to invalidate and the clearing is skipped.  The
+same call without it clears."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list))
+          (reply (nth 1 vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list reply) nil t)
+      (should (equal (vm-thread-subtree-of root) '(computed)))
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list root) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-a-message-with-no-parent-keeps-its-cache ()
+  "A message with no parent at all -- a thread root -- has its subtree
+cleared when it is threaded again, and not while the database is being
+initialized, when there is nothing there to be stale."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list root) nil t)
+      (should (equal (vm-thread-subtree-of root) '(computed)))
+      (vm-build-reference-threads (list root) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-a-second-copy-of-a-reply-clears-the-cache ()
+  "The same reply seen twice -- a duplicate copy in the folder -- names the
+parent it already has, and the parent's cached subtree is cleared for it
+just the same, unless the database is being initialized."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((root (car vm-message-list))
+          (reply (nth 1 vm-message-list)))
+      (setq vm-thread-obarray (make-vector 641 0)
+            vm-thread-subject-obarray (make-vector 641 0))
+      (vm-build-reference-threads (list root reply) nil t)
+      (vm-set-thread-subtree-of root '(computed))
+      (vm-build-reference-threads (list reply) nil t)
+      (should (equal (vm-thread-subtree-of root) '(computed)))
+      (vm-build-reference-threads (list reply) nil nil)
+      (should-not (vm-thread-subtree-of root)))))
+
+(ert-deftest vm-thread-test-progress-is-reported-every-so-many-messages ()
+  "Building threads reports its progress once every tenth message rather
+than for each one, a folder of thousands would otherwise spend its time in
+the minibuffer.  The percentage is of two passes over the folder, so eight
+messages report once, at ten steps of sixteen."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (level fmt &rest args)
+                   (when (string-match-p "Building threads" fmt)
+                     (push (cons level (apply #'format fmt args)) said)))))
+        (vm-build-reference-threads (append vm-message-list vm-message-list)
+                                    nil t))
+      (should (equal (length said) 1))
+      (should (string-match-p "62%" (cdr (car said))))
+      (should (equal (car (car said)) 7)))))
 
 (provide 'vm-thread-test)
 

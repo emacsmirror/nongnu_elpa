@@ -1,6 +1,6 @@
 ;;; vm-biff-test.el --- Tests for vm-biff.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -31,13 +31,112 @@
   (should (fboundp 'vm-biff-find-folder-frame))
   (should (fboundp 'vm-biff-timer-delete-popup)))
 
-(ert-deftest vm-biff-test-summary-function-exists ()
-  "Test that summary function for body peek exists."
-  (should (fboundp 'vm-summary-function-V)))
+;;; What the body peek shows, and where the popup frame goes.  These had a
+;;; test each asserting the function was bound.
 
-(ert-deftest vm-biff-test-fvwm-function-exists ()
-  "Test that FVWM integration function exists."
-  (should (fboundp 'vm-biff-fvwm-focus-vm-folder-frame)))
+(ert-deftest vm-biff-test-body-peek-shows-the-start-of-the-body ()
+  "The V summary format shows up to `vm-biff-body-peek' characters of body.
+It is what the popup is for, and nothing checked what it produced."
+  (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: alice@example.com\nSubject: hello\n\n"
+                               "First line of the body.\n"
+                               "Second line, well past any peek.\n\n")
+    (let* ((m (car vm-message-list))
+           (vm-biff-body-peek 10)
+           (peek (vm-summary-function-V m)))
+      ;; the peek is indented with a tab, and stops at the end of the line
+      ;; the limit fell in rather than mid-word
+      (should (string-prefix-p "\t" peek))
+      (should (string-match-p "First line of the body" peek))
+      (should-not (string-match-p "Second line" peek))
+      (should (eq (get-text-property 0 'face peek) 'bold)))))
+
+(ert-deftest vm-biff-test-body-peek-squeezes-the-blank-lines ()
+  "Blank lines are dropped so a paragraph break does not fill the popup,
+and every line after the first is indented to line up under it."
+  (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: alice@example.com\nSubject: hello\n\n"
+                               "\n\nOne\n\n\nTwo\n\n")
+    (let* ((m (car vm-message-list))
+           (vm-biff-body-peek 400)
+           (peek (vm-summary-function-V m)))
+      (should-not (string-match-p "\n\n" peek))
+      (should (string-match-p "One\n\tTwo" peek)))))
+
+(ert-deftest vm-biff-test-body-peek-leaves-the-folder-narrowing-alone ()
+  "The peek widens the folder to read the body, and puts it back.
+`save-restriction' saves the restriction of the buffer it is entered in, and
+this one was entered before the switch to the folder, so it held whichever
+buffer the summary was being built in.  `vm-biff-popup' makes the popup
+buffer current before it formats a line, so a folder narrowed to the message
+being read came back showing the whole mbox."
+  (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: alice@example.com\nSubject: one\n\nBody one.\n\n"
+                               "From bob@example.com Mon Jan  1 00:00:00 2024\n"
+                               "From: bob@example.com\nSubject: two\n\nBody two.\n\n")
+    (let ((m (car vm-message-list))
+          (folder (current-buffer)))
+      (narrow-to-region (vm-start-of m) (vm-end-of m))
+      (let ((bounds (cons (point-min) (point-max))))
+        (should (< (cdr bounds) (1+ (buffer-size))))   ; really narrowed
+        ;; as the popup does it: another buffer is current
+        (with-temp-buffer
+          (vm-summary-function-V m))
+        (with-current-buffer folder
+          (should (equal bounds (cons (point-min) (point-max)))))))))
+
+(ert-deftest vm-biff-test-place-frame-limits-the-height ()
+  "The popup is `vm-biff-width' wide and never more than
+`vm-biff-max-height' lines, however long the message is."
+  (let (sized)
+    (cl-letf (((symbol-function 'set-frame-size)
+               (lambda (_f w h) (setq sized (cons w h))))
+              ((symbol-function 'set-frame-position) #'ignore))
+      (with-temp-buffer
+        (insert "one line\n")
+        ;; an explicit position, so that centring does not want a display
+        (let ((vm-biff-position '(1 1))
+              (vm-biff-width 40) (vm-biff-max-height 10))
+          (vm-biff-place-frame 'a-frame)
+          (should (equal sized '(40 . 2))))
+        (dotimes (_ 100) (insert "another line\n"))
+        (let ((vm-biff-position '(1 1))
+              (vm-biff-width 40) (vm-biff-max-height 10))
+          (vm-biff-place-frame 'a-frame)
+          (should (equal sized '(40 . 10))))))))
+
+(ert-deftest vm-biff-test-place-frame-centres-or-obeys-the-position ()
+  "`vm-biff-position' center centres the frame on the display; a list is
+passed to `set-frame-position' as it stands."
+  (let (placed)
+    (cl-letf (((symbol-function 'set-frame-size) #'ignore)
+              ((symbol-function 'set-frame-position)
+               (lambda (_f x y) (setq placed (list x y))))
+              ((symbol-function 'x-display-pixel-width) (lambda () 1000))
+              ((symbol-function 'x-display-pixel-height) (lambda () 800))
+              ((symbol-function 'frame-pixel-width) (lambda (_f) 400))
+              ((symbol-function 'frame-pixel-height) (lambda (_f) 200)))
+      (with-temp-buffer
+        (let ((vm-biff-position 'center))
+          (vm-biff-place-frame 'a-frame)
+          (should (equal placed '(300 300))))
+        (let ((vm-biff-position '(17 23)))
+          (vm-biff-place-frame 'a-frame)
+          (should (equal placed '(17 23))))))))
+
+(ert-deftest vm-biff-test-fvwm-focus-names-the-folder-window ()
+  "The FVWM command matches the window whose title has the folder name in it.
+The stars around the name are what make it a match rather than a title."
+  (let (sent)
+    (cl-letf (((symbol-function 'start-process) (lambda (&rest _) 'a-process))
+              ((symbol-function 'process-send-string)
+               (lambda (_p s) (setq sent s)))
+              ((symbol-function 'process-send-eof) #'ignore))
+      (with-temp-buffer
+        (rename-buffer " *vm-biff-test-INBOX*" t)
+        (let ((vm-biff-folder-buffer (current-buffer)))
+          (vm-biff-fvwm-focus-vm-folder-frame)
+          (should (equal sent (concat "SelectWindow *" (buffer-name) "*\n"))))))))
 
 ;;; Variable existence tests
 
@@ -149,6 +248,45 @@
   "Test that vm-biff-x-p returns a boolean-like value."
   (let ((result (vm-biff-x-p)))
     (should (or (eq result t) (eq result nil) result))))
+
+
+;;; loading must not change VM's behaviour (issue #512)
+
+(ert-deftest vm-biff-test-loading-does-not-install-the-hook ()
+  "REGRESSION: merely loading vm-biff does not switch it on.
+Issue #512, on Stefan Monnier's advice: loading a file should not change how
+Emacs behaves, and this one added `vm-biff-popup' to `vm-arrived-messages-hook'
+as it loaded -- which is also why it needed a guard against doing so while being
+byte-compiled.  The mode does it instead."
+  (require 'vm-biff)
+  (let ((vm-arrived-messages-hook nil)
+        (vm-biff-mode nil))
+    ;; Loading has already happened; the hook is untouched.
+    (should-not (memq 'vm-biff-popup vm-arrived-messages-hook))))
+
+(ert-deftest vm-biff-test-mode-toggles-the-hook ()
+  "`vm-biff-mode' adds the hook when switched on and removes it when off."
+  (require 'vm-biff)
+  (let ((vm-arrived-messages-hook nil)
+        (vm-biff-mode nil))
+    (vm-biff-mode 1)
+    (should vm-biff-mode)
+    (should (memq 'vm-biff-popup vm-arrived-messages-hook))
+    (vm-biff-mode -1)
+    (should-not vm-biff-mode)
+    (should-not (memq 'vm-biff-popup vm-arrived-messages-hook))))
+
+(ert-deftest vm-biff-test-mode-is-idempotent ()
+  "Switching the mode on twice leaves one copy of the hook function.
+`add-hook' guarantees this, but the old code path could be reached more than
+once -- loading the file again -- so it is worth pinning."
+  (require 'vm-biff)
+  (let ((vm-arrived-messages-hook nil)
+        (vm-biff-mode nil))
+    (vm-biff-mode 1)
+    (vm-biff-mode 1)
+    (should (= 1 (seq-count (lambda (f) (eq f 'vm-biff-popup))
+                            vm-arrived-messages-hook)))))
 
 (provide 'vm-biff-test)
 

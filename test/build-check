@@ -1,0 +1,70 @@
+#!/bin/sh
+# Check what `configure' hands to `make', in a copy of the tree.
+#
+# The build system has no other test: the suite runs inside Emacs and cannot
+# see a Makefile that enters a directory it should not.  What is checked here
+# is the shape of what configure writes, not a whole build -- a build takes
+# minutes and proves nothing more about the case that went wrong.
+#
+# emacs-vm/vm#718: without makeinfo, `MAKEINFO' was empty and the recipe read
+# "-o vm.info vm.texinfo", whose leading dash told make to ignore the error, so
+# a build printed "make: o: No such file or directory" and claimed success with
+# no manual.
+#
+# emacs-vm/vm#719: configure checked for texi2dvi and nothing used it, so it
+# warned about DVI and PDF files that were never built either way.
+
+set -e
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+work=$(mktemp -d "${TMPDIR:-/tmp}/vm-build-check.XXXXXX")
+trap 'rm -rf "$work"' 0
+
+fail () {
+    echo "build-check: $*" >&2
+    exit 1
+}
+
+# A copy rather than the tree itself: configuring in place would replace the
+# Makefiles of whoever is running this.
+(cd "$root" && tar --exclude=.git --exclude='*.elc' --exclude='*.eln' -cf - .) \
+    | (cd "$work" && tar -xf -)
+
+cd "$work"
+
+echo "build-check: configure.ac no longer looks for texi2dvi"
+if grep -q 'texi2dvi' configure.ac; then
+    fail "configure.ac still checks for texi2dvi (emacs-vm/vm#719)"
+fi
+
+echo "build-check: with no makeinfo, make does not enter info"
+./configure ac_cv_prog_MAKEINFO= > configure-nomakeinfo.log 2>&1 \
+    || fail "configure failed without makeinfo; see $work/configure-nomakeinfo.log"
+subdirs=$(sed -n 's/^SUBDIRS *= *//p' Makefile)
+case " $subdirs " in
+    *" info "*) fail "SUBDIRS still has info without makeinfo: $subdirs" ;;
+esac
+case " $subdirs " in
+    *" lisp "*) ;;
+    *) fail "SUBDIRS lost lisp: $subdirs" ;;
+esac
+# The recipes are shell loops over the directory list, so what `make -n' shows
+# is the list in the loop header rather than one command per directory.
+if make -n 2>&1 | grep '^for i in' | grep -q 'info'; then
+    fail "make would still enter info without makeinfo"
+fi
+# and what configure wrote is still cleanable, which is a different list
+if ! make -n distclean 2>&1 | grep '^for i in' | grep -q 'info'; then
+    fail "distclean would leave info/Makefile behind"
+fi
+
+echo "build-check: with makeinfo, make does enter info"
+./configure > configure-makeinfo.log 2>&1 \
+    || fail "configure failed; see $work/configure-makeinfo.log"
+subdirs=$(sed -n 's/^SUBDIRS *= *//p' Makefile)
+case " $subdirs " in
+    *" info "*) ;;
+    *) fail "SUBDIRS has no info although makeinfo was found: $subdirs" ;;
+esac
+
+echo "build-check: every check passed"

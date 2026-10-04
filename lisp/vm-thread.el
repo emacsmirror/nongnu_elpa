@@ -5,7 +5,7 @@
 ;; Copyright (C) 1994, 2001 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
 ;; Copyright (C) 2010 Uday S. Reddy
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -27,6 +27,11 @@
 (require 'vm-misc)
 (require 'vm-folder)
 (eval-when-compile (require 'cl-lib))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;; --------------------------------------------------------------------------
 ;; Top-level operations
@@ -121,12 +126,20 @@
   (put 'vm-thread-error 'error-message "VM internal threading error")
   )
 
+;;;###autoload
 (defun vm-trace-message-id ()
+  "Trace this message by Message-ID while threads are being built.
+A debugging aid, with `vm-trace-message-subject\': the threading code walks
+these lists to decide when to stop and report.  Prints the list."
   (interactive)
   (add-to-list 'vm-traced-message-ids (vm-su-message-id (vm-current-message)))
   (message "%s" vm-traced-message-ids))
 
+;;;###autoload
 (defun vm-trace-message-subject ()
+  "Trace this message by subject while threads are being built.
+The subject is the sortable one, so it matches the way threading groups
+messages by subject.  See `vm-trace-message-id\'."
   (interactive)
   (add-to-list 'vm-traced-message-subjects 
 	       (vm-so-sortable-subject (vm-current-message)))
@@ -179,9 +192,6 @@ youngest or oldest date in its thread.  CRITERION must be one of
 (defsubst vm-th-canonical-message (m)
   (vm-th-message-of (vm-th-thread-symbol m)))
 
-;; (defsubst vm-th-message (id-sym)
-;;   (and (vm-th-messages-of id-sym)
-;;        (vm-last-elem (vm-th-messages-of id-sym))))
 
 (defsubst vm-th-set-messages-of (id-sym ml)
   (put id-sym 'messages ml))
@@ -223,14 +233,14 @@ youngest or oldest date in its thread.  CRITERION must be one of
   (put id-sym 'children ml))
 
 (defun vm-th-add-child (parent-sym id-sym)
-  (if (member (symbol-name id-sym) (car vm-traced-message-ids))
+  (if (member (symbol-name id-sym) vm-traced-message-ids)
       (vm-thread-debug 'vm-th-add-child id-sym))
   (unless (member id-sym (vm-th-children-of parent-sym))
     (vm-th-set-children-of
      parent-sym (cons id-sym (vm-th-children-of parent-sym)))))
 
 (defun vm-th-delete-child (parent-sym id-sym)
-  (if (member (symbol-name id-sym) (car vm-traced-message-ids) )
+  (if (member (symbol-name id-sym) vm-traced-message-ids)
       (vm-thread-debug 'vm-th-delete-child id-sym))
   (let ((kids (vm-th-children-of parent-sym)))
     (vm-th-set-children-of parent-sym (remq id-sym kids))))
@@ -241,17 +251,41 @@ youngest or oldest date in its thread.  CRITERION must be one of
 (defsubst vm-th-set-date-of (id-sym date)
   (put id-sym 'date date))
 
-(defun vm-ts-subject-symbol (id-sym)
+(defun vm-th-reference-root-sym (id-sym &optional cache)
+  "Return the interned symbol of the root of ID-SYM\'s reference thread.
+That is the oldest ancestor reachable through parent links.
+
+CACHE, when given, is a hash table in which the answer is remembered for
+ID-SYM and for every id passed on the way up.  A caller that wants the root
+for every id in a thread would otherwise climb the same ancestry once per id,
+which costs the depth of the thread each time; that is what made
+`vm-thread-subtree' cubic in a thread\'s depth (issue #557).  A cache is only
+valid for as long as nothing is reparented, so it belongs to one walk."
+  (or (and cache (gethash id-sym cache))
+      (let ((sym id-sym) (path nil) parent hit)
+	(while (and (setq parent (vm-th-parent-of sym))
+		    (null (setq hit (and cache (gethash parent cache)))))
+	  (push sym path)
+	  (setq sym parent))
+	;; Either PARENT is nil and SYM is the root, or PARENT had a cached
+	;; root, which is therefore SYM\'s root too.
+	(let ((root (or hit sym)))
+	  (when cache
+	    (puthash id-sym root cache)
+	    (puthash sym root cache)
+	    (dolist (s path) (puthash s root cache)))
+	  root))))
+
+(defun vm-ts-subject-symbol (id-sym &optional root-cache)
   ;; the subject symbol is calculated from the oldest-subject field
   ;; stored in the reference root of ID-SYM.
   ;; if there is no such field exists, then nil is returned.
+  ;; ROOT-CACHE, if given, is passed to vm-th-reference-root-sym.
   (if (member (symbol-name id-sym) vm-traced-message-ids)
       (vm-thread-debug 'vm-ts-subject-symbol id-sym))
-  (let ((sym id-sym)
-	parent subject)
-    (while (setq parent (vm-th-parent-of sym))
-      (setq sym parent))
-    (if (setq subject (vm-th-oldest-subject-of sym))
+  (let ((subject (vm-th-oldest-subject-of
+		  (vm-th-reference-root-sym id-sym root-cache))))
+    (if subject
 	(intern subject vm-thread-subject-obarray))))
 
 (defsubst vm-ts-root-of (subject-sym)
@@ -527,10 +561,10 @@ specifier) will be visible."
 ;;;###autoload
 (defun vm-promote-subthread (n)
   "Decrease the thread indentation of the current message and its
-subthread by $N$ steps (provided as a prefix argument).  
+subthread by N steps, N being the prefix argument.
 
-The case $N$ being 0 is a special case.  It means to decrease the
-indentation all the way to 0."
+A prefix argument of 0 decreases the indentation all the way to 0, so the
+message reads as the root of a thread."
   (interactive "p")
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
@@ -553,10 +587,10 @@ indentation all the way to 0."
 ;;;###autoload
 (defun vm-demote-subthread (n)
   "Increase the thread indentation of the current message and its
-subthread by $N$ steps (provided as a prefix argument).  
+subthread by N steps, N being the prefix argument.
 
-The case $N$ being 0 is a special case.  It means to reset the
-indentation back to the normal indentation, i.e., no offset is used."
+A prefix argument of 0 puts the indentation back to the one the message's
+thread level gives it, with no offset."
   (interactive "p")
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
@@ -583,6 +617,13 @@ indentation back to the normal indentation, i.e., no offset is used."
   "For all messages in MESSAGE-LIST, build thread information in the
 `vm-thread-obarray' and `vm-thread-subject-obarray'.  If MESSAGE-LIST
 is nil, do it for all the messages in the folder.  USR, 2010-07-15"
+  (vm-with-timing 8 (format "threading %d message%s"
+			    (length (or message-list vm-message-list))
+			    (if (cdr (or message-list vm-message-list)) "s" ""))
+    (vm-build-threads-1 message-list)))
+
+(defun vm-build-threads-1 (message-list)
+  "Build the thread information.  See `vm-build-threads'."
   (let ((initializing (not (vectorp vm-thread-obarray)))
 	(mp (or message-list vm-message-list))
 	(n 0)
@@ -741,7 +782,6 @@ message with ID-SYM and all its descendants."
     (vm-thread-debug 'vm-th-clear-thread-lists (symbol-name id-sym)))
   (mapc (lambda (d)
 	  ;; This idea still needs more work.  USR, 2012-05-06
-	  ;; (vm-unthread-message-from-subject-thread d)
 	  (vm-set-thread-list-of d nil)
 	  (vm-set-thread-indentation-of d nil))
 	(vm-th-messages-of id-sym))
@@ -751,8 +791,6 @@ message with ID-SYM and all its descendants."
 (defun vm-th-clear-subtree-of (id-sym)
   "Clear the thread-subtrees of the messages with ID-SYM, i.e.,
 set them to nil.  They will get recalculated on demand."
-  ;; (when (vm-th-message-of id-sym)
-  ;;   (vm-set-thread-subtree-of (vm-th-message-of id-sym) nil))
   (mapc (lambda (m) 
   	  (vm-set-thread-subtree-of m nil))
   	(vm-th-messages-of id-sym))
@@ -889,8 +927,6 @@ with other ancestors."
   "Fill in the thread-list fields of the Soft data vector for all
 messages in the folder.  Threads should have been built before this
 function is called."
-  ;; (if vm-thread-debug
-  ;;     (vm-check-thread-integrity vm-message-list))
   (dolist (m vm-message-list)
     (vm-thread-list m))
   (if vm-thread-debug
@@ -923,7 +959,6 @@ whereas dates are updated for both reference and subject-based ancestors."
   (dolist (m mlist)
     (let ((done nil)
 	  (subject-thread nil)
-	  ;; (loop-recovery-point nil)
 	  (date (vm-so-sortable-datestring m))
 	  (subject (vm-so-sortable-subject m))
 	  id-sym subject-sym loop-sym 
@@ -940,7 +975,6 @@ whereas dates are updated for both reference and subject-based ancestors."
 	(while (not done)
 	  ;; save the date of the oldest message in this thread
 	  (setq root-date (vm-th-oldest-date-of id-sym))
-	  ;; (setq root-subject (vm-th-oldest-subject-of id-sym))
 	  (when (or (null root-date) (string< date root-date))
 	    (vm-th-set-oldest-date-of id-sym date)
 	    (unless subject-thread
@@ -977,7 +1011,6 @@ whereas dates are updated for both reference and subject-based ancestors."
 		 (if (boundp loop-sym)
 		     ;; loop detected, bail...
 		     (setq done t)
-		   ;; (setq root (vm-th-message-of id-sym))
 		   (set loop-sym t)
 		   (setq m (vm-th-message-of id-sym))))))
 	))))
@@ -1006,14 +1039,10 @@ symbols interned in vm-thread-obarray."
       ;; if m is a non-canonical message for its message ID, give it
       ;; an artificial thread-list
       ;; But, does this make sense?
-      ;; (unless (eq m (vm-th-message-of id-sym))
-      ;; 	(setq thread-list (list id-sym id-sym))
-      ;; 	(setq done t))
       (set (intern (symbol-name id-sym) vm-thread-loop-obarray) t)
       (while (not done)
 	;; save the date of the oldest message in this thread
 	(setq root-date (vm-th-oldest-date-of id-sym))
-	;; (setq root-subject (vm-th-oldest-subject-of id-sym))
 	(when (or (null root-date)
 		  (string< date root-date))
 	  (vm-th-set-oldest-date-of id-sym date)
@@ -1049,8 +1078,6 @@ symbols interned in vm-thread-obarray."
 	       (setq id-sym (vm-ts-root-of subject-sym))
 	       ;; seems to cause more trouble than it fixes
 	       ;; revisit this later.
-	       ;; (setq loop-recovery-point (or loop-recovery-point
-	       ;;	 		        thread-list))
 	       (setq loop-sym (intern (symbol-name id-sym)
 				      vm-thread-loop-obarray))
 	       (if (boundp loop-sym)
@@ -1129,8 +1156,6 @@ reinserted into an appropriate thread later.       USR, 2011-03-17"
     (vm-unthread-message-from-subject-thread m)
     )
   ;; This doesn't work yet
-  ;; (if vm-thread-debug
-  ;;     (vm-check-thread-integrity))
   )
 
 (defun vm-unthread-message-from-reference-thread (m message-changing)
@@ -1142,11 +1167,28 @@ reinserted into an appropriate thread later.       USR, 2011-03-17"
 	;; remove m from its thread node
 	(vm-th-remove-message-from-symbol id-sym m)
 	;; reset the thread dates of m
-	(setq date (vm-so-sortable-datestring m))
-	(setq subject (vm-so-sortable-subject m))
-	(vm-th-set-youngest-date-of id-sym date)
-	(vm-th-set-oldest-date-of id-sym date)
-	(vm-th-set-oldest-subject-of id-sym subject)
+	(if message-changing
+	    ;; The message's cached date and subject are still the old ones:
+	    ;; `vm-discard-cached-data-internal' unthreads before it wipes the
+	    ;; cache, so that the old message id still finds the right node.
+	    ;; Recording them would leave the node describing the message as
+	    ;; it was, and nothing would ever replace them --
+	    ;; `vm-build-thread-list' fills these in only when it meets an
+	    ;; older date.  `vm-ts-subject-symbol' reads the subject field, so
+	    ;; a message whose Subject was edited went on being sorted under
+	    ;; the subject it used to have, joining that subject thread under
+	    ;; whichever message had taken over as its root -- which can be
+	    ;; one of its own children.  Cleared, the rebuild fills them in
+	    ;; from what the message says now.
+	    (progn
+	      (vm-th-set-youngest-date-of id-sym nil)
+	      (vm-th-set-oldest-date-of id-sym nil)
+	      (vm-th-set-oldest-subject-of id-sym nil))
+	  (setq date (vm-so-sortable-datestring m))
+	  (setq subject (vm-so-sortable-subject m))
+	  (vm-th-set-youngest-date-of id-sym date)
+	  (vm-th-set-oldest-date-of id-sym date)
+	  (vm-th-set-oldest-subject-of id-sym subject))
 	;; if message changed, remove it from the thread tree
 	;; not clear what is going on.  USR, 2010-07-24
 	(when (and message-changing (null (vm-th-message-of id-sym)))
@@ -1175,7 +1217,6 @@ been already removed from its symbol node."
     (when (and s-sym (boundp s-sym))
       (if (eq (vm-ts-root-of s-sym) id-sym)
 	  ;; handle the subject thread root
-	  ;; (when message-changing
 	  (cond
 	   ;; duplicate copy present, so keep the root id-sym.
 	   ;; FIXME the thread-subtree of the duplicate copy has to be
@@ -1207,11 +1248,8 @@ been already removed from its symbol node."
 		;; subject thread nonempty
 		(let () ;; new-sub new-s-sym
 		  (setq root-sym (vm-th-thread-symbol oldest-msg))
-		  ;; (setq children (vm-th-visible-children-of id-sym))
 		  (setq children (cons id-sym (vm-ts-members-of s-sym)))
-		  ;; (vm-th-clear-cached-data root-sym root-sym)
 		  (vm-th-clear-subtree root-sym)
-		  ;; (vm-th-clear-thread-lists root-sym)
 		  (mapc 'vm-th-clear-thread-lists (vm-ts-members-of s-sym))
 		  (vm-ts-set s-sym :root root-sym
 			     :root-date oldest-date
@@ -1258,10 +1296,13 @@ been already removed from its symbol node."
 	(p-sym (vm-thread-symbol (car vm-last-message-pointer)))
 	(m (car vm-message-pointer))
 	(m-sym (vm-thread-symbol (car vm-message-pointer))))
-    ;; (vm-thread-mark-for-summary-update (list m))
-    (vm-unthread-message m :message-changing t)
+    ;; Check before touching anything.  Unthreading M does not change the new
+    ;; parent's ancestors, so the answer is the same either way, and raising
+    ;; after the unthreading left the message out of its old thread with
+    ;; nothing to put it back (#574).
     (unless (vm-th-safe-parent-p m-sym p-sym)
       (error "Attaching to thread will create a cycle"))
+    (vm-unthread-message m :message-changing t)
     (vm-th-set-parent-of m-sym p-sym)
     (vm-th-add-child p-sym m-sym))
     (vm-inform 5 "Message attached to thread")
@@ -1300,7 +1341,6 @@ the cache is nil, calculates the parent and caches it.  USR, 2010-03-13"
 	    (setq ids (cdr ids)))
 	  ;; we do not want to hack the References header any more
 	  ;; USR, 2012-02-12
-	  ;; (when id (vm-set-references-of m (list id)))
 	  id )
 	;; Otherwise use the last element of the References header
 	;; But References headers are often buggy
@@ -1346,7 +1386,6 @@ calculates the thread-list and caches it.  USR, 2010-03-13"
       (progn
 	(vm-set-thread-list-of m (vm-build-thread-list m))
 	;; reset the thread-subtrees, forcing them to be rebuilt
-	;; (mapc 'vm-th-clear-subtree-of (vm-thread-list-of m))
 	(vm-thread-list-of m))))
 (defalias 'vm-th-thread-list 'vm-thread-list)
 
@@ -1409,13 +1448,27 @@ See also: `vm-thread-root'."
 (defun vm-thread-root-p (m)
   "Returns t if message M is known to be a thread root, nil
 otherwise.  No exceptions are thrown for errors."
-  ;; Threads may not be turned on.  So, ignore errors.
   ;; requires: LIST0(m)
-  (condition-case _err
-      (and (eq m (vm-thread-root m))
-	   (> (vm-thread-count m) 1))
-    (vm-thread-error
-     nil)))
+  ;; Threads may not be built.  Ask first, rather than provoke a
+  ;; `vm-thread-error' from `vm-thread-subtree' and catch it, which is what
+  ;; this used to do.  `vm-summary-faces-add' calls this for every summary
+  ;; line, so with threads unbuilt that was an error signalled and recovered
+  ;; on a hot path in normal operation -- which, apart from the cost, leaves
+  ;; `debug-on-signal' unusable for anyone trying to debug something else
+  ;; while reading mail.  That is issue #476.
+  ;;
+  ;; `vm-thread-symbol' returning nil is exactly the condition
+  ;; `vm-thread-subtree' signals on, and it looks in the message's own folder
+  ;; buffer, where `vm-thread-obarray' lives.  Note that `vm-thread-root'
+  ;; already answers this case without signalling, by returning M.
+  (and (vm-thread-symbol m)
+       ;; A genuine threading error is still not worth failing a summary line
+       ;; for, so those are caught as before.
+       (condition-case _err
+	   (and (eq m (vm-thread-root m))
+		(> (vm-thread-count m) 1))
+	 (vm-thread-error
+	  nil))))
 
 ;;;###autoload
 (defun vm-thread-subtree-safe (msg)
@@ -1425,7 +1478,10 @@ containing MSG."
   (if (eq major-mode 'vm-mode)
       (vm-thread-subtree msg)
     (with-current-buffer vm-mail-buffer
-      (if (vectorp 'vm-thread-obarray)
+      ;; The value, not the symbol: this asked `(vectorp 'vm-thread-obarray)',
+      ;; which is nil however things stand, so the singleton below was the only
+      ;; answer this branch could give.  Issue #563.
+      (if (vectorp vm-thread-obarray)
 	  (vm-thread-subtree msg)
 	(list msg)))))
 
@@ -1447,29 +1503,67 @@ Threads should have been built for this function to work."
 	;; canonical message for this message ID
 	(or (vm-thread-subtree-of msg)
 	    ;; otherwise calcuate the thread-subtree
-	    (let ((list (list m-sym))
-		  (loop-obarray (make-vector 29 0))
+	    (let* ((list (list m-sym))
+		  ;; The last cons of LIST.  The queue used to be extended
+		  ;; with nconc, which walks it from the head every time, so
+		  ;; extending it k times cost k^2 -- the other half of why
+		  ;; this was cubic (issue #557).
+		  (queue-tail list)
+		  ;; Which message IDs this walk has already expanded.  This
+		  ;; was an obarray of 29 buckets, which is fine for a small
+		  ;; thread and not for a large one: with k ids in it every
+		  ;; lookup scanned a bucket of k/29, so expanding k nodes
+		  ;; cost k^2/29.  That, not the list handling, is what made
+		  ;; building threads cubic in the depth of a thread -- see
+		  ;; issue #557.  Keyed by name rather than by symbol, as
+		  ;; interning was: ids interned in another folder's obarray
+		  ;; are the same node here.
+		  (expanded (make-hash-table :test 'equal))
+		  ;; Reference roots, for this walk only.  See
+		  ;; `vm-th-reference-root-sym'.
+		  (root-cache (make-hash-table :test 'eq))
+		  ;; What is in RESULT already.  The membership test below used to
+		  ;; be a memq over RESULT itself, and the accumulation an append
+		  ;; onto the end of it, so each of the two cost the length of the
+		  ;; result so far: one subtree of k messages took k^2 work.  And
+		  ;; `vm-build-threads' asks for the subtree of every message, so a
+		  ;; folder that is one long reference chain made the whole thing
+		  ;; cubic -- 2000 messages in one thread took a minute (#557).
+		  (in-result (make-hash-table :test 'eq))
 		  subject-sym id-sym id
+		  ;; Accumulated backwards and put in order once, at the end,
+		  ;; rather than copied on every addition.
 		  result)
 	      (when (member (vm-su-message-id msg) vm-traced-message-ids)
 		(with-current-buffer (vm-buffer-of msg)
 		  (vm-thread-debug 'vm-thread-subtree (vm-su-message-id msg))))
 	      (while list
 		(setq id-sym (car list)
-		      id (symbol-name id-sym)
-		      subject-sym (with-current-buffer (vm-buffer-of msg)
-				    (vm-ts-subject-symbol id-sym)))
+		      id (symbol-name id-sym))
 		(when (and (vm-th-messages-of id-sym)
-			   (not (memq (vm-th-message-of id-sym) result)))
-		  (setq result (append result (vm-th-messages-of id-sym))))
-		(when (null (intern-soft id loop-obarray))
-		  (intern id loop-obarray)
-		  (nconc list (copy-sequence (vm-th-children-of id-sym)))
-		  (when (and subject-sym (boundp subject-sym) 
+			   (not (gethash (vm-th-message-of id-sym) in-result)))
+		  (dolist (m (vm-th-messages-of id-sym))
+		    (push m result)
+		    (puthash m t in-result)))
+		(unless (gethash id expanded)
+		  (puthash id t expanded)
+		  (let ((more (copy-sequence (vm-th-children-of id-sym))))
+		    (when more
+		      (setcdr queue-tail more)
+		      (setq queue-tail (last more))))
+		  ;; Only wanted here, and computing it means climbing to the
+		  ;; thread root, so it is not computed for ids this walk has
+		  ;; already expanded.
+		  (setq subject-sym (with-current-buffer (vm-buffer-of msg)
+				      (vm-ts-subject-symbol id-sym root-cache)))
+		  (when (and subject-sym (boundp subject-sym)
 			     (eq id-sym (vm-ts-root-of subject-sym)))
-		    (nconc list 
-			   (copy-sequence (vm-ts-members-of subject-sym)))))
+		    (let ((more (copy-sequence (vm-ts-members-of subject-sym))))
+		      (when more
+			(setcdr queue-tail more)
+			(setq queue-tail (last more))))))
 		(setq list (cdr list)))
+	      (setq result (nreverse result))
 	      (when msg
 		(vm-set-thread-subtree-of msg result))
 	      result))
@@ -1540,8 +1634,6 @@ to the thread.  Used for testing purposes."
       (vm-warn 0 2 (concat "%s: Problem detected with the threads database; "
 		       "try vm-fix-my-summary")
 	       (buffer-name))
-      ;; (setq vm-thread-obarray 'bonk)
-      ;; (setq vm-thread-subject-obarray 'bonk)
       ))))
 
 (provide 'vm-thread)

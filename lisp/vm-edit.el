@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1990, 1991, 1993, 1994, 1997, 2001 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -25,6 +25,10 @@
 (require 'vm-macro)
 (require 'vm-folder)
 (require 'vm-motion)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;;;###autoload
 (defun vm-edit-message (&optional prefix-argument)
@@ -57,7 +61,6 @@ replace the original, use C-c C-] and the edit will be aborted."
 		    (- (point) (vm-headers-of (car vm-message-pointer)))))
 	  (edit-buf (vm-edit-buffer-of (car vm-message-pointer)))
 	  (folder-buffer (current-buffer)))
-      ;; (vm-load-message)
       (vm-retrieve-operable-messages 1 (list (car vm-message-pointer))
 				     :fail t)
       (if (and edit-buf (buffer-name edit-buf))
@@ -69,8 +72,7 @@ replace the original, use C-c C-] and the edit will be aborted."
 		(format "edit of %s's note re: %s"
 			(vm-su-full-name (car vm-message-pointer))
 			(vm-su-subject (car vm-message-pointer)))))
-	 (if (not (featurep 'xemacs))
-	     (set-buffer-multibyte nil)) ; for new buffer
+	 (set-buffer-multibyte nil)	; for new buffer
 	 (vm-set-edit-buffer-of (car mp) edit-buf)
 	 (copy-to-buffer edit-buf
 			 (vm-headers-of (car mp))
@@ -184,8 +186,6 @@ thread have their cached data discarded."
 	;; message.  Need to do it in bulk.  USR, 2012-03-08
 	(if (vectorp vm-thread-obarray)
 	    (vm-build-threads (list m)))
-	;; (if vm-thread-debug
-	;;     (vm-check-thread-integrity))
 	(if vm-summary-show-threads
 	    (intern (buffer-name) buffers-needing-thread-sort))
 	(dolist (v-m (vm-virtual-messages-of m))
@@ -214,11 +214,6 @@ thread have their cached data discarded."
         (vm-check-thread-integrity))
     ;; Probably not a good idea to sort messages here.
     ;; Reorders the message summary unnecessarily.  USR, 2012-09-22
-    ;; (save-excursion
-    ;;   (mapatoms (function (lambda (s)
-    ;; 			    (set-buffer (get-buffer (symbol-name s)))
-    ;; 			    (vm-sort-messages (or vm-ml-sort-keys "activity"))))
-    ;; 		buffers-needing-thread-sort))
     ))
 
 ;;;###autoload
@@ -237,9 +232,9 @@ thread have their cached data discarded."
     ;; prevent message from being split into several messages.
     (vm-munge-message-separators (vm-message-type-of (car vm-message-pointer))
 				 (point-min) (point-max))
-    ;; for From_-with-Content-Length recompute the Content-Length header
+    ;; for mboxcl2 recompute the Content-Length header
     (if (eq (vm-message-type-of (car vm-message-pointer))
-	    'From_-with-Content-Length)
+	    'mboxcl2)
 	(let ((buffer-read-only nil)
 	      length)
 	  (goto-char (point-min))
@@ -267,15 +262,49 @@ thread have their cached data discarded."
 	  (save-restriction
 	   (widen)
 	   (goto-char (vm-headers-of (vm-real-message-of (car mp))))
-	   (let ((vm-message-pointer mp)
-		 ;; opoint
-		 (buffer-read-only nil))
-	     ;; (setq opoint (point))
-	     (insert-buffer-substring edit-buf)
-	     (delete-region
-	      (point) (vm-text-end-of (vm-real-message-of (car mp))))
-	     (vm-discard-cached-data-internal (list (car mp))))
+	   (let* ((vm-message-pointer mp)
+		  ;; opoint
+		  (buffer-read-only nil)
+		  (mm (vm-real-message-of (car mp)))
+		  ;; Keep the text this is about to overwrite.  Replacing it
+		  ;; and then discarding the cached data are two steps, and
+		  ;; the second one can fail -- vm-discard-cached-data-internal
+		  ;; re-threads the message, and issue #307 is a report of that
+		  ;; signalling.  Without this the message body was already
+		  ;; overwritten by then and nothing could put it back: the
+		  ;; user's own vm-edit-message-abort only kills the edit
+		  ;; buffer, so an edit that failed half way was unrecoverable.
+		  (old-text (buffer-substring-no-properties
+			     (vm-headers-of mm) (vm-text-end-of mm)))
+		  (applied nil))
+	     (unwind-protect
+		 (progn
+		   (insert-buffer-substring edit-buf)
+		   (delete-region (point) (vm-text-end-of mm))
+		   (vm-discard-cached-data-internal (list (car mp)))
+		   (setq applied t))
+	       (unless applied
+		 ;; Put the old text back the same way round, so the markers
+		 ;; end up where they started, and let the error carry on to
+		 ;; the user.  The cached data may have been partly discarded
+		 ;; already; that costs a recomputation, where a half-written
+		 ;; body costs the message.
+		 (goto-char (vm-headers-of mm))
+		 (insert old-text)
+		 (delete-region (point) (vm-text-end-of mm))
+		 (vm-warn 0 2
+			  "Edit of message %s not applied; the message is unchanged"
+			  (vm-number-of (car mp))))))
 	   (vm-set-edited-flag-of (car mp) t)
+	   ;; The edited body exists only here now.  While the message is
+	   ;; registered as a fetched one, that body gets discarded --
+	   ;; when the fetched-message limit evicts it, or wholesale by
+	   ;; vm-discard-fetched-messages -- and the server's unedited
+	   ;; copy comes back in its place, silently losing the edit.
+	   ;; Unregister it, so the edited body is kept like any other.
+	   (let ((mm (vm-real-message-of (car mp))))
+	     (when (vm-body-to-be-discarded-of mm)
+	       (vm-unregister-fetched-message mm)))
 	   (vm-set-edit-buffer-of (car mp) nil))
 	  (set-buffer (vm-buffer-of (car mp)))
 	  (if (eq (vm-real-message-of (car mp))
@@ -313,6 +342,7 @@ thread have their cached data discarded."
       (set-buffer-modified-p nil)	; edit-buf
       (kill-buffer edit-buf))))
 
+;;;###autoload
 (defun vm-edit-message-abort ()
   "Abort the edit of a message, forgetting changes to the message."
   (interactive)

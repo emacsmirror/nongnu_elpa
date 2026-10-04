@@ -1,0 +1,153 @@
+* Lazy MIME part loading
+
+Plan for issue #544, replacing headers-only mode with fetching individual MIME
+parts on demand.
+
+** Problem Statement
+
+Headers-only mode (=vm-enable-external-messages=, see
+[[file:../../../info/vm.texinfo][External Messages]] in the manual) is
+all-or-nothing: a message is either wholly present or wholly absent, and viewing
+it fetches the entire body, attachments included.  That is the wrong granularity
+for the thing people actually want, which is to read a two-line message without
+pulling its 8 MB PDF.
+
+It is also the more fragile of the two designs, because fetching a whole body
+means *rewriting the message in place* in the folder buffer.
+=vm-retrieve-real-message-body= empties the body region, inserts the whole
+message afresh, and then deletes the duplicate headers with a
+=re-search-forward= whose bound depends on point not having moved.  The class of
+bug that produces:
+
+- #500, headers-only corruption: body appearing among the headers.  Never
+  reproduced, and the warning was retired without a code change.
+- #496, =k= deleting a whole folder, which was the same family, a header read
+  returning nothing because point had moved.
+- The four =vm-assert= calls guarding that code are inert by default
+  (=vm-assertion-checking-off= defaults to t), so the invariant is unchecked in
+  the field.
+
+Fetching a *part* never rewrites the message: the part's bytes go somewhere else
+entirely.  So the lazy-parts design removes the mechanism those bugs live in,
+rather than adding a feature beside it.
+
+** What VM already has
+
+This is the important part, and it makes #544 far smaller than it looks.
+
+VM's MIME display does not assume a part's bytes are in the folder buffer.
+=vm-mime-insert-mime-body= reaches them through the marker's own buffer:
+
+#+begin_src elisp
+(defun vm-mime-insert-mime-body (layout)
+  (vm-insert-region-from-buffer
+   (marker-buffer (vm-mm-layout-body-start layout))
+   (vm-mm-layout-body-start layout)
+   (vm-mm-layout-body-end layout)))
+#+end_src
+
+And =message/external-body= already exercises that indirection:
+=vm-mime-fetch-message/external-body= retrieves content into a work buffer and
+repoints the child layout's markers at it.  Its test for "not fetched yet" is
+that the header and body markers still share a buffer.
+
+So the representation for "a part whose bytes are not here" exists, is used, and
+the display path already copes with it.  What is missing is on the IMAP side.
+
+** What is missing
+
+*** 1. BODYSTRUCTURE
+
+VM's IMAP client issues only two body fetches:
+
+| =BODY.PEEK[HEADER]= | headers only    |
+| =BODY.PEEK[]=       | the whole thing |
+
+It never asks for =BODYSTRUCTURE=, so it cannot know a message's MIME structure
+without downloading it.  Lazy parts need the layout built from the server's
+description instead of by parsing bytes.
+
+This is the bulk of the work, and it is a real parser: nested multiparts,
+=message/rfc822= nesting, parameter lists, =NIL= handling, and the extension
+fields servers may or may not send.  =vm-imap-read-object= already gives
+parenthesised-list parsing to build on.
+
+*** 2. Part fetching
+
+=FETCH n (BODY.PEEK[<section>])= where section is the RFC 3501 §6.4.5 part
+number: =1=, =2.1=, =2.MIME=, =3.TEXT=.  The numbering rules are fiddly
+around =message/rfc822= and single-part messages; they must come from the same
+code that built the layout, not be re-derived at fetch time.
+
+*** 3. Provenance on the layout
+
+A layout node needs to carry "I am section 2.1 of IMAP UID 1234 in this folder",
+so the fetch can be issued when the part is displayed.  Today's layout vector
+has =message-symbol= (index 13) pointing at the message; a section string
+alongside it would be enough.  Do not overload the =message/external-body=
+parameters for this: those are the sender's data, and this is ours.
+
+*** 4. A fetch hook in the display path
+
+=vm-decode-mime-layout= dispatches on type and then reads the body.  The hook
+belongs at the point where a body is first needed, one place guarded by "is
+this part present", rather than spread across the type handlers.
+
+** Design decisions to settle
+
+- *Which parts to fetch eagerly.*  Text parts are what you want to read, and are
+  small; attachments are what you want to defer.  A size threshold as now
+  (=vm-imap-max-message-size=), a type rule (fetch =text/*=, defer the rest), or
+  both.  A type rule is more predictable than a size rule and matches what
+  modern clients do.
+- *Where fetched parts live.*  Work buffers, as =message/external-body= uses, or
+  the folder buffer.  Work buffers keep the promise that the folder on disk is
+  what came from the server, and sidestep the rewrite-in-place problem entirely.
+  They cost a buffer per displayed part.
+- *Eviction.*  =vm-external-fetched-message-limit= counts messages; the
+  equivalent for parts wants to count bytes, since one PDF is not one line of
+  text.
+- *Saving.*  Fetched parts must not be written to disk, as fetched bodies are not
+  today.  With work buffers this is automatic.
+- *Editing and forwarding* a message whose parts are absent.  #376 is the
+  headers-only version of this problem; the answer here is probably to fetch
+  everything first, and to say so.
+- *Non-IMAP folders.*  POP has no part fetching at all, and local folders have
+  the whole message anyway.  This is IMAP-only, like headers-only mode.
+
+** Ordering against #473
+
+#473 (non-blocking IMAP) and this both change the IMAP layer.  Fetching a part
+when a part is displayed makes VM issue *more, smaller* requests during
+redisplay, so doing this first on the synchronous client means more places where
+Emacs stops.  #473 first, or at least the CPS primitives from it, would make
+this land better.  Worth deciding deliberately rather than by whichever gets
+attempted first.
+
+** Suggested slices
+
+Each slice is testable on its own, which matters because there is now a rig:
+=test/vm-imap-live-init.el= against dovecot for the happy paths, and
+=test/vm-imap-relay.el= for malformed and truncated server responses.
+
+1. =BODYSTRUCTURE= parsing into a VM MIME layout, with no fetching and no
+   display: a pure function, compared against layouts VM builds by parsing the
+   same messages it has downloaded.  That last point is the whole test strategy:
+   *the two paths must agree*, which is checkable for any message.
+2. Part fetching, =BODY.PEEK[<section>]=, verified against the same messages.
+3. Provenance plus the display hook, with everything still fetched eagerly, so
+   nothing is deferred and behaviour is unchanged, a no-op slice that proves
+   the plumbing.
+4. Deferral policy, and the eviction accounting.
+5. Retire headers-only mode: keep =vm-enable-external-messages= working as an
+   alias for a while, since people have it in their init files, and #59, #376
+   and #500 all close with it.
+
+** Open questions
+
+- Do servers in the wild disagree with each other about =BODYSTRUCTURE= enough
+  to matter?  Dovecot alone will not answer that; slice 1's "the two paths must
+  agree" test would, given a varied folder.
+- Should the layout keep both the parsed-from-bytes and the from-BODYSTRUCTURE
+  form during the transition, to catch disagreements in the field rather than in
+  tests?  Cheap, and it is how #109's cached-layout verification already works.

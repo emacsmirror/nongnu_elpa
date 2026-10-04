@@ -1,6 +1,6 @@
 ;;; vm-undo-test.el --- Tests for vm-undo.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -276,11 +276,6 @@ non-boundary records had message structs."
 ;; Note: vm-undo-describe requires real message structures for full testing.
 ;; Here we test that the function recognizes different record types.
 
-(ert-deftest vm-undo-test-describe-recognizes-operations ()
-  "Test that vm-undo-describe can be called."
-  ;; Just verify the function is callable - it needs real messages for output
-  (should (fboundp 'vm-undo-describe)))
-
 ;;; vm-squeeze-consecutive-undo-boundaries tests
 
 (ert-deftest vm-undo-test-squeeze-removes-consecutive-nils ()
@@ -341,6 +336,581 @@ non-boundary records had message structs."
     (vm-undo-boundary)
     ;; Should not add another nil
     (should (equal vm-undo-record-list '(nil record1)))))
+
+;;; unused label tests
+
+(defmacro vm-undo-test-with-labels (obarray-labels message-labels &rest body)
+  "Run BODY in a three-message folder with labels set up.
+OBARRAY-LABELS is the folder's label list; MESSAGE-LABELS is a list of
+label lists, one per message.
+
+`vm-current-warning' and `vm-user-interaction-buffer' are bound: declining an
+expunge warns, and asking the question records the buffer it was asked in."
+  (declare (indent 2))
+  `(let ((vm-current-warning vm-current-warning)
+         (vm-user-interaction-buffer vm-user-interaction-buffer))
+     (vm-test-with-folder
+         "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test 1
+
+Body 1
+
+From sender@example.com Mon Jan  1 00:00:01 2024
+From: sender@example.com
+Subject: Test 2
+
+Body 2
+
+From sender@example.com Mon Jan  1 00:00:02 2024
+From: sender@example.com
+Subject: Test 3
+
+Body 3
+"
+     (setq major-mode 'vm-mode)
+     (setq vm-label-obarray (make-vector 29 0))
+     (dolist (label ,obarray-labels)
+       (intern label vm-label-obarray))
+     (let ((i 0))
+       (dolist (labels ,message-labels)
+         (vm-set-decoded-labels-of (nth i vm-message-list) labels)
+         (setq i (1+ i))))
+     (cl-letf (((symbol-function 'vm-follow-summary-cursor) #'ignore)
+               ((symbol-function 'vm-select-folder-buffer-and-validate)
+                (lambda (&rest _) nil))
+               ((symbol-function 'vm-error-if-folder-read-only) #'ignore)
+               ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+               ((symbol-function 'vm-mark-folder-modified-p) #'ignore)
+               ((symbol-function 'vm-inform) #'ignore))
+         ,@body))))
+
+(ert-deftest vm-undo-test-unused-labels-finds-them ()
+  "Test that `vm-unused-labels' reports labels no message carries."
+  (vm-undo-test-with-labels
+      '("important" "work" "stale" "gone")
+      '(("important" "work") ("important") nil)
+    (should (equal (vm-unused-labels) '("gone" "stale")))))
+
+(ert-deftest vm-undo-test-unused-labels-none ()
+  "Test that `vm-unused-labels' returns nil when every label is in use."
+  (vm-undo-test-with-labels
+      '("important" "work")
+      '(("important") ("work") nil)
+    (should (null (vm-unused-labels)))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels ()
+  "Test that `vm-expunge-unused-labels' removes exactly the unused ones.
+Regression test for issue #269: deleting a label from the last message
+holding it left it in the folder, so it kept appearing in completions."
+  (vm-undo-test-with-labels
+      '("important" "work" "stale" "gone")
+      '(("important" "work") ("important") nil)
+    (vm-expunge-unused-labels)
+    (should (null (vm-unused-labels)))
+    (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                         #'string-lessp)
+                   '("important" "work")))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels-leaves-messages-alone ()
+  "Test that `vm-expunge-unused-labels' changes no message."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") ("important") nil)
+    (vm-expunge-unused-labels)
+    (should (equal (vm-labels-of (nth 0 vm-message-list)) '("important")))
+    (should (equal (vm-labels-of (nth 1 vm-message-list)) '("important")))
+    (should (null (vm-labels-of (nth 2 vm-message-list))))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels-declined ()
+  "Test that declining the confirmation removes nothing."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") nil nil)
+    ;; vm-interactive-p is a macro over called-interactively-p, so that
+    ;; is what has to be stubbed to make the command think it is
+    ;; interactive and reach the confirmation
+    (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
+              ((symbol-function 'yes-or-no-p) (lambda (_) nil)))
+      (should-error (vm-expunge-unused-labels) :type 'error))
+    (should (equal (vm-unused-labels) '("stale")))))
+
+(ert-deftest vm-undo-test-list-unused-labels ()
+  "Test that `vm-list-unused-labels' reports them without changing anything."
+  (vm-undo-test-with-labels
+      '("important" "stale" "gone")
+      '(("important") nil nil)
+    (vm-list-unused-labels)
+    (let ((buf (get-buffer "*VM unused labels*")))
+      (should buf)
+      (with-current-buffer buf
+        (let ((text (buffer-string)))
+          (should (string-match "2 unused labels" text))
+          (should (string-match "^  gone$" text))
+          (should (string-match "^  stale$" text))
+          (should-not (string-match "important" text))))
+      (kill-buffer buf))
+    ;; nothing removed
+    (should (equal (vm-unused-labels) '("gone" "stale")))))
+
+(ert-deftest vm-undo-test-missing-labels-finds-them ()
+  "Test that `vm-missing-labels' reports labels the folder does not list.
+A message saved in from another folder brings its labels with it, but
+nothing interns them, so they never reach completion."
+  (vm-undo-test-with-labels
+      '("important")
+      '(("important") ("arrived-with-message") ("another" "important"))
+    (should (equal (vm-missing-labels) '("another" "arrived-with-message")))))
+
+(ert-deftest vm-undo-test-missing-labels-none ()
+  "Test that `vm-missing-labels' returns nil when the folder lists them all."
+  (vm-undo-test-with-labels
+      '("important" "work" "spare")
+      '(("important") ("work") nil)
+    (should (null (vm-missing-labels)))))
+
+(ert-deftest vm-undo-test-labels-compare-case-insensitively ()
+  "Test that label case does not make one label look like two.
+Labels are lowercase by convention -- `vm-expunge-label' and
+`vm-add-or-delete-message-labels' both downcase -- but a message can
+arrive carrying \"Work\" while the folder lists \"work\".  Comparing
+verbatim reported the one label as unused and missing at once."
+  (vm-undo-test-with-labels
+      '("work")
+      '(("Work") nil nil)
+    (should (null (vm-unused-labels)))
+    (should (null (vm-missing-labels)))))
+
+(ert-deftest vm-undo-test-sync-labels-leaves-case-alone ()
+  "Test that syncing does not rewrite the folder's canonical spelling."
+  (vm-undo-test-with-labels
+      '("work")
+      '(("Work") nil nil)
+    (vm-sync-labels)
+    (should (equal (vm-obarray-to-string-list vm-label-obarray) '("work")))))
+
+(ert-deftest vm-undo-test-sync-labels ()
+  "Test that `vm-sync-labels' fixes the list in both directions."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") ("newcomer") nil)
+    (vm-sync-labels)
+    (should (null (vm-unused-labels)))
+    (should (null (vm-missing-labels)))
+    (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                         #'string-lessp)
+                   '("important" "newcomer")))))
+
+(ert-deftest vm-undo-test-sync-labels-leaves-messages-alone ()
+  "Test that `vm-sync-labels' changes no message."
+  (vm-undo-test-with-labels
+      '("stale")
+      '(("newcomer") ("newcomer") nil)
+    (vm-sync-labels)
+    (should (equal (vm-labels-of (nth 0 vm-message-list)) '("newcomer")))
+    (should (equal (vm-labels-of (nth 1 vm-message-list)) '("newcomer")))
+    (should (null (vm-labels-of (nth 2 vm-message-list))))))
+
+(ert-deftest vm-undo-test-sync-labels-records-undo ()
+  "Test that both directions of the sync are undoable."
+  (vm-undo-test-with-labels
+      '("stale")
+      '(("newcomer") nil nil)
+    (let ((vm-undo-record-list nil)
+          (vm-undo-record-pointer nil))
+      (vm-sync-labels)
+      ;; an added label is undone by uninterning it, a removed one by
+      ;; re-interning it
+      (should (member '(unintern "newcomer" vm-label-obarray)
+                      vm-undo-record-list))
+      (should (member '(intern "stale" vm-label-obarray)
+                      vm-undo-record-list))
+      ;; and the recorded forms actually reverse the change when evalled
+      (dolist (record vm-undo-record-list) (eval record t))
+      (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                           #'string-lessp)
+                     '("stale"))))))
+
+(ert-deftest vm-undo-test-sync-labels-nothing-to-do ()
+  "Test that a folder already in agreement is left alone."
+  (vm-undo-test-with-labels
+      '("important")
+      '(("important") nil nil)
+    (vm-sync-labels)
+    (should (equal (vm-obarray-to-string-list vm-label-obarray)
+                   '("important")))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels-records-undo ()
+  "Test that the removal can be undone."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") nil nil)
+    (let ((vm-undo-record-list nil)
+          (vm-undo-record-pointer nil))
+      (vm-expunge-unused-labels)
+      (should (member '(intern "stale" vm-label-obarray)
+                      vm-undo-record-list)))))
+
+;;; Undo across an expunge
+
+;; An undo record holds the message it would change, so expunging a message
+;; leaves records that would set flags on something no longer in the folder.
+;; `vm-clear-expunge-invalidated-undos' drops them, recognising an expunged
+;; message by its deleted flag being `expunged' rather than t.  It had no test
+;; beyond one that it survives a record with no message in it.
+
+(defconst vm-undo-test--two-messages
+  "From alice@example.com Mon Jan  1 00:00:00 2024
+From: alice@example.com
+Subject: subject 0
+Message-ID: <undo-0@example.com>
+
+Body 0.
+
+From alice@example.com Mon Jan  1 00:00:01 2024
+From: alice@example.com
+Subject: subject 1
+Message-ID: <undo-1@example.com>
+
+Body 1.
+"
+  "Two messages, enough to have one expunged and one not.")
+
+(defun vm-undo-test--record-messages ()
+  "Return the message of each undo record, nil for a boundary."
+  (mapcar (lambda (r) (and r (nth 1 r))) vm-undo-record-list))
+
+(ert-deftest vm-undo-test-clear-expunge-drops-the-expunged-records ()
+  "Records naming an expunged message go; the others and the boundaries stay.
+The expunged record is the first here, which is the branch that has to move the
+head of the list rather than splice."
+  (vm-test-with-folder vm-undo-test--two-messages
+    (let ((live (vm-test-first-message))
+          (gone (vm-test-nth-message 1)))
+      (vm-set-deleted-flag-of gone 'expunged)
+      (setq vm-undo-record-list
+            (list (list 'vm-set-deleted-flag gone nil)
+                  nil
+                  (list 'vm-set-replied-flag live nil)))
+      (vm-clear-expunge-invalidated-undos)
+      (should (equal (list nil live) (vm-undo-test--record-messages))))))
+
+(ert-deftest vm-undo-test-clear-expunge-drops-a-record-from-the-middle ()
+  "The same when the record to drop is not the first: the list is spliced.
+Two records for the expunged message, one either side of a live one, so both
+branches run in one list."
+  (vm-test-with-folder vm-undo-test--two-messages
+    (let ((live (vm-test-first-message))
+          (gone (vm-test-nth-message 1)))
+      (vm-set-deleted-flag-of gone 'expunged)
+      (setq vm-undo-record-list
+            (list (list 'vm-set-replied-flag live nil)
+                  (list 'vm-set-deleted-flag gone nil)
+                  nil
+                  (list 'vm-set-new-flag gone nil)
+                  (list 'vm-set-flagged-flag live nil)))
+      (vm-clear-expunge-invalidated-undos)
+      (should (equal (list live nil live) (vm-undo-test--record-messages))))))
+
+(ert-deftest vm-undo-test-clear-expunge-keeps-records-for-deleted-messages ()
+  "A message merely flagged deleted keeps its undo records.
+`expunged' is a distinct value of the same flag, and undeleting is exactly what
+undo is for, so a deleted message's records must survive."
+  (vm-test-with-folder vm-undo-test--two-messages
+    (let ((m (vm-test-first-message)))
+      (vm-set-deleted-flag-of m t)
+      (setq vm-undo-record-list (list (list 'vm-set-deleted-flag m nil)))
+      (vm-clear-expunge-invalidated-undos)
+      (should (equal (list m) (vm-undo-test--record-messages))))))
+
+(ert-deftest vm-undo-test-undo-after-an-expunge-changes-the-right-message ()
+  "An expunge drops the undo record it invalidated and leaves the rest usable.
+The whole sequence in a visited folder: flag one message replied, delete
+another, expunge, undo.  The undo has to reach the replied flag on the message
+that is still there, and the expunged message's own record has to be gone so
+that nothing tries to undelete it."
+  (vm-test-with-real-folder (4)
+    (let ((replied (nth 2 vm-message-list))
+          (doomed (nth 1 vm-message-list)))
+      (vm-undo-boundary)
+      (vm-set-replied-flag replied t)
+      (vm-undo-boundary)
+      (vm-set-deleted-flag doomed t)
+      (should (= 4 (length vm-message-list)))
+      (vm-expunge-folder)
+      ;; The message is gone and so is the record that would have undeleted it.
+      (should (= 3 (length vm-message-list)))
+      (should-not (memq doomed vm-message-list))
+      (should-not (memq doomed (vm-undo-test--record-messages)))
+      (should (vm-replied-flag replied))
+      ;; And the undo lands on the surviving message.
+      (vm-undo)
+      (should-not (vm-replied-flag replied))
+      (should (= 3 (length vm-message-list)))
+      (should (equal '("subject 0" "subject 2" "subject 3")
+                     (mapcar #'vm-su-subject vm-message-list))))))
+
+(ert-deftest vm-undo-test-nothing-left-to-undo-after-an-expunge ()
+  "With only the expunged message's record recorded, there is nothing to undo.
+`vm-undo' signals rather than reporting, which is worth pinning because it is
+the visible consequence of the record having been dropped: an undo that reached
+the record would undelete a message the folder no longer has."
+  (vm-test-with-real-folder (3)
+    (let ((doomed (nth 1 vm-message-list))
+          (before nil))
+      (vm-undo-boundary)
+      (vm-set-deleted-flag doomed t)
+      (vm-expunge-folder)
+      (setq before (mapcar #'vm-su-subject vm-message-list))
+      (should-error (vm-undo) :type 'error)
+      (should (equal before (mapcar #'vm-su-subject vm-message-list)))
+      (should (equal '(nil nil) (mapcar #'vm-deleted-flag vm-message-list))))))
+
+;;; Setting attributes by name
+
+;; The name-to-flag mapping was inlined in `vm-set-message-attributes' until
+;; `vm-virtual-filter-alist' needed it per-message too, so it is now
+;; `vm-set-message-attribute'.  These pin the mapping across that move: the
+;; command still takes a space separated list over a run of messages, and the
+;; extracted function is what does the work.
+
+(ert-deftest vm-undo-test-set-message-attributes-takes-a-list ()
+  "The command sets every named attribute on every message it covers."
+  (vm-test-with-real-folder (3)
+    (setq vm-message-pointer vm-message-list)
+    (vm-set-message-attributes "read flagged replied" 2)
+    (dolist (m (list (nth 0 vm-message-list) (nth 1 vm-message-list)))
+      (should (null (vm-new-flag m)))
+      (should (null (vm-unread-flag m)))
+      (should (vm-flagged-flag m))
+      (should (vm-replied-flag m)))
+    ;; the third is past the count
+    (should (vm-new-flag (nth 2 vm-message-list)))
+    (should (null (vm-flagged-flag (nth 2 vm-message-list))))))
+
+(ert-deftest vm-undo-test-set-message-attribute-negations ()
+  "The un- names clear the flag their positive counterpart sets."
+  (vm-test-with-real-folder (1)
+    (let ((m (car vm-message-list)))
+      (dolist (name '("deleted" "replied" "forwarded" "redistributed"
+                      "filed" "written" "flagged"))
+        (vm-set-message-attribute m name))
+      (should (vm-deleted-flag m))
+      (should (vm-filed-flag m))
+      (dolist (name '("undeleted" "unreplied" "unforwarded" "unredistributed"
+                      "unfiled" "unwritten" "unflagged"))
+        (vm-set-message-attribute m name))
+      ;; the flag setters queue the message globally; the callers of
+      ;; `vm-set-message-attribute' flush that queue, so do the same here
+      (vm-update-summary-and-mode-line)
+      (should (null (vm-deleted-flag m)))
+      (should (null (vm-replied-flag m)))
+      (should (null (vm-forwarded-flag m)))
+      (should (null (vm-redistributed-flag m)))
+      (should (null (vm-filed-flag m)))
+      (should (null (vm-written-flag m)))
+      (should (null (vm-flagged-flag m))))))
+
+(ert-deftest vm-undo-test-set-message-attribute-unknown-name-warns ()
+  "An unrecognised name warns and leaves the message alone.
+It does not signal: `vm-set-message-attributes' reads a space separated list
+from the user, and one typo should not abandon the rest of it."
+  (vm-test-with-real-folder (1)
+    (let ((m (car vm-message-list))
+          (warned nil))
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (&rest args) (setq warned args))))
+        (vm-set-message-attribute m "no-such-attribute"))
+      (vm-update-summary-and-mode-line)
+      (should warned)
+      (should (vm-new-flag m))
+      (should (null (vm-deleted-flag m))))))
+
+(ert-deftest vm-undo-test-every-offered-attribute-name-is-accepted ()
+  "REGRESSION: completion offers no name the setter rejects.
+
+`vm-supported-attribute-names' is the completion table of
+`vm-set-message-attributes', so every name in it is one a reader can arrive
+at by typing @key{TAB}.  Two of them, \"expanded\" and \"collapsed\", had no arm
+in `vm-set-message-attribute' from the day they were added in 2010: they are
+thread folding states of a thread root rather than attributes, and belong to
+the virtual folder selectors, where they work.  Completing to either warned
+\"Invalid attribute\" and did nothing (emacs-vm/vm#827)."
+  (vm-test-with-real-folder (1)
+    (let ((m (car vm-message-list))
+          (rejected nil))
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (_level _time format &rest args)
+                   (push (apply #'format format args) rejected))))
+        (dolist (name vm-supported-attribute-names)
+          (vm-set-message-attribute m name)))
+      (vm-update-summary-and-mode-line)
+      (should-not rejected))))
+
+;;; What a boundary is and when there is one, in place of a test that the
+;;; functions were bound.
+
+(ert-deftest vm-undo-test-boundary-is-not-added-to-nothing ()
+  "A boundary marks the end of a group of records, so an empty list gets none
+and two in a row are not made."
+  (with-temp-buffer
+    (let ((vm-undo-record-list nil))
+      (vm-undo-boundary)
+      (should-not vm-undo-record-list)
+      (vm-undo-record '(vm-set-deleted-flag a-message nil))
+      (vm-undo-boundary)
+      (should (= (length vm-undo-record-list) 2))
+      (should-not (car vm-undo-record-list))
+      (vm-undo-boundary)
+      (should (= (length vm-undo-record-list) 2)))))
+
+(ert-deftest vm-undo-test-squeeze-removes-the-boundaries-with-nothing-between ()
+  "Records removed by an expunge can leave two boundaries together, which
+would make one undo command do nothing.  Squeezing them is what stops that."
+  (with-temp-buffer
+    (let ((vm-undo-record-list '(nil nil (a) nil nil nil (b) nil)))
+      (vm-squeeze-consecutive-undo-boundaries)
+      (should (equal vm-undo-record-list '(nil (a) nil (b) nil))))
+    ;; a list of nothing but a boundary is an empty list
+    (let ((vm-undo-record-list '(nil)))
+      (vm-squeeze-consecutive-undo-boundaries)
+      (should-not vm-undo-record-list))
+    ;; and one with records is left as it is
+    (let ((vm-undo-record-list '((a) nil (b))))
+      (vm-squeeze-consecutive-undo-boundaries)
+      (should (equal vm-undo-record-list '((a) nil (b)))))))
+
+;;; What an undo says it is undoing
+
+(ert-deftest vm-undo-test-describe-names-the-flag-and-its-two-states ()
+  "Undoing a flag change says which flag, and which way the undo goes.
+A record is (FUNCTION MESSAGE VALUE) where VALUE is what undoing will set --
+`vm-set-xxxx-flag' records `(not flag)\\=' -- so a record carrying t reads
+undeleted -> deleted: the state it is in now, and the state it goes to."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+    (let ((m (car vm-message-list))
+          said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level fmt &rest args)
+                   (setq said (apply #'format fmt args)))))
+        (vm-undo-describe (list 'vm-set-deleted-flag m t))
+        (should (string-match-p "undeleted -> deleted" said))
+        (vm-undo-describe (list 'vm-set-deleted-flag m nil))
+        (should (string-match-p "deleted -> undeleted" said))
+        (vm-undo-describe (list 'vm-set-replied-flag m t))
+        (should (string-match-p "unanswered -> answered" said))
+        ;; and it names the folder the message is in
+        (should (string-match-p (regexp-quote (buffer-name)) said))))))
+
+(ert-deftest vm-undo-test-describe-names-the-labels ()
+  "Undoing a label change says what the labels go back to.
+It never said anything: the clause tested `(car cell)', which is what the
+alist of flag names gave -- and that alist has no `vm-set-labels' in it, so
+`cell' was nil and the test could not be true."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+    (let ((m (car vm-message-list))
+          said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level fmt &rest args)
+                   (setq said (apply #'format fmt args)))))
+        (vm-undo-describe (list 'vm-set-labels m '("work" "urgent")))
+        (should (string-match-p "labels set to work, urgent" said))
+        (setq said nil)
+        (vm-undo-describe (list 'vm-set-labels m nil))
+        (should (string-match-p "lost all its labels" said))))))
+
+(ert-deftest vm-undo-test-describe-says-nothing-about-what-it-does-not-know ()
+  "A record of a kind the message does not cover is not announced.
+`vm-set-buffer-modified-p' records are in the list too, and there is nothing
+to tell the user about them."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+    (let (said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (&rest args) (setq said args))))
+        (vm-undo-describe (list 'vm-set-buffer-modified-p nil))
+        (should-not said)))))
+
+;;; Adding and deleting labels
+
+(defmacro vm-undo-test--labelling (&rest body)
+  "Run BODY in a folder of two messages with an empty label obarray.
+`one' and `two' are the messages, and `known' is what the obarray holds."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder
+       (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+               "From: alice@example.com\nSubject: one\n\nBody.\n\n"
+               "From alice@example.com Sat Aug  8 14:25:13 2026\n"
+               "From: alice@example.com\nSubject: two\n\nBody.\n\n")
+     (setq major-mode 'vm-mode)
+     (setq vm-label-obarray (make-vector 29 0))
+     (let ((one (car vm-message-list))
+           (two (nth 1 vm-message-list)))
+       (cl-flet ((known ()
+                   (let (names)
+                     (mapatoms (lambda (s) (push (symbol-name s) names))
+                               vm-label-obarray)
+                     (sort names #'string<))))
+         ,@body))))
+
+(ert-deftest vm-undo-test-adding-a-label-keeps-the-labels-there-already ()
+  "A label is added to the labels the message has, not put in place of
+them, and it is added to the folder's list of labels so that completion
+offers it."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work"))
+    (should-not (vm-add-or-delete-message-labels "Urgent" (list one) 'all))
+    (should (equal (sort (copy-sequence (vm-decoded-labels-of one)) #'string<)
+                   '("urgent" "work")))
+    ;; a label is lower case whatever you typed
+    (should (equal (known) '("urgent")))
+    (should (vm-attribute-modflag-of one))))
+
+(ert-deftest vm-undo-test-adding-a-label-twice-adds-it-once ()
+  "Adding a label the message has already leaves one of it: the labels are
+a set, and a repeat would show twice in the summary."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work"))
+    (vm-add-or-delete-message-labels "work" (list one) 'all)
+    (should (equal (vm-decoded-labels-of one) '("work")))))
+
+(ert-deftest vm-undo-test-an-existing-only-label-must-be-known-already ()
+  "`vm-add-existing-message-labels' adds only labels the folder already
+uses, and returns the others rather than inventing them -- which is what
+makes a typo visible instead of making a new label."
+  (vm-undo-test--labelling
+    (vm-add-or-delete-message-labels "work" (list one) 'all)
+    (should (equal (vm-add-or-delete-message-labels "work bogus" (list two)
+                                                   'existing-only)
+                   '("bogus")))
+    (should (equal (vm-decoded-labels-of two) '("work")))
+    (should (equal (known) '("work")))))
+
+(ert-deftest vm-undo-test-deleting-a-label-leaves-the-others-alone ()
+  "Deleting a label takes that label off the message and touches nothing
+else -- not the other labels, and not the folder's list of labels, which
+`vm-expunge-label' is for."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work" "work" "urgent"))
+    (vm-add-or-delete-message-labels "urgent" (list one) nil)
+    (should (equal (vm-decoded-labels-of one) '("work" "work")))
+    (should-not (known))))
+
+(ert-deftest vm-undo-test-a-label-of-nothing-changes-no-message ()
+  "A string with no label in it is not a label to add: the messages are
+left as they are rather than being given an empty one."
+  (vm-undo-test--labelling
+    (vm-set-labels one '("work"))
+    (vm-set-attribute-modflag-of one nil)
+    (vm-add-or-delete-message-labels "   " (list one two) 'all)
+    (should (equal (vm-decoded-labels-of one) '("work")))
+    (should-not (vm-decoded-labels-of two))
+    (should-not (vm-attribute-modflag-of one))))
 
 (provide 'vm-undo-test)
 

@@ -4,7 +4,7 @@
 ;
 ;; Copyright (C) 1989-1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -22,27 +22,21 @@
 
 ;;; Code:
 
+(require 'wid-edit)		; the shrunken-header widget
 (require 'vm-macro)
 (require 'vm-window)
 (require 'vm-motion)
 (require 'vm-menu)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-make-virtual-copy "vm-virtual" (message))
 (declare-function vm-make-presentation-copy "vm-mime" (message))
 (declare-function vm-decode-mime-message "vm-mime" (&optional state))
 (declare-function vm-mime-plain-message-p "vm-mime" (message))
-;; (declare-funciton vm-mm-layout "vm-mime" (message))
 
-(declare-function map-extents "vm-xemacs" 
-		  (function &optional object from to maparg 
-			    flags property value))
-(declare-function find-face "vm-xemacs" (face-or-name))
-(declare-function make-glyph "vm-xemacs" (&optional spec-list type))
-(declare-function set-glyph-face "vm-xemacs" (glyph face))
-(declare-function glyphp "vm-xemacs" (object))
-(declare-function set-extent-begin-glyph "vm-xemacs" 
-		  (extent begin-glyph &optional layout))
-(declare-function highlight-headers "vm-xemacs" (start end hack-sig))
 
 ;;;###autoload
 (defun vm-scroll-forward (&optional arg)
@@ -66,7 +60,6 @@ Prefix argument N means scroll forward N lines."
     ;; cursor problem in the summary window, reported on May 4, 2008
     ;; in gnu.emacs.vm.info, title "Re: synchronization of vm buffers"
     ;; The original vodoo was:
-    ;; (if mp-changed (sit-for 0))
     (when mp-changed 
       (vm-present-current-message)
       (sit-for 0))
@@ -195,13 +188,6 @@ Prefix argument N means scroll forward N lines."
 ;; window position may no longer be visible but
 ;; pos-visible-in-window-p will still say it is because it was
 ;; visible before some window size change happened.
-;;	(progn
-;;	  (if (and (> direction 0)
-;;		   (pos-visible-in-window-p
-;;		    (vm-text-end-of (car vm-message-pointer))))
-;;	      (signal 'end-of-buffer nil)
-;;	    (scroll-up arg))
-;;	  nil )
       (error
        (if (or (and (< direction 0)
 		    (> (point) (vm-text-of (car vm-message-pointer))))
@@ -251,8 +237,6 @@ Prefix argument N means scroll forward N lines."
 		       ;; scroll-fix.el replaces scroll-up and
 		       ;; doesn't behave properly when it hits
 		       ;; end of buffer.  It does this!
-		       ;; (ding)
-		       ;; (message (get 'beginning-of-buffer 'error-message))
 		       (let ((scroll-in-place-replace-original nil))
 			 (scroll-up nil))))
 		   nil)
@@ -265,7 +249,7 @@ Prefix argument N means scroll forward N lines."
 it is suppressed if the variable `vm-auto-next-message' is nil."
   (interactive)
   (if vm-auto-next-message
-      (let ((vm-summary-uninteresting-senders-arrow "")
+      (let ((vm-summary-recipient-marker "")
 	    (case-fold-search nil))
 	(vm-inform 6 (if (and (stringp vm-summary-uninteresting-senders)
 			  (string-match vm-summary-uninteresting-senders
@@ -274,11 +258,13 @@ it is suppressed if the variable `vm-auto-next-message' is nil."
 		   "End of message %s from %.50s...")
 		 (vm-number-of (car vm-message-pointer))
 		 (vm-summary-sprintf "%F" (car vm-message-pointer))))))
+(put 'vm-emit-eom-blurb 'vm-called-by-vm t)
 
 (defun vm-emit-mime-decoding-message (format &rest args)
   (interactive)
   (when vm-emit-messages-for-mime-decoding
     (apply 'message (concat "%s: " format) (buffer-name vm-mail-buffer) args)))
+(put 'vm-emit-mime-decoding-message 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-scroll-backward (&optional arg)
@@ -308,51 +294,27 @@ Negative arg means scroll forward."
   (vm-scroll-forward (- count)))
 
 (defun vm-highlight-headers ()
-  (cond
-   ((and (featurep 'xemacs) vm-use-lucid-highlighting)
-    (require 'highlight-headers)
-    ;; disable the url marking stuff, since VM has its own interface.
-    (let ((highlight-headers-mark-urls nil)
-	  (highlight-headers-regexp (or vm-highlighted-header-regexp
-					highlight-headers-regexp)))
-      (highlight-headers (point-min) (point-max) t)))
-   ((featurep 'xemacs)
-    (let (e)
-      (map-extents (function
-		    (lambda (e ignore)
-		      (when (vm-extent-property e 'vm-highlight)
-			(vm-delete-extent e))
-		      nil))
-		   (current-buffer) (point-min) (point-max))
-      (goto-char (point-min))
-      (while (vm-match-header)
-	(cond ((vm-match-header vm-highlighted-header-regexp)
-	       (setq e (vm-make-extent (vm-matched-header-contents-start)
-				       (vm-matched-header-contents-end)))
-	       (vm-set-extent-property e 'face vm-highlighted-header-face)
-	       (vm-set-extent-property e 'vm-highlight t)))
-	(goto-char (vm-matched-header-end)))))
-   ((not (featurep 'xemacs))
-    (let (o-lists p)
-      (setq o-lists (overlay-lists)
-	    p (car o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-highlight)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (setq p (cdr o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-highlight)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (goto-char (point-min))
-      (while (vm-match-header)
-	(cond ((vm-match-header vm-highlighted-header-regexp)
-	       (setq p (make-overlay (vm-matched-header-contents-start)
-				     (vm-matched-header-contents-end)))
-	       (overlay-put p 'face vm-highlighted-header-face)
-	       (overlay-put p 'vm-highlight t)))
-	(goto-char (vm-matched-header-end)))))))
+  (let (o-lists p)
+    (setq o-lists (overlay-lists)
+	  p (car o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-highlight)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (setq p (cdr o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-highlight)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (goto-char (point-min))
+    (while (vm-match-header)
+      (when (vm-match-header vm-highlighted-header-regexp)
+	(setq p (make-overlay (vm-matched-header-contents-start)
+			      (vm-matched-header-contents-end)))
+	(overlay-put p 'face vm-highlighted-header-face)
+	(overlay-put p 'vm-highlight t))
+      (goto-char (vm-matched-header-end)))))
+
 
 ;;;###autoload
 (defun vm-energize-urls (&optional clean-only)
@@ -374,8 +336,6 @@ Negative arg means scroll forward."
 			 (when (vm-extent-property e 'vm-url)
 			   (vm-delete-extent e))
 			 nil))
-		      ;; (current-buffer)
-		      ;; (point-min) (point-max)
 		      )
       (if clean-only (vm-inform 1 "Energy from urls removed!")
 	(while search-pairs
@@ -396,16 +356,9 @@ Negative arg means scroll forward."
 			     (looking-at "mailto:"))
 			   'vm-menu-popup-mailto-url-browser-menu
 			 'vm-menu-popup-url-browser-menu)))
-		  (if (not (featurep 'xemacs))
-		      (setq keymap (nconc keymap (current-local-map))))
-		  (if (featurep 'xemacs)
-		      (define-key keymap 'button2 'vm-mouse-send-url-at-event)
-		    ;; nothing for fsfemacs?
-		    )
+		  (setq keymap (nconc keymap (current-local-map)))
 		  (when vm-popup-menu-on-mouse-3
-		    (if (featurep 'xemacs)
-			(define-key keymap 'button3 popup-function)
-		      (define-key keymap [mouse-3] popup-function)))
+		    (define-key keymap [mouse-3] popup-function))
 		  (define-key keymap "\r"
 			      (function (lambda () (interactive)
 				          (vm-mouse-send-url-at-position (point)))))
@@ -425,114 +378,37 @@ Negative arg means scroll forward."
 	  (setq search-pairs (cdr search-pairs)))))))
 
 (defun vm-energize-headers ()
-  (cond
-   ((featurep 'xemacs)
-    (let ((search-tuples '(("^From:" vm-menu-author-menu)
-			   ("^Subject:" vm-menu-subject-menu)))
-	  regexp menu keymap e)
-      (map-extents (function
-		    (lambda (e ignore)
-		      (when (vm-extent-property e 'vm-header)
-			(vm-delete-extent e))
-		      nil))
-		   (current-buffer) (point-min) (point-max))
-      (while search-tuples
-	(goto-char (point-min))
-	(setq regexp (nth 0 (car search-tuples))
-	      menu (symbol-value (nth 1 (car search-tuples))))
-	(while (re-search-forward regexp nil t)
-	  (save-excursion (goto-char (match-beginning 0)) (vm-match-header))
-	  (setq e (vm-make-extent (vm-matched-header-contents-start)
-				  (vm-matched-header-contents-end)))
-	  (vm-set-extent-property e 'vm-header t)
-	  (setq keymap (make-sparse-keymap))
-	  ;; Might as well make button2 do what button3 does in
-	  ;; this case, since there is no default 'select'
-	  ;; action.
-	  (define-key keymap 'button2
-	    (list 'lambda () '(interactive)
-		  (list 'popup-menu (list 'quote menu))))
-	  (if vm-popup-menu-on-mouse-3
-	      (define-key keymap 'button3
-		(list 'lambda () '(interactive)
-		      (list 'popup-menu (list 'quote menu)))))
-	  (vm-set-extent-property e 'keymap keymap)
-	  (vm-set-extent-property e 'balloon-help 'vm-mouse-3-help)
-	  (vm-set-extent-property e 'highlight t))
-	(setq search-tuples (cdr search-tuples)))))
-   ((and (not (featurep 'xemacs))
-	 (fboundp 'overlay-put))
-    (let ((search-tuples '(("^From:" vm-menu-fsfemacs-author-menu)
-			   ("^Subject:" vm-menu-fsfemacs-subject-menu)))
-	  regexp menu
-	  o-lists o p)
-      (setq o-lists (overlay-lists)
-	    p (car o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-header)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (setq p (cdr o-lists))
-      (while p
-	(when (overlay-get (car p) 'vm-header)
-	  (vm-delete-extent (car p)))
-	(setq p (cdr p)))
-      (while search-tuples
-	(goto-char (point-min))
-	(setq regexp (nth 0 (car search-tuples))
-	      menu (symbol-value (nth 1 (car search-tuples))))
-	(while (re-search-forward regexp nil t)
-	  (goto-char (match-end 0))
-	  (save-excursion (goto-char (match-beginning 0)) (vm-match-header))
-	  (setq o (make-overlay (vm-matched-header-contents-start)
-				(vm-matched-header-contents-end)))
-	  (overlay-put o 'vm-header menu)
-	  (overlay-put o 'mouse-face 'highlight))
-	(setq search-tuples (cdr search-tuples)))))))
+  (let ((search-tuples '(("^From:" vm-menu-fsfemacs-author-menu)
+			 ("^Subject:" vm-menu-fsfemacs-subject-menu)))
+	regexp menu
+	o-lists o p)
+    (setq o-lists (overlay-lists)
+	  p (car o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-header)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (setq p (cdr o-lists))
+    (while p
+      (when (overlay-get (car p) 'vm-header)
+	(vm-delete-extent (car p)))
+      (setq p (cdr p)))
+    (while search-tuples
+      (goto-char (point-min))
+      (setq regexp (nth 0 (car search-tuples))
+	    menu (symbol-value (nth 1 (car search-tuples))))
+      (while (re-search-forward regexp nil t)
+	(goto-char (match-end 0))
+	(save-excursion (goto-char (match-beginning 0)) (vm-match-header))
+	(setq o (make-overlay (vm-matched-header-contents-start)
+			      (vm-matched-header-contents-end)))
+	(overlay-put o 'vm-header menu)
+	(overlay-put o 'mouse-face 'highlight))
+      (setq search-tuples (cdr search-tuples)))))
 
 (defun vm-display-xface ()
-  (cond ((featurep 'xemacs) (vm-display-xface-xemacs))
-	((and (not (featurep 'xemacs))
-	      (and (stringp vm-uncompface-program)
-		   (fboundp 'create-image)))
-	 (vm-display-xface-fsfemacs))))
-
-(defun vm-display-xface-xemacs ()
-  (let ((case-fold-search t) e g h)
-    (if (map-extents (function
-		      (lambda (e _ignore)
-			(if (vm-extent-property e 'vm-xface)
-			    t
-			  nil)))
-		     (current-buffer) (point-min) (point-max))
-	nil
-      (goto-char (point-min))
-      (if (find-face 'vm-xface)
-	  nil
-	(make-face 'vm-xface)
-	(set-face-background 'vm-xface "white")
-	(set-face-foreground 'vm-xface "black"))
-      (if (re-search-forward "^X-Face:" nil t)
-	  (progn
-	    (goto-char (match-beginning 0))
-	    (vm-match-header)
-	    (setq h (concat "X-Face: " (vm-matched-header-contents)))
-	    (setq g (intern h vm-xface-cache))
-	    (if (boundp g)
-		(setq g (symbol-value g))
-	      (set g (make-glyph
-		      (list
-		       (list 'global (cons '(tty) [nothing]))
-		       (list 'global (cons '(win) (vector 'xface ':data h))))))
-	      (setq g (symbol-value g))
-	      ;; XXX broken.  Gives extra pixel lines at the
-	      ;; bottom of the glyph in 19.12
-	      ;;(set-glyph-baseline g 100)
-	      (set-glyph-face g 'vm-xface))
-	    (setq e (vm-make-extent (vm-vheaders-of (car vm-message-pointer))
-				    (vm-vheaders-of (car vm-message-pointer))))
-	    (vm-set-extent-property e 'vm-xface t)
-	    (set-extent-begin-glyph e g))))))
+  (when (stringp vm-uncompface-program)
+    (vm-display-xface-fsfemacs)))
 
 (defun vm-display-xface-fsfemacs ()
   (catch 'done
@@ -572,46 +448,52 @@ Negative arg means scroll forward."
 			   (char-to-string (char-after pos)))
 	      (overlay-put o 'display g)))))))
 
+(defun vm-xface-run-converter (program &rest args)
+  "Run PROGRAM with ARGS over the current buffer, replacing it with the output.
+Return t when it ran and succeeded.
+
+A program that cannot be run is not an error here.  An X-Face is decoration,
+and `uncompface' is a 1990 utility that a machine may not have, or may have
+in a state that does not run; failing the whole message display over one is
+out of proportion.  So this warns and gives up on the face instead."
+  (condition-case err
+      (eq 0 (apply #'call-process-region (point-min) (point-max)
+		   program t t nil args))
+    (error
+     (vm-warn 0 2 "X-Face not shown: %s could not be run (%s).  \
+Set vm-display-xfaces to nil to stop trying"
+	      program (error-message-string err))
+     nil)))
+
+(defun vm-xface-image (type)
+  "An image instantiator of TYPE holding the current buffer's contents."
+  (list 'image ':type type
+	':ascent 80
+	':foreground "black"
+	':background "white"
+	':data (buffer-string)))
+
 (defun vm-convert-xface-to-fsfemacs-image-instantiator (data)
-  (let ((work-buffer nil)
-	retval)
+  (let ((work-buffer nil))
     (catch 'done
       (unwind-protect
 	  (save-excursion
-	    (if (not (stringp vm-uncompface-program))
-		(throw 'done nil))
+	    (unless (stringp vm-uncompface-program)
+	      (throw 'done nil))
 	    (setq work-buffer (vm-make-work-buffer))
 	    (set-buffer work-buffer)
 	    (insert data)
-	    (setq retval
-		  (apply 'call-process-region
-			 (point-min) (point-max)
-			 vm-uncompface-program t t nil
-			 (if vm-uncompface-accepts-dash-x '("-X") nil)))
-	    (if (not (eq retval 0))
-		(throw 'done nil))
-	    (if vm-uncompface-accepts-dash-x
-		(throw 'done
-		       (list 'image ':type 'xbm
-			     ':ascent 80
-			     ':foreground "black"
-			     ':background "white"
-			     ':data (buffer-string))))
-	    (if (not (stringp vm-icontopbm-program))
-		(throw 'done nil))
+	    (unless (apply #'vm-xface-run-converter vm-uncompface-program
+			   (if vm-uncompface-accepts-dash-x '("-X") nil))
+	      (throw 'done nil))
+	    (when vm-uncompface-accepts-dash-x
+	      (throw 'done (vm-xface-image 'xbm)))
+	    (unless (stringp vm-icontopbm-program)
+	      (throw 'done nil))
 	    (goto-char (point-min))
-	    (insert "/* Width=48, Height=48 */\n");
-	    (setq retval
-		  (call-process-region
-		   (point-min) (point-max)
-		   vm-icontopbm-program t t nil))
-	    (if (not (eq retval 0))
-		nil
-	      (list 'image ':type 'pbm
-		    ':ascent 80
-		    ':foreground "black"
-		    ':background "white"
-		    ':data (buffer-string))))
+	    (insert "/* Width=48, Height=48 */\n")
+	    (and (vm-xface-run-converter vm-icontopbm-program)
+		 (vm-xface-image 'pbm)))
 	(and work-buffer (kill-buffer work-buffer))))))
 
 (defun vm-url-help (_object)
@@ -619,15 +501,9 @@ Negative arg means scroll forward."
    "Use mouse button 2 to send the URL to %s.
 Use mouse button 3 to choose a Web browser for the URL."
    (cond ((stringp vm-url-browser) vm-url-browser)
-	 ((eq vm-url-browser 'w3-fetch)
-	  "Emacs W3")
-	 ((eq vm-url-browser 'w3-fetch-other-frame)
-	  "Emacs W3")
-	 ((eq vm-url-browser 'vm-mouse-send-url-to-mosaic)
-	  "Mosaic")
-	 ((eq vm-url-browser 'vm-mouse-send-url-to-netscape)
-	  "Netscape")
-	 (t (symbol-name vm-url-browser)))))
+	 ((symbolp vm-url-browser) (symbol-name vm-url-browser))
+	 ;; customize's function type also allows a lambda, which has no name
+	 (t "a Lisp function"))))
 
 ;;;###autoload
 (defun vm-energize-urls-in-message-region (&optional start end)
@@ -642,10 +518,72 @@ Use mouse button 3 to choose a Web browser for the URL."
           (narrow-to-region start end)
           (vm-energize-urls)))))
     
+(defconst vm-citation-prefix-regexp "[ \t]*[-A-Za-z0-9]*>[ \t]*"
+  "One level of quoting at the start of a line.
+A `>' on its own, or one behind the initials some readers put there.")
+
+(defun vm-citation-depth ()
+  "How many levels of quoting the line at point begins with.
+Point is left after the prefixes counted."
+  (let ((depth 0))
+    (while (looking-at vm-citation-prefix-regexp)
+      (goto-char (match-end 0))
+      (setq depth (1+ depth)))
+    depth))
+
+(defun vm-fontify-citations (start end)
+  "Colour quoted text between START and END, a face per level of quoting.
+The faces are `vm-citation-faces', and text quoted deeper than there are
+faces wears the last of them."
+  (when vm-citation-faces
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+        (let* ((line-start (point))
+               (depth (vm-citation-depth)))
+          (when (> depth 0)
+            (let ((face (nth (min (1- depth) (1- (length vm-citation-faces)))
+                             vm-citation-faces)))
+              (vm-fontify-region line-start (line-end-position) face)))
+          (forward-line 1))))))
+
+(defun vm-fontify-signature (start end)
+  "Colour the signature between START and END with `vm-signature-face'.
+The signature is what follows the last line of exactly \"-- \", which is the
+separator RFC 3676 describes.  A leading `- ' is allowed on it, that being
+what a signature quoted into a digest looks like."
+  (when vm-signature-face
+    (save-excursion
+      (goto-char end)
+      (let ((separator (re-search-backward "^\\(- \\)?-- ?$" start t)))
+        (when separator
+          (vm-fontify-region separator end vm-signature-face))))))
+
+(defun vm-fontify-region (start end face)
+  "Put FACE on the text between START and END, marked as VM's own.
+An overlay rather than a text property, and marked, so that the next message
+shown in this buffer can take it off again the way `vm-highlight-headers'
+does with the headers it puts on."
+  (let ((overlay (make-overlay start end)))
+    (overlay-put overlay 'face face)
+    (overlay-put overlay 'vm-highlight t)))
+
+(defun vm-fontify-body-maybe ()
+  "Colour quoted text and the signature of the message being shown.
+Does nothing unless `vm-enable-body-faces' says to.  Called where
+`vm-highlight-headers-maybe' is, and it removes what this leaves behind:
+both mark their overlays `vm-highlight'."
+  (when (and vm-enable-body-faces vm-message-pointer)
+    (save-restriction
+      (widen)
+      (let ((start (vm-text-of (car vm-message-pointer)))
+            (end (vm-text-end-of (car vm-message-pointer))))
+        (vm-fontify-citations start end)
+        (vm-fontify-signature start end)))))
+
 (defun vm-highlight-headers-maybe ()
   ;; highlight the headers
-  (if (or vm-highlighted-header-regexp
-	  (and (featurep 'xemacs) vm-use-lucid-highlighting))
+  (if vm-highlighted-header-regexp
       (save-restriction
 	(widen)
 	(narrow-to-region (vm-headers-of (car vm-message-pointer))
@@ -661,20 +599,20 @@ Use mouse button 3 to choose a Web browser for the URL."
 			  (vm-text-of (car vm-message-pointer)))
 	(vm-energize-headers)))
   ;; display xfaces, if we can
-  (if (and vm-display-xfaces
-	   (or (and (featurep 'xemacs) (featurep 'xface))
-	       (and (not (featurep 'xemacs)) (fboundp 'create-image)
-		    (stringp vm-uncompface-program))))
+  (if (and vm-display-xfaces (stringp vm-uncompface-program))
       (save-restriction
 	(widen)
 	(narrow-to-region (vm-headers-of (car vm-message-pointer))
 			  (vm-text-of (car vm-message-pointer)))
 	(vm-display-xface))))
 
-(defun vm-narrow-for-preview (&optional just-passing-through)
+(defun vm-narrow-for-preview (&optional _just-passing-through)
   "Hide as much of the message body as vm-preview-lines specifies.
-Optional argument JUST-PASSING-THROUGH says that no real preview
-is necessary."
+JUST-PASSING-THROUGH said that no real preview was necessary, and is
+ignored: it suppressed a workaround for XEmacs displaying the begin-glyph of
+an extent at the end of a narrowed region, which put the image of a message
+that held only one on the screen at preview time however small
+vm-preview-lines was."
   (widen)
   (narrow-to-region
    (vm-vheaders-of (car vm-message-pointer))
@@ -684,27 +622,6 @@ is necessary."
 	   (save-excursion
 	     (goto-char (vm-text-of (car vm-message-pointer)))
 	     (forward-line (if (natnump vm-preview-lines) vm-preview-lines 0))
-	     ;; KLUDGE CITY: Under XEmacs, an extent's begin-glyph
-	     ;; will be displayed even if the extent is at the end
-	     ;; of a narrowed region.  Thus a message containing
-	     ;; only an image will have the image displayed at
-	     ;; preview time even if vm-preview-lines is 0 provided
-	     ;; vm-mime-decode-for-preview is non-nil.  We kludge
-	     ;; a fix for this by moving everything on the preview
-	     ;; cutoff line one character forward, but only if
-	     ;; we're doing MIME decode for preview.
-	     (if (and (not just-passing-through)
-		      (featurep 'xemacs)
-		      vm-mail-buffer ; in presentation buffer
-		      vm-auto-decode-mime-messages
-		      vm-mime-decode-for-preview
-		      ;; can't do the kludge unless we know that
-		      ;; when the message is exposed it will be
-		      ;; decoded and thereby remove the kludge.
-		      (not (vm-mime-plain-message-p (car vm-message-pointer))))
-		 (let ((buffer-read-only nil))
-		   (insert " ")
-		   (forward-char -1)))
 	     (point))))
 	 (t (vm-text-end-of (car vm-message-pointer))))))
 
@@ -727,10 +644,6 @@ preview or the full message, governed by the the variables
 		   (or (vm-new-flag (car vm-message-pointer))
 		       (vm-unread-flag (car vm-message-pointer))
 		       vm-preview-read-messages))))
-;;     (when vm-enable-external-messages
-;;       (when (not need-preview)
-;; 	(vm-inform 1 "External messages cannot be previewed")
-;; 	(setq need-preview nil)))
     (save-current-buffer
      (setq vm-system-state 'previewing)
      (setq vm-mime-decoded nil)
@@ -739,7 +652,11 @@ preview or the full message, governed by the the variables
      (when vm-external-fetch-message-for-presentation
        (when (vm-body-to-be-retrieved-of (car vm-message-pointer))
 	 (let ((mm (vm-real-message-of (car vm-message-pointer))))
-	   (vm-retrieve-real-message-body mm :fetch t :register t))))
+	   ;; the body may arrive after this returns: presentation is where
+	   ;; that is what the reader wants -- the message now, its body when
+	   ;; the server answers -- and the fetch shows it again then
+	   (vm-retrieve-real-message-body mm :fetch t :register t
+					  :may-arrive-later t))))
      ;; 1b. create a virtual copy if in a virtual folder
      (when vm-real-buffers
        (vm-make-virtual-copy (car vm-message-pointer)))
@@ -747,6 +664,9 @@ preview or the full message, governed by the the variables
      ;; 2. run the message select hooks.
      (save-excursion
        (vm-select-folder-buffer)
+       (when (and vm-auto-save-all-attachments
+		  (vm-new-flag (car vm-message-pointer)))
+	 (vm-mime-auto-save-all-attachments))
        (when (and vm-select-new-message-hook 
 		  (vm-new-flag (car vm-message-pointer)))
 	    (vm-run-hook-on-message 'vm-select-new-message-hook
@@ -790,14 +710,6 @@ preview or the full message, governed by the the variables
      ;; if we're using one for this message.
      (vm-unbury-buffer (current-buffer))
 
-;;     (let ((real-m (car vm-message-pointer)))
-;;        (if (= (1+ (marker-position (vm-text-of real-m)))
-;; 	      (marker-position (vm-text-end-of real-m)))
-;;            (vm-inform 1 "must fetch the body of %s ..." (vm-imap-uid-of real-m))
-;; 	 (vm-inform 1 "must NOT fetch the body of %s ..." (vm-imap-uid-of real-m))
-;;	 (let ((vm-message-pointer nil))
-;;	   (vm-discard-cached-data)))
-;;	   ))
      
      ;; 4. decode MIME
      (if (and vm-display-using-mime
@@ -814,6 +726,7 @@ preview or the full message, governed by the the variables
 	       (vm-decode-mime-message-headers (car vm-message-pointer))
 	       (vm-energize-urls)
 	       (vm-highlight-headers-maybe)
+	       (vm-fontify-body-maybe)
 	       (vm-energize-headers-and-xfaces))
 	   ;; restrict the things that are auto-displayed, since
 	   ;; decode-for-preview is meant to allow a numeric
@@ -825,7 +738,6 @@ preview or the full message, governed by the the variables
 		      (cons "message/external-body"
 			    vm-mime-auto-displayed-content-type-exceptions)
 		    vm-mime-auto-displayed-content-type-exceptions))
-		 ;; (vm-mime-external-content-types-alist nil)
 		 )
 	     (condition-case data
 		 (progn
@@ -851,6 +763,7 @@ preview or the full message, governed by the the variables
        ;; if no MIME decoding is needed
        (vm-energize-urls-in-message-region)
        (vm-highlight-headers-maybe)
+       (vm-fontify-body-maybe)
        (vm-energize-headers-and-xfaces))
 
      ;; 6. Go to the text of message
@@ -867,11 +780,138 @@ preview or the full message, governed by the the variables
      ;; 8. Show the full message if necessary
      (if need-preview
 	 (vm-update-summary-and-mode-line)
-       (vm-show-current-message))))
+       (vm-show-current-message))
 
+     ;; 9. Fold the headers that run long, if asked
+     (when vm-enable-shrunken-headers
+       (vm-shrunken-headers))))
+
+  (when vm-handle-return-receipts
+    (vm-handle-return-receipt))
   (vm-run-hook-on-message 'vm-select-message-hook (car vm-message-pointer)))
 
 (defalias 'vm-preview-current-message 'vm-present-current-message)
+
+;;; Shrunken headers
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle ()
+  "Toggle display of shrunken headers."
+  (interactive)
+  (vm-shrunken-headers 'toggle))
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle-this-mouse (&optional event)
+  "Toggle display of shrunken headers."
+  (interactive "e")
+  (mouse-set-point event)
+  (end-of-line)
+  (vm-shrunken-headers-toggle-this))
+(put 'vm-shrunken-headers-toggle-this-mouse 'vm-called-by-vm t)
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle-this-widget (widget &rest _event)
+  (goto-char (widget-get widget :to))
+  (end-of-line)
+  (vm-shrunken-headers-toggle-this))
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle-this ()
+  "Toggle display of shrunken headers."
+  (interactive)
+  
+  (save-excursion
+    (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
+        (set-buffer (symbol-value 'vm-mail-buffer)))
+    (if vm-presentation-buffer
+        (set-buffer vm-presentation-buffer))
+    (let ((o (or (car (vm-shrunken-headers-get-overlays (point)))
+                 (car (vm-shrunken-headers-get-overlays
+                       (save-excursion (end-of-line)
+                                       (forward-char 1)
+                                       (point)))))))
+      (save-restriction
+        (narrow-to-region (- (overlay-start o) 7) (overlay-end o))
+        (vm-shrunken-headers 'toggle)
+        (widen)))))
+
+(defun vm-shrunken-headers-get-overlays (start &optional end)
+  (let ((o-list (if end
+                    (overlays-in start end)
+                  (overlays-at start))))
+    (setq o-list (mapcar (lambda (o)
+                           (if (overlay-get o 'vm-shrunken-headers)
+                               o
+                             nil))
+                         o-list)
+          o-list (delete nil o-list))))
+
+;;;###autoload
+(defun vm-shrunken-headers (&optional toggle)
+  "Hide or show headers which occupy more than one line.
+Well, one might do it more precisely with only some headers,
+but it is sufficient for me!
+
+If the optional argument TOGGLE, then hiding is toggled.
+
+The face used for the visible hidden regions is `vm-shrunken-headers-face' and
+the keymap used within that region is `vm-shrunken-headers-keymap'."
+  (interactive "P")
+  
+  (save-excursion 
+    (let (headers-start headers-end start end o shrunken modified)
+      (if (equal major-mode 'vm-summary-mode)
+          (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
+              (set-buffer (symbol-value 'vm-mail-buffer))))
+      (if (equal major-mode 'vm-mode)
+          (if vm-presentation-buffer
+              (set-buffer vm-presentation-buffer)))
+
+      ;; We cannot use the default functions (vm-headers-of, ...) since
+      ;; we might also work within a presentation buffer.
+      (setq modified (buffer-modified-p))
+      (goto-char (point-min))
+      (setq headers-start (point-min)
+            headers-end (or (re-search-forward "\n\n" (point-max) t)
+                            (point-max)))
+
+      (cond (toggle
+             (setq shrunken (vm-shrunken-headers-get-overlays
+                             headers-start headers-end))
+             (while shrunken
+               (setq o (car shrunken))
+               (let ((w (overlay-get o 'vm-shrunken-headers-widget)))
+                 (widget-toggle-action w))
+	       (overlay-put o 'invisible (not (overlay-get o 'invisible)))
+	       (setq shrunken (cdr shrunken))))
+            (t
+             (goto-char headers-start)
+             (while (re-search-forward "^\\(\\s-+.*\n\\)+" headers-end t)
+               (setq start (match-beginning 0) end (match-end 0))
+               (setq o (vm-shrunken-headers-get-overlays start end))
+               (if o
+                   (setq o (car o))
+                 (setq o (make-overlay (1- start) end))
+                 (overlay-put o 'face 'vm-shrunken-headers-face)
+                 (overlay-put o 'mouse-face 'highlight)
+                 (overlay-put o 'local-map vm-shrunken-headers-keymap)
+                 (overlay-put o 'priority 10000)
+                 ;; make a new overlay for the invisibility, the other one we
+                 ;; made before is just for highlighting and key-bindings ...
+                 (setq o (make-overlay start end))
+                 (overlay-put o 'vm-shrunken-headers t)
+		 (goto-char (1- start))
+		 (overlay-put o 'start-closed nil)
+		 (overlay-put o 'vm-shrunken-headers-widget
+			      (widget-create 'visibility
+					     :action
+                                      'vm-shrunken-headers-toggle-this-widget))
+		 (overlay-put o 'invisible t)))))
+      (set-buffer-modified-p modified)
+      (goto-char (point-min)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 (defun vm-show-current-message ()
   "Show the current message in the Presentation Buffer.  MIME decoding
@@ -947,9 +987,18 @@ is done if necessary.  (USR, 2010-01-14)"
          (vm-update-summary-and-mode-line)
 	 (vm-howl-if-eom))
      (vm-update-summary-and-mode-line)))
-  ;; (if vm-summary-enable-thread-folding
-  ;;     (vm-toggle-thread 1))
   )
+
+(defvar vm-headers-exposed nil
+  "Whether `vm-expose-hidden-headers' has exposed the headers here.
+Buffer-local to the buffer the message is shown in, and reset with it, so
+the next message starts with its headers hidden as usual.
+
+The narrowing used to carry this: exposed meant the visible region started
+at the message rather than at its visible headers.  With
+`vm-honor-page-delimiters' the visible region is a page, whose start says
+nothing about the headers, so the state is kept here instead.  Issue #513.")
+(make-variable-buffer-local 'vm-headers-exposed)
 
 ;;;###autoload
 (defun vm-expose-hidden-headers ()
@@ -965,7 +1014,15 @@ is done if necessary.  (USR, 2010-01-14)"
 				   vm-presentation-buffer))
     (and vm-presentation-buffer
 	 (set-buffer vm-presentation-buffer))
-    (let* ((exposed (= (point-min) (vm-start-of (car vm-message-pointer)))))
+    (let* ((exposed (if vm-honor-page-delimiters
+			;; The narrowing cannot say: it is a page, and its
+			;; start has nothing to do with the headers.  #513
+			vm-headers-exposed
+		      (= (point-min) (vm-start-of (car vm-message-pointer)))))
+	   ;; Where the reader was.  Toggling the headers changes what is
+	   ;; narrowed, not the text, so this position stays good.
+	   (reading (point)))
+      (setq vm-headers-exposed (not exposed))
       (vm-widen-page)
       (goto-char (point-max))
       (widen)
@@ -980,9 +1037,26 @@ is done if necessary.  (USR, 2010-01-14)"
 	     (= (window-start w) (vm-vheaders-of (car vm-message-pointer)))
 	     (not exposed)
 	     (set-window-start w (vm-start-of (car vm-message-pointer)))))
-      (if vm-honor-page-delimiters
-	  (vm-narrow-to-page))))
-  )
+      (when vm-honor-page-delimiters
+	;; Back to the page that was being read, rather than the first one.
+	;; `vm-narrow-to-page' narrows to the page point is in, and point was
+	;; sent to the top of the message just above -- so pressing `t' on
+	;; page three left you looking at page one, which the reporter of
+	;; issue #513 took for the command having failed.  The headers are
+	;; exposed either way; they may be off screen, which is the price of
+	;; not being moved.
+	(vm-restore-reading-position reading)
+	(vm-narrow-to-page))))
+  (when vm-enable-shrunken-headers
+    (vm-shrunken-headers)))
+
+(defun vm-restore-reading-position (position)
+  "Put point back at POSITION, and the window with it.
+Does nothing if POSITION is outside what is visible now."
+  (when (and position (<= (point-min) position) (<= position (point-max)))
+    (goto-char position)
+    (let ((w (vm-get-visible-buffer-window (current-buffer))))
+      (when w (set-window-point w position)))))
 
 (defun vm-widen-page ()
   (if (or (> (point-min) (vm-text-of (car vm-message-pointer)))
@@ -994,25 +1068,13 @@ is done if necessary.  (USR, 2010-01-14)"
 			  (vm-text-end-of (car vm-message-pointer))))))
 
 (defun vm-narrow-to-page ()
-  (cond ((not (featurep 'xemacs))
-	 (if (not (and vm-page-end-overlay
-		       (overlay-buffer vm-page-end-overlay)))
-	     (let ((g vm-page-continuation-glyph))
-	       (setq vm-page-end-overlay (make-overlay (point) (point)))
-	       (vm-set-extent-property vm-page-end-overlay 'vm-glyph g)
-	       (vm-set-extent-property vm-page-end-overlay 'before-string g)
-	       (overlay-put vm-page-end-overlay 'evaporate nil))))
-	((featurep 'xemacs)
-	 (if (not (and vm-page-end-overlay
-		       (vm-extent-end-position vm-page-end-overlay)))
-	     (let ((g vm-page-continuation-glyph))
-	       (cond ((not (glyphp g))
-		      (setq g (make-glyph g))
-		      (set-glyph-face g 'italic)))
-	       (setq vm-page-end-overlay (vm-make-extent (point) (point)))
-	       (vm-set-extent-property vm-page-end-overlay 'vm-glyph g)
-	       (vm-set-extent-property vm-page-end-overlay 'begin-glyph g)
-	       (vm-set-extent-property vm-page-end-overlay 'detachable nil)))))
+  (unless (and vm-page-end-overlay
+	       (overlay-buffer vm-page-end-overlay))
+    (let ((g vm-page-continuation-glyph))
+      (setq vm-page-end-overlay (make-overlay (point) (point)))
+      (vm-set-extent-property vm-page-end-overlay 'vm-glyph g)
+      (vm-set-extent-property vm-page-end-overlay 'before-string g)
+      (overlay-put vm-page-end-overlay 'evaporate nil)))
   (save-excursion
     (let (min max (e vm-page-end-overlay))
       (if (or (bolp) (not (save-excursion
@@ -1108,6 +1170,7 @@ exposed and marked as read."
       (vm-move-to-xxxx-button (vm-abs count) (>= count 0))
     (if vm-honor-page-delimiters
 	(vm-narrow-to-page))))
+;;;###autoload (autoload 'vm-move-to-next-button "vm-page" nil t)
 (defalias 'vm-move-to-next-button 'vm-next-button)
 
 ;;;###autoload
@@ -1136,6 +1199,7 @@ exposed and marked as read."
       (vm-move-to-xxxx-button (vm-abs count) (< count 0))
     (if vm-honor-page-delimiters
 	(vm-narrow-to-page))))
+;;;###autoload (autoload 'vm-move-to-previous-button "vm-page" nil t)
 (defalias 'vm-move-to-previous-button 'vm-previous-button)
 
 (defun vm-move-to-xxxx-button (count next)
@@ -1160,6 +1224,23 @@ exposed and marked as read."
 	(goto-char (vm-extent-start-position e))
       (goto-char old-point)
       (error "No more buttons"))))
+
+;;;###autoload
+(defun vm-isearch-presentation ()
+  "Switches to the Presentation buffer and starts isearch."
+  (interactive)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (let ((target (or vm-presentation-buffer (current-buffer))))
+    (if (get-buffer-window-list target)
+        (select-window (car (get-buffer-window-list target)))
+      (switch-to-buffer target)))
+  (isearch-forward))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Contributed by Alley Stoughton
+;; gnu.emacs.vm.info, 2011-02-26
 
 (provide 'vm-page)
 ;;; vm-page.el ends here

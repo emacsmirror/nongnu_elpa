@@ -8,9 +8,8 @@ SHELL = /bin/sh
 MKDIR = @MKDIR@
 RMDIR = @RMDIR@
 RM   = @RM@
-LS   = @LS@
-INSTALL = @INSTALL@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = @VM_INSTALL@
+INSTALL_DATA = $(INSTALL) -m 644
 
 prefix = @prefix@
 srcdir = @srcdir@
@@ -53,17 +52,17 @@ uninstall-pkg:
 	    echo "Uninstalling $$i from '$(DESTDIR)$(pixmapdir)'" ;        \
 	    rm -f "$(DESTDIR)$(pixmapdir)/$$i" ;        \
 	done
-	-$(RMDIR) "$(DESTDIR)$(pixmapdir)/mime" 2> /dev/null
+	@$(RMDIR) "$(DESTDIR)$(pixmapdir)/mime" 2> /dev/null || true
 	@for i in gtk/*.xpm ; do                                   \
 	    echo "Uninstalling $$i from '$(DESTDIR)$(pixmapdir)'" ;        \
 	    rm -f "$(DESTDIR)$(pixmapdir)/$$i" ;         \
 	done
-	-$(RMDIR) "$(DESTDIR)$(pixmapdir)/gtk" 2> /dev/null
+	@$(RMDIR) "$(DESTDIR)$(pixmapdir)/gtk" 2> /dev/null || true
 	@for i in *.xpm ; do                                    \
 	    echo "Uninstalling $$i from '$(DESTDIR)$(pixmapdir)'" ;        \
 	    rm -f "$(DESTDIR)$(pixmapdir)/$$i" ;             \
 	done
-	-$(RMDIR) "$(DESTDIR)$(pixmapdir)/" 2> /dev/null
+	@$(RMDIR) "$(DESTDIR)$(pixmapdir)/" 2> /dev/null || true
 	@echo VM pixmaps successfully uninstalled
 
 

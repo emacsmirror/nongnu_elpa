@@ -9,7 +9,7 @@ configure.lineno
 *.dvi
 *.fn*
 *.ilg
-*.in*
+*.ind*
 *.ky*
 *.pdf
 *.pg*
@@ -35,6 +35,12 @@ _pkg.el
 commit.msg
 
 /info/version.texinfo
+/test/opt/
+# vm-reference.texinfo is generated but committed: vm.texinfo @includes it,
+# and makeinfo writes no manual at all when it is missing, so a build without
+# `make' -- an ELPA tarball, a plain checkout -- would have no manual.  #589.
+/info/vm-reference.texinfo.tmp
+/info/vm-docstrings.texinfo.tmp
 /info/vm
 
 /lisp/vm-autoloads.el
@@ -42,6 +48,20 @@ commit.msg
 /lisp/vm-cus-load.el
 
 .emacs.bak/
-/.claude/
-
+# Claude Code's own directory: settings.local.json is personal, and
+# CLAUDE.md is guidance for the project and is tracked.  The contents
+# rather than the directory, since git cannot re-include a file whose
+# parent directory is excluded.
+/.claude/*
+!/.claude/CLAUDE.md
 /test/coverage-results.txt
+/test/forms-coverage-results.txt
+/test/line-coverage-results.txt
+/test/line-coverage.info
+/test/vm-live-config.el
+/notes
+
+# What the tests make VM write: the IMAP cache of a folder the live tests
+# visit.  In the tree so that make clean can remove it; it used to land in
+# $HOME, that being VM's last fallback for the cache directory.
+test/scratch/

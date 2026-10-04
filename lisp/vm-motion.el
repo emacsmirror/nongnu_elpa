@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989-1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -28,7 +28,12 @@
 (require 'vm-window)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-so-sortable-subject "vm-sort" (message))
+(declare-function vm-set-summary-pointer "vm-summary" (m))
 
 (cl-defun vm-record-and-change-message-pointer (old new &key present)
   "Change the `vm-message-pointer' of the folder from OLD to NEW, both
@@ -57,7 +62,6 @@ given."
    (list
     (cond (current-prefix-arg (prefix-numeric-value current-prefix-arg))
 	  ((vm-follow-summary-cursor) nil)
-	  ((vm-follow-folders-summary-cursor) nil)
 	  (t
 	   (let ((last-command last-command)
 		 (this-command this-command))
@@ -73,8 +77,6 @@ given."
 	  (vm-present-current-message)
 	(vm-record-and-change-message-pointer vm-message-pointer cons
 					      :present t)
-	;;(vm-warn 0 0 "start of message you want is: %s"
-	;; (vm-su-start-of (car vm-message-pointer)))
 	(if (and (vm-summary-operation-p)
 		 vm-summary-show-threads
 		 (get-text-property 
@@ -94,6 +96,7 @@ given."
       (vm-record-and-change-message-pointer 
        vm-message-pointer vm-last-message-pointer
        :present t)))
+;;;###autoload (autoload 'vm-goto-last-message-seen "vm-motion" nil t)
 (defalias 'vm-goto-last-message-seen 'vm-goto-message-last-seen)
 
 ;;;###autoload
@@ -206,7 +209,7 @@ this command \"sees\" marked messages as it moves."
   ;; Note that interactively all args are 1, so error signaling
   ;; and retries apply to all interactive moves.
   (interactive "p\np\np")  
-  ;;(vm-inform 8 "running vm next message")
+  (vm-inform 10 "running vm next message")
   (if (vm-interactive-p)
       (vm-follow-summary-cursor))
   (vm-select-folder-buffer-and-validate 
@@ -545,18 +548,6 @@ If a new message is selected then return t, otherwise nil. USR, 2010-03-08"
 		     (get-text-property (- (point) 3) 'vm-message)))))
 		t)
 	       ;; make the position at eob belong to the last message
-	       ;; ((eobp)
-	       ;; 	(while (get-text-property (point) 'invisible)
-	       ;; 	  (goto-char (1- (point)))
-	       ;; 	  setq mp 
-	       ;; 	  ;;(setq mp (vm-last message-pointer))
-	       ;; 	(save-excursion
-	       ;; 	  (set-buffer vm-mail-buffer)
-	       ;; 	  (vm-record-and-change-message-pointer 
-	       ;;		vm-message-pointer mp :present t)
-	       ;; 	  ;; return non-nil so the caller will know that
-	       ;; 	  ;; a new message was selected.
-	       ;; 	  t ))
 	       (t
 		(if (< point (vm-su-start-of (car message-pointer)))
 		    (setq mp message-list)
@@ -572,6 +563,16 @@ If a new message is selected then return t, otherwise nil. USR, 2010-03-08"
 		      ;; loading. USR, 2010-09-30
 		      (vm-record-and-change-message-pointer
 		       vm-message-pointer mp :present nil)
+		      ;; Move the summary arrow now rather than leaving it to
+		      ;; whenever the command gets around to updating the
+		      ;; summary.  A command that asks a question first --
+		      ;; vm-save-message asking which folder -- would otherwise
+		      ;; put that question while the arrow still points at the
+		      ;; message the user had before they clicked, so the answer
+		      ;; applies to a message the display disagrees about.  That
+		      ;; is issue #528.  This only moves the arrow; the message
+		      ;; is still not presented.
+		      (vm-set-summary-pointer (car mp))
 		      ;; return non-nil so the caller will know that
 		      ;; a new message was selected.
 		      t )))))))

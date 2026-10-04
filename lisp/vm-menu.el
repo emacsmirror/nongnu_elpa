@@ -5,7 +5,7 @@
 ;; Copyright (C) 1994 Heiko Muenkel
 ;; Copyright (C) 1995, 1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;;
 ;; This program is free software; you can redistribute it and/or modify
@@ -55,21 +55,11 @@
 
 (require 'vm-misc)
 (require 'vm-mime)
+(require 'vm-macro)
 
-(declare-function event-window "vm-xemacs" (event))
-(declare-function event-point "vm-xemacs" (event))
-(declare-function popup-mode-menu "vm-xemacs" (&optional event))
-(declare-function event-closest-point "vm-xemacs" (event))
-(declare-function find-menu-item "vm-xemacs" 
-		  (menubar item-path-list &optional parent))
-(declare-function add-menu-button "vm-xemacs" 
-		  (menu-path menu-leaf &optional before in-menu))
-(declare-function add-menu-item "vm-xemacs" 
-		  (menu-path item-name function enabled-p &optional before))
-(declare-function add-menu "vm-xemacs" 
-		  (menu-path menu-name menu-items &optional before))
-(declare-function set-menubar-dirty-flag "vm-xemacs" ())
-(declare-function set-buffer-menubar "vm-xemacs" (menubar))
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 
 (declare-function vm-pop-find-name-for-spec "vm-pop" (spec))
@@ -97,9 +87,7 @@
 
 (defconst vm-menu-folder-menu
   `("Folder"
-    ,(if (not (featurep 'xemacs))
-	["Manipulate Folders" ignore (ignore)]
-      vm-menu-folders-menu)
+    ["Manipulate Folders" ignore (ignore)]
     "---"
     ["Display Summary" vm-summarize t]
     ["Toggle Threading" vm-toggle-threads-display t]
@@ -124,6 +112,8 @@
      (vm-menu-can-recover-p)]
     ["Save" vm-save-folder (vm-menu-can-save-p)]
     ["Save As..." vm-write-file t]
+    ["Back Up Folder (copy of the file on disk)" vm-backup-folder
+     (vm-menu-can-backup-p)]
     ["Quit" vm-quit-no-change t]
     ["Save & Quit" vm-quit t]
     "---"
@@ -321,10 +311,6 @@
     ["Quit Without Saving" vm-quit-no-change t]
     ))
 
-(defconst vm-menu-xemacs-undo-button
-  ["[Undo]" vm-undo (vm-menu-can-undo-p)]
-  )
-
 (defconst vm-menu-undo-menu
   '("Undo"
     ["Undo" vm-undo (vm-menu-can-undo-p)]
@@ -452,17 +438,6 @@ do not allow menubar buttons.")
     ;; FSF Emacs does not allow a non-string menu element name.
     ;; This is not working on XEmacs either.  USR, 2011-03-05
     ;; ,@(if (vm-menu-can-eval-item-name)
-    ;; 	    (list [(format "Convert to %s and Display"
-    ;; 			   (or (nth 1 (vm-mime-can-convert
-    ;; 				       (car
-    ;; 					(vm-mm-layout-type
-    ;; 					 (vm-mime-get-button-layout)))))
-    ;; 			       "different type"))
-    ;; 		   (vm-mime-run-display-function-at-point
-    ;; 		    'vm-mime-convert-body-then-display)
-    ;; 		   (vm-mime-can-convert
-    ;; 		    (car (vm-mm-layout-type
-    ;; 			  (vm-mime-get-button-layout))))]))
     "---"
     ["Undo"
      vm-undo]
@@ -489,56 +464,20 @@ do not allow menubar buttons.")
     ["Delete" vm-delete-mime-object t]))
 
 (defconst vm-menu-url-browser-menu
-  (let ((w3 (cond ((fboundp 'w3-fetch-other-frame)
-		   'w3-fetch-other-frame)
-		  ((fboundp 'w3-fetch)
-		   'w3-fetch)
-		  (t 'w3-fetch-other-frame))))
-    `("Send URL to ..."
-      ["Window system (Copy)"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-window-system)
-       t]
-      ["X Clipboard"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-clipboard)
-       t]
-      ["browse-url"
-       (vm-mouse-send-url-at-position (point) 'browse-url) 
-       browse-url-browser-function]
-      ["Emacs W3" (vm-mouse-send-url-at-position (point) (quote ,w3))
-       (fboundp (quote ,w3))]
-      ["Emacs W3M" (vm-mouse-send-url-at-position (point) 'w3m-browse-url)
-       (fboundp 'w3m-browse-url)]
-      "---"
-      ["Firefox"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-firefox)
-       vm-firefox-program]
-      ["Konqueror"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-konqueror)
-       vm-konqueror-client-program]
-      ;; ["Mosaic"
-      ;;  (vm-mouse-send-url-at-position 
-      ;;  (point) 'vm-mouse-send-url-to-mosaic)
-      ;;  vm-mosaic-program]
-      ;; ["mMosaic"
-      ;;  (vm-mouse-send-url-at-position 
-      ;; 	(point) 'vm-mouse-send-url-to-mmosaic)
-      ;;  vm-mmosaic-program]
-      ["Mozilla"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-mozilla)
-       vm-mozilla-program]
-;;       ["Netscape"
-;;        (vm-mouse-send-url-at-position 
-;; 	(point) 'vm-mouse-send-url-to-netscape)
-;;        vm-netscape-program]
-      ["Opera"
-       (vm-mouse-send-url-at-position 
-	(point) 'vm-mouse-send-url-to-opera)
-       vm-opera-program])))
+  '("Send URL to ..."
+    ["Window system (Copy)"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-window-system)
+     t]
+    ["X Clipboard"
+     (vm-mouse-send-url-at-position
+      (point) 'vm-mouse-send-url-to-clipboard)
+     t]
+    ["browse-url"
+     (vm-mouse-send-url-at-position (point) 'browse-url)
+     browse-url-browser-function]
+    ["Emacs W3M" (vm-mouse-send-url-at-position (point) 'w3m-browse-url)
+     (fboundp 'w3m-browse-url)]))
 
 (defconst vm-menu-mailto-url-browser-menu
   `("Send Mail using ..."
@@ -629,40 +568,43 @@ do not allow menubar buttons.")
       :active vm-send-using-mime
       :style radio
       :selected (not (vm-mime-attachment-forward-local-refs-at-point))])
-    ["Delete"
-     (vm-mime-delete-attachment-button)
+    ["Rename..."
+     (vm-mime-rename-attachment)
+     :active vm-send-using-mime
      :style button]
-    ["Delete, but keep infos"
-     (vm-mime-delete-attachment-button-keep-infos)
-     :style button]
+    ;; "Delete" and "Delete, but keep infos" used to be here.  Their
+    ;; commands were never implemented for GNU Emacs -- the non-XEmacs
+    ;; arm of each was an empty placeholder -- so the entries silently
+    ;; did nothing, which is worse than not offering them.  See #552;
+    ;; C-k on the tag deletes an attachment in the meantime.
     ))
 
 (defconst vm-menu-image-menu
   `("Redisplay Image"
     ["4x Larger"
      (vm-mime-run-display-function-at-point 'vm-mime-larger-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["4x Smaller"
      (vm-mime-run-display-function-at-point 'vm-mime-smaller-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Rotate Left"
      (vm-mime-run-display-function-at-point 'vm-mime-rotate-image-left)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Rotate Right"
      (vm-mime-run-display-function-at-point 'vm-mime-rotate-image-right)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Mirror"
      (vm-mime-run-display-function-at-point 'vm-mime-mirror-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Brighter"
      (vm-mime-run-display-function-at-point 'vm-mime-brighten-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Dimmer"
      (vm-mime-run-display-function-at-point 'vm-mime-dim-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Monochrome"
      (vm-mime-run-display-function-at-point 'vm-mime-monochrome-image)
-     (stringp vm-imagemagick-convert-program)]
+     (vm-imagemagick-available-p)]
     ["Revert to Original"
      (vm-mime-run-display-function-at-point 'vm-mime-revert-image)
      (get
@@ -706,6 +648,15 @@ set to the command name so that window configuration will be done."
 	(and (buffer-modified-p) buffer-file-name))
     (error nil)))
 
+(defun vm-menu-can-backup-p ()
+  (condition-case nil
+      (save-excursion
+	(vm-select-folder-buffer)
+	(and (not (eq major-mode 'vm-virtual-mode))
+	     buffer-file-name
+	     (file-exists-p buffer-file-name)))
+    (error nil)))
+
 (defun vm-menu-can-recover-p ()
   (condition-case nil
       (save-excursion
@@ -747,7 +698,6 @@ set to the command name so that window configuration will be done."
 	(and vm-display-using-mime
 	     vm-message-pointer
 	     vm-presentation-buffer
-;;	     (not vm-mime-decoded)
 	     (not (vm-mime-plain-message-p (car vm-message-pointer)))))
     (error nil)))
 
@@ -773,6 +723,10 @@ set to the command name so that window configuration will be done."
     (error nil)))
 
 (defun vm-menu-yank-original ()
+  "Yank every message being replied to into this composition.
+The menu\'s way to `vm-yank-message\'.  Where that command yanks one message,
+this yanks all of `vm-reply-list\' one after another, which is what a reply
+to several messages at once is replying to."
   (interactive)
   (save-excursion
     (let ((mlist vm-reply-list))
@@ -780,6 +734,7 @@ set to the command name so that window configuration will be done."
 	(vm-yank-message (car mlist))
 	(goto-char (point-max))
 	(setq mlist (cdr mlist))))))
+(put 'vm-menu-yank-original 'vm-called-by-vm t)
 
 (defun vm-menu-can-send-mail-p ()
   (save-match-data
@@ -794,32 +749,38 @@ set to the command name so that window configuration will be done."
 	nil ))))
 
 (defun vm-menu-create-subject-virtual-folder ()
+  "Visit a virtual folder of every message with this one\'s subject.
+The menu\'s way to `vm-create-virtual-folder\', with the selector and the
+subject filled in from the current message rather than prompted for."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-create-virtual-folder)
   (vm-create-virtual-folder 'sortable-subject (regexp-quote
 	 			       (vm-so-sortable-subject
 	 				(car vm-message-pointer)))))
+(put 'vm-menu-create-subject-virtual-folder 'vm-called-by-vm t)
 
 (defun vm-menu-create-author-virtual-folder ()
+  "Visit a virtual folder of every message by this one\'s author.
+The menu\'s way to `vm-create-virtual-folder\', with the selector and the
+author filled in from the current message rather than prompted for."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-create-virtual-folder)
   (vm-create-virtual-folder 'author (regexp-quote
 				     (vm-su-from (car vm-message-pointer)))))
+(put 'vm-menu-create-author-virtual-folder 'vm-called-by-vm t)
 
 (defun vm-menu-mail-to ()
+  "Compose a message to the author of this one.
+The menu\'s way to `vm-mail\', with the From: header of the current message
+as the recipient.  Not a reply: no subject, no references, no citation."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-mail)
   (vm-mail (vm-get-header-contents (car vm-message-pointer) "From:")))
+(put 'vm-menu-mail-to 'vm-called-by-vm t)
 
-
-(defun vm-menu--global-menubar ()
-  (if (featurep 'xemacs)
-      (with-current-buffer (get-buffer-create "*scratch*")
-        current-menubar)
-    (lookup-key (current-global-map) [menu-bar])))
 
 (defun vm-menu-initialize-vm-mode-menu-map ()
   (if (null vm-mode-menu-map)
@@ -849,8 +810,6 @@ set to the command name so that window configuration will be done."
 			     vm-menu-send-menu)
 	(easy-menu-define vm-menu-fsfemacs-motion-menu (list dummy) nil
 			     vm-menu-motion-menu)
-;;	(easy-menu-define vm-menu-fsfemacs-folders-menu (list dummy) nil
-;;			     vm-menu-folders-menu)
 	(easy-menu-define vm-menu-fsfemacs-folder-menu (list dummy) nil
 			     vm-menu-folder-menu)
 	(easy-menu-define vm-menu-fsfemacs-vm-menu (list dummy) nil
@@ -950,53 +909,18 @@ set to the command name so that window configuration will be done."
 	(setq vm-mode-menu-map map)
 	(run-hooks 'vm-menu-setup-hook))))
 
-(defun vm-menu-make-xemacs-menubar ()
-  (let ((menu-alist
-	 '((dispose . vm-menu-dispose-menu)
-	   (folder . vm-menu-folder-menu)
-	   (help . vm-menu-help-menu)
-	   (label . vm-menu-label-menu)
-	   (mark . vm-menu-mark-menu)
-	   (motion . vm-menu-motion-menu)
-	   (send . vm-menu-send-menu)
-	   (sort . vm-menu-sort-menu)
-	   (virtual . vm-menu-virtual-menu)
-	   (emacs . vm-menu-emacs-button)
-	   (undo . vm-menu-xemacs-undo-button)))
-	cons
-	(menubar nil)
-	(menu-list vm-use-menus))
-    (while menu-list
-      (if (null (car menu-list))
-	  (setq menubar (cons nil menubar))
-	(setq cons (assq (car menu-list) menu-alist))
-	(if cons
-	    (setq menubar (cons (symbol-value (cdr cons)) menubar))))
-      (setq menu-list (cdr menu-list)))
-    (nreverse menubar) ))
-
 (defun vm-menu-popup-mode-menu (event)
   (interactive "e")
-  (cond ((and (featurep 'xemacs) vm-use-menus)
-	 (set-buffer (window-buffer (event-window event)))
-	 (and (event-point event) (goto-char (event-point event)))
-	 (popup-mode-menu))
-	((and (not (featurep 'xemacs)) vm-use-menus)
-	 (set-buffer (window-buffer (posn-window (event-start event))))
-	 (goto-char (posn-point (event-start event)))
-	 (vm-menu-popup-fsfemacs-menu event))))
+  (when vm-use-menus
+    (set-buffer (window-buffer (posn-window (event-start event))))
+    (goto-char (posn-point (event-start event)))
+    (vm-menu-popup-fsfemacs-menu event)))
+(put 'vm-menu-popup-mode-menu 'vm-called-by-vm t)
 
 (defvar vm-menu-fsfemacs-attachment-menu)
 (defun vm-menu-popup-context-menu (event)
   (interactive "e")
-  ;; We should not need to do anything here for XEmacs.  The
-  ;; default binding of mouse-3 is popup-mode-menu which does
-  ;; what we want for the normal case.  For special context,s
-  ;; like when the mouse is over an URL, XEmacs has local keymap
-  ;; support for extents.  Any context sensitive area should be
-  ;; contained in an extent with a keymap that has mouse-3 bound
-  ;; to a function that will pop up a context sensitive menu.
-  (cond ((and (not (featurep 'xemacs)) vm-use-menus)
+  (cond (vm-use-menus
 	 (set-buffer (window-buffer (posn-window (event-start event))))
 	 (goto-char (posn-point (event-start event)))
 	 (if (get-text-property (point) 'vm-mime-object)
@@ -1019,6 +943,7 @@ set to the command name so that window configuration will be done."
 		      (vm-menu-popup-mime-dispose-menu event)))
 	       (setq o-list (cdr o-list)))
 	     (and (not found) (vm-menu-popup-fsfemacs-menu event)))))))
+(put 'vm-menu-popup-context-menu 'vm-called-by-vm t)
 
 ;; to quiet the byte-compiler
 (defvar vm-menu-fsfemacs-url-browser-menu)
@@ -1026,63 +951,44 @@ set to the command name so that window configuration will be done."
 (defvar vm-menu-fsfemacs-mime-dispose-menu)
 
 (defun vm-menu-goto-event (event)
-  (cond ((featurep 'xemacs)
-	 ;; Must select window instead of just set-buffer because
-	 ;; popup-menu returns before the user has made a
-	 ;; selection.  This will cause the command loop to
-	 ;; resume which might undo what set-buffer does.
-	 (select-window (event-window event))
-	 (and (event-closest-point event)
-	      (goto-char (event-closest-point event))))
-	((not (featurep 'xemacs))
-	 (set-buffer (window-buffer (posn-window (event-start event))))
-	 (goto-char (posn-point (event-start event))))))
+  (set-buffer (window-buffer (posn-window (event-start event))))
+  (goto-char (posn-point (event-start event))))
 
 (defun vm-menu-popup-url-browser-menu (event)
   (interactive "e")
   (vm-menu-goto-event event)
-  (cond ((and (featurep 'xemacs) vm-use-menus)
-	 (popup-menu vm-menu-url-browser-menu))
-	((and (not (featurep 'xemacs)) vm-use-menus)
-	 (vm-menu-popup-fsfemacs-menu
-	  event vm-menu-fsfemacs-url-browser-menu))))
+  (when vm-use-menus
+    (vm-menu-popup-fsfemacs-menu event vm-menu-fsfemacs-url-browser-menu)))
+(put 'vm-menu-popup-url-browser-menu 'vm-called-by-vm t)
 
 (defun vm-menu-popup-mailto-url-browser-menu (event)
   (interactive "e")
   (vm-menu-goto-event event)
-  (cond ((and (featurep 'xemacs) vm-use-menus)
-	 (popup-menu vm-menu-mailto-url-browser-menu))
-	((and (not (featurep 'xemacs)) vm-use-menus)
-	 (vm-menu-popup-fsfemacs-menu
-	  event vm-menu-fsfemacs-mailto-url-browser-menu))))
+  (when vm-use-menus
+    (vm-menu-popup-fsfemacs-menu event vm-menu-fsfemacs-mailto-url-browser-menu)))
+(put 'vm-menu-popup-mailto-url-browser-menu 'vm-called-by-vm t)
 
 (defun vm-menu-popup-mime-dispose-menu (event)
   (interactive "e")
   (vm-menu-goto-event event)
-  (cond ((and (featurep 'xemacs) vm-use-menus)
-	 (popup-menu vm-menu-mime-dispose-menu))
-	((and (not (featurep 'xemacs)) vm-use-menus)
-	 (vm-menu-popup-fsfemacs-menu
-	  event vm-menu-fsfemacs-mime-dispose-menu))))
+  (when vm-use-menus
+    (vm-menu-popup-fsfemacs-menu event vm-menu-fsfemacs-mime-dispose-menu)))
+(put 'vm-menu-popup-mime-dispose-menu 'vm-called-by-vm t)
 
 (defun vm-menu-popup-attachment-menu (event)
   (interactive "e")
   (vm-menu-goto-event event)
-  (cond ((and (featurep 'xemacs) vm-use-menus)
-	 (popup-menu vm-menu-attachment-menu))
-	((and (not (featurep 'xemacs)) vm-use-menus)
-	 (vm-menu-popup-fsfemacs-menu
-	  event vm-menu-fsfemacs-attachment-menu))))
+  (when vm-use-menus
+    (vm-menu-popup-fsfemacs-menu event vm-menu-fsfemacs-attachment-menu)))
+(put 'vm-menu-popup-attachment-menu 'vm-called-by-vm t)
 
 (defvar vm-menu-fsfemacs-image-menu)
 (defun vm-menu-popup-image-menu (event)
   (interactive "e")
   (vm-menu-goto-event event)
-  (cond ((and (featurep 'xemacs) vm-use-menus)
-	 (popup-menu vm-menu-image-menu))
-	((and (not (featurep 'xemacs)) vm-use-menus)
-	 (vm-menu-popup-fsfemacs-menu
-	  event vm-menu-fsfemacs-image-menu))))
+  (when vm-use-menus
+    (vm-menu-popup-fsfemacs-menu event vm-menu-fsfemacs-image-menu)))
+(put 'vm-menu-popup-image-menu 'vm-called-by-vm t)
 
 ;; to quiet the byte-compiler
 (defvar vm-menu-fsfemacs-mail-menu)
@@ -1105,33 +1011,23 @@ set to the command name so that window configuration will be done."
 	   (call-interactively this-command))
 	  (t
 	   (call-interactively command)))))
+(put 'vm-menu-popup-fsfemacs-menu 'vm-called-by-vm t)
 
 (defun vm-menu-mode-menu ()
-  (if (featurep 'xemacs)
-      (cond ((eq major-mode 'mail-mode)
-	     vm-menu-mail-menu)
-	    ((memq major-mode '(vm-mode vm-presentation-mode
-				vm-summary-mode vm-virtual-mode))
-	     vm-menu-dispose-menu)
-	    (t vm-menu-vm-menu))
-    (cond ((eq major-mode 'mail-mode)
-	   vm-menu-fsfemacs-mail-menu)
-	  ((memq major-mode '(vm-mode vm-summary-mode vm-virtual-mode))
-	   vm-menu-fsfemacs-dispose-popup-menu)
-	  (t vm-menu-fsfemacs-vm-menu))))
+  (cond ((eq major-mode 'mail-mode)
+	 vm-menu-fsfemacs-mail-menu)
+	((memq major-mode '(vm-mode vm-summary-mode vm-virtual-mode))
+	 vm-menu-fsfemacs-dispose-popup-menu)
+	(t vm-menu-fsfemacs-vm-menu)))
 
 (defun vm-menu-set-menubar-dirty-flag ()
-  (cond ((featurep 'xemacs)
-	 (set-menubar-dirty-flag))
-	((not (featurep 'xemacs))
-	 ;; force-mode-line-update seems to have been buggy in Emacs
-	 ;; 21, 22, and 23.  So we do it ourselves.  USR, 2011-02-26
-	 ;; (force-mode-line-update t)
-	 (set-buffer-modified-p (buffer-modified-p))
-	 (when (and vm-user-interaction-buffer
-		    (buffer-live-p vm-user-interaction-buffer))
-	   (with-current-buffer vm-user-interaction-buffer
-	     (set-buffer-modified-p (buffer-modified-p)))))))
+  ;; force-mode-line-update seems to have been buggy in Emacs
+  ;; 21, 22, and 23.  So we do it ourselves.  USR, 2011-02-26
+  (set-buffer-modified-p (buffer-modified-p))
+  (when (and vm-user-interaction-buffer
+	     (buffer-live-p vm-user-interaction-buffer))
+    (with-current-buffer vm-user-interaction-buffer
+      (set-buffer-modified-p (buffer-modified-p)))))
 
 (defun vm-menu-fsfemacs-add-vm-menu ()
   "Add a menu or a menubar button to the Emacs menubar for switching
@@ -1151,97 +1047,49 @@ menu bar.                                             USR, 2011-02-27"
   (if buffer
       (set-buffer buffer)
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p)))
-  (cond ((featurep 'xemacs)
-	 (if (null (car (find-menu-item current-menubar '("[Emacs Menubar]"))))
-	     (set-buffer-menubar vm-menu-vm-menubar)
-	   ;; copy the current menubar in case it has been changed.
-	   (make-local-variable 'vm-menu-vm-menubar)
-	   (setq vm-menu-vm-menubar (copy-sequence current-menubar))
-	   (set-buffer-menubar (copy-sequence (vm-menu--global-menubar)))
-	   (condition-case nil
-	       (add-menu-button nil vm-menu-vm-button nil)
-	     (void-function
-	      (add-menu-item nil "Menubar" 'vm-menu-toggle-menubar t))))
-	 (vm-menu-set-menubar-dirty-flag)
-	 (vm-check-for-killed-summary)
-	 (and vm-summary-buffer
-	      (save-excursion
-		(vm-menu-toggle-menubar vm-summary-buffer)))
-	 (vm-check-for-killed-presentation)
-	 (and vm-presentation-buffer-handle
-	      (save-excursion
-		(vm-menu-toggle-menubar vm-presentation-buffer-handle))))
-	((not (featurep 'xemacs))
-	 (if (not (eq (lookup-key vm-mode-map [menu-bar])
-		      (lookup-key vm-mode-menu-map [rootmenu vm])))
-	     (define-key vm-mode-map [menu-bar]
-	       (lookup-key vm-mode-menu-map [rootmenu vm]))
-	   (define-key vm-mode-map [menu-bar]
-	     (make-sparse-keymap "Menu"))
-	   (vm-menu-fsfemacs-add-vm-menu))
-	 (vm-menu-set-menubar-dirty-flag))))
+  (if (not (eq (lookup-key vm-mode-map [menu-bar])
+	       (lookup-key vm-mode-menu-map [rootmenu vm])))
+      (define-key vm-mode-map [menu-bar]
+	(lookup-key vm-mode-menu-map [rootmenu vm]))
+    (define-key vm-mode-map [menu-bar]
+      (make-sparse-keymap "Menu"))
+    (vm-menu-fsfemacs-add-vm-menu))
+  (vm-menu-set-menubar-dirty-flag))
+(put 'vm-menu-toggle-menubar 'vm-called-by-vm t)
 
 (defun vm-menu-install-menubar ()
   "Install the dedicated menu bar of VM.              USR, 2011-02-27"
-  (cond ((featurep 'xemacs)
-	 (setq vm-menu-vm-menubar (vm-menu-make-xemacs-menubar))
-	 (set-buffer-menubar vm-menu-vm-menubar)
-         (run-hooks 'vm-menu-setup-hook)
-         (setq vm-menu-vm-menubar current-menubar))
-	((and (not (featurep 'xemacs))
-	      ;; menus only need to be installed once for FSF Emacs
-	      (not (fboundp 'vm-menu-undo-menu)))
-	 (vm-menu-initialize-vm-mode-menu-map)
-	 (define-key vm-mode-map [menu-bar]
-	   (lookup-key vm-mode-menu-map [rootmenu vm])))))
+  ;; menus only need to be installed once
+  (unless (fboundp 'vm-menu-undo-menu)
+    (vm-menu-initialize-vm-mode-menu-map)
+    (define-key vm-mode-map [menu-bar]
+      (lookup-key vm-mode-menu-map [rootmenu vm]))))
 
 (defun vm-menu-install-menubar-item ()
   "Install VM's menu on the current - presumably the standard - menu
 bar.						     USR, 2011-02-27"
-  (cond ((and (featurep 'xemacs) (vm-menu--global-menubar))
-	 (set-buffer-menubar (copy-sequence (vm-menu--global-menubar)))
-	 (add-menu nil "VM" (cdr vm-menu-vm-menu)))
-	((and (not (featurep 'xemacs))
-	      ;; menus only need to be installed once for FSF Emacs
-	      (not (fboundp 'vm-menu-undo-menu)))
-	 (vm-menu-initialize-vm-mode-menu-map)
-	 (define-key vm-mode-map [menu-bar]
-	   (lookup-key vm-mode-menu-map [rootmenu])))))
+  ;; menus only need to be installed once
+  (unless (fboundp 'vm-menu-undo-menu)
+    (vm-menu-initialize-vm-mode-menu-map)
+    (define-key vm-mode-map [menu-bar]
+      (lookup-key vm-mode-menu-map [rootmenu]))))
 
 (defun vm-menu-install-vm-mode-menu ()
   "This function strangely does nothing!               USR, 2011-02-27."
   ;; nothing to do here.
   ;; handled in vm-mouse.el
-  (cond ((featurep 'xemacs)
-	 t )
-	((not (featurep 'xemacs))
-	 t )))
+  t)
 
 (defun vm-menu-install-mail-mode-menu ()
-  (cond ((featurep 'xemacs)
-	 ;; mail-mode doesn't have mode-popup-menu bound to
-	 ;; mouse-3 by default.  fix that.
-	 (if vm-popup-menu-on-mouse-3
-	     (define-key vm-mail-mode-map 'button3 'popup-mode-menu))
-	 ;; put menu on menubar also.
-	 (if (vm-menu--global-menubar)
-	     (progn
-	       (set-buffer-menubar
-		(copy-sequence (vm-menu--global-menubar)))
-	       (add-menu nil "Mail" (cdr vm-menu-mail-menu))))
-	 t )
-	((not (featurep 'xemacs))
-	 ;; I'd like to do this, but the result is a combination
-	 ;; of the Emacs and VM Mail menus glued together.
-	 ;; Poorly.
-	 ;;(define-key vm-mail-mode-map [menu-bar mail]
-	 ;;  (cons "Mail" vm-menu-fsfemacs-mail-menu))
-	 (defvar mail-mode-map)
-	 (define-key mail-mode-map [menu-bar mail]
-	   (cons "Mail" vm-menu-fsfemacs-mail-menu))
-	 (if vm-popup-menu-on-mouse-3
-	     (define-key vm-mail-mode-map [down-mouse-3]
-	       'vm-menu-popup-context-menu)))))
+  ;; I'd like to do this, but the result is a combination
+  ;; of the Emacs and VM Mail menus glued together.
+  ;; Poorly.
+  (defvar mail-mode-map)
+  (define-key mail-mode-map [menu-bar mail]
+    (cons "Mail" vm-menu-fsfemacs-mail-menu))
+  (if vm-popup-menu-on-mouse-3
+      (define-key vm-mail-mode-map [down-mouse-3]
+	'vm-menu-popup-context-menu)))
 
 (defun vm-menu-install-menus ()
   "Install VM menus, either in the current menu bar or in a
@@ -1278,14 +1126,13 @@ separate dedicated menu bar, depending on the value of
 	(progn
 	  (setcdr tail menu)
 	  (vm-menu-set-menubar-dirty-flag)
-	  (cond ((not (featurep 'xemacs))
-		 (makunbound 'vm-menu-fsfemacs-virtual-menu)
-		 (easy-menu-define vm-menu-fsfemacs-virtual-menu
-				      (list (make-sparse-keymap))
-				      nil
-				      vm-menu-virtual-menu)
-		 (define-key vm-mode-menu-map [rootmenu vm vm-menubar-virtual]
-		   (cons "Virtual" vm-menu-fsfemacs-virtual-menu))))))))
+	  (makunbound 'vm-menu-fsfemacs-virtual-menu)
+	  (easy-menu-define vm-menu-fsfemacs-virtual-menu
+	    (list (make-sparse-keymap))
+	    nil
+	    vm-menu-virtual-menu)
+	  (define-key vm-mode-menu-map [rootmenu vm vm-menubar-virtual]
+	    (cons "Virtual" vm-menu-fsfemacs-virtual-menu))))))
 
 (defun vm-menu-install-visited-folders-menu ()
   (let ((folders (vm-delete-duplicates (copy-sequence vm-folder-history)))
@@ -1341,36 +1188,53 @@ separate dedicated menu bar, depending on the value of
 	(progn
 	  (setcdr tail menu)
 	  (vm-menu-set-menubar-dirty-flag)
-	  (cond ((not (featurep 'xemacs))
-		 (makunbound 'vm-menu-fsfemacs-folder-menu)
-		 (easy-menu-define vm-menu-fsfemacs-folder-menu
-				      (list (make-sparse-keymap))
-				      nil
-				      vm-menu-folder-menu)
-		 (define-key vm-mode-menu-map [rootmenu vm vm-menubar-folder]
-		   (cons "Folder" vm-menu-fsfemacs-folder-menu))))))))
+	  (makunbound 'vm-menu-fsfemacs-folder-menu)
+	  (easy-menu-define vm-menu-fsfemacs-folder-menu
+	    (list (make-sparse-keymap))
+	    nil
+	    vm-menu-folder-menu)
+	  (define-key vm-mode-menu-map [rootmenu vm vm-menubar-folder]
+	    (cons "Folder" vm-menu-fsfemacs-folder-menu))))))
 
+;;;###autoload
 (defun vm-customize ()
   "Customize VM options."
   (interactive)
   (customize-group 'vm))
 
-(defun vm-view-news ()
-  "View NEWS for the current VM version."
-  (interactive)
-  (let* ((vm-dir (file-name-directory (locate-library "vm")))
-	 (doc-dirs (list (and vm-configure-docdir
-			       (expand-file-name vm-configure-docdir))
-			 (concat vm-dir "../")))
-	 doc-dir)
-    (while doc-dirs
-      (setq doc-dir (car doc-dirs))
-      (if (and doc-dir
-               (file-exists-p (expand-file-name "NEWS" doc-dir)))
-          (setq doc-dirs nil)
-	(setq doc-dirs (cdr doc-dirs))))
-    (vm-view-file-other-frame (expand-file-name "NEWS" doc-dir))))
+(defun vm-news-file-number (path)
+  "The number in the name of the NEWS file PATH."
+  (string-to-number
+   (replace-regexp-in-string "\\`NEWS-\\([0-9]+\\)\\.md\\'" "\\1"
+			     (file-name-nondirectory path))))
 
+(defun vm-newest-news-file (dir)
+  "The newest NEWS file in DIR, or nil if it holds none.
+VM's history is kept in numbered files that are never renamed, so the
+newest entries are in the highest-numbered one."
+  (let ((files (and dir (file-directory-p dir)
+		    (directory-files dir t "\\`NEWS-[0-9]+\\.md\\'"))))
+    (car (sort files (lambda (a b)
+		       (> (vm-news-file-number a)
+			  (vm-news-file-number b)))))))
+
+;;;###autoload
+(defun vm-view-news ()
+  "View the newest of VM's NEWS files."
+  (interactive)
+  (let ((dirs (list (and vm-configure-docdir
+			 (expand-file-name vm-configure-docdir))
+		    (concat (file-name-directory (locate-library "vm"))
+			    "../")))
+	(news nil))
+    (while (and dirs (not news))
+      (setq news (vm-newest-news-file (car dirs))
+	    dirs (cdr dirs)))
+    (unless news
+      (error "No NEWS file installed with VM; read it at https://gitlab.com/emacs-vm/vm/"))
+    (vm-view-file-other-frame news)))
+
+;;;###autoload
 (defun vm-view-manual ()
   "View the VM manual."
   (interactive)
@@ -1402,6 +1266,7 @@ separate dedicated menu bar, depending on the value of
     (vm-menu-hm-make-folder-menu)
     (vm-menu-hm-install-menu)
     ))
+(put 'vm-menu-hm-delete-folder 'vm-called-by-vm t)
 	
 
 (defun vm-menu-hm-rename-folder (folder)
@@ -1409,15 +1274,20 @@ separate dedicated menu bar, depending on the value of
   (interactive "fRename folder: ")
   (if (file-exists-p folder)
       (rename-file folder
+		   ;; the folder's directory, so a name typed at the prompt
+		   ;; lands beside the folder rather than under it: the
+		   ;; folder is a file, and `directory-file-name' of a file
+		   ;; is that same file
 		   (read-file-name (concat "Rename "
 					   folder
 					   " to ")
-				   (directory-file-name folder)
+				   (file-name-directory folder)
 				   folder))
     (error "Folder %s does not exist." folder))
   (vm-menu-hm-make-folder-menu)
   (vm-menu-hm-install-menu)
   )
+(put 'vm-menu-hm-rename-folder 'vm-called-by-vm t)
 
 
 (defun vm-menu-hm-create-dir (parent-dir)
@@ -1434,6 +1304,7 @@ separate dedicated menu bar, depending on the value of
   (vm-menu-hm-make-folder-menu)
   (vm-menu-hm-install-menu)
   )
+(put 'vm-menu-hm-create-dir 'vm-called-by-vm t)
 
 
 (defun vm-menu-hm-make-folder-menu ()
@@ -1498,23 +1369,15 @@ separate dedicated menu bar, depending on the value of
 		      ))))
   (vm-inform 5 "Building folders menu... done")
   (vm-menu-hm-install-menu))
+(put 'vm-menu-hm-make-folder-menu 'vm-called-by-vm t)
 
 (defun vm-menu-hm-install-menu ()
-  (cond ((featurep 'xemacs)
-	 (cond ((car (find-menu-item current-menubar '("VM")))
-		(add-menu '("VM") "Folders"
-			  (cdr vm-menu-folders-menu) "Motion"))
-	       ((car (find-menu-item current-menubar
-				     '("Folder" "Manipulate Folders")))
-		(add-menu '("Folder") "Manipulate Folders"
-			  (cdr vm-menu-folders-menu) "Motion"))))
-	((not (featurep 'xemacs))
-	 (easy-menu-define vm-menu-fsfemacs-folders-menu
-			      (list (make-sparse-keymap))
-			      nil
-			      vm-menu-folders-menu)
-	 (define-key vm-mode-menu-map [rootmenu vm folder folders]
-	   (cons "Manipulate Folders" vm-menu-fsfemacs-folders-menu)))))
+  (easy-menu-define vm-menu-fsfemacs-folders-menu
+    (list (make-sparse-keymap))
+    nil
+    vm-menu-folders-menu)
+  (define-key vm-mode-menu-map [rootmenu vm folder folders]
+    (cons "Manipulate Folders" vm-menu-fsfemacs-folders-menu)))
 
 
 ;;; Muenkel tree-menu code
@@ -1590,8 +1453,6 @@ The list looks like: ((dirname1 file1 file2)
     (setq dir (expand-file-name dir))
     (if (not (string= (substring dir -1) "/"))
 	(setq dir (concat dir "/")))
-;;    (while (string-match "/$" dir)
-;;      (setq dir (substring dir 0 -1)))
     (vm-menu-hm-tree-ls-in-temp-buffer dir
 				 (generate-new-buffer-name
 				  vm-menu-hm-tree-temp-buffername))

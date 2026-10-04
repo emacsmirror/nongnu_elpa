@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1993, 1994 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -32,6 +32,10 @@
 (require 'vm-motion)
 (require 'vm-window)
 (eval-when-compile (require 'cl-lib))
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-sort-insert-auto-folder-names "vm-avirtual" ())
 
@@ -75,6 +79,7 @@ the folder undisturbed."
       (setq ovmp-prev (vm-reverse-link-of (car ovmp)))
       ;; lock out interrupts to preserve message list integrity.
       (let ((inhibit-quit t))
+	(vm-increment vm-message-list-generation)
 	(if ovmp-prev
 	    (progn
 	      (setcdr ovmp-prev (cdr ovmp))
@@ -310,16 +315,20 @@ messages compare equal by the first key, the second key will be
 compared and so on.  When called interactively the keys will be
 read from the minibuffer.  Valid keys are
 
-\"date\"		\"reversed-date\"
-\"activity\" 		\"reversed-activity\"
-\"author\"		\"reversed-author\"
-\"full-name\"		\"reversed-full-name\"
-\"subject\"		\"reversed-subject\"
-\"recipients\"		\"reversed-recipients\"
-\"line-count\"		\"reversed-line-count\"
-\"byte-count\"		\"reversed-byte-count\"
-\"physical-order\"	\"reversed-physical-order\"
-\"spam-score\"		\"reversed-spam-score\"
+\"date\"		the date the message was sent
+\"activity\"	the date of the newest message in its thread
+\"author\"		the address in the From header
+\"full-name\"	the name in the From header
+\"subject\"		the subject, normalized
+\"recipients\"	the To and Cc headers together
+\"addressees\"	the To header alone
+\"line-count\"	the number of lines
+\"byte-count\"	the number of bytes
+\"physical-order\"	the order the messages are stored in
+\"spam-score\"	the spam score of the headers
+
+Each has a \"reversed-\" form that sorts the other way, as in
+\"reversed-date\".
 
 Optional second arg (prefix arg interactively) means the sort
 should change the physical order of the messages in the folder.
@@ -388,14 +397,6 @@ folder in the order in which the messages arrived."
 	     (setq vm-summary-show-threads t)
 	     (setq key-funcs (cons 'vm-sort-compare-activity-r 
 				   key-funcs)))
-	    ;; ((equal key "thread-oldest-date")
-	    ;;  (setq vm-summary-show-threads t)
-	    ;;  (setq key-funcs (cons 'vm-sort-compare-thread-oldest-date
-	    ;; 			   key-funcs)))
-	    ;; ((equal key "reversed-thread-oldest-date")
-	    ;;  (setq vm-summary-show-threads t)
-	    ;;  (setq key-funcs (cons 'vm-sort-compare-thread-oldest-date-r 
-	    ;; 			   key-funcs)))
 	    ((equal key "subject")
 	     (setq key-funcs (cons 'vm-sort-compare-subject key-funcs)))
 	    ((equal key "reversed-subject")
@@ -404,6 +405,10 @@ folder in the order in which the messages arrived."
 	     (setq key-funcs (cons 'vm-sort-compare-recipients key-funcs)))
 	    ((equal key "reversed-recipients")
 	     (setq key-funcs (cons 'vm-sort-compare-recipients-r key-funcs)))
+	    ((equal key "addressees")
+	     (setq key-funcs (cons 'vm-sort-compare-addressees key-funcs)))
+	    ((equal key "reversed-addressees")
+	     (setq key-funcs (cons 'vm-sort-compare-addressees-r key-funcs)))
 	    ((equal key "byte-count")
 	     (setq key-funcs (cons 'vm-sort-compare-byte-count key-funcs)))
 	    ((equal key "reversed-byte-count")
@@ -522,11 +527,11 @@ folder in the order in which the messages arrived."
 	    (progn
 	      (setq vm-message-order-changed t)
 	      ;; only viewing order changed here
-	      ;; (vm-mark-folder-modified-p (current-buffer))
 	      (vm-clear-modification-flag-undos))))
       (setq vm-ml-sort-keys ml-keys)
       (intern (buffer-name) vm-buffers-needing-display-update)
       (cond (order-did-change
+	     (vm-increment vm-message-list-generation)
 	     (setq vm-message-list new-message-list)
 	     (vm-reverse-link-messages)
 	     (if vm-message-pointer
@@ -557,7 +562,7 @@ boolean value (`t' or `nil').
 `vm-key-functions' is a list of \"key-functions\" that compare
 the two messages to see if one should precede the other.  They
 return `t' if MSG1 should precede MSG2, `nil' if MSG2 should
-precede MSG1, and '=' if neither is the case.  In the last case, the
+precede MSG1, and `=' if neither is the case.  In the last case, the
 two messages are regarded as equivalent as per the particular
 key-function and the remaining key-functions are tried to resolve the
 tie.   (This amounts to a lexicographic combination of the sort-orders
@@ -614,20 +619,9 @@ that, if P1 and P2 are the oldest different ancestors of M1 and M2, then
 	(root2 (vm-thread-root-sym m2))
 	(list1 (vm-thread-list m1))
 	(list2 (vm-thread-list m2))
-	;; (criterion (if vm-sort-threads-by-youngest-date 
-	;; 	       'youngest-date
-	;; 	     'oldest-date))
 	p1 p2) ;; d1 d2
     (catch 'done
       (cond 
-	    ;; ((not (eq (car list1) (car list2)))
-	    ;;  ;; different reference threads
-	    ;;  (let ((date1 (vm-th-thread-date-of (car list1) criterion))
-	    ;; 	   (date2 (vm-th-thread-date-of (car list2) criterion)))
-	    ;;    (cond ((string-lessp date1 date2) t)
-	    ;; 	     ((string-equal date1 date2)
-	    ;; 	      (string-lessp (format "%s" root1) (format "%s" root2)))
-	    ;; 	     (t nil))))
 	    ((eq (car list1) (car list2))
 	     ;; within the same reference thread
 	     (setq list1 (cdr list1) list2 (cdr list2))
@@ -726,19 +720,7 @@ that, if P1 and P2 are the oldest different ancestors of M1 and M2, then
 	  ((string-equal d1 d2) '=)
 	  (t t))))
 
-;; (defun vm-sort-compare-thread-oldest-date (m1 m2)
-;;   (let ((d1 (vm-th-oldest-date-of (vm-thread-symbol m1)))
-;; 	(d2 (vm-th-oldest-date-of (vm-thread-symbol m2))))
-;;     (cond ((string-lessp d1 d2) t)
-;; 	  ((string-equal d1 d2) '=)
-;; 	  (t nil))))
 
-;; (defun vm-sort-compare-thread-oldest-date-r (m1 m2)
-;;   (let ((d1 (vm-th-oldest-date-of (vm-thread-symbol m1)))
-;; 	(d2 (vm-th-oldest-date-of (vm-thread-symbol m2))))
-;;     (cond ((string-lessp d1 d2) nil)
-;; 	  ((string-equal d1 d2) '=)
-;; 	  (t t))))
 
 (defun vm-sort-compare-recipients (m1 m2)
   (let ((s1 (vm-su-to-cc m1))
@@ -864,9 +846,9 @@ that, if P1 and P2 are the oldest different ancestors of M1 and M2, then
             (completing-read
 	     ;; prompt
              (if (car vm-sort-compare-header-history)
-                 (format "Sort hy header (%s): "
+                 (format "Sort by header (%s): "
                          (car vm-sort-compare-header-history))
-               "Sort hy header: ")
+               "Sort by header: ")
 	     ;; collection
              (mapcar (lambda (h) (list h))
                      (vm-get-headers-of m2 (vm-get-headers-of m1)))

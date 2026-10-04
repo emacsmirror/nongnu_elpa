@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1997-2003 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -29,34 +29,15 @@
 (require 'sendmail)
 (require 'smime)
 (eval-when-compile (require 'cl-lib))
+;; For the shr handler.  At compile time so that the let-bindings of shr's
+;; variables are compiled as dynamic: binding a variable whose defvar the
+;; compiler has not seen makes a lexical binding in this file, and shr would
+;; never see it.  The handler requires it again at run time.
+(eval-when-compile (require 'shr))
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function get-itimer "vm-xemacs" (name))
-(declare-function start-itimer "vm-xemacs"
-		  (name function value &optional restart is-idle with-args
-			&rest function-arguments))
-(declare-function set-itimer-restart "vm-xemacs" (itimer restart))
-(declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
-(declare-function latin-unity-representations-feasible-region 
-		  "vm-xemacs" (start end))
-(declare-function latin-unity-representations-present-region 
-		  "vm-xemacs" (start end))
-(declare-function latin-unity-massage-name "vm-xemacs" (a b))
-(declare-function latin-unity-maybe-remap "vm-xemacs" 
-		  (a1 a2 a3 a4 a5 a6))
-(declare-function device-sound-enabled-p "vm-xemacs" (&optional device))
-(declare-function device-bitplanes "vm-xemacs" (&optional device))
-(declare-function font-height "vm-xemacs" (font &optional domain charset))
-(declare-function make-glyph "vm-xemacs" (&optional spec-list type))
-(declare-function set-glyph-baseline "vm-xemacs" 
-		  (glyph spec &optional locale tag-set how-to-add))
-(declare-function set-glyph-face "vm-xemacs" (glyph face))
-(declare-function extent-list "vm-xemacs" 
-		  (&optional buffer-or-string from to flags property value))
-(declare-function extent-begin-glyph "vm-xemacs" (extent))
-(declare-function set-extent-begin-glyph "vm-xemacs" 
-		  (extent begin-glyph &optional layout))
-(declare-function extent-live-p "vm-xemacs" (object))
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-get-sender ())
 (declare-function vm-smime-get-recipient-certfiles ())
@@ -84,7 +65,6 @@
 (defvar vm-image-list)
 (defvar vm-image-type)
 (defvar vm-image-type-name)
-(defvar vm-extent-list)
 (defvar vm-overlay-list)
 
 
@@ -104,11 +84,10 @@
 (defsubst vm-mime-handler (op type)
   (intern (concat "vm-mime-" op "-" type)))
 
-;; A lot of the more complicated MIME character set processing is only
-;; practical under MULE.
-(defvar latin-unity-ucs-list)
-(defvar latin-unity-character-sets)
 (defvar coding-system-list)
+;; defined by `easy-menu-define' in vm-menu.el, and referred to before that
+;; file is loaded
+(defvar vm-menu-fsfemacs-image-menu)
 
 (defun vm-get-coding-system-priorities ()
   "Return the value of `vm-coding-system-priorities', or a reasonable
@@ -127,82 +106,32 @@ default for it if it's nil.  "
   ;; We can depend on the fact that, in FSF Emacsen, coding systems
   ;; have aliases that correspond to MIME charset names.
   (let ((tmp nil))
-    (cond ((not (featurep 'xemacs))
-	   (cond ((vm-coding-system-p (setq tmp (intern (downcase charset))))
-		   tmp)
-		  ((equal charset "us-ascii")
-		   'raw-text)
-		  ((equal charset "unknown")
-		   'iso-8859-1)
-		  (t 'undecided)))
-	  (t
-	   ;; What about the case where vm-m-m-c-t-c-a doesn't have an
-	   ;; entry for the given charset? That shouldn't happen, if
-	   ;; vm-mime-mule-coding-to-charset-alist and
-	   ;; vm-mime-mule-charset-to-coding-alist have complete and
-	   ;; matching entries. Admittedly this last is not a
-	   ;; given. Should we make it so on startup? (By setting the
-	   ;; key for any missing entries in
-	   ;; vm-mime-mule-coding-to-charset-alist to being (format
-	   ;; "%s" coding-system), if necessary.) RWF, 2005-03-25
-	   (setq tmp (vm-string-assoc charset
-				      vm-mime-mule-charset-to-coding-alist))
-	   (if tmp (cadr tmp) nil))
-	  )))
-		  
+    (cond ((vm-coding-system-p (setq tmp (intern (downcase charset))))
+	   tmp)
+	  ((equal charset "us-ascii")
+	   'raw-text)
+	  ((equal charset "unknown")
+	   'iso-8859-1)
+	  (t 'undecided))))
+
+
+(defun vm-mime-charset-decodable-p (charset)
+  "Whether Emacs has a coding system for CHARSET.
+Nil means `vm-mime-charset-to-coding' can answer only `undecided', so the
+text is guessed at rather than decoded: `windows-874', `x-mac-roman' and
+`unknown-8bit' all arrive in mail and all come out that way.  That is the
+one case where `vm-mime-charset-converter-alist' is consulted.
+
+Emacs shows a replacement character for what a font cannot render, so this
+is about decoding and not about display: VM displays the text either way."
+  (not (eq 'undecided (vm-mime-charset-to-coding charset))))
 
 (defun vm-get-mime-ucs-list ()
-  "Return the value of `vm-mime-ucs-list', or a reasonable default for it if
-it's nil.  This is used instead of `vm-mime-ucs-list' directly in order to
-allow runtime checks for optional features like `mule-ucs' or
-`latin-unity'.  "
+  "The value of `vm-mime-ucs-list', or a reasonable default where it is nil.
+A universal character set is one that can encode anything, so a message in
+one needs no charset negotiation."
   (or vm-mime-ucs-list
-      (if (featurep 'latin-unity)
-	  latin-unity-ucs-list
-	(if (vm-coding-system-p 'utf-8)
-	    '(utf-8 iso-2022-jp ctext escape-quoted)
-	  '(iso-2022-jp ctext escape-quoted)))))
-
-(defun vm-update-mime-charset-maps ()
-  "Check for the presence of certain Mule coding systems, and add
-information about the corresponding MIME character sets to VM's
-configuration.  "
-  ;; Add some extra charsets that may not have been defined onto the end
-  ;; of vm-mime-mule-charset-to-coding-alist.
-  (mapc (lambda (x)
-	  (and (vm-coding-system-p x)
-	       ;; Not using vm-string-assoc because of some quoting
-	       ;; weirdness it's doing. 
-	       (if (not (assoc
-			 (format "%s" x)
-			 vm-mime-mule-charset-to-coding-alist))
-		   (add-to-list 'vm-mime-mule-charset-to-coding-alist 
-				(list (format "%s" x) x)))))
-	'(utf-8 iso-8859-15 iso-8859-14 iso-8859-16
-		alternativnyj iso-8859-6 iso-8859-7 koi8-c koi8-o koi8-ru koi8-t
-		koi8-u macintosh windows-1250 windows-1251 windows-1252
-		windows-1253 windows-1256))
-
-  ;; And make sure that the map back from coding-systems is good for
-  ;; those charsets.
-  (mapc (lambda (x)
-	  (or (assoc (car (cdr x)) vm-mime-mule-coding-to-charset-alist)
-	      (add-to-list 'vm-mime-mule-coding-to-charset-alist
-			   (list (car (cdr x)) (car x)))))
-	vm-mime-mule-charset-to-coding-alist)
-  ;; Whoops, doesn't get picked up for some reason. 
-  (add-to-list 'vm-mime-mule-coding-to-charset-alist 
-	       '(iso-8859-1 "iso-8859-1")))
-
-(when (featurep 'xemacs)
-  (require 'vm-vars)
-  (vm-update-mime-charset-maps)
-  ;; If the user loads Mule-UCS, re-evaluate the MIME charset maps. 
-  (unless (vm-coding-system-p 'utf-8)
-    (eval-after-load "un-define" `(vm-update-mime-charset-maps)))
-  ;; Ditto for latin-unity. 
-  (unless (featurep 'latin-unity)
-    (eval-after-load "latin-unity" `(vm-update-mime-charset-maps))))
+      '(utf-8 iso-2022-jp ctext escape-quoted)))
 
 ;;----------------------------------------------------------------------------
 ;;; MIME layout structs (vm-mm)
@@ -213,10 +142,6 @@ configuration.  "
 	  :header-start :header-end :body-start :body-end
 	  :parts :cache :message-symbol :display-error 
 	  :layout-is-converted :unconverted-layout])
-
-(defun vm-pp-mime-layout (layout)
-  (pp (vm-formatted-mime-layout layout))
-  nil)
 
 (defun vm-formatted-mime-layout (layout)
   (let ((copy (copy-sequence layout)))
@@ -309,12 +234,18 @@ body markers is tolerated."
 	    '(0 1 2 3 4))		; type through description
 	   ;; ignore disposition and qdisposition because of the hack
 	   ;; in vm-mime-frob-image-xxxx
-	   ;; Check if the markers are equal
+	   ;; Check if the markers are equal.  Buffer as well as position:
+	   ;; a layout parsed in one buffer and cached against a message in
+	   ;; another is invalid however well the offsets happen to line up,
+	   ;; and they do line up for the first message of a folder, which
+	   ;; starts at 1 just as a Presentation buffer does (issue #109).
 	   (unless external-body
 	     (vm-mapc
 	      (lambda (i)
-		(unless (equal (marker-position (aref cached i))
-			       (marker-position (aref current i)))
+		(unless (and (equal (marker-position (aref cached i))
+				    (marker-position (aref current i)))
+			     (eq (marker-buffer (aref cached i))
+				 (marker-buffer (aref current i))))
 		  (throw 'mismatch i)))
 	      '(7 9 10)))	  ; header-start, body-start, body-end
 	   ;; Check if the subparts are equal
@@ -418,6 +349,10 @@ freshly parsing the message contents."
 	     (vm-mime-layout-of m))))
 
 (defun vm-mm-encoded-header (m)
+  "Return non-nil if M's headers need decoding before they can be displayed.
+The symbol `none' means they do not.  Encoded words need it, and so does raw
+8-bit text, which is legal under RFC 6532 and sent regardless; see
+`vm-decode-8bit-text'."
   (or (vm-mime-encoded-header-flag-of m)
       (progn (setq m (vm-real-message-of m))
 	     (vm-set-mime-encoded-header-flag-of
@@ -430,6 +365,11 @@ freshly parsing the message contents."
 		    (let ((case-fold-search t))
 		      (or (re-search-forward vm-mime-encoded-word-regexp
 					     (vm-text-of m) t)
+			  (and vm-mime-8bit-header-charsets
+			       (progn
+				 (goto-char (vm-headers-of m))
+				 (re-search-forward "[\200-\377]"
+						    (vm-text-of m) t)))
 			  'none))))))
 	     (vm-mime-encoded-header-flag-of m))))
 
@@ -442,6 +382,7 @@ freshly parsing the message contents."
   (let ((buffer-read-only nil))
     (subst-char-in-region start end ?_ (string-to-char " ") t)
     (quoted-printable-decode-region start end)))
+(put 'vm-mime-Q-decode-region 'vm-called-by-vm t)
 
 (fset 'vm-mime-B-decode-region 'vm-mime-base64-decode-region)
 
@@ -536,7 +477,7 @@ same effect."
 	  (insert-buffer-substring b b-start b-end)
 	  (setq retval (apply 'decode-coding-region (point-min) (point-max)
 			      coding-system foo))
-	  (and (not (featurep 'xemacs)) (set-buffer-multibyte t)) ; is this safe?
+	  (set-buffer-multibyte t)	; is this safe?
 	  (setq start (point-min) end (point-max))
 	  (with-current-buffer b
 	    (goto-char b-start)
@@ -552,9 +493,7 @@ same effect."
 
 (defun vm-mime-charset-decode-region (charset start end)
   (or (markerp end) (setq end (vm-marker end)))
-  (if (or (and (featurep 'xemacs) (memq (vm-device-type) '(x gtk mswindows)))
-	  (not (featurep 'xemacs))
-	  (vm-mime-tty-can-display-mime-charset charset))
+  (if t
       (let ((buffer-read-only nil)
 	    (coding (vm-mime-charset-to-coding charset))
 	    (opoint (point)))
@@ -599,7 +538,12 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
        (vm-emit-mime-decoding-message "Decoding base64... done")))
 
 (defun vm-mime-base64-encode-region (start end &optional crlf B-encoding)
-  (or (markerp end) (setq end (vm-marker end)))
+  ;; A marker that advances, as `vm-mime-qp-encode-region' has.  Turning the
+  ;; last LF into CRLF below inserts at END, and a marker that does not
+  ;; advance is left in front of the CR: the body's last line break then fell
+  ;; outside the region and was not encoded, so a base64 part arrived without
+  ;; the newline it was sent with, where quoted-printable and 8bit kept it.
+  (setq end (copy-marker end t))
   (and (> (- end start) 200)
        (vm-inform 7 "Encoding base64..."))
   (let ((buffer-undo-list t)) ;; FIXME: Really?
@@ -607,17 +551,6 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
       (and crlf (vm-mime-lf-to-crlf-region start end))
       (condition-case data
 	  (base64-encode-region start end B-encoding)
-	(wrong-number-of-arguments
-	 ;; call with two args and then strip out the
-	 ;; newlines if we're doing B encoding.
-	 (condition-case data
-	     (base64-encode-region start end)
-	   (error (vm-mime-error "%S" data)))
-	 (if B-encoding
-	     (save-excursion
-	       (goto-char start)
-	       (while (search-forward "\n" end t)
-		 (delete-char -1)))))
 	(error (vm-mime-error "%S" data)))
       (and (> (- end start) 200)
 	   (vm-inform 7 "Encoding base64... done"))
@@ -636,7 +569,13 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
     (declare-function quoted-printable-encode-region "qp")
     (defvar mm-use-ultra-safe-encoding)
     (let ((mm-use-ultra-safe-encoding (if quote-from t nil)))
-      (quoted-printable-encode-region start end))
+      ;; Fold, except when Q-encoding a header word, which has no lines to
+      ;; fold and strips the soft breaks again below.  Without the third
+      ;; argument `quoted-printable-encode-region' encodes the characters
+      ;; and leaves the lines however long they were, so a quoted-printable
+      ;; part could carry a line past the 76 of RFC 2045 -- and no soft line
+      ;; break was ever emitted, whatever the text looked like.
+      (quoted-printable-encode-region start end (not Q-encoding)))
     (when Q-encoding
       (goto-char start)
       (while (search-forward "=\n" end t)
@@ -688,13 +627,80 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
       (vm-error-free-call 'delete-file tempfile)))
   (vm-emit-mime-decoding-message "Decoding uuencoded stuff... done"))
 
+;;; Raw 8-bit header text -- RFC 6532, and mail that predates it
+;;
+;; A folder buffer holds bytes: VM reads it as raw text so that positions and
+;; MIME decoding work on the message as it arrived.  Header text is therefore
+;; ASCII plus whatever bytes the sender put there, and RFC 2047 encoded words
+;; are decoded from that.  Text that is simply 8-bit -- legal under RFC 6532,
+;; and sent regardless of any RFC for decades -- carries no character set of
+;; its own, so it has to be guessed.  See `vm-mime-8bit-header-charsets'.
+
+(defun vm-decode-8bit-text (string)
+  "Return STRING with raw 8-bit bytes decoded into characters.
+The coding systems in `vm-mime-8bit-header-charsets' are tried in order and
+the first one that leaves no undecodable byte behind wins.  STRING is
+returned unchanged if it holds no raw bytes, if none of the coding systems
+accounts for all of them, or if it cannot be handled as bytes at all -- text
+that is already decoded is never decoded twice."
+  (let ((bytes (cond ((not (multibyte-string-p string)) string)
+		     ;; A run taken from a multibyte buffer: only raw bytes
+		     ;; and ASCII can be turned back into bytes.  Anything
+		     ;; else has been decoded already.
+		     ((memq 'eight-bit (find-charset-string string))
+		      (condition-case nil
+			  (string-to-unibyte string)
+			(error nil))))))
+    (if (or (null bytes) (not (string-match-p "[\200-\377]" bytes)))
+	string
+      (let ((charsets vm-mime-8bit-header-charsets)
+	    (result nil)
+	    coding try)
+	(while (and charsets (null result))
+	  (setq coding (car charsets)
+		charsets (cdr charsets))
+	  (when (vm-coding-system-p coding)
+	    (setq try (decode-coding-string bytes coding))
+	    (unless (memq 'eight-bit (find-charset-string try))
+	      (setq result try))))
+	(or result string)))))
+
+(defun vm-decode-8bit-text-region (start end)
+  "Decode raw 8-bit bytes between START and END into characters.
+Each run of bytes is decoded on its own, so text that was already decoded --
+by `vm-decode-mime-encoded-words', which runs first and may have put real
+characters in the same header -- is left alone."
+  (when vm-mime-8bit-header-charsets
+    (save-excursion
+      (let ((end-marker (copy-marker end t))
+	    (buffer-read-only nil)
+	    (inhibit-read-only t)
+	    raw decoded)
+	(goto-char start)
+	;; In a multibyte buffer this finds the eight-bit characters that
+	;; undecodable bytes become; in a unibyte one, the bytes themselves.
+	(while (re-search-forward "[\200-\377]+" end-marker t)
+	  (setq raw (match-string-no-properties 0)
+		decoded (vm-decode-8bit-text raw))
+	  (unless (equal raw decoded)
+	    (delete-region (match-beginning 0) (match-end 0))
+	    (insert decoded)))
+	(set-marker end-marker nil)))))
+
 (defun vm-decode-mime-message-headers (&optional m)
-  (vm-decode-mime-encoded-words 
-   ;; the starting point with null m is (point) to match the
-   ;; previous duplicated code here. Not sure whether it's
-   ;; necessary. JCB, 2011-01-03
-   (if m (vm-headers-of m) (point))
-   (if m (vm-text-of m) (point-max))))
+  ;; The end is held as a marker because decoding shortens the text it
+  ;; decodes, so a position taken before the first pass is too far along for
+  ;; the second one.
+  (let ((start (if m (vm-headers-of m) (point)))
+	(end (copy-marker (if m (vm-text-of m) (point-max)) t)))
+    (unwind-protect
+	;; Encoded words first: they state their own character set, so they
+	;; are not a guess, and decoding them can leave real characters in
+	;; the same header as bytes that still need one.
+	(progn
+	  (vm-decode-mime-encoded-words start end)
+	  (vm-decode-8bit-text-region start end))
+      (set-marker end nil))))
 
 ;; optional argument rstart and rend delimit the region in
 ;; which to decode
@@ -709,47 +715,97 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
 	(setq match-start (match-beginning 0)
 	      match-end (match-end 0)
 	      charset (buffer-substring (match-beginning 1) (match-end 1))
-              need-conversion nil
-	      encoding (buffer-substring (match-beginning 4) (match-end 4))
+              encoding (buffer-substring (match-beginning 4) (match-end 4))
 	      start (match-beginning 5)
-	      end (copy-marker (match-end 5) t))
-	;; don't change anything if we can't display the
-	;; character set properly.
-	(if (and (not (vm-mime-charset-internally-displayable-p charset))
-		 (not (setq need-conversion
-			    (vm-mime-can-convert-charset charset))))
-	    nil
-	  ;; suppress whitespace between encoded words.
-	  (and previous-end
-	       (string-match "\\`[ \t\n]*\\'"
-			     (buffer-substring previous-end match-start))
-	       (setq match-start previous-end))
-	  (delete-region end match-end)
-	  (condition-case data
-	      (cond ((string-match "B" encoding)
-		     (vm-mime-base64-decode-region start end))
-		    ((string-match "Q" encoding)
-		     (vm-mime-Q-decode-region start end))
-		    (t (vm-mime-error "unknown encoded word encoding, %s"
-				      encoding)))
-	    (vm-mime-error (apply 'message (cdr data))
-			   (goto-char start)
-			   (insert "**invalid encoded word**")
-			   (delete-region (point) end)))
-	  (and need-conversion
-	       (setq charset (vm-mime-charset-convert-region
-			      charset start end)))
-	  (vm-mime-charset-decode-region charset start end)
-	  (goto-char end)
-	  (setq previous-end end)
-	  (delete-region match-start start))))))
+	      end (copy-marker (match-end 5) t)
+	      ;; a charset Emacs cannot decode, and a converter configured for
+	      ;; it: the one case where the converter runs
+	      need-conversion (unless (vm-mime-charset-decodable-p charset)
+				(vm-mime-can-convert-charset charset)))
+	;; suppress whitespace between encoded words.
+	(and previous-end
+	     (string-match "\\`[ \t\n]*\\'"
+			   (buffer-substring previous-end match-start))
+	     (setq match-start previous-end))
+	(delete-region end match-end)
+	(condition-case data
+	    (cond ((string-match "B" encoding)
+		   (vm-mime-base64-decode-region start end))
+		  ((string-match "Q" encoding)
+		   (vm-mime-Q-decode-region start end))
+		  (t (vm-mime-error "unknown encoded word encoding, %s"
+				    encoding)))
+	  (vm-mime-error (apply 'message (cdr data))
+			 (goto-char start)
+			 (insert "**invalid encoded word**")
+			 (delete-region (point) end)))
+	(and need-conversion
+	     (setq charset (vm-mime-charset-convert-region
+			    charset start end)))
+	(vm-mime-charset-decode-region charset start end)
+	(goto-char end)
+	(setq previous-end end)
+	(delete-region match-start start)))))
+
+(defun vm-decode-header-text-in-buffer ()
+  "Decode the header text in the current buffer for display.
+Both passes, in the order that matters: RFC 2047 encoded words, which state
+their own character set, and then whatever raw 8-bit text is left, which does
+not and has to be guessed at."
+  (vm-decode-mime-encoded-words)
+  (vm-decode-8bit-text-region (point-min) (point-max)))
 
 (defun vm-decode-mime-encoded-words-in-string (string)
-  (if (and vm-display-using-mime
-	   (let ((case-fold-search t))
-	     (string-match vm-mime-encoded-word-regexp string)))
-      (vm-with-string-as-temp-buffer string 'vm-decode-mime-encoded-words)
+  "Return STRING with its header text decoded for display.
+RFC 2047 encoded words are decoded, and so is text that is simply raw 8-bit;
+see `vm-decode-8bit-text'.  Both are needed here rather than only the first,
+because this is what the summary lines and the composition headers are built
+from, and a folder buffer holds the bytes of the message as it arrived.
+
+The work happens in a buffer rather than on the string, so that a header
+holding both an encoded word and raw 8-bit text gets each run treated on its
+own -- once the encoded word is decoded the string holds real characters and
+raw bytes together, and there is no one character set for the whole of it."
+  (if (or (and vm-display-using-mime
+	       (let ((case-fold-search t))
+		 (string-match vm-mime-encoded-word-regexp string)))
+	  (and vm-mime-8bit-header-charsets
+	       ;; Matches raw bytes only; a character that has already been
+	       ;; decoded does not match, so decoded text takes this exit.
+	       (string-match-p "[\200-\377]" string)))
+      (vm-with-string-as-temp-buffer string 'vm-decode-header-text-in-buffer)
     string ))
+
+(defun vm-reencode-mime-absorb-separating-whitespace ()
+  "Make whitespace between two to-be-encoded runs part of the first.
+RFC 2047 says whitespace *between* two encoded words is a separator and
+not part of the text, so a decoder drops it -- `vm-decode-mime-encoded-words'
+does exactly that.  Whitespace carries no `vm-charset' property of its
+own, so encoding the runs and leaving the space between them literal
+turns \"f\\=\\o\\=\\o b\\=\\ar\" into two encoded words with a space between,
+which decodes back as \"f\\=\\o\\=\\ob\\=\\ar\".
+
+Give such whitespace the charset of the run before it, so it is encoded
+along with it and stays significant."
+  (let ((start (point-min))
+	charset pos)
+    (while (< start (point-max))
+      (setq charset (get-text-property start 'vm-charset))
+      (setq pos (or (next-single-property-change start 'vm-charset)
+		    (point-max)))
+      (when (and (null charset)
+		 (> start (point-min))
+		 (< pos (point-max))
+		 (get-text-property (1- start) 'vm-charset)
+		 (get-text-property pos 'vm-charset)
+		 (string-match "\\`[ \t\n]+\\'"
+			       (buffer-substring-no-properties start pos)))
+	(let ((prev-charset (get-text-property (1- start) 'vm-charset))
+	      (prev-coding (get-text-property (1- start) 'vm-coding)))
+	  (put-text-property start pos 'vm-charset prev-charset)
+	  (when prev-coding
+	    (put-text-property start pos 'vm-coding prev-coding))))
+      (setq start pos))))
 
 (defun vm-reencode-mime-encoded-words ()
   "Reencode in mime the words in the current buffer that need
@@ -757,6 +813,7 @@ encoding.  The words that need encoding are expected to have
 text-properties set with the appropriate characte set.  This would
 have been done if the contents of the buffer are the result of a
 previous mime decoding."
+  (vm-reencode-mime-absorb-separating-whitespace)
   (let ((charset nil)
 	start coding pos q-encoding
 	old-size
@@ -1123,7 +1180,6 @@ DEFAULT-TRANSFER-ENCODING, unless specified, is assumed to be 7bit.
     (error
      (vm-inform 0 "%s" (car (cdr error-data)))
      ;; don't sleep, no one cares about MIME syntax errors
-     ;;     (sleep-for 2)
      (let ((header (if (and m (not passing-message-only))
 		       (vm-headers-of m)
 		     (vm-marker (point-min))))
@@ -1158,6 +1214,151 @@ DEFAULT-TRANSFER-ENCODING, unless specified, is assumed to be 7bit.
 ;;; MIME layout operations
 ;;----------------------------------------------------------------------------
 
+;;; RFC 2231 -- internationalized MIME parameter values
+;;
+;; A parameter value may be tagged with a character set and a language, and
+;; may be split into numbered segments:
+;;
+;;     Content-Disposition: attachment; filename*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s
+;;     Content-Type: application/pdf;
+;;       name*0*=UTF-8''%E5%A0%B1; name*1*=%E5%91%8A.pdf
+;;
+;; The segments carry raw bytes, and one character may straddle two of them,
+;; so the bytes are joined before the character set is applied.  The language
+;; tag is discarded: VM has nowhere to put it.
+
+(defconst vm-mime-rfc2231-value-regexp
+  "\\`\\([^']*\\)'\\([^']*\\)'\\(\\(?:.\\|\n\\)*\\)\\'"
+  "Match an RFC 2231 extended parameter value.
+Group 1 is the character set, group 2 the language, group 3 the
+percent-encoded text.")
+
+(defconst vm-mime-rfc2231-safe-chars "A-Za-z0-9!#$&+.^_~-"
+  "Characters that need no percent-encoding in an RFC 2231 parameter value.
+The attribute-char of RFC 2231 section 7, less anything whose literal meaning
+elsewhere in a header makes it not worth the risk.")
+
+(defun vm-mime-string-to-bytes (string)
+  "Return STRING as a unibyte string, without reinterpreting its characters."
+  (if (multibyte-string-p string)
+      (encode-coding-string string 'utf-8)
+    string))
+
+(defun vm-mime-percent-decode-to-bytes (string)
+  "Undo the percent-encoding of STRING, returning a unibyte string.
+A percent sign not followed by two hex digits stands for itself, since that
+is what senders that do not encode at all produce."
+  (let ((i 0) (n (length string)) (bytes nil) c)
+    (while (< i n)
+      (setq c (aref string i))
+      (cond ((and (eq c ?%) (<= (+ i 3) n)
+		  (string-match-p "\\`[0-9a-fA-F][0-9a-fA-F]\\'"
+				  (substring string (1+ i) (+ i 3))))
+	     (push (string-to-number (substring string (1+ i) (+ i 3)) 16)
+		   bytes)
+	     (setq i (+ i 3)))
+	    ((< c 256)
+	     (push c bytes)
+	     (setq i (1+ i)))
+	    (t
+	     ;; A character that was never encoded at all.  Keep its bytes.
+	     (dolist (b (append (encode-coding-string (char-to-string c) 'utf-8)
+				nil))
+	       (push b bytes))
+	     (setq i (1+ i)))))
+    (apply #'unibyte-string (nreverse bytes))))
+
+(defun vm-mime-decode-rfc2231-bytes (bytes charset)
+  "Decode BYTES, a unibyte string, according to the MIME CHARSET.
+CHARSET may be nil or unknown to Emacs, in which case the encoding is
+guessed rather than the bytes being shown raw."
+  (let ((coding (and charset (not (equal charset ""))
+		     (vm-mime-charset-to-coding charset))))
+    (decode-coding-string bytes
+			  (if (and coding (vm-coding-system-p coding)
+				   (not (eq coding 'undecided)))
+			      coding
+			    'undecided))))
+
+(defun vm-mime-decode-rfc2231-value (value)
+  "Decode VALUE, the value of a NAME* parameter, per RFC 2231.
+VALUE is CHARSET'LANGUAGE'TEXT with TEXT percent-encoded.  A value missing
+the character set section is still percent-decoded, since senders do send
+that."
+  (if (string-match vm-mime-rfc2231-value-regexp value)
+      (vm-mime-decode-rfc2231-bytes
+       (vm-mime-percent-decode-to-bytes (match-string 3 value))
+       (match-string 1 value))
+    (vm-mime-decode-rfc2231-bytes
+     (vm-mime-percent-decode-to-bytes value) nil)))
+
+(defun vm-mime-get-rfc2231-parameter (name param-list)
+  "Return parameter NAME from PARAM-LIST, decoded from RFC 2231 notation.
+Returns nil if NAME does not appear in that notation.
+
+Both forms are handled: a single extended value, NAME*=, and continuations
+NAME*0, NAME*1 and so on, in which each segment may independently be extended
+\(NAME*0*=).  The character set is taken from the first segment, which is
+where RFC 2231 section 4.1 puts it, and is applied only after the segments
+have been joined, because a character may be split across two of them."
+  (let ((single (vm-mime-get-xxx-parameter-internal
+		 (concat name "*") param-list)))
+    (if single
+	(vm-mime-decode-rfc2231-value single)
+      (let ((n 0) (bytes "") (found nil) charset segment extended)
+	(while (progn
+		 (setq extended (vm-mime-get-xxx-parameter-internal
+				 (format "%s*%d*" name n) param-list)
+		       segment (or extended
+				   (vm-mime-get-xxx-parameter-internal
+				    (format "%s*%d" name n) param-list)))
+		 segment)
+	  (setq found t)
+	  (if extended
+	      (let ((text segment))
+		(when (and (= n 0)
+			   (string-match vm-mime-rfc2231-value-regexp segment))
+		  (setq charset (match-string 1 segment)
+			text (match-string 3 segment)))
+		(setq bytes (concat bytes
+				    (vm-mime-percent-decode-to-bytes text))))
+	    ;; A plain segment is literal text; its percent signs are not
+	    ;; encoding.
+	    (setq bytes (concat bytes (vm-mime-string-to-bytes segment))))
+	  (setq n (1+ n)))
+	(and found (vm-mime-decode-rfc2231-bytes bytes charset))))))
+
+(defun vm-mime-encode-rfc2231-value (string)
+  "Return STRING percent-encoded for use in an RFC 2231 parameter value."
+  (mapconcat (lambda (byte)
+	       (if (string-match-p (concat "[" vm-mime-rfc2231-safe-chars "]")
+				   (char-to-string byte))
+		   (char-to-string byte)
+		 (format "%%%02X" byte)))
+	     (append (encode-coding-string string 'utf-8) nil)
+	     ""))
+
+(defun vm-mime-quote-parameter-value (value)
+  "Return VALUE quoted for use in a MIME parameter."
+  (concat "\"" (vm-replace-in-string value "[\"\\\\]" "\\\\\\&") "\""))
+
+(defun vm-mime-encode-parameter (name value)
+  "Return a MIME parameter string assigning VALUE to NAME.
+An ASCII VALUE is quoted, as it always was.  Anything else is written in the
+RFC 2231 extended notation, which is what current mail clients send and
+expect for international file names; the alternative, an RFC 2047 encoded
+word, is not permitted in a parameter value, though VM still accepts it on
+the way in."
+  (if (string-match-p "\\`[[:ascii:]]*\\'" value)
+      (concat name "=" (vm-mime-quote-parameter-value value))
+    (concat name "*=UTF-8''" (vm-mime-encode-rfc2231-value value))))
+
+(defun vm-mime-parameter-name-regexp (name)
+  "Return a regexp matching an assignment to parameter NAME.
+Matches the plain form and every RFC 2231 spelling of it, so that a parameter
+can be replaced without leaving an alternative spelling of it behind."
+  (concat "\\`" (regexp-quote name) "\\(\\*[0-9]*\\)?\\*?="))
+
 (defun vm-mime-get-xxx-parameter-internal (name param-list)
   "Return the parameter NAME from PARAM-LIST."
   (let ((match-end (1+ (length name)))
@@ -1175,16 +1376,15 @@ DEFAULT-TRANSFER-ENCODING, unless specified, is assumed to be 7bit.
 (defun vm-mime-get-xxx-parameter (name param-list)
   "Return the parameter NAME from PARAM-LIST.
 
-If parameter value continuations was used, i.e. the parameter was split into
-shorter pieces, rebuild it from them."  
-  (or (vm-mime-get-xxx-parameter-internal name param-list)
-      (let ((n 0) content p)
-        (while (setq p (vm-mime-get-xxx-parameter-internal
-                        (format "%s*%d" name n)
-                        param-list))
-          (setq n (1+ n)
-                content (concat content p)))
-        content)))
+RFC 2231 notation is decoded: a character-set-tagged value, NAME*=, and
+continuations, NAME*0 and so on, whether or not the segments are themselves
+tagged.  See `vm-mime-get-rfc2231-parameter'.
+
+The tagged form wins over a plain NAME= when a sender supplies both.  RFC
+2231 does not allow both, but senders do send them, and then the plain one is
+the deliberately lossy fallback -- an ASCII approximation of the real name."
+  (or (vm-mime-get-rfc2231-parameter name param-list)
+      (vm-mime-get-xxx-parameter-internal name param-list)))
 
 (defun vm-mime-get-parameter (layout param)
   (let ((string (vm-mime-get-xxx-parameter 
@@ -1288,12 +1488,10 @@ source of the message."
     (setq pres-buf vm-presentation-buffer-handle)
     (setq vm-presentation-buffer vm-presentation-buffer-handle)
     (setq vm-mime-decoded nil)
-    ;; W3 or some other external mode might set some local colors
-    ;; in this buffer; remove them before displaying a different
-    ;; message here.
-    (when (fboundp 'remove-specifier)
-      (remove-specifier (face-foreground 'default) pres-buf)
-      (remove-specifier (face-background 'default) pres-buf))
+    ;; W3 or some other external mode might have set local colours in this
+    ;; buffer, and XEmacs's `remove-specifier' took them off again before a
+    ;; different message was shown here.  Emacs has no equivalent: a face
+    ;; is not specified per buffer, so there is nothing to remove.
     (with-current-buffer (vm-buffer-of real-m)
       (save-restriction
 	(widen)
@@ -1310,7 +1508,6 @@ source of the message."
 	      (inhibit-read-only t))
 	  ;; We don't care about the buffer-modified-p flag of the
 	  ;; Presentation buffer.  Only that of the folder matters.
-	  ;; (setq modified (buffer-modified-p)) 
 	  (unwind-protect
 	      (progn
 		(erase-buffer)
@@ -1321,8 +1518,17 @@ source of the message."
 	;; make a modifiable copy of the message struct
 	(setq mm (copy-sequence m))
 	;; also a modifiable copy of the location data
-	;; other data will be shared with the Folder buffer
 	(vm-set-location-data-of mm (vm-copy (vm-location-data-of m)))
+	;; and of the soft data, because the cached MIME layout lives there
+	;; and its markers point into whichever buffer was parsed.  Sharing
+	;; the vector let a layout parsed here -- see vm-fetch-message, which
+	;; parses the current buffer -- overwrite the folder's cache with
+	;; markers into this buffer, which is then erased and refilled for
+	;; the next message.  That is issue #109: the part markers all end up
+	;; meaningless and no part has any text.  Copied shallowly, so every
+	;; field still refers to the same object it did before; nothing but
+	;; the layout is ever written through a presentation copy.
+	(vm-set-softdata-of mm (copy-sequence (vm-softdata-of m)))
 	(set-marker (vm-start-of mm) (point-min))
 	(set-marker (vm-headers-of mm) (+ (vm-start-of mm)
 					  (- (vm-headers-of real-m)
@@ -1340,47 +1546,37 @@ source of the message."
 				      (- (vm-end-of real-m)
 					 (vm-start-of real-m))))
 
-	;; fetch the real message now
-	;; why is this being done here, rather than in
-	;; vm-present-current-message or vm-show-current-message?
-	;; it was inserted by Rob F in rev. 506.1.1
-	;;                              USR, 2012-04-09
-	;; Let us turn it off and see waht happens.
-	;;                              USR, 2012-11-21
+	;; An external body is fetched into the folder buffer before this copy is
+	;; made -- `vm-preview-current-message' does it, under
+	;; `vm-external-fetch-message-for-presentation'.  Fetching it again here,
+	;; into the presentation buffer, is what the questions in this comment
+	;; were about:
+	;;
+	;;   why is this being done here, rather than in
+	;;   vm-present-current-message or vm-show-current-message?
+	;;   it was inserted by Rob F in rev. 506.1.1     USR, 2012-04-09
+	;;   Let us turn it off and see waht happens.     USR, 2012-11-21
+	;;
+	;; Turned off now, with what happens measured (issue #585).  It fetched
+	;; whatever that option said, since the option is only consulted in
+	;; `vm-preview-current-message'; it fetched into this buffer rather than
+	;; the folder, so `vm-body-to-be-retrieved-of' stayed set and the next
+	;; presentation fetched the same body over again; and the layout it
+	;; parsed here outlived the filling of the buffer it described, leaving
+	;; parts whose markers had all collapsed to the end -- which is the empty
+	;; attachment of #386.
+	;;
+	;; The `X-VM-Storage:' case is a different mechanism, on the copy rather
+	;; than the folder, and stays.
 	(goto-char (point-min))
-	(cond ((and (vm-message-access-method-of mm)
-		    (vm-body-to-be-retrieved-of mm))
-	       ;; Remember that this does process I/O and
-	       ;; accept-process-output, allowing concurrent threads
-	       ;; to run!!!  USR, 2010-07-11
-	       (condition-case err
-		   (vm-fetch-message 
-		    (list (vm-message-access-method-of mm)) mm)
-		 (error
-		  (vm-warn 0 0 "Cannot fetch message; %s" 
-			   (error-message-string err)))))
-	      ((re-search-forward vm-external-storage-header-regexp
-	                          (vm-text-of mm) t)
-	       (vm-fetch-message (read (current-buffer)) mm)))
+	(when (re-search-forward vm-external-storage-header-regexp
+				 (vm-text-of mm) t)
+	  (vm-fetch-message (read (current-buffer)) mm))
 
 	;; Attempt to show a message about the missing body.
 	;; But it is not working right.  Needs more work.  USR, 2012-04-09
-	;; (cond ((and (vm-message-access-method-of mm)
-	;; 	    (vm-body-to-be-retrieved-of mm))
-	;;        (let ((buffer-read-only nil))
-	;; 	 (save-excursion
-	;; 	   (goto-char (vm-text-end-of mm))
-	;; 	   (insert-before-markers
-	;; 	    "<... message body in external source ...>\n"))))
-	;;       ((re-search-forward vm-external-storage-header-regexp
-	;;                           (vm-text-of mm) t)
-	;;        (let ((buffer-read-only nil))
-	;; 	 (goto-char (point-max))
-	;; 	 (insert-before-markers
-	;; 	  "<... message body in external source ...>\n"))))
 
 	;; This might be redundant.  Wasn't in revision 717.
-	;; (vm-reset-buffer-modified-p modified (current-buffer)) 
 	;; fixup the reference to the message
 	(setcar vm-message-pointer mm)))))
 
@@ -1450,9 +1646,11 @@ The STORAGE specification is given in the same format as for
   (insert-file-contents filename nil nil nil t)
   t)
 
-(fset 'vm-fetch-mode 'vm-mode)
+(defalias 'vm-fetch-mode 'vm-mode)
+(put 'vm-fetch-mode 'vm-called-by-vm t)
 (put 'vm-fetch-mode 'mode-class 'special)
-(fset 'vm-presentation-mode 'vm-mode)
+(defalias 'vm-presentation-mode 'vm-mode)
+(put 'vm-presentation-mode 'vm-called-by-vm t)
 (put 'vm-presentation-mode 'mode-class 'special)
 
 (defvar buffer-file-coding-system)
@@ -1460,169 +1658,58 @@ The STORAGE specification is given in the same format as for
 (defun vm-determine-proper-charset (beg end)
   "Work out what MIME character set to use for sending a message.
 
-Uses `us-ascii' if the message is entirely ASCII compatible.  If MULE is not
-available, and the message contains contains non-ASCII characters, consults
-the variable `vm-mime-8bit-composition-charset' or uses `iso-8859-1.' if
-that is nil.
+Uses `us-ascii' if the message is entirely ASCII compatible.
 
-Under MULE, `vm-coding-system-priorities' is searched, in order, for a coding
-system that will encode all the characters in the message. If none is found,
-consults the variable `vm-mime-8bit-composition-charset' or uses `iso-2022-jp',
-which will preserve information for all the character sets of which Emacs is
-aware - at the expense of being incompatible with the recipient's software, if
-that recipient is outside of East Asia."
+`vm-coding-system-priorities' is searched, in order, for a coding system that
+will encode all the characters in the message.  If none is found, uses
+`iso-2022-jp', which will preserve information for all the character sets of
+which Emacs is aware - at the expense of being incompatible with the
+recipient's software, if that recipient is outside of East Asia."
   (save-excursion
     (save-restriction
       (narrow-to-region beg end)
-      (if (not (featurep 'xemacs))
-	  (let* ((preapproved (vm-get-coding-system-priorities))
-		 (ucs-list (vm-get-mime-ucs-list))
-		 (cant-encode (check-coding-systems-region
-			       (point-min) (point-max)
-			       (cons 'us-ascii preapproved))))
-	    (if (not (assq 'us-ascii cant-encode))
-		;; If there are only ASCII chars, we're done.
-		"us-ascii"
-	      (while (and preapproved
-			  (assq (car preapproved) cant-encode)
-			  (not (memq (car preapproved) ucs-list)))
-		(setq preapproved (cdr preapproved)))
-	      (if preapproved
-		  (cadr (assq (car preapproved)
-			      vm-mime-mule-coding-to-charset-alist))
-		;; None of the entries in vm-coding-system-priorities
-		;; can be used. This can only happen if no universal
-		;; coding system is included. Fall back to utf-8.
-		"utf-8")))
+      (let* ((preapproved (vm-get-coding-system-priorities))
+	     (ucs-list (vm-get-mime-ucs-list))
+	     (cant-encode (check-coding-systems-region
+			   (point-min) (point-max)
+			   (cons 'us-ascii preapproved))))
+	(if (not (assq 'us-ascii cant-encode))
+	    ;; If there are only ASCII chars, we're done.
+	    "us-ascii"
+	  (while (and preapproved
+		      (assq (car preapproved) cant-encode)
+		      (not (memq (car preapproved) ucs-list)))
+	    (setq preapproved (cdr preapproved)))
+	  (if preapproved
+	      (cadr (assq (car preapproved)
+			  vm-mime-mule-coding-to-charset-alist))
+	    ;; None of the entries in vm-coding-system-priorities
+	    ;; can be used. This can only happen if no universal
+	    ;; coding system is included. Fall back to utf-8.
+	    "utf-8"))))))
 
-	(let ((charsets (delq 'ascii
-			      (vm-charsets-in-region (point-min)
-						     (point-max)))))
-	  (cond
-	   ;; No non-ASCII chars? Right, that makes it easy for us.
-	   ((null charsets) "us-ascii")
+(defun vm-mime-longest-line-length ()
+  "The length of the longest line in the accessible region.
+The line terminator is not counted, RFC 5322 measuring a line without it."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((longest 0))
+      (while (not (eobp))
+	(setq longest (max longest (- (line-end-position) (point))))
+	(forward-line))
+      longest)))
 
-	   ;; Check whether the buffer can be encoded using one of the
-	   ;; vm-coding-system-priorities coding systems.
-	   ((catch 'done
+(defun vm-mime-line-length-limit ()
+  "The longest line that may be sent in a text part without encoding it.
+`vm-mime-max-text-line-length' says, but never above the 998 of RFC 5322:
+a longer line cannot be sent as it stands whatever the setting."
+  (min (or vm-mime-max-text-line-length 998) 998))
 
-	      ;; We can't really do this intelligently unless latin-unity
-	      ;; is available.
-	      (if (featurep 'latin-unity)
-		  (let ((csetzero charsets)
-			;; Check what latin character sets are in the
-			;; buffer.
-			(csets (latin-unity-representations-feasible-region
-				beg end))
-			(psets (latin-unity-representations-present-region
-				beg end))
-			(systems (vm-get-coding-system-priorities)))
-
-		    ;; If one of the character sets is outside of latin
-		    ;; unity's remit, check for a universal character
-		    ;; set in vm-coding-system-priorities, and pass back
-		    ;; the first one.
-		    ;;
-		    ;; Otherwise, there's no remapping that latin unity
-		    ;; can do for us, and we should default to something
-		    ;; iso-2022 based. (Since we're not defaulting to
-		    ;; Unicode, at the moment.)
-
-		    (while csetzero
-		      (if (not (memq 
-				(car csetzero) latin-unity-character-sets))
-			  (let ((ucs-list (vm-get-mime-ucs-list))
-				(preapproved
-				 (vm-get-coding-system-priorities)))
-			    (while preapproved
-			      (if (memq (car preapproved) ucs-list)
-				  (throw 'done 
-					 (car (cdr (assq (car preapproved)
-					                 vm-mime-mule-coding-to-charset-alist)))))
-			      (setq preapproved (cdr preapproved)))
-			    ;; Nothing universal in the preapproved list.
-			    (throw 'done nil)))
-		      (setq csetzero (cdr csetzero)))
-
-		    ;; Okay, we're able to remap using latin-unity. Do so.
-		    (while systems
-		      (let ((sys (latin-unity-massage-name (car systems)
-					                   'buffer-default)))
-			(when (latin-unity-maybe-remap (point-min) 
-						       (point-max) sys 
-						       csets psets t)
-			  (throw 'done
-				 (second (assq sys
-				               vm-mime-mule-coding-to-charset-alist)))))
-		      (setq systems (cdr systems)))
-		    (throw 'done nil))
-
-		;; Right, latin-unity isn't available.  If there's only
-		;; one non-ASCII character set in the region, and the
-		;; corresponding coding system is on the preapproved
-		;; list before the first universal character set, pass
-		;; it back. Otherwise, if a universal character set is
-		;; on the preapproved list, pass the first one of them
-		;; back. Otherwise, pass back nil and use the
-		;; "iso-2022-jp" entry below.
-
-		(let ((csetzero charsets)
-		      (preapproved (vm-get-coding-system-priorities))
-		      (ucs-list (vm-get-mime-ucs-list)))
-		  (if (null (cdr csetzero))
-		      (while preapproved
-			;; If we encounter a universal character set on
-			;; the preapproved list, pass it back.
-			(if (memq (car preapproved) ucs-list)
-			    (throw 'done
-				   (second (assq (car preapproved)
-				                 vm-mime-mule-coding-to-charset-alist))))
-
-			;; The preapproved entry isn't universal. Check if
-			;; it's related to the single non-ASCII MULE
-			;; charset in the buffer (that is, if the
-			;; conceptually unordered MULE list of characters
-			;; is based on a corresponding ISO character set,
-			;; and thus the ordered ISO character set can
-			;; encode all the characters in the MIME charset.)
-			;;
-			;; The string equivalence test is used because we
-			;; don't have another mapping that is useful
-			;; here. Nnngh.
-
-			(if (string=
-			     (car (cdr (assoc (car csetzero)
-				              vm-mime-mule-charset-to-charset-alist)))
-			     (car (cdr (assoc (car preapproved)
-				              vm-mime-mule-coding-to-charset-alist))))
-			    (throw 'done
-				   (car (cdr (assoc (car csetzero)
-				                    vm-mime-mule-charset-to-charset-alist)))))
-			(setq preapproved (cdr preapproved)))
-
-		    ;; Okay, there's more than one MULE character set in
-		    ;; the buffer. Check for a universal entry in the
-		    ;; preapproved list; if it exists pass it back,
-		    ;; otherwise fall through to the iso-2022-jp below,
-		    ;; because nothing on the preapproved list is
-		    ;; appropriate.
-
-		    (while preapproved
-		      ;; If we encounter a universal character set on
-		      ;; the preapproved list, pass it back.
-		      (when (memq (car preapproved) ucs-list)
-			(throw 'done
-			       (second (assq (car preapproved)
-				             vm-mime-mule-coding-to-charset-alist))))
-		      (setq preapproved (cdr preapproved)))))
-		(throw 'done nil))))
-	   ;; Couldn't do any magic with vm-coding-system-priorities. Pass
-	   ;; back a Japanese iso-2022 MIME character set.
-	   (t "iso-2022-jp")
-	   ;; Undo the change made in revisin 493
-	   ;; (t (or vm-mime-8bit-composition-charset "iso-2022-jp"))
-	   ;;    -- 
-	   ))))))
+(defconst vm-mime-long-lines-encoding "long-lines"
+  "What `vm-determine-proper-content-transfer-encoding' says for a long line.
+Not a transfer encoding: `vm-mime-transfer-encode-region' turns it into
+quoted-printable.  It cannot say \"quoted-printable\" itself, since that
+means to that function that the region is encoded already.")
 
 (defun vm-determine-proper-content-transfer-encoding (beg end)
   (save-excursion
@@ -1633,20 +1720,28 @@ that recipient is outside of East Asia."
 	(and (re-search-forward "[\000\015]" nil t)
 	     (throw 'done "binary"))
 
-	(let ((toolong nil) bol)
-	  (goto-char (point-min))
-	  (setq bol (point))
-	  (while (and (not (eobp)) (not toolong))
-	    (forward-line)
-	    (setq toolong (> (- (point) bol) 998)
-		  bol (point)))
-	  (and toolong (throw 'done "binary")))
-	 
+	(and (> (vm-mime-longest-line-length) (vm-mime-line-length-limit))
+	     (throw 'done vm-mime-long-lines-encoding))
+
 	(goto-char (point-min))
 	(and (re-search-forward "[^\000-\177]" nil t)
 	     (throw 'done "8bit"))
 
 	"7bit"))))
+
+(defun vm-mime-encapsulation-transfer-encoding (beg end)
+  "The transfer encoding for a message or multipart body between BEG and END.
+Only 7bit, 8bit and binary may appear on one (RFC 2045 6.4), so these cannot
+take the sentinel `vm-mime-long-lines-encoding' and cannot take the
+quoted-printable it stands for either.  A line too long to send as it stands
+makes the body binary, there being no encoding open to it that would shorten
+the line: the parts inside carry their own, and a header written here is
+written as it stands rather than handed to
+`vm-mime-transfer-encode-region'."
+  (let ((encoding (vm-determine-proper-content-transfer-encoding beg end)))
+    (if (equal encoding vm-mime-long-lines-encoding)
+	"binary"
+      encoding)))
 
 ;;----------------------------------------------------------------------------
 ;;; Predicates on MIME types and layouts
@@ -1673,14 +1768,22 @@ that recipient is outside of East Asia."
 (defun vm-mime-text/html-handler ()
   (if (eq vm-mime-text/html-handler 'auto-select)
       (setq vm-mime-text/html-handler
-            (cond ((locate-library "w3m")
+            (cond ((and (locate-library "w3m") (executable-find "w3m"))
+                   ;; emacs-w3m drives the w3m program; the library alone
+                   ;; cannot render anything, and choosing it then means
+                   ;; every HTML part fails or waits for a process that is
+                   ;; not there.
                    'emacs-w3m)
-                  ((locate-library "w3")
-                   'emacs-w3)
                   ((executable-find "w3m")
                    'w3m)
                   ((executable-find "lynx")
-                   'lynx)))
+                   'lynx)
+                  ;; shr needs nothing installed, so it is last and it is
+                  ;; always there: a reader with none of the above used to
+                  ;; get no HTML display at all.  It wants a libxml2-enabled
+                  ;; Emacs, which is the usual build but not guaranteed.
+                  ((and (fboundp 'libxml-available-p) (libxml-available-p))
+                   'shr)))
     vm-mime-text/html-handler))
 
 (defun vm-mime-can-display-internal (layout &optional deep)
@@ -1699,14 +1802,9 @@ that recipient is outside of East Asia."
 	   (and (vm-image-type-available-p 'pbm) (vm-images-possible-here-p)))
 	  ((vm-mime-types-match "image/xbm" type)
 	   (and (vm-image-type-available-p 'xbm) (vm-images-possible-here-p)))
-	  ((vm-mime-types-match "audio/basic" type)
-	   (and (featurep 'xemacs)
-		(or (featurep 'native-sound)
-		    (featurep 'nas-sound))
-		(or (device-sound-enabled-p)
-		    (and (featurep 'native-sound)
-			 (not native-sound-only-on-console)
-			 (memq (vm-device-type) '(x gtk))))))
+	  ;; audio/basic was played by XEmacs's own sound support and there
+	  ;; is no Emacs equivalent to put here.
+	  ((vm-mime-types-match "audio/basic" type) nil)
 	  ((vm-mime-types-match "multipart" type) t)
 	  ((vm-mime-types-match "message/external-body" type)
 	   (or (not deep)
@@ -1715,15 +1813,10 @@ that recipient is outside of East Asia."
 	  ((vm-mime-types-match "message" type) t)
 	  ((vm-mime-types-match "text/html" type)
 	   ;; Allow vm-mime-text/html-handler to decide if text/html parts are displayable:
-           (and (vm-mime-text/html-handler)
-		(let ((charset (or (vm-mime-get-parameter layout "charset")
-				   "us-ascii")))
-		  (vm-mime-charset-internally-displayable-p charset))))
-	  ((vm-mime-types-match "text" type)
-	   (let ((charset (or (vm-mime-get-parameter layout "charset")
-			      "us-ascii")))
-	     (or (vm-mime-charset-internally-displayable-p charset)
-		 (vm-mime-can-convert-charset charset))))
+           (and (vm-mime-text/html-handler) t))
+	  ;; every charset, decodable or not: what Emacs cannot decode is
+	  ;; displayed as it stands rather than handed to an external viewer
+	  ((vm-mime-types-match "text" type) t)
 	  (t nil))))
 
 (defun vm-mime-can-convert (type)
@@ -1882,67 +1975,10 @@ assuming that it is text."
   (let ((done nil))
     (while (and alist (not done))
       (cond ((and (vm-string-equal-ignore-case (car (car alist)) charset)
-		  (vm-mime-charset-internally-displayable-p
-		   (nth 1 (car alist))))
+		  (vm-mime-charset-decodable-p (nth 1 (car alist))))
 	     (setq done t))
 	    (t (setq alist (cdr alist)))))
     (and alist (car alist))))
-
-;; This function from VM 7.19 is not being used anywhere.  However,
-;; see vm-mime-charset-convert-region for similar functionality.  
-;; 						   USR, 2011-02-11
-(defun vm-mime-convert-undisplayable-charset (layout)
-  (let ((charset (vm-mime-get-parameter layout "charset"))
-	ooo work-buffer)
-    (setq ooo (vm-mime-can-convert-charset charset))
-    (vm-inform 6 "Converting charset %s to %s..."
-	     charset
-	     (nth 1 ooo))
-    (save-excursion
-      (setq work-buffer (vm-make-work-buffer " *mime object*"))
-      (vm-register-message-garbage 'kill-buffer work-buffer)
-      (set-buffer work-buffer)
-      ;; call-process-region calls write-region.
-      ;; don't let it do CR -> LF translation.
-      (setq selective-display nil)
-      (vm-mime-insert-mime-body layout)
-      (vm-mime-transfer-decode-region layout (point-min) (point-max))
-      (call-process-region (point-min) (point-max) shell-file-name
-			   t t nil shell-command-switch (nth 2 ooo))
-      (setq layout
-	    (vm-make-layout
-	     'type (copy-sequence (vm-mm-layout-type layout))
-	     'qtype (copy-sequence (vm-mm-layout-type layout))
-	     'encoding "binary"
-	     'id (vm-mm-layout-id layout)
-	     'description (vm-mm-layout-description layout)
-	     'disposition (vm-mm-layout-disposition layout)
-	     'qdisposition (vm-mm-layout-qdisposition layout)
-	     'header-start (vm-marker (point-min))
-	     'header-body (vm-marker (1- (point)))
-	     'body-start (vm-marker (point))
-	     'body-end (vm-marker (point-max))
-	     'cache (vm-mime-make-cache-symbol)
-	     'message-symbol (vm-mime-make-message-symbol
-			      (vm-mm-layout-message layout))
-	     'layout-is-converted t
-	     'onconverted-layout layout
-	     ))
-      (vm-mime-set-parameter layout "charset" (nth 1 ooo))
-      (vm-mime-set-qparameter layout "charset" (nth 1 ooo))
-      (goto-char (point-min))
-      (let ((vm-mime-avoid-folding-content-type t)) ; maybe no need
-	(insert-before-markers "Content-Type: " 
-			       (vm-mime-type-with-params
-				(car (vm-mm-layout-type layout))
-				(cdr (vm-mm-layout-type layout)))
-			       "\n"))
-      (insert-before-markers "Content-Transfer-Encoding: binary\n\n")
-      (set-buffer-modified-p nil)
-      (vm-inform 6 "Converting charset %s to %s... done"
-	       charset
-	       (nth 1 ooo))
-      layout)))
 
 (defun vm-mime-charset-convert-region (charset b-start b-end)
   (let ((b (current-buffer))
@@ -1962,19 +1998,31 @@ assuming that it is text."
 	    (setq ex (call-process-region 
 		      (point-min) (point-max) shell-file-name
 		      t t nil shell-command-switch (nth 2 ooo))))
-	  (unless (eq ex 0)
-	    (vm-warn 0 1 "Conversion from %s to %s signalled exit code %s"
-		     (nth 0 ooo) (nth 1 ooo) ex))
-	  ;; This cannot possibly safe.  USR, 2011-02-11
-	  ;; (if (not (featurep 'xemacs))
-	  ;;    (set-buffer-multibyte t))
-	  (setq start (point-min) end (point-max))
-	  (with-current-buffer b
-	    (save-excursion
-	      (goto-char b-start)
-	      (insert-buffer-substring work-buffer start end)
-	      (delete-region (point) (+ (point) oldsize))))
-	  (nth 1 ooo))
+	  (cond
+	   ((eq ex 0)
+	    ;; This cannot possibly safe.  USR, 2011-02-11
+	    (setq start (point-min) end (point-max))
+	    (with-current-buffer b
+	      (save-excursion
+		(goto-char b-start)
+		(insert-buffer-substring work-buffer start end)
+		(delete-region (point) (+ (point) oldsize))))
+	    (nth 1 ooo))
+	   (t
+	    ;; The region is left as it was, and the caller decodes it with
+	    ;; the charset it already had.  A converter that stops part way
+	    ;; has written only what it managed, and copying that back cuts
+	    ;; the message off there: iconv without -c does it on the first
+	    ;; byte it cannot map.  Unconverted text is mojibake at worst,
+	    ;; where a truncated message has lost what it does not show
+	    ;; (emacs-vm/vm#886).
+	    (vm-warn 0 2
+		     (concat "Converting from %s to %s failed with exit code"
+			     " %s; showing the text unconverted.  Check the"
+			     " command in vm-mime-charset-converter-alist,"
+			     " which iconv needs -c for")
+		     (nth 0 ooo) (nth 1 ooo) ex)
+	    charset)))
       ;; unwind-protection
       (when work-buffer (kill-buffer work-buffer)))))
 
@@ -2183,6 +2231,7 @@ in the buffer.  The function is expected to make the message
 		   (delete-region (point) (point-max)))
 		 (vm-energize-urls)
 		 (vm-highlight-headers-maybe)
+		 (vm-fontify-body-maybe)
 		 (vm-energize-headers-and-xfaces))
 	     (set-buffer-modified-p modified))))
 	(with-current-buffer vm-mail-buffer
@@ -2191,7 +2240,6 @@ in the buffer.  The function is expected to make the message
 	(vm-update-summary-and-mode-line)
 	(with-current-buffer vm-mail-buffer
 	  (vm-emit-mime-decoding-message 
-	   ;; (format "Showing MIME %s" (or vm-mime-decoded "undecoded"))
 	   "Decoding MIME message... done"
 	   ))
 	)))
@@ -2396,26 +2444,34 @@ possible.  Returns a boolean flag indicating success."
   (vm-mime-display-internal-text/plain layout))
 
 (defun vm-mime-cid-retrieve (url message)
-  "Insert a content pointed by URL if it has the cid: scheme."
-  (setq vm-mime-cid-retrieved t)
-  (if (string-match "\\`cid:" url)
-      (setq url (concat "<" (substring url (match-end 0)) ">"))
+  "Insert the part of MESSAGE that URL names, URL having the cid: scheme.
+Returns the part, or nil when the message carries no part with that
+Content-ID.  `vm-mime-cid-retrieved' is set only when a part was inserted,
+since it is what `vm-mime-display-internal-multipart/related' reads to decide
+that the viewer has shown the related parts itself."
+  (unless (string-match "\\`cid:" url)
     (error "%S is not a cid url" url))
-  (let ((part-list (vm-mm-layout-parts (vm-mm-layout message)))
-        part)
-    (while part-list
-      (setq part (car part-list))
-      (if (vm-mime-composite-type-p (car (vm-mm-layout-type part)))
-          (setq part-list (nconc (copy-sequence (vm-mm-layout-parts part))
-                                 (cdr part-list))))
-      (setq part-list (cdr part-list))
-      (if (not (equal url (vm-mm-layout-id part)))
-          (setq part nil)
-        (vm-mime-insert-mime-body part)
-        (setq part-list nil)))
-    (unless part
-      (vm-inform 5 "No data for cid %S" url))
+  (let* ((id (concat "<" (substring url (match-end 0)) ">"))
+         (top (vm-mm-layout (vm-real-message-of message)))
+         (part (and (vectorp top) (vm-mime-find-leaf-content-id top id))))
+    (if (null part)
+        (vm-inform 5 "No data for cid %S" id)
+      (vm-mime-insert-mime-body part)
+      (setq vm-mime-cid-retrieved t))
     part))
+
+(defun vm-mime-html-columns ()
+  "The width an HTML converter should render to.
+See `vm-html-fill-column', which the reply code binds so that quoted text
+does not come out as wide as the window the message was read in."
+  (cond ((eq vm-html-fill-column 'window-width)
+	 (max 20 (1- (window-width (get-buffer-window (current-buffer))))))
+	;; nil used to ask for a page 100000 columns wide, no converter taking
+	;; an instruction to leave the text unbroken.  A page laid out that
+	;; wide indents a centred table by hundreds of columns, and most HTML
+	;; mail is a centred table (#540), so nil is no longer offered.
+	((null vm-html-fill-column) vm-html-default-column)
+	(t vm-html-fill-column)))
 
 (defun vm-mime-display-internal-w3m-text/html (start end layout)
   (let* ((charset (or (vm-mime-get-parameter layout "charset") "us-ascii"))
@@ -2427,16 +2483,35 @@ possible.  Returns a boolean flag indicating success."
 	      default-process-coding-system)))
       (shell-command-on-region
        start (1- end)
-       (format "%s -dump -T text/html -I %s -O %s" 
-	       vm-w3m-program charset charset)
+       (format "%s -dump -cols %d -T text/html -I %s -O %s"
+	       vm-w3m-program (vm-mime-html-columns) charset charset)
        nil t))))
   
 (defun vm-mime-display-internal-lynx-text/html (start end _layout)
   (shell-command-on-region 
    start (1- end)
-   ;; (concat vm-lynx-program " -force_html /dev/stdin" )
-   (concat vm-lynx-program " -force_html -dump -pseudo_inlines -stdin")
+   (format "%s -force_html -dump -pseudo_inlines -stdin -width=%d"
+	   vm-lynx-program (vm-mime-html-columns))
    nil t))
+
+(defun vm-mime-display-internal-shr-text/html (start end _layout)
+  "Render the HTML between START and END with shr, which Emacs ships.
+Unlike the other handlers this needs nothing installed, so it is what makes
+HTML display work on a stock Emacs.
+
+No image is fetched.  A remote image in mail reports back to whoever sent
+the message that it was opened, so `vm-mime-shr-inhibit-images' is bound
+here rather than left to the reader's shr settings, which are for the web."
+  (require 'shr)
+  (let ((document (libxml-parse-html-region start (1- end)))
+	(shr-width (vm-mime-html-columns))
+	(shr-inhibit-images vm-mime-shr-inhibit-images)
+	(shr-blocked-images (if vm-mime-shr-inhibit-images "." nil))
+	;; the presentation buffer is VM's to lay out, not shr's
+	(shr-use-fonts nil))
+    (delete-region start (1- end))
+    (goto-char start)
+    (shr-insert-document document)))
 
 (defun vm-mime-display-internal-text/html (layout)
   "Dispatch handling of html to the actual html handler."
@@ -2462,27 +2537,20 @@ possible.  Returns a boolean flag indicating success."
 	    (setq end (point-marker))
 	    (vm-mime-transfer-decode-region layout start end)
 	    (vm-mime-charset-decode-region charset start end)
-	    ;; block remote images by prefixing the link
-	    (goto-char start)
-	    (let ((case-fold-search t))
-	      (while (re-search-forward vm-mime-text/html-blocker end t)
-		(goto-char (match-end 0))
-		(if (or t 
-			(and vm-mime-text/html-blocker-exceptions
-			     (looking-at vm-mime-text/html-blocker-exceptions))
-			(looking-at "cid:"))
-		    (progn
-		      ;; TODO: write the image to a file and replace the link
-		      )
-		  (insert "blocked:"))))
-	    ;; w3-region apparently deletes all the text in the
-	    ;; region and then insert new text.  This makes the
-	    ;; end == start.  The fix is to move the end marker
-	    ;; forward with a placeholder character so that when
-	    ;; w3-region delete all the text, end will still be
-	    ;; ahead of the insertion point and so will be moved
-	    ;; forward when the new text is inserted.  We'll
-	    ;; delete the placeholder afterward.
+	    ;; Nothing blocks a remote image here.  A loop stood here that
+	    ;; searched for `vm-mime-text/html-blocker' and then tested
+	    ;; (or t ...), so it always took the branch holding a TODO and
+	    ;; the `blocked:' it meant to insert was unreachable
+	    ;; (emacs-vm/vm#845).  What does the blocking is
+	    ;; `vm-w3m-safe-url-regexp', which vm-w3m.el binds emacs-w3m's
+	    ;; own `w3m-safe-url-regexp' to while it renders; the w3m and
+	    ;; lynx handlers convert outside Emacs and fetch nothing.
+	    ;; A renderer that replaces the region deletes all of the
+	    ;; text first, which makes end == start.  The fix is to move
+	    ;; the end marker forward with a placeholder character so
+	    ;; that end stays ahead of the insertion point and is moved
+	    ;; forward when the new text is inserted.  We'll delete the
+	    ;; placeholder afterward.
 	    (goto-char end)
 	    (insert-before-markers "z")
 	    ;; the view port (scrollbar) is sometimes messed up, try to avoid it
@@ -2514,6 +2582,182 @@ possible.  Returns a boolean flag indicating success."
     nil))
   
 
+;;; RFC 3676 -- format=flowed
+;;
+;; A sender who does not know how wide the reader's window is can say so: it
+;; wraps the text at some width of its own and marks every break it invented
+;; by leaving a space at the end of the line.  The reader is then free to join
+;; those lines back up and re-wrap them.  A break with no space before it is
+;; the author's own and stays put.
+;;
+;;     Content-Type: text/plain; format=flowed
+;;
+;; Two wrinkles.  A line whose first character is a space, or that would
+;; otherwise look like a quote or a From_ line, is sent with an extra space in
+;; front of it -- "space-stuffing" -- which has to come off before anything
+;; else is looked at.  And delsp=yes says the space at a soft break is part of
+;; the marking rather than part of the text, so it comes off when the lines are
+;; joined; that is how a language that does not put spaces between words uses
+;; the format.
+
+(defun vm-mime-flowed-layout-p (layout)
+  "Return non-nil if LAYOUT is plain text sent as RFC 3676 format=flowed."
+  (and vm-mime-unflow-flowed-text
+       (vm-mime-types-match "text/plain" (car (vm-mm-layout-type layout)))
+       (let ((format (vm-mime-get-parameter layout "format")))
+	 (and format
+	      (equal "flowed"
+		     (downcase (vm-mime-unquote-parameter-value format)))))))
+
+(defun vm-mime-delsp-layout-p (layout)
+  "Return non-nil if LAYOUT carries the RFC 3676 delsp=yes parameter."
+  (let ((delsp (vm-mime-get-parameter layout "delsp")))
+    (and delsp
+	 (equal "yes" (downcase (vm-mime-unquote-parameter-value delsp))))))
+
+(defun vm-mime-flowed-quote-depth ()
+  "Return the number of quote characters at point, leaving point after them."
+  (skip-chars-forward ">"))
+
+(defun vm-mime-unflow-region (start end &optional delsp)
+  "Join the soft line breaks of RFC 3676 format=flowed between START and END.
+A line that ends in a space is joined to the one after it, provided that line
+is quoted to the same depth: quoting is part of the paragraph's identity, so
+text quoted twice is never joined to text quoted once.  Space-stuffing is
+undone first, as RFC 3676 section 4.4 requires.  With DELSP the space at the
+break is dropped rather than kept.
+
+The signature separator is not joined to, or joined from.  Strictly it is a
+flowed line, ending as it does in a space, but RFC 3676 section 4.3 asks that
+it be left as a line of its own; running it together with the text above or
+the signature below would stop anything recognising either.
+
+On a quoted line the space that follows the quote characters is put back after
+the stuffing is removed, so that quoted text still looks quoted.  A sender
+space-stuffs a quoted line precisely because the quote prefix is followed by
+one, and every reader displays it that way."
+  (save-excursion
+    (save-restriction
+      (narrow-to-region start end)
+      (goto-char (point-min))
+      (let (line-start depth stuffed joining)
+	(while (not (eobp))
+	  (setq line-start (point)
+		depth (vm-mime-flowed-quote-depth)
+		stuffed nil)
+	  ;; Un-stuff before deciding anything else about the line.
+	  (when (eq (char-after) ?\s)
+	    (delete-char 1)
+	    (setq stuffed t))
+	  (when (and stuffed (> depth 0))
+	    (insert " "))
+	  (setq joining t)
+	  (while joining
+	    (end-of-line)
+	    (if (and (eq (char-before) ?\s)
+		     (not (eobp))
+		     (not (vm-mime-flowed-signature-line-p line-start (point)))
+		     ;; The next line has to be quoted to the same depth, and
+		     ;; must not be the signature separator.
+		     (save-excursion
+		       (forward-char 1)
+		       (and (= depth (vm-mime-flowed-quote-depth))
+			    (not (looking-at " ?-- $")))))
+		(progn
+		  (when delsp (delete-char -1))
+		  (delete-char 1)		; the line break itself
+		  (delete-char depth)		; the next line's quoting
+		  ;; and its stuffing.  No quote prefix goes back in: the
+		  ;; joined text now follows the prefix of the line it was
+		  ;; appended to.
+		  (when (eq (char-after) ?\s)
+		    (delete-char 1)))
+	      (setq joining nil)))
+	  (unless (eobp) (forward-line 1)))))))
+
+(defun vm-mime-flowed-signature-line-p (start end)
+  "Return non-nil if the text between START and END is the signature separator.
+That is the line \"-- \" of RFC 3676 section 4.3, quoted or not."
+  (string-match-p "\\`>* ?-- \\'"
+		  (buffer-substring-no-properties start end)))
+
+(defun vm-mime-flowed-soft-break-width ()
+  "Return the width at which a line break is taken to be VM's rather than yours.
+A line filled out to about the fill column was broken there because that is
+where the text ran out of room; a much shorter line was broken there because
+you meant it to be -- an address, a list item, a line of code.  Only the first
+kind is offered to the reader to undo.  This is a guess, but the alternative is
+to flow everything and reflow the reader's view of text that was deliberately
+laid out."
+  (max 20 (- (or fill-column 70) 10)))
+
+(defun vm-mime-flow-region (start end)
+  "Mark the line breaks between START and END as soft, per RFC 3676.
+A line that runs to about the fill column and is followed by more of the same
+paragraph is given a trailing space, which tells the reader the break after it
+was made to fit a width and may be undone.  A paragraph ends at a blank line,
+at a change of quote depth, or at the signature separator, and its last line
+keeps its break.  So does a line short enough to have been broken on purpose;
+see `vm-mime-flowed-soft-break-width'.
+
+Space-stuffing is applied as section 4.4 requires: a line whose text begins
+with a space, or -- when the line is not quoted -- with a quote character or
+with \"From \", is sent with one extra space in front of that text, so that the
+reader can tell it from the format's own marks.  The quote characters of a
+quoted line are its quote prefix and are left alone; stuffing goes after them.
+
+Returns non-nil if any break was marked soft, which is the caller's cue to
+declare format=flowed.  Text of one-line paragraphs comes back unchanged apart
+from stuffing and does not need the parameter."
+  (let ((flowed nil)
+	(width (vm-mime-flowed-soft-break-width)))
+    (save-excursion
+      (save-restriction
+	(narrow-to-region start end)
+	;; Stuffing first: it shifts the text, and the width measured below
+	;; should be the width the reader will see.
+	(goto-char (point-min))
+	(while (not (eobp))
+	  (let ((depth (vm-mime-flowed-quote-depth)))
+	    ;; Point is now after the quote prefix, at the text itself.
+	    (when (if (> depth 0)
+		      ;; The space a mailer conventionally puts after the quote
+		      ;; characters is itself the stuffing -- the reader takes
+		      ;; one space off and puts one back to display the line.
+		      ;; Adding another would send "> " as ">  ".  A quoted
+		      ;; line with no space there gets one, so that it reads
+		      ;; the usual way at the other end.
+		      (not (eq (char-after) ?\s))
+		    (looking-at "[ >]\\|From "))
+	      (insert " ")))
+	  (forward-line 1))
+	(goto-char (point-min))
+	(while (not (eobp))
+	  (let ((bol (point))
+		(depth (save-excursion (vm-mime-flowed-quote-depth)))
+		eol)
+	    (end-of-line)
+	    (setq eol (point))
+	    (unless (or (= bol eol)		; a blank line ends a paragraph
+			(vm-mime-flowed-signature-line-p bol eol)
+			(eobp)			; the last line keeps its break
+			(< (- eol bol) width)	; a break you meant
+			;; A paragraph also ends where the next line is blank,
+			;; quoted differently, or the signature separator.
+			(save-excursion
+			  (forward-char 1)
+			  (or (eobp)
+			      (looking-at "$")
+			      (/= depth (save-excursion
+					  (vm-mime-flowed-quote-depth)))
+			      (looking-at " ?-- $"))))
+	      ;; A soft break: leave exactly one space before it.
+	      (unless (eq (char-before) ?\s)
+		(insert " "))
+	      (setq flowed t)))
+	  (forward-line 1))))
+    flowed))
+
 (defun vm-mime-display-internal-text/plain (layout &optional no-highlighting)
   "Display a text/plain mime part given by LAYOUT, carrying out
 any necessary MIME-decoding, CRLF-conversion, charset-conversion
@@ -2523,29 +2767,34 @@ in the text are highlighted and energized."
   (let ((start (point)) end need-conversion
 	(buffer-read-only nil)
 	(charset (or (vm-mime-get-parameter layout "charset") "us-ascii")))
-    (if (and (not (vm-mime-charset-internally-displayable-p charset))
-	     (not (setq need-conversion (vm-mime-can-convert-charset charset))))
-	(progn
-	  (vm-set-mm-layout-display-error
-	   layout (concat "Undisplayable charset: " charset))
-	  (vm-warn 0 2 "%s: %s" (buffer-name vm-mail-buffer) 
-		   (vm-mm-layout-display-error layout))
-	  nil)
-      (vm-mime-insert-mime-body layout)
-      (unless (bolp) (insert "\n"))
-      (setq end (point-marker))
-      (vm-mime-transfer-decode-region layout start end)
-      (when need-conversion
-	(setq charset (vm-mime-charset-convert-region charset start end)))
-      (vm-mime-charset-decode-region charset start end)
-      (unless no-highlighting (vm-energize-urls-in-message-region start end))
-      (when (and (or vm-word-wrap-paragraphs
-		     vm-fill-paragraphs-containing-long-lines)
-		 (not no-highlighting))
-	(vm-fill-paragraphs-containing-long-lines
-	 vm-fill-paragraphs-containing-long-lines start end))
-      (goto-char end)
-      t )))
+    ;; a charset Emacs cannot decode, and a converter configured for it: the
+    ;; one case where the converter runs.  Text in a charset Emacs has no
+    ;; coding system for and no converter for is displayed as it stands, with
+    ;; a replacement character for what cannot be rendered, which is better
+    ;; than refusing to show the message at all.
+    (setq need-conversion (unless (vm-mime-charset-decodable-p charset)
+			    (vm-mime-can-convert-charset charset)))
+    (vm-mime-insert-mime-body layout)
+    (unless (bolp) (insert "\n"))
+    (setq end (point-marker))
+    (vm-mime-transfer-decode-region layout start end)
+    (when need-conversion
+      (setq charset (vm-mime-charset-convert-region charset start end)))
+    (vm-mime-charset-decode-region charset start end)
+    ;; Before anything looks at the line structure: the sender's line breaks
+    ;; are not all real.  What is left is one long line per paragraph, which
+    ;; the filling below then wraps to this window -- which is the point of
+    ;; the format.
+    (when (vm-mime-flowed-layout-p layout)
+      (vm-mime-unflow-region start end (vm-mime-delsp-layout-p layout)))
+    (unless no-highlighting (vm-energize-urls-in-message-region start end))
+    (when (and (or vm-word-wrap-paragraphs
+		   vm-fill-paragraphs-containing-long-lines)
+	       (not no-highlighting))
+      (vm-fill-paragraphs-containing-long-lines
+       vm-fill-paragraphs-containing-long-lines start end))
+    (goto-char end)
+    t ))
 
 (defun vm-mime-display-internal-text/enriched (layout)
   (require 'enriched)
@@ -2578,6 +2827,128 @@ in the text are highlighted and energized."
     (vm-emit-mime-decoding-message "Decoding text/enriched... done")
     t ))
 
+(defun vm-mime-cid-file-name (id)
+  "Return a file name component naming the cid: reference ID.
+A Content-ID may hold anything an addr-spec may, `@' and `%' included, so it is
+not a file name as it stands."
+  (let ((name (copy-sequence id)))
+    (while (string-match "[^A-Za-z0-9._-]" name)
+      (setq name (replace-match "_" t t name)))
+    name))
+
+(defun vm-mime-write-cid-part (part id html-file)
+  "Write PART, the target of cid: reference ID, beside HTML-FILE.
+Returns the file written, or nil.  It goes in the same directory so that the
+rewritten reference can be a bare file name, which is what a browser resolves
+relative to the document it is reading.
+
+Written with the same care `vm-make-tempfile' takes over the HTML part itself:
+mode 600, because this is somebody's mail going into a directory other people
+may be able to read, and any existing file removed first, so that a name
+already occupying the path -- a symbolic link, say -- is not written through."
+  (let* ((suffix (or (vm-mime-extract-filename-suffix part)
+		     (vm-mime-find-filename-suffix-for-type part)
+		     ""))
+	 (file (expand-file-name
+		(concat (file-name-base html-file) "-"
+			(vm-mime-cid-file-name id) suffix)
+		(file-name-directory html-file)))
+	 (modes (default-file-modes)))
+    (unwind-protect
+	(progn
+	  (set-default-file-modes (vm-octal 600))
+	  (vm-error-free-call 'delete-file file)
+	  (and (vm-mime-send-body-to-file part nil file t)
+	       file))
+      (set-default-file-modes modes))))
+
+(defun vm-mime-html-fragment-p ()
+  "Whether the HTML in the current buffer is a fragment rather than a document.
+A document says so with a doctype or an `<html>' tag, or at least says what
+character set it is in; a fragment says neither, and leaves a browser to
+guess both.
+
+Note that `>' is a symbol constituent in the standard syntax table, so
+\"<html\\\\_>\" does not match `<html>'."
+  (let ((case-fold-search t))
+    (goto-char (point-min))
+    (not (or (re-search-forward "<html[ \t\r\n>]\\|<!doctype[ \t]" nil t)
+	     (progn (goto-char (point-min))
+		    (re-search-forward "<meta\\s-[^>]*charset" nil t))))))
+
+(defun vm-mime-complete-html-file (layout html-file)
+  "Make HTML-FILE a whole document if the text/html in it is a fragment.
+HTML-FILE holds the text of LAYOUT, written out for an external viewer.  A
+fragment carries no charset of its own -- that was in the part's header, and
+the file has no header -- so the viewer guesses.  Issue #387.
+
+The text is wrapped, not re-encoded: the bytes VM wrote are the bytes the
+part had.  Returns t when the file was changed.
+
+Does nothing when `vm-mime-complete-html-for-external-viewer' is nil."
+  (when vm-mime-complete-html-for-external-viewer
+    (let ((charset (or (vm-mime-get-parameter layout "charset") "us-ascii"))
+	  (coding-system-for-read (vm-binary-coding-system))
+	  (coding-system-for-write (vm-binary-coding-system)))
+      (with-temp-buffer
+	(insert-file-contents html-file)
+	(when (vm-mime-html-fragment-p)
+	  (goto-char (point-min))
+	  (insert (format (concat "<html>\n<head>\n"
+				  "<meta http-equiv=\"Content-Type\""
+				  " content=\"text/html; charset=%s\">\n"
+				  "</head>\n<body>\n")
+			  charset))
+	  (goto-char (point-max))
+	  (unless (bolp) (insert "\n"))
+	  (insert "</body>\n</html>\n")
+	  (write-region (point-min) (point-max) html-file nil 'quiet)
+	  t)))))
+
+(defun vm-mime-externalize-cid-references (layout html-file)
+  "Point HTML-FILE's cid: references at local copies of the parts they name.
+HTML-FILE holds the text of LAYOUT, a text/html part written out for an
+external viewer.  A `cid:' URL names another part of the same message
+(RFC 2392), which a browser handed a lone HTML file has no way to reach --
+so it draws a broken image where the sender put a picture.  Issue #506.
+
+Each referenced part is written beside HTML-FILE and the reference is
+replaced by its file name.  Returns the list of files written, for the
+caller to register as garbage.
+
+Does nothing when `vm-mime-externalize-cid-references' is nil."
+  (let ((message (and vm-mime-externalize-cid-references
+		      (vm-mm-layout-message layout)))
+	(written nil))
+    (when message
+      (let ((top (vm-mm-layout (vm-real-message-of message))))
+	(when (vectorp top)
+	  (with-temp-buffer
+	    (let ((coding-system-for-read (vm-binary-coding-system)))
+	      (insert-file-contents html-file))
+	    (let ((found (make-hash-table :test 'equal))
+		  (changed nil))
+	      (goto-char (point-min))
+	      ;; A cid: URL ends where the attribute or the CSS url() does.
+	      (while (re-search-forward "cid:\\([^\"'>) \t\r\n]+\\)" nil t)
+		(let* ((id (match-string 1))
+		       (file (gethash id found)))
+		  (unless file
+		    (let ((part (vm-mime-find-leaf-content-id
+				 top (concat "<" id ">"))))
+		      (when part
+			(setq file (vm-mime-write-cid-part part id html-file))
+			(when file
+			  (puthash id file found)
+			  (push file written)))))
+		  (when file
+		    (replace-match (file-name-nondirectory file) t t)
+		    (setq changed t))))
+	      (when changed
+		(let ((coding-system-for-write (vm-binary-coding-system)))
+		  (write-region (point-min) (point-max) html-file nil 'quiet))))))))
+    (nreverse written)))
+
 (defun vm-mime-display-external-generic (layout)
   "Display mime object with LAYOUT in an external viewer, as
 determined by `vm-mime-external-content-types-alist'."
@@ -2605,7 +2976,17 @@ determined by `vm-mime-external-content-types-alist'."
 	     (setq basename (vm-mime-get-disposition-filename layout))
 	     (setq tempfile (vm-make-tempfile suffix basename))
              (vm-register-message-garbage-files (list tempfile))
-             (vm-mime-send-body-to-file layout nil tempfile t)))
+             (vm-mime-send-body-to-file layout nil tempfile t)
+	     ;; An external viewer given only this file cannot follow a cid:
+	     ;; reference to another part of the message, so give it copies to
+	     ;; look at instead of broken images (issue #506).  Nor does the
+	     ;; file say what character set it is in, if the part was a
+	     ;; fragment rather than a document (issue #387).
+	     (when (vm-mime-types-match "text/html"
+					(car (vm-mm-layout-type layout)))
+	       (vm-mime-complete-html-file layout tempfile)
+	       (vm-register-message-garbage-files
+		(vm-mime-externalize-cid-references layout tempfile)))))
 
       (if (symbolp (car program-list))
 	  ;; use internal function if provided
@@ -2994,13 +3375,7 @@ current buffer."
 	       (error (signal 'vm-mime-error (cdr data))))))
 	  ((and (string= access-method "url")
 		vm-url-retrieval-methods)
-	   (defvar w3-configuration-directory) ; for bytecompiler
-	   (let ((url (vm-mime-get-parameter layout "url"))
-		 ;; needed or url-retrieve will bitch
-		 (w3-configuration-directory
-		  (if (boundp 'w3-configuration-directory)
-		      w3-configuration-directory
-		    "~")))
+	   (let ((url (vm-mime-get-parameter layout "url")))
 	     (if (null url)
 		 (vm-mime-error
 		  "%s access type missing `url' parameter"
@@ -3012,11 +3387,10 @@ current buffer."
 			   (goto-char (point-min))
 			   (while (re-search-forward "[ \t\n]" nil t)
 			     (delete-char -1))))))
-	     (vm-mime-fetch-url-with-programs url work-buffer)))
+	     (vm-mime-fetch-url url work-buffer)))
 	  ((and (or (string= access-method "ftp")
 		    (string= access-method "anon-ftp"))
-		(or (fboundp 'efs-file-handler-function)
-		    (fboundp 'ange-ftp-hook-function)))
+		(fboundp 'ange-ftp-hook-function))
 	   (let ((name (vm-mime-get-parameter layout "name"))
 		 (directory (vm-mime-get-parameter layout "directory"))
 		 (site (vm-mime-get-parameter layout "site"))
@@ -3037,7 +3411,7 @@ current buffer."
 		   (t (setq user "anonymous")))
 	     (if (and (string= access-method "ftp")
 		      vm-url-retrieval-methods
-		      (vm-mime-fetch-url-with-programs
+		      (vm-mime-fetch-url
 		       (if directory
 			   (concat "ftp:////" site "/"
 				   directory "/" name)
@@ -3124,7 +3498,6 @@ fetched content."
 		  (vm-set-mm-layout-body-start 
 		   child-layout (vm-marker (point-min)))))
 	    (vm-mime-error		; handler
-	     ;; (vm-warn 0 2 (format "Error in retrieving: %s" (cdr data)))
 	     (vm-set-mm-layout-display-error layout (cdr data))
 	     (setq child-layout nil)))))
       ;; unwind-protections
@@ -3176,9 +3549,7 @@ button that this LAYOUT comes from."
       (lambda (extent)
 	;; reuse the internal display code, but make sure that no new
 	;; buttons will be created for the external-body content.
-	(let ((layout (if (featurep 'xemacs)
-                         (vm-extent-property extent 'vm-mime-layout)
-                       (overlay-get extent 'vm-mime-layout)))
+	(let ((layout (vm-extent-property extent 'vm-mime-layout))
 	      (vm-mime-auto-displayed-content-types t)
 	      (vm-mime-auto-displayed-content-type-exceptions nil))
 	  (vm-mime-display-internal-message/external-body 
@@ -3189,59 +3560,45 @@ button that this LAYOUT comes from."
      :layout layout)))
 
 
-(defun vm-mime-fetch-url-with-programs (url buffer)
-  (when
-      (eq t (cond ((if (and (memq 'wget vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-wget-program "-q" "-O" "-" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'w3m vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-w3m-program "-dump_source" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'fetch vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-fetch-program "-o" "-" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'curl vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-curl-program url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))
-		  ((if (and (memq 'lynx vm-url-retrieval-methods)
-			    (condition-case _data
-				(vm-run-command-on-region 
-				 (point) (point) buffer
-				 vm-lynx-program "-source" url)
-			      (error nil)))
-		       t
-		     (with-current-buffer buffer
-		       (erase-buffer)
-		       nil )))))
-    (not (zerop (buffer-size buffer)))))
+(defun vm-mime-url-response-body-start ()
+  "Where the body starts in a response `url-retrieve-synchronously' returned.
+`url-http' records it in `url-http-end-of-headers'.  Other schemes do not
+bind that and still synthesise a header block: a file: URL comes back with
+Content-type and Content-length in front of the file.  So the fallback is
+the first blank line, and a response with no header block is all body."
+  (cond ((and (boundp 'url-http-end-of-headers)
+	      (symbol-value 'url-http-end-of-headers))
+	 (symbol-value 'url-http-end-of-headers))
+	(t
+	 (save-excursion
+	   (goto-char (point-min))
+	   (if (re-search-forward "^\r?\n" nil t)
+	       (point)
+	     (point-min))))))
+
+(defun vm-mime-fetch-url (url buffer)
+  "Retrieve URL into BUFFER.  Return non-nil when anything was retrieved.
+
+Emacs does the retrieving.  `url-retrieve-synchronously' is in core and
+speaks http, https, ftp and file, so this needs no external program and no
+option saying which one to run.  The body is copied buffer to buffer rather
+than through a string, so that a binary object keeps its bytes."
+  (let ((response
+	 (condition-case err
+	     (url-retrieve-synchronously url t t vm-url-retrieval-timeout)
+	   (error
+	    (vm-warn 0 2 "Could not retrieve %s: %s"
+		     url (error-message-string err))
+	    nil))))
+    (when response
+      (unwind-protect
+	  (let ((start (with-current-buffer response
+			 (vm-mime-url-response-body-start))))
+	    (with-current-buffer buffer
+	      (erase-buffer)
+	      (insert-buffer-substring response start)
+	      (not (zerop (buffer-size)))))
+	(kill-buffer response)))))
 
 (defun vm-mime-internalize-local-external-bodies (layout)
   "Given a LAYOUT representing a message/external-body object, convert
@@ -3261,12 +3618,10 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
 	       (with-current-buffer work-buffer
 		 (vm-mime-retrieve-external-body layout))
 	       (goto-char (vm-mm-layout-body-start child-layout))
-	       ;; (setq oldsize (buffer-size))
 	       (condition-case data
 		   (insert-buffer-substring work-buffer)
 		 (error (signal 'vm-mime-error (cdr data))))
 	       ;; This is redundant because insertion moves point
-	       ;; (goto-char (+ (point) (- (buffer-size) oldsize)))
 	       (if (< (point) (vm-mm-layout-body-end child-layout))
 		   (delete-region (point)
 				  (vm-mm-layout-body-end child-layout))
@@ -3297,7 +3652,6 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
     (vm-inform 6 "Assembling message...")
     (let ((parts nil)
 	  (missing nil)
-	  ;; (work-buffer nil)
 	  extent id o total m i prev part-header-pos ;; number
 	  p-number p-total p-list)                   ;; p-id
       (setq extent layout
@@ -3318,7 +3672,6 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
 		  nil
 		(setq p-list (vm-mime-find-message/partials o id))
 		(while p-list
-		  ;; (setq p-id (vm-mime-get-parameter (car p-list) "id"))
 		  (setq p-total (vm-mime-get-parameter (car p-list) "total"))
 		  (if (null p-total)
 		      nil
@@ -3403,6 +3756,10 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
       (goto-char (point-min))
       (insert (vm-leading-message-separator))
       (goto-char (point-max))
+      ;; The reassembled message ends with a newline, so that the trailing
+      ;; separator makes the blank line the next leading one has to follow.
+      ;; A last fragment need not end with one (#783).
+      (unless (bolp) (insert "\n"))
       (insert (vm-trailing-message-separator))
       (set-buffer-modified-p nil)
       (vm-inform 6 "Assembling message... done")
@@ -3425,139 +3782,21 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
   "Display the image object described by LAYOUT internally.
 IMAGE-TYPE is its image type (png, jpeg etc.).  NAME is a string
 describing the image type.                             USR, 2011-03-25"
-  (cond
-   ((featurep 'xemacs)
-    (vm-mime-display-internal-image-xemacs-xxxx layout image-type name))
-   ((and (not (featurep 'xemacs)) (fboundp 'image-type-available-p))
-    (vm-mime-display-internal-image-fsfemacs-xxxx layout image-type name))
-   (t
-    (vm-inform 0 "Unsupported Emacs version"))
-   ))
-
-(defun vm-mime-display-internal-image-xemacs-xxxx (layout image-type name)
-  (if (and (vm-images-possible-here-p)
-	   (vm-image-type-available-p image-type))
-      (let ((start (point-marker)) end tempfile g e
-	    (selective-display nil)
-	    (incremental vm-mime-display-image-strips-incrementally)
-	    do-strips
-	    (keymap (make-sparse-keymap))
-	    (buffer-read-only nil))
-	(if (and (setq tempfile (vm-mm-layout-image-file layout))
-		 (file-readable-p tempfile))
-	    nil
-	  (vm-mime-insert-mime-body layout)
-	  (setq end (point-marker))
-	  (vm-mime-transfer-decode-region layout start end)
-	  (setq tempfile (vm-make-tempfile))
-	  (vm-register-folder-garbage-files (list tempfile))
-	  ;; coding system for presentation buffer is binary so
-	  ;; we don't need to set it here.
-	  (write-region start end tempfile nil 0)
-	  (vm-set-mm-layout-image-file layout tempfile)
-	  (delete-region start end))
-	(if (not (bolp))
-	    (insert "\n"))
-	(setq do-strips (and (vm-imagemagick-available-p)
-			     vm-mime-use-image-strips))
-	(cond (do-strips
-	       (condition-case error-data
-		   (let ((strips (vm-make-image-strips tempfile
-						       (* 2 (font-height
-							(face-font 'default)))
-						       image-type
-						       t incremental))
-			 process image-list extent-list
-			 start
-			 (first t))
-		     (define-key keymap 'button3 'vm-menu-popup-image-menu)
-		     (setq process (car strips)
-			   strips (cdr strips)
-			   image-list strips)
-		     (vm-register-message-garbage-files strips)
-		     (setq start (point))
-		     (while strips
-		       (setq g (make-glyph
-				(list
-				 (cons nil
-				       (vector 'string
-					       ':data
-					       (if (or first
-						       (null (cdr strips)))
-						   (progn
-						     (setq first nil)
-						     "+-----+")
-						 "|image|"))))))
-		       (insert " \n")
-		       (setq e (vm-make-extent (- (point) 2) (1- (point))))
-		       (vm-set-extent-property e 'begin-glyph g)
-		       (vm-set-extent-property e 'start-open t)
-		       (vm-set-extent-property e 'keymap keymap)
-		       (setq extent-list (cons e extent-list))
-		       (setq strips (cdr strips)))
-		     (setq e (vm-make-extent start (point)))
-		     (vm-set-extent-property e 'start-open t)
-		     (vm-set-extent-property e 'vm-mime-layout layout)
-		     (vm-set-extent-property e 'vm-mime-disposable t)
-		     (vm-set-extent-property e 'keymap keymap)
-		     (with-current-buffer (process-buffer process)
-		       (set (make-local-variable 'vm-image-list) image-list)
-		       (set (make-local-variable 'vm-image-type) image-type)
-		       (set (make-local-variable 'vm-image-type-name)
-			    name)
-		       (set (make-local-variable 'vm-extent-list)
-			    (nreverse extent-list)))
-		     (if incremental
-			 (set-process-filter
-			  process
-			  'vm-process-filter-display-some-image-strips))
-		     (set-process-sentinel
-		      process
-		      'vm-process-sentinel-display-image-strips))
-		 (vm-image-too-small
-		  (setq do-strips nil))
-		 (error
-		  (vm-warn 0 0 "%s: Failed making image strips: %s" 
-			   (buffer-name vm-mail-buffer) error-data)
-		  ;; fallback to the non-strips way
-		  (setq do-strips nil)))))
-	(cond ((not do-strips)
-	       (vm-inform 6 "Creating %s glyph..." name)
-	       (setq g (make-glyph
-			(list
-			 (cons (list 'win)
-			       (vector image-type ':file tempfile))
-			 (cons (list 'win)
-			       (vector 'string
-				       ':data
-				       (format "[Unknown/Bad %s image encoding]"
-					       name)))
-			 (cons nil
-			       (vector 'string
-				       ':data
-				       (format "[%s image]\n" name))))))
-	       (vm-inform 6 "")
-	       ;; XEmacs 21.2 can pixel scroll images (sort of)
-	       ;; if the entire image is above the baseline.
-	       (set-glyph-baseline g 100)
-	       (if (memq image-type '(xbm))
-		   (set-glyph-face g 'vm-monochrome-image))
-	       (insert " \n")
-	       (define-key keymap 'button3 'vm-menu-popup-image-menu)
-	       (setq e (vm-make-extent (- (point) 2) (1- (point))))
-	       (vm-set-extent-property e 'keymap keymap)
-	       (vm-set-extent-property e 'begin-glyph g)
-	       (vm-set-extent-property e 'vm-mime-layout layout)
-	       (vm-set-extent-property e 'vm-mime-disposable t)
-	       (vm-set-extent-property e 'start-open t)))
-	t )))
-
-(defvar vm-menu-fsfemacs-image-menu)
+  (vm-mime-display-internal-image-fsfemacs-xxxx layout image-type name))
 
 (defun vm-mime-display-internal-image-fsfemacs-xxxx (layout image-type name)
   "Display the image object described by LAYOUT internally.
 IMAGE-TYPE is its image type (png, jpeg etc.).  NAME is a string
-describing the image type.                            USR, 2011-03-25"
+describing the image type.                            USR, 2011-03-25
+
+A picture the reader has rotated, mirrored or scaled is a PNG whatever the
+part was, `vm-mime-frob-image-xxxx' having written it with ImageMagick's
+\"png:-\", and it is the cached file that is displayed from then on.  So the
+part's own type is not what the file holds, and IMAGE-TYPE is PNG for as
+long as the picture stays frobbed (emacs-vm/vm#885)."
+  (when (vm-mm-layout-image-modified layout)
+    (setq image-type 'png
+	  name "PNG"))
   (if (and (vm-images-possible-here-p)
 	   (vm-image-type-available-p image-type))
       (let (start end tempfile image work-buffer
@@ -3580,7 +3819,9 @@ describing the image type.                            USR, 2011-03-25"
 		  (setq tempfile (vm-make-tempfile))
 		  (let ((coding-system-for-write (vm-binary-coding-system)))
 		    (write-region start end tempfile nil 0))
-		  (vm-mm-layout-image-file layout))
+		  ;; remember it, or the next display writes it again: this
+		  ;; read of the same slot discarded its value (#882)
+		  (vm-set-mm-layout-image-file layout tempfile))
 		(vm-register-folder-garbage-files (list tempfile)))
 	    (and work-buffer (kill-buffer work-buffer))))
 	(if (not (bolp))
@@ -3716,7 +3957,11 @@ describing the image type.                            USR, 2011-03-25"
 		(progn
 		  ;; Problem - we have no way of knowing whether these
 		  ;; calls succeed or not.  USR, 2011-02-23
+		  ;; the file first: ImageMagick 7 refuses an operator with no
+		  ;; image read yet, "no images found for operation `-crop'",
+		  ;; and writes nothing (emacs-vm/vm#882)
 		  (insert (vm-imagemagick-convert-shell-command)
+			  " \"" file "\""
 			  " -crop"
 			  (format " %dx%d+0+%d"
 				  width
@@ -3729,13 +3974,14 @@ describing the image type.                            USR, 2011-03-25"
 				  (+ min-height adjustment
 				     (if (zerop remainder) 0 1)))
 			  (format " -roll +%d+%d" hroll vroll)
-			  " \"" file "\" \"" output-type newfile "\"\n")
+			  " \"" output-type newfile "\"\n")
 		  (when incremental
 			(insert "echo XZXX" (int-to-string i) "XZXX\n"))
 		  (setq i (1+ i)))
 	      (vm-imagemagick-call-convert
 	       nil nil
-	       (list "-crop"
+	       (list file
+		     "-crop"
 		     (format "%dx%d+0+%d"
 			     width
 			     (+ min-height adjustment
@@ -3748,7 +3994,7 @@ describing the image type.                            USR, 2011-03-25"
 				(if (zerop remainder) 0 1)))
 		     "-roll"
 		     (format "+%d+%d" hroll vroll)
-		     file (concat output-type newfile))))
+		     (concat output-type newfile))))
 	    (setq image-list (cons newfile image-list)
 		  starty (+ starty min-height adjustment
 			    (if (zerop remainder) 0 1))
@@ -3769,50 +4015,15 @@ describing the image type.                            USR, 2011-03-25"
 
 (defun vm-process-sentinel-display-image-strips (process _what-happened)
   (with-current-buffer (process-buffer process)
-    (cond ((and (boundp 'vm-extent-list)
-		(boundp 'vm-image-list))
-	   (let ((strips vm-image-list)
-		 (extents vm-extent-list)
-		 (image-type vm-image-type)
-		 (type-name vm-image-type-name))
-	     (vm-display-image-strips-on-extents strips extents image-type
-						 type-name)))
-	  ((and (boundp 'vm-overlay-list)
-		(overlay-buffer (car vm-overlay-list))
-		(boundp 'vm-image-list))
-	   (let ((strips vm-image-list)
-		 (overlays vm-overlay-list)
-		 (image-type vm-image-type))
-	     (vm-display-image-strips-on-overlay-regions strips overlays
-							 image-type))))
+    (when (and (boundp 'vm-overlay-list)
+	       (overlay-buffer (car vm-overlay-list))
+	       (boundp 'vm-image-list))
+      (let ((strips vm-image-list)
+	    (overlays vm-overlay-list)
+	    (image-type vm-image-type))
+	(vm-display-image-strips-on-overlay-regions strips overlays
+						    image-type)))
     (kill-buffer (current-buffer))))
-
-(defun vm-display-image-strips-on-extents (strips extents image-type type-name)
-  (let (g)
-    (while (and strips
-		(file-exists-p (car strips))
-		(extent-live-p (car extents))
-		(vm-extent-object (car extents)))
-      (setq g (make-glyph
-	       (list
-		(cons (list 'win)
-		      (vector image-type ':file (car strips)))
-		(cons (list 'win)
-		      (vector
-		       'string
-		       ':data
-		       (format "[Unknown/Bad %s image encoding]"
-			       type-name)))
-		(cons nil
-		      (vector 'string
-			      ':data
-			      (format "[%s image]\n" type-name))))))
-      (set-glyph-baseline g 50)
-      (if (memq image-type '(xbm))
-	  (set-glyph-face g 'vm-monochrome-image))
-      (set-extent-begin-glyph (car extents) g)
-      (setq strips (cdr strips)
-	    extents (cdr extents)))))
 
 (defun vm-display-image-strips-on-overlay-regions (strips overlays image-type)
   (let (prop value omodified)
@@ -3822,18 +4033,13 @@ describing the image type.                            USR, 2011-03-25"
 	(widen)
 	(unwind-protect
 	    (let ((buffer-read-only nil))
-	      (if (fboundp 'image-type-available-p)
-		  (setq prop 'display)
-		(setq prop 'face))
+	      (setq prop 'display)
 	      (while (and strips
 			  (file-exists-p (car strips))
 			  (overlay-end (car overlays)))
-		(if (fboundp 'image-type-available-p)
-		    (setq value (list 'image ':type image-type
-				      ':file (car strips)
-				      ':ascent 50))
-		  (setq value (make-face (make-symbol "<vm-image-face>")))
-		  (set-face-stipple value (car strips)))
+		(setq value (list 'image ':type image-type
+				  ':file (car strips)
+				  ':ascent 50))
 		(put-text-property (overlay-start (car overlays))
 				   (overlay-end (car overlays))
 				   prop value)
@@ -3848,54 +4054,14 @@ describing the image type.                            USR, 2011-03-25"
 			       which-strips)
 	    i (match-end 0)))
     (with-current-buffer (process-buffer process)
-      (cond ((and (boundp 'vm-extent-list)
-		  (boundp 'vm-image-list))
-	     (let ((strips vm-image-list)
-		   (extents vm-extent-list)
-		   (image-type vm-image-type)
-		   (type-name vm-image-type-name))
-	       (vm-display-some-image-strips-on-extents strips extents
-							image-type
-							type-name
-							which-strips)))
-	    ((and (boundp 'vm-overlay-list)
-		  (overlay-buffer (car vm-overlay-list))
-		  (boundp 'vm-image-list))
-	     (let ((strips vm-image-list)
-		   (overlays vm-overlay-list)
-		   (image-type vm-image-type))
-	       (vm-display-some-image-strips-on-overlay-regions
-		strips overlays image-type which-strips)))))))
-
-(defun vm-display-some-image-strips-on-extents
-  (strips extents image-type type-name which-strips)
-  (let (g sss eee)
-    (while which-strips
-      (setq sss (nthcdr (car which-strips) strips)
-	    eee (nthcdr (car which-strips) extents))
-      (cond ((and sss
-		  (file-exists-p (car sss))
-		  (extent-live-p (car eee))
-		  (vm-extent-object (car eee)))
-	     (setq g (make-glyph
-		      (list
-		       (cons (list 'win)
-			     (vector image-type ':file (car sss)))
-		       (cons (list 'win)
-			     (vector
-			      'string
-			      ':data
-			      (format "[Unknown/Bad %s image encoding]"
-				      type-name)))
-		       (cons nil
-			     (vector 'string
-				     ':data
-				     (format "[%s image]\n" type-name))))))
-	     (set-glyph-baseline g 50)
-	     (if (memq image-type '(xbm))
-		 (set-glyph-face g 'vm-monochrome-image))
-	     (set-extent-begin-glyph (car eee) g)))
-      (setq which-strips (cdr which-strips)))))
+      (when (and (boundp 'vm-overlay-list)
+		 (overlay-buffer (car vm-overlay-list))
+		 (boundp 'vm-image-list))
+	(let ((strips vm-image-list)
+	      (overlays vm-overlay-list)
+	      (image-type vm-image-type))
+	  (vm-display-some-image-strips-on-overlay-regions
+	   strips overlays image-type which-strips))))))
 
 (defun vm-display-some-image-strips-on-overlay-regions
   (strips overlays image-type which-strips)
@@ -3906,22 +4072,16 @@ describing the image type.                            USR, 2011-03-25"
 	(widen)
 	(unwind-protect
 	    (let ((buffer-read-only nil))
-	      (if (fboundp 'image-type-available-p)
-		  (setq prop 'display)
-		(setq prop 'face))
+	      (setq prop 'display)
 	      (while which-strips
 		(setq sss (nthcdr (car which-strips) strips)
 		      ooo (nthcdr (car which-strips) overlays))
 		(cond ((and sss
 			    (file-exists-p (car sss))
 			    (overlay-end (car ooo)))
-		       (if (fboundp 'image-type-available-p)
-			   (setq value (list 'image ':type image-type
-					     ':file (car sss)
-					     ':ascent 50))
-			 (setq value (make-face (make-symbol
-						 "<vm-image-face>")))
-			 (set-face-stipple value (car sss)))
+		       (setq value (list 'image ':type image-type
+					 ':file (car sss)
+					 ':ascent 50))
 		       (put-text-property (overlay-start (car ooo))
 					  (overlay-end (car ooo))
 					  prop value)))
@@ -3975,11 +4135,15 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	    ;; convert just the first page "[0]" and enforce PNG
 	    ;; output by "png:"
 	    (let ((coding-system-for-read (vm-binary-coding-system)))
+	      ;; the image first, then what to do to it: ImageMagick 7 refuses
+	      ;; an operator with nothing read yet (emacs-vm/vm#882).  "-" is
+	      ;; standard input, "[0]" the first page of it
 	      (setq success
 		    (eq 0 (vm-imagemagick-call-convert
 			   tempfile t
-			   (append convert-args
-				   (list "-[0]" "png:-"))))))
+			   (append (list "-[0]")
+				   convert-args
+				   (list "png:-"))))))
 	    (when success
 	      (write-region (point-min) (point-max) tempfile nil 0)
 	      (vm-set-mm-layout-image-modified layout t)))
@@ -3994,19 +4158,9 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	  (vm-set-mm-layout-disposition layout '("inline"))
 	  ;; Keep the image files around in case the user comes back
 	  ;; to them.   USR, 2012-11-17
-	  ;; (vm-mark-image-tempfile-as-message-garbage-once layout tempfile)
 	  (vm-mime-display-internal-generic extent))
       (vm-set-mm-layout-type layout saved-type)
       (vm-set-mm-layout-disposition layout saved-disposition))))
-
-(defun vm-mark-image-tempfile-as-message-garbage-once (layout tempfile)
-  "Register image TEMPFILE used for MIME LAYOUT as a message garbage
-file, and set the `vm-message-garbage' property of LAYOUT.  This
-feature is currently not in use.                        USR, 2012-11-17"
-  (if (get (vm-mm-layout-cache layout) 'vm-message-garbage)
-      nil
-    (vm-register-message-garbage-files (list tempfile))
-    (put (vm-mm-layout-cache layout) 'vm-message-garbage t)))
 
 (defun vm-mime-rotate-image-left (extent)
   (vm-mime-frob-image-xxxx extent "-rotate" "-90"))
@@ -4107,61 +4261,27 @@ image when possible."
 				   vm-mime-thumbnail-max-geometry))
 	;; extract image data, don't need the image itself!
 	;; if the display was not successful, glyph will be nil
-	(setq glyph (if (featurep 'xemacs)
-			(let ((e1 (vm-extent-at start))
-			      (e2 (vm-extent-at (1+ start))))
-			  (or (and e1 (extent-begin-glyph e1))
-			      (and e2 (extent-begin-glyph e2))))
-		      (get-text-property start 'display)))
+	(setq glyph (get-text-property start 'display))
 	(delete-region start (point))
 	;; insert the button and replace the image 
 	(setq start (point))
 	(vm-mime-display-button-xxxx layout t)
 	(when glyph
-	  (if (featurep 'xemacs)
-	      (set-extent-begin-glyph (vm-extent-at start) glyph)
-	    (put-text-property start (1+ start) 'display glyph)))
-	;; remove the cached thumb so that full sized image will be shown
-	;; next time
-	;; (vm-set-mm-layout-image-file layout nil)
+	  (put-text-property start (1+ start) 'display glyph))
+	;; Remove the cached thumb so that the full sized image is shown next
+	;; time.  `vm-mime-frob-image-xxxx' wrote the thumbnail over the file
+	;; the layout points at, and `vm-mime-display-internal-image-xxxx'
+	;; reuses that file if it is there: pressing [Display] showed the
+	;; thumbnail (emacs-vm/vm#884).  The comment here has always said so
+	;; and there was nothing under it.
+	(vm-set-mm-layout-image-file layout nil)
+	(vm-set-mm-layout-image-modified layout nil)
 	t)
     ;; if image not possible, just display the normal button
     (vm-mime-display-button-xxxx layout t)))
 
 (defun vm-mime-display-button-application/pdf (layout)
   (vm-mime-display-button-image layout))
-
-(defun vm-mime-display-internal-audio/basic (layout)
-  (if (and (featurep 'xemacs)
-	   (or (featurep 'native-sound)
-	       (featurep 'nas-sound))
-	   (or (device-sound-enabled-p)
-	       (and (featurep 'native-sound)
-		    (not native-sound-only-on-console)
-		    (memq (vm-device-type) '(x gtk)))))
-      (let ((start (point-marker)) end tempfile
-	    (selective-display nil)
-	    (buffer-read-only nil))
-	(if (setq tempfile (get (vm-mm-layout-cache layout)
-				'vm-mime-display-internal-audio/basic))
-	    nil
-	  (vm-mime-insert-mime-body layout)
-	  (setq end (point-marker))
-	  (vm-mime-transfer-decode-region layout start end)
-	  (setq tempfile (vm-make-tempfile))
-	  (vm-register-folder-garbage-files (list tempfile))
-	  ;; coding system for presentation buffer is binary, so
-	  ;; we don't need to set it here.
-	  (write-region start end tempfile nil 0)
-	  (put (vm-mm-layout-cache layout)
-	       'vm-mime-display-internal-audio/basic
-	       tempfile)
-	  (delete-region start end))
-	(start-itimer "audioplayer"
-		      (list 'lambda nil (list 'play-sound-file tempfile))
-		      1)
-	t )
-    nil ))
 
 (defun vm-mime-display-generic (layout)
   "Display the mime object described by LAYOUT, irrespective of
@@ -4216,9 +4336,17 @@ expanded to display the mime object."
 If optional argument FUNCTION is given, run it instead.
 					          USR, 2011-03-07"
   (interactive)
-  (if (and (memq major-mode '(vm-mode vm-virtual-mode))
-	   (vm-body-to-be-retrieved-of (car vm-message-pointer)))
-      (error "Message must be loaded to view attachments" ))
+  ;; The presentation buffer counts too.  A message whose body is still on the
+  ;; server has a layout parsed from its headers alone, so its parts have no
+  ;; text: acting on one wrote an empty file and said nothing about why (issue
+  ;; #386).  The folder buffer refused already; this refuses wherever the button
+  ;; is, and says what to do about it.
+  (when (and (memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode))
+	     (vm-body-to-be-retrieved-of
+	      (vm-real-message-of (car vm-message-pointer))))
+    (error (concat "This message's body is not loaded, so its attachments have"
+		   " no contents here.  Type o (vm-load-message) on the message"
+		   " first, or set vm-external-fetch-message-for-presentation")))
 
   ;; save excursion to keep point from moving.  its motion would
   ;; drag window point along, to a place arbitrarily far from
@@ -4313,7 +4441,7 @@ If optional argument FUNCTION is given, run it instead.
 ;;;###autoload
 (defun vm-mime-reader-map-attach-to-composition ()
   "Attach the MIME object at point to a message being composed.  The
-buffer for message composition is queried from the minibufer."
+buffer for message composition is queried from the minibuffer."
   (interactive)
   (vm-mime-run-display-function-at-point
    'vm-mime-attach-body-to-composition))
@@ -4340,14 +4468,9 @@ buffer for message composition is queried from the minibufer."
 ;;	 :name :: string) 
 ;;	-> void
 ;; vm-delete-all-attachments :: (&optional count :: int) -> void
-;; vm-mime-delete-all-attachments -- alias to the above
-;; vm-save-all-attachments :: (&optional 
-;;			       count :: int, directory :: path,
-;;			       no-delete-after-saving :: bool) -> void
-;; vm-mime-save-all-attachments -- alias to the above
-;; vm-save-attachments :: (&optional
-;;			   count :: int, 
-;;			   no-delete-after-saving :: bool) -> void
+;; vm-save-all-attachments :: (&optional
+;;			       count :: int, directory :: path) -> void
+;; vm-save-attachments :: (&optional count :: int) -> void
 ;;----------------------------------------------------------------------------
 
 ;;;###autoload
@@ -4398,33 +4521,40 @@ ACTION will get called with four arguments: MSG LAYOUT TYPE FILENAME."
                   (t (setq parts (list o))))
             
             (while parts
-              (while (vm-mime-composite-type-p
-		      (car (vm-mm-layout-type (car parts))))
-		(setq parts 
+	      ;; Replace a composite part by its sub-parts, repeatedly.
+	      ;; A composite with no sub-parts -- e.g. a multipart whose
+	      ;; boundary never appears, as seen in delivery-failure
+	      ;; reports -- just disappears, and if it was the last part
+	      ;; that empties the list, so test PARTS as well.
+              (while (and parts
+			  (vm-mime-composite-type-p
+			   (car (vm-mm-layout-type (car parts)))))
+		(setq parts
 		      (nconc (copy-sequence (vm-mm-layout-parts (car parts)))
 			     (cdr parts))))
-              
-              (setq layout (car parts)
-                    type (car (vm-mm-layout-type layout))
-                    disposition (car (vm-mm-layout-disposition layout))
-                    filename (vm-mime-get-disposition-filename layout) )
-              
-              (cond ((or filename
-                         (and disposition (string= disposition "attachment"))
-                         (and (not (vm-mime-types-match 
-				    "message/external-body" type))
-                              types
-                              (vm-mime-is-type-valid type types exceptions)))
-                     (when action-name
-                       (vm-inform 10
-			"%s part type=%s filename=%s disposition=%s"
-			action-name type filename disposition))
-                     (funcall action (car mlist) layout type filename))
-                    (action-name
-                     (vm-inform 10
-		      "No %s on part type=%s filename=%s disposition=%s"
-		      action-name type filename disposition)))
-              (setq parts (cdr parts)))))
+
+	      (when parts
+		(setq layout (car parts)
+		      type (car (vm-mm-layout-type layout))
+		      disposition (car (vm-mm-layout-disposition layout))
+		      filename (vm-mime-get-disposition-filename layout) )
+
+		(cond ((or filename
+			   (and disposition (string= disposition "attachment"))
+			   (and (not (vm-mime-types-match
+				      "message/external-body" type))
+				types
+				(vm-mime-is-type-valid type types exceptions)))
+		       (when action-name
+			 (vm-inform 10
+			  "%s part type=%s filename=%s disposition=%s"
+			  action-name type filename disposition))
+		       (funcall action (car mlist) layout type filename))
+		      (action-name
+		       (vm-inform 10
+			"No %s on part type=%s filename=%s disposition=%s"
+			action-name type filename disposition)))
+		(setq parts (cdr parts))))))
         (setq mlist (cdr mlist))))))
 
 ;;;###autoload
@@ -4465,7 +4595,7 @@ ACTION will get called with four arguments: MSG LAYOUT TYPE FILENAME."
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
 simply has an associated filename.  Any mime types that match
-`vm-mime-deleteable-types' but not `vm-mime-deleteable-type-exceptions'
+`vm-mime-deletable-types' but not `vm-mime-deletable-type-exceptions'
 are also included."
   (interactive "p")
   (vm-check-for-killed-summary)
@@ -4480,8 +4610,8 @@ are also included."
        (vm-inform 7 "Deleting `%s%s" type (if file (format " (%s)" file) ""))
        (vm-mime-discard-layout-contents layout)
        (setq successes (+ 1 successes)))
-     :included vm-mime-deleteable-types
-     :excluded vm-mime-deleteable-type-exceptions)
+     :included vm-mime-deletable-types
+     :excluded vm-mime-deletable-type-exceptions)
     (when (vm-interactive-p)
       (vm-discard-cached-data count)
       (let ((vm-preview-lines nil))
@@ -4491,17 +4621,9 @@ are also included."
       (vm-inform 5 "No attachments deleted")))
   (vm-update-summary-and-mode-line))
 
-;; (define-obsolete-function-alias 'vm-mime-delete-all-attachments
-;;   'vm-delete-all-attachments "8.2.0")
-(defalias 'vm-mime-delete-all-attachments
-  'vm-delete-all-attachments)
-(make-obsolete 'vm-mime-delete-all-attachments
-	       'vm-delete-all-attachments "8.2.0")
 
 ;;;###autoload
-(defun vm-save-all-attachments (&optional count
-					  directory
-					  _no-delete-after-saving)
+(defun vm-save-all-attachments (&optional count directory)
   "Save all attachments in the next COUNT messages or marked
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
@@ -4510,7 +4632,7 @@ simply has an associated filename.  Any mime types that match
 are also included.
 
 The attachments are saved to the specified DIRECTORY.  The
-variables `vm-all-attachments-directory' or
+variables `vm-mime-all-attachments-directory' or
 `vm-mime-attachment-save-directory' can be used to set the
 default location.  When directory does not exist it will be
 created."
@@ -4525,14 +4647,15 @@ created."
               vm-mime-attachment-save-directory
               default-directory)
           nil nil
-          vm-mime-save-all-attachments-history)))
+          'vm-mime-save-all-attachments-history)))
 
   (vm-check-for-killed-summary)
   (if (vm-interactive-p) (vm-follow-summary-cursor))
  
   (let ((successes 0)
 	(failures 0)
-	(result nil))
+	(result nil)
+	(refused-directories nil))
     (vm-mime-operate-on-attachments
      count
      :name "saving"
@@ -4543,21 +4666,39 @@ created."
        (let ((directory (if (functionp directory)
                             (funcall directory msg)
                           directory)))
-         (setq file 
+         (setq file
 	       (if file
 		   (expand-file-name (file-name-nondirectory file) directory)
-		 (vm-read-file-name
-		  (format "Save %s (no filename given) to: " type)
-		  (or directory
-		      vm-mime-all-attachments-directory
-		      vm-mime-attachment-save-directory)
-		  (or directory
-		      vm-mime-all-attachments-directory
-		      vm-mime-attachment-save-directory)
-		  nil nil
-		  vm-mime-save-all-attachments-history)
-		 ))
-         
+		 (let* ((dir (or directory
+				 vm-mime-all-attachments-directory
+				 vm-mime-attachment-save-directory))
+			;; Content-Disposition gave no filename, but the
+			;; part may still name itself in its Content-Type.
+			(name (vm-mime-get-parameter layout "name"))
+			(answer
+			 (vm-read-file-name
+			  (format "Save %s (no filename given) to: " type)
+			  dir
+			  (if name
+			      (expand-file-name (file-name-nondirectory name)
+						dir)
+			    dir)
+			  nil nil
+			  'vm-mime-save-all-attachments-history)))
+		   ;; A directory is not a file name -- and it is what
+		   ;; answering the prompt with RET used to give, since
+		   ;; the directory was offered as the default.  Saving
+		   ;; there would ask to "overwrite" the directory and
+		   ;; then fail in delete-file.  Collect these and report
+		   ;; them once at the end rather than pausing here for
+		   ;; each one.
+		   (if (and answer (file-directory-p answer))
+		       (progn
+			 (setq refused-directories
+			       (cons answer refused-directories))
+			 nil)
+		     answer))))
+
          (if (and file (file-exists-p file))
              (if (y-or-n-p (format "Overwrite `%s'? " file))
                  (delete-file file)
@@ -4581,6 +4722,15 @@ created."
       (let ((vm-preview-lines nil))
 	(vm-present-current-message)))
     
+    (when refused-directories
+      ;; the same directory is the obvious answer for every part, so
+      ;; the list is usually the same name over and over
+      (setq refused-directories
+	    (delete-dups (nreverse refused-directories)))
+      (vm-warn 0 2 "Not saved: %s %s a directory, not a file name"
+	       (mapconcat #'identity refused-directories ", ")
+	       (if (cdr refused-directories) "name" "names")))
+
     (if (> failures 0)
 	(if (> successes 0)
 	    (vm-inform 5 "%d attachment%s saved; %s failed" 
@@ -4591,15 +4741,9 @@ created."
 		       successes (if (= successes 1) "" "s"))
 	  (vm-inform 5 "No attachments saved")))))
 
-;; (define-obsolete-function-alias 'vm-mime-save-all-attachments
-;;   'vm-save-all-attachments "8.2.0")
-(defalias 'vm-mime-save-all-attachments
-  'vm-save-all-attachments)
-(make-obsolete 'vm-mime-save-all-attachments
-  'vm-save-all-attachments "8.2.0")
 
-(defun vm-save-attachments (&optional count
-				      _no-delete-after-saving)
+;;;###autoload
+(defun vm-save-attachments (&optional count)
   "Save all attachments in the next COUNT messages or marked
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
@@ -4611,7 +4755,7 @@ The attachments are saved in file names input from the
 minibuffer.  (This is the main difference from
 `vm-save-all-attachments'.) 
 
-The variables `vm-all-attachments-directory' or
+The variables `vm-mime-all-attachments-directory' or
 `vm-mime-attachment-save-directory' can be used to set the
 default location.  When directory does not exist it will be
 confirmed before creating a new directory."
@@ -4637,16 +4781,22 @@ confirmed before creating a new directory."
 		    (file-name-as-directory		; directory
 		     (or directory		      
 			 vm-mime-attachment-save-directory
-			 vm-mime-all-attachments-directory))
+			 vm-mime-all-attachments-directory
+			 ;; both are allowed to be nil -- the customize type
+			 ;; of the first offers it -- and `file-name-as-directory'
+			 ;; of nil is an error, so the command signalled instead
+			 ;; of asking where to save
+			 default-directory))
 		    (and file-name			; default-filename
 			 (concat
 			  (file-name-as-directory 	      
 			   (or directory		      
 			       vm-mime-attachment-save-directory
-			       vm-mime-all-attachments-directory))
+			       vm-mime-all-attachments-directory
+			       default-directory))
 			  (or file-name "")))
 		    nil nil			      ; mustmatch initial
-		    vm-mime-save-all-attachments-history ; predicate
+		    'vm-mime-save-all-attachments-history
 		    )))
 	 (setq directory (file-name-directory file))
          (when (file-exists-p file)
@@ -4688,11 +4838,7 @@ confirmed before creating a new directory."
 (defun vm-mime-set-image-stamp-for-type (e type)
   "Set an image stamp for MIME button extent E as appropriate for
 TYPE.                                                 USR, 2011-03-25"
-  (cond
-   ((featurep 'xemacs)
-    (vm-mime-xemacs-set-image-stamp-for-type e type))
-   ((not (featurep 'xemacs))
-    (vm-mime-fsfemacs-set-image-stamp-for-type e type))))
+  (vm-mime-fsfemacs-set-image-stamp-for-type e type))
 
 (defconst vm-mime-type-images
   '(("text" "text.xpm")
@@ -4702,34 +4848,6 @@ TYPE.                                                 USR, 2011-03-25"
     ("message" "message.xpm")
     ("application" "application.xpm")
     ("multipart" "multipart.xpm")))
-
-(defun vm-mime-xemacs-set-image-stamp-for-type (e type)
-  "Set an image stamp for MIME button extent E as appropriate for
-TYPE.                                                  USR, 2011-03-25"
-  (if (and (vm-images-possible-here-p)
-	   (vm-image-type-available-p 'xpm)
-	   (> (device-bitplanes) 7))
-      (let ((dir (vm-image-directory))
-	    (tuples vm-mime-type-images)
-	    glyph file sym) ;; p
-	(setq file (catch 'done
-		     (while tuples
-		       (if (vm-mime-types-match (car (car tuples)) type)
-			   (throw 'done (car tuples))
-			 (setq tuples (cdr tuples))))
-		     nil)
-	      file (and file (nth 1 file))
-	      sym (and file (intern file vm-image-obarray))
-	      glyph (and sym (boundp sym) (symbol-value sym))
-	      glyph (or glyph
-			(and file
-			     (make-glyph
-			      (list
-			       (vector 'xpm ':file
-				       (expand-file-name file dir))
-			       [nothing])))))
-	(and sym (not (boundp sym)) (set sym glyph))
-	(and glyph (set-extent-begin-glyph e glyph)))))
 
 (defun vm-mime-fsfemacs-set-image-stamp-for-type (e type)
   "Set an image stamp for MIME button extent E as appropriate for
@@ -4778,32 +4896,16 @@ be removed when it is expanded to display the mime object."
   (let ((start (point))	e
 	(keymap vm-mime-reader-map)
 	(buffer-read-only nil))
-    (if (fboundp 'set-keymap-parents)
-	(if (current-local-map)
-	    (set-keymap-parents keymap (list (current-local-map))))
-      (setq keymap (append keymap (current-local-map))))
+    (setq keymap (append keymap (current-local-map)))
     (if (not (bolp))
 	(insert "\n"))
     (insert caption "\n")
-    ;; we must use the same interface that the vm-extent functions
-    ;; use.  if they use overlays, then we call make-overlay.
-    (if (not (featurep 'xemacs))
-	;; we MUST have the five arg make-overlay.  overlays must
-	;; advance when text is inserted at their start position or
-	;; inline text and graphics will seep into the button
-	;; overlay and then be removed when the button is removed.
-	(setq e (vm-make-extent start (point) nil t nil))
-      (setq e (vm-make-extent start (point)))
-      (vm-set-extent-property e 'start-open t)
-      (vm-set-extent-property e 'end-open t))
+    ;; the five argument make-overlay: an overlay must advance when text is
+    ;; inserted at its start position, or inline text and graphics seep into
+    ;; the button overlay and are then removed when the button is
+    (setq e (vm-make-extent start (point) nil t nil))
     (vm-mime-set-image-stamp-for-type e (car (vm-mm-layout-type layout)))
-    (when (not (featurep 'xemacs))
-      (vm-set-extent-property e 'local-map keymap))
-    (when (featurep 'xemacs)
-      (vm-set-extent-property e 'highlight t)
-      (vm-set-extent-property e 'keymap keymap)
-      (vm-set-extent-property e 'balloon-help 'vm-mouse-3-help))
-    ;; for all
+    (vm-set-extent-property e 'local-map keymap)
     (vm-set-extent-property e 'vm-button t)
     (vm-set-extent-property e 'vm-mime-disposable disposable)
     (vm-set-extent-property e 'face vm-mime-button-face)
@@ -4811,12 +4913,9 @@ be removed when it is expanded to display the mime object."
     (vm-set-extent-property e 'vm-mime-layout layout)
     (vm-set-extent-property e 'vm-mime-function action)
     ;; for vm-continue-postponed-message
-    (when (featurep 'xemacs)
-      (vm-set-extent-property e 'duplicable t))
-    (when (not (featurep 'xemacs))
-      (put-text-property (overlay-start e)
-			 (overlay-end e)
-			 'vm-mime-layout layout))
+    (put-text-property (overlay-start e)
+		       (overlay-end e)
+		       'vm-mime-layout layout)
     ;; return t as decoding worked
     t))
 
@@ -4947,7 +5046,13 @@ file with the name should be overwritten."
 		file )
 	    (error (vm-warn 1 2 "Error in writing %s: %s" file err)
 		   nil))
-	(when work-buffer (kill-buffer work-buffer))))))
+	(when work-buffer (kill-buffer work-buffer))
+	;; Saving can change what the part is displayed as, since
+	;; `vm-mime-delete-after-saving' turns it into an external-body
+	;; reference, so the message is presented again to show that.  This
+	;; was advice on this function, from vm-rfaddons.
+	(when vm-mime-delete-after-saving
+	  (vm-present-current-message))))))
 
 (defun vm-mime-send-body-to-folder (layout &optional default-filename)
   (unless (vectorp layout)
@@ -4977,6 +5082,9 @@ file with the name should be overwritten."
 	      (goto-char (point-min))
 	      (insert (vm-leading-message-separator 'mmdf))
 	      (goto-char (point-max))
+	      ;; mmdf's separator begins a line, and a part's body need not
+	      ;; end with a newline (#783).
+	      (unless (bolp) (insert "\n"))
 	      (insert (vm-trailing-message-separator 'mmdf))
 	      (set-buffer-modified-p nil)
 	      (vm-mode t)
@@ -5136,42 +5244,6 @@ file with the name should be overwritten."
 	 (and work-buffer (kill-buffer work-buffer))))))
 
 ;; unused
-;;(defun vm-mime-layout-description (layout)
-;;  (let ((type (car (vm-mm-layout-type layout)))
-;;	description name)
-;;    (setq description
-;;	  (if (vm-mm-layout-description layout)
-;;	      (vm-mime-scrub-description (vm-mm-layout-description layout))))
-;;    (concat
-;;     (if description description "")
-;;     (if description ", " "")
-;;     (cond ((vm-mime-types-match "multipart/digest" type)
-;;	    (let ((n (length (vm-mm-layout-parts layout))))
-;;	      (format "digest (%d message%s)" n (if (= n 1) "" "s"))))
-;;	   ((vm-mime-types-match "multipart/alternative" type)
-;;	    "multipart alternative")
-;;	   ((vm-mime-types-match "multipart" type)
-;;	    (let ((n (length (vm-mm-layout-parts layout))))
-;;	      (format "multipart message (%d part%s)" n (if (= n 1) "" "s"))))
-;;	   ((vm-mime-types-match "text/plain" type)
-;;	    (format "plain text%s"
-;;		    (let ((charset (vm-mime-get-parameter layout "charset")))
-;;		      (if charset
-;;			  (concat ", " charset)
-;;			""))))
-;;	   ((vm-mime-types-match "text/enriched" type)
-;;	    "enriched text")
-;;	   ((vm-mime-types-match "text/html" type)
-;;	    "HTML")
-;;	   ((vm-mime-types-match "image/gif" type)
-;;	    "GIF image")
-;;	   ((vm-mime-types-match "image/jpeg" type)
-;;	    "JPEG image")
-;;	   ((and (vm-mime-types-match "application/octet-stream" type)
-;;		 (setq name (vm-mime-get-parameter layout "name"))
-;;		 (save-match-data (not (string-match "^[ \t]*$" name))))
-;;	    name)
-;;	   (t type)))))
 
 (defun vm-mime-layout-contains-type (layout type)
   (if (vm-mime-types-match type (car (vm-mm-layout-type layout)))
@@ -5232,64 +5304,6 @@ Returns non-NIL value M is a plain message."
       (vm-mime-types-match "message" (car (vm-mm-layout-type layout)))))
 
 
-(defun vm-mime-tty-can-display-mime-charset (name)
-  "Can the current TTY correctly display the given MIME character set?"
-  (and (fboundp 'console-tty-output-coding-system)
-       ;; Is this check too paranoid?
-       (vm-coding-system-p (console-tty-output-coding-system))
-       (fboundp 'coding-system-get)
-       (let
-	   ;; Nnngh, latin-unity-base-name isn't doing the right thing for
-	   ;; me with MULE-UCS and UTF-8 as the terminal coding system. Of
-	   ;; course, it's not evident that it _can_ do the right thing.
-	   ;;
-	   ;; The intention is that ourtermcs is the version of the
-	   ;; coding-system without line-ending information attached to its
-	   ;; end.
-	   ((ourtermcs (vm-coding-system-name
-                        (or (car 
-                             (coding-system-get
-                              (console-tty-output-coding-system)
-                              'alias-coding-systems))
-                            (coding-system-base
-                             (console-tty-output-coding-system))))))
-	 (or (eq ourtermcs (vm-mime-charset-to-coding name))
-	     ;; The vm-mime-mule-charset-to-coding-alist check is to make
-	     ;; sure it does the right thing with a nonsense MIME character
-	     ;; set name.
-	     (and (memq ourtermcs (vm-get-mime-ucs-list))
-		  (vm-mime-charset-to-coding name) 
-		  t)
-	     (vm-mime-default-face-charset-p name)))))
-
-(defun vm-mime-charset-internally-displayable-p (name)
-  "Can the given MIME charset be displayed within emacs by VM?"
-  (cond ((and (featurep 'xemacs) (memq (vm-device-type) '(x gtk mswindows)))
-	 (or (vm-mime-charset-to-coding name)
-	     (vm-mime-default-face-charset-p name)))
-
-	;; vm-mime-tty-can-display-mime-charset (called below) fails
-	;; for GNU Emacs. So keep things simple, since there's no harm
-	;; if replacement characters are displayed.
-	((not (featurep 'xemacs)))
-
-	;; If the terminal-coding-system variable is set to something that
-	;; can encode all the characters of the given MIME character set,
-	;; then we can display any message in the given MIME character set
-	;; internally.
-
-	((vm-mime-tty-can-display-mime-charset name))
-	(t
-	 (vm-mime-default-face-charset-p name))))
-
-(defun vm-mime-default-face-charset-p (charset)
-  (and (or (eq vm-mime-default-face-charsets t)
-	   (and (consp vm-mime-default-face-charsets)
-		(vm-string-member charset vm-mime-default-face-charsets)))
-       (not (vm-string-member charset
-			      vm-mime-default-face-charset-exceptions))))
-
-
 (defun vm-mime-find-message/partials (layout id)
   (let ((list nil)
 	(type (vm-mm-layout-type layout)))
@@ -5306,29 +5320,30 @@ Returns non-NIL value M is a plain message."
     list ))
 
 (defun vm-mime-find-leaf-content-id-in-layout-folder (layout id)
-  (save-excursion
-    (save-restriction
-      (let (m (o nil))
-	(set-buffer (vm-buffer-of
-		     (vm-real-message-of
-		      (vm-mm-layout-message layout))))
-	(widen)
-	(goto-char (point-min))
-	(while (and (search-forward id nil t)
-		    (setq m (vm-message-at-point)))
-	  (setq o (vm-mm-layout m))
-	  (if (not (vectorp o))
-	      nil
-	    (setq o (vm-mime-find-leaf-content-id o id))
-	    (if (null o)
+  ;; `save-restriction' in the folder being widened, not in whatever buffer
+  ;; the caller was in (#780).
+  (with-current-buffer (vm-buffer-of
+			(vm-real-message-of
+			 (vm-mm-layout-message layout)))
+    (save-excursion
+      (save-restriction
+	(let (m (o nil))
+	  (widen)
+	  (goto-char (point-min))
+	  (while (and (search-forward id nil t)
+		      (setq m (vm-message-at-point)))
+	    (setq o (vm-mm-layout m))
+	    (if (not (vectorp o))
 		nil
-	      ;; if we found it, end the search loop
-	      (goto-char (point-max)))))
-	o ))))
+	      (setq o (vm-mime-find-leaf-content-id o id))
+	      (if (null o)
+		  nil
+		;; if we found it, end the search loop
+		(goto-char (point-max)))))
+	  o )))))
 
 (defun vm-mime-find-leaf-content-id (layout id)
   (let (;; (list nil)
-	;; (type (vm-mm-layout-type layout))
 	)
     (catch 'done
       (cond ((vm-mime-composite-type-p (car (vm-mm-layout-type layout)))
@@ -5460,6 +5475,7 @@ this case and not prompt you for it in the minibuffer."
     (setq description (vm-mime-scrub-description description)))
   (vm-attach-object file :type type :params charset 
 			 :description description :mimed nil))
+;;;###autoload (autoload 'vm-mime-attach-file "vm-mime" nil t)
 (defalias 'vm-mime-attach-file 'vm-attach-file)
 
 ;;;###autoload
@@ -5514,6 +5530,7 @@ should use `vm-attach-file' to attach the file."
     (error "You don't have permission to read %s" file))
   (vm-attach-object file :type type :params nil 
 			 :description nil :mimed t))
+;;;###autoload (autoload 'vm-mime-attach-mime-file "vm-mime" nil t)
 (defalias 'vm-mime-attach-mime-file 'vm-attach-mime-file)
 
 ;;;###autoload
@@ -5585,6 +5602,7 @@ this case and not prompt you for it in the minibuffer."
     (setq description (vm-mime-scrub-description description)))
   (vm-attach-object buffer :type type :params charset
 			 :description description :mimed nil))
+;;;###autoload (autoload 'vm-mime-attach-buffer "vm-mime" nil t)
 (defalias 'vm-mime-attach-buffer 'vm-attach-buffer)
 
 
@@ -5691,6 +5709,7 @@ minibuffer if the command is run interactively."
 	(t
 	 (vm-attach-message-digest-internal message description))))
 
+;;;###autoload (autoload 'vm-mime-attach-message "vm-mime" nil t)
 (defalias 'vm-mime-attach-message 'vm-attach-message)
 
 (defun vm-attach-message-internal (message description)
@@ -5741,8 +5760,7 @@ DESCRIPTION."
 	       "multipart/digest" (list (concat "boundary=\"" boundary "\"")))
 	      "\n")
       (insert "Content-Transfer-Encoding: "
-	      (vm-determine-proper-content-transfer-encoding
-	       (point) (point-max))
+	      (vm-mime-encapsulation-transfer-encoding (point) (point-max))
 	      "\n\n"))
     (when description 
       (setq description (vm-mime-scrub-description description)))
@@ -5821,6 +5839,7 @@ minibuffer if the command is run interactively."
     (if (null (cdr mlist))		; single message
 	(vm-attach-message-internal (car mlist) description)
       (vm-attach-message-digest-internal mlist description)))))
+;;;###autoload (autoload 'vm-mime-attach-message-to-composition "vm-mime" nil t)
 (defalias 'vm-mime-attach-message-to-composition
   'vm-attach-message-to-composition)
 		      
@@ -5861,8 +5880,14 @@ COMPOSITION's name will be read from the minibuffer."
 	   nil :keep-list nil :discard-regexp "Content-Transfer-Encoding:")
 	  (insert "Content-Transfer-Encoding: binary\n")
 	  (set-buffer composition)
+	  ;; Append.  vm-attach-object inserts at point, which is right
+	  ;; for vm-attach-file -- the user put it there -- but here the
+	  ;; composition is a buffer we have just been named, whose point
+	  ;; is wherever it was last left, quite possibly in the middle of
+	  ;; what the user was typing.
+	  (goto-char (point-max))
 	  ;; FIXME need to copy the disposition from the original
-	  (vm-attach-object work-buffer 
+	  (vm-attach-object work-buffer
 			    :type (car (vm-mm-layout-type layout)) 
 			    :params (cdr (vm-mm-layout-type layout))
 			    :description (vm-mm-layout-description 
@@ -5884,10 +5909,6 @@ COMPOSITION's name will be read from the minibuffer."
       (when work-buffer (kill-buffer work-buffer)))))
 (defalias 'vm-mime-attach-object-to-composition
   'vm-attach-object-to-composition)
-(defalias 'vm-mime-attach-object-from-message 
-  'vm-attach-object-to-composition)
-(make-obsolete 'vm-mime-attach-object-from-message
-	       'vm-attach-object-to-composition "8.2.0")
 
 
 (cl-defun vm-attach-object (object &key type params description 
@@ -5909,15 +5930,10 @@ there is no file name for this object.             USR, 2011-03-07"
     (error "VM internal error: vm-attach-object not in Mail mode buffer."))
   (when (vm-mail-mode-get-header-contents "MIME-Version")
     (error "Can't attach MIME object to already encoded MIME buffer."))
-  (let (start end e tag-string file-name
-	;; Forward references to external-body parts if
-        ;; either vm-mime-forward-local-external-bodies is t
-        ;; or vm-mime-forward-saved-attachments is nil
-	;; Otherwise, expand the external-body parts
-	(fb (list (or (with-suppressed-warnings
-		          ((obsolete vm-mime-forward-local-external-bodies))
-		        vm-mime-forward-local-external-bodies)
-		      (not vm-mime-forward-saved-attachments)))))
+  (let (start end tag-string file-name
+	;; Forward references to external-body parts when
+	;; vm-mime-forward-saved-attachments is nil; otherwise expand them
+	(fb (list (not vm-mime-forward-saved-attachments))))
     (cond ((and (stringp object) (not mimed))
 	   (if (or (vm-mime-types-match "application" type)
 		   (vm-mime-types-match "model" type))
@@ -5926,13 +5942,13 @@ there is no file name for this object.             USR, 2011-03-07"
 	   (unless no-suggested-filename
 	     (setq file-name (file-name-nondirectory object))
 	     ;; why fuse things together?  USR, 2011-03-17
-;; 	     (setq type 
-;; 		   (concat type "; name=\"" file-name "\""))
 	     (setq params
-		   (append params (list (concat "name=\"" file-name "\""))))
-	     (setq disposition 
+		   (append params
+			   (list (vm-mime-encode-parameter "name" file-name))))
+	     (setq disposition
 		   (nconc disposition
-			  (list (concat "filename=\"" file-name "\""))))))
+			  (list (vm-mime-encode-parameter
+				 "filename" file-name))))))
 	  ((listp object) 
 	   (setq file-name (nth 4 object))
 	   (setq disposition (nth 3 object)))
@@ -5946,104 +5962,166 @@ there is no file name for this object.             USR, 2011-03-07"
     (setq tag-string (format "[ATTACHMENT %s, %s]" 
 			     (or file-name description "") 
 			     (or type "MIME file")))
-;;     (if (listp object)
-;; 	(setq tag-string (format "[ATTACHMENT %s, %s]" 
-;; 				 (or (nth 4 object) "") type))
-;;       (setq tag-string (format "[ATTACHMENT %s, %s]" object
-;; 			     (or type "MIME file"))))
     (insert tag-string "\n")
     (setq end (1- (point)))
 
 
-    (cond ((not (featurep 'xemacs))
-	   (put-text-property start end 'front-sticky nil)
-	   (put-text-property start end 'rear-nonsticky t)
-	   ;; can't be intangible because menu clicking at a position
-	   ;; needs to set point inside the tag so that a command can
-	   ;; access the text properties there.
-	   ;; (put-text-property start end 'intangible object) 
-	   (put-text-property start end 'face vm-attachment-button-face)
-	   (put-text-property start end 'font-lock-face 
-			      vm-attachment-button-face)
-	   (put-text-property start end 'mouse-face 
-			      vm-attachment-button-mouse-face)
-	   (put-text-property start end 'vm-mime-forward-local-refs fb)
-	   (put-text-property start end 'vm-mime-type type)
-	   (put-text-property start end 'vm-mime-object object)
-	   (put-text-property start end 'vm-mime-parameters params)
-	   (put-text-property start end 'vm-mime-description description)
-	   (put-text-property start end 'vm-mime-disposition disposition)
-	   (put-text-property start end 'vm-mime-encoding (list nil))
-	   (put-text-property start end 'vm-mime-encoded mimed)
-	   ;; (put-text-property start end 'duplicable t)
-	   )
-	  ((featurep 'xemacs)
-	   (setq e (vm-make-extent start end))
-	   (vm-mime-set-image-stamp-for-type e (or type "text/plain"))
-	   (vm-set-extent-property e 'start-open t)
-	   (vm-set-extent-property e 'face vm-mime-button-face)
-	   (vm-set-extent-property e 'mouse-face vm-mime-button-mouse-face)
-	   (vm-set-extent-property e 'duplicable t)
-	   (let ((keymap (make-sparse-keymap)))
-	     (when vm-popup-menu-on-mouse-3
-	       (define-key keymap 'button3
-		 'vm-menu-popup-attachment-menu))
-             (define-key keymap [return] 'vm-mime-change-content-disposition)
-	     (vm-set-extent-property e 'keymap keymap)
-	     (vm-set-extent-property e 'balloon-help 'vm-mouse-3-help))
-	   (vm-set-extent-property e 'vm-mime-forward-local-refs fb)
-	   (vm-set-extent-property e 'vm-mime-type type)
-	   (vm-set-extent-property e 'vm-mime-object object)
-	   (vm-set-extent-property e 'vm-mime-parameters params)
-	   (vm-set-extent-property e 'vm-mime-description description)
-	   (vm-set-extent-property e 'vm-mime-disposition disposition)
-	   (vm-set-extent-property e 'vm-mime-encoding (list nil))
-	   (vm-set-extent-property e 'vm-mime-encoded mimed)))))
+    (put-text-property start end 'front-sticky nil)
+    (put-text-property start end 'rear-nonsticky t)
+    ;; can't be intangible because menu clicking at a position
+    ;; needs to set point inside the tag so that a command can
+    ;; access the text properties there.
+    (put-text-property start end 'face vm-attachment-button-face)
+    (put-text-property start end 'font-lock-face vm-attachment-button-face)
+    (put-text-property start end 'mouse-face vm-attachment-button-mouse-face)
+    (put-text-property start end 'vm-mime-forward-local-refs fb)
+    (put-text-property start end 'vm-mime-type type)
+    (put-text-property start end 'vm-mime-object object)
+    (put-text-property start end 'vm-mime-parameters params)
+    (put-text-property start end 'vm-mime-description description)
+    (put-text-property start end 'vm-mime-disposition disposition)
+    (put-text-property start end 'vm-mime-encoding (list nil))
+    (put-text-property start end 'vm-mime-encoded mimed)))
+
 (defalias 'vm-mime-attach-object 'vm-attach-object)
 
 (defun vm-mime-attachment-forward-local-refs-at-point ()
-  (cond ((not (featurep 'xemacs))
-	 (let ((fb (get-text-property (point) 'vm-mime-forward-local-refs)))
-	   (car fb) ))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-type))
-		(fb (vm-extent-property e 'vm-mime-forward-local-refs)))
-	   (car fb) ))))
+  (car (get-text-property (point) 'vm-mime-forward-local-refs)))
 
 (defun vm-mime-set-attachment-forward-local-refs-at-point (val)
-  (cond ((not (featurep 'xemacs))
-	 (let ((fb (get-text-property (point) 'vm-mime-forward-local-refs)))
-	   (setcar fb val) ))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-type))
-		(fb (vm-extent-property e 'vm-mime-forward-local-refs)))
-	   (setcar fb val) ))))
+  (setcar (get-text-property (point) 'vm-mime-forward-local-refs) val))
 
-(defun vm-mime-delete-attachment-button ()
-  (cond ((not (featurep 'xemacs))
-         ;; TODO
-         )
-	((featurep 'xemacs)
-	 (let ((e (vm-extent-at (point) 'vm-mime-type)))
-           (delete-region (vm-extent-start-position e)
-                          (vm-extent-end-position e))))))
+;; vm-mime-delete-attachment-button and
+;; vm-mime-delete-attachment-button-keep-infos were removed along with the
+;; attachment-menu entries that called them: the GNU Emacs arm of each was
+;; an empty placeholder, so on GNU Emacs they did nothing at all.  See #552
+;; for reimplementing them; vm-mime-attachment-tag-bounds gives the region
+;; the XEmacs versions got from the extent.  C-k on the tag deletes an
+;; attachment in the meantime, as the manual says.
 
-(defun vm-mime-delete-attachment-button-keep-infos ()
-  (cond ((not (featurep 'xemacs))
-         ;; TODO
-         )
-	((featurep 'xemacs)
-	 (let ((e (vm-extent-at (point) 'vm-mime-type)))
-           (save-excursion
-             (goto-char (1+ (vm-extent-start-position e)))
-             (insert " --- DELETED ")
-             (goto-char (vm-extent-end-position e))
-             (insert " ---")
-             (vm-delete-extent e))))))
+(defun vm-mime-set-parameter-in-list (params key value)
+  "Return PARAMS with KEY set to VALUE, adding it if it is not there.
+PARAMS is a list of \"key=value\" strings as carried by the
+`vm-mime-parameters' and `vm-mime-disposition' properties of an
+attachment tag."
+  (let ((entry (vm-mime-encode-parameter key value))
+	(regexp (vm-mime-parameter-name-regexp key))
+	(found nil)
+	(result nil))
+    (dolist (param params)
+      (if (and (stringp param) (string-match regexp param))
+	  ;; Replace the first spelling of KEY and drop any other, so that a
+	  ;; value set here cannot be overridden by a leftover NAME*= or by
+	  ;; the remaining segments of a continuation.
+	  (unless found
+	    (setq found t)
+	    (setq result (cons entry result)))
+	(setq result (cons param result))))
+    (setq result (nreverse result))
+    (if found result (append result (list entry)))))
+
+(defun vm-mime-attachment-tag-bounds ()
+  "Return (START . END) for the attachment tag at point, or nil.
+Point counts as being on the tag when it is just past its closing
+bracket, which is where `end-of-line' leaves it."
+  (let ((pos (cond ((get-text-property (point) 'vm-mime-type) (point))
+		   ((and (> (point) (point-min))
+			 (get-text-property (1- (point)) 'vm-mime-type))
+		    (1- (point))))))
+    (when pos
+      (cons (or (previous-single-property-change
+		 (min (1+ pos) (point-max)) 'vm-mime-type)
+		(point-min))
+	    (or (next-single-property-change pos 'vm-mime-type)
+		(point-max))))))
+
+(defun vm-mime-unquote-parameter-value (value)
+  "Return VALUE with MIME parameter quoting removed."
+  (if (and value (string-match "\\`\"\\(\\(?:[^\"\\\\]\\|\\\\.\\)*\\)\"\\'" value))
+      (vm-replace-in-string (match-string 1 value) "\\\\\\(.\\)" "\\1")
+    value))
+
+(defun vm-mime-attachment-name-at-point ()
+  "Return the file name of the attachment at point, or nil.
+Any MIME parameter quoting is removed."
+  ;; through the bounds, so that point just past the tag counts as on it
+  (let* ((pos (car (vm-mime-attachment-tag-bounds)))
+	 (disposition (and pos (get-text-property pos 'vm-mime-disposition)))
+	 (params (and pos (get-text-property pos 'vm-mime-parameters))))
+    (vm-mime-unquote-parameter-value
+     (or (vm-mime-get-xxx-parameter "filename" (cdr disposition))
+	 (vm-mime-get-xxx-parameter "name" params)))))
+
+(defun vm-mime-set-attachment-name-at-point (name)
+  "Give the attachment at point the file NAME.
+Sets it in both the Content-Type name parameter and the
+Content-Disposition filename parameter, and updates the visible tag."
+  (let ((bounds (vm-mime-attachment-tag-bounds)))
+    (unless bounds (error "No attachment here"))
+    (let* ((start (car bounds))
+	     (end (cdr bounds))
+	     (inhibit-read-only t)
+	     ;; the whole tag carries one set of properties; work on a
+	     ;; copy and put it back over the tag once the text is right
+	     (props (copy-sequence (text-properties-at start)))
+	     (disposition (plist-get props 'vm-mime-disposition)))
+	(setq props (plist-put props 'vm-mime-parameters
+			       (vm-mime-set-parameter-in-list
+				(plist-get props 'vm-mime-parameters)
+				"name" name)))
+	(setq props (plist-put props 'vm-mime-disposition
+			       (cons (car disposition)
+				     (vm-mime-set-parameter-in-list
+				      (cdr disposition) "filename" name))))
+	(save-excursion
+	  (save-restriction
+	    ;; Narrow to this tag.  The name is matched greedily, because
+	    ;; it may itself contain a comma, and `looking-at' would
+	    ;; otherwise run past the end of the tag: two tags sharing a
+	    ;; line -- which happens as soon as the user joins them --
+	    ;; and the match would swallow the second one's text while
+	    ;; leaving its properties orphaned in the buffer.
+	    (narrow-to-region start end)
+	    (goto-char start)
+	    ;; The tag reads "[ATTACHMENT <name>, <type>]".
+	    (when (looking-at "\\[ATTACHMENT \\(.*\\), [^,]*\\]\\'")
+	      (let ((name-start (match-beginning 1))
+		    (name-end (match-end 1)))
+		(setq end (+ end (- (length name) (- name-end name-start))))
+		(delete-region name-start name-end)
+		(goto-char name-start)
+		;; Not insert-and-inherit: the tag is rear-nonsticky, so
+		;; inserted text inherits nothing and the tag's property
+		;; run would be split in three -- which the encoder reads
+		;; as two attachments where there is one.
+		(insert name)))))
+      (set-text-properties start end props))))
+
+;;;###autoload
+(defun vm-mime-rename-attachment ()
+  "Give the attachment at point a different file name.
+The name is the one the recipient sees, and the one their mailer will
+suggest when they save it; the file the attachment was read from is not
+touched."
+  (interactive)
+  (let ((current (vm-mime-attachment-name-at-point)))
+    (unless (vm-mime-attachment-tag-bounds)
+      (error "No attachment here"))
+    (vm-mime-set-attachment-name-at-point
+     (read-string "Attachment file name: " current))))
 
 ;;;###autoload
 (defun vm-mime-change-content-disposition ()
+  "Change the disposition of the attachment at point in this composition.
+Reads `inline\', `attachment\' or `unspecified\'.  The disposition tells the
+recipient\'s mail reader whether the part is meant to be shown as part of
+the message or offered as a file to save; `unspecified\' sends no
+Content-Disposition header and leaves the choice to them."
   (interactive)
+  ;; before the prompt, as `vm-mime-rename-attachment' does: an answer read
+  ;; and then thrown away is worse than the question not being asked
+  (unless (vm-mime-attachment-tag-bounds)
+    (error "No attachment here"))
   (vm-mime-set-attachment-disposition-at-point
    (intern
     (completing-read 
@@ -6055,72 +6133,27 @@ there is no file name for this object.             USR, 2011-03-07"
      nil t))))
 
 (defun vm-mime-attachment-disposition-at-point ()
-  (cond ((not (featurep 'xemacs))
-	 (let ((disp (get-text-property (point) 'vm-mime-disposition)))
-	   (intern (car disp))))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-disposition))
-		(disp (vm-extent-property e 'vm-mime-disposition)))
-	   (intern (car disp))))))
+  (intern (car (get-text-property (point) 'vm-mime-disposition))))
 
 (defun vm-mime-set-attachment-disposition-at-point (sym)
-  (cond ((not (featurep 'xemacs))
-	 (let ((disp (get-text-property (point) 'vm-mime-disposition)))
-	   (setcar disp (symbol-name sym))))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-disposition))
-		(disp (vm-extent-property e 'vm-mime-disposition)))
-	   (setcar disp (symbol-name sym))))))
+  (setcar (get-text-property (point) 'vm-mime-disposition)
+	  (symbol-name sym)))
 
 
 (defun vm-mime-attachment-encoding-at-point ()
-  (cond ((not (featurep 'xemacs))
-	 (let ((enc (get-text-property (point) 'vm-mime-encoding)))
-	   (car enc)))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-encoding))
-		(enc (vm-extent-property e 'vm-mime-encoding)))
-           (if e (car enc))))))
+  (car (get-text-property (point) 'vm-mime-encoding)))
 
 (defun vm-mime-set-attachment-encoding-at-point (sym)
-  (cond ((not (featurep 'xemacs))
-	 ;; (set-text-property (point) 'vm-mime-encoding sym)
-	 ;; (put-text-property (point) (point) 'vm-mime-encoding sym)
-	 (let ((enc (get-text-property (point) 'vm-mime-encoding)))
-	   (setcar enc sym)))
-	((featurep 'xemacs)
-	 (let* ((e (vm-extent-at (point) 'vm-mime-disposition))
-		(enc (vm-extent-property e 'vm-mime-encoding)))
-	   (setcar enc sym)))))
-
-(defun vm-disallow-overlay-endpoint-insertion 
-  (overlay after start end &optional _old-size)
-  "Hook function called before and after text is inserted at the
-endpoint of an OVERLAY.  AFTER is true if the call is being made after
-insertion.  Otherwise, it is being made before insertion.  START and
-END denote the range of the text inserted.  Optional argument
-OLD-SIZE is ignored.
-
-This hook does nothing when called before insertion.  When it is
-called after insertion, it moves the overlay so that the inserted is
-excluded from the overlay."
-  (when after
-    (cond ((= start (overlay-start overlay))
-	   (move-overlay overlay end (overlay-end overlay)))
-	  ((= start (overlay-end overlay))
-	   (move-overlay overlay (overlay-start overlay) start)))))
+  (setcar (get-text-property (point) 'vm-mime-encoding) sym))
 
 (defun vm-mime-attachment-button-extents (start end &optional prop)
   "Return the extents of all attachment buttons in the region.  Optional
 argument PROP can specify an extent property, in which case only those
 extents that have the property are returned.
 
-In GNU Emacs version of this function, attachment buttons are expected
-to be denoted by text-properties rather than extents.  \"Fake\"
-extents are created for the purpose of this function.  USR, 2011-03-27"
-  (let ((e-list  (if (featurep 'xemacs)
-		     (vm-extent-list start end prop)
-		   (vm-mime-fake-attachment-overlays start end prop))))
+Attachment buttons are denoted by text properties rather than by overlays,
+so the overlays this returns are made for the purpose.  USR, 2011-03-27"
+  (let ((e-list (vm-mime-fake-attachment-overlays start end prop)))
     (sort e-list (function
 		  (lambda (e1 e2)
 		    (< (vm-extent-end-position e1)
@@ -6153,10 +6186,6 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
 		  done t))
 	  (when object
 	    (setq o (make-overlay start pos nil t nil))
-	    ;; (overlay-put o 'insert-in-front-hooks
-	    ;; 		 '(vm-disallow-overlay-endpoint-insertion))
-	    ;; (overlay-put o 'insert-behind-hooks
-	    ;; 		 '(vm-disallow-overlay-endpoint-insertion))
 	    (setq props (text-properties-at start))
 	    (unless (eq prop 'vm-mime-object)
 	      (setq props (append (list 'vm-mime-object t) props)))
@@ -6168,6 +6197,14 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
 	o-list ))))
 
 (defun vm-mime-default-type-from-filename (file)
+  "The MIME type FILE's name suggests, or nil.
+
+`vm-mime-attachment-auto-type-alist' first, so what the user has set there
+decides.  Failing that, `mailcap-extension-to-mime', which knows the
+system's /etc/mime.types and Emacs's own table: an .org file is text/x-org
+there and a .patch text/x-patch, and either is better than the
+application/octet-stream the callers fall back to -- octet-stream carries no
+charset, so text sent as one arrives as a download rather than as text."
   (let ((alist vm-mime-attachment-auto-type-alist)
 	(case-fold-search t)
 	(done nil))
@@ -6175,7 +6212,19 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
       (if (string-match (car (car alist)) file)
 	  (setq done t)
 	(setq alist (cdr alist))))
-    (and alist (cdr (car alist)))))
+    (or (and alist (cdr (car alist)))
+	(vm-mime-type-from-mailcap file))))
+
+(declare-function mailcap-parse-mimetypes "mailcap" (&optional path force))
+(declare-function mailcap-extension-to-mime "mailcap" (extn))
+
+(defun vm-mime-type-from-mailcap (file)
+  "The MIME type Emacs's mailcap tables give FILE's suffix, or nil."
+  (let ((extension (file-name-extension file)))
+    (when extension
+      (require 'mailcap)
+      (mailcap-parse-mimetypes)
+      (mailcap-extension-to-mime extension))))
 
 (defun vm-remove-mail-mode-header-separator ()
   (save-excursion
@@ -6209,6 +6258,12 @@ should be included (?)                               USR, 2011-03-27"
     (cond ((string-match "^binary$" encoding)
 	   (vm-mime-base64-encode-region beg end crlf)
 	   (setq encoding "base64"))
+	  ((equal encoding vm-mime-long-lines-encoding)
+	   ;; Quoted-printable rather than base64: it carries the long line
+	   ;; just as exactly, and leaves the rest of the part readable to
+	   ;; anyone looking at the message as it was sent.
+	   (vm-mime-qp-encode-region beg end nil armor-from)
+	   (setq encoding "quoted-printable"))
 	  ((and (not armor-from) (not armor-dot)
 	        (string-match "^7bit$" encoding))
 	   t)
@@ -6305,15 +6360,6 @@ quoted-printable or binary).                            USR, 2011-03-27"
 	  "message body and .signature"
 	"message body text"))))
 ;; tried this but random text in the object tag does't look right.
-;;      (skip-chars-forward " \t\n")
-;;      (let ((description (buffer-substring (point) (min (+ (point) 20) end)))
-;;	    (ellipsis (< (+ (point) 20) end))
-;;	    (i nil))
-;;	(while (setq i (string-match "[\t\r\n]" description i))
-;;	  (aset description i " "))
-;;	(cond ((= 0 (length description)) nil)
-;;	      (ellipsis (concat description "..."))
-;;	      (t description))))))
 
 ;;;###autoload
 (defun vm-delete-mime-object (&optional saved-file)
@@ -6410,9 +6456,9 @@ describes what was deleted."
 	(vm-set-byte-count-of m nil)
 	(vm-set-line-count-of m nil)
 	(vm-set-stuff-flag-of m t)
-	;; For the dreaded From_-with-Content-Length folders recompute
+	;; For the dreaded mboxcl2 folders recompute
 	;; the message length and make a new Content-Length header.
-	(if (eq (vm-message-type-of m) 'From_-with-Content-Length)
+	(if (eq (vm-message-type-of m) 'mboxcl2)
 	    (let (length)
 	      (goto-char (vm-headers-of m))
 	      ;; first delete all copies of Content-Length
@@ -6455,6 +6501,86 @@ describes what was deleted."
 	       (vm-set-mm-layout-parts layout nil)
 	       (vm-set-mm-layout-display-error layout nil)))))))
 
+(defconst vm-mime-encoded-word-limit 75
+  "The longest an encoded word may be, from RFC 2047 section 2.
+Counting the whole of it: the charset, the encoding letter, the question
+marks and the payload.  A run of text too long to fit becomes several
+encoded words in a row, which is what the standard says to do.")
+
+(defconst vm-mime-header-line-limit 78
+  "The longest a header line should be, from RFC 5322 section 2.1.1.
+That section also sets a limit of 998 that a line MUST NOT exceed.  This is
+the smaller, softer one, which VM aims for by folding; a header with a single
+unbreakable run longer than this exceeds it and cannot be helped.")
+
+(defun vm-mime-encoded-word-payload (text coding encoding)
+  "TEXT encoded for the body of an RFC 2047 word, without the wrapper.
+CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'."
+  (with-temp-buffer
+    (insert text)
+    (when (and coding (not (eq coding 'no-conversion)))
+      ;; encode-coding-region and not vm-encode-coding-region, which encodes
+      ;; this wrongly
+      (encode-coding-region (point-min) (point-max) coding))
+    ;; A marker that advances: Q-encoding expands the text it encodes, and
+    ;; `vm-mime-Q-encode-region' turns the spaces into underscores afterwards
+    ;; over the region it was given.  A plain position taken before the call
+    ;; is short by then, and the tail of the word keeps a space, which ends
+    ;; the encoded word where it stands.
+    (let ((end (copy-marker (point-max) t)))
+      (if (eq encoding 'Q)
+	  (vm-mime-Q-encode-region (point-min) end)
+	;; B-encoding, so that no line break is inserted: a break inside an
+	;; encoded word would end it.
+	(vm-mime-base64-encode-region (point-min) end nil t))
+      (set-marker end nil))
+    (buffer-string)))
+
+(defun vm-mime-encoded-word (text charset coding encoding)
+  "TEXT as one whole RFC 2047 encoded word."
+  (concat "=?" charset "?" (format "%s" encoding) "?"
+	  (vm-mime-encoded-word-payload text coding encoding)
+	  "?="))
+
+(defun vm-mime-encoded-word-budget (charset encoding)
+  "How many characters of payload an encoded word for CHARSET has room for."
+  (- vm-mime-encoded-word-limit
+     (length (vm-mime-encoded-word "" charset nil encoding))))
+
+(defun vm-mime-split-for-encoded-words (text charset coding encoding)
+  "TEXT split into the pieces that each fit in one encoded word.
+Split between characters, never inside one: a piece is encoded on its own, so
+a multibyte character cut in half would encode as two invalid ones.
+
+A piece that still does not fit is a single character whose encoding is
+longer than the budget, which no split can help; it is passed through whole
+rather than dropped."
+  (let ((budget (vm-mime-encoded-word-budget charset encoding))
+	(pieces nil)
+	(piece "")
+	(piece-length 0))
+    (dolist (char (string-to-list text))
+      (let* ((one (char-to-string char))
+	     (cost (length (vm-mime-encoded-word-payload one coding encoding))))
+	(when (and (> piece-length 0) (> (+ piece-length cost) budget))
+	  (push piece pieces)
+	  (setq piece "" piece-length 0))
+	(setq piece (concat piece one)
+	      piece-length (+ piece-length cost))))
+    (when (> (length piece) 0)
+      (push piece pieces))
+    (nreverse pieces)))
+
+(defun vm-mime-encoded-words (text charset coding encoding)
+  "TEXT as one or more RFC 2047 encoded words, none over the limit.
+Several of them are written next to each other, separated by a space.  That
+is lossless: RFC 2047 section 6.2 has a decoder drop the whitespace between
+two adjacent encoded words, so the text comes back as it went in.  It is also
+where a folder may break the line."
+  (mapconcat (lambda (piece) (vm-mime-encoded-word piece charset coding encoding))
+	     (vm-mime-split-for-encoded-words text charset coding encoding)
+	     " "))
+
 (defun vm-mime-encode-words (&optional encoding)
   "MIME encode all words in the current buffer.
 The optional argument ENCODING can be the symbol `Q' or `B' (for
@@ -6476,27 +6602,26 @@ If none is specified, quoted-printable is used."
     (while (re-search-forward vm-mime-encode-headers-words-regexp (point-max) t)
       (setq start (match-beginning 1)
             end   (copy-marker (match-end 0) t)
-            charset (or (vm-determine-proper-charset start end)
-                        vm-mime-8bit-composition-charset)
+            charset (vm-determine-proper-charset start end)
             coding (vm-mime-charset-to-coding charset))
-      ;; encode coding system body
-      (when (and  coding (not (eq coding 'no-conversion)))
-        (if (featurep 'xemacs)
-	    (vm-encode-coding-region start end coding)
-	  ;; using vm-encode-coding-region causes wrong encoding in GNU Emacs
-	  (encode-coding-region start end coding)))
-      ;; encode 
-      (if (eq encoding 'Q)
-	  (vm-mime-Q-encode-region start end)
-        (vm-mime-base64-encode-region  start end))
-      ;; insert start and end markers 
-      (goto-char start)
-      (insert "=?" charset "?" (format "%s" encoding) "?")
-      (setq start (point))
-      (goto-char end)
-      (insert "?=")
-      ;; goto end for next round
-      (goto-char end))))
+      ;; One encoded word where the run fits in one, several in a row where it
+      ;; does not: RFC 2047 puts a limit of 75 on each (emacs-vm/vm#794).
+      (let ((words (vm-mime-encoded-words
+		    (buffer-substring-no-properties start end)
+		    charset coding encoding)))
+	;; Insert first and delete after, not the other way about.  A marker
+	;; sitting at the end of this run -- `body-start' in
+	;; `vm-mime-encode-headers' is one -- collapses to START when the
+	;; region under it is deleted, and an insertion there does not carry
+	;; it along, its insertion type being nil.  Inserting first pushes it
+	;; past the new text, and deleting the old text then leaves it exactly
+	;; at the end of the new.
+	(goto-char start)
+	(insert words)
+	;; END advances, so the insertion above has already carried it past the
+	;; new text: what is left between point and it is the old text.
+	(delete-region (point) end))
+      (set-marker end nil))))
 
 ;;;###autoload
 (defun vm-mime-encode-words-in-string (string &optional _encoding)
@@ -6513,12 +6638,17 @@ not the whole header as this will cause trouble for the
 recipient and author headers.
 
 Whitespace between encoded words is trimmed during decoding and thus those
-should be encoded together."
+should be encoded together.
+
+A run too long for one encoded word becomes several in a row, RFC 2047
+allowing 75 characters each, and a header line longer than
+`vm-mime-header-line-limit' is folded at whitespace.  Both are undone by the
+reader: a folded line is joined back up, and the whitespace between two
+adjacent encoded words is dropped."
   (interactive)
   (save-excursion 
     (let ((headers (concat "^\\(" vm-mime-encode-headers-regexp "\\):"))
           (case-fold-search nil)
-          ;; (encoding vm-mime-encode-headers-type)
           body-start
           start end)
       (goto-char (point-min))
@@ -6534,13 +6664,69 @@ should be encoded together."
           (insert " ")
           (backward-char 1))
         (save-excursion
-          (setq end (or (and (re-search-forward "^[^ \t:]+:" body-start t)
-                             (match-beginning 0))
-                        body-start)))
+          ;; A marker that advances: encoding the words expands the text, and
+          ;; a plain position taken now points into the middle of the header
+          ;; afterwards.  The folding below needs to know where it really ends.
+          (setq end (copy-marker
+                     (or (and (re-search-forward "^[^ \t:]+:" body-start t)
+                              (match-beginning 0))
+                         body-start)
+                     t)))
         (save-restriction
          (narrow-to-region start end)
          (vm-mime-encode-words))
-        (goto-char end)))))
+        ;; and fold what is now there, counting the header name, which is part
+        ;; of the first line (emacs-vm/vm#794)
+        (vm-mime-fold-header (save-excursion (goto-char start)
+                                             (line-beginning-position))
+                             end)
+        (goto-char end)
+        (set-marker end nil)))))
+(defun vm-mime-fold-header--break (bol limit)
+  "Where to break the line starting at BOL so it is no longer than LIMIT.
+The last whitespace at or before the limit, and never the first character of
+the line, a break there leaving an empty line.  Nil when there is nowhere to
+break: one long run with no whitespace in it."
+  (save-excursion
+    (let ((eol (line-end-position))
+          (break nil))
+      (goto-char (1+ bol))
+      (while (and (< (point) eol)
+                  (re-search-forward "[ \t]" eol t)
+                  (<= (- (point) bol) limit))
+        (setq break (match-beginning 0)))
+      break)))
+
+(defun vm-mime-fold-header (start end)
+  "Fold the header between START and END so its lines are not over-long.
+RFC 5322 section 2.1.1 sets a limit of 998 characters that a line MUST NOT
+exceed and 78 that it SHOULD NOT; `vm-mime-header-line-limit' is the second.
+A folded line is broken at whitespace and the next one begins with a space,
+which section 2.2.3 says a reader joins back up.
+
+Breaks only where whitespace already is, so nothing is inserted into the
+text: between two encoded words the whitespace is dropped when they are
+decoded, and elsewhere it was in the header to begin with.  A run with no
+whitespace in it stays over the limit, there being nowhere to break it."
+  (save-excursion
+    (let ((end (copy-marker end t)))
+      (goto-char start)
+      (while (< (point) end)
+        (let* ((bol (line-beginning-position))
+               (break (and (> (- (min end (line-end-position)) bol)
+                              vm-mime-header-line-limit)
+                           (vm-mime-fold-header--break
+                            bol vm-mime-header-line-limit))))
+          (if (not break)
+              (forward-line 1)
+            (goto-char break)
+            (delete-region break (progn (skip-chars-forward " \t") (point)))
+            (insert "\n ")
+            ;; carry on from the continuation line, which may need folding too
+            (beginning-of-line))))
+      (set-marker end nil))))
+
+(put 'vm-mime-encode-headers 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-mime-encode-composition (&optional attachments-only)
@@ -6563,7 +6749,7 @@ message content when it's passed to the MTA (that is, the mail transfer
 agent; under Unix, normally sendmail.)
 
 Attachment tags added to the buffer with `vm-attach-file' are expanded
-and the approriate content-type and boundary markup information is added."
+and the appropriate content-type and boundary markup information is added."
 
   (interactive)
 
@@ -6609,9 +6795,6 @@ and the approriate content-type and boundary markup information is added."
 	  forward-local-refs already-mimed layout e e-list boundary
 	  type encoding params description disposition object ;; charset
 	  opoint-min encoded-attachment message-smimed)
-      (when (featurep 'xemacs)
-	;;Make sure we don't double encode UTF-8 (for example) text.
-	(setq buffer-file-coding-system (vm-binary-coding-system)))
       (goto-char (mail-text-start))
       (setq e-list (vm-mime-attachment-button-extents 
 		    (point) (point-max) 'vm-mime-object))
@@ -6659,14 +6842,14 @@ and the approriate content-type and boundary markup information is added."
 		  object (vm-extent-property e 'vm-mime-type)))
 		;; insert attachment from another folder
 		((listp object)
-		 (save-restriction
-		   (with-current-buffer (nth 0 object)
-		     (widen))
-		   (setq boundary-positions 
-			 (cons (point-marker) boundary-positions))
-		   (insert-buffer-substring 
-		    (nth 0 object) (nth 1 object) (nth 2 object))
-		   (setq encoded-attachment t)))
+		 (setq boundary-positions
+		       (cons (point-marker) boundary-positions))
+		 ;; `vm-insert-region-from-buffer' enters `save-restriction' in
+		 ;; the folder it reads from, so that folder's narrowing comes
+		 ;; back.  Widening it from here left it widened (#780).
+		 (vm-insert-region-from-buffer
+		  (nth 0 object) (nth 1 object) (nth 2 object))
+		 (setq encoded-attachment t))
 		;; insert file
 		((stringp object)
 		 (vm-mime-insert-file-contents 
@@ -6915,24 +7098,26 @@ Returns a pair consisting of a marker pointing to the start of the
 encoded MIME part and the transfer-encoding used.  But if
 WHOLE-MESSAGE is true then nil is returned."
   (let ((enriched (and (boundp 'enriched-mode) enriched-mode))
-	encoding charset description marker) ;; type params
+	encoding charset description marker flowed) ;; type params
     (narrow-to-region beg end)
+    ;; Mark the soft line breaks before the text is encoded or measured, and
+    ;; only for plain text: text/enriched carries its own line structure.
+    (when (and vm-send-using-flowed-text (not enriched))
+      (setq flowed (vm-mime-flow-region (point-min) (point-max))))
     ;; support enriched-mode for text/enriched composition
     (when enriched
       (let ((enriched-initial-annotation ""))
-	(if (not (featurep 'xemacs))
-	    (save-excursion
-	      ;; insert/delete trick needed to avoid
-	      ;; enriched-mode tags from seeping into the
-	      ;; attachment overlays.  I really wish
-	      ;; front-advance / rear-advance overlay
-	      ;; endpoint properties actually worked.
-	      (goto-char (point-max))
-	      (insert-before-markers "\n")
-	      (enriched-encode (point-min) (1- (point)))
-	      (goto-char (point-max))
-	      (delete-char -1))
-	  (enriched-encode (point-min) (point-max)))))
+	(save-excursion
+	  ;; insert/delete trick needed to avoid
+	  ;; enriched-mode tags from seeping into the
+	  ;; attachment overlays.  I really wish
+	  ;; front-advance / rear-advance overlay
+	  ;; endpoint properties actually worked.
+	  (goto-char (point-max))
+	  (insert-before-markers "\n")
+	  (enriched-encode (point-min) (1- (point)))
+	  (goto-char (point-max))
+	  (delete-char -1))))
             
     (setq charset (vm-determine-proper-charset (point-min) (point-max)))
     (when t
@@ -6952,9 +7137,6 @@ WHOLE-MESSAGE is true then nil is returned."
 	     ;; coding-system), if necessary.)        RWF, 2005-03-25
 			      coding-system)))
 
-    ;; not clear why this is needed.  USR, 2011-03-27
-    (when (featurep 'xemacs)
-      (when whole-message (enriched-mode -1)))
     (setq encoding (vm-determine-proper-content-transfer-encoding
 		    (point-min) (point-max))
 	  encoding (vm-mime-transfer-encode-region 
@@ -6977,14 +7159,16 @@ WHOLE-MESSAGE is true then nil is returned."
 	  (insert "MIME-Version: 1.0\n")
 	  (if enriched
 	      (insert "Content-Type: text/enriched; charset=" charset "\n")
-	    (insert "Content-Type: text/plain; charset=" charset "\n"))
+	    (insert "Content-Type: text/plain; charset=" charset
+		    (if flowed "; format=flowed" "") "\n"))
 	  (insert "Content-Transfer-Encoding: " encoding "\n")
 	  nil)
 
       (setq marker (point-marker))
       (if enriched
 	  (insert "Content-Type: text/enriched; charset=" charset "\n")
-	(insert "Content-Type: text/plain; charset=" charset "\n"))
+	(insert "Content-Type: text/plain; charset=" charset
+		(if flowed "; format=flowed" "") "\n"))
       (when description
 	(insert "Content-Description: " description "\n"))
       (insert "Content-Transfer-Encoding: " encoding "\n\n")
@@ -6994,327 +7178,7 @@ WHOLE-MESSAGE is true then nil is returned."
 
 ;; This function is now defunct.   Use vm-mime-encode-composition.
 ;; USR, 2011-03-27
-(defun vm-mime-fsfemacs-encode-composition ()
-  "MIME encode the message composition in the current buffer."
-  (save-restriction
-    (widen)
-    (unless (eq major-mode 'mail-mode)
-      (error "Command must be used in a VM Mail mode buffer."))
-    (when (vm-mail-mode-get-header-contents "MIME-Version:")
-      (error "Message is already MIME encoded."))
-    (let ((8bit nil)
-	  (just-one nil)
-	  (boundary-positions nil)	; markers for the start of parts
-	  marker
-	  forward-local-refs already-mimed layout e e-list boundary
-	  type encoding params description disposition object ;; charset
-	  opoint-min postponed-attachment)
-      (goto-char (mail-text-start))
-      (setq e-list (vm-mime-attachment-button-extents 
-		    (point) (point-max) 'vm-mime-object))
-      ;; If there's just one attachment and no other readable
-      ;; text in the buffer then make the message type just be
-      ;; the attachment type rather than sending a multipart
-      ;; message with one attachment
-      (setq just-one (and (= (length e-list) 1)
-			  (looking-at "[ \t\n]*")
-			  (= (match-end 0)
-			     (vm-extent-start-position (car e-list)))
-			  (save-excursion
-			    (goto-char (vm-extent-end-position (car e-list)))
-			    (looking-at "[ \t\n]*\\'"))))
-      (if (null e-list)
-	  ;; no attachments
-	  (vm-mime-encode-text-part (point) (point-max) t)
-	;; attachments to be handled
-	(while e-list
-	  (setq e (car e-list))
-	  (if (or just-one
-		  (save-excursion
-		    (eq (vm-extent-start-position e)
-			(re-search-forward 
-			 "[ \t\n]*" (vm-extent-start-position e) t))))
-	      ;; found an attachment
-	      (delete-region (point) (vm-extent-start-position e))
-	    ;; found text
-	    (setq marker (vm-mime-encode-text-part
-			  (point) (vm-extent-start-position e) nil))
-	    (setq boundary-positions (cons marker boundary-positions)))
-	  (goto-char (vm-extent-start-position e))
-	  (narrow-to-region (point) (point))
-	  (setq object (vm-extent-property e 'vm-mime-object))
 
-	  ;; insert the object
-	  (cond ((bufferp object)
-		 (vm-mime-insert-buffer-substring 
-		  object (vm-extent-property e 'vm-mime-type)))
-		;; insert attachment from another folder
-		((listp object)
-		 (save-restriction
-		   (with-current-buffer (nth 0 object)
-		     (widen))
-		   (setq boundary-positions 
-			 (cons (point-marker) boundary-positions))
-		   (insert-buffer-substring 
-		    (nth 0 object) (nth 1 object) (nth 2 object))
-		   (setq postponed-attachment t)))
-		;; insert file
-		((stringp object)
-		 (vm-mime-insert-file-contents 
-		  object (vm-extent-property e 'vm-mime-type))))
-	  ;; gather information about the object from the extent.
-	  (if (setq already-mimed (vm-extent-property e 'vm-mime-encoded))
-	      (setq layout 
-		    (vm-mime-parse-entity
-		     nil :default-type (list "text/plain" "charset=us-ascii")
-		     :default-encoding "7bit")
-		    type (or (vm-extent-property e 'vm-mime-type)
-			     (car (vm-mm-layout-type layout)))
-		    params (or (vm-extent-property e 'vm-mime-parameters)
-			       (cdr (vm-mm-layout-qtype layout)))
-		    forward-local-refs
-		        (car (vm-extent-property e 'vm-mime-forward-local-refs))
-		    description (vm-extent-property e 'vm-mime-description)
-		    disposition
-		    (if (not (equal
-			      (car (vm-extent-property e 'vm-mime-disposition))
-			      "unspecified"))
-			(vm-extent-property e 'vm-mime-disposition)
-		      (vm-mm-layout-qdisposition layout)))
-	    (setq type (vm-extent-property e 'vm-mime-type)
-		  params (vm-extent-property e 'vm-mime-parameters)
-		  forward-local-refs
-		      (car (vm-extent-property e 'vm-mime-forward-local-refs))
-		  description (vm-extent-property e 'vm-mime-description)
-		  disposition
-		  (if (not (equal
-			    (car (vm-extent-property e 'vm-mime-disposition))
-			    "unspecified"))
-		      (vm-extent-property e 'vm-mime-disposition)
-		    nil)))
-	  (cond ((vm-mime-types-match "text" type)
-		 (setq encoding
-		       (or (vm-extent-property e 'vm-mime-encoding)
-			   (vm-determine-proper-content-transfer-encoding
-			    (if already-mimed
-				(vm-mm-layout-body-start layout)
-			      (point-min))
-			    (point-max)))
-		       encoding (vm-mime-transfer-encode-region
-				 encoding
-				 (if already-mimed
-				     (vm-mm-layout-body-start layout)
-				   (point-min))
-				 (point-max)
-				 t))
-		 (setq 8bit (or 8bit (equal encoding "8bit"))))
-		((vm-mime-composite-type-p type)
-		 (setq opoint-min (point-min))
-		 (unless already-mimed
-		   (goto-char (point-min))
-		   (insert "Content-Type: " type "\n")
-		   ;; vm-mime-transfer-encode-layout will replace
-		   ;; this if the transfer encoding changes.
-		   (insert "Content-Transfer-Encoding: 7bit\n\n")
-		   (setq layout 
-			 (vm-mime-parse-entity
-			  nil 
-			  :default-type (list "text/plain" "charset=us-ascii")
-			  :default-encoding "7bit"))
-		   (setq already-mimed t))
-		 (when (and layout (not forward-local-refs))
-		   (vm-mime-internalize-local-external-bodies layout)
-		   ; update the cached data that might now be stale
-		   (setq type (car (vm-mm-layout-type layout))
-			 params (cdr (vm-mm-layout-qtype layout))
-			 disposition (vm-mm-layout-qdisposition layout)))
-		 (setq encoding (vm-mime-transfer-encode-layout layout))
-		 (setq 8bit (or 8bit (equal encoding "8bit")))
-		 (goto-char (point-max))
-		 (widen)
-		 (narrow-to-region opoint-min (point)))
-		((not postponed-attachment)
-		 (when (and layout (not forward-local-refs))
-		   (vm-mime-internalize-local-external-bodies layout)
-		   ; update the cached data that might now be stale
-		   (setq type (car (vm-mm-layout-type layout))
-			 params (cdr (vm-mm-layout-qtype layout))
-			 disposition (vm-mm-layout-qdisposition layout)))
-		 (if already-mimed
-		     (setq encoding (vm-mime-transfer-encode-layout layout))
-		   (vm-mime-base64-encode-region (point-min) (point-max))
-		   (setq encoding "base64"))))
-	  (unless (or just-one postponed-attachment)
-	    (goto-char (point-min))
-	    (setq boundary-positions (cons (point-marker) boundary-positions))
-	    (when already-mimed
-	      ;; trim headers - why remove perfectly good headers?  USR
-	      (vm-reorder-message-headers 
-	       nil :keep-list '("Content-ID:") :discard-regexp nil)
-	      ;; remove header/text separator
-	      (goto-char (1- (vm-mm-layout-body-start layout)))
-	      (when (looking-at "\n")
-		(delete-char 1)))
-	    (insert "Content-Type: " 
-		    (vm-mime-type-with-params type params)
-		    "\n")
-	    (when description
-	      (insert "Content-Description: " description "\n"))
-	    (when disposition
-	      (insert "Content-Disposition: " (car disposition))
-	      (when (cdr disposition)
-		(insert ";\n\t" (mapconcat 'identity
-					   (cdr disposition)
-					   ";\n\t")))
-	      (insert "\n"))
-	    (insert "Content-Transfer-Encoding: " encoding "\n\n"))
-	  (goto-char (point-max))
-	  (widen)
-	  (save-excursion
-	    (goto-char (vm-extent-start-position e))
-	    (vm-assert (looking-at "\\[ATTACHMENT")))
-	  (delete-region (vm-extent-start-position e)
-			 (vm-extent-end-position e))
-	  (vm-detach-extent e)
-	  (if (looking-at "\n")
-	      (delete-char 1))
-	  (setq e-list (cdr e-list)))
-	;; handle the remaining chunk of text after the last
-	;; extent, if any.
-	(if (or just-one (looking-at "[ \t\n]*\\'"))
-	    (delete-region (point) (point-max))
-	  (setq marker (vm-mime-encode-text-part (point) (point-max) nil))
-	  (setq boundary-positions (cons marker boundary-positions))
-	  ;; FIXME is this needed?
-	  ;; (setq 8bit (or 8bit (equal encoding "8bit")))
-	  (goto-char (point-max)))
-	(setq boundary (vm-mime-make-multipart-boundary))
-	(mail-text)
-	(while (re-search-forward (concat "^--"
-					  (regexp-quote boundary)
-					  "\\(--\\)?$")
-				  nil t)
-	  (setq boundary (vm-mime-make-multipart-boundary))
-	  (mail-text))
-	(goto-char (point-max))
-	(or just-one (insert "\n--" boundary "--\n"))
-	(while boundary-positions
-	  (goto-char (car boundary-positions))
-	  (insert "\n--" boundary "\n")
-	  (setq boundary-positions (cdr boundary-positions)))
-	(when (and just-one already-mimed)
-	  (goto-char (vm-mm-layout-header-start layout))
-	  ;; trim headers
-	  (vm-reorder-message-headers
-	   nil :keep-list '("Content-ID:") :discard-regexp nil)
-	  ;; remove header/text separator
-	  (goto-char (vm-mm-layout-header-end layout))
-	  (if (looking-at "\n")
-	      (delete-char 1))
-	  ;; copy remainder to enclosing entity's header section
-	  (goto-char (point-max))
-	  (unless just-one
-	    (insert-buffer-substring (current-buffer)
-				     (vm-mm-layout-header-start layout)
-				     (vm-mm-layout-body-start layout)))
-	  (delete-region (vm-mm-layout-header-start layout)
-			 (vm-mm-layout-body-start layout)))
-	(goto-char (point-min))
-	(vm-remove-mail-mode-header-separator)
-	(vm-reorder-message-headers
-	 nil :keep-list nil 
-	 :discard-regexp
-	 "\\(Content-Type:\\|MIME-Version:\\|Content-Transfer-Encoding\\)")
-	(vm-add-mail-mode-header-separator)
-	(insert "MIME-Version: 1.0\n")
-	(if just-one
-	    (insert "Content-Type: " 
-		    (vm-mime-type-with-params type params)
-		    "\n")
-	  (insert "Content-Type: "
-		  (vm-mime-type-with-params 
-		   "multipart/mixed"
-		   (list (concat "boundary=\"" boundary "\"")))
-		  "\n"))
-	(when (and just-one description)
-	    (insert "Content-Description: " description "\n"))
-	(when (and just-one disposition)
-	  (insert "Content-Disposition: " 
-		  (vm-mime-type-with-params (car disposition) (cdr disposition))
-		  "\n"))
-	(if just-one
-	    (insert "Content-Transfer-Encoding: " encoding "\n")
-	  (if 8bit
-	      (insert "Content-Transfer-Encoding: 8bit\n")
-	    (insert "Content-Transfer-Encoding: 7bit\n")))))))
-(make-obsolete 'vm-mime-fsfemacs-encode-composition
-	       'vm-mime-encode-composition-internal "8.2.0")
-
-(defun vm-mime-fsfemacs-encode-text-part (beg end whole-message)
-  "Encode the text from BEG to END in a composition buffer
-as MIME part and add appropriate MIME headers.  If WHOLE-MESSAGE is
-true, then encode it as the entire message.
-
-Returns marker pointing to the start of the encoded MIME part."
-  (let ((enriched (and (boundp 'enriched-mode) enriched-mode))
-	encoding charset description marker) ;; type params
-    (narrow-to-region beg end)
-    ;; support enriched-mode for text/enriched composition
-    (when enriched
-      (let ((enriched-initial-annotation ""))
-	(save-excursion
-	  ;; insert/delete trick needed to avoid
-	  ;; enriched-mode tags from seeping into the
-	  ;; attachment overlays.  I really wish
-	  ;; front-advance / rear-advance overlay
-	  ;; endpoint properties actually worked.
-	  (goto-char (point-max))
-	  (insert-before-markers "\n")
-	  (enriched-encode (point-min) (1- (point)))
-	  (goto-char (point-max))
-	  (delete-char -1))))
-
-    (setq charset (vm-determine-proper-charset (point-min) (point-max)))
-    (when (not (featurep 'xemacs))
-      (let ((coding-system
-	     (vm-mime-charset-to-coding charset)))
-	(unless coding-system
-	  (error "Can't find a coding system for charset %s" charset))
-	(encode-coding-region (point-min) (point-max) coding-system)))
-
-    (setq encoding (vm-determine-proper-content-transfer-encoding
-		    (point-min) (point-max))
-	  encoding (vm-mime-transfer-encode-region 
-		    encoding (point-min) (point-max) t)
-	  description (vm-mime-text-description 
-		       (point-min) (point-max)))
-    (if whole-message
-	(progn
-	  (widen)
-	  (vm-remove-mail-mode-header-separator)
-	  (goto-char (point-min))
-	  (vm-reorder-message-headers
-	   nil :keep-list nil 
-	   :discard-regexp
-	   "\\(Content-Type:\\|Content-Transfer-Encoding\\|MIME-Version:\\)")
-	  (insert "MIME-Version: 1.0\n")
-	  (if enriched
-	      (insert "Content-Type: text/enriched; charset=" charset "\n")
-	    (insert "Content-Type: text/plain; charset=" charset "\n"))
-	  (insert "Content-Transfer-Encoding: " encoding "\n")
-	  (vm-add-mail-mode-header-separator))
-
-      (setq marker (point-marker))
-      (if enriched
-	  (insert "Content-Type: text/enriched; charset=" charset "\n")
-	(insert "Content-Type: text/plain; charset=" charset "\n"))
-      (when description
-	(insert "Content-Description: " description "\n"))
-      (insert "Content-Transfer-Encoding: " encoding "\n\n")
-      (widen)
-      marker)))
-(make-obsolete 'vm-mime-fsfemacs-encode-text-part
-	       'vm-mime-encode-text-part "8.2.0")
 
 
 (defun vm-mime-fragment-composition (size)
@@ -7371,9 +7235,15 @@ Returns marker pointing to the start of the encoded MIME part."
 		     "Content-Type: message/partial; id=%s; number=%d"
 		   "Content-Type: message/partial;\n\tid=%s;\n\tnumber=%d")
 		 id n))
+	;; No number here on purpose: how many parts there will be is not
+	;; known until the last one has been cut, so the value is written
+	;; below, at the position recorded next.  A `%d' here puts the
+	;; fragment's own number in the way of it, and the two run together:
+	;; three parts numbered 1, 2, 3 went out saying total=13, 23 and 33,
+	;; which no reader can reassemble (emacs-vm/vm#797).
 	(if vm-mime-avoid-folding-content-type
-	    (insert (format "; total=%d" n))
-	  (insert (format ";\n\ttotal=%d" n)))
+	    (insert "; total=")
+	  (insert ";\n\ttotal="))
 	(setq total-markers (cons (point) total-markers))
 	(insert "\nContent-Transfer-Encoding: 7bit\n")
 	(goto-char (point-max))
@@ -7396,7 +7266,8 @@ Returns marker pointing to the start of the encoded MIME part."
       (nreverse buffers))))
 
 ;; moved to vm-reply.el, not MIME-specific.
-(fset 'vm-mime-preview-composition 'vm-preview-composition)
+;;;###autoload (autoload 'vm-mime-preview-composition "vm-mime" nil t)
+(defalias 'vm-mime-preview-composition 'vm-preview-composition)
 
 (defun vm-mime-composite-type-p (type)
   "Check if TYPE is a MIME type that might have subparts."
@@ -7406,12 +7277,6 @@ Returns marker pointing to the start of the encoded MIME part."
 
 ;; Unused currrently.
 ;;
-;;(defun vm-mime-map-atomic-layouts (function list)
-;;  (while list
-;;    (if (vm-mime-composite-type-p (car (vm-mm-layout-type (car list))))
-;;	(vm-mime-map-atomic-layouts function (vm-mm-layout-parts (car list)))
-;;      (funcall function (car list)))
-;;    (setq list (cdr list))))
 
 (defvar vm-mime-layout nil)		; used with dynamic binding
 
@@ -7427,6 +7292,11 @@ Returns marker pointing to the start of the encoded MIME part."
     ;; the format s-expression to work.
     (let ((vm-mime-layout layout))
       (eval (cdr match)))))
+
+(defconst vm-mime-number-specifiers '(?n ?N ?T)
+  "The button specifiers whose substitution is a number.
+A width beginning with 0 fills with zeros for these and with spaces for
+everything else, as printf does.")
 
 (defun vm-mime-compile-format (format)
   (let ((return-value (vm-mime-compile-format-1 format 0)))
@@ -7495,28 +7365,8 @@ Returns marker pointing to the start of the encoded MIME part."
 		    ((= conv-spec ?x)
 		     (setq sexp (cons (list 'vm-mf-external-body-content-type
 					    'vm-mime-layout) sexp))))
-	      (cond ((and (match-beginning 1) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-left-justify-string
-				'vm-left-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2))))))
-		    ((match-beginning 2)
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-right-justify-string
-				'vm-right-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2)))))))
+	      ;; The maximum first and the width after it, as printf does it
+	      ;; and as `vm-summary-compile-format-1' does (emacs-vm/vm#848).
 	      (cond ((match-beginning 3)
 		     (setcar sexp
 			     (list 'vm-truncate-string (car sexp)
@@ -7524,30 +7374,56 @@ Returns marker pointing to the start of the encoded MIME part."
 				    (substring format
 					       (match-beginning 4)
 					       (match-end 4)))))))
+	      (cond ((and (match-beginning 1) (match-beginning 2))
+		     ;; Spaces whatever the width says: a `-' beats a `0'.
+		     (setcar sexp
+			     (list 'vm-left-justify-string
+				   (car sexp)
+				   (string-to-number
+				    (substring format
+					       (match-beginning 2)
+					       (match-end 2))))))
+		    ((match-beginning 2)
+		     (setcar sexp
+			     (list
+			      (if (and (eq (aref format (match-beginning 2)) ?0)
+				       (memq conv-spec vm-mime-number-specifiers))
+				  'vm-numeric-right-justify-string
+				'vm-right-justify-string)
+			      (car sexp)
+			      (string-to-number
+			       (substring format
+					  (match-beginning 2)
+					  (match-end 2)))))))
 	      (setq sexp-fmt
 		    (cons "%s"
-			  (cons (substring format
-					   last-match-end
-					   (match-beginning 0))
+			  (cons (vm-percent-quote
+				 (substring format
+					    last-match-end
+					    (match-beginning 0)))
 				sexp-fmt))))
 	  (setq sexp-fmt
 		(cons (if (eq conv-spec ?\))
 			  (prog1 "" (setq done t))
 			"%%")
-		      (cons (substring format
-				       (or last-match-end 0)
-				       (match-beginning 0))
+		      (cons (vm-percent-quote
+			     (substring format
+					(or last-match-end 0)
+					(match-beginning 0)))
 			    sexp-fmt))))
 	(setq last-match-end new-match-end))
       (unless done
 	(setq sexp-fmt
-	      (cons (substring format last-match-end (length format))
+	      (cons (vm-percent-quote
+		     (substring format last-match-end (length format)))
 		    sexp-fmt)
 	      done t))
       (setq sexp-fmt (apply 'concat (nreverse sexp-fmt)))
       (if sexp
 	  (setq sexp (cons 'format (cons sexp-fmt (nreverse sexp))))
-	(setq sexp sexp-fmt)))
+	;; Nothing to substitute, so nothing calls `format' and the doubled
+	;; percents would reach the button as themselves.
+	(setq sexp (vm-percent-unquote sexp-fmt))))
     (list last-match-end sexp)))
 
 (defun vm-mime-find-format-for-layout (layout)
@@ -7617,10 +7493,6 @@ Returns marker pointing to the start of the encoded MIME part."
     "Press RETURN"))
 
 ;; This puts "alternative" on all attachments.  Silly.  USR, 2011-11-24
-;; (defun vm-mf-default-action (layout)
-;;   (if (eq vm-mime-alternative-show-method 'all)
-;;       (concat (vm-mf-default-action-orig layout) " alternative")
-;;     (vm-mf-default-action-orig layout)))
 
 (defun vm-mf-default-action (layout)
   (or vm-mf-default-action
@@ -7658,6 +7530,7 @@ end of the path."
         (vm-mime-map-layout-parts m function (car parts) (cons layout path))
         (setq parts (cdr parts))))))
 
+;;;###autoload
 (defun vm-list-mime-part-structure (&optional verbose)
   "List mime part structure of the current message."
   (interactive "P")
@@ -7666,8 +7539,6 @@ end of the path."
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (let ((m (car vm-message-pointer))
 	(buffer (get-buffer-create "*VM mime part layout*")))
-    ;; (switch-to-buffer "*VM mime part layout*")
-    ;; (erase-buffer)
     (with-current-buffer buffer (setq truncate-lines t))
     (with-electric-help
      (lambda ()
@@ -7688,26 +7559,49 @@ end of the path."
 			     (if dispo (format " %S" dispo) ""))))))))
      buffer)
     ))
+;;;###autoload (autoload 'vm-mime-list-part-structure "vm-mime" nil t)
 (defalias 'vm-mime-list-part-structure
   'vm-list-mime-part-structure)
 
 ;;;###autoload
+(defun vm-nuke-alternative--enclosing-alternative (path)
+  "The nearest multipart/alternative in PATH, or nil if there is none.
+PATH runs from the immediate parent outwards, so the nearest one is the
+alternative whose choices the part is among."
+  (let ((tail path) (found nil))
+    (while (and tail (not found))
+      (when (vm-mime-types-match "multipart/alternative"
+                                 (car (vm-mm-layout-type (car tail))))
+        (setq found (car tail)))
+      (setq tail (cdr tail)))
+    found))
+
+(defun vm-nuke-alternative--has-plain-text-p (layout)
+  "Non-nil when the first part of LAYOUT is text/plain.
+That part is the copy the reader is left with, so it is what makes
+deleting the html safe; an alternative offering html alone is the only
+copy there is."
+  (let ((first (car (vm-mm-layout-parts layout))))
+    (and (vectorp first)
+         (vm-mime-types-match "text/plain" (car (vm-mm-layout-type first))))))
+
 (defun vm-nuke-alternative-text/html-internal (m)
   "Delete all text/html parts of multipart/alternative parts of message M.
 Returns the number of deleted parts.  text/html parts are only deleted iff
 the first sub part of a multipart/alternative is a text/plain part."
   (let ((deleted-count 0)
-        prev-type this-type parent-types
-        nuke-html)
+        this-type alternative)
     (vm-mime-map-layout-parts
      m
      (lambda (m layout path)
        (setq this-type (car (vm-mm-layout-type layout))
-             parent-types (mapcar (lambda (layout)
-                                    (car (vm-mm-layout-type layout)))
-                                  path))
-       (when (and nuke-html
-                  (member "multipart/alternative" parent-types)
+             ;; the alternative this part is offered under, which is the
+             ;; nearest one in the path: a text/html inside a
+             ;; multipart/related inside an alternative is still one of the
+             ;; alternatives on offer
+             alternative (vm-nuke-alternative--enclosing-alternative path))
+       (when (and alternative
+                  (vm-nuke-alternative--has-plain-text-p alternative)
                   (vm-mime-types-match "text/html" this-type))
          (with-current-buffer (vm-buffer-of m)
            (let ((buffer-read-only nil))
@@ -7723,11 +7617,7 @@ the first sub part of a multipart/alternative is a text/plain part."
               (vm-set-line-count-of m nil)
               (vm-set-stuff-flag-of m t)
               (vm-mark-for-summary-update m)))
-           (setq deleted-count (1+ deleted-count))))
-       (if (and (vm-mime-types-match "multipart/alternative" prev-type)
-                (vm-mime-types-match "text/plain" this-type))
-           (setq nuke-html t))
-       (setq prev-type this-type)))
+           (setq deleted-count (1+ deleted-count))))))
     deleted-count))
 
 ;;;###autoload
@@ -7756,45 +7646,24 @@ This is a destructive operation and cannot be undone!"
   (when (vm-interactive-p)
     (vm-discard-cached-data count)
     (vm-present-current-message)))
-(defalias 'vm-mime-nuke-alternative-text/html
-  'vm-nuke-alterantive-text/html)
-(make-obsolete 'vm-mime-nuke-alternative-text/html
-	       'vm-nuke-alternative-text/html "8.2.0")
 
 ;;-----------------------------------------------------------------------------
 ;; The following functions are taken from vm-postpone.el
 ;; Copyright (C) Robert Widhopf-Fenk
 ;; Copyright (C) Uday S. Reddy, 2010-2011
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 
 ;;;###autoload
 (defun vm-mime-convert-to-attachment-buttons ()
   "Replace all mime buttons in the current buffer by attachment buttons."
   ;; called vm-mime-encode-mime-attachments in vm-postpone.el
   (interactive)
-  (cond ((featurep 'xemacs)
-         (let ((e-list (vm-extent-list 
-			(point-min) (point-max) 'vm-mime-layout)))
-           (setq e-list
-                 (sort e-list
-                       (function (lambda (e1 e2)
-                                   (< (vm-extent-end-position e1)
-                                      (vm-extent-end-position e2))))))
-           ;; Then replace the buttons, because doing it at once will result in
-           ;; problems since the new buttons are from the same extent.
-           (while e-list
-             (vm-mime-replace-by-attachment-button (car e-list))
-             (setq e-list (cdr e-list)))))
-        ((not (featurep 'xemacs))
-         (let ((e-list (vm-mime-attachment-button-extents
-			(point-min) (point-max) 'vm-mime-layout)))
-           (while e-list
-             (vm-mime-replace-by-attachment-button (car e-list))
-             (setq e-list (cdr e-list)))
-	   (goto-char (point-max))))
-        (t
-         (error "don't know how to MIME encode composition for %s"
-                (emacs-version)))))
+  (let ((e-list (vm-mime-attachment-button-extents
+		 (point-min) (point-max) 'vm-mime-layout)))
+    (while e-list
+      (vm-mime-replace-by-attachment-button (car e-list))
+      (setq e-list (cdr e-list)))
+    (goto-char (point-max))))
 
 ;; The function vm-mime-re-fake-attachment-overlays from vm-postpone.el is
 ;; now unused.  USR, 2011-02-14 
@@ -7805,7 +7674,6 @@ This is a destructive operation and cannot be undone!"
   (save-excursion
     (let* ((layout (vm-extent-property x 'vm-mime-layout))
 	   (xstart (vm-extent-start-position x))
-	   ;; (xend   (vm-extent-end-position x))
 	   (hstart (vm-mm-layout-header-start layout))
 	   (bstart (vm-mm-layout-body-start layout))
 	   (end    (vm-mm-layout-body-end   layout))
@@ -7828,18 +7696,21 @@ This is a destructive operation and cannot be undone!"
 	(save-excursion
 	  (setq ext-file (substring (caddr type) 5))
 	  (vm-select-folder-buffer)
-	  (save-restriction
-	    (let ((start (vm-mm-layout-body-start layout))
-		  (end   (vm-mm-layout-body-end layout)))
-	      (set-buffer (marker-buffer (vm-mm-layout-body-start layout)))
-	      (widen)
-	      (goto-char start)
-	      (if (not (re-search-forward
-			"Content-Type: \"?\\([^ ;\" \n\t]+\\)\"?;?"
-			end t))
-		  (error "No `Content-Type' header found in: %s"
-			 (buffer-substring start end))
-		(setq type (list (match-string 1))))))))
+	  (let ((start (vm-mm-layout-body-start layout))
+		(end   (vm-mm-layout-body-end layout)))
+	    ;; `save-restriction' in the buffer the markers point into, which
+	    ;; is normally the folder just selected but is not promised to be
+	    ;; (#780).
+	    (with-current-buffer (marker-buffer (vm-mm-layout-body-start layout))
+	      (save-restriction
+		(widen)
+		(goto-char start)
+		(if (not (re-search-forward
+			  "Content-Type: \"?\\([^ ;\" \n\t]+\\)\"?;?"
+			  end t))
+		    (error "No `Content-Type' header found in: %s"
+			   (buffer-substring start end))
+		  (setq type (list (match-string 1)))))))))
         
       ;; insert an attached-object-button
       (goto-char xstart)
@@ -7862,68 +7733,208 @@ This is a destructive operation and cannot be undone!"
       (vm-detach-extent x))))
 
 
-;; This code was originally part of
-;; vm-mime-xemacs/fsfemacs-encode-composition functions.
+;; This code was originally part of vm-mime-fsfemacs-encode-composition.
 
 (defun vm-mime-insert-file-contents (file type)
-  "Safely insert the contents of FILE of TYPE into the current
-buffer." 
-  (if (featurep 'xemacs)
-      (let ((coding-system-for-read
-	     (if (vm-mime-text-type-p type)
-		 (vm-line-ending-coding-system)
-	       (vm-binary-coding-system)))
-	    ;; keep no undos 
-	    (buffer-undo-list t)
-	    ;; no transformations!
-	    (format-alist nil)
-	    ;; no decompression!
-	    (jka-compr-compression-info-list nil)
-	    ;; don't let buffer-file-coding-system be changed
-	    ;; by insert-file-contents.  The
-	    ;; value we bind to it to here isn't important.
-	    (buffer-file-coding-system (vm-binary-coding-system)))
-	(insert-file-contents file))
-    ;; as of FSF Emacs 19.34, even with the hooks
-    ;; we've attached to the attachment overlays,
-    ;; text STILL can be inserted into them when
-    ;; font-lock is enabled.  Explaining why is
-    ;; beyond the scope of this comment and I
-    ;; don't know the answer anyway.  This
-    ;; insertion dance works to prevent it.
-    (insert-before-markers " ")
-    (forward-char -1)
-    (let ((coding-system-for-read
-	   (if (vm-mime-text-type-p type)
-	       (vm-line-ending-coding-system)
-	     (vm-binary-coding-system)))
-	  ;; keep no undos 
-	  (buffer-undo-list t)
-	  ;; no transformations!
-	  (format-alist nil)
-	  ;; no decompression!
-	  (jka-compr-compression-info-list nil)
-	  ;; don't let buffer-file-coding-system be
-	  ;; changed by insert-file-contents.  The
-	  ;; value we bind to it to here isn't
-	  ;; important.
-	  (buffer-file-coding-system (vm-binary-coding-system)))
-      (condition-case data
-	  (insert-file-contents file)
-	(error
-	 ;; font-lock could signal this error in FSF
-	 ;; Emacs versions prior to 21.0.  Catch it
-	 ;; and ignore it.
-	 (if (equal data '(error "Invalid search bound (wrong side of point)"))
-	     nil
-	   (signal (car data) (cdr data)))))
-      (goto-char (point-max))
-      (delete-char -1))))
+  "Safely insert the contents of FILE of TYPE into the current buffer."
+  ;; Even with the hooks attached to the attachment overlays, text can still
+  ;; be inserted into them when font-lock is on.  Explaining why is beyond
+  ;; the scope of this comment and I do not know the answer anyway.  This
+  ;; insertion dance prevents it.
+  (insert-before-markers " ")
+  (forward-char -1)
+  (let ((coding-system-for-read
+	 (if (vm-mime-text-type-p type)
+	     (vm-line-ending-coding-system)
+	   (vm-binary-coding-system)))
+	;; keep no undos
+	(buffer-undo-list t)
+	;; no transformations!
+	(format-alist nil)
+	;; no decompression!
+	(jka-compr-compression-info-list nil)
+	;; don't let buffer-file-coding-system be changed by
+	;; insert-file-contents.  The value bound here is not important.
+	(buffer-file-coding-system (vm-binary-coding-system)))
+    (insert-file-contents file)
+    (goto-char (point-max))
+    (delete-char -1)))
 
 (defun vm-mime-insert-buffer-substring (buffer _type)
   "Safe insert the contents of BUFFER of TYPE into the current buffer."
   (insert-buffer-substring buffer))
 
+
+;;; Attachment commands, from vm-rfaddons.el (issue #606)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
+(defun vm-attach-files-in-directory (directory &optional regexp)
+  "Attach all files in DIRECTORY matching REGEXP.
+The optional argument MATCH might specify a regexp matching all files
+which should be attached, when empty all files will be attached.
+
+When called with a prefix arg it will do a literal match instead of a regexp
+match."
+  (interactive
+   ;; FIXME: Temporarily override substitute-in-file-name. but why?
+   (cl-letf (((symbol-function 'substitute-in-file-name) #'identity))
+     (let ((file (vm-read-file-name
+                  "Attach files matching regexp: "
+                  (or vm-mime-all-attachments-directory
+                      vm-mime-attachment-save-directory
+                      default-directory)
+                  (or vm-mime-all-attachments-directory
+                      vm-mime-attachment-save-directory
+                      default-directory)
+                  nil nil
+                  'vm-attach-files-in-directory-regexps-history)))
+       (list (file-name-directory file)
+             (file-name-nondirectory file)))))
+
+  (setq vm-mime-all-attachments-directory directory)
+
+  (message "Attaching files matching `%s' from directory %s " regexp directory)
+  
+  (if current-prefix-arg
+      (setq regexp (concat "^" (regexp-quote regexp) "$")))
+  
+  (let ((files (directory-files directory t regexp nil))
+        file type charset)
+    (if (null files)
+        (error "No matching files!")
+      (while files
+        (setq file (car files))
+        (if (file-directory-p file)
+            nil ;; should we add recursion here?
+          (setq type (or (vm-mime-default-type-from-filename file)
+                         vm-attach-files-in-directory-default-type))
+          (message "Attaching file %s with type %s ..." file type)
+          (if (null type)
+              (let ((default-type (or (vm-mime-default-type-from-filename file)
+                                      "application/octet-stream")))
+                (setq type (completing-read
+			    ;; prompt
+                            (format "Content type for %s (default %s): "
+                                    (file-name-nondirectory file)
+                                    default-type)
+			    ;; collection
+                            vm-mime-type-completion-alist)
+                      type (if (> (length type) 0) type default-type))))
+          (if (not (vm-mime-types-match "text" type)) nil
+            (setq charset vm-attach-files-in-directory-default-charset)
+            (cond ((eq 'guess charset)
+                   (save-excursion
+                     (let ((b (get-file-buffer file)))
+                       (set-buffer (or b (find-file-noselect file t t)))
+                       (setq charset (vm-determine-proper-charset (point-min)
+                                                                  (point-max)))
+                       (if (null b) (kill-buffer (current-buffer))))))
+                  ((null charset)
+                   (setq charset
+                         (completing-read
+			  ;; prompt
+                          (format "Character set for %s (default US-ASCII): "
+                                  file)
+			  ;; collection
+                          vm-mime-charset-completion-alist)
+                         charset (if (> (length charset) 0) charset)))))
+          (vm-attach-file file type charset))
+        (setq files (cdr files))))))
+(defun vm-mime-auto-save-all-attachments-subdir (msg)
+  "Return a subdir for the attachments of MSG.
+This will be done according to `vm-mime-auto-save-all-attachments-subdir'."
+  (setq msg (vm-real-message-of msg))
+  (cond ((functionp vm-mime-auto-save-all-attachments-subdir)
+         (funcall vm-mime-auto-save-all-attachments-subdir msg))
+        ((stringp vm-mime-auto-save-all-attachments-subdir)
+         (vm-summary-sprintf vm-mime-auto-save-all-attachments-subdir msg))
+        ((null vm-mime-auto-save-all-attachments-subdir)
+         (let (;; for the folder
+               (basedir (buffer-file-name (vm-buffer-of msg)))
+               ;; for the message
+               (subdir (concat 
+                        "/"
+                        (format "%04s.%02s.%02s-%s"
+                                (vm-su-year msg)
+                                (vm-su-month-number msg)
+                                (vm-su-monthday msg)
+                                (vm-su-hour msg))
+                        "--"
+			(or (vm-su-full-name msg)
+			    "unknown")
+                        "--"
+                         (vm-su-subject msg))))
+               
+           (if (and basedir vm-folder-directory
+                    (string-match
+                     (concat "^" (expand-file-name vm-folder-directory))
+                     basedir))
+               (setq basedir (replace-match "" nil nil basedir)))
+           
+           (setq subdir (vm-replace-in-string subdir "\\s-\\s-+" " " t))
+           (setq subdir (vm-replace-in-string subdir "[^A-Za-z0-9\241-_-]+" "_" t))
+           (setq subdir (vm-replace-in-string subdir "?_-?_" "-" nil))
+           (setq subdir (vm-replace-in-string subdir "^_+" "" t))
+           (setq subdir (vm-replace-in-string subdir "_+$" "" t))
+           (concat basedir "/" subdir)))
+        (t
+         (eval vm-mime-auto-save-all-attachments-subdir))))
+
+(defun vm-mime-auto-save-all-attachments-path (msg)
+  "Create a path for storing the attachments of MSG."
+  (let ((subdir (vm-mime-auto-save-all-attachments-subdir
+                 (vm-real-message-of msg))))
+    (if (not vm-mime-attachment-save-directory)
+        (error "Set `vm-mime-attachment-save-directory' for autosaving of attachments")
+      (if subdir
+          ;; the subdir may begin with a separator of its own, and two of
+          ;; them in a path is untidy rather than wrong
+          (concat (directory-file-name vm-mime-attachment-save-directory)
+                  (if (string-prefix-p "/" subdir) "" "/")
+                  subdir)
+        vm-mime-attachment-save-directory))))
+
+;;;###autoload
+(defun vm-mime-auto-save-all-attachments (&optional count)
+  "Save all attachments to a subdirectory.
+Root directory for saving is `vm-mime-attachment-save-directory'.
+
+You might add this to `vm-select-new-message-hook' in order to automatically
+save attachments.
+
+    (add-hook \\='vm-select-new-message-hook #\\='vm-mime-auto-save-all-attachments)"
+  (interactive "P")
+
+  (if vm-mime-auto-save-all-attachments-avoid-recursion
+      nil
+    (let ((vm-mime-auto-save-all-attachments-avoid-recursion t))
+      (vm-check-for-killed-folder)
+      (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+      
+      (vm-save-all-attachments
+       count
+       'vm-mime-auto-save-all-attachments-path)
+
+      (when (vm-interactive-p)
+        (vm-discard-cached-data)
+        (vm-present-current-message)))))
+
+;;;###autoload
+(defun vm-toggle-best-mime ()
+  "Toggle between best-internal and best mime decoding modes. (Alley Soughton)"
+  (interactive)
+  (if (eq vm-mime-alternative-show-method 'best-internal)
+      (progn
+	(vm-decode-mime-message 'undecoded)
+	(setq vm-mime-alternative-show-method 'best)
+	(vm-decode-mime-message 'decoded)
+	(message "using best MIME decoding"))
+    (progn
+      (vm-decode-mime-message 'undecoded)
+      (setq vm-mime-alternative-show-method 'best-internal)
+      (vm-decode-mime-message 'decoded)
+      (message "using best internal MIME decoding"))))
 
 (provide 'vm-mime)
 ;;; vm-mime.el ends here

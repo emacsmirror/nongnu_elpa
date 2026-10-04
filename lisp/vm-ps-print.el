@@ -57,19 +57,17 @@
 (require 'vm-folder)
 (require 'vm-summary)
 (require 'vm-mime)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-marked-messages "vm-mark" ())
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; group already defined in vm-vars.el
-;; (defgroup vm nil
-;;   "The VM mail reader."
-;;   :group 'mail)
 
-;; (defgroup vm-print nil
-;;   "Options affecting printing of messages in VM."
-;;   :group 'vm)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defcustom vm-ps-print-message-function  'ps-print-buffer-with-faces
   "This should point to the function which is used for ps-printing.
@@ -77,7 +75,7 @@ The function should accept one optional argument which is a filename."
   :group 'vm-print
   :type 'function)
 
-(defcustom vm-ps-print-message-separater  "\n"
+(defcustom vm-ps-print-message-separator  "\n"
   "The separator between messages when printing multiple messages."
   :group 'vm-print
   :type 'string)
@@ -187,7 +185,7 @@ See:	`vm-ps-print-message-function'"
 	 (ps-right-header (if each (eval vm-ps-print-each-message-right-header env)
 			    (eval vm-ps-print-message-right-header env)))
 	 (ps-header-lines  (if each vm-ps-print-each-message-header-lines
-			     vm-ps-print-each-message-header-lines))
+			     vm-ps-print-message-header-lines))
 	 (ps-print-header-frame t)
 	 (ps-font-size vm-ps-print-message-font-size))
     (funcall vm-ps-print-message-function filename)
@@ -195,31 +193,17 @@ See:	`vm-ps-print-message-function'"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-ps-print-tokenized-summary (message tokens)
-  "Return the summary string for MESSAGE according to the format in TOKENS.
-Like `vm-tokenized-summary-insert'."
-  (if (stringp tokens)
-      tokens
-    (let (token summary)
-      (while tokens
-	(setq token (car tokens))
-	(cond ((stringp token)
-	       (if vm-display-using-mime
-		   (setq summary 
-			 (concat summary
-				 (vm-decode-mime-encoded-words-in-string token)))
-		 (setq summary (concat summary token))))
-	      ((eq token 'number)
-	       (setq summary (concat summary (vm-padded-number-of message))))
-	      ((eq token 'mark)
-	       (setq summary (concat summary (vm-su-mark message))))
-	      ((eq token 'thread-indent)
-	       (if (and vm-summary-show-threads
-			(natnump vm-summary-thread-indent-level))
-		   (setq summary (concat summary
-					 ?\ (* vm-summary-thread-indent-level
-					       (vm-thread-indentation message)))))))
-	(setq tokens (cdr tokens)))
-      summary)))
+  "The summary line for MESSAGE built from TOKENS, as a string.
+
+`vm-tokenized-summary-insert' writes it, in a buffer of its own.  This was a
+copy of that function once, and the copy drifted: it dropped the width and
+the maximum of every group, so a format written to line up in the summary did
+not line up on paper (emacs-vm/vm#862), and before that it signalled on a
+thread indent rather than indenting (emacs-vm/vm#778).  One renderer is the
+answer to both."
+  (with-temp-buffer
+    (vm-tokenized-summary-insert message tokens)
+    (buffer-string)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-ps-print-message-folder-name ()
@@ -231,7 +215,10 @@ Like `vm-tokenized-summary-insert'."
 							vm-folder-directory))
 					 "/?\\(.+\\)")
 				 folder-name))
-	      (substring folder-name (match-beginning 1) (match-end 2))
+	      ;; Group 1, there being no group 2.  `(match-end 2)' is nil, so
+	      ;; `substring' ran to the end of the string, which is where
+	      ;; group 1 ends anyway (#778).
+	      (substring folder-name (match-beginning 1) (match-end 1))
 	    folder-name)))
     folder-name))
 
@@ -249,14 +236,14 @@ If FILENAME is specified then write PS into that file.
 When printing a single message it acts like `vm-ps-print-each-message'.
 When printing multiple messages it will insert a summary line according
 to the variable `vm-ps-print-message-summary-format' and a separator
-according to the variable `vm-ps-print-message-separater' between
+according to the variable `vm-ps-print-message-separator' between
 messages.  You might force the printing of one job per message, by
 giving a t EACH argument.
 
 See: `vm-ps-print-message-function'
      `vm-ps-print-message-font-size'
      `vm-ps-print-message-summary-format'
-     `vm-ps-print-message-separater'
+     `vm-ps-print-message-separator'
      `vm-ps-print-message-left-header'
      `vm-ps-print-message-right-header'
 for customization of the output."
@@ -308,7 +295,7 @@ for customization of the output."
 						 mcount m))
 		 (set-buffer tmpbuf)
 		 (erase-buffer))
-	(if (> (length mlist) 1) (insert vm-ps-print-message-separater)))
+	(if (> (length mlist) 1) (insert vm-ps-print-message-separator)))
       (setq mlist (cdr mlist)))
 
     (if (not each)
@@ -386,7 +373,10 @@ If EACH it t, then replace `vm-print-message' by
       (insert (format "(setq %s '%S)" (symbol-name menu) (symbol-value menu)))
       (if (re-search-backward "vm-\\(ps-\\)?print-\\(each-\\)?message"
 			      (point-min) t)
-	  (if each (replace-match "vm-print-each-message")
+	  ;; `vm-ps-print-each-message', as the docstring says: there is no
+	  ;; `vm-print-each-message' and never has been, so the entry
+	  ;; `vm-ps-print-message-infect-vm' installed could only fail (#778).
+	  (if each (replace-match "vm-ps-print-each-message")
 	    (replace-match "vm-ps-print-message")))
       (eval-buffer)
       (kill-buffer tmpbuf)
@@ -410,12 +400,12 @@ t) instead of `vm-print-message'."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; From: "Jeffrey J. Kosowsky" <jeff.kosowsky_ATsign_verizon_DOTsymbol_net>
 ;;;###autoload
-(defun vm-ps-print-marked (&optional filename seperate nup color)
+(defun vm-ps-print-marked (&optional filename separate nup color)
   "Postscript print all marked emails in mail Summary. If no messages marked,
 print just the current message.
 Optionally write postscript output to FILENAME (default is to spool
 to printer). 
-Optionally force SEPERATE printing of each message by setting to `t'. 
+Optionally force SEPARATE printing of each message by setting to `t'. 
 Optionally also print NUP pages per sheet.
 Optionally also print in COLOR by setting to non-nil.
 
@@ -438,7 +428,7 @@ filename and formats 1 page per sheet. (JJK)"
         )
     (and (vm-marked-messages)
          (setq last-command 'vm-next-command-uses-marks))
-    (vm-ps-print-message nil filename seperate)))
+    (vm-ps-print-message nil filename separate)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

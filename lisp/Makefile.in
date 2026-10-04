@@ -16,9 +16,11 @@ SOURCES += vm-crypto.el
 SOURCES += vm-delete.el
 SOURCES += vm-digest.el
 SOURCES += vm-edit.el
+SOURCES += vm-epg.el
 SOURCES += vm-folder.el
 SOURCES += vm-grepmail.el
 SOURCES += vm-imap.el
+SOURCES += vm-imap-net.el
 SOURCES += vm-license.el
 SOURCES += vm-macro.el
 SOURCES += vm-mark.el
@@ -29,18 +31,19 @@ SOURCES += vm-mime.el
 SOURCES += vm-smime.el
 SOURCES += vm-minibuf.el
 SOURCES += vm-misc.el
+SOURCES += vm-net.el
 SOURCES += vm-motion.el
 SOURCES += vm-mouse.el
 SOURCES += vm-page.el
+SOURCES += vm-org.el
 SOURCES += vm-pcrisis.el
-SOURCES += vm-pgg.el
-SOURCES += vm-epg.el
 SOURCES += vm-postpone.el
 SOURCES += vm-pop.el
+SOURCES += vm-pop-net.el
 SOURCES += vm-ps-print.el
+SOURCES += vm-renamed.el
 SOURCES += vm-reply.el
 SOURCES += vm-dired.el
-SOURCES += vm-rfaddons.el
 SOURCES += vm-save.el
 SOURCES += vm-search.el
 SOURCES += vm-serial.el
@@ -53,32 +56,26 @@ SOURCES += vm-toolbar.el
 SOURCES += vm-undo.el
 SOURCES += vm-user.el
 SOURCES += vm-vars.el
+SOURCES += vm-icalendar.el
 SOURCES += vm-vcard.el
 SOURCES += vm-virtual.el
 SOURCES += vm-window.el
 SOURCES += vm-w3m.el
-SOURCES += vm-w3.el
 SOURCES += vm-version-conf.el
 
 SOURCES += tapestry.el
-SOURCES += u-vm-color.el
 
-# autoloads differ depending on emacs flavor
-emacs_AUTOLOADS = vm-autoloads.el
-xemacs_AUTOLOADS = auto-autoloads.el
-AUTOLOADS = ${@EMACS_FLAVOR@_AUTOLOADS}
+AUTOLOADS = vm-autoloads.el
 
-# to list of object files
-emacs_OBJECTS = vm-autoloads.elc vm-cus-load.elc
-xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
+OBJECTS = vm-autoloads.elc $(SOURCES:.el=.elc)
 
-OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
+# Generated lisp that is never byte-compiled, so it has no .elc to install.
+# `vm-custom-make-dependencies' writes vm-cus-load.el with a
+# `no-byte-compile: t' local variable, so listing vm-cus-load.elc in OBJECTS
+# asked install for a file that can never exist.
+LISP_ONLY = vm-cus-load.el
 
-INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS)
-
-# for autoload generation
-AUTOLOAD_PACKAGE_NAME = (setq autoload-package-name \"vm\")
-AUTOLOAD_FILE = (setq generated-autoload-file \"./auto-autoloads.el\")
+INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS) $(LISP_ONLY)
 
 # for BSDmake
 .SUFFIXES: .el .elc
@@ -86,14 +83,10 @@ AUTOLOAD_FILE = (setq generated-autoload-file \"./auto-autoloads.el\")
 ##############################################################################
 # location of required programms
 RM   = @RM@
-LS   = @LS@
 MKDIR = @MKDIR@
 RMDIR = @RMDIR@
-XARGS = @XARGS@
-INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@
-INSTALL_SCRIPT = @INSTALL_SCRIPT@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = @VM_INSTALL@
+INSTALL_DATA = $(INSTALL) -m 644
 
 prefix = @prefix@
 srcdir = @srcdir@
@@ -109,13 +102,18 @@ EMACS_FLAVOR = @EMACS_FLAVOR@
 
 FLAGS = @FLAGS@
 
-EMACS_COMP = OTHERDIRS=@OTHERDIRS@ "$(EMACS_PROG)" $(FLAGS)
+# Quoted: @OTHERDIRS@ is an elisp list -- ("/some/dir") -- which vm-build.el
+# reads back out of the environment.  Unquoted, the shell sees the parenthesis
+# and every recipe using this dies with "Syntax error: "(" unexpected".  It
+# went unnoticed because with no --with-other-dirs the value is the bare word
+# "nil", which the shell is happy with.  Issue #495.
+EMACS_COMP = OTHERDIRS='@OTHERDIRS@' "$(EMACS_PROG)" $(FLAGS)
 
 .el.elc:
 	$(EMACS_COMP) -f batch-byte-compile $<
 
 ##############################################################################
-all: $(OBJECTS)
+all: $(OBJECTS) $(LISP_ONLY)
 
 $(OBJECTS): $(AUTOLOADS)
 
@@ -147,15 +145,27 @@ vm-version-conf.el: Makefile
 vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	-$(RM) -f $@
 	echo > $@.tmp
+	@# build_dir, not the absolute build directory configure resolved and
+	@# wrote into this Makefile.  Where the two differ, a tree reached by
+	@# two paths or one moved after configure, autoload writes every entry
+	@# relative to the wrong directory and the file names the build machine.
+	@# The second `pwd' is srcdir, being after the cd, which is what the
+	@# variable is here for.
 	(build_dir="`pwd`"; cd "@srcdir@" && \
 	 $(EMACS_COMP) -l autoload \
-		-f vm-built-autoloads "@abs_builddir@/$@.tmp" "`pwd`")
+		-f vm-built-autoloads "$$build_dir/$@.tmp" "`pwd`")
 	echo "(custom-add-load 'vm 'vm-cus-load)" | tr -d '\015' >> $@.tmp
+#	Before the assignments, not after: vm-vars.el is where the four
+#	vm-configure- variables are defined, and assigning to them first is an
+#	assignment to a free variable.  It went unwarned while u-vm-color.el
+#	was in SOURCES, that being the one file sorting before the vm- ones,
+#	so compiling it pulled vm-vars in first and the whole-directory lint
+#	saw the definitions anyway.
+	echo "(require 'vm-vars)" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-datadir \"${etcdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-docdir \"${docdir}\")" | tr -d '\015' >> $@.tmp
 	echo "(setq vm-configure-infodir \"${infodir}\")" | tr -d '\015' >> $@.tmp
-	echo "(require 'vm-vars)" | tr -d '\015' >> $@.tmp
 	echo "(provide 'vm-autoloads)" | tr -d '\015' >> $@.tmp
 	mv -f $@.tmp $@
 
@@ -163,48 +173,41 @@ vm-cus-load.el: $(SOURCES:%=@srcdir@/%)
 	$(EMACS_COMP) -f vm-custom-make-dependencies .
 
 ##############################################################################
-# XEmacs#s auto-autoloads and custom-load file
-auto-autoloads.el: $(SOURCES:%=@srcdir@/%)
-	-$(RM) -f $@
-	$(EMACS_COMP) \
-                -eval "$(AUTOLOAD_PACKAGE_NAME)" \
-                -eval "$(AUTOLOAD_FILE)" \
-                -l autoload -f batch-update-autoloads $^
-#	avoid getting an error about an already loaded vm-autoloads
-	mv $@ $@.tmp
-	echo "(setq features (delete 'vm-autoloads features))" > $@
-	cat $@.tmp >> $@
-	echo "(setq features (delete 'vm-autoloads features))" >> $@
-	echo "(require 'vm-vars)" >> $@
-	echo "(setq vm-configure-datadir \"${etcdir}\")" >> $@
-	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" >> $@
-	echo "(setq vm-configure-docdir \"${docdir}\")"  >> $@
-	echo "(setq vm-configure-infodir \"${infodir}\")" >> $@
-	$(RM) $@.tmp
-
-
-custom-load.el: $(SOURCES:%=@srcdir@/%)
-	$(EMACS_COMP) -f vm-custom-make-dependencies .
-
-##############################################################################
 install-pkg: all $(INSTALL_FILES)
 	@mkdir -p -m 0755 $(DESTDIR)$(lispdir)
-	@# Remove obsolete vm-pine.el (renamed to vm-postpone.el in 8.4.0)
+	@# Files an earlier VM installed that this one does not, which Emacs
+	@# would otherwise go on loading in preference to nothing.  `uninstall'
+	@# only knows the current SOURCES, so a dropped file has to be named.
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
+		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-w3.el $(DESTDIR)$(lispdir)/vm-w3.elc
 	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
 	  echo "Installing $$i in $(DESTDIR)$(lispdir)" ;    \
 	  $(INSTALL_DATA) $$i $(DESTDIR)$(lispdir) ;         \
 	done
 	@echo VM ELISP files successfully installed
 
-uninstall-pkg: $(INSTALL_FILES)
-	@# Remove obsolete vm-pine.el (renamed to vm-postpone.el in 8.4.0)
+# No prerequisites: uninstall needs the names of the files, not the files.
+# With `$(INSTALL_FILES)' here, `make uninstall' byte-compiled the whole of
+# VM before deleting it.
+uninstall-pkg:
+	@# Files an earlier VM installed that this one does not, which Emacs
+	@# would otherwise go on loading in preference to nothing.  `uninstall'
+	@# only knows the current SOURCES, so a dropped file has to be named.
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
-	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
+		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-w3.el $(DESTDIR)$(lispdir)/vm-w3.elc
+	@# $(INSTALL_FILES) is every .el and .elc install puts there.  The list
+	@# used to carry $(SOURCES:%=@srcdir@/%) as well, which is the same files
+	@# named through the source directory: harmlessly duplicated for an
+	@# in-tree build, and pointing outside $(lispdir) for any other.
+	@for i in $(INSTALL_FILES) ; do  \
 	  echo "Uninstalling $$i from $(DESTDIR)$(lispdir)" ; \
 	  $(RM) -f $(DESTDIR)$(lispdir)/$$i ;                  \
 	done
-	-$(RMDIR) $(DESTDIR)$(lispdir)/ 2> /dev/null
+	@$(RMDIR) $(DESTDIR)$(lispdir)/ 2> /dev/null || true
 	@echo VM ELISP files successfully uninstalled
 
 

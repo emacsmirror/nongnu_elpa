@@ -4,8 +4,8 @@
 ;;
 ;; Copyright (C) 1989-2001 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -70,10 +70,30 @@
 (require 'vm-summary)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
+(declare-function vm-emacs-name-and-version "vm" ())
 (declare-function vm-mode "vm" (&optional read-only))
+;; The Fcc of a composition may name an IMAP mailbox (emacs-vm/vm#605), so
+;; this file calls into vm-imap.el, which requires this one.
+(declare-function vm-imap-save-composition "vm-imap" ())
+(declare-function vm-imap-parse-spec-to-list "vm-imap" (spec))
+(declare-function vm-imap-subst-CRLF-for-LF "vm-imap" (string))
+;; A cl-defun taking &key arguments: spelling the arglist out here makes the
+;; compiler count a keyword call wrongly, so it is left unsaid.
+(declare-function vm-imap-make-session "vm-imap" t)
+(declare-function vm-imap-spec-fields "vm-imap" (spec))
+(declare-function vm-imap-net-append-text "vm-imap-net"
+		  (spec mailbox text &optional flags may-ask))
+(declare-function vm-imap-append-message "vm-imap"
+		  (process mailbox string &optional flags))
+(declare-function vm-imap-end-session "vm-imap"
+		  (process &optional imap-buffer keep-buffer))
+(declare-function dnd-get-local-file-name "dnd" (uri &optional must-exist))
 (declare-function vm-session-initialization "vm" ())
 (declare-function vm-version "vm" ())
-(declare-function get-itimer "vm-xemacs.el" (name))
 
 ;; vm-digest.el functions - cyclic dependency
 (declare-function vm-no-frills-encapsulate-message "vm-digest"
@@ -94,6 +114,9 @@
 		  (field &optional soft))
 (declare-function mail-mode "ext:sendmail" ())
 (declare-function build-mail-aliases "ext:mailalias" (&optional file))
+(declare-function sendmail-sync-aliases "ext:sendmail" ())
+(declare-function vm-pcrisis-configured-but-off-p "vm" ())
+(declare-function mail-insert-from-field "ext:sendmail" ())
 
 (defun vm-add-reply-subject-prefix (message &optional start)
   (when (not start)
@@ -112,6 +135,7 @@
   (while (re-search-forward "^" (point-max) t)
     (insert vm-included-text-prefix)))
 
+;;;###autoload
 (defun vm-fill-long-lines-in-reply ()
   "Fill lines in the message composition in the current buffer,
 provided it has lines longer than the line length specified by
@@ -151,8 +175,6 @@ COUNT is the prefix argument indicating how many consecutive
 messages of the folder are involved in this reply."
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Reply to"))
-        (dir default-directory)
-        ;; (message-pointer vm-message-pointer)
         (case-fold-search t)
         to cc subject in-reply-to references
         mp tmp tmp2 newsgroups)
@@ -250,8 +272,7 @@ messages of the folder are involved in this reply."
      :references references :newsgroups newsgroups)
     (make-local-variable 'vm-reply-list)
     (setq vm-system-state 'replying
-          vm-reply-list mlist
-          default-directory dir)
+          vm-reply-list mlist)
     (when include-text
       (save-excursion
 	(goto-char (point-min))
@@ -271,6 +292,7 @@ messages of the folder are involved in this reply."
     (when vm-fill-paragraphs-containing-long-lines-in-reply
       (vm-fill-long-lines-in-reply))
     (run-hooks 'vm-reply-hook)
+    (vm-mail-mode-apply-options)
     (run-hooks 'vm-mail-mode-hook)))
 
 (defun vm-strip-ignored-addresses (addresses)
@@ -321,6 +343,7 @@ messages of the folder are involved in this reply."
 	(insert vm-included-text-prefix)
 	(forward-line 1)))))
 
+;;;###autoload
 (defun vm-yank-message-other-folder (folder)
   "Like vm-yank-message except the message is yanked from a folder other
 than the one that spawned the current Mail mode buffer.  The name of the
@@ -367,6 +390,7 @@ Don't call this function from a program."
       (vm-bury-buffer newbuf)
       (vm-bury-buffer sumbuf))))
 
+;;;###autoload
 (defun vm-yank-message (message)
   "Yank message number N into the current buffer at point.
 When called interactively N is always read from the minibuffer.  When
@@ -377,19 +401,16 @@ This command is meant to be used in VM created Mail mode buffers; the
 yanked message comes from the mail buffer containing the message you
 are replying to, forwarding, or invoked VM's mail command from.
 
-All message headers are yanked along with the text.  Point is
-left before the inserted text, the mark after.  Any hook
-functions bound to `mail-citation-hook' are run, after inserting
-the text and setting point and mark.
+The whole message is inserted, headers and all, with point left
+before it and the mark after it, which is where a function on
+`mail-citation-hook' looks for what it is to cite.  Anything on
+that hook is then run.
 
-If mail-citation-hook and mail-yank-hooks are both nil, this
-default action is taken: the yanked headers are trimmed as
-specified by `vm-included-text-headers' and
-`vm-included-text-discard-header-regexp', and the value of
-`vm-included-text-prefix' is prepended to every yanked line."
-;; The original doc string also said:
-;;  For backward compatibility, if mail-citation-hook is set to nil,
-;; `mail-yank-hooks' is run instead.
+With nothing on the hook VM cites the message itself: the yanked
+headers are trimmed as specified by `vm-included-text-headers' and
+`vm-included-text-discard-header-regexp', which between them keep
+none by default, and the value of `vm-included-text-prefix' is
+prepended to every line that is left."
   (interactive
    (list
     ;; What we really want for the first argument is a message struct,
@@ -471,10 +492,10 @@ specified by `vm-included-text-headers' and
       ;; "doesn't conform to RFC 822." -- Brent Goodrick, 2009-01-24
       ;; But this yanks wrongly!  The following line reverted by Uday
       ;; Reddy, 2009-12-07 
-      ;; (goto-char (point-min))
       (cond (mail-citation-hook (run-hooks 'mail-citation-hook))
 	    ;; mail-yank-hooks is obsolete now
-	    ;; (mail-yank-hooks (run-hooks 'mail-yank-hooks))
+	    ;; `mail-yank-hooks' is not consulted: it was obsoleted by
+	    ;; `mail-citation-hook' above.
 	    (t (vm-mail-yank-default message))))))
 
 (defun vm-yank-message-presentation ()
@@ -517,9 +538,12 @@ specified by `vm-included-text-headers' and
 					; doesn't work well with fill-prefixes
 	(vm-fill-paragraphs-containing-long-lines
 	 vm-fill-paragraphs-containing-long-lines-in-reply)
-	(vm-paragraph-fill-column 
+	(vm-paragraph-fill-column
 	 vm-fill-long-lines-in-reply-column)
-	;; (vm-use-presentation-minor-modes nil) ; do we need this?
+	;; An HTML part is converted to text here, and the converter would
+	;; otherwise pick a width of its own -- the window's, in the case of
+	;; emacs-w3m (#369).
+	(vm-html-fill-column vm-html-in-reply-column)
 	)
     (if (eq layout 'none)
 	(vm-insert-region-from-buffer (vm-buffer-of message)
@@ -539,7 +563,7 @@ specified by `vm-included-text-headers' and
 		 vm-mime-alternative-show-method))
 	    ;; include only text and message/rfc822 types
 	    ;; message/external-body should not be included
-	    (vm-auto-displayed-mime-content-types '("text" "message/rfc822"))
+	    (vm-mime-auto-displayed-content-types '("text" "message/rfc822"))
 	    ;; don't include separator for multipart
 	    (vm-mime-parts-display-separator "")
 	    ;; make MIME buttons look like text unless they are included
@@ -571,7 +595,6 @@ specified by `vm-included-text-headers' and
 	    (append-to-buffer b (vm-headers-of message)
 			      (vm-text-end-of message))
 	    (set-buffer b)))
-      ;; (setq type (car (vm-mm-layout-type layout)))
       (setq parts (list layout))
       (setq alternatives 0)
 
@@ -593,11 +616,6 @@ specified by `vm-included-text-headers' and
 		      (setq res (vm-mime-display-internal-message/rfc822
 				 layout)))
 		     ;; no text/html for now
-		     ;; ((vm-mime-types-match
-		     ;;   "text/html"
-		     ;;   (car (vm-mm-layout-type layout)))
-		     ;;  (setq res (vm-mime-display-internal-text/html
-		     ;; 	      layout)))
 		     ((member (downcase (car (vm-mm-layout-type layout)))
 			      vm-included-mime-types-list)
 		      (if (and (not (vm-mm-layout-is-converted layout))
@@ -634,9 +652,10 @@ specified by `vm-included-text-headers' and
 	       (setq alternatives (1- alternatives))
 	       (setq parts (cdr parts))))))))
 
+;;;###autoload
 (defun vm-mail-send-and-exit (&rest _ignored)
   "Send message and maybe delete the composition buffer.
-The value of `vm-keep-sent-mesages' determines whether the composition buffer
+The value of `vm-keep-sent-messages' determines whether the composition buffer
 is deleted.  If the composition is a reply to a message in a currently visited
 folder, that message is marked as having been replied to."  
   (interactive "P")
@@ -696,7 +715,12 @@ folder, that message is marked as having been replied to."
 			  (vm-make-message-id))))))))
 
 (defun vm-mail-mode-insert-date-maybe ()
-  (if (not vm-mail-header-insert-date)
+  "Insert a Date header into the composition, unless it has one to keep.
+`vm-mail-mode-fake-date-p' is what keeps one: it lets you write the Date
+yourself and have VM leave it alone."
+  (if (or (not vm-mail-header-insert-date)
+	  (and vm-mail-mode-fake-date-p
+	       (vm-mail-mode-get-header-contents "Date:")))
       nil
     (save-restriction
       (save-excursion
@@ -736,7 +760,6 @@ folder, that message is marked as having been replied to."
 			  (abs min))
 ;; localization in Europe and elsewhere can cause %Z to return
 ;; 8-bit chars, which are forbidden in headers.
-;;		  (format-time-string " (%Z)" time)
 		  "\n"))))))
 
 (defun vm-mail-mode-remove-message-id-maybe ()
@@ -747,7 +770,6 @@ folder, that message is marked as having been replied to."
 		(vm-mail-mode-get-header-contents "Resent-Bcc:"))
 	    (progn
 	      (vm-mail-mode-remove-header "Resent-Message-ID:")
-	      ;; (setq resent t)
 	      t)
 	  (vm-mail-mode-remove-header "Message-ID:")))))
 
@@ -759,7 +781,6 @@ folder, that message is marked as having been replied to."
 		(vm-mail-mode-get-header-contents "Resent-Bcc:"))
 	    (progn
 	      (vm-mail-mode-remove-header "Resent-Date:")
-	      ;; (setq resent t)
 	      t)
 	  (vm-mail-mode-remove-header "Date:")))))
 
@@ -797,8 +818,7 @@ This function is a variant of `vm-get-header-contents'."
 
 (defvar vm-dont-ask-coding-system-question nil)
 
-(cond ((and (not (featurep 'xemacs))
-	    (fboundp 'select-message-coding-system)
+(cond ((and (fboundp 'select-message-coding-system)
 	    (not (fboundp 'vm-old-select-message-coding-system)))
        (fset 'vm-old-select-message-coding-system
 	     (symbol-function 'select-message-coding-system))
@@ -812,6 +832,130 @@ This function is a variant of `vm-get-header-contents'."
 (defvar coding-system-for-write)
 (defvar mail-send-nonascii)
 
+(defvar vm-call-process-region-original nil
+  "`call-process-region' as it was before the send stood in for it.
+`vm-mail-send' binds this to the definition it is replacing, so the stand-in
+can hand back the calls it does not implement.  Calling
+`call-process-region' by name from inside the stand-in would reach the
+stand-in again.")
+
+(defun vm-call-process-region-interruptibly (start end program
+						   &optional delete buffer
+						   display &rest args)
+  "Run PROGRAM on the region as `call-process-region' does, and let C-g out.
+`call-process-region' stops the whole of Emacs while it waits: no timer
+runs, nothing reads the keyboard, and so a C-g is not ignored but never
+seen.  A mailer waiting on a server that has stopped answering can then only
+be got out of with a signal sent from outside Emacs (emacs-vm/vm#842).  This
+runs PROGRAM under `make-process' and waits with `accept-process-output',
+which leaves Emacs able to see the C-g; it kills PROGRAM when it does and
+says that the message may have gone out anyway.
+
+The arguments are `call-process-region's and so is the value: the exit
+status of PROGRAM, or the signal that killed it.  DISPLAY is ignored, output
+being inserted as it arrives whatever it says.  A BUFFER of 0 and the
+two-element BUFFER that sends standard error to a file both go to
+`vm-call-process-region-original', the first having no wait to interrupt and
+the second no counterpart here."
+  (if (or (eq buffer 0) (consp buffer))
+      (apply (or vm-call-process-region-original #'call-process-region)
+	     start end program delete buffer display args)
+    (let ((input (buffer-substring-no-properties start end))
+	  (process (vm-start-process-on-input
+		    program args (if (eq buffer t) (current-buffer) buffer))))
+      (when delete
+	(delete-region start end))
+      (unwind-protect
+	  (condition-case nil
+	      (progn
+		(vm-send-input-to-process process input)
+		(vm-wait-for-process process)
+		(vm-process-exit-value process))
+	    (quit (vm-abandon-send process program)))
+	(when (process-live-p process)
+	  (delete-process process))))))
+
+(defun vm-start-process-on-input (program args buffer)
+  "Start PROGRAM with ARGS, ready to be sent its standard input.
+Its output is inserted before point in BUFFER, which is where
+`call-process-region' puts it rather than at the end where a process filter
+would; BUFFER nil discards it.  The sentinel is set because the default one
+writes a line of its own into the process buffer, which
+`call-process-region' does not do; what it is told is kept for
+`vm-process-exit-value' to read."
+  (let ((out (and buffer (get-buffer-create buffer)))
+	(process nil))
+    (setq process (make-process
+		   :name (file-name-nondirectory program)
+		   :command (cons program args)
+		   :connection-type 'pipe
+		   :noquery t
+		   :filter (and out (lambda (_process text)
+				      (with-current-buffer out
+					(insert text))))))
+    (set-process-sentinel process
+			  (lambda (p event) (process-put p 'vm-death event)))
+    process))
+
+(defun vm-send-input-to-process (process input)
+  "Give PROCESS its standard input, INPUT, a piece at a time.
+A mailer that refuses the message and exits before it has read all of it
+leaves nothing to write to.  `call-process-region' never meets that, having
+handed the program a file to read; writing to a pipe that has gone is an
+error, and in a batch Emacs a SIGPIPE that kills it outright.  So this stops
+as soon as the program has, and the exit status of the program is what
+answers the send, which is what answered it before."
+  (let ((start 0)
+	(end (length input))
+	(sending t))
+    (while (and sending (< start end))
+      (let ((stop (min end (+ start 8192))))
+	(if (vm-write-to-process process (substring input start stop))
+	    (setq start stop)
+	  (setq sending nil)))
+      ;; reaps a program that has exited, so the next turn stops
+      (accept-process-output process 0))
+    (vm-write-to-process process nil)))
+
+(defun vm-write-to-process (process text)
+  "Write TEXT to PROCESS, or close its standard input where TEXT is nil.
+Answers nil where the program has stopped reading, which is not an error
+here: see `vm-send-input-to-process'."
+  (condition-case nil
+      (progn (if text
+		 (process-send-string process text)
+	       (process-send-eof process))
+	     t)
+    (error nil)))
+
+(defun vm-wait-for-process (process)
+  "Wait for PROCESS to finish, leaving Emacs able to see a C-g.
+Other processes are left where they are while it waits, as
+`call-process-region' leaves them: their output is read once the wait is
+over."
+  (while (or (accept-process-output process 0.2 nil t)
+	     (process-live-p process))))
+
+(defun vm-process-exit-value (process)
+  "What `call-process-region' would have answered for the finished PROCESS.
+A number is an exit status.  A string names the signal that killed the
+program, which is what `call-process-region' answers for one; the sentinel
+is told it in lower case and that function capitalises it, so this does
+too."
+  (if (eq (process-status process) 'signal)
+      (upcase-initials
+       (string-trim (or (process-get process 'vm-death) "killed")))
+    (process-exit-status process)))
+
+(defun vm-abandon-send (process program)
+  "Kill PROCESS after a C-g, and say what stopping it did not undo."
+  (delete-process process)
+  (error (concat "%s was interrupted.  It may have handed the message to the"
+		 " server already: check where the message went before"
+		 " sending it again")
+	 (file-name-nondirectory program)))
+
+;;;###autoload
 (defun vm-mail-send ()
   "Just like mail-send except that VM flags the appropriate message(s)
 as replied to, forwarded, etc, if appropriate."
@@ -824,14 +968,29 @@ as replied to, forwarded, etc, if appropriate."
 	       (not (y-or-n-p "Send the message? ")))
       (error "Message not sent.")))
   (vm-mail-mode-show-headers)
+  (when vm-check-recipients
+    (vm-mail-check-recipients))
+  (when vm-check-bcc-removal
+    (vm-mail-check-bcc-removal))
+  (when vm-check-for-empty-subject
+    (vm-mail-check-for-empty-subject))
   (save-excursion (run-hooks 'vm-mail-send-hook))
+  ;; A header carrying anything outside US-ASCII has to be encoded whatever
+  ;; the body is done with, so this is not conditional on
+  ;; `vm-send-using-mime': without it an 8-bit Subject went out raw when
+  ;; MIME was off.  `vm-mime-encode-composition' calls it again below and
+  ;; finds nothing left to do, the first pass having left pure ASCII.
+  (vm-mime-encode-headers)
   (vm-mail-mode-insert-date-maybe)
   (vm-mail-mode-insert-message-id-maybe)
   ;; send mail using MIME if user requests it and if the buffer
   ;; has not already been MIME encoded.
   (when (and vm-send-using-mime
 	     (null (vm-mail-mode-get-header-contents "MIME-Version:")))
-    (when vm-do-fcc-before-mime-encode
+    ;; Guarded, or a copy filed before this point is filed again here: the
+    ;; encrypting commands file the unencoded copy when they encode, which is
+    ;; before any of this runs (emacs-vm/vm#784).
+    (when (and vm-do-fcc-before-mime-encode (not vm-fcc-filed))
       (vm-do-fcc-before-mime-encode))
     (vm-mime-encode-composition))
   (when vm-mail-reorder-message-headers
@@ -880,10 +1039,47 @@ as replied to, forwarded, etc, if appropriate."
 	    (sendmail-coding-system (vm-binary-coding-system))
 	    (vm-dont-ask-coding-system-question t)
 	    (select-safe-coding-system-function nil))
+	;; File the copy ourselves, unless it went already because
+	;; `vm-do-fcc-before-mime-encode' is set.
+	(unless vm-fcc-filed
+	  (vm-do-fcc-in-composition))
+	;; An IMAP-FCC header names a mailbox on the account the composition
+	;; came from, and VM files that copy too.  Until this it was done
+	;; only by `vm-imap-save-composition' on `mail-send-hook', which the
+	;; reader had to add by hand (emacs-vm/vm#68).  Anyone who added it
+	;; still has it, and finds nothing to do: the header is removed here,
+	;; before `mail-send' runs the hook, so no second copy is filed.
+	(when (vm-mail-mode-get-header-contents "IMAP-FCC:")
+	  (vm-imap-save-composition))
+	;; `mail-send' would file it again, through `mail-do-fcc', which
+	;; writes one format whatever the folder is -- see `vm-do-fcc'.  For
+	;; the length of the send it does the one part of its job still worth
+	;; doing: taking the Fcc headers out of the copy that goes out, which
+	;; is the only thing that does that, and which is why it cannot simply
+	;; be turned off.  The composition itself is left alone.
+	;;
+	;; `call-process-region' is stood in for so that a mailer which stops
+	;; answering can be got out of with a C-g: the real one blocks the
+	;; whole of Emacs, keyboard included (emacs-vm/vm#842).  It is the
+	;; call `sendmail-send-it' makes, and any other sender that runs a
+	;; program.
 	(save-excursion
-	  (mail-send))))
+	  (let ((vm-call-process-region-original
+		 (symbol-function 'call-process-region)))
+	    (cl-letf (((symbol-function 'mail-do-fcc) #'vm-fcc-strip-headers)
+		      ((symbol-function 'call-process-region)
+		       #'vm-call-process-region-interruptibly))
+	      (mail-send))))))
     ;; be careful, something could have killed the composition
     ;; buffer inside mail-send.
+    ;; The copies of this send are filed, so the next one is to file its own.
+    ;; Cleared here and not at the start of the send: `vm-epg-encrypt' and its
+    ;; kind file the unencoded copy when they encode, which is before any of
+    ;; this runs, and a flag cleared at the start threw that away and filed a
+    ;; second copy of the encrypted message (emacs-vm/vm#784).  The buffer is
+    ;; kept after a send, so it must be cleared somewhere: a flag left set
+    ;; would mean a message edited and sent again was filed nowhere.
+    (setq vm-fcc-filed nil)
     (when (eq (current-buffer) composition-buffer)
       (cond ((eq vm-system-state 'replying)
 	     (vm-mail-mark-replied))
@@ -895,22 +1091,216 @@ as replied to, forwarded, etc, if appropriate."
       (vm-keep-mail-buffer (current-buffer)))
     (vm-display nil nil '(vm-mail-send) '(vm-mail-send))))
 
+;;; Filing a copy of what we send
+
+;; `mail-do-fcc' in sendmail.el writes one format whatever the folder is: a
+;; `From ' line of its own devising, `\nFrom ' quoted to `>From ' always --
+;; its own comment says "this isn't really quoting" -- and never a
+;; `Content-Length'.  So an Fcc into a `mboxcl2' folder
+;; appends a message the byte counts do not describe, and the folder stops
+;; reading back the way it was written, silently.  VM does it itself.
+;;                                                              Issue #597.
+
+(defvar vm-fcc-filed nil
+  "Whether the Fcc copies have been filed during the send now under way.
+Buffer-local, and cleared by `vm-mail-send' at the end of each send.  It
+exists only to stop the copy being filed twice within one send:
+`vm-do-fcc-before-mime-encode' files it before the message is encoded, and
+`vm-mail-send' files it otherwise.
+
+At the end and not at the start, because the encrypting commands file their
+copy as they encode, which is before the send begins: a flag cleared at the
+start threw that away and a second copy went to the folder
+(emacs-vm/vm#784).  It must not outlive the send.  VM keeps the composition
+buffer, so a flag left set would mean a message edited and sent again was
+filed nowhere.")
+(make-variable-buffer-local 'vm-fcc-filed)
+
+(defun vm-fcc-strip-headers (header-end)
+  "Delete the Fcc headers before HEADER-END, returning the folders they named.
+Used on the copy of the message that goes out, where an Fcc header has no
+business being -- it names a folder on this machine -- and on the copy that
+is filed, which does not need to say where it was filed."
+  (let ((folders nil)
+	(case-fold-search t))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^Fcc:[ \t]*" header-end t)
+	(push (buffer-substring-no-properties
+	       (point)
+	       (progn (end-of-line) (skip-chars-backward " \t") (point)))
+	      folders)
+	(delete-region (match-beginning 0) (progn (forward-line 1) (point)))))
+    (nreverse folders)))
+
+(defun vm-fcc-folders (header-end)
+  "Return the folders named by the Fcc headers before HEADER-END.
+The composition is not touched: the headers stay where they are, so the
+buffer VM leaves you with still says where the copy went, and editing it and
+sending again files it again."
+  (let ((folders nil)
+	(case-fold-search t))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^Fcc:[ \t]*" header-end t)
+	(push (buffer-substring-no-properties
+	       (point)
+	       (progn (end-of-line) (skip-chars-backward " \t") (point)))
+	      folders)))
+    (nreverse folders)))
+
+(defun vm-fcc-leading-separator (type)
+  "The envelope line to file a copy of the message in this buffer under.
+Named after the address the message is from, and dated from its own Date
+header, so that filing the same message twice records when it was sent both
+times -- which matters for a composition postponed and sent days later.
+
+The message struct the other separator callers have does not exist here: the
+composition is not in a folder, so the headers are read from the buffer.  A
+composition may not carry a From header at all, since the MTA will add one,
+and then the copy is filed under `user-mail-address' -- it is a copy of your
+own outgoing mail, and you are its sender."
+  (if (not (memq type '(From_ mboxcl2 BellFrom_)))
+      (vm-leading-message-separator type)
+    (let ((end (save-excursion (goto-char (point-min))
+			       (if (re-search-forward "\n\n" nil t)
+				   (point) (point-max)))))
+      (vm-From_-separator
+       (or (vm-From_-address (vm-fcc-header-contents "From" end))
+	   (vm-From_-address user-mail-address))
+       (vm-fcc-header-contents "Date" end)))))
+
+(defun vm-fcc-header-contents (name end)
+  "The contents of header NAME in the headers before END, or nil."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((case-fold-search t))
+      (when (re-search-forward (concat "^" (regexp-quote name) ": *\\(.*\\)$")
+			       end t)
+	(match-string 1)))))
+
+(defun vm-fcc-message-text (type)
+  "The message in the current buffer, ready to append to a folder of TYPE.
+That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
+in TYPE's separators, and carrying a `Content-Length' where TYPE asks for
+one.  A composition has been through none of that yet."
+  (let ((mailbuf (current-buffer)))
+    (with-temp-buffer
+      (insert-buffer-substring mailbuf)
+      ;; The copy does not need to say where it was filed, and the
+      ;; composition keeps its own headers -- this is a copy.
+      (vm-fcc-strip-headers (point-max))
+      (vm-munge-message-separators type (point-min) (point-max))
+      ;; A message written into a folder ends with a newline.  The trailing
+      ;; separator then makes the blank line the next leading separator has
+      ;; to follow, and the separators of the other types begin at the start
+      ;; of a line.  A composition need not end with one, and this filed it
+      ;; as it stood, so two messages read back as one (#783).  Done before
+      ;; the count below, which has to describe what is written.
+      (goto-char (point-max))
+      (unless (bolp) (insert "\n"))
+      (goto-char (point-min))
+      (progn
+	(concat (vm-fcc-leading-separator type)
+		(or (vm-content-length-header-line type) "")
+		(buffer-substring-no-properties (point-min) (point-max))
+		(vm-trailing-message-separator type))))))
+
+(defun vm-fcc-write (folder)
+  "Append the message in the current buffer to FOLDER, in FOLDER's own format.
+A folder VM is visiting is appended to in its buffer, so that the copy shows
+up without a revert; any other folder is appended to on disk.
+
+A folder that does not exist yet is created, and one created as mboxcl2 is
+created under a name that says so.  See `vm-new-folder-file-name' (#767)."
+  (setq folder (vm-new-folder-file-name folder))
+  (let* ((type (or (vm-get-folder-type folder)
+		   (vm-folder-type-for-name folder)
+		   vm-default-folder-type
+		   'From_))
+	 (folder-buffer (vm-get-file-buffer folder))
+	 (attributes (file-attributes folder))
+	 (text (vm-fcc-message-text type)))
+    (when (eq type 'unknown)
+      (error "Not filing in %s: VM does not recognize its folder type" folder))
+    (if folder-buffer
+	(with-current-buffer folder-buffer
+	  (vm-error-if-folder-read-only)
+	  (let ((buffer-read-only nil))
+	    (save-restriction
+	      (widen)
+	      (goto-char (point-max))
+	      (insert text)
+	      (when (eq major-mode 'vm-mode)
+		(vm-increment vm-messages-not-on-disk)
+		(vm-clear-modification-flag-undos)
+		(vm-check-for-killed-summary)
+		(vm-assimilate-new-messages)
+		(vm-update-summary-and-mode-line)))))
+      (when (or (null attributes) (zerop (file-attribute-size attributes)))
+	(vm-write-string folder (vm-folder-header type)))
+      (vm-write-string folder text))))
+
+(defun vm-fcc-write-imap (spec)
+  "Append the message in the current buffer to the IMAP mailbox SPEC names.
+The manual has always said an Fcc header may name \"the maildrop
+specification of a folder on an IMAP server\", and until this it was taken
+as a file name like any other -- so an Fcc of
+\"imap:mail.example.com:143:inbox:login:user:*\" wrote a file of that name
+in the default directory and put the sent copy in it (issue #605).
+
+The session is opened for this one message and closed again, since a
+composition has no folder whose session it could borrow."
+  ;; `vm-imap-spec-fields' and not `vm-imap-parse-spec-to-list', which drops
+  ;; an empty field: a maildrop with no mailbox read its `login' as the
+  ;; mailbox and nothing said so (emacs-vm/vm#822).
+  (let ((mailbox (nth 3 (vm-imap-spec-fields spec)))
+	(string (vm-imap-subst-CRLF-for-LF
+		 (buffer-substring-no-properties (point-min) (point-max)))))
+    (when (or (null mailbox) (equal mailbox ""))
+      (error "Not filing in %s: no mailbox in the maildrop specification" spec))
+    ;; On the driver: sending a message should not stop Emacs while a copy
+    ;; of it goes to a server.
+    (vm-imap-net-append-text spec mailbox string)))
+
+(defun vm-do-fcc (header-end)
+  "File a copy of this composition in each folder its Fcc headers name.
+HEADER-END is a marker at the end of the header section.  Each folder is
+written in its own format; see `vm-fcc-write'."
+  ;; Expanded only so that `~' works, as it did when `write-region' was
+  ;; handed the name.  Deliberately not resolved against
+  ;; `vm-folder-directory': an Fcc header has never meant that, and making
+  ;; it mean that would move where existing configurations file their mail.
+  (dolist (folder (vm-fcc-folders header-end))
+    (if (vm-imap-folder-spec-p folder)
+	(vm-fcc-write-imap folder)
+      (vm-fcc-write (expand-file-name folder))))
+  (setq vm-fcc-filed t))
+
+(defun vm-do-fcc-in-composition ()
+  "Carry out this composition's Fcc headers, if it still has any.
+The header separator is what stands where a message has a blank line, so it
+is taken out for the copy and put back afterwards."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward
+	   (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
+	   nil t)
+      (delete-region (match-beginning 0) (match-end 0))
+      (let ((header-end (point-marker)))
+	(unwind-protect
+	    (vm-do-fcc header-end)
+	  (goto-char header-end)
+	  (insert mail-header-separator)
+	  (set-marker header-end nil))))))
+
 (defun vm-do-fcc-before-mime-encode ()
   "The name says it all.
 Sometimes you may want to save a message unencoded, specifically not to waste
 storage for attachments which are stored on disk anyway."
   (interactive)
-  (save-excursion
-    (goto-char (point-min))
-    (re-search-forward
-     (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
-     (point-max))
-    (delete-region (match-beginning 0) (match-end 0))
-    (let ((header-end (point-marker)))
-      (unwind-protect
-	  (mail-do-fcc header-end)
-	(goto-char header-end)
-	(insert mail-header-separator)))))
+  (vm-do-fcc-in-composition))
+(put 'vm-do-fcc-before-mime-encode 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-mail-mode-get-header-contents (header-name-regexp)
@@ -1120,8 +1510,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-  (let ((dir default-directory)
-	(miming (and vm-send-using-mime
+  (let ((miming (and vm-send-using-mime
 		     (not plain)
 		     (equal vm-forwarding-digest-type "mime")))
 	reply-buffer
@@ -1132,15 +1521,8 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
     (if (cdr mlist)
 	;; multiple message forwarding
 	(progn
-	  ;; (unless (or (not plain)
-	  ;; 	      (y-or-n-p 
-	  ;; 	       "Use encapsulated forwarding for multiple messages? "))
-	  ;;     (error "Aborted"))
-	  ;; (setq plain nil)
 	  (let ((vm-digest-send-type (if plain nil
 				       vm-forwarding-digest-type)))
-	    ;; (setq this-command 'vm-next-command-uses-marks)
-	    ;; (command-execute 'vm-send-digest)
 	    (vm-send-digest nil mlist)))
       ;; single message forwarding
       (vm-retrieve-operable-messages 1 mlist :fail t)
@@ -1156,8 +1538,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 					  (car mlist)))))
 	(make-local-variable 'vm-forward-list)
 	(setq vm-system-state 'forwarding
-	      vm-forward-list mlist
-	      default-directory dir)
+	      vm-forward-list mlist)
 	;; current-buffer is now the reply buffer
 	(if miming
 	    (progn
@@ -1186,15 +1567,13 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 	       (insert "MIME-Version: 1.0\n")
 	       (insert "Content-Type: message/rfc822\n")
 	       (insert "Content-Transfer-Encoding: "
-		       (vm-determine-proper-content-transfer-encoding
-			(point)
-			(point-max))
+		       (vm-mime-encapsulation-transfer-encoding (point)
+							       (point-max))
 		       "\n")
 	       (insert "Content-Description: forwarded message\n")
 	       ;; eight bit chars will get \201 prepended if we
 	       ;; don't do this.
-	       (when (not (featurep 'xemacs))
-		 (set-buffer-multibyte t))) ; is this safe?
+	       (set-buffer-multibyte t))	; is this safe?
 	      ((equal vm-forwarding-digest-type "rfc934")
 	       (vm-rfc934-encapsulate-messages
 		vm-forward-list 
@@ -1220,6 +1599,7 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
 		      )))
 	(mail-position-on-field "To"))
       (run-hooks 'vm-forward-message-hook)
+      (vm-mail-mode-apply-options)
       (run-hooks 'vm-mail-mode-hook))))
 
 ;;;###autoload
@@ -1231,7 +1611,6 @@ you can change the recipient address before resending the message."
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (let ((b (current-buffer)) start
-	(dir default-directory)
 	(layout (vm-mm-layout (car vm-message-pointer)))
 	(lim (vm-text-end-of (car vm-message-pointer))))
     ;; We only want to select one message here
@@ -1290,10 +1669,11 @@ you can change the recipient address before resending the message."
       (if (vm-mail-mode-get-header-contents "Resent-To:")
 	  (mail-position-on-field "Resent-To")
 	(insert "Resent-To: \n")
-	(forward-char -1))
-      (setq default-directory dir)))
+	(forward-char -1))))
   (run-hooks 'vm-resend-bounced-message-hook)
+  (vm-mail-mode-apply-options)
   (run-hooks 'vm-mail-mode-hook))
+;;;###autoload (autoload 'vm-retry-bounced-message "vm-reply" nil t)
 (defalias 'vm-retry-bounced-message 'vm-resend-bounced-message)
 
 ;;;###autoload
@@ -1312,7 +1692,6 @@ You may also create a Resent-Cc header."
   (save-restriction
     (widen)
     (let ((b (current-buffer))
-	  (dir default-directory)
 	  (vmp vm-message-pointer)
 	  (start (vm-headers-of (car vm-message-pointer)))
 	  (lim (vm-text-end-of (car vm-message-pointer))))
@@ -1335,12 +1714,9 @@ You may also create a Resent-Cc header."
       (insert "Resent-To: \n")
       (if mail-self-blind
 	  (insert "Bcc: "
-		  (cond ((and (featurep 'xemacs) (fboundp 'user-mail-address))
-			 (user-mail-address))
-			((and (boundp 'user-mail-address)
-			      (stringp user-mail-address))
-			 user-mail-address)
-			(t (user-login-name)))
+		  (if (stringp user-mail-address)
+		      user-mail-address
+		    (user-login-name))
 		  ?\n))
       (if mail-archive-file-name
 	  (insert "FCC: " mail-archive-file-name ?\n))
@@ -1357,9 +1733,9 @@ You may also create a Resent-Cc header."
       (mail-position-on-field "Resent-To")
       (make-local-variable 'vm-redistribute-list)
       (setq vm-system-state 'redistributing
-	    vm-redistribute-list (list (car vmp))
-	    default-directory dir)
+	    vm-redistribute-list (list (car vmp)))
       (run-hooks 'vm-resend-message-hook)
+      (vm-mail-mode-apply-options)
       (run-hooks 'vm-mail-mode-hook))))
 
 ;;;###autoload
@@ -1381,8 +1757,7 @@ collapsed threads in summary and thread operations are enabled via
 included in the digest."
   (interactive "P")
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-  (let ((dir default-directory)
-	(miming (and vm-send-using-mime (equal vm-digest-send-type "mime")))
+  (let ((miming (and vm-send-using-mime (equal vm-digest-send-type "mime")))
 	mp mail-buffer work-buffer ;; b
 	start header-end boundary) ;; ms
     (unless mlist
@@ -1415,8 +1790,7 @@ included in the digest."
       (setq mail-buffer (current-buffer))
       (make-local-variable 'vm-forward-list)
       (setq vm-system-state 'forwarding
-	    vm-forward-list mlist
-	    default-directory dir)
+	    vm-forward-list mlist)
       (if miming
 	  (progn
 	    ;; buffer is changed for only the mime case
@@ -1445,9 +1819,8 @@ included in the digest."
 		       "Content-Type: multipart/digest;\n\tboundary=\"")
 		     boundary "\"\n")
 	     (insert "Content-Transfer-Encoding: "
-		     (vm-determine-proper-content-transfer-encoding
-		      (point)
-		      (point-max))
+		     (vm-mime-encapsulation-transfer-encoding (point)
+							     (point-max))
 		     "\n"))
 	    ((equal vm-digest-send-type "rfc934")
 	     (vm-rfc934-encapsulate-messages
@@ -1458,13 +1831,16 @@ included in the digest."
 	      mlist vm-rfc1153-digest-headers
 	      vm-rfc1153-digest-discard-header-regexp))
             ((equal vm-digest-send-type nil)
-             (while mlist
+             ;; Walked with `dolist', not by cutting `mlist' down: the
+             ;; preamble below reads `mlist' after this, and an arm that
+             ;; consumed it left every nil-type digest with no preamble at
+             ;; all (emacs-vm/vm#804).
+             (dolist (m mlist)
                (vm-no-frills-encapsulate-message
-                (car mlist) 
+                m
 		(append vm-forwarded-headers vm-forwarded-mime-headers)
                 vm-unforwarded-header-regexp) ; nil?
-	       (insert "\n")
-               (setq mlist (cdr mlist)))))
+	       (insert "\n"))))
 
       (goto-char start)
       (setq mp mlist)
@@ -1485,10 +1861,6 @@ included in the digest."
 			   (kill-buffer ,work-buffer))))))
       (when prefix
 	(vm-inform 6 "Building digest preamble...")
-	;; (if miming
-	;;     (progn
-	;;       (set-buffer mail-buffer)
-	;;       (mail-text)))
 	(while mp
 	  (let ((vm-summary-uninteresting-senders nil))
 	    (insert (vm-summary-sprintf vm-digest-preamble-format
@@ -1503,6 +1875,7 @@ included in the digest."
       (mail-position-on-field "To")
       (vm-inform 5 "Building %s digest... done" vm-digest-send-type)))
   (run-hooks 'vm-send-digest-hook)
+  (vm-mail-mode-apply-options)
   (run-hooks 'vm-mail-mode-hook))
 
 ;;;###autoload
@@ -1616,6 +1989,7 @@ command can be invoked from external agents via an emacsclient."
 	(while (search-forward "\r\n" nil t)
 	  (replace-match "\n"))))
     (run-hooks 'vm-mail-hook)
+    (vm-mail-mode-apply-options)
     (run-hooks 'vm-mail-mode-hook)))
 
 ;; external variables
@@ -1646,7 +2020,6 @@ command can be invoked from external agents via an emacsclient."
 buffers.") 
 
 (defvar dnd-protocol-alist)
-(defvar ns-input-file)
 
 (defun vm-update-ml-composition-buffer-count ()
    (setq vm-ml-composition-buffer-count
@@ -1658,11 +2031,117 @@ buffers.")
   (setq vm-compositions-exist (> vm-composition-buffer-count 0))
   (vm-update-ml-composition-buffer-count))
 
+(declare-function vm-save-killed-message-hook "vm-postpone" ())
+(declare-function vm-remove-save-killed-message-hook "vm-postpone" ())
+
+(defvar vm-composition-headers-vm-wrote nil
+  "This composition\\='s headers as VM wrote them, or nil where VM did not say.
+Set once the composition is ready for the writer, `mail-setup-hook' included,
+so that `vm-composition-headers-changed-p' can tell a header the writer typed
+from one they were handed.")
+(make-variable-buffer-local 'vm-composition-headers-vm-wrote)
+
+(defun vm-composition-header-text ()
+  "This composition\\='s headers, as text, or nil where it has no separator."
+  (save-excursion
+    (goto-char (point-min))
+    (and (re-search-forward
+          (concat "^" (regexp-quote mail-header-separator) "$") nil t)
+         (buffer-substring-no-properties (point-min) (match-beginning 0)))))
+
+(defun vm-composition-has-body-p ()
+  "Whether anything but whitespace follows `mail-header-separator' here."
+  (save-excursion
+    (goto-char (point-min))
+    (and (re-search-forward
+          (concat "^" (regexp-quote mail-header-separator) "$") nil t)
+         (re-search-forward "[^ \t\n]" nil t))))
+
+(defun vm-composition-headers-changed-p ()
+  "Whether this composition\\='s headers differ from the ones VM wrote.
+Nil where VM did not record them, which is a composition VM did not make."
+  (and vm-composition-headers-vm-wrote
+       (not (equal (vm-composition-header-text)
+                   vm-composition-headers-vm-wrote))))
+
+(defun vm-composition-worth-keeping-p (&optional buffer)
+  "Whether BUFFER holds a composition with anything in it.
+A composition begun and abandoned untouched is not worth a question, still
+less a draft in the postponed folder.
+
+Modified is not enough on its own: VM writes the headers itself, so a
+composition is modified from the moment it appears.  What says the writer has
+written something is text after `mail-header-separator', or a header they
+changed from the one VM handed them: a recipient and a subject typed with the
+body still empty were writing, and were killed silently (emacs-vm/vm#856)."
+  (with-current-buffer (or buffer (current-buffer))
+    (and (buffer-modified-p)
+         (or (vm-composition-has-body-p)
+             (vm-composition-headers-changed-p)))))
+
+(defcustom vm-confirm-killing-a-composition t
+  "*Whether VM asks before a composition with writing in it is killed.
+
+A composition buffer belongs to no file, so Emacs kills it without the
+question it asks about an unsaved file: `kill-buffer' and everything bound to
+it, `kill-this-buffer' included, took an unsent reply with no warning
+(emacs-vm/vm#824).  Nil restores that.
+
+The question is not asked for a composition nothing has been written in, nor
+for one that has been sent."
+  :group 'vm-compose
+  :type 'boolean)
+
+(defvar vm-save-killed-message)
+
+(defun vm-composition-kill-buffer-saves-it-p ()
+  "Whether killing this composition will keep it as a draft.
+
+`vm-save-killed-message-hook' on the local `kill-buffer-hook' is what keeps
+it, and `vm-save-killed-message' says whether it keeps, asks, or does neither.
+Where it will speak for itself there is nothing to ask first, and
+`vm-postpone-unfinished-compositions' kills a composition for the express
+purpose of reaching it.
+
+The hook is autoloaded, so vm-postpone.el may not be loaded when this runs:
+query functions run before `kill-buffer-hook' does.  It is loaded here rather
+than guessing, since the answer turns on an option defined there and the kill
+about to happen would load it a moment later anyway."
+  (and (memq 'vm-save-killed-message-hook kill-buffer-hook)
+       (progn (require 'vm-postpone) vm-save-killed-message)
+       t))
+
+(defun vm-composition-kill-buffer-query ()
+  "Ask before this composition is killed with writing in it.
+On `kill-buffer-query-functions' in a composition buffer; answering no leaves
+the buffer alone.  See `vm-confirm-killing-a-composition'."
+  (or (not vm-confirm-killing-a-composition)
+      (not (vm-composition-worth-keeping-p))
+      (vm-composition-kill-buffer-saves-it-p)
+      (yes-or-no-p
+       (format "%s has writing in it and has not been sent; kill it? "
+	       (buffer-name)))))
+
 (defun vm-new-composition-buffer ()
   (setq vm-composition-buffer-count (+ 1 vm-composition-buffer-count))
   (setq vm-compositions-exist t)
   (add-hook 'kill-buffer-hook 'vm-forget-composition-buffer nil t)
   (add-hook 'vm-mail-send-hook 'vm-forget-composition-buffer nil t)
+  ;; Killing this composition keeps what is written in it, as
+  ;; `vm-save-killed-message' says to.  Every composition, rather than only
+  ;; those made while `vm-postpone-mode' is on: a reader who had not switched
+  ;; that on lost the writing to any key bound to `kill-buffer'
+  ;; (emacs-vm/vm#824).  Taken off again when the message is sent or postponed,
+  ;; there being nothing to keep then.
+  (add-hook 'kill-buffer-hook #'vm-save-killed-message-hook nil t)
+  (add-hook 'mail-send-hook #'vm-remove-save-killed-message-hook nil t)
+  (add-hook 'vm-postpone-message-hook #'vm-remove-save-killed-message-hook
+	    nil t)
+  ;; And a question where nothing will be kept.  On the query hook rather than
+  ;; `kill-buffer-hook': that one runs after the decision is made and cannot
+  ;; stop the kill.
+  (add-hook 'kill-buffer-query-functions #'vm-composition-kill-buffer-query
+	    nil t)
   (vm-update-ml-composition-buffer-count))
 
 ;;;###autoload
@@ -1674,14 +2153,66 @@ The optional argument USE-SENDER may be nil, in which case the
 variable `vm-mail-use-sender-address' determines whether the sender
 address is used."
   (when (and (or use-sender vm-mail-use-sender-address)
-	     (memq major-mode '(vm-mode vm-virtual-mode 
+	     (memq major-mode '(vm-mode vm-virtual-mode
 					vm-summary-mode vm-presentation-mode)))
     (vm-select-folder-buffer)
-    (vm-get-header-contents (car vm-message-pointer) "From:")))
+    ;; "if possible" includes there being a message to take the sender from:
+    ;; an empty folder has none, and reading a header out of nil is an error
+    ;; rather than an absent recipient (issue #514).
+    (when vm-message-pointer
+      (vm-get-header-contents (car vm-message-pointer) "From:"))))
 
+
+(defun vm-mail-mode-parent-keymap ()
+  "Give `vm-mail-mode-map' the bindings of `mail-mode-map' as well.
+VM's composition keymap holds only VM's own bindings, and Mail mode's have to
+remain reachable behind them.
+
+This used to be done with
+
+    (nconc vm-mail-mode-map mail-mode-map)
+
+on GNU Emacs, `set-keymap-parents' being XEmacs's.  That works, in that
+`keymap-parent' afterwards is `mail-mode-map' -- the splice makes VM's keymap
+literally end in it -- but it is destructive, and doing it a second time walks
+to the end of the spliced list, which is now inside `mail-mode-map', and points
+that cell back at `mail-mode-map' itself.  A circular keymap: `lookup-key' on it
+does not return, and Emacs dies of a stack overflow.  Nothing but a global flag
+stood between VM and corrupting one of Emacs's own keymaps.
+
+`set-keymap-parent' does the same job without touching the parent, and, being
+what parenting actually means, can be repeated harmlessly.  It has been in GNU
+Emacs throughout the range of versions VM supports."
+  (set-keymap-parent vm-mail-mode-map mail-mode-map))
 
 ;;;###autoload
-(cl-defun vm-mail-internal (&key buffer-name to guessed-to subject 
+(defvar vm-said-pcrisis-is-off nil
+  "Whether this session has said that Personality Crisis is switched off.
+Once is enough: the reader is composing, and a line repeated at every
+composition is one they learn to read past.")
+
+(defun vm-say-if-pcrisis-is-off ()
+  "Say once that Personality Crisis has rules and is switched off.
+
+Only where vm-pcrisis.el has not been loaded.  `vm-pcrisis-warn-if-off' says
+it at every composition and is the one to hear, but it reaches
+`vm-mail-mode-hook' as that file loads, so a reader who set the rule
+variables in their init and never loaded it is told nothing by anything.
+That is the quiet half of emacs-vm/vm#561, and this is why the check names
+the variables rather than reading them through the file.
+
+Once, unlike that one: a reader in this state has no vm-pcrisis loaded to
+repeat it, and the line is about their init file rather than about the
+message in front of them."
+  (when (and (not vm-said-pcrisis-is-off)
+             (not (featurep 'vm-pcrisis))
+             (vm-pcrisis-configured-but-off-p))
+    (setq vm-said-pcrisis-is-off t)
+    (vm-warn 0 2 (concat "Personality Crisis has rules and is switched off,"
+                         " so none of them ran.  Add (vm-pcrisis-mode 1) to"
+                         " your init file"))))
+
+(cl-defun vm-mail-internal (&key buffer-name to guessed-to subject
 			       in-reply-to cc references newsgroups)
     "Create a message buffer and set it up according to args.
 Fills in the headers as given by the arguments.
@@ -1696,10 +2227,12 @@ Binds the `vm-mail-mode-map' and hooks"
     (set-buffer (generate-new-buffer buffer-name))
     ;; FSF Emacs: try to prevent write-region (called to handle FCC) from
     ;; asking the user to choose a safe coding system.
-    (if (and (not (featurep 'xemacs)) (fboundp 'set-buffer-file-coding-system))
-	(set-buffer-file-coding-system 'raw-text))
-    ;; avoid trying to write auto-save files in potentially
-    ;; unwritable directories.
+    (set-buffer-file-coding-system 'raw-text)
+    ;; Avoid trying to write auto-save files in potentially unwritable
+    ;; directories.  This is the composition's directory from here on: the
+    ;; commands that start one used to put the folder's own directory back
+    ;; afterwards, which for an IMAP folder is its local cache, and anything
+    ;; that recomputed the auto-save name then wrote there (emacs-vm/vm#666).
     (setq default-directory 
 	  (or vm-mail-auto-save-directory vm-folder-directory 
 	      (expand-file-name "~/")))
@@ -1710,15 +2243,7 @@ Binds the `vm-mail-mode-map' and hooks"
     (when vm-send-using-mime
       (vm-mail-mode-remove-tm-hooks))
     (use-local-map vm-mail-mode-map)
-    ;; make mail-mode-map the parent of this vm-mail-mode-map, if we can.
-    ;; do it only once.
-    (unless vm-mail-mode-map-parented
-      (cond ((fboundp 'set-keymap-parents)
-	     (set-keymap-parents vm-mail-mode-map (list mail-mode-map))
-	     (setq vm-mail-mode-map-parented t))
-	    ((consp mail-mode-map)
-	     (nconc vm-mail-mode-map mail-mode-map)
-	     (setq vm-mail-mode-map-parented t))))
+    (vm-mail-mode-parent-keymap)
     (when (boundp 'dnd-protocol-alist)
       (set (make-local-variable 'dnd-protocol-alist)
 	   (append vm-dnd-protocol-alist dnd-protocol-alist)))
@@ -1728,14 +2253,35 @@ Binds the `vm-mail-mode-map' and hooks"
 			       (vm-menu-mode-menu)))
     (and vm-use-menus (vm-menu-support-possible-p)
 	 (vm-menu-install-mail-mode-menu))
-    (if (fboundp 'mail-aliases-setup) ; use mail-abbrevs.el if present
-	(mail-aliases-setup)
-      (when (eq mail-aliases t)
-	(setq mail-aliases nil)
-	(when (file-exists-p (or mail-personal-alias-file "~/.mailrc"))
-	  (build-mail-aliases))))
-    (when (stringp vm-mail-header-from)
+    ;; Mail aliases, from ~/.mailrc through mailalias.el, as Emacs's own
+    ;; `mail-setup' does it.  `sendmail-sync-aliases' first, so that a file
+    ;; edited during this Emacs session is read again rather than being
+    ;; whatever it said when the first composition was made
+    ;; (emacs-vm/vm#820); it sets `mail-aliases' back to t when the
+    ;; modification time has moved.
+    ;;
+    ;; A reader who would rather see the address than the alias in the
+    ;; composition puts `mail-abbrevs-setup' on `vm-mail-mode-hook'.  Both
+    ;; read the same file; see Composing setup in the VM manual.
+    (vm-say-if-pcrisis-is-off)
+    (sendmail-sync-aliases)
+    (when (eq mail-aliases t)
+      (setq mail-aliases nil)
+      (when (file-exists-p (or mail-personal-alias-file "~/.mailrc"))
+	(build-mail-aliases)))
+    (cond
+     ((stringp vm-mail-header-from)
       (insert "From: " vm-mail-header-from "\n"))
+     (mail-setup-with-from
+      ;; What Emacs's own `mail-setup' does with that variable, which
+      ;; defaults to t, and VM did not: a composition with no From header is
+      ;; filed by Fcc and by IMAP-FCC without one, the copy being made before
+      ;; the send puts it in, so the copy in a Sent folder named no sender at
+      ;; all (emacs-vm/vm#832).  `mail-insert-from-field' is the function
+      ;; `sendmail-send-it' would have used, so what goes to the recipient is
+      ;; the same header either way, and `mail-setup-with-from' set to nil is
+      ;; the Emacs way of asking for neither.
+      (mail-insert-from-field)))
     (setq to (if to 
 		 (vm-decode-mime-encoded-words-in-string to))
 	  guessed-to (if guessed-to 
@@ -1750,12 +2296,8 @@ Binds the `vm-mail-mode-map' and hooks"
     (and newsgroups (insert "Newsgroups: " newsgroups "\n"))
     (and in-reply-to (insert "In-Reply-To: " in-reply-to "\n"))
     (and references (insert "References: " references "\n"))
-    (insert "X-Mailer: VM " (vm-version) " under ")
-    (if (boundp 'emacs-version)
-	   (insert emacs-version)
-      (insert "Unknown Emacs"))
-    ;; (if (functionp 'emacsw32-version)
-    ;; 	(insert " [" (emacsw32-version) "]"))
+    (insert "X-Mailer: VM " (vm-version) " under "
+	    (vm-emacs-name-and-version))
     (if (boundp 'system-configuration)
 	(insert " (" system-configuration ")"))
     (insert "\n")
@@ -1768,12 +2310,9 @@ Binds the `vm-mail-mode-map' and hooks"
       (insert "Reply-To: " mail-default-reply-to "\n"))
     (when mail-self-blind
       (insert "Bcc: "
-	      (cond ((and (featurep 'xemacs) (fboundp 'user-mail-address))
-		     (user-mail-address))
-		    ((and (boundp 'user-mail-address)
-			  (stringp user-mail-address))
-		     user-mail-address)
-		    (t (user-login-name)))
+	      (if (stringp user-mail-address)
+		  user-mail-address
+		(user-login-name))
 	      ?\n))
     (when mail-archive-file-name
       (insert "FCC: " mail-archive-file-name "\n"))
@@ -1847,19 +2386,15 @@ Binds the `vm-mail-mode-map' and hooks"
 	   (mail-position-on-field "To" t))
 	  ((null subject)
 	   (mail-position-on-field "Subject" t)))
-    (cond ((and (featurep 'xemacs)
-		(fboundp 'start-itimer)
-		(null (get-itimer "vm-rename-mail"))
-	   (start-itimer "vm-rename-mail"
-			 'vm-update-composition-buffer-name
-			 1.5 1.5 t)))
-	  ((and (fboundp 'run-with-idle-timer)
-		(null vm-update-composition-buffer-name-timer))
-	   (setq vm-update-composition-buffer-name-timer
-		 (run-with-idle-timer 
-		  1.5 t 'vm-update-composition-buffer-name))))
+    (unless vm-update-composition-buffer-name-timer
+      (setq vm-update-composition-buffer-name-timer
+	    (run-with-idle-timer
+	     1.5 t 'vm-update-composition-buffer-name)))
     (vm-new-composition-buffer)
-    (run-hooks 'mail-setup-hook)))
+    (run-hooks 'mail-setup-hook)
+    ;; Now that the composition is the writer's, what its headers say is what
+    ;; VM said.  After the hook, which may add a header of its own.
+    (setq vm-composition-headers-vm-wrote (vm-composition-header-text))))
 
 ;;;###autoload
 (defun vm-reply-other-frame (count)
@@ -2117,6 +2652,7 @@ message."
   (remove-hook 'mail-send-hook 'mime-editor/maybe-translate))
 
 
+;;;###autoload
 (defun vm-mail-mode-show-headers ()
   "Display any hidden headers in a composition buffer."
   (interactive)
@@ -2127,6 +2663,7 @@ message."
 
 (make-variable-buffer-local 'line-move-ignore-invisible)
 
+;;;###autoload
 (defun vm-mail-mode-hide-headers ()
   "Hides and protects headers listed in `vm-mail-mode-hidden-headers'.
 With a prefix arg, call `vm-mail-mode-show-headers' instead."
@@ -2164,29 +2701,364 @@ composition buffer.  URI is the url of the file as described in
 		     "application/octet-stream"))
       (vm-attach-file file type))))
 
-;;;###autoload
-(defun vm-ns-attach-file ()
-  "Insert a drag and drop file as a MIME attachment in a VM
-composition buffer.  This is a version of `vm-dnd-attach-file'
-that is needed for Mac and NextStep."
-  (interactive)
-  (let ((file (car ns-input-file))
-	type)
-    (unless vm-send-using-mime
-      (error (concat "MIME attachments disabled, "
-		     "set vm-send-using-mime non-nil to enable.")))
-    (when (and file (file-regular-p file))
-      (setq ns-input-file (cdr ns-input-file))
-      (setq type (or (vm-mime-default-type-from-filename file)
-		     "application/octet-stream"))
-      (vm-attach-file file type))))
-
 (defun vm-mail-mode-hide-headers-hook ()
   "Hook which handles `vm-mail-mode-hidden-headers'."
   (when vm-mail-mode-hidden-headers
     (vm-mail-mode-hide-headers)))
 
 (add-hook 'vm-mail-mode-hook 'vm-mail-mode-hide-headers-hook)
+
+;;; Composition helpers, from vm-rfaddons.el (issue #606)
+
+(defun vm-mail-mode-apply-options ()
+  "Apply the composition options to this buffer.
+Called wherever VM sets a composition up, just before
+`vm-mail-mode-hook\', so that a hook function can undo any of it."
+  (when vm-clean-subject-prefixes
+    (vm-mail-subject-cleanup))
+  (when vm-open-line-in-quoted-text
+    (vm-mail-mode-install-open-line)))
+
+
+
+(defun vm-mail-subject-cleanup ()
+  "Do some subject line clean up.
+- Replace subject prefixes according to `vm-mail-subject-prefix-replacements'.
+- Add a number after replies is `vm-mail-subject-number-reply' is t.
+
+You might add this function to `vm-mail-mode-hook' in order to clean up the
+Subject header."
+  (interactive)
+  (save-excursion
+    ;; cleanup
+    (goto-char (point-min))
+    (re-search-forward 
+     (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
+     (point-max))
+    (let ((case-fold-search t)
+          (rpl vm-mail-subject-prefix-replacements))
+      (while rpl
+        (if (re-search-backward (concat "^Subject:[ \t]*" (caar rpl))
+                                (point-min) t)
+            (replace-match (concat "Subject: " (cdar rpl))))
+        (setq rpl (cdr rpl))))
+
+    ;; add number to replys
+    (let (refs (start 0) end (count 0))
+      (when (and vm-mail-subject-number-reply vm-reply-list
+                 (setq refs  (vm-mail-mode-get-header-contents "References:")))
+        (while (string-match "<[^<>]+>" refs start)
+          (setq count (1+ count)
+                start (match-end 0)))
+        (when (> count 1)
+          ;; the number goes inside the reply prefix, so there has to be one:
+          ;; `vm-reply-subject-prefix' is nil by default, and passing that to
+          ;; `regexp-quote' below signalled wrong-type-argument
+          (unless vm-reply-subject-prefix
+            (error (concat "vm-mail-subject-cleanup: "
+                           "`vm-mail-subject-number-reply' needs "
+                           "`vm-reply-subject-prefix' set to the prefix to "
+                           "number, such as \"Re: \"")))
+          (mail-position-on-field "Subject" t)
+          (setq end (point))
+          (if (re-search-backward "^Subject:" (point-min) t)
+              (setq start (point))
+            (error "vm-mail-subject-cleanup: no Subject header to number"))
+          (goto-char start)
+          (if (not (re-search-forward (regexp-quote vm-reply-subject-prefix)
+                                      end t))
+              (error (concat "vm-mail-subject-cleanup: the Subject header "
+                             "does not begin with `vm-reply-subject-prefix' "
+                             "(%s), so there is nothing to number")
+                     vm-reply-subject-prefix)
+            (goto-char (match-end 0))
+            (skip-chars-backward ": \t")
+            (insert (format "[%d]" count))))))))
+(put 'vm-mail-subject-cleanup 'vm-called-by-vm t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun vm-mail-check-recipients-strip (address)
+  "Remove from ADDRESS the parts that may legitimately contain an \"@\".
+That is MIME encoded words, quoted strings and RFC 5322 comments, all of
+which occur alongside the address proper.  What is left should hold
+exactly one address.
+
+`vm-parse-addresses' decodes encoded words, marking what it decoded with
+the `vm-string' text property, so those are removed by property; a word
+still in its encoded form is removed by matching."
+  (let ((start 0)
+	(len (length address))
+	(pieces nil)
+	(stripped nil)
+	(previous nil))
+    ;; drop the decoded encoded words
+    (while (< start len)
+      (let ((end (or (next-single-property-change start 'vm-string address)
+		     len)))
+	(unless (get-text-property start 'vm-string address)
+	  (push (substring-no-properties address start end) pieces))
+	(setq start end)))
+    (setq stripped
+	  (vm-replace-in-string
+	   (vm-replace-in-string (apply #'concat (nreverse pieces))
+				 vm-mime-encoded-word-regexp "")
+	   "\"[^\"]*\"" ""))
+    ;; and the comments, innermost first so nested ones go too
+    (while (not (equal previous stripped))
+      (setq previous stripped)
+      (setq stripped (vm-replace-in-string stripped "([^()]*)" "")))
+    stripped))
+
+(defun vm-mail-check-recipients ()
+  "Check if the recipients are specified correctly.
+Actually it checks only if there are any missing commas or the like in the
+headers."
+  (interactive)
+  (let ((header-list '("To:" "CC:" "BCC:"
+                       "Resent-To:" "Resent-CC:" "Resent-BCC:"))
+        (contents nil)
+        (errors nil))
+    (while header-list
+      (setq contents (vm-mail-mode-get-header-contents (car header-list)))
+      ;; Split into addresses first, respecting quoting and comments, and
+      ;; look for a second "@" within one of them.  Testing the whole
+      ;; header at once cannot tell a missing comma from a display name
+      ;; that contains an "@" -- an encoded word holding an address, say,
+      ;; which is legal and which Exchange and Outlook both produce.
+      (dolist (address (vm-parse-addresses contents))
+        (let ((bare (vm-mail-check-recipients-strip address)))
+          (when (string-match "@[^,]*@" bare)
+            (setq errors
+                  (vm-replace-in-string
+                   (format
+                    "vm-mail-check-recipients: Missing separator in %s \"%s\"!  "
+                    (car header-list) address)
+                   "[\n\t ]+" " ")))))
+      (setq header-list (cdr header-list)))
+    ;; "%s" matters: the message has an address interpolated into it, and
+    ;; "%" is legal in a local part -- percent-hack routing uses it -- so
+    ;; passing it as the format string fails with "Not enough arguments
+    ;; for format string" instead of saying what is wrong.
+    (if errors
+        (error "%s" errors))))
+(put 'vm-mail-check-recipients 'vm-called-by-vm t)
+
+
+(defun vm-mail-check-bcc-removal ()
+  "Ask before sending if this composition's Bcc could reach the other recipients.
+
+A Bcc header is a promise: the addresses in it are told nothing to the people
+who receive the message.  With `send-mail-function' set to
+`sendmail-send-it', VM and Emacs keep the header in the message they hand
+to `sendmail-program' and trust that program to take it out, because with
+-t those addresses are also how it learns whom to deliver to.  When it does
+not take it out, everyone on the message reads who was blind copied, and
+nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
+
+Asks rather than refuses because a working sendmail, postfix or exim does
+remove it, and those are a great many of the people sending mail this way.
+Declining says what to change and where it is written down."
+  (interactive)
+  (when (and (vm-mail-mode-get-header-contents "\\(Resent-\\)?BCC:")
+             (not (memq send-mail-function vm-senders-that-remove-bcc))
+             (not (y-or-n-p
+                   (format (concat "This message has a Bcc and %s leaves"
+                                   " removing it to your mail transport;"
+                                   " see Sending Options in the VM manual."
+                                   "  Send anyway? ")
+                           send-mail-function))))
+    (error (concat "Message not sent.  Set send-mail-function to"
+                   " smtpmail-send-it, which removes the Bcc itself; or take"
+                   " the Bcc header out; or set vm-check-bcc-removal to nil"
+                   " if you know your transport removes it.  See the node"
+                   " Sending Options in the VM manual, and Sending under"
+                   " Setting Up for a worked smtpmail configuration"))))
+(put 'vm-mail-check-bcc-removal 'vm-called-by-vm t)
+
+(defun vm-mail-check-for-empty-subject ()
+  "Check if the subject line is empty and issue an error if so."
+  (interactive)
+  (let (subject)
+    (setq subject (vm-mail-mode-get-header-contents "Subject:"))
+    (if (or (not subject) (string-match "^[ \t]*$" subject))
+        (if (not vm-mail-prompt-if-subject-empty)
+            (error "Empty subject header")
+          (mail-position-on-field "Subject")
+          (insert (read-string "Subject: "))))))
+(put 'vm-mail-check-for-empty-subject 'vm-called-by-vm t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
+(defun vm-mail-mode-citation-clean-up ()
+  "Remove doubly-cited text and extra lines in a mail message."
+  (interactive)
+  (save-excursion
+    (mail-text)
+    (let ((re-alist vm-mail-mode-citation-kill-regexp-alist)
+          (pmin (point))
+          re subst)
+
+      (while re-alist
+        (goto-char pmin)
+        (setq re (caar re-alist)
+              subst (cdar re-alist))
+        (while (re-search-forward re (point-max) t)
+          (replace-match subst))
+        (setq re-alist (cdr re-alist))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun vm-mail-mode-install-open-line ()
+  "Install the open-line hooks for VM composition buffers.
+Add this to `vm-mail-mode-hook'."
+  ;; these are not local even when using add-hook, so we make them local
+  (add-hook 'before-change-functions 'vm-mail-mode-open-line nil t)
+  (add-hook 'after-change-functions 'vm-mail-mode-open-line nil t))
+
+(defun vm-mail-mode-open-line (start end &optional length)
+  "Opens a line when inserting into the region of a reply.
+
+Insert newlines before and after an insert where necessary and does a cleanup
+of empty lines which have been quoted." 
+  (if (= start end)
+      (save-excursion
+        (beginning-of-line)
+        (setq vm-mail-mode-open-line
+              (if (and (eq this-command 'self-insert-command)
+                       (looking-at (concat "^"
+                                           vm-mail-mode-open-line-regexp)))
+                  (if (< (point) start) (point) start))))
+    (if (and length (= length 0) vm-mail-mode-open-line)
+        (let (start-mark end-mark)
+          (save-excursion 
+            (if (< vm-mail-mode-open-line start)
+                (progn
+                  (insert "\n\n" vm-included-text-prefix)
+                  (setq end-mark (point-marker))
+                  (goto-char start)
+                  (setq start-mark (point-marker))
+                  (insert "\n\n"))
+              (if (looking-at (concat "\\("
+                                      vm-mail-mode-open-line-regexp
+                                      "\\)+[ \t]*\n"))
+                  (replace-match ""))
+              (insert "\n\n")
+              (setq end-mark (point-marker))
+              (goto-char start)
+              (setq start-mark (point-marker))
+              (insert "\n"))
+
+            ;; clean leading and trailing garbage 
+            (let ((iq (concat "^" vm-mail-mode-open-line-regexp
+                              "[> \t]*\n")))
+              (save-excursion
+                (goto-char start-mark)
+                (beginning-of-line)
+                (while (looking-at "^$") (forward-line -1))
+                (while (looking-at iq)
+                  (replace-match "")
+                  (forward-line -1))
+                (goto-char end-mark)
+                (beginning-of-line)
+                (while (looking-at "^$") (forward-line 1))
+                (while (looking-at iq)
+                  (replace-match "")))))
+      
+          (setq vm-mail-mode-open-line nil)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
+(defun vm-mail-mode-elide-reply-region (b e)
+  "Replace marked region or current line with `vm-mail-mode-elide-reply-region'.
+B and E are the beginning and end of the marked region or the current line."
+  (interactive (if (mark)
+                   (if (< (mark) (point))
+                       (list (mark) (point))
+                     (list (point) (mark)))
+                 (list (save-excursion (beginning-of-line) (point))
+                       (save-excursion (end-of-line) (point)))))
+  (if (eobp) (insert "\n"))
+  (if (mark) (delete-region b e) (delete-region b (+ 1 e)))
+  (insert vm-mail-mode-elide-reply-region))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;###autoload
+
+;;; Return receipts, from vm-rfaddons.el (issue #606)
+
+(defun vm-handle-return-receipt ()
+  "Generate a reply to the current message if it requests a return receipt
+and has not been replied so far.
+See the variable `vm-handle-return-receipt-mode' for customization."
+  (interactive)
+  (save-excursion
+    (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+    (let* ((msg (car vm-message-pointer))
+           (sender (vm-get-header-contents msg  "Return-Receipt-To:"))
+           (mail-signature nil)
+           (mode (and sender
+                      (cond ((equal 'ask vm-handle-return-receipt-mode)
+                             (y-or-n-p "Send a return receipt? "))
+                            ((symbolp vm-handle-return-receipt-mode)
+                             vm-handle-return-receipt-mode)
+                            (t
+                             (eval vm-handle-return-receipt-mode)))))
+           (vm-mutable-frame-configuration 
+	    (if (eq mode 'edit) vm-mutable-frame-configuration nil))
+           (vm-mail-mode-hook nil)
+           (vm-mode-hook nil)
+           message)
+      (when (and mode (not (vm-replied-flag msg)))
+        ;; Put the reader's windows back afterwards.  The receipt is composed
+        ;; and sent without their asking to see it, and `vm-reply' below
+        ;; displays the composition, so the summary window was left replaced
+        ;; by the presentation buffer and had to be brought back by hand
+        ;; (emacs-vm/vm#800).  In `edit' mode they are shown the composition
+        ;; on purpose and the display is theirs to keep, which is the
+        ;; distinction `vm-mutable-frame-configuration' is bound by above.
+        (let ((windows (unless (eq mode 'edit) (current-window-configuration))))
+         (unwind-protect
+        (progn
+        (vm-reply 1)
+        (vm-mail-mode-remove-header "Return-Receipt-To:")
+        (vm-mail-mode-remove-header "To:")
+        (goto-char (point-min))
+        (insert "To: " sender "\n")
+        (mail-text)
+        (delete-region (point) (point-max))
+        (insert 
+         (format 
+          "Your mail has been received on %s."
+          (current-time-string)))
+        ;; `save-restriction' inside the buffer switch: entered outside it,
+        ;; it held the composition and left the folder widened (#780).
+        (with-current-buffer (vm-buffer-of msg)
+          (save-restriction
+            (widen)
+            (setq message
+                  (buffer-substring
+                   (vm-vheaders-of msg)
+                   (let ((tp (+ vm-handle-return-receipt-peek
+                                (marker-position
+                                 (vm-text-of msg))))
+                         (ep (marker-position
+                              (vm-end-of msg))))
+                     (if (< tp ep) tp ep))
+                   ))))
+        (insert "\n-----------------------------------------------------------------------------\n"
+                message)
+        (if (re-search-backward "^\\s-+.*" (point-min) t)
+            (replace-match ""))
+        (insert "[...]\n")
+        (if (not (eq mode 'edit))
+            (vm-mail-send-and-exit nil))
+        )
+           (when windows (set-window-configuration windows)))))
+      )))
+(put 'vm-handle-return-receipt 'vm-called-by-vm t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'vm-reply)
 ;;; vm-reply.el ends here

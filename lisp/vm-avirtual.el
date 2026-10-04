@@ -3,7 +3,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 2000-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Author:      Robert Widhopf-Fenk
 ;; Status:      Tested with XEmacs 21.4.19 & VM 7.19
@@ -38,7 +38,7 @@
 ;; Then after I realized I was maintaining three different variables for
 ;; actually the same things.  They were `vm-auto-folder-alist' for automatic
 ;; selection of folders when saving messages, `vm-virtual-folder-alist' for my
-;; loved virtual folders and `vmpc-conditions' in order to solve the handling
+;; loved virtual folders and `vm-pcrisis-conditions' in order to solve the handling
 ;; of my different email-addresses.
 ;;
 ;; This was kind of annoying, since virtual folder selectors offer the
@@ -71,7 +71,7 @@
 ;; So by using theses new features I can maintain just one selector for
 ;; e.g. my private email-address and get the right folder for saving messages,
 ;; visiting the corresponding virtual folders, auto archiving, setting the FCC
-;; header and setting up `vmpc-conditions'.  Do you know a mailer than can
+;; header and setting up `vm-pcrisis-conditions'.  Do you know a mailer than can
 ;; beat this?
 ;;
 ;; My default selector for spam messages:
@@ -108,18 +108,16 @@
 (require 'vm-vars)
 (require 'vm-thread)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; FIXME: Cyclic dependency, we can't require `vm-virtual'.
 (declare-function vm-vs-spam-word "vm-virtual" (m &optional part))
 
 (declare-function vm-get-folder-buffer "vm" (folder))
 ;; The following function is erroneously called for fsfemacs as well
-(declare-function key-or-menu-binding "vm-xemacs" (key &optional menu-flag))
-(declare-function bbdb-get-addresses "ext:bbdb-com"
-		  (only-first-address
-		   uninteresting-senders
-		   get-header-content-function
-		   &rest get-header-content-function-args))
-(declare-function bbdb-search-simple "ext:bbdb" (name net))
+(declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 
 ;; vm-save.el function
 (declare-function vm-save-message "vm-save"
@@ -130,9 +128,6 @@
 		  (new-messages &optional dont-finalize))
 
 ; group already defined in vm-vars
-;(defgroup vm nil
-;  "VM"
-;  :group 'mail)
 
 (defgroup vm-avirtual nil
   "VM additional virtual folder selectors and functions."
@@ -145,9 +140,13 @@
   (require 'time-date)
   (vm-load-features-silent-when-compiling '(bbdb bbdb-autoloads bbdb-com)))
 
-(defvar bbdb-get-addresses-headers)	; dummy declaration
-(defvar bbdb-user-mail-names)
-(defvar bbdb-get-only-first-address-p)
+(defconst vm-bbdb-address-headers
+  '((authors "From:" "Resent-From:" "Reply-To:" "Sender:")
+    (recipients "Resent-To:" "Resent-CC:" "To:" "CC:" "BCC:"))
+  "The headers each address class of the `in-bbdb' selector reads.
+BBDB 2.x had this as `bbdb-get-addresses-headers' and did the reading;
+BBDB 3 has no equivalent -- its own version works from the message the MUA
+is showing, which is not what a selector needs.  Issue #567.")
 
 ;;----------------------------------------------------------------------------
 (defvar vm-mail-virtual-selector-function-alist
@@ -213,8 +212,8 @@
 
 ;;-----------------------------------------------------------------------------
 (defun vm-avirtual-add-selectors (selectors)
-  (let ((alist 'vm-virtual-selector-function-alist)
-        (sup-alist 'vm-supported-interactive-virtual-selectors)
+  (let ((alist 'vm-vs-alist)
+        (sup-alist 'vm-vs-interactive)
         sel)
     
     (while selectors
@@ -235,77 +234,12 @@
 ;;-----------------------------------------------------------------------------
 ;; we redefine the basic selectors for some extra features ...
 
-(defcustom vm-virtual-check-case-fold-search t
-  "Whether to use case-fold-search or not when applying virtual selectors.
-I was really missing this!"
-  :type 'boolean
-  :group 'vm-avirtual)
-
-(defcustom vm-virtual-check-diagnostics nil
-  "When set to nil we will display messages on matching selectors."
-  :type 'boolean
-  :group 'vm-avirtual)
-
-(defvar vm-virtual-check-level 0)
-
-(defun vm-vs-or (m &rest selectors)
-  "Virtual selector combinator for checking the disjunction of the
-given SELECTORS."
-  (let ((case-fold-search vm-virtual-check-case-fold-search)
-        (vm-virtual-check-level (+ 2 vm-virtual-check-level))
-        (result nil) selector arglist function)
-    (while selectors
-      (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
-      (if (null function)
-	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
-	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist))
-	(if vm-virtual-check-diagnostics
-	    (princ (format "%sor: %s (%S%s)\n" 
-			   (make-string vm-virtual-check-level ? )
-			   (if result t nil) selector
-			   (if arglist (format " %S" arglist) "")))))
-      (setq selectors (if result nil (cdr selectors))))
-    result))
-
-(defun vm-vs-and (m &rest selectors)
-  "Virtual selector combinator for checking the conjunction of the
-given SELECTORS."
-  (let ((vm-virtual-check-level (+ 2 vm-virtual-check-level))
-        (result t) selector arglist function)
-    (while selectors
-      (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
-      (if (null function)
-	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
-	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist))
-	(if vm-virtual-check-diagnostics
-	    (princ (format "%sand: %s (%S%s)\n" 
-			   (make-string vm-virtual-check-level ? )
-			   (if result t nil) selector
-			   (if arglist (format " %S" arglist) "")))))
-      (setq selectors (if (null result) nil (cdr selectors))))
-    result))
-
-(defun vm-vs-not (m selector)
-  "Virtual selector combinator for checking the negation of the
-given SELECTOR."
-  (let ((vm-virtual-check-level (+ 2 vm-virtual-check-level))
-        (selector (car selector))
-	(selectorlist (cdr selector))
-        result function)
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
-    (if (null function)
-	(vm-warn 0 2 "Invalid virtual selector: %s" selector)
-      (setq result (apply function m selectorlist))
-      (if vm-virtual-check-diagnostics
-	  (princ (format "%snot: %s for (%S%s)\n"
-			 (make-string vm-virtual-check-level ? )
-			 (if result t nil) selector
-			 (if selectorlist (format " %S" selectorlist) "")))))
-    (not result)))
+;; `vm-vs-or\', `vm-vs-and\' and `vm-vs-not\' used to be redefined here, to add
+;; the case folding and the diagnostics this file's checker prints.  Both are in
+;; the definitions in vm-virtual.el now.  Redefining them here only worked when
+;; this file happened to load after that one, and it does not: vm-summary.el
+;; pulls this in through vm-summary-faces.el, and vm.el requires vm-virtual
+;; afterwards, so the copies here never won and the diagnostics never printed.
 
 ;;-----------------------------------------------------------------------------
 ;;;###autoload
@@ -313,9 +247,9 @@ given SELECTOR."
   "Check if there are selectors missing for either vm-mode or mail-mode."
   (interactive "P")
   (let ((a (if arg vm-mail-virtual-selector-function-alist
-             vm-virtual-selector-function-alist))
+             vm-vs-alist))
         (b (mapcar (lambda (s) (car s))
-                   (if arg vm-virtual-selector-function-alist
+                   (if arg vm-vs-alist
                      vm-mail-virtual-selector-function-alist)))
         l)
     (while a
@@ -346,54 +280,69 @@ given SELECTOR."
     (vm-select-folder-buffer)
     (eq m (car vm-message-pointer))))
 
+(defun vm-bbdb-class-headers (address-class)
+  "The headers the `in-bbdb' selector reads for ADDRESS-CLASS.
+Every header of every class when ADDRESS-CLASS is nil."
+  (if (null address-class)
+      (apply #'append (mapcar #'cdr vm-bbdb-address-headers))
+    (or (cdr (assq address-class vm-bbdb-address-headers))
+        (error "No such address class: %s.  There is %s"
+               address-class
+               (mapconcat #'symbol-name
+                          (mapcar #'car vm-bbdb-address-headers) " and ")))))
+
+(defun vm-bbdb-known-address-p (contents only-first)
+  "Whether BBDB has a record for an address in CONTENTS, a header's text.
+With ONLY-FIRST, only the first address in it is looked up, which is what
+`bbdb-get-only-first-address-p' asked for in BBDB 2.x."
+  (let ((addresses (vm-parse-addresses contents))
+        (found nil))
+    (when (and only-first addresses)
+      (setq addresses (list (car addresses))))
+    (while (and addresses (not found))
+      (let ((components (mail-extract-address-components (car addresses))))
+        ;; One call, where this was two: `bbdb-message-search' tries name and
+        ;; mail together, then mail, then name.  It also matches exactly
+        ;; rather than as a regexp, which is what you want of an address --
+        ;; `foo+bar@example.com' is not the regexp anyone meant.  Issue #549.
+        (setq found (bbdb-message-search (car components) (cadr components))
+              addresses (cdr addresses))))
+    found))
+
+(defun vm-bbdb-search-headers (contents-list only-first)
+  "Whether BBDB knows an address in any of CONTENTS-LIST."
+  (let ((found nil))
+    (while (and contents-list (not found))
+      (setq found (vm-bbdb-known-address-p (car contents-list) only-first)
+            contents-list (cdr contents-list)))
+    found))
+
 (defun vm-vs-in-bbdb (m &optional address-class only-first)
   "check if one of the email addresses in the message headers is known
 in BBDB."
-  (let (bbdb-user-mail-names)
-    (let* ((bbdb-get-only-first-address-p only-first)
-           (bbdb-user-mail-names nil)
-           (bbdb-get-addresses-headers
-            (if address-class
-                (or (list (assoc address-class bbdb-get-addresses-headers))
-                    (error "no such address class"))
-              bbdb-get-addresses-headers))
-           (addresses (bbdb-get-addresses nil nil
-                                          'bbdb/vm-get-header-content
-                                          (vm-real-message-of m)))
-           (done nil)
-           addr)
-      (while (and (not done) addresses)
-        (setq addr (caddar addresses)
-              addresses (cdr addresses))
-        (let ((name (car addr))
-              (net  (cadr addr)))
-          (setq done (or (bbdb-search-simple nil net)
-                         (bbdb-search-simple name nil)))))
-      done)))
+  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload
+  ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
+  ;; never requires BBDB itself, so ask for the file that has it (#549).
+  (require 'bbdb-com)
+  ;; The addresses are gathered here rather than by BBDB.  2.x's
+  ;; `bbdb-get-addresses' took a function to read a header with, which is how
+  ;; a selector could ask about a message other than the one on screen; BBDB 3
+  ;; dropped it, and its replacement reads the message the MUA is displaying.
+  ;; Issue #567.
+  (let ((message (vm-real-message-of m)))
+    (vm-bbdb-search-headers
+     (delq nil (mapcar (lambda (header) (vm-get-header-contents message header))
+                       (vm-bbdb-class-headers address-class)))
+     only-first)))
 
 (defun vm-mail-vs-in-bbdb (&optional address-class only-first)
   "check if one of the email addresses in the message headers is known
 in BBDB."
-  (let (bbdb-user-mail-names)
-    (let* ((bbdb-get-only-first-address-p only-first)
-           (bbdb-user-mail-names nil)
-           (bbdb-get-addresses-headers
-            (if address-class
-                (or (list (assoc address-class bbdb-get-addresses-headers))
-                    (error "no such address class"))
-              bbdb-get-addresses-headers))
-           (addresses (bbdb-get-addresses nil nil
-                                          'vm-mail-mode-get-header-contents))
-           (done nil)
-           addr)
-      (while (and (not done) addresses)
-        (setq addr (caddar addresses)
-              addresses (cdr addresses))
-        (let ((name (car addr))
-              (net  (cadr addr)))
-          (setq done (or (bbdb-search-simple nil net)
-                         (bbdb-search-simple name nil)))))
-      done)))
+  (require 'bbdb-com)
+  (vm-bbdb-search-headers
+   (delq nil (mapcar #'vm-mail-mode-get-header-contents
+                     (vm-bbdb-class-headers address-class)))
+   only-first))
 
 ;;;###autoload
 (defun vm-add-spam-word (word)
@@ -574,7 +523,7 @@ in BBDB."
   (vm-mail-mode-get-header-contents "Resent-[^:]+:"))
 
 (defun vm-mail-vs-unreplied ()
-  (not (vm-mail-vs-forwarded )))
+  (not (vm-mail-vs-replied)))
 (fset 'vm-mail-vs-unanswered 'vm-mail-vs-unreplied)
 
 (defun vm-mail-vs-unforwarded ()
@@ -678,18 +627,18 @@ format:
                          "false")))))))
 
 ;;----------------------------------------------------------------------------
-(defvar vmpc-current-state nil)
+(defvar vm-pcrisis-current-state nil)
 ;;;###autoload
-(defun vmpc-virtual-check-selector (selector &optional folder-list)
-  "Checks SELECTOR based on the state of vmpc on the original or current."
+(defun vm-pcrisis-virtual-check-selector (selector &optional folder-list)
+  "Checks SELECTOR based on the Personality Crisis state, original or current."
   (setq selector (vm-virtual-get-selector selector folder-list))
   (if (null selector)
       (error "no virtual folder %s!" selector))
-  (cond ((or (eq vmpc-current-state 'reply)
-             (eq vmpc-current-state 'forward)
-             (eq vmpc-current-state 'resend))
+  (cond ((or (eq vm-pcrisis-current-state 'reply)
+             (eq vm-pcrisis-current-state 'forward)
+             (eq vm-pcrisis-current-state 'resend))
          (vm-virtual-check-selector selector (car vm-message-pointer)))
-        ((eq vmpc-current-state 'automorph)
+        ((eq vm-pcrisis-current-state 'automorph)
          (vm-virtual-check-selector selector))))
 
 ;;----------------------------------------------------------------------------
@@ -702,11 +651,8 @@ format:
       (setq selector (vm-virtual-get-selector
                       (vm-read-string "Virtual folder: "
                                       vm-virtual-folder-alist)))
-      (if (featurep 'xemacs)
-	  (setq function 
-		(key-or-menu-binding (read-key-sequence "VM command: ")))
-	(setq function
-		(key-binding (read-key-sequence "VM command: ")))))
+      (setq function
+	    (key-binding (read-key-sequence "VM command: "))))
 
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
 
@@ -779,6 +725,22 @@ thread are added."
     new-messages))
 
 ;;----------------------------------------------------------------------------
+(defun vm-virtual-deregister-message (m)
+  "Detach the virtual message M, which has left its folder's message list.
+Nothing may reach M through its real message afterwards.  Step 2 of
+`vm-expunge-folder' walks the real message's mirrors and expunges each one from
+its own folder, so a mirror left registered is expunged from a list it is not
+in: its reverse link is stale, and the message that link now precedes is
+spliced out and flagged expunged instead.  Attributes are shared with the real
+message, so that flag comes back to the real folder and its expunge loop
+carries on into messages nobody deleted (#569).
+
+M's reverse link goes too, having nothing to describe."
+  (let ((real-m (vm-real-message-of m)))
+    (vm-set-virtual-messages-of
+     real-m (delq m (vm-virtual-messages-of real-m))))
+  (vm-set-reverse-link-of m nil))
+
 ;;;###autoload
 (defun vm-virtual-omit-message (&optional count message-list)
   "Omits a message from a virtual folder.
@@ -815,7 +777,10 @@ virtual folder of all messages."
                    (vm-set-reverse-link-of (car (cdr curr)) nil)))
           (setcdr prev (cdr curr))
           (and (cdr curr)
-               (vm-set-reverse-link-of (car (cdr curr)) prev))))
+               (vm-set-reverse-link-of (car (cdr curr)) prev)))
+        ;; CURR is out of the list, so its message is out of the folder.
+        (vm-increment vm-message-list-generation)
+        (vm-virtual-deregister-message (car curr)))
       (setq mp (cdr mp)))
 
     (vm-update-summary-and-mode-line)
@@ -921,14 +886,170 @@ See the function `vm-virtual-auto-delete-message' for details.
   (vm-virtual-auto-delete-message (length vm-message-pointer)))
 
 ;;----------------------------------------------------------------------------
+;; Filtering by a table of selectors, rather than the single selector of
+;; `vm-virtual-auto-delete-message-selector'.
+
+;;;###autoload
+(defcustom vm-virtual-filter-alist nil
+  "*Rules deciding what happens to a message when it arrives.
+Non-nil value should be an alist of the form
+
+        ((VIRTUAL-FOLDER-NAME . ACTIONS)
+          ...)
+
+where VIRTUAL-FOLDER-NAME names a virtual folder in
+`vm-virtual-folder-alist', whose selector says which messages the rule
+applies to, and ACTIONS is a property list of what to do with them:
+
+  :label STRING       attach the labels named in STRING, which is a
+                      list separated by spaces or commas, as
+                      `vm-add-message-labels' takes them
+  :attributes STRING  set the attributes named in STRING, a space
+                      separated list of `vm-supported-attribute-names',
+                      as `vm-set-message-attributes' takes them
+  :save FOLDER        save a copy in FOLDER.  FOLDER is a string or an
+                      expression evaluating to one
+  :skip-inbox t       keep the message out of the folder: it is flagged
+                      deleted and expunged once every rule has run
+
+Every rule that matches is applied, in the order they appear here, so a
+message can be labelled by one rule and saved by another.
+
+To have the rules run on incoming mail:
+
+ (add-hook \\='vm-arrived-messages-hook #\\='vm-virtual-filter-new-messages)
+
+The message is written into the folder before any of this happens, so
+`:skip-inbox' removes it again rather than preventing its arrival.
+
+An example, taking two rules from `vm-virtual-folder-alist':
+
+ (setq vm-virtual-folder-alist
+       \\='((\"from-arik\" ((\"inbox\") (author \"arik\")))
+         (\"spam\"      ((\"inbox\") (spam-word)))))
+ (setq vm-virtual-filter-alist
+       \\='((\"from-arik\" :label \"arik\" :attributes \"read\")
+         (\"spam\"      :save \"spam-folder\" :skip-inbox t)))"
+  :group 'vm-avirtual
+  :type '(repeat
+          (cons :tag "Rule"
+                (string :tag "Virtual folder name")
+                (plist :options ((:label string)
+                                 (:attributes string)
+                                 (:save sexp)
+                                 (:skip-inbox boolean))))))
+
+(defun vm-virtual-filter-selector (vfolder)
+  "Return the selector of virtual folder VFOLDER, which must be defined.
+Unlike `vm-virtual-get-selector' this signals rather than returning nil,
+because a rule of `vm-virtual-filter-alist' naming a folder that does
+not exist would otherwise match nothing and say nothing."
+  (or (vm-virtual-get-selector vfolder)
+      (error (concat "No virtual folder %S for a rule of "
+                     "vm-virtual-filter-alist; define it in "
+                     "vm-virtual-folder-alist, which has %s")
+             vfolder
+             (if vm-virtual-folder-alist
+                 (mapconcat (lambda (f) (format "%S" (car f)))
+                            vm-virtual-folder-alist ", ")
+               "no folders in it"))))
+
+(defun vm-virtual-filter-save (m folder)
+  "Save message M in FOLDER, which is a string or an expression giving one."
+  (let ((vm-message-pointer (list m))
+        (vm-arrived-messages-hook nil)
+        (vm-arrived-message-hook nil))
+    (vm-save-message (if (stringp folder) folder (eval folder t)))))
+
+(defun vm-virtual-filter-act (m actions)
+  "Carry out ACTIONS on message M.  Return t if M is to skip the inbox."
+  (when (plist-get actions :label)
+    (vm-add-or-delete-message-labels (plist-get actions :label) (list m) 'all))
+  (when (plist-get actions :attributes)
+    (dolist (name (vm-parse (plist-get actions :attributes)
+                            "[ \t]*\\([^ \t]+\\)"))
+      (vm-set-message-attribute m name)))
+  (when (plist-get actions :save)
+    (vm-virtual-filter-save m (plist-get actions :save)))
+  (when (plist-get actions :skip-inbox)
+    (vm-set-deleted-flag m t)
+    (vm-mark-for-summary-update m t)
+    t))
+
+(defun vm-virtual-filter-message (m)
+  "Apply every rule of `vm-virtual-filter-alist' that matches message M.
+Return nil if no rule matched, `skip' if M is to skip the inbox, and t
+if a rule matched but M stays."
+  (let ((result nil))
+    (dolist (rule vm-virtual-filter-alist result)
+      (when (vm-virtual-check-selector
+             (vm-virtual-filter-selector (car rule)) m)
+        (setq result (if (vm-virtual-filter-act m (cdr rule))
+                         'skip
+                       (or result t)))))))
+
+;;;###autoload
+(defun vm-virtual-filter-messages (&optional count)
+  "Apply `vm-virtual-filter-alist' to the next COUNT messages.
+Messages matched by a rule with `:skip-inbox' are expunged once every
+rule has run.  Returns the number of messages some rule matched."
+  (interactive "p")
+  (when (vm-interactive-p)
+    (vm-follow-summary-cursor))
+  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let ((mlist (vm-select-operable-messages
+                (or count 1) (vm-interactive-p) "Filter"))
+        (matched 0)
+        (skipped nil))
+    (dolist (m mlist)
+      (let ((result (vm-virtual-filter-message m)))
+        (when result
+          (vm-increment matched))
+        (when (eq result 'skip)
+          (setq skipped (cons m skipped)))))
+    (when skipped
+      ;; back into folder order, and keep the list: its length is reported
+      (setq skipped (nreverse skipped))
+      (vm-expunge-folder :quiet t :just-these-messages skipped))
+    (vm-update-summary-and-mode-line)
+    (when (> matched 0)
+      (vm-inform 5 "%d message%s filtered%s" matched
+                 (if (= matched 1) "" "s")
+                 (if skipped
+                     (format ", %d expunged" (length skipped))
+                   "")))
+    matched))
+
+;;;###autoload
+(defun vm-virtual-filter-new-messages ()
+  "Apply `vm-virtual-filter-alist' to the messages that have just arrived.
+Add this to `vm-arrived-messages-hook':
+
+ (add-hook \\='vm-arrived-messages-hook #\\='vm-virtual-filter-new-messages)
+
+Like `vm-virtual-auto-delete-messages', this runs from the current
+message to the last, which on arrival is exactly the new mail."
+  (interactive)
+  (when (vm-interactive-p)
+    (vm-follow-summary-cursor))
+  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+  (vm-virtual-filter-messages (length vm-message-pointer)))
+
+;;----------------------------------------------------------------------------
 ;;;###autoload
 (defcustom vm-virtual-auto-folder-alist nil
   "*Non-nil value should be an alist that VM will use to choose a default
 folder name when messages are saved.  The alist should be of the form
-        ((VIRTUAL-FOLDER-NAME . FOLDER-NAME)
+        ((VIRTUAL-FOLDER-NAME FOLDER-NAME)
           ...)
 where VIRTUAL-FOLDER-NAME is a string, and FOLDER-NAME
 is a string or an s-expression that evaluates to a string.
+
+Each entry is a two-element list, as the example below shows.  This said
+\"(VIRTUAL-FOLDER-NAME . FOLDER-NAME)\" until 2026-08-12; the entry is read
+with `cadr', so a dotted pair whose tail is the folder name signals
+\"wrong-type-argument listp\" instead of saving anything.
 
 This allows you to extend `vm-virtual-auto-select-folder' to generate
 a folder name.  Your function may use `folder' to get the currently chosen
@@ -1003,8 +1124,7 @@ This is not yet the whole story!                    USR, 2013-01-18"
         vfolder selector matching-vfolders auto-folders)
 
     (when t;(and m (aref m 0) (aref (aref m 0) 0)
-            ;   (marker-buffer (aref (aref m 0) 0)))
-      ;; set matching-vfolders in reverse order of priority
+                  ;; set matching-vfolders in reverse order of priority
       (while vfolders
 	(setq vfolder (caar vfolders))
         (setq selector (vm-virtual-get-selector 
@@ -1015,7 +1135,6 @@ This is not yet the whole story!                    USR, 2013-01-18"
               (setq vfolders nil)))
         (setq vfolders (cdr vfolders)))
       
-      ;; (setq matching-vfolders (reverse matching-vfolders))
       
       ;; find auto-folders for matching-vfolders in order of priority
       (vm-mapc
@@ -1069,42 +1188,66 @@ This is not yet the whole story!                    USR, 2013-01-18"
 
 ;;;###autoload
 (defun vm-sort-insert-auto-folder-names ()
+  "Head each run of messages in the summary with the folder it would be filed to.
+Called interactively it sorts the folder by auto-folder first, so that the
+messages destined for one folder are together, and then writes that
+folder\'s name above each run.  The names are display only: they are removed
+and rewritten each time, and no message is changed.
+
+Which folder a message would go to is `vm-virtual-auto-select-folder\''s
+answer, from `vm-virtual-auto-folder-alist\'.
+
+A folder visited without a summary has nowhere to write them and is left
+alone.  Sorting by auto-folder calls this, and it used to reach
+`with-current-buffer\' with a nil summary buffer: `G auto-folder\' answered
+\"Wrong type argument: stringp, nil\" rather than sorting (emacs-vm/vm#851)."
   (interactive)
   (if (vm-interactive-p)
       (vm-sort-messages "auto-folder"))
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-    ;; remove old descriptions
-    (with-current-buffer vm-summary-buffer
-      (goto-char (point-min))
-      (let ((buffer-read-only nil)
-            (s (point-min))
-            (p (point-min)))
-        (while (setq p (next-single-property-change p 'vm-auto-folder))
-          (if (get-text-property (1+ p) 'vm-auto-folder)
-              (setq s p)
-            (delete-region s p))
-          (setq p (1+ p)))))
-    ;; add new descriptions
-    (let ((ml vm-message-list)
-          (oldf "")
-          m f)
-      (while ml
-        (setq m (car ml)
-              f (cdr (assoc m vm-sort-compare-auto-folder-cache)))
-        (when (not (equal oldf f))
-          (setq m (vm-su-start-of m))
-          (with-current-buffer (marker-buffer m)
-            (let ((buffer-read-only nil))
-              (goto-char m)
-              (insert (format "%s\n" (or f "no default folder")))
-              (put-text-property m (point) 'vm-auto-folder t)
-              (put-text-property m (point) 'face 'blue)
-              ;; fix messages summary mark 
-              (set-marker m (point))))
-          (setq oldf f))
-        (setq ml (cdr ml))))))
-        
+    (if (null vm-summary-buffer)
+	(vm-inform 5 "Sorted; %s makes the summary the folder names go in"
+		   (substitute-command-keys "\\[vm-summarize]"))
+      (vm-sort-clear-auto-folder-names)
+      (vm-sort-write-auto-folder-names))))
+
+(defun vm-sort-clear-auto-folder-names ()
+  "Take the folder names `vm-sort-insert-auto-folder-names\' wrote out again.
+They are display only, so each pass removes what the last one wrote rather
+than writing a second set."
+  (with-current-buffer vm-summary-buffer
+    (goto-char (point-min))
+    (let ((buffer-read-only nil)
+          (s (point-min))
+          (p (point-min)))
+      (while (setq p (next-single-property-change p 'vm-auto-folder))
+        (if (get-text-property (1+ p) 'vm-auto-folder)
+            (setq s p)
+          (delete-region s p))
+        (setq p (1+ p))))))
+
+(defun vm-sort-write-auto-folder-names ()
+  "Write above each run of messages the folder they would be filed to."
+  (let ((ml vm-message-list)
+        (oldf "")
+        m f)
+    (while ml
+      (setq m (car ml)
+            f (cdr (assoc m vm-sort-compare-auto-folder-cache)))
+      (when (not (equal oldf f))
+        (setq m (vm-su-start-of m))
+        (with-current-buffer (marker-buffer m)
+          (let ((buffer-read-only nil))
+            (goto-char m)
+            (insert (format "%s\n" (or f "no default folder")))
+            (put-text-property m (point) 'vm-auto-folder t)
+            (put-text-property m (point) 'face 'blue)
+            ;; fix messages summary mark
+            (set-marker m (point))))
+        (setq oldf f))
+      (setq ml (cdr ml)))))
+
 ;;----------------------------------------------------------------------------
 ;;;###autoload
 (defun vm-virtual-save-message (&optional folder count)
@@ -1217,6 +1360,130 @@ with the same name."
       (error "This is not a virtual folder"))))
 
 ;;----------------------------------------------------------------------------
+
+;;; Virtual folders from BBDB, from vm-rfaddons.el (issue #606)
+
+(declare-function bbdb-record-xfields "ext:bbdb" (record))
+(declare-function bbdb-record-mail "ext:bbdb" (record))
+(declare-function bbdb-split "ext:bbdb" (separator string))
+(declare-function bbdb-records "ext:bbdb" ())
+(declare-function bbdb-save "ext:bbdb" (&optional prompt noisy))
+
+;;;###autoload
+(defun bbdb/vm-set-virtual-folder-alist ()
+  "Create a `vm-virtual-folder-alist' according to the records in the bbdb.
+For each record that has a `vm-virtual' attribute, add or modify the
+corresponding BBDB-VM-VIRTUAL element of the `vm-virtual-folder-alist'.
+
+  (BBDB-VM-VIRTUAL ((vm-primary-inbox)
+                    (author-or-recipient BBDB-RECORD-NET-REGEXP)))
+
+The element gets added to the `element-name' sublist of the
+`vm-virtual-folder-alist'."
+  (interactive)
+  (let (notes-field  email-regexp folder selector)
+    (dolist (record (bbdb-records))
+      (setq notes-field (bbdb-record-xfields record))
+      (when (and (listp notes-field)
+                 (setq folder (cdr (assq 'vm-virtual notes-field))))
+        (setq email-regexp (mapconcat (lambda (addr)
+					(regexp-quote addr))
+                                      (bbdb-record-mail record) "\\|"))
+        (unless (zerop (length email-regexp))
+          (setq folder (or (assoc folder vm-virtual-folder-alist)
+                           (car
+                            (setq vm-virtual-folder-alist
+                                  (nconc (list (list folder
+                                                     (list (list vm-primary-inbox)
+                                                           (list 'author-or-recipient))))
+                                               vm-virtual-folder-alist))))
+                folder (cadr folder)
+                selector (assoc 'author-or-recipient folder))
+
+          (if (cdr selector)
+              (if (not (string-match (regexp-quote email-regexp)
+                                     (cadr selector)))
+                  (setcdr selector (list (concat (cadr selector) "\\|"
+                                                 email-regexp))))
+            (nconc selector (list email-regexp)))))
+      )
+    ))
+
+(defun vm-virtual-find-selector (selector-spec type)
+  "Return the first selector of TYPE in SELECTOR-SPEC."
+  (let ((s (assoc type selector-spec)))
+    (unless s
+      (while (and (not s) selector-spec)
+        (setq s (and (listp (car selector-spec))
+                     (vm-virtual-find-selector (car selector-spec) type))
+              selector-spec (cdr selector-spec))))
+    s))
+
+(defcustom bbdb/vm-virtual-folder-alist-by-mail-alias-alist nil
+  "*A list of (ALIAS . FOLDER-NAME) pairs, which map an alias to a folder."
+  :group 'vm-avirtual
+  :type '(repeat (cons :tag "Mapping Definition"
+                       (regexp :tag "Alias")
+                       (string :tag "Folder Name"))))
+
+;;;###autoload
+(defun bbdb/vm-set-virtual-folder-alist-by-mail-alias ()
+  "Create a `vm-virtual-folder-alist' according to the records in the bbdb.
+For each record check wheather its alias is in the variable 
+`bbdb/vm-virtual-folder-alist-by-mail-alias-alist' and then
+add/modify the corresponding VM-VIRTUAL element of the
+`vm-virtual-folder-alist'. 
+
+  (BBDB-VM-VIRTUAL ((vm-primary-inbox)
+                    (author-or-recipient BBDB-RECORD-NET-REGEXP)))
+
+The element gets added to the `element-name' sublist of the
+`vm-virtual-folder-alist'."
+  (interactive)
+  (let (notes-field email-regexp mail-aliases folder selector)
+    (dolist (record (bbdb-records))
+      (setq notes-field (bbdb-record-xfields record))
+      (when (and (listp notes-field)
+                 (setq mail-aliases (cdr (assq 'mail-alias notes-field)))
+                 (setq mail-aliases (bbdb-split "," mail-aliases)))
+        (setq folder nil)
+        (while mail-aliases
+          (setq folder
+                (assoc (car mail-aliases)
+                       bbdb/vm-virtual-folder-alist-by-mail-alias-alist))
+          
+          (when (and folder
+                     (setq folder (cdr folder)
+                           email-regexp (mapconcat (lambda (addr)
+						     (regexp-quote addr))
+                                                   (bbdb-record-mail record)
+                                                   "\\|"))
+                     (> (length email-regexp) 0))
+            (setq folder (or (assoc folder vm-virtual-folder-alist)
+                             (car
+                              (setq vm-virtual-folder-alist
+                                    (nconc
+                                     (list
+                                      (list folder
+                                            (list (list vm-primary-inbox)
+                                                  (list 'author-or-recipient))
+                                            ))
+                                     vm-virtual-folder-alist))))
+                  folder (cadr folder)
+                  selector (vm-virtual-find-selector folder
+                                                     'author-or-recipient))
+            (unless selector
+              (nconc (cdr folder) (list (list 'author-or-recipient))))
+            (if (cdr selector)
+                (if (not (string-match (regexp-quote email-regexp)
+                                       (cadr selector)))
+                    (setcdr selector (list (concat (cadr selector) "\\|"
+                                                   email-regexp))))
+              (nconc selector (list email-regexp))))
+          (setq mail-aliases (cdr mail-aliases)))
+        ))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'vm-avirtual)
 ;;; vm-avirtual.el ends here

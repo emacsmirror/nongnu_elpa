@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989-1995 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -24,6 +24,10 @@
 
 (require 'vm-macro)
 (require 'vm-summary)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;; vm-undo-record-list is a buffer-local-variable containing
 ;; undo-records.
@@ -104,19 +108,9 @@
 	    (t (setq udp-prev udp)))
       (setq udp (cdr udp)))
     (if (equal '(nil) vm-undo-record-list)
-	(setq vm-undo-record-list nil)))
-  ;; for the Undo button on the menubar, if present
-  (when (and (null vm-undo-record-list)
-	     (vm-menu-support-possible-p)
-	     (featurep 'xemacs))
-    (vm-menu-set-menubar-dirty-flag)))
-	    
+	(setq vm-undo-record-list nil))))
+
 (defun vm-undo-record (sexp)
-  ;; for the Undo button on the menubar, if present
-  (when (and (null vm-undo-record-list)
-	     (vm-menu-support-possible-p)
-	     (featurep 'xemacs))
-    (vm-menu-set-menubar-dirty-flag))
   (setq vm-undo-record-list (cons sexp vm-undo-record-list)))
 
 (defun vm-undo-describe (record)
@@ -143,7 +137,9 @@
 		    (if (nth 2 record)
 			(nth 1 cell)
 		      (nth 2 cell))))
-	  ((eq (car cell) 'vm-set-labels)
+	  ;; cell is what the alist above had, and it never has vm-set-labels
+	  ;; in it -- so this said (car cell) and never ran.
+	  ((eq (car record) 'vm-set-labels)
 	   (setq labels (nth 2 record))
 	   (vm-inform 1 "VM Undo! %s/%s %s%s"
 		    (buffer-name (vm-buffer-of m))
@@ -197,6 +193,62 @@ the undos themselves become undoable."
       (delete-auto-save-file-if-necessary))
     (vm-update-summary-and-mode-line)))
 
+(defun vm-set-message-attribute (m name)
+  "Set the attribute NAME on message M.
+NAME is one of `vm-supported-attribute-names'; an unknown name warns and
+does nothing.  This is the single place that maps an attribute name to
+the flag it sets, for `vm-set-message-attributes' and for the filter
+actions of `vm-virtual-filter-alist'."
+  (cond ((string= name "new")
+	 (vm-set-new-flag m t))
+	((string= name "recent")
+	 (vm-set-new-flag m t))
+	((string= name "unread")
+	 (vm-set-unread-flag m t))
+	((string= name "unseen")
+	 (vm-set-unread-flag m t))
+	((string= name "read")
+	 (vm-set-new-flag m nil)
+	 (vm-set-unread-flag m nil))
+	((string= name "deleted")
+	 (vm-set-deleted-flag m t))
+	((string= name "replied")
+	 (vm-set-replied-flag m t))
+	((string= name "answered")
+	 (vm-set-replied-flag m t))
+	((string= name "forwarded")
+	 (vm-set-forwarded-flag m t))
+	((string= name "redistributed")
+	 (vm-set-redistributed-flag m t))
+	((string= name "filed")
+	 (vm-set-filed-flag m t))
+	((string= name "written")
+	 (vm-set-written-flag m t))
+	((string= name "edited")
+	 (vm-set-edited-flag-of m t))
+	((string= name "flagged")
+	 (vm-set-flagged-flag m t))
+	((string= name "undeleted")
+	 (vm-set-deleted-flag m nil))
+	((string= name "unreplied")
+	 (vm-set-replied-flag m nil))
+	((string= name "unanswered")
+	 (vm-set-replied-flag m nil))
+	((string= name "unforwarded")
+	 (vm-set-forwarded-flag m nil))
+	((string= name "unredistributed")
+	 (vm-set-redistributed-flag m nil))
+	((string= name "unfiled")
+	 (vm-set-filed-flag m nil))
+	((string= name "unwritten")
+	 (vm-set-written-flag m nil))
+	((string= name "unedited")
+	 (vm-set-edited-flag-of m nil))
+	((string= name "unflagged")
+	 (vm-set-flagged-flag m nil))
+	(t
+	 (vm-warn 0 2 "Invalid attribute: %s" name))))
+
 ;;;###autoload
 (defun vm-set-message-attributes (string count)
   "Set message attributes.
@@ -225,65 +277,11 @@ COUNT-1 messages to be altered.  COUNT defaults to one."
   (vm-display nil nil '(vm-set-message-attributes)
 	      '(vm-set-message-attributes))
   (let ((name-list (vm-parse string "[ \t]*\\([^ \t]+\\)"))
-	(m-list (vm-select-operable-messages 
-		 count (vm-interactive-p) "Set attributes of"))
-	n-list name m)
-    (while m-list
-      (setq m (car m-list)
-	    n-list name-list)
-      (while n-list
-	(setq name (car n-list))
-	(cond ((string= name "new")
-	       (vm-set-new-flag m t))
-	      ((string= name "recent")
-	       (vm-set-new-flag m t))
-	      ((string= name "unread")
-	       (vm-set-unread-flag m t))
-	      ((string= name "unseen")
-	       (vm-set-unread-flag m t))
-	      ((string= name "read")
-	       (vm-set-new-flag m nil)
-	       (vm-set-unread-flag m nil))
-	      ((string= name "deleted")
-	       (vm-set-deleted-flag m t))
-	      ((string= name "replied")
-	       (vm-set-replied-flag m t))
-	      ((string= name "answered")
-	       (vm-set-replied-flag m t))
-	      ((string= name "forwarded")
-	       (vm-set-forwarded-flag m t))
-	      ((string= name "redistributed")
-	       (vm-set-redistributed-flag m t))
-	      ((string= name "filed")
-	       (vm-set-filed-flag m t))
-	      ((string= name "written")
-	       (vm-set-written-flag m t))
-	      ((string= name "edited")
-	       (vm-set-edited-flag-of m t))
-	      ((string= name "flagged")
-	       (vm-set-flagged-flag m t))
-	      ((string= name "undeleted")
-	       (vm-set-deleted-flag m nil))
-	      ((string= name "unreplied")
-	       (vm-set-replied-flag m nil))
-	      ((string= name "unanswered")
-	       (vm-set-replied-flag m nil))
-	      ((string= name "unforwarded")
-	       (vm-set-forwarded-flag m nil))
-	      ((string= name "unredistributed")
-	       (vm-set-redistributed-flag m nil))
-	      ((string= name "unfiled")
-	       (vm-set-filed-flag m nil))
-	      ((string= name "unwritten")
-	       (vm-set-written-flag m nil))
-	      ((string= name "unedited")
-	       (vm-set-edited-flag-of m nil))
-	      ((string= name "unflagged")
-	       (vm-set-flagged-flag m nil))
-	      (t
-	       (vm-warn 0 2 "Invalid attribute: %s" name)))
-	(setq n-list (cdr n-list)))
-      (setq m-list (cdr m-list)))
+	(m-list (vm-select-operable-messages
+		 count (vm-interactive-p) "Set attributes of")))
+    (dolist (m m-list)
+      (dolist (name name-list)
+	(vm-set-message-attribute m name)))
     (vm-update-summary-and-mode-line)))
 
 ;;;###autoload
@@ -294,8 +292,8 @@ message attributes like `new' and `deleted'.  Interactively you
 will be prompted for the labels to be added.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
   (Only ASCII strings are at present allowed as message labels.)
 
@@ -342,8 +340,8 @@ message attributes like `new' and `deleted'.  Interactively you
 will be prompted for the labels to be added.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
   (Only ASCII strings are at present allowed as message labels.)
 
@@ -390,8 +388,8 @@ message attributes like `new' and `deleted'.  Interactively you
 will be prompted for the labels to be deleted.  You can use
 completion to expand the label names, with the completion list
 being all the labels that have ever been used in this folder.
-The names should be entered as a space separated list.  Label
-names are compared case-insensitively.
+The names should be entered as a list separated by spaces or commas.
+Label names are compared case-insensitively.
 
 A numeric prefix argument COUNT causes the current message and
 the next COUNT-1 message to have the labels deleted.  A
@@ -464,6 +462,170 @@ number of messages that will be affected."
     (vm-update-summary-and-mode-line)
     (vm-inform 5 "Label \"%s\" expunged from %d message%s"
                label count (if (= count 1) "" "s"))))
+
+;;;###autoload
+(defun vm-unused-labels ()
+  "Return the labels of the current folder that no message carries.
+The list is sorted.  A label becomes unused when it is deleted from
+the last message holding it: `vm-delete-message-labels' leaves it in
+the folder's label list, so it keeps turning up in completions."
+  (let ((used (make-vector 29 0))
+	(unused nil))
+    (dolist (m vm-message-list)
+      (dolist (label (vm-labels-of m))
+	;; Labels are lowercase by convention -- `vm-expunge-label' and
+	;; `vm-add-or-delete-message-labels' both downcase -- so compare
+	;; that way, or a message carrying "Work" against a folder
+	;; listing "work" makes the one label look both unused and
+	;; missing at once.
+	(intern (downcase label) used)))
+    (mapatoms (lambda (s)
+		(unless (intern-soft (downcase (symbol-name s)) used)
+		  (setq unused (cons (symbol-name s) unused))))
+	      vm-label-obarray)
+    (sort unused #'string-lessp)))
+
+;;;###autoload
+(defun vm-missing-labels ()
+  "Return the labels carried by messages but absent from the folder's list.
+The list is sorted.  Labels only reach `vm-label-obarray' from the
+folder's own stored list, read at visit time, and from labels added
+interactively; a message that arrives already labelled -- saved in from
+another folder, say -- brings a label the folder does not know about, so
+it never appears in completions."
+  (let ((missing (make-vector 29 0))
+	(known (make-vector 29 0))
+	(list nil))
+    ;; compare downcased, as everything else that handles labels does
+    (mapatoms (lambda (s) (intern (downcase (symbol-name s)) known))
+	      vm-label-obarray)
+    (dolist (m vm-message-list)
+      (dolist (label (vm-labels-of m))
+	(unless (intern-soft (downcase label) known)
+	  (intern (downcase label) missing))))
+    (mapatoms (lambda (s) (setq list (cons (symbol-name s) list))) missing)
+    (sort list #'string-lessp)))
+
+;;;###autoload
+(defun vm-sync-labels ()
+  "Make the folder's label list agree with the labels its messages carry.
+Adds labels that messages use but the folder does not list, and removes
+those the folder lists but no message uses.  Afterwards label completion
+offers exactly the labels in use.
+
+No message is changed; only the folder's label list.
+
+This operation can be undone with `vm-undo'.
+
+When called interactively, prompts for confirmation, saying what will be
+added and removed.  See also `vm-list-unused-labels'."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let* ((missing (vm-missing-labels))
+	 (unused (vm-unused-labels)))
+    (cond
+     ((and (null missing) (null unused))
+      (vm-inform 5 "Label list already matches the messages"))
+     ((and (vm-interactive-p)
+	   (not (yes-or-no-p
+		 (format "Label list: %s%s%s? "
+			 (if missing
+			     (format "add %s" (mapconcat #'identity missing ", "))
+			   "")
+			 (if (and missing unused) "; " "")
+			 (if unused
+			     (format "remove %s" (mapconcat #'identity unused ", "))
+			   "")))))
+      (error "Aborted"))
+     (t
+      (dolist (label missing)
+	(vm-undo-record (list 'unintern label 'vm-label-obarray))
+	(intern label vm-label-obarray))
+      (dolist (label unused)
+	(vm-undo-record (list 'intern label 'vm-label-obarray))
+	(unintern label vm-label-obarray))
+      ;; no message changed, but the folder's label list did, and that
+      ;; is only written out when the folder is modified
+      (vm-mark-folder-modified-p)
+      (vm-update-summary-and-mode-line)
+      (vm-inform 5 "Label list synced: %d added, %d removed"
+		 (length missing) (length unused))))))
+
+;;;###autoload
+(defun vm-list-unused-labels ()
+  "List the labels of the current folder that no message carries.
+These are exactly the labels `vm-expunge-unused-labels' would remove.
+Nothing is changed."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (let ((unused (vm-unused-labels))
+	(missing (vm-missing-labels))
+	(folder (buffer-name)))
+    (if (and (null unused) (null missing))
+	(vm-inform 5 "No unused labels")
+      (with-output-to-temp-buffer "*VM unused labels*"
+	(if (null unused)
+	    (princ (format "No unused labels in %s.\n" folder))
+	  (princ (format "%d unused label%s in %s -- listed by the folder, on\
+ no message:\n\n"
+			 (length unused)
+			 (if (= (length unused) 1) "" "s")
+			 folder))
+	  (dolist (label unused)
+	    (princ (format "  %s\n" label)))
+	  (princ "\nRemove them with M-x vm-expunge-unused-labels\n"))
+	(when missing
+	  (princ (format "\n%d label%s on messages that the folder does not\
+ list, so absent\nfrom completion:\n\n"
+			 (length missing)
+			 (if (= (length missing) 1) "" "s")))
+	  (dolist (label missing)
+	    (princ (format "  %s\n" label)))
+	  (princ "\nAdd them with M-x vm-sync-labels\n"))))))
+
+;;;###autoload
+(defun vm-expunge-unused-labels ()
+  "Remove from the current folder every label that no message carries.
+Such labels accumulate as messages are relabelled or expunged --
+deleting a label from the last message holding it does not remove it
+from the folder -- and they clutter label completion ever after.
+Use `vm-list-unused-labels' to see them first.
+
+No message is changed; only the folder's label list.
+
+This operation can be undone with `vm-undo'.
+
+When called interactively, prompts for confirmation, listing the
+labels that will be removed."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let ((unused (vm-unused-labels)))
+    (cond
+     ((null unused)
+      (vm-inform 5 "No unused labels"))
+     ((and (vm-interactive-p)
+	   (not (yes-or-no-p
+		 (format "Remove %d unused label%s (%s)? "
+			 (length unused)
+			 (if (= (length unused) 1) "" "s")
+			 (mapconcat #'identity unused ", ")))))
+      (error "Aborted"))
+     (t
+      (dolist (label unused)
+	;; record undo to re-intern it, as vm-expunge-label does
+	(vm-undo-record (list 'intern label 'vm-label-obarray))
+	(unintern label vm-label-obarray))
+      ;; no message changed, but the folder's label list did, and that
+      ;; is only written out when the folder is modified
+      (vm-mark-folder-modified-p)
+      (vm-update-summary-and-mode-line)
+      (vm-inform 5 "%d unused label%s removed"
+		 (length unused) (if (= (length unused) 1) "" "s"))))))
 
 (defun vm-add-or-delete-message-labels (string m-list add)
   "Add or delete the labels given in STRING for all messages in
@@ -565,7 +727,6 @@ the changed attributes are stuffed into the folder, but NORECORD
 		     (vm-mark-folder-modified-p (vm-buffer-of mm))
 		     (vm-undo-record (list 'vm-set-buffer-modified-p nil))))
 	      (vm-undo-record (list function mm (not flag)))
-	      ;; (vm-undo-boundary)
 	      (vm-increment vm-modification-counter)))))
       (aset (vm-attributes-of m) attr-index flag)
       (vm-mark-for-summary-update m)
@@ -611,7 +772,6 @@ suppresses all of this.                             USR 2010-04-06"
 		     (vm-mark-folder-modified-p (vm-buffer-of mm))
 		     (vm-undo-record (list 'vm-set-buffer-modified-p nil))))
 	      (vm-undo-record (list function mm (not flag)))
-	      ;; (vm-undo-boundary)
 	      (vm-increment vm-modification-counter)))))
       (aset (vm-cached-data-of m) attr-index flag)
       (vm-mark-for-summary-update m)
@@ -649,7 +809,6 @@ changed attributes are stuffed into the folder.        USR 2010-04-06"
 		   (vm-mark-folder-modified-p (vm-buffer-of mm))
 		   (vm-undo-record (list 'vm-set-buffer-modified-p nil))))
 	    (vm-undo-record (list 'vm-set-labels m old-labels))
-	    ;; (vm-undo-boundary)
 	    (vm-increment vm-modification-counter))))
       (vm-set-decoded-labels-of m labels)
       (vm-set-decoded-label-string-of m nil)

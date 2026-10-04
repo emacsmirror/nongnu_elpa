@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1993, 1994 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -25,9 +25,10 @@
 (require 'vm-macro)
 (require 'vm-mouse)
 
-(declare-function button-press-event-p "vm-xemacs" (object))
-(declare-function button-release-event-p "vm-xemacs" (object))
-(declare-function menu-event-p "vm-xemacs" (object))
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function vm-folder-buffers "vm" (&optional non-virtual))
 
 (defun vm-minibuffer-complete-word (&optional exiting)
@@ -141,11 +142,16 @@
        (t
 	(and (not exiting)
 	     (vm-minibuffer-completion-message "[No match]")))))))
+(put 'vm-minibuffer-complete-word 'vm-called-by-vm t)
 
 (defun vm-minibuffer-complete-word-and-exit ()
+  "Complete the word before point and leave the minibuffer at once.
+`vm-minibuffer-complete-word\' and then `exit-minibuffer\', for a prompt
+where one word is the whole answer."
   (interactive)
   (vm-minibuffer-complete-word t)
   (exit-minibuffer))
+(put 'vm-minibuffer-complete-word-and-exit 'vm-called-by-vm t)
 
 (defun vm-minibuffer-completion-message (string &optional seconds)
   "Briefly display STRING to the right of the current minibuffer input.
@@ -214,16 +220,12 @@ default the local keymap of the current buffer is used."
 			       (list 'and 'string (list function 'string)))))
 	     (while keymaps
 	       (setq keymap (car keymaps))
-	       (cond ((featurep 'xemacs)
-		      (define-key keymap 'button1 command)
-		      (define-key keymap 'button2 command))
-		     ((not (featurep 'xemacs))
-		      (define-key keymap [down-mouse-1] 'ignore)
-		      (define-key keymap [drag-mouse-1] 'ignore)
-		      (define-key keymap [mouse-1] command)
-		      (define-key keymap [drag-mouse-2] 'ignore)
-		      (define-key keymap [down-mouse-2] 'ignore)
-		      (define-key keymap [mouse-2] command)))
+	       (define-key keymap [down-mouse-1] 'ignore)
+	       (define-key keymap [drag-mouse-1] 'ignore)
+	       (define-key keymap [mouse-1] command)
+	       (define-key keymap [drag-mouse-2] 'ignore)
+	       (define-key keymap [down-mouse-2] 'ignore)
+	       (define-key keymap [mouse-2] command)
 	       (setq keymaps (cdr keymaps)))))
       (setq list (sort (copy-sequence list) (function string-lessp))
 	    w (vm-get-buffer-window (current-buffer))
@@ -257,6 +259,11 @@ default the local keymap of the current buffer is used."
 	(insert "\n")))))
 
 (defun vm-minibuffer-completion-help ()
+  "Show the completions of the word around point.
+Unlike ordinary minibuffer completion, which works on the whole of the
+input, this completes one word of it -- so a prompt that takes a space
+separated list, as the label and attribute prompts do, can complete each
+item in turn."
   (interactive)
   (let ((opoint (point))
 	c-list beg end word word-prefix-regexp)
@@ -283,6 +290,7 @@ default the local keymap of the current buffer is used."
     (if c-list
 	(vm-minibuffer-show-completions c-list)
       (vm-minibuffer-completion-message " [No match]"))))
+(put 'vm-minibuffer-completion-help 'vm-called-by-vm t)
 
 (defun vm-keyboard-read-string (prompt completion-list &optional multi-word)
   (let ((minibuffer-local-map (copy-keymap minibuffer-local-map))
@@ -305,16 +313,9 @@ default the local keymap of the current buffer is used."
   (if (consp (car completion-list))
       (setq completion-list (nreverse (mapcar 'car completion-list))))
   (if (and completion-list (vm-mouse-support-possible-here-p))
-      (cond ((and (featurep 'xemacs)
-		  (or (button-press-event-p last-command-event)
-		      (button-release-event-p last-command-event)
-		      (menu-event-p last-command-event)))
-	     (vm-mouse-read-string prompt completion-list multi-word))
-	    ((and (not (featurep 'xemacs))
-		  (listp last-nonmenu-event))
-	     (vm-mouse-read-string prompt completion-list multi-word))
-	    (t
-	     (vm-keyboard-read-string prompt completion-list multi-word)))
+      (if (listp last-nonmenu-event)
+	  (vm-mouse-read-string prompt completion-list multi-word)
+	(vm-keyboard-read-string prompt completion-list multi-word))
     (vm-keyboard-read-string prompt completion-list multi-word)))
 
 (defun vm-read-number (prompt)
@@ -326,41 +327,36 @@ default the local keymap of the current buffer is used."
 
 (defun vm-keyboard-read-file-name (prompt &optional dir default
 					  must-match initial history)
-  "Like `read-file-name', except HISTORY's value is unaltered."
-  (let ((oldvalue (symbol-value history))
-	;; evade the XEmacs dialog box, yeccch.
-	(use-dialog-box nil))
-    (unwind-protect
-	(condition-case nil
-	    (read-file-name prompt dir default must-match initial history)
-	  ((wrong-number-of-arguments void-function)
-	   (if history
-	       (let ((file-name-history (symbol-value history))
-		     file)
-		 (setq file
-		       (read-file-name prompt dir default must-match initial))
-		 file )
-	     (read-file-name prompt dir default must-match initial))))
-      (and history (set history oldvalue)))))
+  "Like `read-file-name', reading and extending the history in HISTORY.
+HISTORY names a variable whose value is a list of file names.  It is
+offered in the minibuffer in place of `file-name-history', which is left
+alone, and the answer is pushed onto it.
+
+`read-file-name' has no HISTORY argument in GNU Emacs -- its sixth
+argument is a completion PREDICATE -- so the list is supplied by binding
+`file-name-history' around the call."
+  (let ((use-dialog-box nil))		; evade the XEmacs dialog box, yeccch
+    (if (null history)
+	(read-file-name prompt dir default must-match initial)
+      (unless (and (symbolp history) (boundp history))
+	(error "HISTORY should name a variable holding a list of file names, not %S"
+	       history))
+      (let* ((old (symbol-value history))
+	     (file (let ((file-name-history old))
+		     (read-file-name prompt dir default must-match initial))))
+	(set history (cons file (remove file old)))
+	file))))
 
 (defun vm-read-file-name (prompt &optional dir default
 				 must-match initial history)
   "Like `read-file-name', except a mouse interface is used if a mouse
 click mouse triggered the current command."
   (if (vm-mouse-support-possible-here-p)
-      (cond ((and (featurep 'xemacs)
-		  (or (button-press-event-p last-command-event)
-		      (button-release-event-p last-command-event)
-		      (menu-event-p last-command-event)))
-	     (vm-mouse-read-file-name prompt dir default
-				      must-match initial history))
-	    ((and (not (featurep 'xemacs))
-		  (listp last-nonmenu-event))
-	     (vm-mouse-read-file-name prompt dir default
-				      must-match initial history))
-	    (t
-	     (vm-keyboard-read-file-name prompt dir default
-					 must-match initial history)))
+      (if (listp last-nonmenu-event)
+	  (vm-mouse-read-file-name prompt dir default
+				   must-match initial history)
+	(vm-keyboard-read-file-name prompt dir default
+				    must-match initial history))
     (vm-keyboard-read-file-name prompt dir default
 				must-match initial history)))
 

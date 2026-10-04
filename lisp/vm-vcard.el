@@ -3,7 +3,7 @@
 ;; This file is an add-on for VM
 
 ;; Copyright (C) 1997, 2000 Noah S. Friedman
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 
 ;; Author: Noah Friedman <friedman@splode.com>
 ;; Maintainer: friedman@splode.com
@@ -33,6 +33,11 @@
 (eval-and-compile
   (require 'vm-misc)
   (vm-load-features-silent-when-compiling '(vcard)))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defvar vcard-pretty-print-function)  ;; from vcard.el, used for dynamic binding
 
@@ -52,12 +57,24 @@
 (defvar vm-vcard-filter nil
   "*Filter function to use for formatting vcards; if nil, use default.")
 
+(defun vm-vcard-available-p ()
+  "Whether vcard.el is installed, VM shipping no copy of its own.
+`vm-load-features-silent-when-compiling' above tolerates its absence, so
+this is asked again at display time rather than assumed."
+  (and (require 'vcard nil t) t))
+
 ;;;###autoload
 (defun vm-mime-display-internal-text/x-vcard (layout)
-  (let ((inhibit-read-only t)
-        (buffer-read-only nil))
-    (insert (vm-vcard-format-layout layout)))
-  t)
+  "Insert the vCard part LAYOUT as vcard.el formats it.
+Answer nil when vcard.el is not installed.  That is how an internal MIME
+displayer declines, and VM then offers the part as an attachment; the
+formatting reads variables that belong to vcard.el, so without the file it
+signalled void-variable from inside the display (#779)."
+  (when (vm-vcard-available-p)
+    (let ((inhibit-read-only t)
+          (buffer-read-only nil))
+      (insert (vm-vcard-format-layout layout)))
+    t))
 
 ;;;###autoload
 (defun vm-mime-display-internal-text/vcard (layout)

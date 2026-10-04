@@ -4,9 +4,9 @@
 ;;
 ;; Copyright (C) 1994-1998, 2003 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
-;; Version: 8.3.3snapshot
+;; Version: 9.0.0snapshot
 ;; Maintainer: viewmail-info@nongnu.org
 ;; URL: https://gitlab.com/emacs-vm/vm
 ;; Package-Requires: ((emacs "28.1") (vcard "0.2.2"))
@@ -81,12 +81,7 @@
   "Git commit number of VM from generated file when building using make.")
 
 
-;; vm-xemacs.el is a non-existent file to fool the Emacs 23 compiler
-(declare-function get-coding-system "vm-xemacs.el" (name))
-(declare-function facep "vm-xemacs.el" (face-or-name))
 
-(declare-function vm-rfaddons-infect-vm "vm-rfaddons.el" 
-		  (&optional sit-for option-list exclude-option-list))
 (declare-function vm-summary-faces-mode "vm-summary-faces.el" 
 		  (&optional arg))
 
@@ -126,8 +121,9 @@ to be moved and appended to the folder buffer.  You can disable
 this automatic fetching of mail by setting `vm-auto-get-new-mail'
 to nil.
 
-All the messages can be read by repeatedly pressing SPC.  Use `n'ext and
-`p'revious to move about in the folder.  Messages are marked for
+All the messages can be read by repeatedly pressing SPC.  Use `n' for the
+next message and `p' for the previous one to move about in the folder.
+Messages are marked for
 deletion with `d', and saved to another folder with `s'.  Quitting VM
 with `q' saves the buffered folder to disk, but does not expunge
 deleted messages.  Use `###' to expunge deleted messages."
@@ -153,7 +149,7 @@ deleted messages.  Use `###' to expunge deleted messages."
   ;; some variables need to be preserved, e.g., vm-folder-access-data.
 
   ;; JUST-VISIT, if non-nil, says that the folder should be visited
-  ;; with as little intial processing as possible.  No summary
+  ;; with as little initial processing as possible.  No summary
   ;; generation, no moving of the message-pointer, no retrieval of new
   ;; mail.
 
@@ -162,13 +158,17 @@ deleted messages.  Use `###' to expunge deleted messages."
 
   (interactive (list nil :read-only current-prefix-arg))
   (vm-session-initialization)
-  ;; recursive call to vm in order to allow defadvice on its first
-  ;; call.  Added in VM 8.0.6
   (when (vm-interactive-p) (setq interactive t))
-  (unless (boundp 'vm-session-beginning)
-    (vm folder :interactive nil :read-only read-only 
-	:access-method access-method
-	:reload reload :just-visit just-visit))
+  ;; There used to be a recursive call to `vm' here, guarded by
+  ;; (unless (boundp 'vm-session-beginning) ...), whose comment said it was
+  ;; "to allow defadvice on its first call".  It could never run, for two
+  ;; independent reasons: `vm-session-beginning' is defvar'd unconditionally in
+  ;; vm-vars.el, which vm-autoloads.el requires, so it is bound before `vm' can
+  ;; be reached at all; and `vm-session-initialization' just above requires
+  ;; vm-vars itself, so the variable is bound by the time the test is made even
+  ;; if it somehow was not before.  The defvar dates from 2007-01-12 and the
+  ;; recursive call from 2008-02-15, so it was unreachable when it was written.
+  ;; Removed for issue #240.
   ;; set inhibit-local-variables non-nil to protect
   ;; against letter bombs.
   ;; set enable-local-variables to nil for newer Emacses
@@ -205,7 +205,6 @@ deleted messages.  Use `###' to expunge deleted messages."
 	  gobble-headers
 	  ;; whether thunderbird status flags should be processed
 	  ;; this currently a global flag, but it shouldn't be
-	  ;; (read-thunderbird-status nil)
 	  ;; whether the auto-save file should be preserved
 	  preserve-auto-save-file
 	  ;; some local variables
@@ -214,12 +213,10 @@ deleted messages.  Use `###' to expunge deleted messages."
       ;; [3] Infer the folder (disk file) and the folder-name (buffer-name)
 
       (cond ((and full-startup (eq access-method 'pop))
-	     ;; (setq vm-last-visit-pop-folder folder)
 	     (setq remote-spec folder)
 	     (setq folder-name (or (vm-pop-find-name-for-spec folder) "POP"))
 	     (setq folder (vm-pop-find-cache-file-for-spec remote-spec)))
 	    ((and full-startup (eq access-method 'imap))
-	     ;; (setq vm-last-visit-imap-folder folder)
 	     (setq remote-spec folder)
 	     (setq folder-name (or (nth 3 (vm-imap-parse-spec-to-list
 					   remote-spec))
@@ -245,13 +242,10 @@ deleted messages.  Use `###' to expunge deleted messages."
 
       ;; [5] Prepare the folder buffer for MULE
 
-      (if (and (not (featurep 'xemacs)) enable-multibyte-characters)
+      (if enable-multibyte-characters
 	  (set-buffer-multibyte nil))	; is this safe?
       (defvar buffer-file-coding-system)
-      (if (featurep 'xemacs)
-	  (vm-setup-xemacs-folder-coding-system))
-      (if (not (featurep 'xemacs))
-	  (vm-setup-fsfemacs-folder-coding-system))
+      (vm-setup-fsfemacs-folder-coding-system)
 
       ;; [6] Safeguards
 
@@ -294,8 +288,12 @@ deleted messages.  Use `###' to expunge deleted messages."
 	       (vm-set-folder-pop-maildrop-spec remote-spec))
 	      ((eq access-method 'imap)
 	       (vm-set-folder-imap-maildrop-spec remote-spec)
-	       (vm-register-folder-garbage 
-		'vm-kill-folder-imap-session nil)
+	       ;; No garbage action for the session.  The blocking one
+	       ;; registered `vm-kill-folder-imap-session' here, which ended a
+	       ;; session that sat idle between commands.  A driver session is
+	       ;; meant to outlive the folder buffer -- a quit writes the file
+	       ;; and kills the buffer while the flags are still going up --
+	       ;; and stopping it on kill-buffer would lose them.
 	       )))
 
 
@@ -356,9 +354,7 @@ deleted messages.  Use `###' to expunge deleted messages."
       ;; alter the new message count and confuse themselves.
       (when full-startup
 	;; save blurb so we can repeat it later as necessary.
-	(setq totals-blurb (vm-emit-totals-blurb))
-	(if buffer-file-name
-	    (vm-store-folder-totals buffer-file-name (cdr vm-totals))))
+	(setq totals-blurb (vm-emit-totals-blurb)))
 
       (vm-thoughtfully-select-message)
       (vm-update-summary-and-mode-line)
@@ -424,7 +420,7 @@ deleted messages.  Use `###' to expunge deleted messages."
       ;; [15] Display the totals-blurb again
 
       (when interactive
-	(vm-inform 5 totals-blurb))
+	(vm-inform 5 "%s" totals-blurb))
 
       ;; [16] Get new mail if requested
 
@@ -432,43 +428,29 @@ deleted messages.  Use `###' to expunge deleted messages."
 		 (not vm-block-new-mail)
 		 (not vm-folder-read-only))
 	(vm-inform 6 "%s: Checking for new mail..." (buffer-name))
-	(when (vm-get-spooled-mail interactive)
-	  (setq totals-blurb (vm-emit-totals-blurb))
-	  (if (vm-thoughtfully-select-message)
-	      (vm-present-current-message)
-	    (vm-update-summary-and-mode-line)))
-	(vm-inform 5 totals-blurb))
+	(let ((got (vm-get-spooled-mail interactive)))
+	  (cond
+	   ;; The fetch is under way and nothing has arrived yet.  Saying the
+	   ;; totals here would say what the folder held before it, which on a
+	   ;; folder with a cache is the old count and reads as nothing having
+	   ;; happened; the arrival says what came (emacs-vm/vm#825).
+	   ((eq got 'started)
+	    ;; not the totals: `totals-blurb' names the folder itself, and
+	    ;; what it counts is what the fetch has not changed yet
+	    (vm-inform 5 "%s: getting new mail..." (buffer-name)))
+	   (got
+	    (setq totals-blurb (vm-emit-totals-blurb))
+	    (if (vm-thoughtfully-select-message)
+		(vm-present-current-message)
+	      (vm-update-summary-and-mode-line))
+	    (vm-inform 5 "%s" totals-blurb))
+	   (t (vm-inform 5 "%s" totals-blurb)))))
 
       ;; [17] Display copyright and copying info.
       (when (and interactive (not vm-startup-message-displayed))
 	(vm-display-startup-message)
 	(if (not (input-pending-p))
-	    (vm-inform 5 totals-blurb))))))
-
-(defun vm-setup-xemacs-folder-coding-system ()
-  ;; If the file coding system is not a no-conversion variant,
-  ;; make it so by encoding all the text, then setting the
-  ;; file coding system and decoding it.  This situation is
-  ;; only possible if a file is visited and then vm-mode is
-  ;; run on it afterwards.
-  (if (and (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'no-conversion-unix)))
-	   (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'no-conversion-dos)))
-	   (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'no-conversion-mac)))
-	   (not (eq (get-coding-system buffer-file-coding-system)
-		    (get-coding-system 'binary))))
-      (let ((buffer-read-only nil)
-	    (omodified (buffer-modified-p)))
-	(unwind-protect
-	    (progn
-	      (encode-coding-region (point-min) (point-max)
-				    buffer-file-coding-system)
-	      (set-buffer-file-coding-system 'no-conversion nil)
-	      (decode-coding-region (point-min) (point-max)
-				    buffer-file-coding-system))
-	  (set-buffer-modified-p omodified)))))
+	    (vm-inform 5 "%s" totals-blurb))))))
 
 (defun vm-setup-fsfemacs-folder-coding-system ()
   ;; If the file coding system is not a no-conversion variant,
@@ -503,6 +485,7 @@ deleted messages.  Use `###' to expunge deleted messages."
   (vm-gobble-bookmark)
   (vm-gobble-pop-retrieved)
   (vm-gobble-imap-retrieved)
+  (vm-gobble-imap-to-expunge)
   (vm-gobble-summary)
   (vm-gobble-labels))
 
@@ -571,7 +554,7 @@ changes, messages additions or deletions will be allowed in the
 visited folder.
 
 The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little intial
+says that the folder should be visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail."
   (interactive
@@ -606,8 +589,7 @@ message-pointer, no retrieval of new mail."
 		 access-method 'pop
 		 vm-last-visit-pop-folder folder))
 	  ((and (vm-imap-folder-spec-p folder)
-		;;(setq foo (vm-imap-find-name-for-spec folder))
-		)
+)
 	   (setq ;; folder foo
 	         access-method 'imap
 		 vm-last-visit-imap-folder folder))
@@ -896,6 +878,18 @@ visited folder."
   (vm-session-initialization)
   (vm-check-for-killed-folder)
   (vm-select-folder-buffer-if-possible)
+  ;; Before anything else does: a folder that is not a maildrop is read as
+  ;; one further down, and `vm-imap-normalize-spec' fails on it with
+  ;; "Wrong type argument: consp, nil" and no hint of the cause.  Nil is what
+  ;; `vm-imap-spec-for-account' answers for an account VM has not got, which
+  ;; is what a command naming an account hands over (emacs-vm/vm#826).
+  (unless (and (stringp folder) (vm-imap-folder-spec-p folder))
+    (error (concat "%s is not an IMAP maildrop."
+		   "  A command that names an account gets nil from"
+		   " vm-imap-spec-for-account until vm-imap-account-alist"
+		   " has that account in it; M-x vm-check-configuration"
+		   " lists the accounts VM knows")
+	   (if folder (format "%S" folder) "Nothing")))
   (setq vm-last-visit-imap-folder folder)
   (vm folder :access-method 'imap
       :interactive interactive :read-only read-only))
@@ -1118,7 +1112,7 @@ virtual folder buffer."
 	(if (vm-thoughtfully-select-message)
 	    (vm-present-current-message)
 	  (vm-update-summary-and-mode-line)))
-      (vm-inform 5 blurb))
+      (vm-inform 5 "%s" blurb))
     ;; make a new frame if the user wants one.  reuse an
     ;; existing frame that is showing this folder.
     (vm-goto-new-folder-frame-maybe 'folder)
@@ -1129,7 +1123,7 @@ virtual folder buffer."
     (when first-time
       (when (vm-should-generate-summary)
 	(vm-summarize t nil)
-	(vm-inform 5 blurb))
+	(vm-inform 5 "%s" blurb))
       ;; raise the summary frame if the user wants frames
       ;; raised and if there is a summary frame.
       (when (and vm-summary-buffer
@@ -1153,7 +1147,7 @@ virtual folder buffer."
     (when (and (vm-interactive-p)
 	       (not vm-startup-message-displayed))
       (vm-display-startup-message)
-      (vm-inform 5 blurb))))
+      (vm-inform 5 "%s" blurb))))
 
 ;;;###autoload
 (defun vm-visit-virtual-folder-other-frame 
@@ -1252,86 +1246,23 @@ recipient list."
 (defun vm-mail-from-folder (&optional subject)
   "Compose a new mail message using the current folder as its
 parent folder and current message as its parent message.  If the
-variable `vm-mail-using-sender-address' is `t', then the sender of the
+variable `vm-mail-use-sender-address' is `t', then the sender of the
 current message is selected as the recipient of the new composition."
   ;; FIXME We also need variants of this for other-frame and
   ;; other-window.                                USR, 2012-01-19
   
   (interactive)
   (vm-session-initialization)
-  (vm-select-folder-buffer-and-validate 1)
+  ;; No message needed: this composes a new message, and the current message is
+  ;; only wanted as a parent if there is one.  Demanding one meant that `m' in
+  ;; an empty folder answered "Folder is empty" and composed nothing, which is
+  ;; issue #514 -- an IMAP inbox with no mail in it is the ordinary way to meet
+  ;; that.
+  (vm-select-folder-buffer-and-validate 0)
   (let* ((guess (vm-select-recipient-from-sender-if-possible)))
     (vm-mail-internal :to nil :guessed-to guess :subject subject)
     (run-hooks 'vm-mail-hook)
     (run-hooks 'vm-mail-mode-hook)))
-
-(fset 'vm-folders-summary-mode 'vm-mode)
-(put 'vm-folders-summary-mode 'mode-class 'special)
-
-;;;###autoload
-(defun vm-folders-summarize (&optional display raise)
-  "Generate a summary of the folders in your folder directories.
-Set `vm-folders-summary-directories' to specify the folder directories.
-Press RETURN or click mouse button 2 on an entry in the folders
-summary buffer to select a folder."
-  (interactive "p\np")
-  (vm-session-initialization)
-  (vm-check-for-killed-summary)
-  (if (not (featurep 'berkeley-db))
-      (error "Berkeley DB support needed to run this command"))
-  (if (null vm-folders-summary-database)
-      (error "'vm-folders-summary-database' must be non-nil to run this command"))
-  (if (null vm-folders-summary-buffer)
-      (let ((_folder-buffer (and (eq major-mode 'vm-mode)
-				 (current-buffer)))
-	    (summary-buffer-name "VM Folders Summary"))
-	(setq vm-folders-summary-buffer
-	      (or (get-buffer summary-buffer-name)
-		  (vm-generate-new-multibyte-buffer summary-buffer-name)))
-	(with-current-buffer vm-folders-summary-buffer
-	  (abbrev-mode 0)
-	  (auto-fill-mode 0)
-	  (vm-fsfemacs-nonmule-display-8bit-chars)
-	  (buffer-disable-undo (current-buffer))
-	  (vm-folders-summary-mode-internal))
-	(vm-make-folders-summary-associative-hashes)
-	(vm-do-folders-summary)))
-  ;; if this command was run from a VM related buffer, select
-  ;; the folder buffer in the folders summary, but only if that
-  ;; folder has an entry there.
-  (when vm-mail-buffer
-    (vm-check-for-killed-folder))
-  (save-excursion
-    (when vm-mail-buffer
-      (vm-select-folder-buffer-and-validate 0 (vm-interactive-p)))
-    (vm-check-for-killed-summary)
-    (let ((folder-buffer (and (eq major-mode 'vm-mode)
-			      (current-buffer)))
-	  fs )
-      (if (or (null vm-folders-summary-hash) (null folder-buffer)
-	      (null buffer-file-name))
-	  nil
-	(setq fs (symbol-value (intern-soft (vm-make-folders-summary-key
-					     buffer-file-name)
-					    vm-folders-summary-hash)))
-	(if (null fs)
-	    nil
-	  (vm-mark-for-folders-summary-update buffer-file-name)
-	  (set-buffer vm-folders-summary-buffer)
-	  (setq vm-mail-buffer folder-buffer)))))
-  (if display
-      (save-excursion
-	(vm-goto-new-folders-summary-frame-maybe)
-	(vm-display vm-folders-summary-buffer t
-		    '(vm-folders-summarize)
-		    (list this-command) (not raise))
-	;; need to do this after any frame creation because the
-	;; toolbar sets frame-specific height and width specifiers.
-	(set-buffer vm-folders-summary-buffer)
-	(vm-toolbar-install-or-uninstall-toolbar))
-    (vm-display nil nil '(vm-folders-summarize)
-		(list this-command)))
-  (vm-update-summary-and-mode-line))
 
 (defvar mail-reply-action)
 (defvar mail-send-actions)
@@ -1380,8 +1311,8 @@ summary buffer to select a folder."
 	    (push-mark (point))
 	    (mail-text)
 	    (cond (mail-citation-hook (run-hooks 'mail-citation-hook))
-		  ;; this is an obsolete variable now
-		  ;; (mail-yank-hooks (run-hooks 'mail-yank-hooks))
+		  ;; `mail-yank-hooks' is not consulted: it was obsoleted by
+		  ;; `mail-citation-hook' above.
 		  (t (vm-mail-yank-default)))))
       (make-local-variable 'mail-send-actions)
       (setq mail-send-actions send-actions)
@@ -1434,9 +1365,10 @@ summary buffer to select a folder."
 	     vm-mail-folder-alist	; ditto
 	     vm-virtual-folder-alist	; ditto
 	     ;; vm-mail-fcc-default - is this private?
-	     vmpc-actions vmpc-conditions 
-	     vmpc-actions-alist vmpc-reply-alist vmpc-forward-alist
-	     vmpc-resend-alist vmpc-newmail-alist vmpc-automorph-alist
+	     vm-pcrisis-actions vm-pcrisis-conditions 
+	     vm-pcrisis-default-rules vm-pcrisis-reply-rules
+	     vm-pcrisis-forward-rules vm-pcrisis-resend-rules
+	     vm-pcrisis-newmail-rules vm-pcrisis-automorph-rules
 	     ;; email addresses
 	     vm-mail-header-from
 	     vm-mail-return-receipt-to
@@ -1458,7 +1390,8 @@ summary buffer to select a folder."
 		   (vm-mapcar 
 		    (lambda (elem-xyz)
 		      (vm-mapcar (function vm-maildrop-sans-personal-info)
-				 elem-xyz)))
+				 elem-xyz))
+		    vm-spool-files)
 		 (vm-mapcar (function vm-maildrop-sans-personal-info)
 			    vm-spool-files))
 	     (error (vm-increment errors) vm-spool-files)))
@@ -1472,12 +1405,6 @@ summary buffer to select a folder."
 	       (vm-maildrop-alist-sans-personal-info
 		vm-pop-folder-alist)
 	     (error (vm-increment errors) vm-pop-folder-alist)))
-	  ;; (vm-imap-server-list 
-	  ;;  (with-no-warnings
-	  ;;    (condition-case nil
-	  ;; 	 (vm-mapcar (function vm-maildrop-sans-personal-info) 
-	  ;; 		    vm-imap-server-list)
-	  ;;      (error (vm-increment errors) vm-imap-server-list))))
 	  (vm-bug-imap-account-alist
 	   (condition-case nil
 	       (vm-maildrop-alist-sans-personal-info
@@ -1517,12 +1444,13 @@ summary buffer to select a folder."
        (concat				; salutation
 	"INSTRUCTIONS:
 
-- The preferd way submit a bug report is at:
+- The preferred way to report a bug is to open an issue at:
 
    https://gitlab.com/emacs-vm/vm/-/issues
 
-  The content of this mail maybe pasted into the issues to understand your
-  configuration.
+  Paste the configuration below into the issue.  If you would rather not
+  make your configuration public, send this mail instead: it goes only to
+  the VM maintainers.
 
 - You are using Emacs default messaging here.  *** NOT vm-mail-mode ***
 
@@ -1548,11 +1476,13 @@ summary buffer to select a folder."
       (goto-char (point-min))
       (mail-position-on-field "Subject"))))
 
+;;;###autoload
 (defun vm-edit-init-file ()
   "Edit the `vm-init-file'."
   (interactive)
   (find-file-other-frame vm-init-file))
 
+;;;###autoload
 (defun vm-toggle-thread-operations ()
   "Toggle the variable `vm-enable-thread-operations'.
 
@@ -1590,13 +1520,28 @@ attributes, adding/deleting labels etc."
                                           (vm-count-messages-in-file f))))))))
 
 ;;;###autoload
+(defvar vm-session-initializing nil
+  "Whether `vm-session-initialization' is running.
+
+Its own guard, `vm-session-beginning', is cleared at the end of the work
+rather than the start, so anything reached from the middle of it -- the init
+file it loads, and whatever that calls -- would start the work again.  A
+lookup that initialises VM so as to answer at all
+(`vm-imap-spec-for-account') is exactly such a caller.")
+
+;;;###autoload
 (defun vm-session-initialization ()
   "If this is the first time VM has been run in this Emacs session,
 do some necessary preparations.  Otherwise, update the count of
-draft messages."
-  (if (or (not (boundp 'vm-session-beginning))
-	  vm-session-beginning)
-      (progn
+draft messages.
+
+Autoloaded, so that configuration code and the autoloaded functions that ask
+for initialisation before they can answer -- `vm-imap-spec-for-account' --
+reach it without vm.el having been loaded by something else first."
+  (if (and (or (not (boundp 'vm-session-beginning))
+	       vm-session-beginning)
+	   (not vm-session-initializing))
+      (let ((vm-session-initializing t))
         (require 'vm-macro)
         (require 'vm-vars)
         (require 'vm-misc)
@@ -1613,26 +1558,30 @@ draft messages."
         (require 'vm-toolbar)
         (require 'vm-window)
         (require 'vm-menu)
-        (require 'vm-rfaddons)
-	;; PGP support is not loaded by default; it is opt-in because it
-	;; installs advices and MIME handlers.  Add (require 'vm-epg) to your
-	;; configuration to enable it.
-	;;
-	;; vm-epg (epg/EasyPG based) supersedes vm-pgg (pgg based, now
-	;; deprecated).  Do not load both: they define the same
-	;; vm-mime-display-internal-* handlers, so the last one loaded wins.
-	;;
-	;; The default loading of vm-pgg is disabled because it is an
-	;; add-on.  If and when it is integrated into VM, without advices
-	;; and other add-on features, then it can be loaded by
-	;; default.  USR, 2010-01-14
-        ;; (if (locate-library "pgg")
-        ;;     (require 'vm-pgg)
-        ;;   (message "vm-pgg disabled since pgg is missing!"))
+        ;; Before anything reads a folder: a stale .elc fails deep inside
+        ;; the parser with an error that says nothing about the cause (#791).
+        (vm-warn-about-stale-compiled-files)
         (add-hook 'kill-emacs-hook 'vm-garbage-collect-global)
+        ;; A folder cache is VM's own file under a hashed name, so leaving it
+        ;; modified asks the reader about a path that means nothing to them
+        ;; (#798).  Their own folders are left for Emacs to ask about.
+        (add-hook 'kill-emacs-hook 'vm-save-folder-caches)
+        ;; Offers unfinished compositions to the postponed folder as Emacs
+        ;; is left, rather than leaving them to be written to files one at a
+        ;; time.  Registered here rather than as vm-postpone.el loads:
+        ;; loading a file should not change how Emacs behaves (#160).
+        (add-hook 'kill-emacs-query-functions
+                  'vm-postpone-unfinished-compositions)
 	(vm-load-init-file)
-	(when vm-enable-addons
-	  (vm-rfaddons-infect-vm 0 vm-enable-addons))
+	;; After the init file, because that is where it is set: a
+	;; configuration written before mboxcl2 was renamed still says
+	;; `From_-with-Content-Length', and every test of a folder type is
+	;; against the new name.
+	(setq vm-default-folder-type
+	      (vm-canonical-folder-type vm-default-folder-type))
+	(vm-warn-about-deprecated-trust-setting)
+	(vm-check-folder-type-extensions)
+	(vm-check-default-folder-type)
 	(if (not vm-window-configuration-file)
 	    (setq vm-window-configurations vm-default-window-configuration)
 	  (or (vm-load-window-configurations vm-window-configuration-file)
@@ -1640,40 +1589,39 @@ draft messages."
 	(setq vm-buffers-needing-display-update (make-vector 29 0))
 	(setq vm-buffers-needing-undo-boundaries (make-vector 29 0))
 	(add-hook 'post-command-hook 'vm-add-undo-boundaries)
-	(if (if (featurep 'xemacs)
-		(find-face 'vm-monochrome-image)
-	      (facep 'vm-monochrome-image))
+	(if (facep 'vm-monochrome-image)
 	    nil
 	  (make-face 'vm-monochrome-image)
 	  (set-face-background 'vm-monochrome-image "white")
 	  (set-face-foreground 'vm-monochrome-image "black"))
-	(if (or (not (not (featurep 'xemacs)))
-		;; don't need this face under Emacs 21.
-		(fboundp 'image-type-available-p)
-		(facep 'vm-image-placeholder))
-	    nil
-	  (make-face 'vm-image-placeholder)
-	  (if (fboundp 'set-face-stipple)
-	      (set-face-stipple 'vm-image-placeholder
-				(list 16 16
-				      (concat "UU\377\377UU\377\377UU\377\377"
-					      "UU\377\377UU\377\377UU\377\377"
-					      "UU\377\377UU\377\377")))))
 	(and (vm-mouse-support-possible-p)
 	     (vm-mouse-install-mouse))
 	(and (vm-menu-support-possible-p)
 	     vm-use-menus
-	     (not (featurep 'xemacs))
 	     (vm-menu-initialize-vm-mode-menu-map))
-	(setq vm-session-beginning nil)))
+	(setq vm-session-beginning nil)
+	;; Last, so that a hook function sees VM assembled: the init file read,
+	;; menus and the mouse installed, timers running.  Anything it changes
+	;; therefore wins over VM's own setup, which is the point of being able
+	;; to run code here at all.  `vm-session-beginning' is already nil, so a
+	;; hook function may call VM commands without starting this again.
+	;; Issue #565.
+	(run-hooks 'vm-startup-hook)
+	;; After the hook, so that a configuration finished there is seen as
+	;; finished, and on a timer so that it is read rather than overwritten.
+	(vm-suggest-checking-configuration-later)))
   ;; check for postponed messages
   (vm-update-draft-count))
 
 ;;;###autoload
 (if (fboundp 'define-mail-user-agent)
+    ;; The two functions are named, not referenced: this form is copied into
+    ;; vm-autoloads.el, where nothing defines them yet, and a #' reference
+    ;; there is a compiler warning about the generated file.  Emacs' own
+    ;; define-mail-user-agent calls quote them plainly for the same reason.
     (define-mail-user-agent 'vm-user-agent
-      (function vm-compose-mail)	; compose function
-      (function vm-mail-send-and-exit)	; send function
+      'vm-compose-mail			; compose function
+      'vm-mail-send-and-exit		; send function
       nil				; abort function (kill-buffer)
       nil)				; hook variable (mail-send-hook)
 )
@@ -1739,6 +1687,27 @@ draft messages."
   (or vm-version "unknown"))
 
 ;;;###autoload
+(defun vm-emacs-name-and-version ()
+  "Return the editor's name and version, as in \"GNU Emacs 30.2\".
+
+The variable `emacs-version' has held only the number for years now, so an
+X-Mailer built from it says which version sent the mail but not which editor
+\(issue #520).  The function `emacs-version' does say, but follows it with the
+build number, the platform and the build date, which is far more than an
+X-Mailer wants -- so take the name and the version off the front of it.  For
+XEmacs that yields \"XEmacs 21.4\" by the same rule.
+
+Falls back to naming the editor from `featurep' if that string is not in the
+form expected, and to \"Unknown Emacs\" if there is nothing to go on."
+  (let ((full (if (fboundp 'emacs-version) (emacs-version) "")))
+    (cond ((string-match "\\`\\([^0-9\n]*[A-Za-z]\\)[ \t]+\\([0-9][^ \t\n(]*\\)"
+			 full)
+	   (concat (match-string 1 full) " " (match-string 2 full)))
+	  ((boundp 'emacs-version)
+	   (concat "GNU Emacs " emacs-version))
+	  (t "Unknown Emacs"))))
+
+;;;###autoload
 (defun vm-version-commit ()
   "Display and the value of the variable `vm-version-commit'."
   (interactive)
@@ -1747,5 +1716,240 @@ draft messages."
         (message "VM commit is: %s" vm-version-commit)
       (message "VM commit was not discovered when VM was loaded")))
    (or vm-version-commit "unknown"))
+
+;;; Checking a configuration (emacs-vm/vm#816)
+
+(defun vm-configuration-problem-mail-agent ()
+  "A problem with what Emacs uses to send mail, or nil."
+  (unless (eq mail-user-agent 'vm-user-agent)
+    (format (concat "`mail-user-agent' is %s, so C-x m and anything else that"
+                    " composes mail through Emacs will not use VM."
+                    "  Set it to `vm-user-agent'.  See Mail agent in the VM"
+                    " manual")
+            mail-user-agent)))
+
+(defun vm-address-looks-machine-made-p (address)
+  "Whether ADDRESS is one Emacs invented from the host name.
+Emacs sets `user-mail-address' to the login name at `mail-host-address' or
+the system name where nothing else says, and that is rarely an address
+anyone can reply to."
+  (and (stringp address)
+       (or (string-suffix-p (concat "@" (system-name)) address)
+           (and (stringp mail-host-address)
+                (string-suffix-p (concat "@" mail-host-address) address))
+           ;; no dot in the domain: not a name the DNS can resolve
+           (not (string-match-p "@[^@]+\\.[^@.]+\\'" address)))))
+
+(defun vm-configuration-problem-from-address ()
+  "A problem with the address mail will be sent from, or nil."
+  (cond ((not (stringp user-mail-address))
+         (concat "`user-mail-address' is not set, so VM does not know what"
+                 " address to send from.  Set it to your own address."
+                 "  See Composing setup in the VM manual"))
+        ((vm-address-looks-machine-made-p user-mail-address)
+         (format (concat "`user-mail-address' is %S, which Emacs made up from"
+                         " this machine's name rather than being told."
+                         "  Mail will go out from an address nobody can reply"
+                         " to.  Set it to your own address.  See Composing"
+                         " setup in the VM manual")
+                 user-mail-address))))
+
+(defun vm-configuration-problem-from-header ()
+  "A problem with the `From' header VM will write, or nil.
+`vm-mail-header-from' goes into a composition verbatim, after \"From: \", so a
+value that is not an address is a header nobody can reply to and nothing
+says so.  A reader who meant to add a header to every composition and
+reached for this variable gets \"From: IMAP-FCC: Sent\" in the message and in
+every copy filed of it (emacs-vm/vm#832)."
+  (when (stringp vm-mail-header-from)
+    (cond ((string-match-p "\\`[A-Za-z][A-Za-z0-9-]*:" vm-mail-header-from)
+           (format (concat "`vm-mail-header-from' is %S, which reads as a"
+                           " header line rather than an address, so VM writes"
+                           " `From: %s'.  To add a header to every composition"
+                           " set `mail-default-headers' instead, and set this"
+                           " to your own address or to nil")
+                   vm-mail-header-from vm-mail-header-from))
+          ((not (string-match-p "@" vm-mail-header-from))
+           (format (concat "`vm-mail-header-from' is %S, which names no"
+                           " domain, so a reply has nowhere to go.  Set it to"
+                           " your own address or to nil")
+                   vm-mail-header-from)))))
+
+(defun vm-configuration-problem-sending ()
+  "A problem with how mail will be sent, or nil."
+  (cond ((eq send-mail-function 'sendmail-query-once)
+         (concat "`send-mail-function' has not been set, so Emacs will ask how"
+                 " to send the first message and remember the answer."
+                 "  Set it yourself instead: `smtpmail-send-it' with"
+                 " `smtpmail-smtp-server' is what most people want.  See"
+                 " Sending setup in the VM manual"))
+        ((null send-mail-function)
+         (concat "`send-mail-function' is nil, so sending a message will fail."
+                 "  Set it to `smtpmail-send-it'.  See Sending setup in the VM"
+                 " manual"))))
+
+(defun vm-configuration-problem-folder-directory ()
+  "A problem with where folders are kept, or nil."
+  (cond ((null vm-folder-directory)
+         (concat "`vm-folder-directory' is not set, so saving a message offers"
+                 " whatever directory happens to be current and folders end up"
+                 " scattered.  Set it to the one directory your folders live"
+                 " in.  See Local mail in the VM manual"))
+        ((not (file-directory-p (expand-file-name vm-folder-directory)))
+         (format (concat "`vm-folder-directory' is %S, which is not a"
+                         " directory.  Create it, or set the variable to the"
+                         " directory your folders are in.  See Local mail in"
+                         " the VM manual")
+                 vm-folder-directory))))
+
+(defun vm-configuration-problem-mail-source ()
+  "A problem with where new mail comes from, or nil."
+  (unless (or (vm-spool-files) vm-imap-account-alist vm-pop-folder-alist)
+    (concat "Nothing says where your mail comes from, so getting new mail"
+            " will find none.  Set `vm-spool-files' for a local spool file or"
+            " maildir, and see Local mail in the VM manual; for a mailbox on a"
+            " server set `vm-imap-account-alist', and see Server mail in the"
+            " VM manual")))
+
+(defconst vm-maildrop-types
+  '(("imap" . 7) ("imap-ssl" . 7) ("imap-ssh" . 7)
+    ("pop" . 6) ("pop-ssl" . 6) ("pop-ssh" . 6))
+  "Each maildrop type VM understands, and how many colon-separated fields it takes.
+
+The parsers accept any number of fields and any leading word, so a misspelt
+type or a missing field is not reported where it is written: the failure
+comes later, from the session, saying something about the server instead.")
+
+(defun vm-maildrop-problem (spec where)
+  "A problem with the maildrop SPEC, which was found in WHERE, or nil."
+  (let* ((fields (vm-parse spec "\\([^:]+\\):?" 1 8))
+         (type (car fields))
+         (known (assoc type vm-maildrop-types)))
+    (cond ((null known)
+           (format (concat "%s names the maildrop %S, whose type %S is not one"
+                           " VM knows.  The types are %s.  See Server mail in"
+                           " the VM manual")
+                   where spec type
+                   (mapconcat #'car vm-maildrop-types ", ")))
+          ((/= (length fields) (cdr known))
+           (format (concat "%s names the maildrop %S, which has %d"
+                           " colon-separated field%s where %s takes %d.  See"
+                           " Server mail in the VM manual")
+                   where spec (length fields)
+                   (if (= (length fields) 1) "" "s")
+                   type (cdr known))))))
+
+(defun vm-configuration-problems-maildrops ()
+  "Every problem with a maildrop VM has been given."
+  (let ((problems nil))
+    (dolist (entry vm-imap-account-alist)
+      (let ((problem (vm-maildrop-problem
+                      (car entry) "`vm-imap-account-alist'")))
+        (when problem (push problem problems))))
+    (dolist (spec (vm-spool-files))
+      (when (and (stringp spec) (string-match-p "\\`[a-z-]+:" spec))
+        (let ((problem (vm-maildrop-problem spec "`vm-spool-files'")))
+          (when problem (push problem problems)))))
+    (nreverse problems)))
+
+(defconst vm-pcrisis-rule-variable-names
+  '(vm-pcrisis-actions vm-pcrisis-conditions
+    vm-pcrisis-default-rules vm-pcrisis-reply-rules vm-pcrisis-forward-rules
+    vm-pcrisis-resend-rules vm-pcrisis-mail-rules vm-pcrisis-newmail-rules
+    vm-pcrisis-automorph-rules)
+  "The variables that say a reader has configured Personality Crisis.
+Named rather than read, so that asking the question does not load
+vm-pcrisis.el: a reader who set one in their init file has interned and set
+it whether the file is loaded or not, and one who set none has nothing to be
+told about (emacs-vm/vm#841).")
+
+(defun vm-pcrisis-configured-but-off-p ()
+  "Whether Personality Crisis has rules and is switched off.
+Switched off, it installs no advice and so says nothing and does nothing,
+which is indistinguishable from working until the reader notices that none
+of their rules ran."
+  (and (not (bound-and-true-p vm-pcrisis-mode))
+       (seq-some (lambda (name) (and (boundp name) (symbol-value name)))
+                 vm-pcrisis-rule-variable-names)))
+
+(defun vm-configuration-problem-pcrisis ()
+  "Personality Crisis configured and switched off, or nil."
+  (when (vm-pcrisis-configured-but-off-p)
+    (concat "Personality Crisis has rules and is switched off, so none of"
+            " them runs.  Add `(vm-pcrisis-mode 1)' to your init file."
+            "  Loading vm-pcrisis.el used to switch it on and no longer"
+            " does")))
+
+(defun vm-configuration-problems ()
+  "Everything wrong with this VM configuration, as a list of strings."
+  (append
+   (delq nil (list (vm-configuration-problem-mail-agent)
+                   (vm-configuration-problem-from-address)
+                   (vm-configuration-problem-from-header)
+                   (vm-configuration-problem-sending)
+                   (vm-configuration-problem-folder-directory)
+                   (vm-configuration-problem-mail-source)
+                   (vm-configuration-problem-pcrisis)))
+   (vm-configuration-problems-maildrops)))
+
+;;;###autoload
+(defun vm-check-configuration ()
+  "Say what is missing from your VM configuration, and what to do about it.
+
+Checks the settings a first-time reader has to get right before anything
+works: which mail agent Emacs uses, the address mail goes out from, how it
+is sent, where folders are kept, and where new mail comes from.  Each
+maildrop is checked for a type VM knows and the right number of fields,
+neither of which the parsers mind, and `vm-mail-header-from' for a value
+that is not an address, which is a `From' header nobody can reply to.
+
+Says nothing about taste.  Everything it reports is a setting whose default
+either does nothing or does something the reader did not choose."
+  (interactive)
+  (let ((problems (vm-configuration-problems)))
+    (if (null problems)
+        (message "VM configuration: nothing missing")
+      (with-output-to-temp-buffer "*VM Configuration*"
+        (princ (format "%d thing%s to set up:\n\n"
+                       (length problems) (if (cdr problems) "s" "")))
+        (dolist (problem problems)
+          (princ (concat "* " problem "\n\n")))
+        (princ "The VM manual's Setting Up chapter works through all of\n")
+        (princ "these in order: M-x info, then (vm) Setting Up.\n")))
+    (length problems)))
+
+(defvar vm-suggested-checking-configuration nil
+  "Whether the suggestion to check the configuration has been made.
+Once per Emacs session, not once per folder visited.")
+
+(defun vm-suggest-checking-configuration-maybe ()
+  "Say once that vm-check-configuration has something to report.
+
+A suggestion and not the report: it names the command and how many things
+it found, and leaves the reading of them to someone who asks.  Nothing is
+said on a configuration whose checked settings are all in place, so this is
+silent for everyone it has nothing to tell."
+  (when (and vm-suggest-checking-configuration
+             (not vm-suggested-checking-configuration))
+    (setq vm-suggested-checking-configuration t)
+    (let ((problems (length (vm-configuration-problems))))
+      (when (> problems 0)
+        ;; No pause: said when Emacs is idle, it stays until the reader does
+        ;; something, and a `sit-for' inside a timer runs the command loop
+        ;; again where it stands.
+        (vm-warn 1 0 (concat "VM has %d setting%s missing.  M-x"
+                             " vm-check-configuration says which, and what to"
+                             " set (vm-suggest-checking-configuration to stop"
+                             " this)")
+                 problems (if (= problems 1) "" "s"))))))
+
+(defun vm-suggest-checking-configuration-later ()
+  "Make the suggestion once Emacs is idle, rather than now.
+The startup says more after this point: the folder totals, what a fetch is
+doing, what arrived.  Each of those overwrites the echo area, so a line said
+here is gone before it can be read, and the reader is left digging it out of
+the log buffer (emacs-vm/vm#844).  Idle means after all of them, and after
+whatever the reader's own startup hook says."
+  (run-with-idle-timer 0.5 nil #'vm-suggest-checking-configuration-maybe))
 
 ;;; vm.el ends here

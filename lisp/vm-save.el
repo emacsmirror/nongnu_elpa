@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989, 1990, 1993, 1994 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -38,6 +38,10 @@
 (require 'vm-undo)
 (require 'vm-delete)
 (require 'vm-imap)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-session-initialization "vm" ())
 
@@ -74,8 +78,7 @@ specified, use `vm-auto-folder-alist'."
 			  ;; Set up a buffer that matches our cached
 			  ;; match data.
 			  (with-current-buffer buf
-			    (if (not (featurep 'xemacs))
-				(set-buffer-multibyte nil)) ; for empty buffer
+			    (set-buffer-multibyte nil)	; for empty buffer
 			    (widen)
 			    (erase-buffer)
 			    (insert header)
@@ -104,6 +107,27 @@ specified, use `vm-auto-folder-alist'."
 	      nil ))
 	(error (error "error processing vm-auto-folder-alist: %s"
 		      (prin1-to-string error-data))))))
+
+(defun vm-auto-select-folder-for-save (mp &optional auto-folder-alist)
+  "Like `vm-auto-select-folder', but never names the current folder.
+Saving a message into the folder it is already in is not something to
+suggest, so in that case return nil and let the caller fall back on its
+other heuristics, such as `vm-last-save-folder'.
+
+`vm-auto-archive-messages' skips such a message for the same reason."
+  (let ((folder (vm-auto-select-folder mp auto-folder-alist)))
+    ;; Resolve a relative name the way vm-save-message does, against the
+    ;; folder directory rather than whatever default-directory the folder
+    ;; buffer happens to have, or the comparison misses.
+    (unless (and folder
+		 (eq (let ((default-directory
+			     (expand-file-name
+			      (or vm-foreign-folder-directory
+				  vm-folder-directory
+				  default-directory))))
+		       (vm-get-file-buffer folder))
+		     (current-buffer)))
+      folder)))
 
 ;;;###autoload
 (defun vm-auto-archive-messages (&optional prompt)
@@ -207,11 +231,10 @@ The saved messages are flagged as `filed'."
   (let (default default-is-imap default-imap directory file-name)
     (save-current-buffer
       ;; is this needed?  USR, 2011-11-12
-      ;; (vm-session-initialization)
       (vm-select-folder-buffer)
       (vm-error-if-folder-empty)
-      (setq default 
-	    (or (vm-auto-select-folder vm-message-pointer)
+      (setq default
+	    (or (vm-auto-select-folder-for-save vm-message-pointer)
 		vm-last-save-folder))
       (setq default-is-imap
 	    (and default (vm-imap-folder-spec-p default)))
@@ -292,6 +315,25 @@ thread are saved."
 
 (defvar inhibit-local-variables) ;; FIXME: Unknown var.  XEmacs?
 
+(defun vm-save-message-text-for-type (m target-type)
+  "M's headers and body, quoted the way a folder of TARGET-TYPE needs.
+A body line that a folder of that type would read as a message separator is
+prefixed with \">\", which is what `vm-munge-message-separators' is for and
+what `vm-fcc-message-text' does for a composition.
+
+Saving wrote the bytes as they stood.  A message from a folder that had no
+need to quote them -- mboxcl2 counts its bytes, mmdf and babyl have
+separators of their own -- then carried a line that the target read as a
+separator: saved into a From_ folder it became two messages there, and
+saved into an mmdf folder it made that folder unreadable."
+  (let ((source (vm-buffer-of m))
+        (start (vm-headers-of m))
+        (end (vm-text-end-of m)))
+    (with-temp-buffer
+      (insert-buffer-substring source start end)
+      (vm-munge-message-separators target-type (point-min) (point-max))
+      (buffer-string))))
+
 ;;;###autoload
 (defun vm-save-message-to-local-folder (folder &optional count mlist quiet)
   "Save the current message to a mail folder.
@@ -334,6 +376,9 @@ The saved messages are flagged as `filed'."
 	    (expand-file-name (or vm-foreign-folder-directory
 				  vm-folder-directory default-directory))))
       (setq folder (expand-file-name folder)))
+    ;; A folder VM is about to create as mboxcl2 is created under a name that
+    ;; says so, or it would be read back as From_ (#767).
+    (setq folder (vm-new-folder-file-name folder))
     ;; Confirm new folders, if the user requested this.
     (when (and vm-confirm-new-folders
 	       (not (file-exists-p folder))
@@ -366,6 +411,7 @@ The saved messages are flagged as `filed'."
       (when (and mlist vm-check-folder-types)
 	(setq target-type 
 	      (or (vm-get-folder-type folder)
+		  (vm-folder-type-for-name folder)
 		  vm-default-folder-type
 		  (and mlist (vm-message-type-of (car mlist)))))
 	(when (eq target-type 'unknown)
@@ -414,12 +460,12 @@ The saved messages are flagged as `filed'."
 				  target-type))
 		       (vm-write-string
 			folder (vm-leading-message-separator target-type m t))
-		       (if (eq target-type 'From_-with-Content-Length)
+		       (if (eq target-type 'mboxcl2)
 			   (vm-write-string
 			    folder (concat vm-content-length-header " "
 					   (vm-su-byte-count m) "\n")))
-		       (write-region 
-			(vm-headers-of m) (vm-text-end-of m) folder t 'quiet)
+		       (vm-write-string
+			folder (vm-save-message-text-for-type m target-type))
 		       (vm-write-string
 			folder (vm-trailing-message-separator target-type))))
 		 ;; write to folder-buffer
@@ -448,14 +494,13 @@ The saved messages are flagged as `filed'."
 			    (vm-write-string
 			     (current-buffer)
 			     (vm-leading-message-separator target-type m t))
-			    (when (eq target-type 'From_-with-Content-Length)
+			    (when (eq target-type 'mboxcl2)
 			      (vm-write-string
 			       (current-buffer)
 			       (concat vm-content-length-header " "
 				       (vm-su-byte-count m) "\n")))
-			    (insert-buffer-substring (vm-buffer-of m)
-						     (vm-headers-of m)
-						     (vm-text-end-of m))
+			    (insert (vm-save-message-text-for-type
+				     m target-type))
 			    (vm-write-string
 			     (current-buffer)
 			     (vm-trailing-message-separator target-type)))))
@@ -471,7 +516,6 @@ The saved messages are flagged as `filed'."
 	       (unless (vm-filed-flag m)
 		   (vm-set-filed-flag m t))
 	       (vm-increment save-count)
-	       (vm-modify-folder-totals folder 'saved 1 m)
 	       (vm-update-summary-and-mode-line)
 	       (setq ml (cdr ml)))))
 	;; unwind-protections
@@ -491,12 +535,12 @@ The saved messages are flagged as `filed'."
 			   (vm-present-current-message))
 		  (vm-update-summary-and-mode-line)))
 	      (unless quiet
-		(vm-inform 7 "%d message%s saved to buffer %s"
+		(vm-inform 5 "%d message%s saved to buffer %s"
 			   save-count
 			   (if (/= 1 save-count) "s" "")
 			   (buffer-name))))
 	  (unless quiet
-	    (vm-inform 7 "%d message%s saved to %s"
+	    (vm-inform 5 "%d message%s saved to %s"
 		       save-count (if (/= 1 save-count) "s" "") folder)))))
     (when (or (null vm-last-save-folder)
 	      (not (equal unexpanded-folder auto-folder)))
@@ -509,7 +553,7 @@ The saved messages are flagged as `filed'."
 (defun vm-save-message-sans-headers (file &optional count quiet)
   "Save the current message to a file, without its header section.
 If the file already exists, the message body will be appended to it.
-Prefix arg COUNT means save the next COUNT message bodiess.  A
+Prefix arg COUNT means save the next COUNT message bodies.  A
 negative COUNT means save the previous COUNT bodies.
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
@@ -611,13 +655,17 @@ This command should NOT be used to save message to mail folders; use
 		   command output-bytes)
 	(display-buffer buffer)))))
 
-(defun vm-pipe-message-part (m _arg)
-  "Return (START END) bounds for piping to external command, based on ARG."
-  (cond ((equal prefix-arg '(4))
+(defun vm-pipe-message-part (m arg)
+  "Return (START END) bounds for piping to external command, based on ARG.
+ARG is the prefix argument of the command that is doing the piping.  This
+used to read the variable `prefix-arg' instead, which is the prefix for the
+*next* command and is nil while one is running -- so every documented prefix
+did nothing and the whole message went every time."
+  (cond ((equal arg '(4))
 	 (list (vm-text-of m) (vm-text-end-of m)))
-	((equal prefix-arg '(16))
+	((equal arg '(16))
 	 (list (vm-headers-of m) (vm-text-of m)))
-	((equal prefix-arg '(64))
+	((equal arg '(64))
 	 (list (vm-vheaders-of m) (vm-text-end-of m)))
 	(t 
 	 (list (vm-headers-of m) (vm-text-end-of m)))))
@@ -625,8 +673,8 @@ This command should NOT be used to save message to mail folders; use
 ;;;###autoload
 (defun vm-pipe-message-to-command (command &optional prefixarg discard-output)
   "Runs a shell command with contents from the current message as input.
-By default, the entire message is used.  Message separators are
-included if `vm-message-includes-separators' is non-Nil.
+By default the headers and the text are used, without the folder's message
+separators.  The prefix argument selects a part instead:
 
 With one \\[universal-argument] the text portion of the message is used.
 With two \\[universal-argument]'s the header portion of the message is used.
@@ -773,9 +821,15 @@ arguments after the command finished."
 	m process)
     (vm-retrieve-operable-messages 1 mlist :fail t)
     (with-current-buffer buffer      (erase-buffer))
-    (setq process (start-process command buffer 
-				 (or shell-file-name "sh")
-				 shell-command-switch command))
+    ;; A pipe, not a pty.  `process-send-eof' on a pty sends ^D, which the
+    ;; terminal driver turns into end of file only at the start of a line, so
+    ;; text not ending in a newline left the command reading for ever and VM
+    ;; waiting on it (#881).  A pty would also echo the message back into the
+    ;; output buffer and translate its line endings.
+    (setq process (let ((process-connection-type nil))
+		    (start-process command buffer
+				   (or shell-file-name "sh")
+				   shell-command-switch command)))
     (set-process-sentinel 
      process 
      `(lambda (process status) 
@@ -816,6 +870,7 @@ arguments after the command finished."
       (vm-pipe-command-exit-handler process command discard-output))
     buffer))
 
+;;;###autoload
 (defun vm-pipe-messages-to-command-to-string (command &optional prefixarg)
   "Runs a shell command with contents from the current message as input.
 This function is like `vm-pipe-messages-to-command', but will not display the
@@ -966,77 +1021,19 @@ The saved messages are flagged as `filed'."
   (vm-display nil nil '(vm-save-message-to-imap-folder)
 	      '(vm-save-message-to-imap-folder))
   (unless count (setq count 1))
-  (let (source-spec-list
-	(target-spec-list (vm-imap-parse-spec-to-list folder))
-	ml m
-	(save-count 0)
-	server-to-server-p mailbox
-	process
-	)
-    (unless mlist
-      (setq mlist 
-	    (vm-select-operable-messages count (vm-interactive-p) "Save")))
-    (setq mailbox (nth 3 target-spec-list))
-    (unwind-protect
-	(save-excursion
-	  (vm-inform 5 "Saving messages...")
-	  (setq ml mlist)
-	  (while ml
-	    (setq m (vm-real-message-of (car ml)))
-	    (set-buffer (vm-buffer-of m))
-	    (setq source-spec-list 
-		  (and (vm-imap-folder-p)
-		       (vm-imap-parse-spec-to-list 
-			(vm-folder-imap-maildrop-spec))))
-	    (setq server-to-server-p	; copy on the same imap server
-		  (and (equal (nth 1 source-spec-list) 
-			      (nth 1 target-spec-list))
-		       (equal (nth 5 source-spec-list) 
-			      (nth 5 target-spec-list))))
-	    (unless server-to-server-p
-		(vm-retrieve-operable-messages 1 (list m) :fail t))
-	    ;; Kyle Jones says:
-	    ;; have to stuff the attributes in all cases because
-	    ;; the deleted attribute may have been stuffed
-	    ;; previously and we don't want to save that attribute.
-	    ;; FIXME But stuffing attributes into the IMAP buffer is
-	    ;; not easy.  USR, 2010-03-08
-	    ;; (vm-stuff-message-data m t)
-	    (if server-to-server-p ; economise on upstream data traffic
-		(let ((process 
-		       (vm-re-establish-folder-imap-session nil "save")))
-		  (if (null process)
-		      (error "Could not connect to the IMAP server"))
-		  (vm-imap-copy-message process m mailbox))
-	      (unless process
-		(setq process 
-		      (vm-imap-make-session folder t :purpose "save"
-					    :folder-buffer (current-buffer))))
-	      (if (null process)
-		  (error "Could not connect to the IMAP server"))
-	      (vm-imap-save-message process m mailbox))
-	    (vm-run-hook-on-message-with-args 'vm-save-message-hook m folder)
-	    (vm-set-filed-flag m t)
-	    (vm-increment save-count)
-	    (vm-modify-folder-totals folder 'saved 1 m)
-	    ;; we set the deleted flag so that the user is not
-	    ;; confused if the save doesn't go through fully.
-	    (when (and vm-delete-after-saving (not (vm-deleted-flag m)))
-	      (vm-set-deleted-flag m t))
-	    (vm-inform 6 "Saving messages... %s" save-count)
-	    (setq ml (cdr ml))))
-      (when process (vm-imap-end-session process))
-      (vm-inform 5 "%d message%s saved to %s"
-	       save-count (if (/= 1 save-count) "s" "")
-	       (or (vm-imap-folder-for-spec folder)
-		   (vm-safe-imapdrop-string folder)))
-      (vm-update-summary-and-mode-line)
-      (setq vm-last-save-imap-folder folder))
-    ;; We call delete-message again even though the deleted-flags have
-    ;; already been set, perhaps to take care of other business?
-    (if (and vm-delete-after-saving (not vm-folder-read-only))
-	(vm-delete-message count mlist))
-    folder ))
+  (unless mlist
+    (setq mlist (vm-select-operable-messages count (vm-interactive-p) "Save")))
+  ;; On the driver, which is the only way this is done.  The messages are
+  ;; flagged filed when the server has taken them rather than when the
+  ;; command was typed: a save the server refuses must not leave the folder
+  ;; saying it was saved.
+  (vm-imap-net-save-messages-to-folder folder mlist count)
+  (setq vm-last-save-imap-folder folder)
+  ;; We call delete-message again even though the deleted-flags have
+  ;; already been set, perhaps to take care of other business?
+  (if (and vm-delete-after-saving (not vm-folder-read-only))
+      (vm-delete-message count mlist))
+  folder)
 
 (provide 'vm-save)
 ;;; vm-save.el ends here

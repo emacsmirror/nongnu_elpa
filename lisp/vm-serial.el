@@ -4,7 +4,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 2000-2005 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Author:      Robert Widhopf-Fenk
 ;; Status:      Tested with XEmacs 21.4.15 & VM 7.19
@@ -41,9 +41,14 @@
 ;; You may want to use the following into your .vm file after adding other
 ;; vm-mail-mode-hooks ...
 ;; 
-;;   (require 'vm-serial)
+;;   (vm-serial-mode 1)
 ;;   (add-hook 'vm-mail-mode-hook 'vm-serial-auto-yank-mail t)
 ;;   (define-key vm-mail-mode-map "\C-c\C-t" 'vm-serial-expand-tokens)
+;;
+;; (require 'vm-serial) on its own switched the advice on until 2026, and does
+;; nothing now beyond making the mode and the commands available: loading a
+;; file and asking for what it does are separate acts, and Customize loads
+;; this one without being asked (emacs-vm/vm#788).
 ;; 
 ;; and check out what happens if you reply to a message or what happens after
 ;; specifying a recipient in the to header and typing [C-c C-t].
@@ -81,6 +86,10 @@
 (require 'mail-extr)
 (eval-when-compile (require 'cl-lib))
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (defgroup vm-serial nil
   "Sending personalized serial mails and getting message templates."
   :group  'vm-ext)
@@ -89,19 +98,12 @@
 		  "ext:bbdb-snarf" (adstring &optional ignore-errors))
 
 ;; XEmacs function
-(declare-function read-expression "vm-xemacs" (prompt &optional initial-contents))
 (declare-function bbdb-record-firstname "ext:bbdb" (record))
 (declare-function bbdb-record-lastname "ext:bbdb" (record))
-(declare-function bbdb-search-simple "ext:bbdb" (name net))
-(declare-function bbdb-split "ext:bbdb" (string separators))
-(declare-function bbdb/sc-consult-attr "ext:bbdb-sc" (from))
+(declare-function bbdb-message-search "ext:bbdb-com" (name mail))
+(declare-function bbdb-sc-get-attrib "ext:bbdb-sc" (from))
 
-;; vm-xemacs is a fake file meant to fool Emacs 23 compiler
-(declare-function region-exists-p "vm-xemacs" ())
-(declare-function zmacs-region-buffer "vm-xemacs" ())
 ;; The following function is erroneously called in fsfemacs too
-;; (declare-function read-expression "vm-xemacs" 
-;; 		  (prompt &optional initial-contents history default))
 (vm-load-features-silent-when-compiling '(bbdb bbdb-sc))
 
 (defvar vm-reply-list nil)
@@ -320,7 +322,7 @@ let me know!
 
 mailto:Robert Fenk"))
   "*Alist of default mail templates.
-Set this by calling `vm-serial-set-mail'!
+Set this by calling `vm-serial-set-mails'!
 
 Format:
    ((SYMBOLIC-NAME CONDITION MAIL-FORM)
@@ -406,6 +408,7 @@ buffer containing the original message.")
 ;;-----------------------------------------------------------------------------
 (defvar vm-serial-token-history nil)
 
+;;;###autoload
 (defun vm-serial-set-token (&optional token newvalue doc)
   "Set vm-serial TOKEN to NEWVALUE with DOC.
 You may remove a token by specifying just the TOKEN as argument."
@@ -419,7 +422,9 @@ You may remove a token by specifying just the TOKEN as argument."
 		  nil nil nil
 		  ;; hist
 		  vm-serial-token-history))
-          (value (read-expression
+          ;; read-minibuffer and not read-expression, which was XEmacs's name
+          ;; for it: calling this command interactively raised void-function
+          (value (read-minibuffer
                   "Value: "
                   (format "%S" (cdr (assoc token vm-serial-token-alist))))))
      (list token value)))
@@ -442,6 +447,7 @@ Is a list of (TOKEN NEWVALUE DOC) elements"
                          (caddr token-value))
     (setq token-list (cdr token-list)))))
 
+;;;###autoload
 (defun vm-serial-get-token (&optional token)
   "Return value of vm-serial TOKEN."
   (interactive (list (completing-read 
@@ -470,10 +476,13 @@ Is a list of (TOKEN NEWVALUE DOC) elements"
              (setq token-value (funcall  token-value)))
           (t
            (setq token-value (eval token-value))))
-      (error (setq token-value nil)
-             (warn (format "Token `%s' caused a %S"
-                           token-value err))
-             nil))
+      ;; `warn' formats its own message, so hand it the arguments rather
+      ;; than a string that has already been through `format': an error
+      ;; text containing a percent sign made the warning itself fail.
+      ;; And report the value that failed, which clearing it first hid.
+      (error (warn "vm-serial cannot expand %S: %s.  Correct it in `vm-serial-token-alist'"
+                   token-value (error-message-string err))
+             (setq token-value nil)))
     token-value))
 
 ;;-----------------------------------------------------------------------------
@@ -482,9 +491,15 @@ Is a list of (TOKEN NEWVALUE DOC) elements"
 Optional argument HEADER is the header to get the recipients from."
   (setq header (or header "To:"))
   (let ((to (vm-mail-mode-get-header-contents header)))
-    (if (functionp 'bbdb-extract-address-components)
-        (car (bbdb-extract-address-components to))
-      (mail-extract-address-components to))))
+    ;; Both extractors answer one (NAME ADDRESS) pair, so neither answer
+    ;; wants a `car' taken of it.  Taking one on the BBDB side left every
+    ;; name token reading `car' of a string (#777).
+    (cond ((or (null to) (string-match "\\`[ \t\n]*\\'" to))
+           nil)
+          ((functionp 'bbdb-extract-address-components)
+           (bbdb-extract-address-components to))
+          (t
+           (mail-extract-address-components to)))))
 
 (defun vm-serial-get-to ()
   "Return the recipient of current message."
@@ -507,11 +522,22 @@ Optional argument HEADER is the header to get the recipients from."
       name)))
 
 (defun vm-serial-get-bbdb-name (&optional part name)
+  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload
+  ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
+  ;; never requires BBDB itself, so ask for the file that has it (#549).
+  (require 'bbdb-com)
   (let* ((to (vm-serial-get-to))
-         (rec (bbdb-search-simple nil (cadr to))))
+         ;; `bbdb-message-search' answers with a list where the old
+         ;; `bbdb-search-simple' answered with one record (#549).
+         (rec (car (bbdb-message-search nil (cadr to)))))
     (if rec
-        (cond ((equal part 'first) (or (bbdb/sc-consult-attr (cadr to))
-                                       (bbdb-record-firstname rec)))
+        (cond ((equal part 'first)
+               ;; `bbdb-sc-get-attrib' and not `bbdb/sc-consult-attr',
+               ;; which BBDB has kept as an obsolete alias for it since
+               ;; BBDB 3.0 (emacs-vm/vm#818).  `bbdb-message-search' above
+               ;; is BBDB 3 as well.
+               (or (bbdb-sc-get-attrib (cadr to))
+                   (bbdb-record-firstname rec)))
               ((equal part 'last)  (bbdb-record-lastname rec)))
       (vm-serial-get-name part name))))
 
@@ -582,6 +608,7 @@ is no serial mail buffer and if there was no yank-mail before!"
 (defvar vm-serial-yank-mail-choice nil)
 (make-variable-buffer-local 'vm-serial-yank-mail-choice)
 
+;;;###autoload
 (defun vm-serial-yank-mail (&optional mail no-expand)
   "Yank the template associated with MAIL.
 
@@ -662,6 +689,7 @@ me."
           (t
            (eval value)))))
 
+;;;###autoload
 (defun vm-serial-expand-tokens (&optional rstart rend)
   "Expand all tokens within the current mail.
 This means we search for the `vm-serial-cookie' and if it is followed by a
@@ -673,52 +701,62 @@ expression which is evaluated
 
 Results evaluating to a string are inserted all other return values are
 ignored.  For non existing tokens or errors during evaluation one will get
-a warning."
+a warning.
+
+RSTART and REND bound the text to expand.  Given neither, the whole
+message body is expanded."
   (interactive)
   
   (let ((token-regexp (concat (regexp-quote vm-serial-cookie)
                        "\\(" (regexp-quote vm-serial-cookie) "\\)*"
                        "[{(a-zA-Z]"))
         start end expr result vm-serial-point)
-    (if (and (featurep 'xemacs)
-             (region-exists-p)
-             (eq (zmacs-region-buffer) (current-buffer)))
-        (setq rstart (goto-char (region-beginning)) rend (region-end))
-      (setq rstart (mail-text) rend (point-max)))
+    ;; A caller that says where means it: `vm-serial-insert-token' expands
+    ;; the one token it just wrote, which may be in a header.  Overwriting
+    ;; RSTART and REND here re-expanded the whole body instead, and left a
+    ;; token inserted above the body unexpanded (#777).
+    (cond ((and rstart rend))
+          (t
+           (setq rstart (mail-text) rend (point-max))))
 
-    (narrow-to-region rstart rend)
-    (while (re-search-forward token-regexp (point-max) t)
-      (backward-char 1)
-      (setq start (- (match-end 0) 1)
-            result nil)
-      (cond ((> (length (match-string 1)) 0)
-             (delete-region (match-beginning 1) (match-end 1)))
-            ((looking-at "(")
-             (setq end (scan-sexps start 1))
-             (goto-char start)
-             (setq expr (read (current-buffer)))
-             (delete-region (- start 1) end)
-             (setq result (vm-serial-eval-token-value expr)))
-            ((looking-at "\\({\\)?\\([a-zA-Z][a-zA-Z0-9_-]*\\)\\(}\\)?")
-             (setq start (match-beginning 2))
-             (setq end (match-end 2))
-             (setq expr (buffer-substring start end))
-             (if (and (not (and (match-end 1) (match-end 3)))
-                      (or (match-end 1) (match-end 3)))
-                 (error "Invalid token expression `%s'"
-                        (match-string 0)))
-             (delete-region (- (match-beginning 0) 1) (match-end 0))
-             (setq result (vm-serial-eval-token-value
-                           (vm-serial-get-token expr))))
-            )
-      (if (and result (stringp result))
-          (insert (format "%s" result))))
-    (widen)
+    ;; `save-restriction', so that an invalid token expression leaves the
+    ;; composition buffer as wide as it found it rather than narrowed to
+    ;; the body (#777).
+    (save-restriction
+      (narrow-to-region rstart rend)
+      (goto-char rstart)
+      (while (re-search-forward token-regexp (point-max) t)
+        (backward-char 1)
+        (setq start (- (match-end 0) 1)
+              result nil)
+        (cond ((> (length (match-string 1)) 0)
+               (delete-region (match-beginning 1) (match-end 1)))
+              ((looking-at "(")
+               (setq end (scan-sexps start 1))
+               (goto-char start)
+               (setq expr (read (current-buffer)))
+               (delete-region (- start 1) end)
+               (setq result (vm-serial-eval-token-value expr)))
+              ((looking-at "\\({\\)?\\([a-zA-Z][a-zA-Z0-9_-]*\\)\\(}\\)?")
+               (setq start (match-beginning 2))
+               (setq end (match-end 2))
+               (setq expr (buffer-substring start end))
+               (if (and (not (and (match-end 1) (match-end 3)))
+                        (or (match-end 1) (match-end 3)))
+                   (error "Invalid token expression `%s'"
+                          (match-string 0)))
+               (delete-region (- (match-beginning 0) 1) (match-end 0))
+               (setq result (vm-serial-eval-token-value
+                             (vm-serial-get-token expr))))
+              )
+        (if (and result (stringp result))
+            (insert (format "%s" result)))))
     (if vm-serial-point
         (goto-char vm-serial-point))))
 
 (defvar vm-serial-insert-token-history nil)
 
+;;;###autoload
 (defun vm-serial-insert-token (token)
   "Reads a valid token, inserts it at point and expands it."
   (interactive (list
@@ -758,6 +796,7 @@ a warning."
     (eval (list 'vm-increment variable))))
 
 
+;;;###autoload
 (defun vm-serial-send-mail-and-exit (&optional non-interactive)
   "Like `vm-serial-send-mail' but kills the buffer after sending all."
   (interactive "P")
@@ -765,6 +804,7 @@ a warning."
   (setq vm-serial-send-mail-exit t)
   (vm-serial-send-mail non-interactive))
 
+;;;###autoload
 (defun vm-serial-send-mail (&optional non-interactive done)
   "Send an expanded mail to each recipient listed in the To-header.
 This will create a new buffer for expanding the tokens and user interaction.
@@ -798,11 +838,16 @@ questions will bother you!"
     (if (and (not vm-serial-send-mail-jobs) (not done))
         (if (not (setq to (mail-fetch-field "To" nil t)))
             (error "There are no recipients in %s!" (buffer-name))
+          ;; Every recipient, so ask for them all: without the flag both
+          ;; extractors answer one pair for the whole header, which sent a
+          ;; single message with no To at all.  The other arm called
+          ;; `bbdb-split', a BBDB function, in the branch taken when BBDB
+          ;; is absent, so the command died there with a void-function
+          ;; error for anyone without BBDB (#777).
           (setq vm-serial-send-mail-jobs
                 (if (functionp 'bbdb-extract-address-components)
-                    (bbdb-extract-address-components to)
-                  (mapcar 'mail-extract-address-components
-                          (bbdb-split to ","))))
+                    (bbdb-extract-address-components to t)
+                  (mail-extract-address-components to t)))
           (make-local-variable 'vm-serial-sent-cnt)
           (make-local-variable 'vm-serial-edited-cnt)
           (make-local-variable 'vm-serial-killed-cnt)
@@ -896,12 +941,31 @@ questions will bother you!"
                   (vm-mail-mode-remove-header "FCC:")
                   (vm-postpone-message fcc vm-serial-send-mail-exit t))
               (if vm-serial-send-mail-exit
-                  (kill-this-buffer))))))))
+                  (kill-current-buffer))))))))
 
-(advice-add 'vm-mail-send-and-exit :after #'vm-serial--send-mail)
 (defun vm-serial--send-mail (&rest _)
   (if vm-serial-source-buffer
-      (kill-this-buffer)))
+      (kill-current-buffer)))
+
+;;;###autoload
+(define-minor-mode vm-serial-mode
+  "Compose one message from a template and send it to many recipients.
+Turning this on advises `vm-mail-send-and-exit' so that a composition sent
+from a source buffer is killed with it; turning it off removes that advice.
+`vm-serial-expand-tokens' and `vm-serial-send-mail' are commands and work
+either way.
+
+The bindings and the compose hook are yours to add, as the commentary at the
+top of this file says: this mode does not take them over.
+
+Loading this file switched the advice on until 2026 (emacs-vm/vm#788).
+Customize loads it whenever it is asked about a VM option, so loading no
+longer enables: say so here."
+  :global t
+  :group 'vm-serial
+  (if vm-serial-mode
+      (advice-add 'vm-mail-send-and-exit :after #'vm-serial--send-mail)
+    (advice-remove 'vm-mail-send-and-exit #'vm-serial--send-mail)))
 
 ;;-----------------------------------------------------------------------------
 (provide 'vm-serial)

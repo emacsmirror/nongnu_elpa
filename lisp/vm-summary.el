@@ -6,7 +6,7 @@
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
 ;; Copyright (C) 2009-2010 Uday S Reddy
 ;; Copyright (C) 2010 Arik Mitschang
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -25,10 +25,13 @@
 ;;; Code:
 
 (require 'vm-macro)
+(require 'vm-misc)
 (require 'vm-summary-faces)
 
-(declare-function set-specifier "vm-xemacs" 
-		  (specifier value &optional locale tag-set how-to-add))
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 (declare-function rfc822-addresses "ext:rfc822" (header-text))
 
 (declare-function vm-visit-folder "vm.el" 
@@ -44,7 +47,12 @@
 (defvar scrollbar-height)		; defined for XEmacs
 
 
+;;;###autoload
 (defun vm-summary-trace-message ()
+  "Trace this message while summary lines are being built.
+A debugging aid: `vm-summary-debug\' enters the debugger for a message on
+this list, and only when `vm-debug\' is set, so tracing a message costs
+nothing until then.  Prints the list of messages being traced."
   (interactive)
   (add-to-list 'vm-summary-traced-messages
 	       (vm-number-of (vm-current-message)))
@@ -76,8 +84,12 @@ summary display."
 
 (defsubst vm-summary-message-number-thread-descendant (m)
   "Returns the message number of M, padded with spaces to display as
-an interior message of a thread."
-  (concat "  " (vm-padded-number-of m) " "))
+an interior message of a thread.
+
+The number is padded here rather than by `%n', which is now the bare number
+as printf would have it: a width on the specifier applies to this whole
+decoration, so it cannot line up the number inside it."
+  (concat "  " (format "%3s" (vm-number-of m)) " "))
 
 (defsubst vm-expanded-root-p (m)
   "Returns t if M is the root of a thread that is currently shown
@@ -109,6 +121,17 @@ marked as modified."
   "Mark a thread root message M as expanded."
   (vm-set-folded-flag m nil))
 
+(defsubst vm-summary-folding-buffer ()
+  "The summary buffer whose text the folding commands are to alter.
+This buffer if it is a summary buffer, and `vm-summary-buffer' otherwise --
+which is nil in a summary buffer, so neither answer alone will do.  The
+su-start-of and su-end-of markers point into the summary, and applying them
+to the folder buffer signals args-out-of-range."
+  (if (eq major-mode 'vm-summary-mode)
+      (current-buffer)
+    (or vm-summary-buffer
+	(error "This folder has no summary buffer to fold"))))
+
 (defsubst vm-visible-message (m)
   (apply 'vm-vs-or m vm-summary-visible))
 
@@ -130,18 +153,10 @@ marked as modified."
 	truncate-lines t
 	;; Needed for Emacs 24 bidi display
 	bidi-paragraph-direction 'left-to-right)
-  ;; horizontal scrollbar off by default
-  ;; user can turn it on in summary hook if desired.
-  (when (and (featurep 'xemacs) (featurep 'scrollbar))
-    (set-specifier scrollbar-height (cons (current-buffer) 0)))
   (use-local-map vm-summary-mode-map)
   (when (vm-menu-support-possible-p)
     (vm-menu-install-menus))
 ;; using the 'mouse-face property gives faster highlighting than this.
-;;  (and vm-mouse-track-summary
-;;       (vm-mouse-support-possible-p)
-;;       (featurep 'xemacs)
-;;       (add-hook 'mode-motion-hook 'mode-motion-highlight-line))
   (when (and vm-mutable-frame-configuration 
 	     (or vm-frame-per-folder vm-frame-per-summary))
     (vm-set-hooks-for-frame-deletion))
@@ -171,9 +186,6 @@ mandatory."
 	  (abbrev-mode 0)
 	  (auto-fill-mode 0)
 	  ;; Experimental code to use buffer-face-mode to change font
-	  ;; (when (boundp 'vm-summary-face)
-	  ;;   (setq bufer-face-mode-face vm-summary-face)
-	  ;;   (buffer-face-mode 1))
 	  (vm-fsfemacs-nonmule-display-8bit-chars)
 	  (buffer-disable-undo (current-buffer))
 	  (setq vm-mail-buffer b
@@ -194,6 +206,7 @@ mandatory."
     (vm-display nil nil '(vm-summarize vm-summarize-other-frame)
 		(list this-command)))
   (vm-update-summary-and-mode-line))
+;;;###autoload (autoload 'vm-headers-summary "vm-summary" nil t)
 (defalias 'vm-headers-summary 'vm-summarize)
 
 ;;;###autoload
@@ -205,19 +218,26 @@ mandatory."
   (vm-summarize display)
   (if (vm-multiple-frames-possible-p)
       (vm-set-hooks-for-frame-deletion)))
+;;;###autoload (autoload 'vm-headers-summary-other-frame "vm-summary" nil t)
 (defalias 'vm-headers-summary-other-frame 'vm-summarize-other-frame)
 
 (defun vm-do-summary (&optional start-point)
   "Generate summary lines for all the messages in the optional
 argument START-POINT (a list of messages) or, if it is nil, all
 the messages in the current folder."
+  (vm-with-timing 8 (format "generating %d summary line%s"
+			    (length (or start-point vm-message-list))
+			    (if (cdr (or start-point vm-message-list)) "s" ""))
+    (vm-do-summary-1 start-point)))
+
+(defun vm-do-summary-1 (&optional start-point)
+  "Generate the summary lines.  See `vm-do-summary'."
   (let ((m-list (or start-point vm-message-list))
 	(n 0)
 	(modulus 100)
 	(do-mouse-track (or (and vm-mouse-track-summary
 				 (vm-mouse-support-possible-p))
 			    vm-summary-enable-faces)))
-    ;; (setq mp m-list)
     (with-current-buffer vm-summary-buffer
       (setq line-move-ignore-invisible vm-summary-show-threads)
       (let ((buffer-read-only nil)
@@ -276,9 +296,6 @@ the messages in the current folder."
 			    (when (> (vm-thread-count m) 1)
 			      ;; FIXME this is not working yet.
 			      ;; USR 2012-11-12
-			      ;; (if vm-summary-threads-collapsed
-			      ;; 	  (vm-summary-set-root-collapsed m)
-			      ;; 	(vm-summary-set-root-expanded m))
 			      (if vm-summary-threads-collapsed
 				  (vm-summary-mark-root-collapsed m)
 				(vm-summary-mark-root-expanded m))
@@ -288,7 +305,6 @@ the messages in the current folder."
 			    (unless (vm-visible-message m)
 			      (put-text-property s e 'invisible t))
 			    ;; why mess with the root here?  USR, 2010-07-20
-			    ;; (vm-summary-mark-root-collapsed root)
 			    )))))
 		  (setq mp (cdr mp) n (1+ n))
 		  (when (zerop (% n modulus))
@@ -324,6 +340,7 @@ the messages in the current folder."
 	  (vm-inform 7 "%s: Generating summary... done" 
 		     (buffer-name vm-mail-buffer))))))
 
+;;;###autoload
 (defun vm-expand-thread (&optional root)
   "Expand the thread associated with the message at point. This
 will make visible all invisible elements of the thread tree and
@@ -339,9 +356,13 @@ is the root of the thread you want expanded."
     (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
     (unless vm-summary-show-threads
       (error "Summary is not sorted by threads"))
-    (vm-follow-summary-cursor)
-    (set-buffer vm-summary-buffer))
-  (let ((buffer-read-only nil))
+    (vm-follow-summary-cursor))
+  ;; In the summary buffer, whoever called: the markers below point into it.
+  ;; This used to switch only when called interactively, so the Lisp call the
+  ;; docstring above invites -- with ROOT -- put text properties in the folder
+  ;; buffer and signalled args-out-of-range (emacs-vm/vm#627).
+  (with-current-buffer (vm-summary-folding-buffer)
+   (let ((buffer-read-only nil))
     (unless root
       (setq root (vm-thread-root (vm-summary-message-at-point))))
     (when (> (vm-thread-count root) 1)
@@ -353,8 +374,9 @@ is the root of the thread you want expanded."
 	  (vm-su-start-of m) (vm-su-end-of m) 'invisible nil))
        (vm-thread-subtree (vm-thread-symbol root)))
       (when (vm-interactive-p)
-	(vm-update-summary-and-mode-line)))))
+	(vm-update-summary-and-mode-line))))))
 
+;;;###autoload
 (defun vm-collapse-thread (&optional nomove root)
   "Collapse the thread associated with the message at point. This
 will make invisible all read and non-new elements of the thread
@@ -372,9 +394,10 @@ ROOT, which is the root of the thread you want collapsed."
     (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
     (unless vm-summary-show-threads
       (error "Summary is not sorted by threads"))
-    (vm-follow-summary-cursor)
-    (set-buffer vm-summary-buffer))
-  (let ((buffer-read-only nil)
+    (vm-follow-summary-cursor))
+  ;; In the summary buffer, whoever called: as in `vm-expand-thread' above.
+  (with-current-buffer (vm-summary-folding-buffer)
+   (let ((buffer-read-only nil)
 	(msg nil))
     (unless root
       (setq msg (vm-summary-message-at-point))
@@ -395,8 +418,9 @@ ROOT, which is the root of the thread you want collapsed."
 	(unless nomove
 	  (when (get-text-property (+ (vm-su-start-of msg) 3) 'invisible)
 	    (goto-char (vm-su-start-of root))))
-	(vm-update-summary-and-mode-line)))))
+	(vm-update-summary-and-mode-line))))))
 	
+;;;###autoload
 (defun vm-expand-all-threads ()
   "Expand all threads in the folder, which might have been collapsed
  (folded) earlier."
@@ -418,6 +442,7 @@ ROOT, which is the root of the thread you want collapsed."
   (when (vm-interactive-p)
     (vm-update-summary-and-mode-line)))
 
+;;;###autoload
 (defun vm-collapse-all-threads ()
   "Collapse (fold) all threads in the folder so that only the roots of
 the threads are shown in the Summary window."
@@ -445,6 +470,7 @@ the threads are shown in the Summary window."
   (when (vm-interactive-p)
     (vm-update-summary-and-mode-line)))
       
+;;;###autoload
 (defun vm-toggle-thread ()
   "Toggle collapse/expand thread associated with message at point.
 see `vm-expand-thread' and `vm-collapse-thread' for a description
@@ -466,20 +492,65 @@ of action."
 	    (call-interactively 'vm-expand-thread))
 	  )))))
 
+(defun vm-summary-strayed-cursor ()
+  "Where the reader has moved the summary cursor, if off the summary pointer.
+A message, or `end' for the end of the buffer -- which is where
+\\[end-of-buffer] lands, past the last summary line, and where there is no
+message to name.
+
+Nil where the cursor is on the summary pointer, which is where VM put it: a
+rebuild setting the pointer again then carries the cursor along, and that is
+what moving through a folder looks like.
+
+Anything else is the reader having gone somewhere of their own accord, which a
+rebuild is not to undo.  Messages arriving during a fetch rebuild the summary,
+and every bunch that landed dragged the cursor back to the selected message,
+so a reader who pressed \\[end-of-buffer] while a fetch ran could not stay at
+the end of it."
+  (when vm-summary-buffer
+    (with-current-buffer vm-summary-buffer
+      (let ((here (vm-summary-message-at-point)))
+	(cond ((null vm-summary-pointer) nil)
+	      ((null here) (and (eobp) 'end))
+	      ((eq here vm-summary-pointer) nil)
+	      (t here))))))
+
+(defun vm-summary-restore-cursor (where)
+  "Put the summary cursor back to WHERE, as `vm-summary-strayed-cursor' had it.
+Called after a rebuild, so a message's summary line is the one just written
+and its marker is the new one.  `end' is the end of the buffer as it now
+stands, which is where a reader who asked for the end of the summary wants to
+be when more of it has arrived.  A message the rebuild removed is left alone."
+  (when (and where vm-summary-buffer)
+    (let ((w (vm-get-visible-buffer-window vm-summary-buffer)))
+      (with-current-buffer vm-summary-buffer
+	(cond ((eq where 'end)
+	       (goto-char (point-max)))
+	      ((and (vm-su-start-of where)
+		    (marker-buffer (vm-su-start-of where)))
+	       (goto-char (vm-su-start-of where))
+	       (forward-line 0)))
+	(when w (set-window-point w (point)))))))
+
 (defun vm-do-needed-summary-rebuild ()
   "Rebuild the summary lines of all the messages starting at
 `vm-summary-redo-start-point'.  Also, reset the summary pointer
 to the current message.  Do the latter anyway if
 `vm-need-summary-pointer-update' is non-NIL.  All this, only if
-the Summary buffer exists. "
+the Summary buffer exists.
+
+A cursor the reader has moved off the summary pointer is put back afterwards:
+see `vm-summary-strayed-cursor'."
   (if (and vm-summary-redo-start-point vm-summary-buffer)
-      (progn
+      (let ((strayed (vm-summary-strayed-cursor)))
 	(vm-copy-local-variables vm-summary-buffer 'vm-summary-show-threads)
 	(vm-do-summary (and (consp vm-summary-redo-start-point)
 			    vm-summary-redo-start-point))
 	(setq vm-summary-redo-start-point nil)
 	(when vm-message-pointer
 	  (vm-set-summary-pointer (car vm-message-pointer)))
+	(when strayed
+	  (vm-summary-restore-cursor strayed))
 	(setq vm-need-summary-pointer-update nil))
     (when (and vm-need-summary-pointer-update
 	       vm-summary-buffer
@@ -501,7 +572,6 @@ buffer by a regenerated summary line."
 		 vm-summary-enable-faces))
 	    ) ;; summary
 	(with-current-buffer (marker-buffer (vm-su-start-of m))
-	  ;; (setq summary (vm-su-summary m))
 	  (let ((buffer-read-only nil)
 		s e i
 		(selected nil)
@@ -672,33 +742,14 @@ Also move the cursor (point and window-point)."
 (defun vm-summary-highlight-region (start end face)
   (vm-summary-xxxx-highlight-region start end face 'vm-summary-overlay))
 
-(defun vm-folders-summary-highlight-region (start end face)
-  (vm-summary-xxxx-highlight-region start end face
-				    'vm-folders-summary-overlay))
-
 (defun vm-summary-xxxx-highlight-region (start end face var)
   (let ((ooo (symbol-value var)))
-    (cond ((not (featurep 'xemacs))
-	   (if (and ooo (overlay-buffer ooo))
-	       (move-overlay ooo start end)
-	     (setq ooo (make-overlay start end))
-	     (set var ooo)
-	     (overlay-put ooo 'evaporate nil)
-	     (overlay-put ooo 'face face)))
-	  ((featurep 'xemacs)
-	   (if (and ooo (vm-extent-end-position ooo))
-	       (vm-set-extent-endpoints ooo start end)
-	     (setq ooo (vm-make-extent start end))
-	     (set var ooo)
-	     ;; the reason this isn't needed under FSF Emacs is
-	     ;; that insert-before-markers also inserts before
-	     ;; overlays!  so a summary update of an entry just
-	     ;; before this overlay in the summary buffer won't
-	     ;; leak into the overlay, but it _will_ leak into an
-	     ;; XEmacs extent.
-	     (vm-set-extent-property ooo 'start-open t)
-	     (vm-set-extent-property ooo 'detachable nil)
-	     (vm-set-extent-property ooo 'face face))))))
+    (if (and ooo (overlay-buffer ooo))
+	(move-overlay ooo start end)
+      (setq ooo (make-overlay start end))
+      (set var ooo)
+      (overlay-put ooo 'evaporate nil)
+      (overlay-put ooo 'face face))))
 
 (defun vm-auto-center-summary ()
   (if vm-auto-center-summary
@@ -729,6 +780,11 @@ Otherwise, it is a string in mime-decoded form with text-properties.
       (if (or tokenize (null vm-display-using-mime))
 	  (eval (cdr match))
 	(vm-decode-mime-encoded-words-in-string (eval (cdr match)))))))
+
+(defconst vm-summary-number-specifiers '(?c ?d ?l ?M ?n ?y)
+  "The summary specifiers whose substitution is a number.
+A width beginning with 0 fills with zeros for these and with spaces for
+everything else, as printf does: \"0000Monday\" is not a Monday.")
 
 (defun vm-summary-compile-format (format tokenize)
   "Compile FORMAT into an eval'able expression that generates the
@@ -777,6 +833,16 @@ tokenized summary TOKENS."
 		      (field-width (nth 1 blob))
 		      (precision (nth 2 blob))
 		      (end (vm-marker (point))))
+		 ;; The maximum first and the width after it, the order the
+		 ;; compiled path uses and the one printf uses.
+		 (if (integerp precision)
+		     (if (> (- end start) (vm-abs precision))
+			 (if (> precision 0)
+			     (delete-char (- precision (- end start)))
+			   (save-excursion
+			     (goto-char start)
+			     (delete-char (vm-abs (+ precision
+						     (- end start))))))))
 		 (if (integerp field-width)
 		     (if (< (- end start) (vm-abs field-width))
 			 (if (< field-width 0)
@@ -786,14 +852,6 @@ tokenized summary TOKENS."
 			     (goto-char start)
 			     (insert-char space (- field-width
 						   (- end start)))))))
-		 (if (integerp precision)
-		     (if (> (- end start) (vm-abs precision))
-			 (if (> precision 0)
-			     (delete-char (- precision (- end start)))
-			   (save-excursion
-			     (goto-char start)
-			     (delete-char (vm-abs (+ precision
-						     (- end start))))))))
 		 (setq group-list (cdr group-list))))
 	      ((eq token 'number)
 	       (if (and vm-summary-enable-thread-folding
@@ -801,11 +859,15 @@ tokenized summary TOKENS."
 			vm-summary-show-thread-count)
 		   (if (= (vm-thread-indentation message) 0)
 		       (insert
-			(concat (vm-padded-number-of message) 
+			;; padded here, as in
+			;; `vm-summary-message-number-thread-descendant': a
+			;; width on `%n' applies to the number and the count
+			;; together, so it cannot line up the number itself
+			(concat (format "%3s" (vm-number-of message))
 				(vm-summary-padded-thread-count message)))
 		     (insert
 		      (vm-summary-message-number-thread-descendant message)))
-		 (insert (vm-padded-number-of message))))
+		 (insert (vm-number-of message))))
 	      ((eq token 'mark)
 	       (insert (vm-su-mark message)))
 	      ((eq token 'thread-indent)
@@ -829,6 +891,29 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 		 token)))
    summary))
 
+(defun vm-summary-token-with-width (token format)
+  "TOKEN, in a group carrying the width and maximum of the last match.
+
+`%n', `%*' and `%I' become tokens rather than substitutions, and a token is
+inserted with no width of its own, so a width or a maximum written on one of
+them reached the summary as nothing at all while the untokenized path
+justified and truncated it (emacs-vm/vm#849).
+
+A group is what the tokenized path already has for applying a width to what
+it wrote, so one is put around the token.  Answers a list to splice in, which
+is the bare token where neither was asked for.
+
+Spaces whatever the width says: `%05n' fills with zeros on the untokenized
+path, which `group-end' has no way to be told."
+  (let ((width (and (match-beginning 2)
+		    (string-to-number (concat (match-string 1 format)
+					      (match-string 2 format)))))
+	(maximum (and (match-beginning 3)
+		      (string-to-number (match-string 4 format)))))
+    (if (or width maximum)
+	(list ''group-begin width maximum token ''group-end)
+      (list token))))
+
 (defun vm-summary-compile-format-1 (format &optional tokenize start-index)
   (or start-index (setq start-index 0))
   (let ((case-fold-search nil)
@@ -846,12 +931,16 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
       (while
 	  (and (not saw-close-group) (not token)
 	       (string-match
-		"%\\(-\\)?\\([0-9]+\\)?\\(\\.\\(-?[0-9]+\\)\\)?\\([()pPaAbcSdfFhHiIlLmMnstTwyz*%]\\|U[A-Za-z]\\)"
+		;; r and R are here because the cond below has branches for
+		;; them: without them a "%r" was left in the summary as
+		;; literal text, which is what the docstring of
+		;; `vm-summary-format' and the manual both say it is not.
+		"%\\(-\\)?\\([0-9]+\\)?\\(\\.\\(-?[0-9]+\\)\\)?\\([()pPaAbcSdfFhHiIlLmMnrRstTwyz*%]\\|U[A-Za-z]\\)"
 		format last-match-end))
 	(setq conv-spec (aref format (match-beginning 5)))
 	(setq new-match-end (match-end 0))
 	(if (and (memq conv-spec '(?\( ?\) ?p ?P ?a ?A ?b ?c ?S ?d ?f ?F ?h ?H ?i ?I
-				   ?l ?L ?M ?m ?n ?s ?t ?T ?U ?w ?y ?z ?* ))
+				   ?l ?L ?M ?m ?n ?r ?R ?s ?t ?T ?U ?w ?y ?z ?* ))
 		 ;; for the non-tokenized path, we don't want
 		 ;; the close group spcifier processed here, we
 		 ;; want to just bail out and return, which is
@@ -917,7 +1006,9 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					    'vm-su-message) sexp)))
 		    ((= conv-spec ?I)
 		     (if tokenize
-			 (setq token ''thread-indent)
+			 (setq token (vm-summary-token-with-width
+				      ''thread-indent format)
+			       splice t)
 		       (setq sexp (cons (list 'vm-su-thread-indent
 					      'vm-su-message) sexp))))
 		    ((= conv-spec ?l)
@@ -934,8 +1025,10 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					    'vm-su-message) sexp)))
 		    ((= conv-spec ?n)
 		     (if tokenize
-			 (setq token ''number)
-		       (setq sexp (cons (list 'vm-padded-number-of
+			 (setq token (vm-summary-token-with-width
+				      ''number format)
+			       splice t)
+		       (setq sexp (cons (list 'vm-number-of
 					      'vm-su-message) sexp))))
 		    ((= conv-spec ?s)
 		     (setq sexp (cons (list 'vm-su-summary-subject
@@ -975,7 +1068,9 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					    'vm-su-message) sexp)))
 		    ((= conv-spec ?*)
 		     (if tokenize
-			 (setq token ''mark)
+			 (setq token (vm-summary-token-with-width
+				      ''mark format)
+			       splice t)
 		       (setq sexp (cons (list 'vm-su-mark
 					      'vm-su-message) sexp)))))
 	      (cond ((and (not token) vm-display-using-mime)
@@ -984,28 +1079,11 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 		     (setcar sexp
 			     (list 'vm-decode-mime-encoded-words-in-string
 				   (car sexp)))))
-	      (cond ((and (not token) (match-beginning 1) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-left-justify-string
-				'vm-left-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2))))))
-		    ((and (not token) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-right-justify-string
-				'vm-right-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2)))))))
+	      ;; The maximum first and the width after it, as printf does it:
+	      ;; the maximum says how much of the substitution is used, the
+	      ;; width how wide the column is.  The other way round a maximum
+	      ;; smaller than the width cut the padding and left none of the
+	      ;; text, "%20.4s" answering four spaces (emacs-vm/vm#848).
 	      (cond ((and (not token) (match-beginning 3))
 		     (setcar sexp
 			     (list 'vm-truncate-string (car sexp)
@@ -1013,35 +1091,59 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 				    (substring format
 					       (match-beginning 4)
 					       (match-end 4)))))))
+	      (cond ((and (not token) (match-beginning 1) (match-beginning 2))
+		     ;; Spaces whatever the width says, a `-' beating a `0'
+		     ;; as it does in printf: zeros to the right of a number
+		     ;; make a different number.
+		     (setcar sexp
+			     (list 'vm-left-justify-string
+				   (car sexp)
+				   (string-to-number
+				    (substring format
+					       (match-beginning 2)
+					       (match-end 2))))))
+		    ((and (not token) (match-beginning 2))
+		     (setcar sexp
+			     (list
+			      (if (and (eq (aref format (match-beginning 2)) ?0)
+				       (memq conv-spec vm-summary-number-specifiers))
+				  'vm-numeric-right-justify-string
+				'vm-right-justify-string)
+			      (car sexp)
+			      (string-to-number
+			       (substring format
+					  (match-beginning 2)
+					  (match-end 2)))))))
 	      ;; Why do we reencode decoded strings?  USR, 2010-05-12
-;; 	      (cond ((and (not token) vm-display-using-mime)
-;; 		     (setcar sexp
-;; 			     (list 'vm-reencode-mime-encoded-words-in-string
-;; 				   (car sexp)))))
 	      (setq sexp-fmt
 		    (cons (if token "" "%s")
-			  (cons (substring format
-					   last-match-end
-					   (match-beginning 0))
+			  (cons (vm-percent-quote
+				 (substring format
+					    last-match-end
+					    (match-beginning 0)))
 				sexp-fmt))))
 	  (setq sexp-fmt
 		(cons (if (eq conv-spec ?\))
 			  (prog1 "" (setq saw-close-group t))
 			"%%")
-		      (cons (substring format
-				       (or last-match-end 0)
-				       (match-beginning 0))
+		      (cons (vm-percent-quote
+			     (substring format
+					(or last-match-end 0)
+					(match-beginning 0)))
 			    sexp-fmt))))
 	  (setq last-match-end new-match-end))
       (if (and (not saw-close-group) (not token))
 	  (setq sexp-fmt
-		(cons (substring format last-match-end (length format))
+		(cons (vm-percent-quote
+		       (substring format last-match-end (length format)))
 		      sexp-fmt)
 		finished-parsing-format t))
       (setq sexp-fmt (apply 'concat (nreverse sexp-fmt)))
       (if sexp
 	  (setq sexp (cons 'format (cons sexp-fmt (nreverse sexp))))
-	(setq sexp sexp-fmt))
+	;; Nothing to substitute, so nothing calls `format' and the doubled
+	;; percents would reach the summary as themselves.
+	(setq sexp (vm-percent-unquote sexp-fmt)))
       (if tokenize
 	  (setq list (nconc list (if (equal sexp "") nil (list sexp))
 			    (and token (if splice token (list token))))
@@ -1063,10 +1165,20 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
     (with-current-buffer (vm-buffer-of (vm-real-message-of message))
       (save-restriction
 	(widen)
-	(goto-char (vm-headers-of message))
-	(let ((case-fold-search t))
+	;; Find where the headers end *before* going to where they start.
+	;; This used to be evaluated as the bound of the search below, after
+	;; the goto-char, and `vm-text-of' computes the marker on first use --
+	;; so whether the search worked depended on that computation leaving
+	;; point alone.  It did not (issue #492), and the search then ran from
+	;; the body with a bound behind it, matching nothing: headers came back
+	;; empty for every message on first access.  That is issue #496, where
+	;; every subject read as "" and `vm-kill-subject' deleted the whole
+	;; folder.  #492 is fixed, but nothing should depend on it again.
+	(let ((header-end (vm-text-of message))
+	      (case-fold-search t))
+	  (goto-char (vm-headers-of message))
 	  (while (and (or (null contents) clump-sep)
-		      (re-search-forward regexp (vm-text-of message) t)
+		      (re-search-forward regexp header-end t)
 		      (save-excursion (goto-char (match-beginning 0))
 				      (vm-match-header)))
 	    (if contents
@@ -1101,12 +1213,6 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
       (concat (make-string (- width sw) ?\ ) string))))
 
 ;; I don't think number glyphs ever have a width > 1
-(defun vm-numeric-left-justify-string (string width)
-  (let ((sw (length string)))
-    (if (>= sw width)
-	string
-      (concat string (make-string (- width sw) ?0)))))
-
 ;; I don't think number glyphs ever have a width > 1
 (defun vm-numeric-right-justify-string (string width)
   (let ((sw (length string)))
@@ -1115,32 +1221,14 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
       (concat (make-string (- width sw) ?0) string))))
 
 (defun vm-truncate-string (string width)
-  "Truncate STRING to WIDTH number of columns."
-  (cond ((fboundp 'trucate-string-to-width)
-	 (truncate-string-to-width string width))
-	((fboundp 'char-width)
-	 (cond ((> width 0)
-		(let ((i 0)
-		      (lim (length string))
-		      (total 0))
-		  (while (and (< i lim) (< total width))
-		    (setq total (+ total (char-width (aref string i)))
-			  i (1+ i)))
-		  (if (< total width)
-		      string
-		    (substring string 0 i))))
-	       (t
-		(let ((i (1- (length string)))
-		      (lim -1)
-		      (total 0))
-		  (setq width (- width))
-		  (while (and (> i lim) (< total width))
-		    (setq total (+ total (char-width (aref string i)))
-			  i (1- i)))
-		  (if (< total width)
-		      string
-		    (substring string (1+ i)))))))
-	(t (vm-truncate-roman-string string width))))
+  "Truncate STRING to WIDTH number of columns.
+A negative WIDTH keeps the last (- WIDTH) columns rather than the first.
+Either way the result is never wider than asked for: a character that would
+cross the limit is dropped, not kept."
+  (if (>= width 0)
+      (truncate-string-to-width string width)
+    (let ((columns (string-width string)))
+      (truncate-string-to-width string columns (max 0 (+ columns width))))))
 
 (defun vm-truncate-roman-string (string width)
   "Truncate STRING in Roman alphabet to WIDTH number of columns."
@@ -1163,10 +1251,10 @@ indicator string is that defined by the variable
     ""))
 
 (defun vm-su-attachment-indicator (msg)
-  "Given a MESSAGE, ruturns a string indicating whether the
-message has attachments.  The indicator string is the value of
-`vm-summary-attachment-indicator' followed by the number of
-attachments.  					USR, 2010-05-13."
+  "The summary indicator for MSG, empty where it carries no attachment.
+`vm-summary-attachment-indicator' is shown as it stands where it is a
+string, which is the default, and followed by the number of attachments
+where it is a symbol."
   (let ((attachments 0))
     (setq msg (vm-real-message-of msg))
     ;; If this calls back vm-update-summary-and-mode-line
@@ -1334,32 +1422,39 @@ field in the summary.				 	USR, 2012-10-13"
 
 ;; Some yogurt-headed delivery agents don't provide a Date: header.
 (defun vm-grok-From_-date (message)
-  ;; This works only on the From_ types, obviously
-  (if (not (memq (vm-message-type-of message)
-		 '(BellFrom_ From_ From_-with-Content-Length)))
-      nil
-    (with-current-buffer (vm-buffer-of (vm-real-message-of message))
-      (save-excursion
-	(save-restriction
-	  (widen)
-	  (goto-char (vm-start-of message))
-	  (let ((case-fold-search nil))
-	    (if (or (looking-at
-		     ;; special case this so that the "remote from blah"
-		     ;; isn't included.
-		     "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\) remote from .*")
-		    (looking-at "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\)"))
-		(vm-buffer-substring-no-properties
-		 (match-beginning 1)
-		 (match-end 1)))))))))
+  ;; This works only on the From_ types, obviously.
+  ;; The From_ line belongs to the real message, so everything here -- the
+  ;; folder type, the buffer and the position -- has to come from the real
+  ;; message.  Taking the position from MESSAGE broke virtual folders: the
+  ;; location markers of a virtual message are shared between all of them
+  ;; and only point anywhere once `vm-make-virtual-copy' has run for the
+  ;; message being displayed, which during summary generation it has not.
+  (let ((m (vm-real-message-of message)))
+    (if (not (memq (vm-message-type-of m)
+		   '(BellFrom_ From_ mboxcl2)))
+	nil
+      (with-current-buffer (vm-buffer-of m)
+	(save-excursion
+	  (save-restriction
+	    (widen)
+	    (goto-char (vm-start-of m))
+	    (let ((case-fold-search nil))
+	      (if (or (looking-at
+		       ;; special case this so that the "remote from blah"
+		       ;; isn't included.
+		       "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\) remote from .*")
+		      (looking-at "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\)"))
+		  (vm-buffer-substring-no-properties
+		   (match-beginning 1)
+		   (match-end 1))))))))))
 
 (defconst vm-su-rfc822-date-format
   ;; The date format recognized here is the one specified in RFC 822.
   ;; Some slop is allowed e.g. dashes between the monthday, month and year
   ;; because such malformed headers have been observed.
   (concat "\\(\\([a-z][a-z][a-z]\\),\\)?[ \t\n]*"
-	  "\\([0-9][0-9]?\\)[ \t\n---]*"
-	  "\\([a-z][a-z][a-z]\\)[ \t\n---]*"
+	  "\\([0-9][0-9]?\\)[ \t\n-]*"
+	  "\\([a-z][a-z][a-z]\\)[ \t\n-]*"
 	  "\\([0-9]*[0-9][0-9]\\)[ \t\n]*"
 	  "\\([0-9:]+\\)[ \t\n]*"
 	  "\\([a-z][a-z]?[a-z]?\\|\\(-\\|\\+\\)[01][0-9][0-9][0-9]\\)"))
@@ -1382,8 +1477,6 @@ cached-data-vector."
 	vector date)
     (setq date 
 	  (or 
-	   ;; (and vm-sort-messages-by-delivery-date
-	   ;; 	(vm-get-header-contents m "Delivery-Date:"))
 	   (vm-get-header-contents m "Date:")
 	   (vm-grok-From_-date m)))
     (cond
@@ -1467,20 +1560,8 @@ cached-data-vector."
 	    (vm-su-hour m)
 	    (vm-su-year m))))
 
-;; (defun vm-su-delivery-datestring (m)
-;;   "The delivery date of message M in the format \"Sun Jan 01 00:00:00 2000"."
-;;   (when (vm-su-d-weekday m)
-;;     (format "%s %s %s %s %s"
-;; 	    (condition-case error
-;; 		(substring (vm-su-d-weekday m) 0 3)
-;; 	      (error "Sun"))
-;; 	    (substring (vm-su-d-month m) 0 3)
-;; 	    (vm-su-d-monthday m)
-;; 	    (vm-su-d-hour m)
-;; 	    (vm-su-d-year m))))
 
 (defun vm-run-user-summary-function (function message)
-  ;; (condition-case nil
   (let ((m (vm-real-message-of message)))
     (with-current-buffer (vm-buffer-of m)
       (save-restriction
@@ -1488,7 +1569,6 @@ cached-data-vector."
 	(save-excursion
 	  (narrow-to-region (vm-headers-of m) (vm-text-end-of m))
 	  (funcall function m)))))
-  ;; (error " "))
   )
 
 (defun vm-su-decoded-full-name (m)
@@ -1564,7 +1644,7 @@ The result is a mime-encoded string, but this is not certain.
       (vm-su-from m))
      ((not (string-match vm-summary-uninteresting-senders (vm-su-to m)))
       ;; FIXME do we need to match each address separately?  USR, 2012-03-02
-      (concat vm-summary-uninteresting-senders-arrow (vm-su-to m)))
+      (concat vm-summary-recipient-marker (vm-su-to m)))
      ((not (string-match "\\?\\?\\?" (vm-su-reply-to m)))
       (concat vm-summary-principal-marker (vm-su-reply-to m)))
      (t
@@ -1572,20 +1652,24 @@ The result is a mime-encoded string, but this is not certain.
 
 ;; Some yogurt-headed delivery agents don't even provide a From: header.
 (defun vm-grok-From_-author (message)
-  ;; This works only on the From_ types, obviously
-  (if (not (memq (vm-message-type-of message)
-		 '(From_ BellFrom_ From_-with-Content-Length)))
-      nil
-    (with-current-buffer (vm-buffer-of message)
-      (save-excursion
-	(save-restriction
-	  (widen)
-	  (goto-char (vm-start-of message))
-	  (let ((case-fold-search nil))
-	    (if (looking-at "From \\([^ \t\n]+\\)")
-		(vm-buffer-substring-no-properties
-		 (match-beginning 1)
-		 (match-end 1)))))))))
+  ;; This works only on the From_ types, obviously.
+  ;; See `vm-grok-From_-date' for why this has to work on the real message:
+  ;; a virtual message's own buffer holds a copy of the displayed message
+  ;; only, and its location markers point nowhere until then.
+  (let ((m (vm-real-message-of message)))
+    (if (not (memq (vm-message-type-of m)
+		   '(From_ BellFrom_ mboxcl2)))
+	nil
+      (with-current-buffer (vm-buffer-of m)
+	(save-excursion
+	  (save-restriction
+	    (widen)
+	    (goto-char (vm-start-of m))
+	    (let ((case-fold-search nil))
+	      (if (looking-at "From \\([^ \t\n]+\\)")
+		  (vm-buffer-substring-no-properties
+		   (match-beginning 1)
+		   (match-end 1))))))))))
 
 (defun vm-su-do-author (m)
   "Parses the From headers of the message M and stores the results in
@@ -1662,37 +1746,6 @@ the `reply-to' and `reply-to-name' entries of the cached-data vector."
 		 (substring address (match-beginning 1) (match-end 1)))))
     (list full-name from)))
 
-;; test for existence and functionality of mail-extract-address-components
-;; there are versions out there that don't work right, so we run
-;; some test data through it to see if we can trust it.
-(defun vm-choose-chop-full-name-function (address)
-  (let ((test-data '(("kyle@uunet.uu.net" .
-		      (nil "kyle@uunet.uu.net"))
-		     ("c++std=lib@inet.research.att.com" .
-		      (nil "c++std=lib@inet.research.att.com"))
-		     ("\"Piet.Rypens\" <rypens@reks.uia.ac.be>" .
-		      ("Piet Rypens" "rypens@reks.uia.ac.be"))
-		     ("makke@wins.uia.ac.be (Marc.Gemis)" .
-		      ("Marc Gemis" "makke@wins.uia.ac.be"))
-		     ("" . (nil nil))))
-	(failed nil)
-	result)
-    (while test-data
-      (setq result (condition-case nil
-		       (mail-extract-address-components (car (car test-data)))
-		     (error nil)))
-      (if (not (equal result (cdr (car test-data))))
-	  ;; failed test, use default
-	  (setq failed t
-		test-data nil)
-	(setq test-data (cdr test-data))))
-    (if failed
-	;; it failed, use default
-	(setq vm-chop-full-name-function 'vm-default-chop-full-name)
-      ;; it passed the tests
-      (setq vm-chop-full-name-function 'mail-extract-address-components))
-    (funcall vm-chop-full-name-function address)))
-
 (defun vm-su-do-recipients (m)
   "Given a message M, extract its recipients from the headers and
 store the strings in the cached data vector.		USR, 2012-10-13"
@@ -1709,7 +1762,7 @@ store the strings in the cached data vector.		USR, 2012-10-13"
 	  addresses (condition-case err
                         (rfc822-addresses all)
                       (error
-                       (vm-warn 0 5 err)
+                       (vm-warn 0 5 "%s" (error-message-string err))
                        (list "corrupted-header"))))
     (setq list (vm-parse-addresses all)) ; adds text properties for charsets
     (while list
@@ -1744,7 +1797,7 @@ store the strings in the cached data vector.		USR, 2012-10-13"
 	  addresses (condition-case err
                         (rfc822-addresses to)
                       (error
-                       (vm-warn 0 5 err)
+                       (vm-warn 0 5 "%s" (error-message-string err))
                        (list "corrupted-header"))))
     (setq list (vm-parse-addresses to)) ; adds text properties for charsets
     (while list
@@ -1917,12 +1970,7 @@ stored entry (`vm-decoded-tokenized-summary-of') or recalculating it
 if necessary.  The summary line is a mime-decoded string with text
 properties. 
 						  USR 2010-05-13"
-  (if (and (vm-virtual-message-p m)
-	   ;; Kyle also had (not (vm-virtual-messages-of m)) as a condition
-	   ;; here.    USR 2012-10-14
-	   ;; We put this back for now because removing it is giving
-	   ;; errors for virtual foldrs.  USR 2012-10-19
-	   (not (vm-virtual-messages-of m)))
+  (if (vm-virtual-message-p m)
       (or (vm-virtual-summary-of m)
 	  (with-current-buffer (vm-buffer-of m)
 	    (vm-set-virtual-summary-of 
@@ -1976,10 +2024,6 @@ Call this function if you made changes to `vm-summary-format'."
     (vm-set-numbering-redo-start-point t)
     (vm-set-numbering-redo-end-point t)
     ;; Generate fresh summary data and stuff it
-    ;; (vm-inform 7 "%s: Stuffing cached data..." (buffer-name))
-    ;; (vm-stuff-folder-data :interactive t :abort-if-input-pending nil)
-    ;; (vm-inform 7 "%s: Stuffing cached data... done" (buffer-name))
-    ;; (set-buffer-modified-p t)
     ;; Regenerate the summary
     (vm-sort-messages (or vm-ml-sort-keys "activity"))
     (vm-inform 5 "%s: Recreating summary..." (buffer-name))
@@ -2007,526 +2051,6 @@ Call this function if you made changes to `vm-summary-format'."
 	(sort (copy-sequence (vm-decoded-labels-of m)) 'string-lessp)
 	","))
       (vm-decoded-label-string-of m)))
-
-(defun vm-make-folder-summary ()
-  (make-vector vm-folder-summary-vector-length nil))
-
-(defun vm-fs-folder-of (fs) (aref fs 0))
-(defun vm-fs-total-count-of (fs) (aref fs 1))
-(defun vm-fs-new-count-of (fs) (aref fs 2))
-(defun vm-fs-unread-count-of (fs) (aref fs 3))
-(defun vm-fs-deleted-count-of (fs) (aref fs 4))
-(defun vm-fs-start-of (fs) (aref fs 5))
-(defun vm-fs-end-of (fs) (aref fs 6))
-(defun vm-fs-folder-key-of (fs) (aref fs 7))
-(defun vm-fs-mouse-track-overlay-of (fs) (aref fs 8))
-(defun vm-fs-short-folder-of (fs) (aref fs 9))
-(defun vm-fs-modflag-of (fs) (aref fs 10))
-
-(defun vm-set-fs-folder-of (fs x) (aset fs 0 x))
-(defun vm-set-fs-total-count-of (fs x) (aset fs 1 x))
-(defun vm-set-fs-new-count-of (fs x) (aset fs 2 x))
-(defun vm-set-fs-unread-count-of (fs x) (aset fs 3 x))
-(defun vm-set-fs-deleted-count-of (fs x) (aset fs 4 x))
-(defun vm-set-fs-start-of (fs x) (aset fs 5 x))
-(defun vm-set-fs-end-of (fs x) (aset fs 6 x))
-(defun vm-set-fs-folder-key-of (fs x) (aset fs 7 x))
-(defun vm-set-fs-mouse-track-overlay-of (fs x) (aset fs 8 x))
-(defun vm-set-fs-short-folder-of (fs x) (aset fs 9 x))
-(defun vm-set-fs-modflag-of (fs x) (aset fs 10 x))
-
-(defun vm-fs-spooled (fs)
-  (let ((count 0)
-	(list (symbol-value
-	       (intern-soft (vm-fs-folder-key-of fs)
-			    vm-folders-summary-folder-hash))))
-    (while list
-      (setq count (+ count (car (vm-get-folder-totals (car list))))
-	    list (cdr list)))
-    (int-to-string count)))
-
-(defun vm-make-folders-summary-key (folder &optional dir)
-  (cond ((vm-pop-folder-spec-p folder)
-	 (or (vm-pop-find-name-for-spec folder)
-	     (vm-safe-popdrop-string folder)))
-	((vm-imap-folder-spec-p folder)
-	 (or (vm-imap-folder-for-spec folder)
-	     (vm-safe-imapdrop-string folder)))
-	(t
-	 (concat "folder-summary0:"
-		 (file-truename
-		  (expand-file-name folder (or dir vm-folder-directory)))))))
-
-(declare-function open-database  "ext:berkeley-db")
-(declare-function close-database "ext:berkeley-db")
-(declare-function put-database   "ext:berkeley-db")
-(declare-function get-database   "ext:berkeley-db")
-
-(defun vm-open-folders-summary-database (mode)
-  (condition-case data
-      (open-database vm-folders-summary-database 'berkeley-db 'hash mode)
-    (error (vm-warn 0 2 "open-database signaled: %S" data)
-	   nil )))
-
-(defun vm-get-folder-totals (folder)
-  (let ((default "(0 0 0 0)") db key data) ;; fs
-    (catch 'done
-      (if (null vm-folders-summary-database)
-	  (throw 'done (read default)))
-      (if (not (featurep 'berkeley-db))
-	  (throw 'done (read default)))
-      (if (null (setq db (vm-open-folders-summary-database "rw+")))
-	  (throw 'done (read default)))
-      (setq key (vm-make-folders-summary-key folder)
-	    data (read (get-database key db default)))
-      (close-database db)
-      data )))
-
-(defun vm-store-folder-totals (folder totals)
-  (let (fs db key data)
-    (catch 'done
-      (if (null vm-folders-summary-database)
-	  (throw 'done nil))
-      (if (not (featurep 'berkeley-db))
-	  (throw 'done nil))
-      (if (null (setq db (vm-open-folders-summary-database "rw+")))
-	  (throw 'done nil))
-      (setq key (vm-make-folders-summary-key folder)
-	    data (prin1-to-string totals))
-      (put-database key data db t)
-      (close-database db)
-      (if (null vm-folders-summary-hash)
-	  nil
-	(setq fs (intern-soft key vm-folders-summary-hash)
-	      fs (symbol-value fs))
-	(if (null fs)
-	    nil
-	  (vm-set-fs-total-count-of fs (int-to-string (car totals)))
-	  (vm-set-fs-new-count-of fs (int-to-string (nth 1 totals)))
-	  (vm-set-fs-unread-count-of fs (int-to-string (nth 2 totals)))
-	  (vm-set-fs-deleted-count-of fs (int-to-string (nth 3 totals)))))
-      (vm-mark-for-folders-summary-update folder))))
-
-(defun vm-modify-folder-totals (folder action &rest objects)
-  (let (fs db totals key data)
-    (catch 'done
-      (if (null vm-folders-summary-database)
-	  (throw 'done nil))
-      (if (not (featurep 'berkeley-db))
-	  (throw 'done nil))
-      (if (null (setq db (vm-open-folders-summary-database "r")))
-	  (throw 'done nil))
-      (setq key (vm-make-folders-summary-key folder))
-      (setq totals (get-database key db))
-      (close-database db)
-      (if (null totals)
-	  (throw 'done nil))
-      (setq totals (read totals))
-      (cond ((eq action 'arrived)
-	     (let ((arrived (car objects)) c) ;; n
-	       (setcar totals (+ (car totals) arrived))
-	       (setq c (cdr totals))
-	       (setcar c (+ (car c) arrived))))
-	    ((eq action 'saved)
-	     (let ((arrived (car objects))
-		   (m (nth 1 objects)) c) ;; n
-	       (setcar totals (+ (car totals) arrived))
-	       ;; increment new and unread counts if necessary.
-	       ;; messages are never saved with the deleted flag
-	       ;; set no need to check that.
-	       (setq c (cdr totals))
-	       (if (eq (car c) -1)
-		   nil
-		 (if (vm-new-flag m)
-		     (setcar c (+ (car c) arrived))))
-	       (setq c (cdr c))
-	       (if (eq (car c) -1)
-		   nil
-		 (if (vm-unread-flag m)
-		     (setcar c (+ (car c) arrived)))))))
-      (setq data (prin1-to-string totals))
-      (if (null (setq db (vm-open-folders-summary-database "rw+")))
-	  (throw 'done nil))
-      (put-database key data db t)
-      (close-database db)
-      (if (null vm-folders-summary-hash)
-	  nil
-	(setq fs (intern-soft key vm-folders-summary-hash)
-	      fs (symbol-value fs))
-	(if (null fs)
-	    nil
-	  (vm-set-fs-total-count-of fs (int-to-string (car totals)))
-	  (vm-set-fs-new-count-of fs (int-to-string (nth 1 totals)))
-	  (vm-set-fs-unread-count-of fs (int-to-string (nth 2 totals)))
-	  (vm-set-fs-deleted-count-of fs (int-to-string (nth 3 totals)))))
-      (vm-mark-for-folders-summary-update folder))))
-
-(defvar vm-folder-summary nil)		; used with dynamic binding
-
-(defun vm-folders-summary-sprintf (format layout)
-  ;; compile the format into an eval'able s-expression
-  ;; if it hasn't been compiled already.
-  (let ((match (assoc format vm-folders-summary-compiled-format-alist)))
-    (if (null match)
-	(progn
-	  (vm-folders-summary-compile-format format)
-	  (setq match
-		(assoc format vm-folders-summary-compiled-format-alist))))
-    ;; The local variable name `vm-folder-summary' is mandatory here for
-    ;; the format s-expression to work.
-    (let ((vm-folder-summary layout))
-      (eval (cdr match)))))
-
-(defun vm-folders-summary-compile-format (format)
-  (let ((return-value (vm-folders-summary-compile-format-1 format 0)))
-    (setq vm-folders-summary-compiled-format-alist
-	  (cons (cons format (nth 1 return-value))
-		vm-folders-summary-compiled-format-alist))))
-
-(defun vm-folders-summary-compile-format-1 (format start-index)
-  (let ((case-fold-search nil)
-	(done nil)
-	(sexp nil)
-	(sexp-fmt nil)
-	(last-match-end start-index)
-	new-match-end conv-spec)
-    (store-match-data nil)
-    (while (not done)
-      (while
-	  (and (not done)
-	       (string-match
-		"%\\(-\\)?\\([0-9]+\\)?\\(\\.\\(-?[0-9]+\\)\\)?\\([()dfnstu%]\\)"
-		format last-match-end))
-	(setq conv-spec (aref format (match-beginning 5)))
-	(setq new-match-end (match-end 0))
-	(if (memq conv-spec '(?\( ?d ?f ?n ?s ?t ?u))
-	    (progn
-	      (cond ((= conv-spec ?\()
-		     (save-match-data
-		       (let ((retval
-			      (vm-folders-summary-compile-format-1
-			       format
-			       (match-end 5))))
-			 (setq sexp (cons (nth 1 retval) sexp)
-			       new-match-end (car retval)))))
-		    ((= conv-spec ?d)
-		     (setq sexp (cons (list 'vm-fs-deleted-count-of
-					    'vm-folder-summary) sexp)))
-		    ((= conv-spec ?f)
-		     (setq sexp (cons (list 'vm-fs-short-folder-of
-					    'vm-folder-summary) sexp)))
-		    ((= conv-spec ?n)
-		     (setq sexp (cons (list 'vm-fs-new-count-of
-					    'vm-folder-summary) sexp)))
-		    ((= conv-spec ?t)
-		     (setq sexp (cons (list 'vm-fs-total-count-of
-					    'vm-folder-summary) sexp)))
-		    ((= conv-spec ?s)
-		     (setq sexp (cons (list 'vm-fs-spooled
-					    'vm-folder-summary) sexp)))
-		    ((= conv-spec ?u)
-		     (setq sexp (cons (list 'vm-fs-unread-count-of
-					    'vm-folder-summary) sexp))))
-	      (cond ((and (match-beginning 1) (match-beginning 2))
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-left-justify-string
-				'vm-left-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2))))))
-		    ((match-beginning 2)
-		     (setcar sexp
-			     (list
-			      (if (eq (aref format (match-beginning 2)) ?0)
-				  'vm-numeric-right-justify-string
-				'vm-right-justify-string)
-			      (car sexp)
-			      (string-to-number
-			       (substring format
-					  (match-beginning 2)
-					  (match-end 2)))))))
-	      (cond ((match-beginning 3)
-		     (setcar sexp
-			     (list 'vm-truncate-string (car sexp)
-				   (string-to-number
-				    (substring format
-					       (match-beginning 4)
-					       (match-end 4)))))))
-	      (setq sexp-fmt
-		    (cons "%s"
-			  (cons (substring format
-					   last-match-end
-					   (match-beginning 0))
-				sexp-fmt))))
-	  (setq sexp-fmt
-		(cons (if (eq conv-spec ?\))
-			  (prog1 "" (setq done t))
-			"%%")
-		      (cons (substring format
-				       (or last-match-end 0)
-				       (match-beginning 0))
-			    sexp-fmt))))
-	(setq last-match-end new-match-end))
-      (if (not done)
-	  (setq sexp-fmt
-		(cons (substring format last-match-end (length format))
-		      sexp-fmt)
-		done t))
-      (setq sexp-fmt (apply 'concat (nreverse sexp-fmt)))
-      (if sexp
-	  (setq sexp (cons 'format (cons sexp-fmt (nreverse sexp))))
-	(setq sexp sexp-fmt)))
-    (list last-match-end sexp)))
-
-(defun vm-update-folders-summary-entry (fs)
-  (if (and (vm-fs-start-of fs)
-	   (marker-buffer (vm-fs-start-of fs)))
-      (let ((modified (buffer-modified-p))
-	    (do-mouse-track
-	     (or (and vm-mouse-track-summary
-		      (vm-mouse-support-possible-p))
-		 vm-summary-enable-faces))
-	    ) ;;summary
-	(with-current-buffer (marker-buffer (vm-fs-start-of fs))
-	  (let ((buffer-read-only nil))
-	    (unwind-protect
-		(save-excursion
-		  (goto-char (vm-fs-start-of fs))
-		  ;; We do a little dance to update the text in
-		  ;; order to make the markers in the text do
-		  ;; what we want.
-		  ;;
-		  ;; 1. We need to avoid having the start
-		  ;;    and end markers clumping together at
-		  ;;    the start position.
-		  ;;
-		  ;; 2. We want the window point marker (w->pointm
-		  ;;    in the Emacs display code) to move to the
-		  ;;    start of the summary entry if it is
-		  ;;    anywhere within the su-start-of to
-		  ;;    su-end-of region.
-		  ;;
-		  ;; We achieve (2) by deleting before inserting.
-		  ;; Reversing the order of insertion/deletion
-		  ;; pushes the point marker into the next
-		  ;; summary entry. We achieve (1) by inserting a
-		  ;; placeholder character at the end of the
-		  ;; summary entry before deleting the region.
-		  (goto-char (vm-fs-end-of fs))
-		  (insert-before-markers "z")
-		  (goto-char (vm-fs-start-of fs))
-		  (delete-region (point) (1- (vm-fs-end-of fs)))
-		  (insert
-		   (vm-folders-summary-sprintf vm-folders-summary-format fs))
-		  (delete-char 1)
-		  (when do-mouse-track
-		    (vm-mouse-set-mouse-track-highlight
-		     (vm-fs-start-of fs)
-		     (vm-fs-end-of fs)
-		     (vm-fs-mouse-track-overlay-of fs)))
-		  ;; VM Summary Faces may not work for this yet
-		  ;; (when vm-summary-enable-faces
-		  ;;   (vm-summary-faces-add fs))
-		  )
-	      (set-buffer-modified-p modified)))))))
-
-(defun vm-folders-summary-mode-internal ()
-  (setq mode-name "VM Folders Summary"
-	major-mode 'vm-folders-summary-mode
-	mode-line-format '("     %b")
-	;; must come after the setting of major-mode
-	mode-popup-menu (and vm-use-menus
-			     (vm-menu-support-possible-p)
-			     (vm-menu-mode-menu))
-	buffer-read-only t
-	buffer-offer-save nil
-	truncate-lines t)
-  (when (and (featurep 'xemacs) (featurep 'scrollbar))
-    (set-specifier scrollbar-height (cons (current-buffer) 0)))
-  (use-local-map vm-folders-summary-mode-map)
-  (when (vm-menu-support-possible-p)
-    (vm-menu-install-menus))
-  (when (and vm-mutable-frame-configuration vm-frame-per-folders-summary)
-    (vm-set-hooks-for-frame-deletion))
-  (run-hooks 'vm-folders-summary-mode-hook))
-
-(defun vm-do-folders-summary ()
-  (catch 'done
-    (let ((fs-hash (make-vector 89 0)) db dp fp f key fs totals
-          (format vm-folders-summary-format)
-	  (do-mouse-track (or (and vm-mouse-track-summary
-				   (vm-mouse-support-possible-p))
-			      vm-summary-enable-faces)))
-      (with-current-buffer vm-folders-summary-buffer
-	(erase-buffer)
-	(let ((buffer-read-only nil))
-	  (if (null vm-folders-summary-database)
-	      (throw 'done nil))
-	  (if (not (featurep 'berkeley-db))
-	      (throw 'done nil))
-	  (if (null (setq db (vm-open-folders-summary-database "r")))
-	      (throw 'done nil))
-	  (setq dp vm-folders-summary-directories)
-	  (while dp
-	    (if (cdr vm-folders-summary-directories)
-		(insert (car dp) ":\n"))
-	    (let ((default-directory (car dp)))
-	      (setq fp (sort (vm-delete-backup-file-names
-			      (vm-delete-auto-save-file-names
-			       (vm-delete-index-file-names
-				(vm-delete-directory-names
-				 (directory-files (car dp))))))
-			     (function string-lessp))))
-	    (while fp
-	      (setq f (car fp)
-		    key (vm-make-folders-summary-key f (car dp))
-		    totals (get-database key db))
-	      (if (null totals)
-		  (let ((ff (expand-file-name f (car dp))))
-		    (setq totals (list (or (vm-count-messages-in-file ff) -1)
-				       -1 -1 -1))
-		    (if (eq (car totals) -1)
-			nil
-		      (vm-store-folder-totals ff totals)))
-		(setq totals (read totals)))
-	      (if (eq (car totals) -1)
-		  nil
-		(setq fs (vm-make-folder-summary))
-		(vm-set-fs-folder-of fs (expand-file-name f (car dp)))
-		(vm-set-fs-short-folder-of fs f)
-		(vm-set-fs-total-count-of fs (vm-nonneg-string (car totals)))
-		(vm-set-fs-new-count-of fs (vm-nonneg-string (nth 1 totals)))
-		(vm-set-fs-unread-count-of fs (vm-nonneg-string
-					       (nth 2 totals)))
-		(vm-set-fs-deleted-count-of fs (vm-nonneg-string
-						(nth 3 totals)))
-		(vm-set-fs-folder-key-of fs key)
-		(vm-set-fs-start-of fs (vm-marker (point)))
-		(insert (vm-folders-summary-sprintf format fs))
-		(vm-set-fs-end-of fs (vm-marker (point)))
-		(when do-mouse-track
-		  (vm-set-fs-mouse-track-overlay-of
-		   fs
-		   (vm-mouse-set-mouse-track-highlight
-		    (vm-fs-start-of fs)
-		    (vm-fs-end-of fs))))
-		;; VM Summary Faces may not work here yet
-		;; (when vm-summary-enable-faces
-		;;   (vm-summary-faces-add fs))
-		(set (intern key fs-hash) fs))
-	      (setq fp (cdr fp)))
-	    (setq dp (cdr dp)))
-	  (close-database db)
-	  (setq vm-folders-summary-hash fs-hash))
-	(goto-char (point-min))))))
-
-(defun vm-update-folders-summary-highlight ()
-  (if (or (null vm-mail-buffer)
-	  (null (buffer-file-name vm-mail-buffer))
-	  (null vm-folders-summary-hash))
-      (progn
-	(and vm-folders-summary-overlay
-	     (vm-set-extent-endpoints vm-folders-summary-overlay 1 1))
-	(setq vm-mail-buffer nil))
-    (let ((ooo vm-folders-summary-overlay)
-	  (fs (symbol-value (intern-soft (vm-make-folders-summary-key
-					  (buffer-file-name vm-mail-buffer))
-					 vm-folders-summary-hash))))
-      (if (and fs
-	       (or (null ooo)
-		   (null (vm-extent-object ooo))
-		   (/= (vm-extent-end-position ooo)
-		       (vm-fs-end-of fs))))
-	  (vm-folders-summary-highlight-region
-	   (vm-fs-start-of fs) (vm-fs-end-of fs)
-	   vm-summary-highlight-face)))))
-
-(defun vm-do-needed-folders-summary-update ()
-  (if (null vm-folders-summary-buffer)
-      nil
-    (with-current-buffer vm-folders-summary-buffer
-      (if (or (eq vm-modification-counter vm-flushed-modification-counter)
-	      (null vm-folders-summary-hash))
-	  nil
-	(mapatoms
-	 (function
-	  (lambda (sym)
-	    (let ((fs (symbol-value sym)))
-	      (if (null (vm-fs-modflag-of fs))
-		  nil
-		(vm-update-folders-summary-entry fs)
-		(vm-set-fs-modflag-of fs nil)))))
-	  vm-folders-summary-hash)
-	(vm-update-folders-summary-highlight)
-	(setq vm-flushed-modification-counter vm-modification-counter)))))
-
-(defun vm-mark-for-folders-summary-update (folder &optional dont-descend)
-  (let ((key (vm-make-folders-summary-key folder))
-	(hash vm-folders-summary-hash)
-	(spool-hash vm-folders-summary-spool-hash)
-	list fs )
-    (setq fs (symbol-value (intern-soft key hash)))
-    (if (not fs)
-	nil
-      (vm-set-fs-modflag-of fs t)
-      (vm-check-for-killed-summary)
-      (if vm-folders-summary-buffer
-	  (with-current-buffer vm-folders-summary-buffer
-	    (vm-increment vm-modification-counter))))
-    (if dont-descend
-	nil
-      (setq list (symbol-value (intern-soft key spool-hash)))
-      (while list
-	(vm-mark-for-folders-summary-update (car list) t)
-	(setq list (cdr list))))))
-
-(defun vm-make-folders-summary-associative-hashes ()
-  (let ((triples (vm-compute-spool-files t))
-	(spool-hash (make-vector 61 0))
-	(folder-hash (make-vector 61 0))
-	s-list f-list folder-key spool-key)
-    (while triples
-      (setq folder-key (vm-make-folders-summary-key (car (car triples)))
-	    spool-key (vm-make-folders-summary-key (nth 1 (car triples)))
-	    s-list (symbol-value (intern-soft spool-key spool-hash))
-	    s-list (cons (car (car triples)) s-list)
-	    f-list (symbol-value (intern-soft folder-key folder-hash))
-	    f-list (cons (nth 1 (car triples)) f-list)
-	    triples (cdr triples))
-      (set (intern spool-key spool-hash) s-list)
-      (set (intern folder-key folder-hash) f-list))
-    (setq vm-folders-summary-spool-hash spool-hash)
-    (setq vm-folders-summary-folder-hash folder-hash)))
-
-(defun vm-follow-folders-summary-cursor ()
-  (if (or (not (eq major-mode 'vm-folders-summary-mode))
-	  (null vm-folders-summary-hash))
-      nil
-    (catch 'done
-      (mapatoms
-       (function
-	(lambda (sym)
-	  (let ((fs (symbol-value sym)))
-	    (if (and (>= (point) (vm-fs-start-of fs))
-		     (< (point) (vm-fs-end-of fs))
-		     (or (null vm-mail-buffer)
-			 (not (eq vm-mail-buffer
-				  (vm-get-file-buffer (vm-fs-folder-of fs))))))
-		(progn
-		  (setq vm-mail-buffer
-			(save-excursion
-			  (vm-visit-folder (vm-fs-folder-of fs))
-			  (current-buffer)))
-		  (vm-increment vm-modification-counter)
-		  (vm-update-summary-and-mode-line)
-		  (throw 'done t))))))
-       vm-folders-summary-hash)
-      nil )))
-
 
 (provide 'vm-summary)
 ;;; vm-summary.el ends here

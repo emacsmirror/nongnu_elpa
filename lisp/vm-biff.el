@@ -3,7 +3,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 2001 Robert Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Author:      Robert Fenk
 ;; Status:      Tested with XEmacs 21.4.15 & VM 7.18
@@ -26,36 +26,33 @@
 
 ;;; Commentary:
 ;;
-;; Put this file into your load path and add the following line to your .vm
-;; file
+;; Turn this on with
 ;;
-;; (require 'vm-biff)
+;; (vm-biff-mode 1)
+;;
+;; in your .vm file.  Loading the file no longer switches it on by itself:
+;; merely loading a file should not change how Emacs behaves, and this one used
+;; to add to `vm-arrived-messages-hook' as it loaded.  Requiring it and calling
+;; the mode are both fine, and the autoloaded mode means the require is not
+;; needed.
 ;;
 ;; Try: M-x customize-group vm-biff RET
 ;;
-;; You should set `vm-auto-get-newmail', since otherwise this package 
+;; You should set `vm-auto-get-new-mail', since otherwise this package
 ;; does not make any sense!  If getting mail is slow, use fetchmail to
 ;; retrieve it to a local file and uses that file as VM spool file!
-;; 
+;;
 ;;; Code:
 
 (require 'vm-misc)
 (require 'vm-summary)
 (require 'vm-message)
+(require 'vm-macro)
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function get-itimer "vm-xemacs.el" (name))
-(declare-function start-itimer "vm-xemacs.el"
-		  (name function value &optional restart is-idle with-args
-			&rest function-arguments))
-(declare-function set-itimer-restart "vm-xemacs.el" (itimer restart))
-(declare-function delete-itimer "vm-xemacs" (itimer))
-(declare-function set-specifier "vm-xemacs" 
-		  (specifier value &optional locale tag-set how-to-add))
-(declare-function console-type "vm-xemacs" (&optional console))
-(declare-function frame-device "vm-xemacs" (&optional frame))
-(declare-function window-displayed-height "vm-xemacs" (&optional window))
-(defvar current-itimer)
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 
 (declare-function vm-decode-mime-encoded-words-in-string "vm-mime" (string))
 
@@ -67,16 +64,8 @@
 		  (start end &optional overlay))
 (declare-function vm-summary-faces-add "vm-summary-faces" (message))
 
-(when (featurep 'xemacs)
-  (require 'overlay))
-
-(when (not (featurep 'xemacs))
-  (defvar horizontal-scrollbar-visible-p nil))
 
 ; group already defined in vm-vars.el
-;(defgroup vm nil
-;  "VM"
-;  :group 'mail)
 
 (defgroup vm-biff nil
   "The VM biff lib"
@@ -103,13 +92,13 @@
   :type 'integer)
 
 (defcustom vm-biff-body-peek 50
-  "*Maximum number of chractes to peek into the body of a message."
+  "*Maximum number of characters to peek into the body of a message."
   :group 'vm-biff
   :type 'integer)
 
 
 (defcustom vm-biff-focus-popup nil
-  "*t if popup window should get the focus after an update."
+  "*Non-nil means the pop-up window takes the focus when it appears."
   :group 'vm-biff
   :type 'boolean)
 
@@ -128,7 +117,7 @@
 (defcustom vm-biff-selector '(and (new)
                                   (not (deleted))
                                   (not (outgoing)))
-  "*virtual folder selector matching messages to display in the pop-up."
+  "*Virtual folder selector matching the messages the pop-up shows."
   :group 'vm-biff
   :type 'sexp)
 
@@ -156,7 +145,7 @@ Testing is done by string-matching it against the current buffer-file-name.
 
 Another form is an alist of elements (FODERNAME SELECTOR),
 where SELECTOR is a virtual folder selector matching the
-messges which should be displayed.  See `vm-biff-selector'
+messages which should be displayed.  See `vm-biff-selector'
 for an example and `vm-virtual-folder-alist' on how virtual
 folder selectors work."
   :group 'vm-biff
@@ -182,26 +171,30 @@ folder selectors work."
         peek)
     (if (< vm-biff-body-peek (- body-end body-start))
         (setq body-end (+ vm-biff-body-peek body-start)))
-    (save-excursion
-      (save-restriction
-        (set-buffer (vm-buffer-of msg))
-        (widen)
-        (goto-char body-end)
-        (re-search-forward "$" (point-max) t)
-        (setq peek (vm-decode-mime-encoded-words-in-string
-                    (buffer-substring body-start (point))))
-        (let ((pos 0))
-          (if (string-match "^\n+" peek pos)
-              (setq peek (replace-match "" t t peek)))
-          (while (setq pos (string-match "\n\n+" peek pos))
-            (setq peek (replace-match "\n" t t peek)))
-          (setq pos 0)
-          (while (setq pos (string-match "\n" peek pos))
-            (setq peek (replace-match "\n\t" t t peek)
-                  pos (+ 2 pos))))
-        (setq peek (concat "\t" peek))
-        (put-text-property 0 (length peek) 'face 'bold peek)
-        peek))))
+    ;; `save-restriction' in the buffer being widened, not in whichever
+    ;; buffer the summary is being built in: `vm-biff-popup' makes the popup
+    ;; buffer current before it formats a line, so entering it there left the
+    ;; folder widened for good (#780).
+    (with-current-buffer (vm-buffer-of msg)
+      (save-excursion
+        (save-restriction
+          (widen)
+          (goto-char body-end)
+          (re-search-forward "$" (point-max) t)
+          (setq peek (vm-decode-mime-encoded-words-in-string
+                      (buffer-substring body-start (point))))
+          (let ((pos 0))
+            (if (string-match "^\n+" peek pos)
+                (setq peek (replace-match "" t t peek)))
+            (while (setq pos (string-match "\n\n+" peek pos))
+              (setq peek (replace-match "\n" t t peek)))
+            (setq pos 0)
+            (while (setq pos (string-match "\n" peek pos))
+              (setq peek (replace-match "\n\t" t t peek)
+                    pos (+ 2 pos))))
+          (setq peek (concat "\t" peek))
+          (put-text-property 0 (length peek) 'face 'bold peek)
+          peek)))))
 
 (defun vm-biff-place-frame (&optional f)
   "Centers the frame and limits it to `vm-biff-max-height' lines."
@@ -226,7 +219,6 @@ folder selectors work."
     (user-position . t)    
     (menubar-visible-p . nil)
     (default-toolbar-visible-p . nil)
-;    (has-modeline-p . nil)
     (top . 1)
     (left . 1)
     ;; Xemacs properties
@@ -248,14 +240,14 @@ folder selectors work."
 (defvar vm-biff--folder-window nil)
 
 (defun vm-biff-x-p ()
-  (if (featurep 'xemacs)
-      (memq (console-type) '(x mswindows))
-    t))
+  "Whether a frame of its own may be made for the message.
+Always: it asked XEmacs's `console-type', and the answer for Emacs was
+always t, `make-frame' erroring on a terminal being handled by
+`vm-multiple-frames-possible-p' where it matters."
+  t)
 
 (defun vm-biff-get-buffer-window (buf)
-  (if (featurep 'xemacs)
-      (vm-get-buffer-window buf (vm-biff-x-p) (frame-device))
-    (vm-get-buffer-window buf (vm-biff-x-p))))
+  (vm-get-buffer-window buf (vm-biff-x-p)))
 
 (defun  vm-biff-find-folder-window (msg)
   (let ((buf (vm-buffer-of msg)))
@@ -272,7 +264,7 @@ folder selectors work."
 
 ;;;###autoload
 (defun vm-biff-select-message ()
-  "Put focus on the folder frame and select the appropiate message."
+  "Put focus on the folder frame and select the appropriate message."
   (interactive)
   (let* ((vm-biff-message-pointer
           (or (get-text-property (point) 'vm-message-pointer)
@@ -311,6 +303,7 @@ folder selectors work."
   (interactive "e")
   (mouse-set-point event)
   (vm-biff-select-message))
+(put 'vm-biff-select-message-mouse 'vm-called-by-vm t)
 
 (defcustom vm-biff-FvwmCommand-path "/usr/bin/FvwmCommand"
   "Full qualified path to FvwmCommand."
@@ -359,14 +352,11 @@ AddToFunc SelectWindow
   (sit-for 0))
 
 (defun vm-biff-timer-delete-popup (wf)
-  (if (featurep 'itimer)
-      (delete-itimer current-itimer))
   (vm-biff-delete-popup wf))
 
 (defvar vm-biff-message-pointer nil)
 (make-variable-buffer-local 'vm-biff-message-pointer)
 
-(defvar horizontal-scrollbar-visible-p)	; defined for XEmacs only
 
 ;;;###autoload
 (defun vm-biff-popup (&optional force)
@@ -465,18 +455,13 @@ AddToFunc SelectWindow
                                 (cons (cons 'popup ff)
                                       vm-biff-frame-properties)
                               vm-biff-frame-properties))
-                     (mf (or (and (if (featurep 'xemacs)
-				      (vm-get-buffer-window buf t 
-							    (frame-device))
-				    (vm-get-buffer-window buf t))
+                     (mf (or (and (vm-get-buffer-window buf t)
                                   (window-frame
                                    (vm-biff-get-buffer-window buf)))
                              (make-frame props))))
 
                 (select-frame mf)
                 (switch-to-buffer buf)
-                (if (featurep 'xemacs)
-                    (set-specifier horizontal-scrollbar-visible-p nil))
             
                 (if (functionp vm-biff-place-frame-function)
                     (funcall vm-biff-place-frame-function))
@@ -499,30 +484,26 @@ AddToFunc SelectWindow
               (switch-to-buffer buf)
               (if (> h vm-biff-max-height)
                   (setq h vm-biff-max-height))
-	      (if (featurep 'xemacs)
-		  (setq h (- (window-displayed-height) h))
-		(setq h (- (window-height) h)))
+	      (setq h (- (window-height) h))
               (if (not (one-window-p))
                   (shrink-window h)))))
 
-        (if vm-biff-auto-remove
-            (cond
-             	((condition-case nil
-                     (progn (require 'itimer) t)
-                   (error nil))
-                 (start-itimer (buffer-name)
-                               'vm-biff-timer-delete-popup
-                               vm-biff-auto-remove
-                               nil t t wf))
-                ((condition-case nil
-                     (progn (require 'timer) t)
-                   (error nil))
-                 (run-at-time vm-biff-auto-remove nil
-                              'vm-biff-timer-delete-popup wf))))))))
+        (when vm-biff-auto-remove
+          (require 'timer)
+          (run-at-time vm-biff-auto-remove nil
+                       'vm-biff-timer-delete-popup wf))))))
 
-; add hook only when explictly requring this module
-(unless (bound-and-true-p byte-compile-current-file)
-  (add-hook 'vm-arrived-messages-hook 'vm-biff-popup t))
+;;;###autoload
+(define-minor-mode vm-biff-mode
+  "A xlbiff like tool for VM: pop up a summary frame when mail arrives.
+
+You should also set `vm-auto-get-new-mail', since otherwise nothing goes
+looking for new mail and this has nothing to pop up about."
+  :global t
+  :group 'vm-biff
+  (if vm-biff-mode
+      (add-hook 'vm-arrived-messages-hook #'vm-biff-popup t)
+    (remove-hook 'vm-arrived-messages-hook #'vm-biff-popup)))
 
 (provide 'vm-biff)
 ;;; vm-biff.el ends here.

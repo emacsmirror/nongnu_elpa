@@ -1,0 +1,244 @@
+* Gmail labels, and where VM's own labels can live
+
+The design for https://gitlab.com/emacs-vm/vm/-/work_items/601, Work around
+Gmail's partial IMAP: labels set in VM do not stick.
+
+The discussion belongs on the ticket.  This file is what was built, what was
+rejected and why, and the questions still open.  It is meant to be read years
+from now, so it carries no line numbers and no branch names: the functions it
+names can be found by name.
+
+** Scope: Gmail, and not servers in general
+
+Gmail is the server this is for.  It accepts an IMAP keyword, answers OK and
+keeps nothing, which is the specific breakage worked around here.
+
+Making VM's labels survive every server that might mishandle keywords is not a
+goal.  We have no knowledge of how any other server is broken, and a
+workaround written against a server nobody has measured is a guess that will
+be wrong in a way nobody notices.  Where an option below happens to help
+another server, that is a side effect and not a reason to choose it.
+
+** What Gmail does
+
+- A label is a mailbox.  A message with two labels appears in two mailboxes,
+  All Mail holds every message once, and applying a label is a UID COPY.
+- IMAP keywords are not labels.  Gmail takes a STORE of an arbitrary keyword,
+  answers OK, and keeps nothing.  There is no error at any point.
+- \Deleted does not delete.  EXPUNGE from All Mail, or a move to
+  [Gmail]/Trash, does.
+- Gmail advertises X-GM-EXT-1, which carries X-GM-LABELS, X-GM-MSGID,
+  X-GM-THRID and X-GM-RAW search.
+
+X-GM-LABELS is the mapping done properly.  Reading and writing, from Google's
+IMAP extensions documentation:
+
+: a010 FETCH 1:4 (X-GM-LABELS)
+: * 1 FETCH (X-GM-LABELS (\Inbox \Sent Important "Muy Importante"))
+: a011 STORE 1 +X-GM-LABELS (foo)
+
+The values are ASTRINGs, encoded in modified UTF-7 where they are not ASCII.
+Gmail's own labels come back as backslash atoms: \Inbox, \Sent, \Drafts,
+\Junk for Spam, \Trash, \Starred, \Important.
+
+** What VM does now
+
+Implemented and on develop.
+
+- A VM label is a bare IMAP keyword on the wire.  The wanted flags are built
+  from a message's decoded labels and sent as STORE +FLAGS.SILENT.
+- The read-back, =vm-imap-update-message-flags=, gives each message exactly
+  the keywords the server reported.  Both the blocking retrieve-attributes
+  step and the driver's =vm-imap-net-take-server-flags= go through it.
+- =vm-imap-net-note-dropped-flags= warns once per session that the server
+  accepted a keyword and discarded it, naming the label.  The manual says so
+  under Gmail.  Before it, the loss was silent.
+- =vm-imap-net-tell-about-keywords= says the same thing before the store
+  rather than after it, when the mailbox did not offer \* in PERMANENTFLAGS.
+  Once per folder, and only where a label is actually being sent, so a reader
+  who sets none is never told.  It changes nothing: the label still goes and
+  is still lost.
+
+  Why both: the first needs a round trip and a keyword to come back missing,
+  by which time the reader has moved on.  The second says it while the label
+  is still in front of them, at the cost of resting on what the server
+  advertised rather than on what it did.
+- =vm-imap-mailbox-carries-keywords-p= decides whether the server's flag list
+  is a statement about labels at all.  It answers whether any message in the
+  mailbox carries a keyword; where none does, the read-back leaves the
+  folder's labels alone.
+
+  Without it a label was set here, dropped there, and then erased here by the
+  copy that came back, which is why setting a label on Gmail looked like a
+  no-op even locally.
+
+What the heuristic costs: on a mailbox where no message carries a keyword, a
+label removed in another client lingers until some message there has one.
+What the previous behaviour cost was the reader's labels.
+
+Why PERMANENTFLAGS warns and does not decide: a server may leave a keyword out
+of it and store the keyword anyway, or advertise \* and keep nothing.  So it is
+good enough to say something to the reader and not good enough to change what
+VM stores, which is why =vm-imap-net-tell-about-keywords= is worded as what the
+server said.  What Gmail does is still unmeasured.  See the open questions.
+
+** The constraint on any store
+
+A store local to one computer is not a fix.  A reader uses a laptop and a
+desktop, and labels set on one have to be visible on the other.  A local file,
+a sidecar beside the IMAP cache, or a row in a local database is a cache, not
+an answer.  Only a store the server holds qualifies.
+
+** The direction: X-GM-LABELS
+
+The first real fix, and the only option where a label set in VM appears in
+Gmail's own interface and on the reader's phone, which is what the request
+means.
+
+- FETCH X-GM-LABELS to read, UID STORE ±X-GM-LABELS to write, gated on the
+  X-GM-EXT-1 capability, which VM already asks for.
+- Gmail's own labels have to map onto VM's flags rather than onto labels, or
+  the reader acquires a label called \Inbox.
+
+*** Naming and organisation, which is the hard half
+
+The two namespaces do not correspond, and the mismatch is not symmetric.
+
+- **A keyword cannot hold every label name.** An IMAP keyword is an atom: no
+  spaces, and none of the specials the grammar excludes.  A Gmail label may
+  contain spaces and much else, "Muy Importante" being Google's own example.
+  So a Gmail label coming in may have no legal keyword name, and the mapping
+  has to either encode it, refuse it, or hold labels somewhere other than the
+  keyword list.
+- **"/" already means something.** Gmail's label namespace is flat, and a "/"
+  in a name is what makes the interface show one label nested inside another.
+  A VM label containing "/" therefore creates a nested Gmail label, and a
+  nested Gmail label arrives as a name with a "/" in it.  Whether VM should
+  treat that as one label whose name contains a separator, or as a hierarchy
+  of its own, is undecided.
+- **Creating a label creates a mailbox.** Applying a new label to a message
+  makes a mailbox that then appears in every listing, VM's own folder
+  completion included.  A typo makes a permanent one.
+- **Backslash names are reserved.** Anything beginning "\" is Gmail's, and
+  [Gmail]/ and [GoogleMail]/ are reserved prefixes.  A VM label must not be
+  able to claim one.
+- **Case is unmeasured.** Whether Gmail treats two labels differing only in
+  case as one is not documented and has not been tested here.
+
+Google's documentation does not state character restrictions, a length limit
+or a nesting rule.  Every claim above about what Gmail accepts is therefore
+either from its own examples or has to be measured before the mapping is
+written.
+
+An open question rather than a decision: how does a reader say which VM labels
+become Gmail labels, and what happens to a label whose name Gmail will not
+take?
+
+** Storing state in a Gmail mailbox
+
+The fallback if X-GM-LABELS cannot be made to carry everything.  The labels
+live in an IMAP mailbox of VM's own, say VM/State, as ordinary messages keyed
+by Message-ID.  Gmail shows that mailbox as a label like any other.
+
+The question is what a message in it holds, and there are two answers with
+different costs.
+
+*** One state message, holding the whole map
+
+- One message lists every labelled Message-ID and its labels.
+- Reading is a single FETCH at folder open.
+- Writing rewrites it: APPEND the new one, delete the old.
+- Two machines writing is last writer wins, and the loser's labels are gone
+  with no sign that anything happened.
+- The message grows with the folder.  A folder of tens of thousands of
+  messages makes one large message fetched at every open.
+
+*** One metadata message per mail
+
+- One small message per labelled mail, carrying its Message-ID and its
+  labels.
+- Writing is one APPEND and never a rewrite, so two machines merge by
+  construction: neither can lose the other's work.
+- Reading is the expensive half.  Every one of them has to be fetched at
+  folder open, or searched for one message at a time.
+- The mailbox grows to the size of the labelled part of the folder, and
+  removing a label leaves a message that has to be cleaned up.
+
+*** What to build, if this is built
+
+An append-only log compacted into a snapshot, which is the two above
+combined.  Each save APPENDs only what changed.  When the number of loose
+messages passes some count, VM writes one snapshot message and deletes the
+messages it covers.  Reading is the snapshot plus whatever loose messages
+follow it.  Two machines merge, because the log is append-only, and the read
+stays cheap, because the snapshot does not grow without bound.
+
+Costs, whichever structure is chosen: the labels are invisible to Gmail's
+interface and to every other client, which is most of what the request asked
+for; and the mailbox is VM litter that a reader may delete without knowing
+what it was.
+
+** Rejected
+
+- **A file on the reader's machine.**  Cheapest to build, and it fails the
+  constraint above: one machine only.  Worth keeping in mind only as the local
+  half of whatever store is built, never as the fix.
+- **A file in Google Drive.**  It buys what the mailbox message buys and costs
+  far more: OAuth2 with a registered Google client, a token store and refresh,
+  and an HTTP and JSON layer VM does not have.  A reader who reaches Gmail
+  with an app password has none of it set up.  No other mail client can read
+  the result either, so it does not even have the interoperability the mailbox
+  option lacks.
+- **UID COPY into a mailbox named for the label.**  The same effect as
+  X-GM-LABELS without the extension: creating a label means creating a
+  mailbox, removing one means finding the message there and expunging it.
+  Gmail always advertises the extension, so this is more work for a worse
+  result.
+- **A local cache server with a sync tool doing the mapping.**  VM would speak
+  keywords to a local dovecot, where they persist, and the sync tool would map
+  them to labels on the way out.  Blocked rather than pending: isync feature
+  request 15 has asked for X-GM-LABELS since 2021-05-05 with no push support
+  (https://sourceforge.net/p/isync/feature-requests/15/), and offlineimap
+  carries labels one way as an X-Keywords header, which is not a keyword
+  either.
+
+  A variant needs no sync tool: VM talks to the local dovecot for mail and to
+  Gmail directly for X-GM-LABELS.  That is two connections and two credentials
+  for one folder, so it suits only a reader already running the cache.
+
+- **Mapping a VM label onto \Flagged.**  \Seen, \Answered, \Flagged, \Draft
+  and \Deleted are honoured, \Flagged being Starred, so a VM label named
+  starred or flagged could round-trip for almost nothing.  Not rejected on
+  merit: it is a single label rather than a store, so it does not answer the
+  request, and it is worth doing only alongside one of the above.
+
+** Open questions
+
+*** Does Gmail advertise \* in PERMANENTFLAGS?
+
+If it does not, PERMANENTFLAGS answers the question outright and replaces the
+heuristic in =vm-imap-mailbox-carries-keywords-p=.
+
+Measured 2026-08-26 against what test/vm-live-config.el configures, by
+CAPABILITY, LOGIN, SELECT INBOX, LOGOUT and nothing else:
+
+| server      | PERMANENTFLAGS                                                       |
+|-------------+----------------------------------------------------------------------|
+| plain       | \Answered \Flagged \Deleted \Seen \Draft \*                          |
+| ucsc-mirror | \Answered \Flagged \Deleted \Seen \Draft to- to-do filed forwarded \* |
+
+Both are dovecot, both advertise \*, and both keep what they are given: the
+mirror's list carries VM's own keywords, which is a keyword-holding server
+behaving as the read-back expects.
+
+It does not answer the Gmail question.  There is no direct Gmail account in
+the configuration: ucsc-mirror is a local dovecot that mbsync fills from
+Gmail, so its PERMANENTFLAGS is dovecot's answer and says nothing about
+Gmail's.  Settling it wants a session to imap.gmail.com itself, which needs a
+credential the test configuration does not hold.
+
+*** The naming questions above
+
+Which VM labels become Gmail labels, what happens to a name Gmail will not
+take, what "/" means, and whether Gmail folds case.  All of them want a
+session against Gmail before the mapping is written.

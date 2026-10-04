@@ -5,7 +5,7 @@
 ;;
 ;; Copyright (C) 1989-1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -26,6 +26,10 @@
 (require 'vm-macro)
 (require 'vm-vars)
 (eval-when-compile (require 'cl-lib))
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-mime-encode-words-in-string "vm-mime" (string))
 (declare-function vm-reencode-mime-encoded-words-in-string
@@ -100,11 +104,23 @@ works in all VM buffers."
 (defsubst vm-end-of (message)
   (aref (aref message 0) 5))
 
+;; Reverse links live here, not in the message.  A back pointer in the message
+;; vector chains the whole folder for the garbage collector: message, softdata,
+;; preceding cons, previous message, and so on.  Emacs marks that recursively,
+;; one stack frame per message, and about 50000 messages overflow the stack and
+;; kill Emacs 28 (issue #453, debbugs #39962).  Outside the message each graph
+;; is shallow: measured on 28.2, 400000 messages cost what no back pointer at
+;; all costs.  Weak keys, so a dropped message takes its link with it.
+(defvar vm-reverse-link-table (make-hash-table :test 'eq :weakness 'key)
+  "Maps each message to the cons of its message list that precedes it.
+See `vm-reverse-link-of'.  One table serves every folder, messages being
+unique objects.")
+
 ;; soft data vector
-(defconst vm-softdata-vector-length 23)
+(defconst vm-softdata-vector-length 22)
 (defconst vm-softdata-fields
-  [:number :padded-number :mark :su-start :su-end :real-message-sym
-	   :reverse-link-sym :message-type :message-id-number :buffer
+  [:number :mark :su-start :su-end :real-message-sym
+	   :unused :message-type :message-id-number :buffer
 	   :thread-indentation :thread-list
 	   :babyl-frob-flag :saved-virtual-attributes
 	   :saved-virtual-mirror-data :virtual-summary
@@ -113,70 +129,70 @@ works in all VM buffers."
 	   :thread-subtree :mirrored-message-sym :thread-indentation-offset])
 (defsubst vm-number-of (message)
   (aref (aref message 1) 0))
-(defsubst vm-padded-number-of (message)
-  (aref (aref message 1) 1))
 (defsubst vm-mark-of (message)
-  (aref (aref message 1) 2))
+  (aref (aref message 1) 1))
 ;; start of summary line
 (defsubst vm-su-start-of (message)
-  (aref (aref message 1) 3))
+  (aref (aref message 1) 2))
 ;; end of summary line
 (defsubst vm-su-end-of (message)
-  (aref (aref message 1) 4))
+  (aref (aref message 1) 3))
 ;; symbol whose value is the real message.
 (defsubst vm-real-message-sym-of (message)
-  (aref (aref message 1) 5))
+  (aref (aref message 1) 4))
 ;; real message
 (defsubst vm-real-message-of (message)
-  (symbol-value (aref (aref message 1) 5)))
-;; link to previous message in the message list
+  (symbol-value (aref (aref message 1) 4)))
+;; link to previous message: the cons of the message list whose car is the
+;; preceding message, so (cdr (vm-reverse-link-of m)) is the cons holding m
+;; itself.  nil for the first message.  See `vm-reverse-link-table'.
 (defsubst vm-reverse-link-of (message)
-  (symbol-value (aref (aref message 1) 6)))
+  (gethash message vm-reverse-link-table))
 ;; message type
 (defsubst vm-message-type-of (message)
-  (aref (aref message 1) 7))
+  (aref (aref message 1) 6))
 ;; number that uniquely identifies each message
 ;; this is for the set handling stuff
 (defsubst vm-message-id-number-of (message)
-  (aref (aref message 1) 8))
+  (aref (aref message 1) 7))
 ;; folder buffer of this message
 (defsubst vm-buffer-of (message)
-  (aref (aref message 1) 9))
+  (aref (aref message 1) 8))
 ;; cache thread indentation value
 (defsubst vm-thread-indentation-of (message)
-  (aref (aref message 1) 10))
+  (aref (aref message 1) 9))
 ;; list of symbols from vm-thread-obarray that give this message's lineage
 (defsubst vm-thread-list-of (message)
-  (aref (aref message 1) 11))
+  (aref (aref message 1) 10))
 ;; babyl header frob flag (0 or 1 at beginning of message)
 (defsubst vm-babyl-frob-flag-of (message)
-  (aref (aref message 1) 12))
+  (aref (aref message 1) 11))
 ;; saved attributes, if message was switched from unmirrored to mirrored
 (defsubst vm-saved-virtual-attributes-of (message)
-  (aref (aref message 1) 13))
+  (aref (aref message 1) 12))
 ;; saved mirror data, if message was switched from unmirrored to mirrored
 (defsubst vm-saved-virtual-mirror-data-of (message)
-  (aref (aref message 1) 14))
+  (aref (aref message 1) 13))
 ;; summary for unmirrored virtual message
 (defsubst vm-virtual-summary-of (message)
-  (aref (aref message 1) 15))
+  (aref (aref message 1) 14))
 ;; MIME layout information; types, ids, positions, etc. of all MIME entities
 (defsubst vm-mime-layout-of (message)
-  (aref (aref message 1) 16))
+  (aref (aref message 1) 15))
 (defsubst vm-mime-encoded-header-flag-of (message)
-  (aref (aref message 1) 17))
+  (aref (aref message 1) 16))
 (defsubst vm-su-summary-mouse-track-overlay-of (message)
-  (aref (aref message 1) 18))
+  (aref (aref message 1) 17))
 (defsubst vm-message-access-method-of (message)
-  (aref (aref message 1) 19))
+  (aref (aref message 1) 18))
 (defsubst vm-thread-subtree-of (message)
-  (aref (aref message 1) 20))
+  (aref (aref message 1) 19))
 (defsubst vm-mirrored-message-sym-of (message)
-  (aref (aref message 1) 21))
+  (aref (aref message 1) 20))
 (defsubst vm-mirrored-message-of (message)
-  (symbol-value (aref (aref message 1) 21)))
+  (symbol-value (aref (aref message 1) 20)))
 (defsubst vm-thread-indentation-offset-of (message)
-  (aref (aref message 1) 22))
+  (aref (aref message 1) 21))
 
 ;; message attribute vector
 (defconst vm-attributes-vector-length 20)
@@ -315,10 +331,6 @@ works in all VM buffers."
 ;; VM folders in the world already have nil's written in this field.
 (defsubst vm-headers-to-be-retrieved-of (message)
   (aref (aref message 3) 26))
-;; whether the headers of the message are temporarily stored in folder
-(defsubst vm-headers-to-be-discarded-of (message)
-  (aref (aref message 3) 27))
-;; subject string of the message for summary purposes
 (defsubst vm-decoded-summary-subject-of (message)
   (aref (aref message 3) 28))
 (defalias 'vm-summary-subject-of 'vm-decoded-summary-subject-of)
@@ -395,52 +407,50 @@ works in all VM buffers."
   (aset (aref message 0) 5 end))
 (defsubst vm-set-number-of (message n)
   (aset (aref message 1) 0 n))
-(defsubst vm-set-padded-number-of (message n)
-  (aset (aref message 1) 1 n))
 (defsubst vm-set-mark-of (message val)
-  (aset (aref message 1) 2 val))
+  (aset (aref message 1) 1 val))
 (defsubst vm-set-su-start-of (message pos)
-  (aset (aref message 1) 3 pos))
+  (aset (aref message 1) 2 pos))
 (defsubst vm-set-su-end-of (message pos)
-  (aset (aref message 1) 4 pos))
+  (aset (aref message 1) 3 pos))
 (defsubst vm-set-real-message-sym-of (message sym)
-  (aset (aref message 1) 5 sym))
+  (aset (aref message 1) 4 sym))
 (defsubst vm-set-reverse-link-of (message link)
-  (set (aref (aref message 1) 6) link))
-(defsubst vm-set-reverse-link-sym-of (message sym)
-  (aset (aref message 1) 6 sym))
+  (if link
+      (puthash message link vm-reverse-link-table)
+    (remhash message vm-reverse-link-table)))
 (defsubst vm-set-message-type-of (message type)
-  (aset (aref message 1) 7 type))
+  (aset (aref message 1) 6 type))
 (defsubst vm-set-message-id-number-of (message number)
-  (aset (aref message 1) 8 number))
+  (aset (aref message 1) 7 number))
 (defsubst vm-set-buffer-of (message buffer)
-  (aset (aref message 1) 9 buffer))
+  (aset (aref message 1) 8 buffer))
 (defsubst vm-set-thread-indentation-of (message val)
-  (aset (aref message 1) 10 val))
+  (aset (aref message 1) 9 val))
 (defsubst vm-set-thread-list-of (message list)
-  (aset (aref message 1) 11 list))
+  (aset (aref message 1) 10 list))
 (defsubst vm-set-babyl-frob-flag-of (message flag)
-  (aset (aref message 1) 12 flag))
+  (aset (aref message 1) 11 flag))
 (defsubst vm-set-saved-virtual-attributes-of (message attrs)
-  (aset (aref message 1) 13 attrs))
+  (aset (aref message 1) 12 attrs))
 (defsubst vm-set-saved-virtual-mirror-data-of (message data)
-  (aset (aref message 1) 14 data))
+  (aset (aref message 1) 13 data))
 (defsubst vm-set-virtual-summary-of (message summ)
-  (aset (aref message 1) 15 summ))
+  (aset (aref message 1) 14 summ))
 (defsubst vm-set-mime-layout-of (message layout)
-  (aset (aref message 1) 16 layout))
+  (aset (aref message 1) 15 layout))
 (defsubst vm-set-mime-encoded-header-flag-of (message flag)
-  (aset (aref message 1) 17 flag))
+  (aset (aref message 1) 16 flag))
 (defsubst vm-set-su-summary-mouse-track-overlay-of (message overlay)
-  (aset (aref message 1) 18 overlay))
+  (aset (aref message 1) 17 overlay))
 (defsubst vm-set-message-access-method-of (message method)
-  (aset (aref message 1) 19 method))
+  (aset (aref message 1) 18 method))
 (defsubst vm-set-thread-subtree-of (message list)
-  (aset (aref message 1) 20 list))
+  (aset (aref message 1) 19 list))
 (defsubst vm-set-mirrored-message-sym-of (message sym)
-  (aset (aref message 1) 21 sym))
+  (aset (aref message 1) 20 sym))
 (defsubst vm-set-thread-indentation-offset-of (message offset)
-  (aset (aref message 1) 22 offset))
+  (aset (aref message 1) 21 offset))
 
 ;; Defined here early because it's used by vm-set-edited-flag-of below
 (defsubst vm-set-stuff-flag-of (message val)
@@ -519,8 +529,6 @@ works in all VM buffers."
   (aset (aref message 3) 24 val))
 (defsubst vm-set-spam-score-of (message val)
   (aset (aref message 3) 25 val))
-;; (defsubst vm-set-headers-to-be-retrieved-of (message val)
-;;   (aset (aref message 3) 26 val))
 (defsubst vm-set-headers-to-be-discarded-of (message val)
   (aset (aref message 3) 27 val))
 (defsubst vm-set-decoded-summary-subject-of (message val)
@@ -722,10 +730,7 @@ works in all VM buffers."
     (setq sym (make-symbol "<v>"))
     (set sym nil)
     (vm-set-virtual-messages-sym-of mvec sym)
-    ;; Another uninterned symbol for the reverse link
-    ;; into the message list.
-    (setq sym (make-symbol "<--"))
-    (vm-set-reverse-link-sym-of mvec sym)
+    ;; No reverse link field: it lives in `vm-reverse-link-table'.
     mvec ))
 
 (defun vm-find-and-set-text-of (m)
@@ -758,25 +763,8 @@ the headers/body of M."
 		;; doesn't make sense. USR, 2011-04-28
 		(vm-unthread-message v-m :message-changing message-changing)
 		(vm-build-threads (list v-m)))
-	      ;; (if vm-summary-show-threads
-	      ;;     (intern (buffer-name) buffers-needing-thread-sort))
 	      ))
 	  (vm-virtual-messages-of m))))
-
-(defun vm-pp-message (m)
-  (pp
-   (vector
-     ':location-data
-     (vm-zip-vectors vm-location-data-fields (vm-location-data-of m))
-     ':softdata
-     (vm-zip-vectors vm-softdata-fields (vm-softdata-of m))
-     ':attributes
-     (vm-zip-vectors vm-attributes-fields (vm-attributes-of m))
-     ':cached-data
-     (vm-zip-vectors vm-cached-data-fields (vm-cached-data-of m))
-     ':mirror-data
-     (vm-zip-vectors vm-mirror-data-fields (vm-mirror-data-of m))))
-  nil)
 
 (provide 'vm-message)
 ;;; vm-message.el ends here

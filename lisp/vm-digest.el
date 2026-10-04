@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989, 1990, 1993, 1994, 1997, 2001 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -30,6 +30,10 @@
 (require 'vm-motion)
 (require 'vm-mime)
 (require 'vm-delete)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-mode "vm-mode" (&optional read-only))
 (declare-function vm-yank-message "vm-reply" (message))
@@ -62,19 +66,12 @@ to find out how KEEP-LIST and DISCARD-REGEXP are used."
 	  (widen)
 	  (with-current-buffer target-buffer
 	    (let ((beg (point)))
-	      ;; (insert-buffer-substring 
-	      ;;  source-buffer (vm-headers-of m) (vm-text-end-of m))
 	      (let ((vm-include-mime-attachments t) ; override the defaults
 		    (vm-include-text-basic nil)
 		    (vm-include-text-from-presentation nil)
 		    (mail-citation-hook (list 'vm-cite-forwarded-message)))
 		(vm-yank-message m))
 	      (goto-char beg)
-	      ;; (vm-reorder-message-headers 
-	      ;;  nil :keep-list nil 
-	      ;;  :discard-regexp vm-internal-unforwarded-header-regexp)
-	      ;; (vm-reorder-message-headers 
-	      ;;  nil :keep-list keep-list :discard-regexp discard-regexp)
               (vm-decode-mime-message-headers)
 	      ))))
       (goto-char (point-max))
@@ -351,6 +348,13 @@ to find out how KEEP-LIST and DISCARD-REGEXP are used."
 		     nil :keep-list keep-list :discard-regexp discard-regexp)
 		    (vm-rfc934-char-stuff-region beg (point-max))))))
 	    (goto-char (point-max))
+	    ;; A message whose text does not end in a newline would put this
+	    ;; separator at the end of its last body line, where RFC 934 says
+	    ;; a separator is a line of its own -- and the delete below, which
+	    ;; takes the last line back to its start, then took that body line
+	    ;; with it (emacs-vm/vm#805).
+	    (unless (bolp)
+	      (insert "\n"))
 	    (insert "---------------")
 	    (setq mlist (cdr mlist)))
 	  (delete-region (point) (progn (beginning-of-line) (point)))
@@ -556,7 +560,11 @@ RFC 1153.  Otherwise assume RFC 934 digests."
 		 ;; eat trailing newlines
 		 (while (= (following-char) ?\n)
 		   (delete-char 1))
-		 (insert ident-header))
+		 ;; nil means insert no identifying header, which is what the
+		 ;; option's own guard above says and what the MIME burster
+		 ;; does in both of its places (emacs-vm/vm#802)
+		 (when ident-header
+		   (insert ident-header)))
 	       ;; try to match message separator and repeat.
 	       (setq match (re-search-forward separator-regexp nil t)))
 	     ;; from the last separator to eof is the digest epilogue.
@@ -684,7 +692,7 @@ burst."
     (if (vm-thoughtfully-select-message)
 	(vm-present-current-message)
       (vm-update-summary-and-mode-line))
-    (vm-inform 5 totals-blurb)))
+    (vm-inform 5 "%s" totals-blurb)))
 
 ;;;###autoload
 (defun vm-burst-rfc934-digest ()

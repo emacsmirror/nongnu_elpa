@@ -3,59 +3,84 @@
 ##############################################################################
 # VM Test Suite Makefile
 ##############################################################################
+#
+# The tests are run by ./test-runner, not from here: it probes what this
+# machine has -- live servers, a sending config, the optional packages -- and
+# runs a pass for each, saying what it left out and why.  This file forwards to
+# it, so that one place decides what a test run is.
+#
+#   make test                                every pass this machine can run
+#   make test ARGS="--one vm-imap-test.el"   one file
+#   make test ARGS=--probe                   what is available, run nothing
+#   ./test-runner --help                     the rest of the options
+##############################################################################
 
 SHELL = /bin/sh
 EMACS_PROG = @EMACS_PROG@
 srcdir = @srcdir@
 top_srcdir = @top_srcdir@
 
-# Test files
-TEST_INIT = vm-test-init.el
-TEST_RUNNER = run-tests.el
-COVERAGE_RUNNER = coverage-report.el
+ARGS =
 
-##############################################################################
-# Test targets
-##############################################################################
+# Records that the optional packages have been fetched.  A stamp rather than
+# the packages themselves: those land in directories whose names carry a
+# version, which no rule can name in advance.
+OPTIONAL_STAMP = $(srcdir)/opt/installed
 
-.PHONY: test test-coverage test-verbose test-one compile-lisp
+.PHONY: test test-no-opt optional-packages clean distclean
 
-# Byte-recompile any out-of-date lisp before testing.  Emacs `require' loads a
-# `.elc' in preference to its `.el' regardless of mtime, so without this a
-# stale `.elc' silently masks edits to the source and tests run against the old
-# code.  This recompiles only stale/missing files, so it is a fast no-op once
-# everything is up to date.
-compile-lisp:
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
-	    --eval '(byte-recompile-directory "$(top_srcdir)/lisp" 0)'
+# Everything this machine can run.  ARGS goes to the runner: --one FILE,
+# --imap, --pop, --send, --mock, --no-optional, --assert, --leaks, --coverage,
+# --skip-live, --skip-send, --verbose, --probe.
+#
+# The optional packages are fetched first, so that a run covers as much as the
+# machine can rather than skipping whatever nobody remembered to install.
+test: $(OPTIONAL_STAMP)
+	EMACS=$(EMACS_PROG) $(srcdir)/test-runner $(ARGS)
 
-# Run all tests in batch mode
-test: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
+# The same, without fetching anything: for a machine with no network, or one
+# where the fetch fails and the tests have to run regardless.  The tests that
+# use a companion then skip, which is what an ordinary checkout does.
+test-no-opt:
+	EMACS=$(EMACS_PROG) $(srcdir)/test-runner $(ARGS)
 
-# Run tests with coverage collection
-test-coverage: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
+optional-packages: $(OPTIONAL_STAMP)
 
-# Run tests with verbose output
-test-verbose: compile-lisp
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
-	    --eval '(setq ert-batch-print-level 5)' \
-	    --eval '(setq ert-batch-print-length 10)' \
-	    -l $(srcdir)/$(TEST_RUNNER)
-
-# Run a specific test, must specify testel=vm-sometest.el
-test-one: compile-lisp
-	@if [ "x${testel}" = "x" ] ; then \
-	   echo "Error: must specify testel=vm-sometest.el" >&2 ; \
-	   exit 1 ; \
-	fi
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
-	    -l $(srcdir)/${testel} -f ert-run-tests-batch-and-exit
+# Fetch the packages VM integrates with but does not require -- BBDB,
+# emacs-w3m, vcard -- into test/opt/elpa, where vm-test-init.el finds them and
+# the tests that need one stop skipping.  With them installed a run also has a
+# pass without them, which is how an ordinary checkout runs those tests.
+#
+# This is the only part of the tests that needs the network.  A failure leaves
+# no stamp, so it stops the run and the next one tries again: a stamp written
+# anyway would say the packages are here when they are not, and the tests they
+# cover would skip from then on with nothing to show for it.  `make
+# test-no-opt' is the way past it.  Nothing here is committed: test/opt is
+# ignored.
+$(OPTIONAL_STAMP):
+	@$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
+		-f vm-optional-install-batch $(srcdir)/opt || { \
+	  echo "The optional packages did not install.  To run without them:"; \
+	  echo "    make test-no-opt"; \
+	  exit 1; \
+	}
+	@touch $@
 
 # Clean test artifacts
 clean:
 	-rm -f $(srcdir)/coverage-results.txt
+	@# What VM itself writes during a run: the IMAP cache of any folder the
+	@# live tests visit.  In the tree so that this can remove it -- it used
+	@# to go to $$HOME, there being no other default.
+	-rm -rf $(srcdir)/scratch
 
 distclean: clean
+	@# The optional packages `make optional-packages' downloads -- bbdb,
+	@# emacs-w3m, vcard.  Not in `clean': they take the network to fetch,
+	@# and a `clean' that leaves the tests skipping until someone notices
+	@# is a poor trade.  They are not part of the checkout, so `distclean'
+	@# is where they go.
+	-rm -rf $(srcdir)/opt/elpa
+	-rm -f $(OPTIONAL_STAMP)
+	-rmdir $(srcdir)/opt 2> /dev/null || true
 	-rm -f Makefile

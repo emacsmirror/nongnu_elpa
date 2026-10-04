@@ -34,13 +34,13 @@
 ;;
 ;;      (require 'vm-epg)
 ;;
-;; Do NOT load vm-pgg and vm-epg together.  Both define the same MIME
-;; display handlers -- `vm-mime-display-internal-multipart/encrypted',
+;; vm-pgg was removed in VM 9.0.0 and this replaces it.  A copy kept on
+;; `load-path' still conflicts: both define the same MIME display handlers,
+;; `vm-mime-display-internal-multipart/encrypted',
 ;; `vm-mime-display-internal-multipart/signed' and
-;; `vm-mime-display-internal-application/pgp-keys' -- so whichever package
-;; is loaded last silently wins, and the other package's customizations
-;; then have no effect.  vm-pgg is deprecated; remove any `(require
-;; 'vm-pgg)' from your configuration when switching to vm-epg.
+;; `vm-mime-display-internal-application/pgp-keys', so whichever is loaded
+;; last wins and the other's customizations have no effect.  Remove any
+;; `(require 'vm-pgg)' from your configuration.
 ;;
 ;; If you set `vm-mime-auto-displayed-content-types' and/or
 ;; `vm-mime-internal-content-types' make sure that they contain
@@ -111,6 +111,10 @@
 (require 'vm-mime)
 (require 'vm-reply)
 (require 'vm-motion)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 (require 'epa)
 
 (declare-function rfc822-addresses "ext:rfc822" (header-text))
@@ -295,6 +299,7 @@ text that is largely non-ASCII."
     "----"
     ["Sign (inline PGP)"    vm-epg-cleartext-sign t]
     ["Encrypt (inline PGP)" vm-epg-cleartext-encrypt t]))
+(put 'vm-epg-compose-mode-menu 'vm-called-by-vm t)
 
 (defvar vm-epg-compose-mode nil
   "Non-nil when `vm-epg-compose-mode' is active in this buffer.
@@ -302,6 +307,7 @@ Its key bindings and PGP/MIME menu are then available.")
 
 (make-variable-buffer-local 'vm-epg-compose-mode)
 
+;;;###autoload
 (defun vm-epg-compose-mode (&optional arg)
   "Minor mode for composing PGP/MIME messages with EPG.
 
@@ -323,12 +329,12 @@ PGP/MIME menu available in the composition buffer.
 
 The value is either an action symbol or a function:
 
-  nil               do nothing;
-  `sign'            ask whether to sign;
-  `encrypt'         ask whether to encrypt;
+  nil                do nothing;
+  `sign'             ask whether to sign;
+  `encrypt'          ask whether to encrypt;
   `sign-and-encrypt' ask whether to sign and encrypt;
-  a function        called with no arguments, returning one of the action
-                    symbols above, or nil for no action.
+  a function         called with no arguments, returning one of the action
+                     symbols above, or nil for no action.
 
 An action symbol ACTION selects the command `vm-epg-ACTION', so any value
 other than those listed must name an existing `vm-epg-' command."
@@ -437,6 +443,10 @@ CONTEXT is the `epg-context' the keys are looked up in.  There is one key per
 address returned by `vm-epg-get-recipients'; an address containing \"@\" is
 looked up bracketed, as \"<addr>\", so that it matches a full user ID rather
 than any substring.
+
+The author's own key is not among them.  A user who wants every message
+readable by themselves says so to GnuPG, with `encrypt-to' in gpg.conf,
+which VM does not override (#782).
 
 Signal an error, via `vm-epg-find-usable-key', if any recipient has no
 usable encryption key."
@@ -636,6 +646,7 @@ presentation copy, leaving the folder itself unmodified.  Sets
         (delete-region (point) (point-max)))
       (vm-energize-urls-in-message-region)
       (vm-highlight-headers-maybe)
+      (vm-fontify-body-maybe)
       (vm-energize-headers-and-xfaces))))
 
 (defun vm-epg-cleartext-automode-button (label action)
@@ -829,6 +840,22 @@ apply to that text; when nil it is derived from STATUS, giving
                                  'vm-epg-bad-signature
                                'vm-epg-good-signature))))))
 
+(defun vm-epg-cleartext-display-buffer-p ()
+  "Return non-nil if the current buffer is a message on display.
+That is a folder buffer, a virtual folder buffer, or a presentation copy: the
+three places VM transfer-decodes a part in order to show it.  Anywhere else --
+the work buffer `vm-mime-send-body-to-file' decodes in, a composition a message
+is being yanked into -- there is nothing on display to annotate.
+
+Without this the cleartext automode ran for those decodes as well and did
+nothing only by accident: in a work buffer `vm-message-pointer' is nil, and
+`vm-epg-cleartext-decoded' is buffer-local and so nil there too, which makes
+the already-handled test compare nil with nil and take the do-nothing branch.
+Nothing visible came of it, which is why this is a guard rather than a fix, but
+the guard is what was meant, and what stops a change to either variable turning
+a file save into a signature report.  Issue #581."
+  (memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode)))
+
 (advice-add 'vm-mime-transfer-decode-region
             :around #'vm-epg--transfer-cleartext-automode)
 (defun vm-epg--transfer-cleartext-automode (orig-fun &optional layout
@@ -844,15 +871,32 @@ The region is taken from the decode arguments rather than from how far point
 moved: transfer-decoding advances point only for encodings that actually
 transform the text (base64, quoted-printable, uuencode).  A 7bit or 8bit part
 is left untouched, so a point-motion test would wrongly skip exactly the
-plain PGP-signed messages this is meant to handle."
-  (apply orig-fun layout start end args)
-  (when (and (vm-mime-text-type-layout-p layout)
-             start end (< start end))
-    (save-excursion
-      (save-restriction
-        (narrow-to-region start end)
-        (vm-epg-cleartext-automode)
-        (widen)))))
+plain PGP-signed messages this is meant to handle.
+
+END is followed with a marker, because decoding replaces the region by
+something shorter: base64 and quoted-printable both shrink it, so the END that
+came in describes the text before the decode and not the region to scan.
+Where the region is the whole buffer -- `vm-mime-send-body-to-file' decodes
+from point-min to point-max of a work buffer -- narrowing to the old END is
+outside the buffer and signals `args-out-of-range'.
+`vm-mime-base64-decode-region' takes a marker for the same reason.
+
+Only a decode for display is followed up.  VM transfer-decodes for other
+reasons too -- `vm-mime-send-body-to-file' writing a part to a file or handing
+one to an external viewer, `vm-mime-send-body-to-folder', yanking a message
+into a composition, vm-vcard, vm-w3m -- and those decode in a work buffer or a
+composition, where nothing is on display to annotate and the automode has no
+message to work from.  See `vm-epg-cleartext-display-buffer-p'."
+  (let ((end (if (markerp end) end (copy-marker end))))
+    (apply orig-fun layout start end args)
+    (when (and (vm-epg-cleartext-display-buffer-p)
+               (vm-mime-text-type-layout-p layout)
+               start end (< start end))
+      (save-excursion
+        (save-restriction
+          (narrow-to-region start end)
+          (vm-epg-cleartext-automode)
+          (widen))))))
 
 (defvar vm-epg-cleartext-result 'none
   "Result of a cleartext verify/decrypt run under the display advice.
@@ -915,7 +959,9 @@ body it then wraps.
 
 Every recipient must have a usable encryption key: with no recipient key
 this signals an error rather than falling back to symmetric (passphrase)
-encryption, which is never what is wanted for mail."
+encryption, which is never what is wanted for mail.  As with
+`vm-epg-encrypt', your own key is not added; an encrypt-to line in gpg.conf
+is what adds it."
   (interactive "P")
   (save-excursion
     ;; Normalize but do NOT MIME-encode yet: the armor must be inserted into
@@ -1231,8 +1277,7 @@ decrypt failure or an unrecognized structure would make VM fall through and
 re-render the raw ciphertext parts as multipart/mixed.
 
 This is VM's dispatch name for the content type, so it deliberately does not
-carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
-name; see the commentary at the top of this file."
+carry the `vm-epg-' prefix."
   (vm-epg-state-set 'encrypted)
   (let* ((part-list (vm-mm-layout-parts layout))
          (header (car part-list))
@@ -1318,8 +1363,7 @@ If the signing key is not in your keyring and `vm-epg-fetch-missing-keys' is
 non-nil, try to fetch it from a keyserver and verify again.
 
 This is VM's dispatch name for the content type, so it deliberately does not
-carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
-name; see the commentary at the top of this file."
+carry the `vm-epg-' prefix."
   (vm-epg-state-set 'signed)
   (let* ((part-list (vm-mm-layout-parts layout))
          (message (car part-list))
@@ -1446,8 +1490,7 @@ When `vm-epg-auto-snarf' is nil, insert a button that imports on demand
 instead.
 
 This is VM's dispatch name for the content type, so it deliberately does not
-carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
-name; see the commentary at the top of this file."
+carry the `vm-epg-' prefix."
   (vm-epg-state-set 'public-key)
   (if vm-epg-auto-snarf
       (let ((start (point)) end)
@@ -1551,6 +1594,9 @@ inline rather than attached as a MIME part."
          (keys (epg-list-keys context author)))
     (unless keys
       (error "%s has no public key" author))
+    ;; armored: this goes into the message body as text, unlike
+    ;; `vm-epg-attach-public-key', whose MIME part is base64-encoded
+    (setf (epg-context-armor context) t)
     (insert (epg-export-keys-to-string context keys))))
 
 ;;; MIME multipart boundary
@@ -1587,7 +1633,8 @@ own name is a fixed one that the next vm-epg command would erase, and its
 leading space would keep it out of the buffer list."
   (let ((composition-buffer (current-buffer))
         (work-buffer (get-buffer-create " *VM-EPG-WORK*"))
-        (overwriting nil))
+        (overwriting nil)
+        (filed nil))
     (unwind-protect
         (progn
           (with-current-buffer work-buffer
@@ -1595,13 +1642,21 @@ leading space would keep it out of the buffer list."
             (erase-buffer)
             (insert-buffer-substring composition-buffer)
             (setq major-mode 'mail-mode)
-            (apply function args))
+            (apply function args)
+            (setq filed vm-fcc-filed))
           (vm-mail-mode-show-headers)
           ;; Past this point the composition no longer holds a usable copy,
           ;; so an error or a C-g must not take the work buffer with it.
           (setq overwriting t)
           (erase-buffer)
           (insert-buffer-substring work-buffer)
+          ;; Text is not all FUNCTION leaves behind: with
+          ;; `vm-do-fcc-before-mime-encode' it files this composition's Fcc
+          ;; copies, and says so in a buffer-local flag that would go with the
+          ;; work buffer.  The send then filed a second copy, of the encrypted
+          ;; message (emacs-vm/vm#784).
+          (when filed
+            (setq vm-fcc-filed t))
           (setq overwriting nil))
       (if (not overwriting)
           (kill-buffer work-buffer)
@@ -1741,7 +1796,12 @@ Every recipient address found in the headers listed in
 keyring; otherwise this signals an error and leaves the composition
 untouched.  Note that the message is never encrypted to a passphrase: if no
 recipient key can be found, it refuses rather than falling back to symmetric
-encryption."
+encryption.
+
+Encryption is to those recipients and to nobody else, so a copy filed with
+FCC: is one you cannot read back.  To encrypt to yourself as well, put a
+line reading encrypt-to followed by your key id in ~/.gnupg/gpg.conf.  VM
+passes GnuPG no --no-encrypt-to, so that setting is honoured."
   (interactive "P")
   (vm-epg-save-work 'vm-epg-encrypt-internal sign))
 
@@ -1843,6 +1903,7 @@ choice, and `q' aborts sending with an error."
       (message "No action selected."))
     (setq vm-epg-prompt-last-action action)
     action))
+(put 'vm-epg-prompt-for-action 'vm-called-by-vm t)
 
 ;;;###autoload
 (defun vm-epg-ask-hook ()
@@ -1891,20 +1952,21 @@ to `add-hook':
 
 (defun vm-epg-pgg-conflict-warning ()
   "Return a warning about a vm-pgg/vm-epg conflict, or nil if there is none.
-The two packages define the same `vm-mime-display-internal-*' handlers, so
-whichever is loaded last wins outright and the other's customizations become
-dead settings.  Loading both is always a configuration error."
+The two define the same `vm-mime-display-internal-*' handlers, so whichever
+is loaded last wins outright and the other's customizations become dead
+settings.  Loading both is always a configuration error."
   (when (featurep 'vm-pgg)
     (concat
      "vm-pgg is also loaded.  Do not load both: they define the same\n"
      "vm-mime-display-internal-* handlers, so the one loaded last (vm-epg)\n"
      "now wins and vm-pgg's customizations have no effect.\n"
-     "vm-pgg is deprecated; remove (require 'vm-pgg) from your config.")))
+     "vm-pgg was removed in VM 9.0.0; remove (require 'vm-pgg) from your\n"
+     "config, and the copy of vm-pgg.el that is still on your load-path.")))
 
-;; Warn in this direction too.  vm-pgg warns when it is loaded after vm-epg,
-;; but the common migration order is the other way round -- an existing
-;; configuration already requires vm-pgg and gains a `(require 'vm-epg)' --
-;; and that case would otherwise pass in silence.
+;; VM no longer ships vm-pgg, and a `(require 'vm-pgg)' left in a
+;; configuration now fails to load rather than conflicting.  This stays for
+;; the reader who keeps their own copy on `load-path', where the conflict is
+;; the same as it ever was and nothing else would say so.
 (let ((warning (vm-epg-pgg-conflict-warning)))
   (when warning
     (display-warning 'vm-epg warning)))

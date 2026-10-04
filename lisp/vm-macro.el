@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989-1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -22,34 +22,11 @@
 
 ;;; Code:
 
-;; Definitions for things that aren't in all Emacsen and that we really
-;; prefer not to live without.
-(eval-and-compile
-  (if (fboundp 'unless) nil
-    (defmacro unless (bool &rest forms) `(if ,bool nil ,@forms))
-    (defmacro when (bool &rest forms) `(if ,bool (progn ,@forms))))
-  (unless (fboundp 'save-current-buffer)
-    (defalias 'save-current-buffer 'save-excursion))
-  (if (fboundp 'mapc)
-      (defalias 'bbdb-mapc 'mapc)
-    (defalias 'bbdb-mapc 'mapcar))
-
-  (unless (fboundp 'with-current-buffer)
-    (defmacro with-current-buffer (buf &rest body)
-      `(save-current-buffer (set-buffer ,buf) ,@body)))
-
-  (unless (fboundp 'defvaralias)
-    (defmacro defvaralias (&rest _args)))
-
-  (unless (fboundp 'declare-function)
-    (defmacro declare-function (_fn _file &optional _arglist _fileonly))))
-
 (defmacro vm-interactive-p ()
-  (if (featurep 'xemacs)
-      `(interactive-p)
-    (if (fboundp 'called-interactively-p) ;; (> emacs-major-version 23)
-	`(called-interactively-p 'interactive)
-      `(interactive-p))))
+  "Non-nil when the command now running was called interactively.
+A macro, so `cl-letf' on the symbol does not stub it; stub
+`called-interactively-p' instead."
+  `(called-interactively-p 'interactive))
 
 (declare-function vm-check-for-killed-summary "vm-misc" ())
 (declare-function vm-check-for-killed-presentation "vm-misc" ())
@@ -123,8 +100,6 @@ isn't a folder buffer.  USR, 2010-03-08"
   ;; This may be problematic - done in revno 570.
   ;; All kinds of operations call vm-select-folder-buffer, including
   ;; asynchronous things like the toolbar.
-  ;; (vm-buffer-type:set 'folder)
-  ;;--------------------------
   )
 
 (defsubst vm-select-folder-buffer-if-possible ()
@@ -136,15 +111,11 @@ isn't a folder buffer.  USR, 2010-03-08"
 	 (set-buffer vm-mail-buffer)
 	 ;;--------------------------
 	 ;; This may be problematic - done in revno 570.
-	 ;; (vm-buffer-type:set 'folder)
-	 ;;--------------------------
 	 )
 	((or (eq major-mode 'vm-mode)
 	     (eq major-mode 'vm-virtual-mode))
 	 ;;--------------------------
 	 ;; This may be problematic - done in revno 570.
-	 ;; (vm-buffer-type:set 'folder)
-	 ;;--------------------------
 	 )))
 
 (defsubst vm-select-folder-buffer-and-validate (&optional minimum interactive-p)
@@ -168,8 +139,6 @@ current-buffer in `vm-user-interaction-buffer'."
 	 (error "No VM folder buffer associated with this buffer")))
   ;;--------------------------
   ;; This may be problematic - done in revno 570.
-  ;; (vm-buffer-type:set 'folder)
-  ;;--------------------------
 
   (vm-check-for-killed-summary)
   (vm-check-for-killed-presentation)
@@ -200,14 +169,10 @@ current-buffer in `vm-user-interaction-buffer'."
       (vm-build-threads nil)))
 
 (defsubst vm-binary-coding-system ()
-  (cond ((featurep 'xemacs) 'binary)
-	((featurep 'xemacs) 'binary)
-	(t 'no-conversion)))
+  'no-conversion)
 
 (defsubst vm-line-ending-coding-system ()
-  (cond ((featurep 'xemacs) 'no-conversion)
-	((featurep 'xemacs) 'no-conversion)
-	(t 'raw-text)))
+  'raw-text)
 
 ;; can't use defsubst where quoting is needed in some places but
 ;; not others.
@@ -236,7 +201,6 @@ current-buffer in `vm-user-interaction-buffer'."
 ;; For verification of the correct buffer protocol
 ;; Possible values are 'folder, 'presentation, 'summary, 'process
 
-;; (defvar vm-buffer-types nil)    ; moved to vm-vars.el
 
 (defvar vm-buffer-type-debug nil
   "*This flag can be set to t for debugging asynchronous buffer change
@@ -292,8 +256,66 @@ purposes.")
 vm-buffer-types stack."
   (while (and vm-buffer-types 
 	      (eq (car vm-buffer-types) 'process))
-    (sleep-for 1)))
+    (sit-for 1)))
 
+
+;;; Compiled against which VM
+
+;; A .elc left from an older VM is loaded in preference to the newer source,
+;; and VM's accessors are defsubsts, so it runs bodies that no longer match
+;; the rest of VM and fails somewhere unrelated.  #453 moved a message's
+;; reverse link out of the message vector; a vm-folder.elc compiled before
+;; that still ran the old `vm-set-reverse-link-of', which on a message built
+;; by the new `vm-make-message' is (set nil ...), and visiting any folder
+;; answered "(setting-constant nil)" from inside `vm-build-message-list'
+;; (#791).
+;;
+;; Timestamps cannot catch that.  `make install' gives every file a fresh
+;; mtime and copies the .elc after the .el, so on an installed tree the .elc
+;; is always the newer of the two.  What does catch it is the version being
+;; written into the compiled file as it is compiled, which is what Org does
+;; with `org-assert-version' and for the same reason.
+
+(defun vm-version-stamp ()
+  "What VM this is, as a string, for comparing a compiled file against.
+The release and the commit together: two builds of one release differ by
+their commit, and a tree built without git has neither, which compares equal
+to itself and so says nothing."
+  ;; `load', not `require': the generated file sets two variables and calls
+  ;; no `provide', so `require' signals on it even with NOERROR.  This is the
+  ;; same way `vm-version-conf-info' in vm.el reads it.
+  (unless (boundp 'vm-version-config)
+    (ignore-errors (load "vm-version-conf" t t)))
+  (format "%s/%s"
+          (if (boundp 'vm-version-config) (or vm-version-config "unknown")
+            "unknown")
+          (if (boundp 'vm-version-commit-config)
+              (or vm-version-commit-config "") "")))
+
+(defvar vm-version-mismatched-files nil
+  "VM files whose compiled form was built against another version of VM.
+Filled in as they load; `vm-warn-about-stale-compiled-files' reports them.")
+
+(defun vm-note-version-mismatch (file compiled)
+  "Record that FILE was compiled against COMPILED, which is not what runs."
+  (unless (assoc file vm-version-mismatched-files)
+    (push (cons file compiled) vm-version-mismatched-files)))
+
+(defmacro vm-assert-version ()
+  "Note it if the file being compiled is loaded into another VM later.
+Expands with this tree's version written into it, so the compiled file
+carries the version it was built against and can say so as it loads.
+
+Put this at the top of every VM file that is byte-compiled, after its
+requires.  It costs one string comparison at load."
+  (let ((compiled (vm-version-stamp))
+        (file (file-name-nondirectory
+               (or (and (boundp 'byte-compile-current-file)
+                        (stringp byte-compile-current-file)
+                        byte-compile-current-file)
+                   load-file-name buffer-file-name "a VM file"))))
+    `(unless (equal ,compiled (vm-version-stamp))
+       (vm-note-version-mismatch ,file ,compiled))))
 
 (provide 'vm-macro)
 ;;; vm-macro.el ends here

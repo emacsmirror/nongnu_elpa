@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989-1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -29,6 +29,10 @@
 (require 'vm-undo)
 (require 'vm-sort)
 (eval-when-compile (require 'cl-lib))
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;;;###autoload
 (defun vm-delete-message (count &optional mlist)
@@ -65,8 +69,6 @@ thread are deleted."
       ;; vm-update-summary-and-mode-line eventually.
       (when (and vm-summary-enable-thread-folding
 		 vm-summary-show-threads
-		 ;; (not (and vm-enable-thread-operations
-		 ;;	 (eq count 1)))
 		 (> (vm-thread-count (car mlist)) 1))
 	(with-current-buffer vm-summary-buffer
 	  (vm-expand-thread (vm-thread-root (car mlist)))))
@@ -171,8 +173,6 @@ messages in the thread are flagged/unflagged."
 	;; vm-update-summary-and-mode-line eventually.
 	(when (and vm-summary-enable-thread-folding
 		 vm-summary-show-threads
-		 ;; (not (and vm-enable-thread-operations
-		 ;;	 (eq count 1)))
 		 (> (vm-thread-count (car mlist)) 1))
 	(with-current-buffer vm-summary-buffer
 	  (vm-expand-thread (vm-thread-root (car mlist))))))
@@ -198,7 +198,7 @@ the variables `vm-subject-ignored-prefix' and `vm-subject-ignored-suffix'.
 The optional prefix argument ARG specifies the direction to move
 if `vm-move-after-killing' is non-nil.  The default direction is
 forward.  A positive prefix argument means move forward, a
-negative arugment means move backward, a zero argument means
+negative argument means move backward, a zero argument means
 don't move at all."
   (interactive "p")
   (vm-follow-summary-cursor)
@@ -237,7 +237,7 @@ don't move at all."
 The optional prefix argument ARG specifies the direction to move
 if vm-move-after-killing is non-nil.  The default direction is
 forward.  A positive prefix argument means move forward, a
-negative arugment means move backward, a zero argument means
+negative argument means move backward, a zero argument means
 don't move at all."
   (interactive "p")
   (vm-follow-summary-cursor)
@@ -279,7 +279,7 @@ deletion; you will have to expunge the messages with
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
 only duplicate messages among the marked messages are deleted;
-unmarked messages are not considerd for deletion."
+unmarked messages are not considered for deletion."
   (interactive)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-folder-read-only)
@@ -298,13 +298,22 @@ unmarked messages are not considerd for deletion."
 	     ;; ignore messages already flagged for deletion
 	     )
 	    ((and (eq vm-folder-access-method 'imap)
-		  (member "stale" (vm-labels-of (car mp))))
-	     ;; ignore messages with the `stale' label
+		  (or (member "stale" (vm-labels-of (car mp)))
+		      ;; ...and those that are stale but not yet labelled.
+		      ;; The label is only applied once the user declines to
+		      ;; expunge them, which happens *after* this runs from
+		      ;; `vm-arrived-messages-hook'.  A message left with a
+		      ;; mismatched UID validity by an interrupted retrieval
+		      ;; would otherwise claim the message id and get the
+		      ;; freshly fetched good copy flagged for deletion
+		      ;; instead of itself (issue #286).
+		      (not (equal (vm-imap-uid-validity-of (car mp))
+				  (vm-folder-imap-uid-validity)))))
+	     ;; ignore stale messages
 	     )
             (t
              (setq mid (vm-su-message-id (car mp)))
 	     (when mid
-	       ;; (or mid (debug (car mp)))
 	       (when (intern-soft mid table)
 		 (if (vm-set-deleted-flag (car mp) t)
 		     (setq n (1+ n))))
@@ -330,7 +339,7 @@ really get rid of them, as usual.
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
 only duplicate messages among the marked messages are deleted,
-unmarked messages are not hashed or considerd for deletion."
+unmarked messages are not hashed or considered for deletion."
   (interactive)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-folder-read-only)
@@ -366,11 +375,87 @@ unmarked messages are not hashed or considerd for deletion."
     (vm-update-summary-and-mode-line)
     del-count))
 
+(defun vm-expunge-queue-pop-deletion (message)
+  "Queue MESSAGE\\='s deletion for its maildrop, if the maildrop can act on it.
+The current buffer is MESSAGE\\='s folder, and its access method is `pop\\='.
+
+Only a message with a UIDL.  Without one the maildrop was never asked for it
+by name and there is nothing there to delete, and the queue collected nil
+for it (emacs-vm/vm#758)."
+  (when (vm-pop-uidl-of message)
+    (setq vm-pop-messages-to-expunge
+	  (cons (vm-pop-uidl-of message) vm-pop-messages-to-expunge))))
+
+(defun vm-expunge-record-pop-uidl (message)
+  "Remember MESSAGE\\='s UIDL as one this folder has had, once.
+The current buffer is MESSAGE\\='s folder, and its access method is `pop\\='.
+So that a later check or fetch does not bring it again.
+
+The maildrop is named without its password, which is how the entry made when
+the message arrived names it (`vm-pop-net-note-retrieved\\=') and what every
+check compares against (`vm-pop-net-unretrieved\\='): recorded with the
+password in it, as this did, the entry matched nothing and was a duplicate of
+one that does (emacs-vm/vm#758)."
+  (let ((uidl (vm-pop-uidl-of message))
+	(maildrop (vm-popdrop-sans-password (vm-folder-pop-maildrop-spec))))
+    (when (and uidl
+	       (null (vm-find vm-pop-retrieved-messages
+			      (lambda (entry)
+				(and (equal (car entry) uidl)
+				     (equal (nth 1 entry) maildrop))))))
+      (setq vm-pop-retrieved-messages
+	    (cons (list uidl maildrop 'uidl) vm-pop-retrieved-messages)))))
+
+(defun vm-expunge-queue-imap-deletion (message)
+  "Queue MESSAGE\\='s deletion for its mailbox, if the mailbox can act on it.
+The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
+
+Only a UID under the mailbox\\='s own UIDVALIDITY is queued.  A message with no
+UID never came from the server; one whose UIDVALIDITY is not the mailbox\\='s
+names nothing there now, and `vm-imap-expunge-remote-messages\\=' would refuse
+it and say so, which tells the reader about something they can do nothing
+about.  A validity that goes stale after the queue is written is a different
+matter and is still refused at that point: the mailbox can be recreated while
+a deletion waits for a session (emacs-vm/vm#757)."
+  (when (and (vm-imap-uid-of message)
+	     (equal (vm-imap-uid-validity-of message)
+		    (vm-folder-imap-uid-validity)))
+    (setq vm-imap-messages-to-expunge
+	  (cons (cons (vm-imap-uid-of message)
+		      (vm-imap-uid-validity-of message))
+		vm-imap-messages-to-expunge))))
+
+(defun vm-expunge-record-imap-uid (message)
+  "Remember MESSAGE\\='s UID as one this folder has had, once.
+The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
+So that a later synchronise does not fetch it again.
+
+The UID went on the list when the message arrived, so this is usually a
+message the list already names: it is the key that says so, the UID and its
+UIDVALIDITY, and not the whole entry -- the entry made on arrival holds the
+maildrop without its password and this one holds it as the folder has it.
+Comparing entries grew one duplicate per expunge, in a list written into the
+folder\\='s `X-VM-IMAP-Retrieved\\=' header on every save (emacs-vm/vm#757)."
+  (let ((uid (vm-imap-uid-of message))
+	(validity (vm-imap-uid-validity-of message)))
+    (when (and uid validity
+	       (null (vm-find vm-imap-retrieved-messages
+			      (lambda (entry)
+				(and (equal (car entry) uid)
+				     (equal (cadr entry) validity))))))
+      (setq vm-imap-retrieved-messages
+	    (cons (list uid validity
+			(vm-imapdrop-sans-password
+			 (vm-folder-imap-maildrop-spec))
+			'uid)
+		  vm-imap-retrieved-messages)))))
+
 ;;;###autoload
 (cl-defun vm-expunge-folder (&key (quiet nil)
 				((:just-these-messages message-list)
 				 nil	; default value
-				 just-these-messages))
+				 just-these-messages)
+				(not-on-the-server nil))
   "Expunge messages with the `deleted' attribute.
 For normal folders this means that the deleted messages are
 removed from the message list and the message contents are
@@ -383,7 +468,13 @@ message lists and the message contents are removed from real folders.
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
 only messages both marked and deleted are expunged, other messages are
-ignored."
+ignored.
+
+NOT-ON-THE-SERVER says these messages are being expunged because the server no
+longer has them, so their deletion is not queued for it.  A synchronise passes
+it for the messages it found gone; without it the queue collected UIDs that no
+longer exist there, which is a no-op at best and a NO from some servers
+(emacs-vm/vm#757)."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-folder-read-only)
@@ -416,9 +507,16 @@ ignored."
 			       (vm-virtual-messages-of (car mp)))
 		       (vm-virtual-messages-of (car mp)))))
 	    (while vms
-	      (with-current-buffer (vm-buffer-of (car vms))
-		(vm-expunge-message (car vms))
-		(intern (buffer-name) buffers-altered))
+	      ;; Don't trust blindly.  The user could have killed some of
+	      ;; these buffers, and killing a folder buffer does not
+	      ;; deregister its messages, so a mirror can outlive the list it
+	      ;; was in.  Expunging it would signal, leaving this expunge half
+	      ;; done and the next one signalling in the same place (#571).
+	      ;; The trimming below takes the dead mirror off the list.
+	      (when (buffer-name (vm-buffer-of (car vms)))
+		(with-current-buffer (vm-buffer-of (car vms))
+		  (vm-expunge-message (car vms))
+		  (intern (buffer-name) buffers-altered)))
 	      (vm-set-virtual-messages-of (car mp) (cdr vms))
 	      (setq vms (cdr vms)))))
 	;; 3. remove this message from message lists.
@@ -436,28 +534,13 @@ ignored."
 	    (let ((real-m (vm-real-message-of (car mp))))
 	      (with-current-buffer (vm-buffer-of real-m)
 		(cond ((eq vm-folder-access-method 'pop)
-		       (setq vm-pop-messages-to-expunge
-			     (cons (vm-pop-uidl-of real-m)
-				   vm-pop-messages-to-expunge))
-		       (setq vm-pop-retrieved-messages
-			     (cons (list (vm-pop-uidl-of real-m)
-					 (vm-folder-pop-maildrop-spec)
-					 'uidl)
-				   vm-pop-retrieved-messages)))
+		       (unless not-on-the-server
+			 (vm-expunge-queue-pop-deletion real-m))
+		       (vm-expunge-record-pop-uidl real-m))
 		      ((eq vm-folder-access-method 'imap)
-		       (setq vm-imap-messages-to-expunge
-			     (cons (cons
-				    (vm-imap-uid-of real-m)
-				    (vm-imap-uid-validity-of real-m))
-				   vm-imap-messages-to-expunge))
-		       (when (and (vm-imap-uid-of real-m)
-				  (vm-imap-uid-validity-of real-m))
-			 (setq vm-imap-retrieved-messages
-			       (cons (list (vm-imap-uid-of real-m)
-					   (vm-imap-uid-validity-of real-m)
-					   (vm-folder-imap-maildrop-spec)
-					   'uid)
-				     vm-imap-retrieved-messages)))))
+		       (unless not-on-the-server
+			 (vm-expunge-queue-imap-deletion real-m))
+		       (vm-expunge-record-imap-uid real-m)))
 		(vm-increment vm-modification-counter)
 		(save-restriction
 		 (widen)
@@ -469,8 +552,13 @@ ignored."
 
     ;; 5. Update display
 
-    (if (null buffers-altered)
-	(vm-inform 5 "%s: No messages are flagged for deletion." (buffer-name))
+    ;; BUFFERS-ALTERED is an obarray, so it is a vector and never nil: this
+    ;; used to test it with `null' and so always reported the messages as
+    ;; expunged, and re-sorted a folder nothing had been expunged from (#572).
+    (if (vm-obarray-empty-p buffers-altered)
+	(unless quiet
+	  (vm-inform 5 "%s: No messages are flagged for deletion."
+		     (buffer-name)))
       (mapatoms
        (lambda (buffer)
 	 (with-current-buffer (symbol-name buffer)
@@ -499,14 +587,30 @@ ignored."
     )
   (when vm-debug
     (vm-check-thread-integrity)))
+;;;###autoload (autoload 'vm-compact-folder "vm-delete" nil t)
 (defalias 'vm-compact-folder 'vm-expunge-folder)
 
 (defun vm-expunge-message (m)
   "Expunge the message M from the current folder buffer."
   (let (prev curr)
-    (vm-unregister-fetched-message m)
     (setq prev (vm-reverse-link-of m)
 	  curr (or (cdr prev) vm-message-list))
+    ;; CURR is spliced out below on the strength of the reverse link alone, so a
+    ;; stale link removes the message after the one it used to precede and a
+    ;; missing link removes the head of the folder, leaving M in place and
+    ;; flagging the wrong message expunged.  In a folder with virtual mirrors
+    ;; the wrong flag then propagates through the shared attributes and the
+    ;; expunge loop cascades.  Nothing recovers from that, so check before
+    ;; anything is touched (#570).  Not `vm-assert': assertion checking is off
+    ;; by default, which is where this has to hold.
+    (unless (eq m (car curr))
+      (error (concat "Message %s of %s is not where its reverse link says,"
+		     " so expunging it would remove another message."
+		     "  This is a VM bug: kill this folder without saving it,"
+		     " visit it again, and report this at"
+		     " https://gitlab.com/emacs-vm/vm/-/issues")
+	     (vm-number-of m) (buffer-name)))
+    (vm-unregister-fetched-message m)
     (vm-set-numbering-redo-start-point (or prev t))
     (vm-set-summary-redo-start-point (or prev t))
     (when (eq vm-message-pointer curr)
@@ -535,7 +639,10 @@ ignored."
 	(and (cdr curr)
 	     (vm-set-reverse-link-of (car (cdr curr)) prev)))
       (vm-mark-folder-modified-p (current-buffer))
-      (vm-increment vm-modification-counter))))
+      (vm-increment vm-modification-counter)
+      ;; a message left the list, so whoever was following its conses has to
+      ;; look again: see `vm-message-list-generation'
+      (vm-increment vm-message-list-generation))))
 
 (provide 'vm-delete)
 ;;; vm-delete.el ends here

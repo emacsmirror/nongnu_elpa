@@ -270,17 +270,16 @@ be silently ignored and the real code would `aref' a bogus value."
          (top    (vm-epg-test--make-layout
                   "multipart/encrypted" (list header msg)))
          (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*"))
-         ;; A minimal "message object" as `vm-buffer-of' dereferences it:
-         ;; (aref (aref message 1) 9) must be the buffer holding the cipher.
-         (msg-inner (make-vector 10 nil))
-         (msg-obj (make-vector 2 nil))
+         ;; a message of VM's own making, whose buffer holds the cipher: the
+         ;; slot numbers are not written down here, a hand-built vector
+         ;; having had to be renumbered with them (emacs-vm/vm#861)
+         (msg-obj (vm-make-message))
          (msg-sym (make-symbol "vm-epg-test-msg"))
          (vm-epg-auto-decrypt t))
     (unwind-protect
         (progn
           (with-current-buffer cipher-buf (insert "CIPHERTEXT"))
-          (aset msg-inner 9 cipher-buf)
-          (aset msg-obj 1 msg-inner)
+          (vm-set-buffer-of msg-obj cipher-buf)
           (set msg-sym msg-obj)
           ;; Wire the octet-stream layout to the message object and to the
           ;; cipher region: slot 13 = message symbol, slots 9/10 = body
@@ -399,10 +398,88 @@ advice now scans the decode region [START, END] instead."
     (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
                (lambda () (setq automode-called t))))
       (with-temp-buffer
+        ;; A decode for display, which is the only kind the advice follows
+        ;; since #581.
+        (setq major-mode 'vm-presentation-mode)
         (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
         ;; Call through the real (advised) function; point does not move.
         (vm-mime-transfer-decode-region layout (point-min) (point-max))
         (should automode-called)))))
+
+(ert-deftest vm-epg-test-transfer-advice-survives-a-shrinking-decode ()
+  "REGRESSION: decoding a whole buffer must not put the scan region past its end.
+The advice scanned [START, END] as they arrived, but quoted-printable and
+base64 decoding replace the region by something shorter.  Where the region is
+the whole buffer -- `vm-mime-send-body-to-file' decodes from point-min to
+point-max of a work buffer -- the old END is outside the buffer afterwards and
+`narrow-to-region' signalled `args-out-of-range'.
+
+`vm-mime-send-body-to-file' swallows the error and warns, so with vm-epg loaded
+writing a quoted-printable text part to a file wrote nothing at all, and an
+HTML part sent to an external viewer arrived empty."
+  (let ((layout (vm-epg-test--make-layout "text/plain"))
+        (automode-region nil))
+    (aset layout 2 "quoted-printable")
+    (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
+               (lambda () (setq automode-region (cons (point-min) (point-max))))))
+      (with-temp-buffer
+        ;; as above: for display, so the advice follows it
+        (setq major-mode 'vm-presentation-mode)
+        ;; "=41" decodes to "A", so the region loses two characters of three.
+        (insert "=41=42=43\n")
+        (let ((size (buffer-size)))
+          (vm-mime-transfer-decode-region layout (point-min) (point-max))
+          (should (= (buffer-size) (- size 6)))
+          ;; the region scanned is the decoded text, not the bytes it came from
+          (should (equal automode-region (cons (point-min) (point-max)))))))))
+
+(ert-deftest vm-epg-test-transfer-advice-only-follows-a-display ()
+  "REGRESSION: a decode that is not for display does not run the automode.
+Issue #581.  VM transfer-decodes for several reasons: `vm-mime-send-body-to-file'
+writing a part to a file or handing one to an external viewer,
+`vm-mime-send-body-to-folder', yanking a message into a composition, vm-vcard,
+vm-w3m.  Those decode in a work buffer or a composition, where nothing is on
+display and the automode has no message to work from, yet the advice ran there
+too.
+
+It did nothing, but only by accident: `vm-message-pointer' is nil in a work
+buffer and `vm-epg-cleartext-decoded' is buffer-local and so nil there as well,
+so the already-handled test compared nil with nil and took the do-nothing
+branch.  This pins the intent instead of the accident."
+  (let ((layout (vm-epg-test--make-layout "text/plain"))
+        (calls 0))
+    (aset layout 2 "8bit")
+    (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
+               (lambda () (setq calls (1+ calls)))))
+      ;; a work buffer, as `vm-mime-send-body-to-file' decodes in
+      (with-temp-buffer
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should (= 0 calls)))
+      ;; a composition, as yanking a message decodes in
+      (with-temp-buffer
+        (mail-mode)
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should (= 0 calls)))
+      ;; and the display path still does
+      (with-temp-buffer
+        (setq major-mode 'vm-presentation-mode)
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should (= 1 calls))))))
+
+(ert-deftest vm-epg-test-cleartext-display-buffer-p ()
+  "The three modes a message is displayed in, and nothing else.
+Issue #581."
+  (dolist (mode '(vm-mode vm-virtual-mode vm-presentation-mode))
+    (with-temp-buffer
+      (setq major-mode mode)
+      (should (vm-epg-cleartext-display-buffer-p))))
+  (dolist (mode '(fundamental-mode mail-mode vm-summary-mode text-mode))
+    (with-temp-buffer
+      (setq major-mode mode)
+      (should-not (vm-epg-cleartext-display-buffer-p)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: cleartext (sign-only) signatures must validate
@@ -450,9 +527,10 @@ the resulting multipart/signed part is verified exactly as the display code
 does (extract the first part, canonicalize to CRLF, detached-verify against the
 signature).  With the old LF-signing bug the signature came out invalid.
 
-Requires a usable secret key; skipped otherwise, and skipped if signing itself
-is unavailable (e.g. a passphrase cannot be supplied non-interactively)."
-  (vm-test-skip-unless (vm-epg-test--secret-key-p) "no OpenPGP secret key")
+Signed with the keyring the tests make for themselves, so it runs wherever
+gpg does rather than only where the person running it happens to have a
+secret key -- and it can never sign with theirs."
+  (vm-epg-test--with-a-test-keyring
   (let ((mail-header-separator "--text follows this line--")
         signature signed-part)
     (cl-letf (((symbol-function 'vm-epg-prepare-composition)
@@ -499,7 +577,8 @@ is unavailable (e.g. a passphrase cannot be supplied non-interactively)."
           (epg-verify-string context signature signed-part)
           (let ((result (epg-context-result-for context 'verify)))
             (should result)
-            (should (eq (epg-signature-status (car result)) 'good))))))))
+            (should (eq (epg-signature-status (car result)) 'good)))))))))
+
 
 ;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: inline cleartext armor must be MIME-encoded, not inserted raw
@@ -570,7 +649,7 @@ End-to-end with a real GnuPG: sign a body containing a non-ASCII character
 detached-verify.  With the old code the armor was inserted raw into the
 quoted-printable part, a `='-terminated signature line merged with the next
 line, and verification failed."
-  (vm-test-skip-unless (vm-epg-test--secret-key-p) "no OpenPGP secret key")
+  (vm-epg-test--with-a-test-keyring
   (let ((mail-header-separator "--text follows this line--"))
     (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
       (with-temp-buffer
@@ -596,7 +675,8 @@ line, and verification failed."
               (epg-verify-string context (buffer-string))
               (let ((result (epg-context-result-for context 'verify)))
                 (should result)
-                (should (eq (epg-signature-status (car result)) 'good))))))))))
+                (should (eq (epg-signature-status (car result)) 'good)))))))))))
+
 
 ;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: `vm-epg-ask-function' action symbols must name real commands
@@ -736,9 +816,13 @@ depend on the display and are largely unset in batch mode."
                     (buffer-list))))
 
 (defun vm-epg-test--kill-vm-epg-buffers ()
-  "Kill any leftover vm-epg work/recovery buffers."
+  "Kill any leftover vm-epg work/recovery buffers, and the warnings they made.
+The recovery path calls `display-warning', which creates `*Warnings*' if it is
+not already there, and that outlives the test (issue #559)."
   (dolist (name (vm-epg-test--vm-epg-buffer-names))
-    (kill-buffer name)))
+    (kill-buffer name))
+  (when (get-buffer "*Warnings*")
+    (kill-buffer "*Warnings*")))
 
 (ert-deftest vm-epg-test-save-work-leaves-composition-alone-on-error ()
   "A failing FUNCTION leaves the composition untouched and leaks no buffer.
@@ -864,6 +948,517 @@ then overrides vm-pgg's MIME handlers."
   "No conflict warning is produced when vm-pgg is not loaded."
   (skip-unless (not (featurep 'vm-pgg)))
   (should-not (vm-epg-pgg-conflict-warning)))
+
+;;; A keyring of our own (emacs-vm/vm#643)
+;;
+;; The tests below that sign or encrypt used whatever secret key the machine
+;; running them happened to have, which is the developer's own: not
+;; reproducible, and not something a test suite should be reaching for.  They
+;; make a keyring of their own instead.
+;;
+;; Generating a key costs about a third of a second with ed25519, so there is
+;; no reason to keep one in the repository.  A committed private key is one a
+;; scanner flags, one nobody can trust afterwards, and one that expires while
+;; nobody is looking.
+
+(defconst vm-epg-test--address "vm-test@example.invalid"
+  "The address of the throwaway key.  The .invalid domain cannot resolve.")
+
+(defun vm-epg-test--gpg-program ()
+  "The gpg to test with, or nil when there is none."
+  (or (executable-find "gpg") (executable-find "gpg2")))
+
+(defun vm-epg-test--generate-key (user-id)
+  "Generate a passphrase-less ed25519 key for USER-ID in the current GNUPGHOME.
+Returns gpg's exit status.  ed25519 takes about a third of a second, which is
+why these tests make keys instead of keeping one in the repository."
+  (call-process (vm-epg-test--gpg-program) nil nil nil
+                "--batch" "--pinentry-mode" "loopback"
+                "--passphrase" "" "--quick-generate-key" user-id
+                "default" "default" "never"))
+
+(defmacro vm-epg-test--with-a-test-keyring (&rest body)
+  "Run BODY with GNUPGHOME pointing at a fresh keyring holding one key.
+
+The key is generated here rather than kept in the repository, and the home is
+thrown away afterwards, agent and all.  Nothing here can reach the keyring of
+whoever is running the tests: `epg-gpg-home-directory' and the GNUPGHOME in
+`process-environment' both point at the temporary one, so a test cannot sign
+with a real key or wake a passphrase prompt."
+  (declare (indent 0) (debug t))
+  `(let ((gpg (vm-epg-test--gpg-program)))
+     (vm-test-skip-unless
+      gpg
+      "No gpg on PATH.  Install GnuPG to run the tests that sign and encrypt.")
+     (let ((home (make-temp-file "vm-epg-home" t)))
+       (set-file-modes home #o700)
+       (unwind-protect
+           (let* ((process-environment
+                   (cons (concat "GNUPGHOME=" home) process-environment))
+                  (epg-gpg-home-directory home)
+                  (user-mail-address vm-epg-test--address)
+                  (generated
+                   (vm-epg-test--generate-key
+                    (format "VM Test <%s>" vm-epg-test--address))))
+             (vm-test-skip-unless
+              (equal generated 0)
+              "gpg could not generate a key; see its output for why")
+             ,@body)
+         ;; the agent is per home directory and outlives the test that started
+         ;; it, so it is stopped before the directory goes
+         (call-process gpg nil nil nil "--homedir" home "--quit-agent")
+         (ignore-errors
+           (call-process "gpgconf" nil nil nil "--homedir" home
+                         "--kill" "gpg-agent"))
+         (delete-directory home t)))))
+
+(defmacro vm-epg-test--in-a-composition (&rest body)
+  "Run BODY in a composition addressed to and from the test key."
+  (declare (indent 0) (debug t))
+  `(let ((mail-header-separator "--text follows this line--")
+         (vm-send-using-mime t))
+     (with-temp-buffer
+       (mail-mode)
+       (insert "From: VM Test <" vm-epg-test--address ">\n"
+               "To: VM Test <" vm-epg-test--address ">\n"
+               "Subject: for the keyring\n"
+               mail-header-separator "\n"
+               "A body to work on.\n")
+       ,@body)))
+
+(defun vm-epg-test--decrypt-composition ()
+  "Decrypt the armored message in the current composition and return it.
+
+Returns a cons of the plain text and the list of signatures it carried, so a
+test can tell an encrypted message from a signed-and-encrypted one.  The
+alternative is to assert on the ciphertext, which is the same either way."
+  (goto-char (point-min))
+  (should (re-search-forward
+           "-----BEGIN PGP MESSAGE-----\\(.\\|\n\\)*-----END PGP MESSAGE-----"
+           nil t))
+  (let ((armor (match-string 0))
+        (context (epg-make-context 'OpenPGP)))
+    (setf (epg-context-home-directory context) epg-gpg-home-directory)
+    (let ((plain (epg-decrypt-string context armor)))
+      (cons plain (epg-context-result-for context 'verify)))))
+
+(ert-deftest vm-epg-test-the-test-keyring-holds-only-its-own-key ()
+  "The keyring the tests use has one key in it, and it is the test key.
+
+If this fails, the tests below are using somebody's real keyring, which is
+what this whole fixture exists to prevent."
+  (vm-epg-test--with-a-test-keyring
+    (let ((context (epg-make-context 'OpenPGP)))
+      (setf (epg-context-home-directory context) epg-gpg-home-directory)
+      (let ((owners (mapcar (lambda (key)
+                              (epg-user-id-string
+                               (car (epg-key-user-id-list key))))
+                            (epg-list-keys context nil t))))
+        (should (equal owners
+                       (list (format "VM Test <%s>" vm-epg-test--address))))))))
+
+(ert-deftest vm-epg-test-signing-a-composition ()
+  "`vm-epg-sign' signs the composition, and the signature is a MIME part
+rather than armor in the body: that is what multipart/signed means."
+  (vm-epg-test--with-a-test-keyring
+    (vm-epg-test--in-a-composition
+      (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
+        (vm-epg-sign))
+      (let ((composed (buffer-string)))
+        (should (string-match-p "multipart/signed" composed))
+        ;; the part itself must be typed as the signature.  Matching the
+        ;; string anywhere would be answered by the protocol= parameter of
+        ;; the enclosing multipart, which says nothing about the part.
+        (should (string-match-p "^Content-Type: application/pgp-signature$"
+                                composed))
+        (should (string-match-p "BEGIN PGP SIGNATURE" composed))
+        ;; the text is still readable: signing does not hide it
+        (should (string-match-p "A body to work on" composed))))))
+
+(ert-deftest vm-epg-test-encrypting-a-composition ()
+  "`vm-epg-encrypt' encrypts to the recipients, and the body is gone from
+the composition: an encrypted message that still carried its plain text
+would be the worst possible bug in this file."
+  (vm-epg-test--with-a-test-keyring
+    (vm-epg-test--in-a-composition
+      (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
+        (vm-epg-encrypt))
+      (let ((composed (buffer-string)))
+        (should (string-match-p "multipart/encrypted" composed))
+        (should (string-match-p "application/pgp-encrypted" composed))
+        (should (string-match-p "BEGIN PGP MESSAGE" composed))
+        (should-not (string-match-p "A body to work on" composed)))
+      ;; the recipient gets the text back, and it carries no signature:
+      ;; signing is what the prefix argument is for
+      (let ((decrypted (vm-epg-test--decrypt-composition)))
+        (should (string-match-p "A body to work on" (car decrypted)))
+        (should-not (cdr decrypted))))))
+
+(ert-deftest vm-epg-test-signing-and-encrypting-together ()
+  "`vm-epg-sign-and-encrypt' does both in one step, and the result is an
+encrypted message: the signature is inside it, where only the recipient can
+see it."
+  (vm-epg-test--with-a-test-keyring
+    (vm-epg-test--in-a-composition
+      (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
+        (vm-epg-sign-and-encrypt))
+      (let ((composed (buffer-string)))
+        (should (string-match-p "multipart/encrypted" composed))
+        (should-not (string-match-p "A body to work on" composed)))
+      ;; decrypting is the only way to see the signature, which is the whole
+      ;; difference between this command and `vm-epg-encrypt'
+      (let ((decrypted (vm-epg-test--decrypt-composition)))
+        (should (string-match-p "A body to work on" (car decrypted)))
+        (should (cdr decrypted))
+        (should (eq (epg-signature-status (car (cdr decrypted))) 'good))))))
+
+(defun vm-epg-test--import-attached-key (composed)
+  "Import the application/pgp-keys part of COMPOSED and return its user IDs.
+
+The import goes into a keyring of its own, as a correspondent's would, so
+this says the attached bytes are a usable key rather than merely that a part
+with the right Content-Type is present."
+  (should (string-match
+           (concat "Content-Type: application/pgp-keys\\(?:.\\|\n\\)*?"
+                   "Content-Transfer-Encoding: base64\n\n"
+                   "\\(\\(?:.\\|\n\\)*?\\)\n--")
+           composed))
+  (let ((key (base64-decode-string (match-string 1 composed)))
+        (home (make-temp-file "vm-epg-import" t)))
+    (set-file-modes home #o700)
+    (unwind-protect
+        (let ((context (epg-make-context 'OpenPGP)))
+          (setf (epg-context-home-directory context) home)
+          (epg-import-keys-from-string context key)
+          (mapcar (lambda (k)
+                    (epg-user-id-string (car (epg-key-user-id-list k))))
+                  (epg-list-keys context)))
+      (ignore-errors
+        (call-process "gpgconf" nil nil nil "--homedir" home
+                      "--kill" "gpg-agent"))
+      (delete-directory home t))))
+
+(ert-deftest vm-epg-test-attaching-a-public-key ()
+  "`vm-epg-attach-public-key' puts the author's key in the composition as an
+application/pgp-keys part, which is how a correspondent gets the key to
+answer with."
+  (vm-epg-test--with-a-test-keyring
+    ;; a second key in the ring, so "the author's key" is a claim the test can
+    ;; actually check: with one key in the keyring, exporting the wrong one
+    ;; and exporting the right one look identical
+    (should (equal 0 (vm-epg-test--generate-key
+                      "Decoy <decoy@example.invalid>")))
+    (vm-epg-test--in-a-composition
+      (goto-char (point-max))
+      (unwind-protect
+          (progn
+            (vm-epg-attach-public-key)
+            (vm-mime-encode-composition)
+            (let ((composed (buffer-string)))
+              (should (string-match-p "^Content-Type: application/pgp-keys"
+                                      composed))
+              ;; named for the author, which is what the recipient sees,
+              ;; in the part's name parameter and in its disposition alike.
+              ;; The name pattern needs the leading delimiter: without it,
+              ;; "filename=" answers for "name=" and the parameter goes
+              ;; unchecked.
+              (let ((named (concat "=\"" (regexp-quote vm-epg-test--address)
+                                   "\\.asc\"")))
+                (should (string-match-p (concat "[ \t;]name" named) composed))
+                (should (string-match-p (concat "filename" named) composed)))
+              ;; and the part is the key: a correspondent can import it
+              (should (equal (vm-epg-test--import-attached-key composed)
+                             (list (format "VM Test <%s>"
+                                           vm-epg-test--address))))))
+        ;; the command keeps the exported key in a buffer of its own, as the
+        ;; source of the attachment; it is ours to kill afterwards
+        (let ((exported (get-buffer (concat " *public key of "
+                                            vm-epg-test--address "*"))))
+          (when exported (kill-buffer exported)))))))
+
+(ert-deftest vm-epg-test-inserting-a-public-key ()
+  "REGRESSION: `vm-epg-insert-public-key' inserts ASCII armor, as it says.
+The context it exported through had armor off, so the binary key packet went
+into the message body: the recipient cannot import that, and it is not text.
+`vm-epg-attach-public-key' shares the omission and is unaffected, since its
+export becomes a base64 MIME part."
+  (vm-epg-test--with-a-test-keyring
+    (vm-epg-test--in-a-composition
+      (goto-char (point-max))
+      (vm-epg-insert-public-key)
+      (let ((composed (buffer-string)))
+        (should (string-match-p "BEGIN PGP PUBLIC KEY BLOCK" composed))
+        (should (string-match-p "END PGP PUBLIC KEY BLOCK" composed))
+        ;; inline, where the attach command would have made a MIME part
+        (should-not (string-match-p "application/pgp-keys" composed))
+        ;; and it is text: every character survives a text/plain body
+        (should (string-match-p "\\`[[:print:][:space:]]*\\'" composed))))))
+
+
+;;; The inline (cleartext) commands, over the test keyring
+
+(defun vm-epg-test--armored-context ()
+  "An OpenPGP context on the test keyring, producing ASCII armor."
+  (let ((context (epg-make-context 'OpenPGP)))
+    (setf (epg-context-armor context) t)
+    (setf (epg-context-home-directory context) epg-gpg-home-directory)
+    context))
+
+(defun vm-epg-test--encrypt-to-the-test-key (plain &optional sign)
+  "Return PLAIN encrypted to the test key as ASCII armor, signed if SIGN."
+  (let* ((context (vm-epg-test--armored-context))
+         (keys (epg-list-keys context vm-epg-test--address)))
+    (should keys)
+    (when sign
+      (setf (epg-context-signers context)
+            (epg-list-keys context vm-epg-test--address t)))
+    (epg-encrypt-string context plain keys sign)))
+
+(defun vm-epg-test--clearsign (plain)
+  "Return PLAIN as an inline cleartext-signed message, signed by the test key."
+  (let ((context (vm-epg-test--armored-context)))
+    (setf (epg-context-signers context)
+          (epg-list-keys context vm-epg-test--address t))
+    (epg-sign-string context plain 'clear)))
+
+(defmacro vm-epg-test--with-a-message (body-text &rest body)
+  "Run BODY in a folder of one message whose body is BODY-TEXT.
+
+The buffer is put in `vm-mode' because that is what the commands validate
+against; without it they refuse with \"No VM folder buffer associated with
+this buffer\" before reaching anything worth testing."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder
+       (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+               "From: sender@example.com\n"
+               "Subject: an inline PGP message\n\n"
+               ,body-text "\n")
+     (setq major-mode 'vm-mode)
+     ;; the folder buffer must be current when `vm-test-with-folder' cleans
+     ;; up, or it reads `vm-presentation-buffer' in whatever buffer the
+     ;; command left behind and the presentation copy is never killed
+     (save-current-buffer
+       ,@body)))
+
+(defmacro vm-epg-test--with-a-keyring-and-a-folder (body-text &rest body)
+  "Run BODY over a one-message folder whose body is BODY-TEXT, with a keyring.
+BODY-TEXT is evaluated inside the keyring, so it can encrypt or sign with the
+test key."
+  (declare (indent 1) (debug t))
+  `(vm-epg-test--with-a-test-keyring
+     (vm-epg-test--with-a-message ,body-text ,@body)))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-shows-the-plain-text ()
+  "`vm-epg-cleartext-decrypt' puts the plain text in the presentation copy.
+The armor is gone from it, and the state line says the message was
+encrypted."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key "the secret body\n")
+   (vm-epg-cleartext-decrypt)
+   (should (string-match-p "the secret body" (buffer-string)))
+   (should-not (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))
+   (should (member " encrypted" vm-epg-state))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-leaves-the-folder-alone ()
+  "The folder keeps the ciphertext: only the presentation copy is rewritten.
+Decrypting into the folder would write the plain text to disk on the next
+save, which is the opposite of what the sender asked for."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key "the secret body\n")
+   (let ((folder (current-buffer)))
+     (vm-epg-cleartext-decrypt)
+     (should-not (eq (current-buffer) folder))
+     (with-current-buffer folder
+       (should (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))
+       (should-not (string-match-p "the secret body" (buffer-string)))))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-refuses-a-read-only-folder ()
+  "A read-only folder is refused, as the docstring says.
+Only the presentation copy is written, so the check is a policy rather than
+a necessity -- which is exactly why it needs a test to keep it."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key "the secret body\n")
+   (let ((vm-folder-read-only t)
+         (text-quoting-style 'grave))
+     (let ((err (should-error (vm-epg-cleartext-decrypt) :type 'error)))
+       (should (string-match-p "read-only" (error-message-string err)))))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-reports-a-failure-in-place ()
+  "A message that cannot be decrypted shows the error where the armor was.
+The armor is left in place -- there is nothing to replace it with -- and the
+state says error rather than encrypted."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   ;; armor that is not decryptable with any key we have
+   (concat "-----BEGIN PGP MESSAGE-----\n\n"
+           "hQEMAwAAAAAAAAAAAQf/YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=\n"
+           "=abcd\n-----END PGP MESSAGE-----")
+   (vm-epg-cleartext-decrypt)
+   (should (member " ERROR" vm-epg-state))
+   (should (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))))
+
+(ert-deftest vm-epg-test-cleartext-decrypt-verifies-a-signed-plain-text ()
+  "When the plain text is itself inline-signed, the signature is verified too.
+Encrypt-then-sign is the common case, and the reader should be told about the
+signature without a second command."
+  (vm-epg-test--with-a-keyring-and-a-folder
+   (vm-epg-test--encrypt-to-the-test-key
+    (vm-epg-test--clearsign "signed and then encrypted\n"))
+   (vm-epg-cleartext-decrypt)
+   (should (string-match-p "signed and then encrypted" (buffer-string)))
+   (should (member " verified" vm-epg-state))))
+
+(ert-deftest vm-epg-test-cleartext-verify-reports-a-good-signature ()
+  "`vm-epg-cleartext-verify' replaces the armor with a description of the
+signature and reports it verified."
+  (vm-epg-test--with-a-test-keyring
+    (with-temp-buffer
+      (setq major-mode 'vm-presentation-mode)
+      (insert (vm-epg-test--clearsign "text that was signed\n"))
+      (vm-epg-cleartext-verify)
+      (let ((shown (buffer-string)))
+        (should (member " verified" vm-epg-state))
+        ;; the text survives; the armor around it does not
+        (should (string-match-p "text that was signed" shown))
+        (should-not (string-match-p "BEGIN PGP SIGNATURE" shown))
+        (should (string-match-p "Good signature from key" shown))))))
+
+(ert-deftest vm-epg-test-cleartext-verify-reports-a-broken-signature ()
+  "Text altered after signing is reported as an error, not as verified.
+This is the whole point of the command, so it is worth asserting that a
+signature that does not check comes back distinguishable from one that
+does."
+  (vm-epg-test--with-a-test-keyring
+    (with-temp-buffer
+      (setq major-mode 'vm-presentation-mode)
+      (insert (vm-epg-test--clearsign "text that was signed\n"))
+      (goto-char (point-min))
+      (should (search-forward "text that was signed" nil t))
+      (replace-match "text that was tampered with")
+      (vm-epg-cleartext-verify)
+      (should (member " ERROR" vm-epg-state))
+      (should-not (member " verified" vm-epg-state)))))
+
+;;; Who a message is encrypted to (#782)
+
+(defconst vm-epg-test--author-address "vm-author@example.invalid"
+  "The address the two-key tests compose from.")
+
+(defconst vm-epg-test--recipient-address "vm-recipient@example.invalid"
+  "The address the two-key tests compose to.")
+
+(defmacro vm-epg-test--with-two-keys (&rest body)
+  "Run BODY with a fresh keyring holding an author key and a recipient key.
+`vm-epg-test--with-a-test-keyring' makes one key and addresses everything to
+it, which cannot tell encrypting to the recipient from encrypting to the
+author.  BODY sees `home', the GNUPGHOME the keys are in."
+  (declare (indent 0) (debug t))
+  `(let ((gpg (vm-epg-test--gpg-program)))
+     (vm-test-skip-unless
+      gpg
+      "No gpg on PATH.  Install GnuPG to run the tests that sign and encrypt.")
+     (let ((home (make-temp-file "vm-epg-home" t)))
+       (set-file-modes home #o700)
+       (unwind-protect
+           (let* ((process-environment
+                   (cons (concat "GNUPGHOME=" home) process-environment))
+                  (epg-gpg-home-directory home)
+                  (user-mail-address vm-epg-test--author-address))
+             (vm-test-skip-unless
+              (and (equal 0 (vm-epg-test--generate-key
+                             (format "VM Author <%s>"
+                                     vm-epg-test--author-address)))
+                   (equal 0 (vm-epg-test--generate-key
+                             (format "VM Recipient <%s>"
+                                     vm-epg-test--recipient-address))))
+              "gpg could not generate the keys; see its output for why")
+             ,@body)
+         (call-process gpg nil nil nil "--homedir" home "--quit-agent")
+         (ignore-errors
+           (call-process "gpgconf" nil nil nil "--homedir" home
+                         "--kill" "gpg-agent"))
+         (delete-directory home t)))))
+
+(defun vm-epg-test--encryption-subkey-id (home address)
+  "The key id gpg names in a session-key packet for ADDRESS's key in HOME.
+The packet names the encryption subkey, not the primary key, so a test
+comparing the two has to ask for the subkey."
+  (with-temp-buffer
+    (call-process (vm-epg-test--gpg-program) nil t nil
+                  "--homedir" home "--batch" "--with-colons"
+                  "--list-keys" address)
+    (let (id)
+      (dolist (line (split-string (buffer-string) "\n" t) id)
+        (let ((fields (split-string line ":")))
+          (when (and (equal (nth 0 fields) "sub")
+                     (string-match-p "e" (or (nth 11 fields) "")))
+            (setq id (nth 4 fields))))))))
+
+(defun vm-epg-test--encrypted-to (home)
+  "The key ids the PGP message in the current buffer is encrypted to."
+  (goto-char (point-min))
+  (re-search-forward "-----BEGIN PGP MESSAGE-----")
+  (let ((start (match-beginning 0)))
+    (re-search-forward "-----END PGP MESSAGE-----")
+    (let ((file (make-temp-file "vm-epg-cipher"))
+          (armor (buffer-substring-no-properties start (point)))
+          ids)
+      (unwind-protect
+          (progn
+            (with-temp-file file (insert armor))
+            (with-temp-buffer
+              (call-process (vm-epg-test--gpg-program) nil t nil
+                            "--homedir" home "--batch" "--list-packets" file)
+              (goto-char (point-min))
+              (while (re-search-forward "keyid \\([0-9A-F]+\\)" nil t)
+                (push (match-string 1) ids))))
+        (delete-file file))
+      (nreverse ids))))
+
+(defun vm-epg-test--encrypt-from-author (home)
+  "Encrypt a composition from the author to the recipient; answer the key ids."
+  (let ((mail-header-separator "--text follows this line--")
+        (vm-send-using-mime t))
+    (with-temp-buffer
+      (mail-mode)
+      (insert "From: VM Author <" vm-epg-test--author-address ">\n"
+              "To: VM Recipient <" vm-epg-test--recipient-address ">\n"
+              "Subject: for the keyring\n"
+              mail-header-separator "\n"
+              "A body to work on.\n")
+      (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
+        (vm-epg-encrypt nil))
+      (vm-epg-test--encrypted-to home))))
+
+(ert-deftest vm-epg-test-encrypts-to-the-recipients-and-nobody-else ()
+  "The author's own key is not added, so a filed copy cannot be read back.
+The manual and NEWS say so, and this is what they say it about: `vm-pgg'
+added the author's key and vm-epg does not (#782)."
+  (vm-epg-test--with-two-keys
+    (let ((author (vm-epg-test--encryption-subkey-id
+                   home vm-epg-test--author-address))
+          (recipient (vm-epg-test--encryption-subkey-id
+                      home vm-epg-test--recipient-address)))
+      (should author)
+      (should recipient)
+      (let ((ids (vm-epg-test--encrypt-from-author home)))
+        (should (member recipient ids))
+        (should-not (member author ids))))))
+
+(ert-deftest vm-epg-test-gpg-conf-encrypt-to-reaches-the-encryption ()
+  "`encrypt-to' in gpg.conf adds the author's key, as the manual says it does.
+The advice is only worth giving because VM passes gpg no --no-encrypt-to;
+were that to change, the manual would be telling the reader to do something
+that no longer works (#782)."
+  (vm-epg-test--with-two-keys
+    (let ((author (vm-epg-test--encryption-subkey-id
+                   home vm-epg-test--author-address))
+          (recipient (vm-epg-test--encryption-subkey-id
+                      home vm-epg-test--recipient-address)))
+      (with-temp-file (expand-file-name "gpg.conf" home)
+        (insert "encrypt-to " author "\n"))
+      (let ((ids (vm-epg-test--encrypt-from-author home)))
+        (should (member recipient ids))
+        (should (member author ids))))))
 
 (provide 'vm-epg-test)
 

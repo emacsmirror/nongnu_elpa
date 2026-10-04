@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1989-1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -27,18 +27,9 @@
 (require 'tapestry) ;; FIXME: Use Emacs-24's `frameset'?
 (eval-when-compile (require 'cl-lib))
 
-(declare-function frame-highest-window "vm-xemacs" (frame))
-
-(declare-function vm-selected-frame "vm-window.el" ())
-(declare-function vm-window-frame "vm-window.el" (window))
-(declare-function vm-delete-frame "vm-window.el" (&optional frame force))
-(declare-function vm-raise-frame "vm-window.el" (&optional frame))
-(declare-function vm-frame-visible-p "vm-window.el" (frame))
-(declare-function vm-frame-iconified-p "vm-window.el" (frame))
-(declare-function vm-window-frame "vm-window.el" (window))
-(declare-function vm-next-frame "vm-window.el" (&optional frame miniframe))
-(declare-function vm-select-frame "vm-window.el" (frame &optional norecord))
-(declare-function vm-frame-selected-window "vm-window.el" (&optional frame))
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;;;###autoload
 (defun vm-display (buffer display commands configs
@@ -142,8 +133,7 @@
       (unwind-protect
 	  (progn
 	    (set-buffer (setq work-buffer (get-buffer-create "*vm-wconfig*")))
-	    (if (not (featurep 'xemacs))
-		(set-buffer-multibyte nil)) ; for empty buffer
+	    (set-buffer-multibyte nil)	; for empty buffer
 	    (erase-buffer)
 	    (setq vm-window-configurations
 		  (condition-case ()
@@ -161,11 +151,8 @@
       (unwind-protect
 	  (progn
 	    (set-buffer (setq work-buffer (get-buffer-create "*vm-wconfig*")))
-	    (if (not (featurep 'xemacs))
-		(set-buffer-multibyte nil)) ; for empty buffer
-	    ;; for MULE
-	    (if (fboundp 'set-buffer-file-coding-system)
-		(set-buffer-file-coding-system (vm-line-ending-coding-system)))
+	    (set-buffer-multibyte nil)	; for empty buffer
+	    (set-buffer-file-coding-system (vm-line-ending-coding-system))
 	    (erase-buffer)
 	    (print vm-window-configurations (current-buffer))
 	    (let ((coding-system-for-write (vm-line-ending-coding-system))
@@ -179,8 +166,7 @@
 	(throw 'done nil))
     (let ((nonexistent " *vm-nonexistent*")
 	  (nonexistent-summary " *vm-nonexistent-summary*")
-	  ;; (selected-frame (vm-selected-frame))
-	  folders-summary summary message composition edit config)
+	  summary message composition edit config)
       (while (and tags (null config))
 	(setq config (assq (car tags) vm-window-configurations)
 	      tags (cdr tags)))
@@ -192,11 +178,6 @@
 	     (if (or (null vm-mail-buffer) (null (buffer-name vm-mail-buffer)))
 		 (throw 'done nil)
 	       (setq summary (current-buffer))
-	       (setq message vm-mail-buffer)))
-	    ((eq major-mode 'vm-folders-summary-mode)
-	     (if (or (null vm-mail-buffer) (null (buffer-name vm-mail-buffer)))
-		 (throw 'done nil)
-	       (setq folders-summary (current-buffer))
 	       (setq message vm-mail-buffer)))
 	    ((eq major-mode 'vm-mode)
 	     (setq message (current-buffer)))
@@ -222,8 +203,6 @@
       (if vm-presentation-buffer
 	  (setq message vm-presentation-buffer))
       (vm-check-for-killed-summary)
-      (or folders-summary (setq folders-summary (or vm-folders-summary-buffer
-						    nonexistent)))
       (or summary (setq summary (or vm-summary-buffer nonexistent-summary)))
       (or composition (setq composition nonexistent))
       (or edit (setq edit nonexistent))
@@ -231,7 +210,6 @@
              (lambda (label)
                (cl-ecase label
 	         (summary summary)
-	         (folders-summary folders-summary)
 	         (composition composition)
 	         (message message)
 	         (edit edit)))))
@@ -316,8 +294,6 @@ window configurations."
   (with-current-buffer buf
     (cond ((eq major-mode 'vm-summary-mode)
 	   'summary)
-	  ((eq major-mode 'vm-folders-summary-mode)
-	   'folders-summary)
 	  ((eq major-mode 'mail-mode)
 	   'composition)
 	  ((eq major-mode 'vm-mode)
@@ -386,10 +362,13 @@ from the minibuffer."
 	'identity t)))))
   (vm-set-window-configuration tag))
 
+;;;###autoload
 (defun vm-window-help ()
+  "Show the window configuration commands and their keys in the echo area."
   (interactive)
   (vm-inform 0 "WS = save configuration, WD = delete configuration, WW = apply configuration"))
 
+;;;###autoload
 (defun vm-iconify-frame ()
   "Iconify the current frame.
 Run the hooks in vm-iconify-frame-hook before doing so."
@@ -423,11 +402,7 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 	    ((and (eq action 'replace) (eq obj-1 (window-buffer w)))
 	     (set-window-buffer w obj-2)))
       (setq done (eq start
-		     (setq w
-			  (condition-case nil
-			      (next-window w 'nomini all-frames)
-			    (wrong-number-of-arguments
-			     (next-window w 'nomini))))))
+		     (setq w (next-window w 'nomini all-frames))))
       (if (null start)
 	  (setq start w)))
     (if (and delete-me (not (eq delete-me (next-window delete-me 'nomini))))
@@ -486,12 +461,7 @@ Run the hooks in vm-iconify-frame-hook before doing so."
   (vm-window-loop 'replace old new))
 
 (defun vm-bury-buffer (&optional buffer)
-  (or buffer (setq buffer (current-buffer)))
-  (if (featurep 'xemacs)
-      (if (vm-multiple-frames-possible-p)
-	  (vm-frame-loop 'bury buffer)
-	(bury-buffer buffer))
-    (bury-buffer buffer)))
+  (bury-buffer (or buffer (current-buffer))))
 
 (defun vm-unbury-buffer (buffer)
   (save-excursion
@@ -536,15 +506,9 @@ Run the hooks in vm-iconify-frame-hook before doing so."
     (while (and types (null params))
       (setq params (car (cdr (assq (car types) vm-frame-parameter-alist)))
 	    types (cdr types)))
-    ;; these functions might be defined in an Emacs that isn't
-    ;; running under a window system, but VM always checks for
-    ;; multi-frame support before calling this function.
-    (cond ((fboundp 'make-frame)
-	   (vm-select-frame (make-frame params)))
-	  ((fboundp 'make-screen)
-	   (vm-select-frame (make-screen params)))
-	  ((fboundp 'new-screen)
-	   (vm-select-frame (new-screen params))))
+    ;; `make-frame' is defined in an Emacs with no window system too, and
+    ;; fails there; the callers check `vm-multiple-frames-possible-p' first.
+    (vm-select-frame (make-frame params))
     (vm-register-frame (vm-selected-frame))
     (and vm-warp-mouse-to-new-frame
 	 (vm-warp-mouse-to-frame-maybe (vm-selected-frame)))))
@@ -556,19 +520,6 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 	(if (null w)
 	    (progn
 	      (vm-goto-new-frame 'summary)
-	      (vm-set-hooks-for-frame-deletion))
-	  (save-excursion
-	    (select-window w)
-	    (and vm-warp-mouse-to-new-frame
-		 (vm-warp-mouse-to-frame-maybe (vm-window-frame w))))))))
-
-(defun vm-goto-new-folders-summary-frame-maybe ()
-  (if (and vm-mutable-frame-configuration vm-frame-per-folders-summary
-	   (vm-multiple-frames-possible-p))
-      (let ((w (vm-get-buffer-window vm-folders-summary-buffer)))
-	(if (null w)
-	    (progn
-	      (vm-goto-new-frame 'folders-summary)
 	      (vm-set-hooks-for-frame-deletion))
 	  (save-excursion
 	    (select-window w)
@@ -598,136 +549,64 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 
 (defun vm-warp-mouse-to-frame-maybe (&optional frame)
   (or frame (setq frame (vm-selected-frame)))
-  (if (vm-mouse-support-possible-here-p)
-      (cond ((featurep 'xemacs)
-	     (cond ((fboundp 'mouse-position);; XEmacs 19.12 and up
-		    (let ((mp (mouse-position)))
-		      (if (and (car mp)
-			       (eq (window-frame (car mp)) (selected-frame)))
-			  nil
-			(set-mouse-position (frame-highest-window frame)
-					    (/ (frame-width frame) 2)
-					    (/ (frame-height frame) 2)))))
-		   (t 
-		    (error "Emacs version too old")
-		    ;; XEmacs 19.11
-		    ;; use (apply 'screen-...) instead of
-		    ;; (screen-...) to avoid stimulating a
-		    ;; byte-compiler bug in Emacs 19.29 that
-		    ;; happens when it encounters 'obsolete'
-		    ;; functions.  puke, puke, puke.
-		    ;; (let ((mp (read-mouse-position frame)))
-		    ;;   (if (and (>= (car mp) 0)
-		    ;; 	       (<= (car mp) (apply 'screen-width frame))
-		    ;; 	       (>= (cdr mp) 0)
-		    ;; 	       (<= (cdr mp) (apply 'screen-height frame)))
-		    ;; 	  nil
-		    ;; 	(set-mouse-position 
-		    ;; 	 frame
-		    ;; 	 (/ (apply 'screen-width frame) 2)
-		    ;; 	 (/ (apply 'screen-height frame) 2))))
-		    )))
-	    (t
-	     (let ((mp (mouse-position)))
-	       (if (and (eq (car mp) frame)
-			;; nil coordinates mean that the mouse
-			;; pointer isn't really within the frame
-			(car (cdr mp)))
-		   nil
-		 (set-mouse-position frame
-				     (/ (frame-width frame) 2)
-				     (/ (frame-height frame) 2))
-		 ;; doc for set-mouse-position says to do this
-		 ;; but Emacs 22 doesn't say it and unfocus-frame is
-		 ;; obsolete now.  USR, 2010-07-03
-		 ;; (unfocus-frame)
-		 ))))))
+  (when (vm-mouse-support-possible-here-p)
+    (let ((mp (mouse-position)))
+      (unless (and (eq (car mp) frame)
+		   ;; nil coordinates mean that the mouse pointer is not
+		   ;; really within the frame
+		   (car (cdr mp)))
+	(set-mouse-position frame
+			    (/ (frame-width frame) 2)
+			    (/ (frame-height frame) 2))))))
 
-(fset 'vm-selected-frame
-      (symbol-function
-       (cond ((fboundp 'selected-frame) 'selected-frame)
-	     ;; ((fboundp 'selected-screen) 'selected-screen) ; Xemacs 19?
-	     (t 'ignore))))
+(defun vm-selected-frame ()
+  "The selected frame.  A wrapper, and not a command as `selected-frame' is."
+  (selected-frame))
 
-(fset 'vm-delete-frame
-      (symbol-function
-       (cond ((fboundp 'delete-frame) 'delete-frame)
-	     ;; ((fboundp 'delete-screen) 'delete-screen)  ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-delete-frame (&optional frame force)
+  "Delete FRAME, which defaults to the selected frame.
+FORCE deletes it even when it is the last frame on its terminal."
+  (delete-frame frame force))
 
 ;; xxx because vm-iconify-frame is a command
 (defun vm-iconify-frame-xxx (&optional frame)
-  (cond ((fboundp 'iconify-frame)
-	 (iconify-frame frame))
-	;; ((fboundp 'iconify-screen)                     ; XEmacs 19?
-	;;  (iconify-screen (or frame (vm-selected-frame))))
-	))
+  "Iconify FRAME, which defaults to the selected frame."
+  (iconify-frame frame))
 
-(defun vm-deiconify-frame (frame)
-  "Deiconify FRAME."
-  (if (fboundp 'deiconify-frame)
-      (deiconify-frame frame)
-    (when (eq (frame-visible-p frame) 'icon)
-      (select-frame frame)
-      (iconify-or-deiconify-frame))))
+(defun vm-raise-frame (&optional frame)
+  "Raise FRAME, which defaults to the selected frame."
+  (raise-frame frame))
 
-(fset 'vm-raise-frame
-      (symbol-function
-       (cond ((fboundp 'raise-frame) 'raise-frame)
-	     ;; ((fboundp 'raise-screen) 'raise-screen)   ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-frame-visible-p (frame)
+  "Whether FRAME is visible, or `icon' if it is iconified."
+  (frame-visible-p frame))
 
-(fset 'vm-frame-visible-p
-      (symbol-function
-       (cond ((fboundp 'frame-visible-p) 'frame-visible-p)
-	     ;; ((fboundp 'screen-visible-p) 'screen-visible-p) ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-frame-iconified-p (&optional frame)
+  "Whether FRAME is iconified, which `frame-visible-p' says by answering
+`icon'."
+  (eq (vm-frame-visible-p frame) 'icon))
 
-(if (fboundp 'frame-iconified-p)
-    (fset 'vm-frame-iconified-p 'frame-iconified-p)
-  (defun vm-frame-iconified-p (&optional frame)
-    (eq (vm-frame-visible-p frame) 'icon)))
-
-;; frame-totally-visible-p is broken under XEmacs 19.14 and is
-;; absent under Emacs 19.34.  So vm-frame-per-summary won't work
-;; quite right under these Emacs versions.  XEmacs 19.15 should
-;; have a working version of this function.
-;; 2 April 1997, frame-totally-visible-p apparently still broken
-;; under 19.15.  I give up for now.
-;;(if (and (fboundp 'frame-totally-visible-p)
-;;	 (featurep 'xemacs)
-;;	 (or (>= emacs-major-version 20)
-;;	     (>= emacs-minor-version 15)))
-;;    (fset 'vm-frame-totally-visible-p 'frame-totally-visible-p)
-;;  (fset 'vm-frame-totally-visible-p 'vm-frame-visible-p))
-;; 2 April 1998, frame-visible-p returns 'hidden for tty frames
-;; that are visible but not the topmost frame.  Use that info.
 (defun vm-frame-totally-visible-p (&optional frame)
   (or frame (setq frame (selected-frame)))
   (not (memq (frame-visible-p frame) '(nil hidden))))
 
-(fset 'vm-window-frame
-      (symbol-function
-       (cond ((fboundp 'window-frame) 'window-frame)
-	     ((fboundp 'window-screen) 'window-screen)
-	     (t 'ignore))))
+(defun vm-window-frame (window)
+  "The frame WINDOW is on."
+  (window-frame window))
 
-(cond ((fboundp 'next-frame)
-       (fset 'vm-next-frame (symbol-function 'next-frame))
-       (fset 'vm-select-frame (symbol-function 'select-frame))
-       (fset 'vm-frame-selected-window
-	     (symbol-function 'frame-selected-window)))
-      ((fboundp 'next-screen)
-       (fset 'vm-next-frame (symbol-function 'next-screen))
-       (fset 'vm-select-frame (symbol-function 'select-screen))
-       (fset 'vm-frame-selected-window
-	     (if (fboundp 'epoch::selected-window)
-		 (symbol-function 'epoch::selected-window)
-	       (symbol-function 'screen-selected-window))))
-      (t
-       ;; it is useful for this to be a no-op, but don't bind the
-       ;; others.
-       (fset 'vm-select-frame 'ignore)))
+(defun vm-select-frame (frame &optional norecord)
+  "Select FRAME, as `select-frame' does.
+NORECORD leaves the frame's position in the recent-selection order alone."
+  (select-frame frame norecord))
+
+(defun vm-next-frame (&optional frame miniframe)
+  "The frame after FRAME in the cyclic order, as `next-frame' has it.
+MINIFRAME says how minibuffer-only frames are treated; VM never passes it."
+  (next-frame frame miniframe))
+
+(defun vm-frame-selected-window (&optional frame)
+  "The window selected in FRAME, which defaults to the selected frame."
+  (frame-selected-window frame))
 
 (provide 'vm-window)
 ;;; vm-window.el ends here

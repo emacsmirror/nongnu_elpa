@@ -1,0 +1,241 @@
+#+TITLE: Live IMAP tests
+#+STARTUP: overview
+
+Design for testing =vm-imap.el= against a real server. All 68 existing IMAP
+tests are pure spec parsing; there is no coverage of protocol interaction,
+which is why #38, #83, #286, #335 and #447 are stuck.
+
+Also the precondition for [[file:async-imap.org][async-imap.org]]: that rewrite is close to
+unreviewable without behavioural tests.
+
+Exchange (#389, #391) is out of scope for now.
+
+* Three tiers
+
+| Tier | Needs                | Covers                                        |
+|------+----------------------+-----------------------------------------------|
+|    1 | nothing              | spec parsing, encoding — what exists today     |
+|    2 | dovecot              | UIDVALIDITY, flags, COPY, namespaces, literals |
+|    3 | dovecot + relay      | dropped connections, =NO=/=BAD= responses      |
+
+Tier 3 matters because most of the stuck tickets are *error path* bugs and a
+healthy server will not produce those states:
+
+| Ticket | Tier | Note                                                    |
+|--------+------+---------------------------------------------------------|
+| #38    |    2 | attributes lost on save; two mailboxes, check flags     |
+| #83    |    2 | same subsystem as #38                                   |
+| #447   |    2 | virtual folder over a never-visited IMAP component      |
+| #335   |    3 | connection dropped after =SELECT= read as UIDVALIDITY change |
+| #286   |    3 | dropped mid =get-new-mail=, then duplicate deletion     |
+
+#286 and #335 share a root cause — VM cannot tell "server said no" from
+"connection broke" — so they should be done together.
+
+Tier 3 is a TCP relay written in elisp (=make-network-process :server t=)
+between VM and dovecot, scriptable to cut the connection after a chosen
+command or rewrite a tagged response. No new dependencies.
+
+* Opt-in
+
+The whole live suite is opt-in. Gate is the *presence* of
+=test/vm-live-config.el= (gitignored) *and* the enable flag that only the
+live runner sets. So:
+
+- an unconfigured checkout :: never contacts a server.
+- =./test-runner= :: loads the config and runs the live tests, along with a
+  pass that skips them.
+
+Test files are named =vm-imap-live-*-test.el=, so normal discovery picks them
+up and they =skip-unless= the flag. No separate destructive opt-in: the
+accounts are throwaway test users.
+
+If the config exists and the enable flag is set but the server is unreachable
+or auth fails, *fail* — do not skip. A configured suite that silently skips
+rots into permanent no-coverage.
+
+One environment variable takes the live servers away again: =VM_TEST_LIVE=0=
+(also =no=, =off=, =mock=) is the default of =vm-imap-live-enabled= and
+=vm-pop-live-enabled=, so a configured machine can run the mock servers alone
+without deleting its config; =./test-runner --mock= is the shorthand, and the
+default run includes that pass. That is not a second opt-in; it is how the mock
+tests get checked on the machine where a live run would otherwise cover for
+them. =VM_TEST_OPTIONAL=0= does the same for BBDB, emacs-w3m and vcard, and the
+default run includes a pass without them: the test files that name one, which
+is the only place their absence can show.
+
+* Configuration
+
+One gitignored elisp file, =test/vm-live-config.el=,
+copied from =test/vm-live-config.el.template=, which is checked in and carries
+the documentation:
+
+#+begin_src sh
+cp test/vm-live-config.el.template test/vm-live-config.el
+#+end_src
+
+It sets =vm-imap-test-servers= and =vm-pop-test-servers=, so one file describes
+both protocols. The template is the reference for their structure and for what
+each key means; do not copy a second copy of it into this document, which is
+how the two drift apart.
+
+- The harness builds the maildrop spec and populates
+  =vm-imap-account-alist=, so tests exercise the nickname path real users
+  take rather than raw specs.
+- =test/vm-live-config.el= goes in =.gitignore=; the =.template= must not,
+  which the exact-name pattern takes care of. Check it against the
+  narrowed =*.ind*= pattern, not the old =*.in*=.
+
+* Namespace
+
+Discover it, do not hardcode: issue =NAMESPACE= on connect and take the
+personal prefix and separator from the reply.
+
+Mark's dovecot is =mdbox=, so =LAYOUT=fs=: empty prefix, =/= separator.
+Maildir++ boxes would give =INBOX.= and =.=. Discovery keeps the suite
+portable and is needed anyway to name #447's component folders correctly.
+
+* Fixtures
+
+Per test: create a throwaway mailbox =vmtest/<pid>-<n>=, =APPEND= the
+messages it needs, run, and delete it in =unwind-protect=. Never touch
+INBOX.
+
+*Fixtures must not be built with VM's own IMAP code.* If setup goes through
+=vm-imap-*= then a VM bug corrupts the fixture and masks itself — exactly the
+failure mode #286 complains about, where VM acts on data it got wrong. Use a
+small independent client in the harness: =open-network-stream= plus
+=CREATE=/=APPEND=/=STORE=/=DELETE=, about 40 lines.
+
+=doveadm= is an optional fast path for wholesale reset (=doveadm mailbox
+delete -u=). Note =mail_uid = dovecot-mail=, so it likely needs privileges;
+pure IMAP stays the default so the suite runs unprivileged and against
+non-dovecot servers.
+
+* TLS
+
+VM has *no STARTTLS*. =imap-ssl= is implicit TLS only, via
+=open-network-stream :type 'tls= (or stunnel when =vm-stunnel-program= is
+set). So:
+
+- In scope :: implicit TLS on 993, native, via =open-network-stream=.
+- Not in scope :: STARTTLS on 143 — VM does not implement it. Worth its own
+  enhancement issue.
+- Not in scope :: the =vm-stunnel-program= branch. It reaches the same place
+  by a different route, but needs stunnel installed and configured; decided
+  against covering it.
+
+Emacs verifies the certificate through the network security manager. A
+self-signed dovecot cert will fail, or worse prompt, and a prompt in batch
+hangs. The harness must bind =gnutls-trustfiles= to the =:trustfile= from the
+config, and =network-security-level= to =low=, for TLS servers only.
+
+* Hangs
+
+=vm-imap-server-timeout= defaults to =nil=, meaning never. A wedged live
+test would hang forever. The harness binds it (10s) and wraps each test in
+=with-timeout=. VM's IMAP is synchronous =accept-process-output=; fine in
+batch, but these will be slower than tier 1.
+
+* Credentials in output
+
+=vm-imap-log-sessions= logs raw protocol tokens, so a trace contains the
+=LOGIN= password in cleartext. Protocol bugs will want traces, so scrub
+before attaching one to a failure. Throwaway passwords regardless.
+
+* POP
+
+=vm-pop.el= is tested the same way and out of the same config file.  Two
+pieces, because POP needs less of a server than IMAP does and can be faked
+convincingly:
+
+- =test/vm-pop-mock.el= :: a POP3 server in the test process, listening on a
+  port the OS picks.  Needs no configuration and always runs, so
+  =vm-pop-mock-test.el= is part of the ordinary suite.  It serves the protocol
+  honestly: greeting, =USER=/=PASS= or =APOP=, =STAT=, =LIST=, =UIDL=,
+  =RETR=, =TOP=, =DELE=, =RSET=, =NOOP=, =QUIT=, with dot-stuffing, and
+  misbehaves on request: =:no-uidl=, =:refuse=, =:drop-on=,
+  =:truncate-retr=, =:lie-about-size=, =:slow-greeting=.  VM talks to it
+  through =vm-pop-make-session= and everything below, so the code under test
+  is the real client, not a stub of =vm-pop-send-command=.
+- =test/vm-pop-live-init.el= :: the live tier, against the same dovecot with
+  =pop3= added to =protocols=.  Skips unless =vm-pop-test-servers= is set.
+
+Config, in the same gitignored =test/vm-live-config.el=; the template has the
+=vm-pop-test-servers= form ready to fill in, and says what each key takes.
+
+Run with =./test-runner --pop= (mock plus live), or the default run, which includes both
+and skips the live half when no POP server is configured.
+
+** Seeding a maildrop
+
+POP3 has no =APPEND=: a client can only take messages out of a maildrop, so a
+fixture cannot be created over POP.  The live POP tests therefore need *both*
+protocols for the same account: the message goes in over IMAP, into =INBOX=,
+and is read back over POP.  Dovecot serves both for one user without further
+configuration.
+
+That makes =INBOX= shared state rather than a throwaway mailbox, so:
+
+- every fixture message carries an =X-VMTest-Id= header naming the run, and
+  the tests find their own message rather than assuming they are alone;
+- the fixture is removed over IMAP in an =unwind-protect=, whether or not the
+  test got as far as retrieving it;
+- nothing asserts that the maildrop starts or ends empty.
+
+** dovecot changes needed for POP
+
+1. =protocols = imap pop3= (add =pop3s= implicitly via =ssl = yes=; the 995
+   listener comes from the same =ssl_cert= as IMAPS).  Out of the box the
+   MacPorts and Homebrew configs list =imap= only, so 110 is not listening
+   and every live POP test skips or fails to connect.
+2. Nothing else: the same =passwd-file= passdb, the same certificate, the same
+   =disable_plaintext_auth = no= that lets =PASS= work on 110.
+
+Reload after editing.  On MacPorts the port is =dovecot=, so
+=sudo port reload dovecot=, not =dovecot2=.
+
+* dovecot changes needed
+
+Step-by-step instructions live in [[file:../dev-guide.org][dev-guide.org]] under
+"testing"; this is only what has to change and why.
+
+1. Two test users in the =passwd-file= passdb.  =disable_plaintext_auth = no=
+   already allows the IMAP =LOGIN= command on 143.
+2. For TLS: =ssl = yes= plus =ssl_cert=/=ssl_key= for a self-signed
+   certificate whose *subjectAltName* matches the =:host= in the config.  Not
+   the CN.  Current GnuTLS checks the SAN and ignores a bare CN, so a
+   CN-only certificate fails verification. Out of the box =ssl = no= and no
+   certificate is set, so 993 listens but cannot complete a handshake.
+3. Optional, for CRAM-MD5: =auth_mechanisms = plain cram-md5= and a passdb
+   hash that supports it. VM has a =cram-md5= branch that is untestable
+   while =auth_mechanisms = plain=.
+
+Gotchas from that config:
+
+- =mail_max_userip_connections = 10= — tests that leave sessions open can
+  hit it; close sessions in =unwind-protect=.
+- =auth_failure_delay = 2 secs= — each negative auth test costs 2s.
+- =imap_max_line_length = 64 k= — relevant to literal/large-header tests.
+
+* CI
+
+Optional, never required. A container recipe under =test/imap/= so tiers 2
+and 3 *can* run in CI; the default pipeline stays tier 1 only.
+
+* Order of work
+
+1. [X] Harness =test/vm-imap-live-init.el= + =make test-imap= + smoke tests
+   over plain and TLS.  Landed and green against dovecot 2.3.21: greeting,
+   =CAPABILITY=, =NAMESPACE=, login, fixture create/append/select/fetch,
+   flags, cleanup, bad-password refusal, native TLS on 993, and VM's own
+   =vm-imap-make-session=.  The live tier costs about 1.8s.
+2. [ ] #38 — best value per effort on a healthy server, and flags are user
+   data.
+3. [ ] Tier 3 relay, then #335 and #286 together.
+4. [ ] #447 once component-folder naming comes from =NAMESPACE=.
+
+* Open
+
+- Whether tier 3 should also replay canned server transcripts, which would
+  cover Exchange (#389, #391) later without an Exchange server.

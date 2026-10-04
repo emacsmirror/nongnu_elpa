@@ -12,12 +12,8 @@ GIT_DIR = "@top_srcdir@/.git"
 MKDIR = @MKDIR@
 RMDIR = @RMDIR@
 RM   = @RM@
-LS   = @LS@
-XARGS = @XARGS@
-INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@
-INSTALL_SCRIPT = @INSTALL_SCRIPT@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = @VM_INSTALL@
+INSTALL_DATA = $(INSTALL) -m 644
 INSTALL_INFO = @INSTALL_INFO@
 MAKEINFO = @MAKEINFO@
 
@@ -33,10 +29,33 @@ EMACS_FLAVOR = @EMACS_FLAVOR@
 FLAGS = @FLAGS@
 
 INFO_FILE = vm.info
-INFO_ALL_FILES = vm.info vm.info-1 vm.info-2
-INFO_INSTALLED = $(infodestdir)/vm.info
+# The manual is split into as many files as makeinfo decides it needs, and the
+# reference appendix took it from three to five.  install and uninstall glob
+# for what is there in the shell: naming the parts here meant a vm.info-4 was
+# built and never installed, and $(wildcard) is GNU make only.
+INFO_SPLIT_GLOB = vm.info vm.info-[0-9]
 INFO_INSTALLED = $(INFO_FILE:%=$(infodestdir)/%)
-INFO_ALL_INSTALLED = $(INFO_ALL_FILES:%=$(infodestdir)/%)
+
+# Info files older releases installed and this one does not.  vm-pcrisis had a
+# manual of its own until Personality Crisis became part of VM; an install over
+# one of those leaves it behind, and its uninstall no longer knows about it.
+STALE_INFO_GLOB = vm-pcrisis.info vm-pcrisis.info-[0-9]
+
+# The reference appendix, generated from the docstrings in lisp/ so that the
+# manual does not carry a second copy of them.  Generated, but committed:
+# vm.texinfo @includes it, and makeinfo writes no manual at all when it is
+# missing -- so a build without `make', an ELPA tarball or a plain checkout,
+# would have no manual.  `check-reference' is what keeps the committed copy
+# honest.
+REFERENCE_FILE = vm-reference.texinfo
+
+# The same entries again, as one macro per symbol, which the chapters invoke
+# where they used to carry a description of their own.  Generated and
+# committed for the same reason as the appendix.
+MACROS_FILE = vm-docstrings.texinfo
+
+# Both are generated from the docstrings and both are committed.
+GENERATED_TEXINFO = $(REFERENCE_FILE) $(MACROS_FILE)
 
 ##############################################################################
 
@@ -51,7 +70,54 @@ version.texinfo:
 	fi
 	mv -f $@.tmp $@
 
-$(INFO_FILE): version.texinfo
+# Regenerated on every build -- there is no portable way to depend on every
+# docstring in lisp/ -- but only replaced when it has changed, so makeinfo
+# reruns when a docstring did and not otherwise.
+$(REFERENCE_FILE): FORCE @srcdir@/gen-reference.el
+	$(EMACS_PROG) -batch -q -no-site-file -L @top_srcdir@/lisp \
+		-l @srcdir@/gen-reference.el -f vm-reference-batch $@.tmp
+	if cmp -s $@.tmp $@; then \
+		$(RM) -f $@.tmp; \
+	else \
+		mv -f $@.tmp $@; \
+	fi
+
+$(MACROS_FILE): FORCE @srcdir@/gen-reference.el
+	$(EMACS_PROG) -batch -q -no-site-file -L @top_srcdir@/lisp \
+		-l @srcdir@/gen-reference.el -f vm-reference-macros-batch $@.tmp
+	if cmp -s $@.tmp $@; then \
+		$(RM) -f $@.tmp; \
+	else \
+		mv -f $@.tmp $@; \
+	fi
+
+.PHONY: FORCE
+FORCE:
+
+# The committed copy has to be what the docstrings currently say, or a reader
+# of the manual is told something the code stopped doing.  `make' regenerates
+# it, so this only has to notice that the working tree now differs.  Run it
+# before a release, and after changing a docstring.
+.PHONY: check-reference
+check-reference: $(GENERATED_TEXINFO)
+	@if [ ! -d "$(GIT_DIR)" ]; then \
+		echo "check-reference: not a git checkout, nothing to compare"; \
+		exit 0; \
+	fi; \
+	stale=""; \
+	for f in $(GENERATED_TEXINFO); do \
+		$(GIT) -C "@top_srcdir@" diff --quiet -- info/$$f || stale="$$stale $$f"; \
+	done; \
+	if [ -z "$$stale" ]; then \
+		echo "check-reference: $(GENERATED_TEXINFO) are up to date"; \
+	else \
+		echo "check-reference: out of date:$$stale" >&2; \
+		echo "  A docstring changed.  Commit the regenerated files:" >&2; \
+		for f in $$stale; do echo "      git add info/$$f" >&2; done; \
+		exit 1; \
+	fi
+
+$(INFO_FILE): version.texinfo $(GENERATED_TEXINFO)
 
 .PHONY: info
 info: ${INFO_FILE}
@@ -68,18 +134,62 @@ uninstall: uninstall-pkg
 
 install-pkg: info
 	@$(MKDIR) -p -m 0755 "$(infodestdir)";
-	$(INSTALL) ${INFO_ALL_FILES} $(infodestdir)
-	$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
+	@# INSTALL_DATA, not INSTALL: a bare `install' means 0755 and the
+	@# manual came out executable.  Every other directory installs its data
+	@# with INSTALL_DATA; this was the one that did not.
+	for f in $(INFO_SPLIT_GLOB); do \
+		test -f "$$f" && $(INSTALL_DATA) "$$f" $(infodestdir) || true; \
+	done
+	@# Only with an install-info to run.  Without one the recipe was the
+	@# bare arguments, which make ran as a command and the install died on
+	@# -- the same shape as the missing makeinfo of emacs-vm/vm#718.
+	@if test -n "$(INSTALL_INFO)"; then \
+		echo "$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)"; \
+		$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED); \
+	else \
+		echo "No install-info program: $(infodestdir)/dir not updated"; \
+	fi
+	@$(MAKE) remove-stale-info
 	@echo VM INFO files successfully installed
 
 uninstall-pkg:
-	$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
-	$(RM) -f $(INFO_ALL_INSTALLED)
-	$(RMDIR) $(infodestdir)/ 2> /dev/null || true
+	@# Only if it is there.  `install-info --delete' fails when the file is
+	@# already gone, so a second `make uninstall' died here instead of
+	@# finishing, and an uninstall has to be safe to repeat.
+	@if test -f "$(INFO_INSTALLED)" && test -n "$(INSTALL_INFO)"; then \
+		echo "$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)"; \
+		$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED); \
+	fi
+	for f in $(INFO_SPLIT_GLOB); do \
+		$(RM) -f "$(infodestdir)/$$f"; \
+	done
+	@$(MAKE) remove-stale-info
+	@# Empty or not there: either way there is nothing to report.
+	@$(RMDIR) $(infodestdir)/ 2> /dev/null || true
+
+.PHONY: remove-stale-info
+remove-stale-info:
+	@# The dir entry goes first: install-info wants the file it names.
+	@for f in $(STALE_INFO_GLOB); do \
+		if test -f "$(infodestdir)/$$f"; then \
+			echo "removing outdated $(infodestdir)/$$f"; \
+			test -n "$(INSTALL_INFO)" && \
+			$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir \
+				"$(infodestdir)/$$f" 2> /dev/null || true; \
+			$(RM) -f "$(infodestdir)/$$f"; \
+		fi; \
+	done
 
 ##############################################################################
+# $(GENERATED_TEXINFO) is not removed.  Those two are generated from the
+# docstrings and committed: vm.texinfo @includes them, makeinfo writes no
+# manual at all when they are missing, and an ELPA build never runs make.
+# Removing one left a deleted tracked file in the working tree for someone to
+# commit by accident (emacs-vm/vm#902).  `make' rewrites them and
+# `check-reference' is what notices when they are stale.
 clean:
-	-$(RM) -f version.texinfo *.info *.info-[0-9]
+	-$(RM) -f version.texinfo $(REFERENCE_FILE).tmp $(MACROS_FILE).tmp \
+		*.info *.info-[0-9]
 
 distclean: clean
 	-$(RM) -f Makefile

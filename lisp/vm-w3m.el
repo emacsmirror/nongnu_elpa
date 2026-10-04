@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 2003, 2005, 2006 Katsumi Yamaoka,
 ;; Copyright (C) 2007 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -33,12 +33,17 @@
 
 (require 'vm-mime)
 (require 'vm-misc)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (eval-and-compile (vm-load-features-silent-when-compiling '(w3m)))
 
 (declare-function w3m-region 
 		  "ext:w3m" (start end &optional url charset))
-(declare-function w3m-safe-toggle-inline-images 
+(declare-function w3m-toggle-inline-images
 		  "ext:w3m" (&optional force no-cache))
 
 
@@ -51,9 +56,6 @@
 (defvar url-working-buffer)
 (defvar url-current-mime-type)
 (defvar url-current-mime-headers)
-
-(defvar vm-w3m-mode-map nil
-  "Keymap for w3m within VM.")
 
 (defgroup vm-w3m nil
   "w3m settings for VM."
@@ -82,19 +84,7 @@ this variable to nil if you consider all urls to be safe."
   :type '(choice (regexp :tag "Regexp")
 		 (const :tag "All URLs are safe" nil)))
 
-;; (defcustom vm-w3m-use-w3m-minor-mode-map nil
-;;   "Say whether to use emacs-w3m command keys in VM presentation buffers.
-;; Set this variable to nil if you don't want vm-w3m to override any VM
-;; commend keys.  If it is non-nil, you will not be able to use some VM
-;; command keys, which are bound to emacs-w3m commands defined in the
-;; `w3m-minor-mode-command-alist' variable."
-;;   :group 'vm-w3m
-;;   :type 'boolean)
 
-(defvaralias 'vm-w3m-use-w3m-minor-mode-map 
-  'vm-use-presentation-minor-modes)
-(make-obsolete-variable 'vm-w3m-use-w3m-minor-mode-map
-			'vm-use-presentation-minor-modes "8.2.0")
 
 (defvar vm-w3m-minor-mode-map
   (let ((map (make-sparse-keymap)))
@@ -108,22 +98,15 @@ this variable to nil if you consider all urls to be safe."
     (define-key map "\C-xi" 'w3m-toggle-inline-image)
     (define-key map "\C-x\C-I" 'w3m-toggle-inline-images)
     (define-key map [down-mouse-1] 'w3m-mouse-view-this-url)
-    (cond ((fboundp 'set-keymap-name)
-	   (set-keymap-name map 'vm-w3m-map)))
     map )
   "Keymap for text/html parts inlined by emacs-w3m.")
 
-(eval-and-compile
-  (or (featurep 'xemacs) (>= emacs-major-version 21)
-      (defvar vm-w3m-mode-map nil
-	"Internal variable holding the keymap for text/html parts
-inlined by emacs-w3m. 
-This keymap will be bound only when Emacs 20 is running and overwritten
-by the minor-mode-keymap for emacs-w3m text, as determined by
-`vm-presentation-minor-modes'.")))
-
 (defvar w3m-display-inline-images)
 (defvar w3m-safe-url-regexp)
+;; Declared so that binding it below is dynamic and so reaches w3m: this file
+;; is compiled with lexical binding and without w3m installed, and an
+;; undeclared variable would be bound lexically and never seen.
+(defvar w3m-fill-column)
 
 (defun vm-w3m-cid-retrieve (url &rest _args)
   "Insert a content of URL."
@@ -136,10 +119,17 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
       (vm-mime-transfer-decode-region part (point-min) (point-max)))
     type))
 
-(or (assq 'vm-presentation-mode w3m-cid-retrieve-function-alist)
+;; Tell emacs-w3m how to fetch a `cid:' part of the message being presented.
+;; Deferred until w3m is loaded: this file used to do it as it loaded, and
+;; `w3m-cid-retrieve-function-alist' is only declared here, so without
+;; emacs-w3m installed requiring vm-w3m raised `void-variable' rather than
+;; simply doing nothing.  Anything that loads every VM module -- the manual's
+;; generated reference among them -- lost this file for that reason.
+(with-eval-after-load 'w3m
+  (unless (assq 'vm-presentation-mode w3m-cid-retrieve-function-alist)
     (setq w3m-cid-retrieve-function-alist
 	  (cons '(vm-presentation-mode . vm-w3m-cid-retrieve)
-		w3m-cid-retrieve-function-alist)))
+		w3m-cid-retrieve-function-alist))))
 
 (defun vm-w3m-local-map-property ()
   (let* ((minor-mode (and vm-use-presentation-minor-modes
@@ -149,21 +139,16 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
 	 (keymap (and keymap-name (boundp keymap-name)
 		      (symbol-value keymap-name))))
     (when keymap
-      (if (or (featurep 'xemacs) (>= emacs-major-version 21))
-	  (list 'keymap keymap)
-	(list 'local-map
-	      (or vm-w3m-mode-map
-		  (progn
-		    (setq vm-w3m-mode-map
-			  (copy-keymap keymap))
-		    (set-keymap-parent vm-w3m-mode-map vm-mode-map)
-		    vm-w3m-mode-map)))))))
+      (list 'keymap keymap))))
 
 ;;;###autoload
 (defun vm-mime-display-internal-emacs-w3m-text/html (start end _layout)
   "Use emacs-w3m to inline HTML mails in the VM presentation buffer."
   (let ((w3m-display-inline-images vm-w3m-display-inline-images)
-        (w3m-safe-url-regexp vm-w3m-safe-url-regexp))
+        (w3m-safe-url-regexp vm-w3m-safe-url-regexp)
+        ;; w3m-fill-column defaults to -1, which means the width of the
+        ;; window -- right for display, wrong for text being quoted.
+        (w3m-fill-column (vm-mime-html-columns)))
     (w3m-region start (1- end))
     (add-text-properties
      start end
@@ -174,6 +159,7 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
             ;; inlined by emacs-w3m.
             '(text-rendered-by-emacs-w3m t)))))
 
+;;;###autoload
 (defun vm-w3m-safe-toggle-inline-images (&optional arg)
   "Toggle displaying of all images in the presentation buffer.
 If the prefix arg is given, all images are considered to be safe."
@@ -185,9 +171,22 @@ If the prefix arg is given, all images are considered to be safe."
 		       (current-buffer))
 		      ((eq major-mode 'vm-mode)
 		       vm-presentation-buffer))))
-    (if (buffer-live-p buffer)
-	(with-current-buffer buffer
-	  (w3m-safe-toggle-inline-images arg)))))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+	(when arg (vm-w3m-mark-images-safe))
+	(w3m-toggle-inline-images)))))
+
+(defun vm-w3m-mark-images-safe ()
+  "Let emacs-w3m display the images in this buffer whatever their URLs.
+emacs-w3m records the `w3m-safe-url-regexp' in force when it rendered the
+text as a text property over it, and `w3m-toggle-inline-images' refuses to
+show anything whose URL does not match what it finds there.  So removing that
+property is what \"consider all images safe\" means; there is no argument for
+it, and the `w3m-safe-toggle-inline-images' that once took one is gone."
+  (let ((inhibit-read-only t)
+	(modified (buffer-modified-p)))
+    (remove-text-properties (point-min) (point-max) '(w3m-safe-url-regexp nil))
+    (set-buffer-modified-p modified)))
 
 (provide 'vm-w3m)
 ;;; vm-w3m.el ends here

@@ -5,7 +5,7 @@
 ;;
 ;; Copyright (C) 1989-2001 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -26,17 +26,11 @@
 (require 'vm-macro)
 (require 'vm-message)
 (require 'vm-vars)
+(require 'auth-source)
 
-;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
-(declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
-(declare-function map-extents "vm-xemacs" (function &optional buffer from to))
-(declare-function focus-frame "vm-xemacs" (frame))
-(declare-function char-to-int "vm-xemacs" (char))
 (declare-function scroll-bar-mode "scroll-bar" (&optional arg))
 
-;; Aliases for xemacs/fsfemacs functions with different arguments
-;; (declare-function vm-interactive-p "vm-misc.el"
-;; 		  ())
+;; VM's own names for the overlay functions, which were extents in XEmacs
 (declare-function vm-buffer-substring-no-properties "vm-misc.el"
 		  (start end))
 (declare-function vm-extent-property "vm-misc.el" (overlay prop) t)
@@ -53,6 +47,10 @@
 
 (require 'vm-vars)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; This file contains various low-level operations that address
 ;; incomaptibilities between Gnu and XEmacs.  Expect compiler warnings.
 
@@ -64,30 +62,128 @@
 ;; 7 - normal level
 ;; 10 - heavy debugging info
 
+(defconst vm-log-buffer-name "*VM Log*"
+  "Where `vm-log-level' records what VM had to say.")
+
+(defvar vm-last-message-time nil
+  "Real and CPU time when VM last logged a message, or nil.
+What the intervals in the log are measured from.")
+
+(defun vm-message-timing ()
+  "The clock time, and how long it is since VM last said anything.
+Answers a string.  Advances the interval both parts are measured from, so
+call it once per message and only when the answer is going to be used."
+  (let ((real (current-time))
+	(cpu (get-internal-run-time))
+	(previous vm-last-message-time))
+    (setq vm-last-message-time (cons real cpu))
+    (if (null previous)
+	(format-time-string "%H:%M:%S.%3N" real)
+      (format "%s +%.3fs +%.3fcpu"
+	      (format-time-string "%H:%M:%S.%3N" real)
+	      (float-time (time-subtract real (car previous)))
+	      (float-time (time-subtract cpu (cdr previous)))))))
+
+(defun vm-log-line (line)
+  "Append LINE to the log buffer, trimming the front if it has grown.
+`vm-log-max-lines' is how many are kept: the log runs for as long as Emacs
+does, so something has to bound it, and what a reader wants is the end."
+  (with-current-buffer (get-buffer-create vm-log-buffer-name)
+    (goto-char (point-max))
+    (let ((inhibit-read-only t))
+      (insert line "\n")
+      (when (and vm-log-max-lines
+		 (> (line-number-at-pos (point-max)) (* 2 vm-log-max-lines)))
+	(goto-char (point-min))
+	(forward-line (- (line-number-at-pos (point-max)) vm-log-max-lines 1))
+	(delete-region (point-min) (point))))))
+
+(defun vm-log-level-p (level)
+  "Whether a message at LEVEL goes in the log.
+Everything VM says goes in it -- the log is where a run is read afterwards,
+and a message that was shown and not recorded is one nobody can go back to.
+`vm-log-level' adds the levels that are recorded without being shown."
+  (or (<= level vm-verbosity)
+      (and vm-log-level (<= level vm-log-level))))
+
+;;;###autoload
+(defun vm-show-log ()
+  "Show the log of what VM has been doing, and when.
+It holds everything VM has said this session, timed, and whatever more
+`vm-log-level' asks for."
+  (interactive)
+  (let ((buffer (get-buffer vm-log-buffer-name)))
+    (if (and buffer (> (buffer-size buffer) 0))
+	(display-buffer buffer)
+      (vm-inform 0 "VM has not said anything yet"))))
+
+(defun vm-emit-message (level text)
+  "Show TEXT if LEVEL allows, and record it in the log.
+Answers TEXT when it was shown, as `message' does, and nil otherwise.
+
+The record is timed and the message shown is not: a time in the echo area
+is in the way of what the message says, and each message is gone as the next
+arrives anyway, so a run is read afterwards from the log."
+  (let ((logging (vm-log-level-p level))
+	(showing (<= level vm-verbosity)))
+    (when logging
+      (vm-log-line (format "%s [%d] %s" (vm-message-timing) level text)))
+    (when showing
+      (message "%s" text)
+      text)))
+
+(defmacro vm-with-timing (level name &rest body)
+  "Run BODY and record at LEVEL how long it took.
+NAME says what it was.  For the pieces of work that are neither a wait nor a
+single message: a reader looking at a gap in the log needs to know whose it
+is, and a phase that says only that it started leaves its own duration to be
+guessed at."
+  (declare (indent 2) (debug t))
+  (let ((started (make-symbol "started"))
+	(spent (make-symbol "spent"))
+	(answer (make-symbol "answer")))
+    `(let ((,started (float-time))
+	   (,spent (get-internal-run-time)))
+       (prog1 (progn ,@body)
+	 (let ((,answer (float-time (time-subtract (get-internal-run-time)
+						   ,spent))))
+	   (vm-inform ,level "%s took %.2fs (%.2f cpu)" ,name
+		      (- (float-time) ,started) ,answer))))))
+
 (defun vm-inform (level &rest args)
-  (when (<= level vm-verbosity)
-    (let ((message (apply 'message args)))
-      (sleep-for vm-verbal-time)
-      message)))
+  (let ((text (and (or (<= level vm-verbosity) (vm-log-level-p level))
+		   (apply #'format-message args))))
+    (when text
+      (prog1 (vm-emit-message level text)
+	(when (<= level vm-verbosity)
+	  (vm-pause vm-verbal-time))))))
 
 (defun vm-warn (l secs &rest args)
   "Give a warning at level L and display it for SECS seconds.  The
 remaining arguments are passed to `message' to generate the warning
-message." 
-  (when (<= l vm-verbosity)
+message."
+  (when (or (<= l vm-verbosity) (vm-log-level-p l))
     (let ((warning (apply 'format args)))
       (unless (equal vm-current-warning warning)
 	(setq vm-current-warning warning)
-	(message warning)
-	(sleep-for secs)))))
+	(when (vm-emit-message l warning)
+	  (vm-pause secs))))))
+
+(defun vm-pause (seconds)
+  "Leave the last message on screen for SECONDS, or until the user types.
+
+`sit-for' rather than `sleep-for': both let a process filter run, and only
+one of them lets the reader carry on.  A pause here is for reading a
+message that the next one would overwrite -- it is never part of a
+protocol, and a reader who has read it should not have to wait out the
+rest (emacs-vm/vm#473)."
+  (when (and seconds (> seconds 0))
+    (sit-for seconds)))
 
 ;; garbage-collector result
 (defconst gc-fields '(:conses :syms :miscs 
 			      :chars :vector 
 			      :floats :intervals :strings))
-
-(defsubst vm-garbage-collect ()
-  (pp (vm-zip-lists gc-fields (garbage-collect))))
 
 (defun vm-accept-process-output (process &optional timeout)
   "Accept output from PROCESS, optionally with TIMEOUT seconds.
@@ -100,26 +196,6 @@ Returns non-nil if output was received, nil on timeout."
 ;; Make sure that interprogram-cut-function is defined
 (unless (boundp 'interprogram-cut-function)
   (defvar interprogram-cut-function nil))
-
-(defun vm-substring (string from &optional to)
-  (let ((work-buffer nil))
-    (set-buffer work-buffer)
-    (unwind-protect
-	(with-current-buffer work-buffer
-	  (insert string)
-	  (if (null to)
-	      (setq to (length string))
-	    (if (< to 0)
-		(setq to (+ (length string) to))))
-	  ;; string indices start at 0, buffers start at 1.
-	  (setq from (1+ from)
-		to (1+ to))
-	  (if (> from (point-min))
-	      (delete-region (point-min) from))
-	  (if (< to (point-max))
-	      (delete-region to (point-max)))
-	  (buffer-string))
-      (when work-buffer (kill-buffer work-buffer)))))
 
 ;; Taken from XEmacs as GNU Emacs is missing `replace-in-string' and defining
 ;; it may cause clashes with other packages defining it differently, in fact
@@ -268,8 +344,13 @@ need to add quotes or leave them undecoded.             RWF"
           (concat "\"" (match-string 1 da) "\" " (match-string 2 da))
         da))))
 
-(make-obsolete 'vmrf-fix-quoted-address 'vm-quoted-address "8.2.0")
-          
+;; `vmrf-fix-quoted-address' was renamed to `vm-fix-quoted-address' above, in
+;; 8.2.0, and not kept as an alias.  The `make-obsolete' that stood here named
+;; `vm-quoted-address' as the replacement, which has never existed, and marked a
+;; function that no longer exists as obsolete -- so it could never fire and only
+;; misnamed the survivor.  Anyone who wants the old name back wants a
+;; `defalias' to `vm-fix-quoted-address', not this.
+
 (defun vm-parse-structured-header (string &optional sepchar keep-quotes)
   (if (null string)
       ()
@@ -348,6 +429,68 @@ need to add quotes or leave them undecoded.             RWF"
 	     (nreverse list))
 	(and work-buffer (kill-buffer work-buffer)))))))
 
+(defun vm-stale-compiled-files ()
+  "VM's own files whose .elc is older than the .el beside it.
+Answers a list of base names, or nil.
+
+Only files VM has already loaded are asked about, so this says nothing about
+a part of VM the session has not touched."
+  (let (stale)
+    (dolist (feature features (nreverse stale))
+      (let ((name (symbol-name feature)))
+        (when (or (string-prefix-p "vm-" name)
+                  (member name '("vm" "tapestry")))
+          (let* ((el (locate-library (concat name ".el")))
+                 (elc (and el (concat el "c"))))
+            (when (and el elc (file-exists-p elc)
+                       (file-newer-than-file-p el elc))
+              (push name stale))))))))
+
+(defun vm-warn-about-stale-compiled-files ()
+  "Say so, once, if VM is running compiled files from another build.
+Two ways of telling: a .elc older than the .el beside it, and a .elc that
+says it was compiled against a different VM (see `vm-assert-version').  The
+second is the one that works on an installed tree, where every .elc is newer
+than its source because `make install' copies it later.
+
+Emacs loads a .elc in preference to a newer .el unless `load-prefer-newer\\='
+says otherwise, and its own warning about that is one line among many at
+startup.  What makes it worth repeating here is that VM\\='s files inline one
+another: the accessors in vm-message.el are `defsubst\\='s, and the byte
+compiler copies their bodies into every caller.  A stale .elc therefore runs
+code that no longer matches the rest of VM, and fails somewhere with no
+apparent connection to what is wrong.
+
+That is not hypothetical.  #453 moved a message\\='s reverse link out of the
+message vector; a vm-folder.elc compiled before it still ran the old
+`vm-set-reverse-link-of\\=', which on a message built by the new
+`vm-make-message\\=' is `(set nil ...)'.  Visiting any folder answered
+\"(setting-constant nil)\" from inside `vm-build-message-list\\=', with nothing
+in the backtrace to say why (#791)."
+  (let* ((older (vm-stale-compiled-files))
+         (mismatched (mapcar #'car vm-version-mismatched-files))
+         (stale (delete-dups (append mismatched older))))
+    (when stale
+      (display-warning
+       'vm
+       (concat
+        "VM is running compiled files left over from another build:\n  "
+        (mapconcat #'identity stale " ")
+        (when mismatched
+          (concat "\n\nThose were compiled against "
+                  (mapconcat (lambda (cell) (cdr cell))
+                             vm-version-mismatched-files ", ")
+                  ",\nand this is " (vm-version-stamp) "."))
+        "\n\nEmacs loads the compiled file in preference to the newer source,"
+        "\nand VM's files inline one another, so a stale one runs code that no"
+        "\nlonger matches the rest of VM and fails in places that make no sense."
+        "\n\nRecompile VM: `make' in the source tree, or M-x"
+        " byte-recompile-directory\non "
+        (or (file-name-directory (or (locate-library "vm-misc.el") "")) "VM's")
+        " with a prefix argument.  Deleting the .elc files"
+        "\nworks too; VM then runs interpreted, more slowly.")
+       :warning))))
+
 (defun vm-write-string (where string)
   (if (bufferp where)
       (save-current-buffer
@@ -366,18 +509,14 @@ need to add quotes or leave them undecoded.             RWF"
 (defun vm-check-for-killed-summary ()
   "If the current folder's summary buffer has been killed, reset
 the vm-summary-buffer variable and all the summary markers in the
-folder so that it remains a valid folder.  Take care of
-vm-folders-summary-buffer in a similar way."
+folder so that it remains a valid folder."
   (and (bufferp vm-summary-buffer) (null (buffer-name vm-summary-buffer))
        (let ((mp vm-message-list))
 	 (setq vm-summary-buffer nil)
 	 (while mp
 	   (vm-set-su-start-of (car mp) nil)
 	   (vm-set-su-end-of (car mp) nil)
-	   (setq mp (cdr mp)))))
-  (and (bufferp vm-folders-summary-buffer)
-       (null (buffer-name vm-folders-summary-buffer))
-       (setq vm-folders-summary-buffer nil)))
+	   (setq mp (cdr mp))))))
 
 (defun vm-check-for-killed-presentation ()
   "If the current folder's Presentation buffer has been killed, reset
@@ -430,6 +569,14 @@ vm-mail-buffer variable."
     (mapatoms (function (lambda (s) (setq list (cons (symbol-name s) list))))
 	      blobarray)
     list ))
+
+(defun vm-obarray-empty-p (blobarray)
+  "Return t if nothing has been interned in BLOBARRAY.
+An obarray used as a set is a vector, so it is never nil and cannot be
+tested for emptiness with `null'."
+  (let ((empty t))
+    (mapatoms (function (lambda (_s) (setq empty nil))) blobarray)
+    empty ))
 
 (defun vm-zip-vectors (v1 v2)
   (if (= (length v1) (length v2))
@@ -542,16 +689,6 @@ the function for < comparison."
       (setq n (1+ n)))
     (nreverse res)))
 
-(defun vm-find2 (list1 list2 pred)
-  "Find the first corresponding pair of elements of LIST1 and
-LIST2 satisfying PRED and return the position"
-  (let ((n 0))
-    (while (and list1 list2 (not (apply pred (car list1) (car list2) nil)))
-      (setq list1 (cdr list2)
-	    list2 (cdr list2))
-      (setq n (1+ n)))
-    (if (and list1 list2) n nil)))
-
 (defun vm-elems-of (list)
   "Return the set of elements of LIST as a list."
   (let ((res nil))
@@ -570,83 +707,36 @@ LIST2 satisfying PRED and return the position"
 	  (throw 'fail nil)))
       t)))
 
-(defalias 'vm-view-file-other-frame
-  (if (fboundp 'view-file-other-frame) ;XEmacs doesn't have it yet!
-      #'view-file-other-frame
-    #'view-file-other-window))
+;;;###autoload (autoload 'vm-view-file-other-frame "vm-misc" nil t)
+(defalias 'vm-view-file-other-frame #'view-file-other-frame)
 
-;; (defalias 'vm-interactive-p
-;;       (if (fboundp 'called-interactively-p)	; Gnu Emacs 23.2
-;; 	  (lambda () (called-interactively-p 'any))
-;; 	'interactive-p))
-
-(defalias 'vm-device-type
-  (if (featurep 'xemacs) #'device-type
-    (lambda (&optional _device)
-      "An FSF Emacs emulation for XEmacs `device-type' function.  Returns
-the type of the current screen device: one of `x', `gtk', `w32', `ns', and
-`pc'.  The optional argument DEVICE is ignored."
-      (if (eq window-system 'x)
-          (if (featurep 'gtk) 'gtk)
-        window-system))))
 
 (defun vm-generate-new-unibyte-buffer (name)
-  (if (featurep 'xemacs)
-      (generate-new-buffer name)
-    (let* (;; (default-enable-multibyte-characters nil)
-	   ;; don't need this because of set-buffer-multibyte below
-	   (buffer (generate-new-buffer name)))
-      (when (fboundp 'set-buffer-multibyte)
-	(with-current-buffer buffer
-	  (set-buffer-multibyte nil)))
-      buffer)))
+  (let ((buffer (generate-new-buffer name)))
+    (with-current-buffer buffer
+      (set-buffer-multibyte nil))
+    buffer))
 
 (defun vm-generate-new-multibyte-buffer (name)
-  (if (featurep 'xemacs)
-      (generate-new-buffer name)
-    (let* (;; (default-enable-multibyte-characters t)
-	   ;; don't need this because of set-buffer-multibyte below
-	   (buffer (generate-new-buffer name)))
-      (if (fboundp 'set-buffer-multibyte)
-	  (with-current-buffer buffer
-	    (set-buffer-multibyte t))
-	;; This error checking only works on FSF
-	(with-current-buffer buffer 
-	  (unless enable-multibyte-characters
-	    (error "VM internal error #1922: buffer is not multibyte"))))
-      buffer)))
+  (let ((buffer (generate-new-buffer name)))
+    (with-current-buffer buffer
+      (set-buffer-multibyte t))
+    buffer))
 
-(defun vm-abbreviate-file-name (path)
-  (if (featurep 'xemacs)
-      (abbreviate-file-name path t)
-    (abbreviate-file-name path)))
+(defalias 'vm-abbreviate-file-name #'abbreviate-file-name)
 
-(defun vm-select-frame-set-input-focus (frame)
-  (if (fboundp 'select-frame-set-input-focus)
-      ;; defined in FSF Emacs 22.1
-      (select-frame-set-input-focus frame)
-    (select-frame frame)
-    (focus-frame frame)
-    (raise-frame frame)))
+(defalias 'vm-select-frame-set-input-focus #'select-frame-set-input-focus)
 
-(defun vm-get-buffer-window (buffer &optional which-frames which-devices)
-  (if (featurep 'xemacs)
-      (or (get-buffer-window buffer which-frames which-devices)
-	  (and vm-search-other-frames
-	       (get-buffer-window buffer t t)))
-    (or (get-buffer-window buffer which-frames)
-	(and vm-search-other-frames
-	     (get-buffer-window buffer t)))))
+(defun vm-get-buffer-window (buffer &optional which-frames _which-devices)
+  (or (get-buffer-window buffer which-frames)
+      (and vm-search-other-frames
+	   (get-buffer-window buffer t))))
 
-(defun vm-get-visible-buffer-window (buffer &optional 
-					    which-frames which-devices)
-  (if (featurep 'xemacs)
-      (or (get-buffer-window buffer which-frames which-devices)
-	  (and vm-search-other-frames
-	       (get-buffer-window buffer t which-devices)))
-    (or (get-buffer-window buffer which-frames)
-	(and vm-search-other-frames
-	     (get-buffer-window buffer 'visible)))))
+(defun vm-get-visible-buffer-window (buffer &optional
+					    which-frames _which-devices)
+  (or (get-buffer-window buffer which-frames)
+      (and vm-search-other-frames
+	   (get-buffer-window buffer 'visible))))
 
 (defun vm-force-mode-line-update ()
   "Force a mode line update in all frames."
@@ -732,6 +822,56 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 	(signal 'unrecognized-folder-type nil)
       (signal 'folder-empty nil))))
 
+(defconst vm-cache-folder-type-suffix ".mboxcl2"
+  "The name suffix VM gives a cache file it creates, and the type it writes it in.
+A cache is VM's own file and VM writes every message in it, so unlike any
+other folder its type is known and can be stated where
+`vm-folder-type-by-extension-alist' reads it back.  mboxcl2 because the lengths
+make the message boundaries exact for arbitrary mail, which a cache holds.
+
+Said in the name rather than in a header inside the folder: a claim written
+into a folder outlives the belief that produced it, and a wrong one then
+survives the fix.  See dev/docs/design/folder-type.org.")
+
+(defconst vm-cache-folder-name-regexp
+  (concat "\\`\\(imap\\|pop\\)-cache-[0-9a-f]+"
+	  "\\(" (regexp-quote vm-cache-folder-type-suffix) "\\)?\\'")
+  "Matches the name of a file VM uses as the local cache of a server folder.
+`vm-imap-make-filename-for-spec' and `vm-pop-make-filename-for-spec' build
+these names, from a prefix, the MD5 of the maildrop specification, and for a
+cache VM created the type suffix.")
+
+(defun vm-cache-folder-name-p (file)
+  "Return non-nil if FILE is VM's local cache of a POP or IMAP folder.
+Judged by the name, which is all there is to go on: the maildrop the cache
+belongs to is deliberately not recorded in it, so a cache folder cannot be
+reconnected to its server by reading it."
+  (and file
+       (string-match-p vm-cache-folder-name-regexp
+		       (file-name-nondirectory file))))
+
+(defun vm-cache-file-in-use (base)
+  "The cache file to use, given BASE, its name without a type suffix.
+BASE where that file exists, so a cache made before VM named them keeps its
+name and goes on being read as whatever it is: renaming it would say a type of
+it that may not be true, and refusing it would mean refetching the mailbox.
+
+BASE with `vm-cache-folder-type-suffix' otherwise, which is the name a new
+cache gets and the type it is then written in.
+
+Both existing means a cache that was converted with the old file left beside
+it.  The suffixed one is the cache, and the other is named in a warning rather
+than passed over in silence, since it is the one holding the older mail."
+  (let ((named (concat base vm-cache-folder-type-suffix)))
+    (cond ((file-exists-p named)
+	   (when (file-exists-p base)
+	     (vm-warn 0 2 "Using cache %s, ignoring %s"
+		      (file-name-nondirectory named)
+		      (file-name-nondirectory base)))
+	   named)
+	  ((file-exists-p base) base)
+	  (t named))))
+
 (defun vm-copy (object)
   "Make a copy of OBJECT, which could be a list, vector, string or marker."
   (cond ((consp object)
@@ -758,9 +898,6 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 	(narrow-to-region (vm-headers-of message) (vm-text-end-of message))
 	(run-hooks hook-variable)))))
 
-(defun vm-run-message-hook (message hook-variable)
-  (vm-run-hook-on-message hook-variable message))
-(make-obsolete 'vm-run-message-hook 'vm-run-hook-on-message "8.2.0")
 
 (defun vm-run-hook-on-message-with-args (hook-variable message &rest args)
   (with-current-buffer (vm-buffer-of message)
@@ -770,10 +907,6 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 	(narrow-to-region (vm-headers-of message) (vm-text-end-of message))
 	(apply 'run-hook-with-args hook-variable args)))))
 
-(defun vm-run-message-hook-with-args (message hook-variable &rest args)
-  (apply 'vm-run-hook-on-message-with-args hook-variable message args))
-(make-obsolete 'vm-run-message-hook-with-args
-	       'vm-run-hook-on-message-with-args "8.2.0")
 
 (defun vm-error-free-call (function &rest args)
   (condition-case nil
@@ -784,10 +917,6 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 (put 'beginning-of-folder 'error-message "Beginning of folder")
 (put 'end-of-folder 'error-conditions '(end-of-folder error))
 (put 'end-of-folder 'error-message "End of folder")
-
-(defun vm-trace (&rest args)
-  (with-current-buffer (get-buffer-create "*vm-trace*")
-    (apply 'insert args)))
 
 (defun vm-timezone-make-date-sortable (string)
   (or (cdr (assq string vm-sortable-date-alist))
@@ -857,12 +986,12 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 	(setq month (substring date (match-beginning 0) (match-end 0))))
     (if (string-match "[0-9]?[0-9]:[0-9][0-9]\\(:[0-9][0-9]\\)?" date)
 	(setq hour (substring date (match-beginning 0) (match-end 0))))
-    (cond ((string-match "[^a-z][+---][0-9][0-9][0-9][0-9]" date)
+    (cond ((string-match "[^a-z][+-][0-9][0-9][0-9][0-9]" date)
 	   (setq timezone (substring date (1+ (match-beginning 0))
 				     (match-end 0))))
 	  ((or (string-match "e[ds]t\\|c[ds]t\\|p[ds]t\\|m[ds]t" date)
 	       (string-match "ast\\|nst\\|met\\|eet\\|jst\\|bst\\|ut" date)
-	       (string-match "gmt\\([+---][0-9]+\\)?" date))
+	       (string-match "gmt\\([+-][0-9]+\\)?" date))
 	   (setq timezone (substring date (match-beginning 0) (match-end 0)))))
     (while (and (or (zerop (length monthday))
 		    (zerop (length year)))
@@ -922,9 +1051,7 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 ;; The following function is not working correctly on Gnu Emacs 23.
 ;; So we do it ourselves.
 (defun vm-delete-auto-save-file-if-necessary ()
-  (if (featurep 'xemacs)
-      (delete-auto-save-file-if-necessary)
-    (when (and buffer-auto-save-file-name delete-auto-save-files
+  (when (and buffer-auto-save-file-name delete-auto-save-files
 	       (not (string= buffer-file-name buffer-auto-save-file-name))
 	       (file-newer-than-file-p 
 		buffer-auto-save-file-name buffer-file-name))
@@ -952,7 +1079,7 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 			 buffer-auto-save-file-name)))
 	      (delete-file buffer-auto-save-file-name))
 	(file-error nil))
-      (set-buffer-auto-saved))))
+    (set-buffer-auto-saved)))
 
 (defun vm-set-region-face (start end face)
   (let ((e (vm-make-extent start end)))
@@ -966,20 +1093,12 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
     (set-text-properties 0 (length s) nil s)
     (copy-sequence s)))
 
-(defalias 'vm-buffer-substring-no-properties
-  (cond ((fboundp 'buffer-substring-no-properties)
-	 (function buffer-substring-no-properties))
-	((featurep 'xemacs)
-	 (function buffer-substring))
-	(t (function vm-default-buffer-substring-no-properties))))
+(defalias 'vm-buffer-substring-no-properties #'buffer-substring-no-properties)
 
 (defun vm-buffer-string-no-properties ()
   (vm-buffer-substring-no-properties (point-min) (point-max)))
 
-(defalias 'vm-substring-no-properties
-  (cond ((fboundp 'substring-no-properties)
-	 (function substring-no-properties))
-	(t (function substring))))
+(defalias 'vm-substring-no-properties #'substring-no-properties)
 
 (defun vm-insert-region-from-buffer (buffer &optional start end)
   (let ((target-buffer (current-buffer)))
@@ -993,109 +1112,57 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
       (set-buffer buffer))
     (set-buffer target-buffer)))
 
-(defalias 'vm-extent-property
-  (if (featurep 'xemacs) #'extent-property #'overlay-get))
+(defalias 'vm-extent-property #'overlay-get)
 
-(defalias 'vm-extent-object
-  (if (featurep 'xemacs) #'extent-object #'overlay-buffer))
+(defalias 'vm-extent-object #'overlay-buffer)
 
-(defalias 'vm-set-extent-property
-  (if (featurep 'xemacs) #'set-extent-property #'overlay-put))
+(defalias 'vm-set-extent-property #'overlay-put)
 
-(defalias 'vm-set-extent-endpoints
-  (if (featurep 'xemacs) #'set-extent-endpoints #'move-overlay))
+(defalias 'vm-set-extent-endpoints #'move-overlay)
 
-(defalias 'vm-make-extent
-  (if (featurep 'xemacs) #'make-extent #'make-overlay))
+(defalias 'vm-make-extent #'make-overlay)
 
-(defalias 'vm-extent-end-position
-  (if (featurep 'xemacs) #'extent-end-position #'overlay-end))
+(defalias 'vm-extent-end-position #'overlay-end)
 
-(defalias 'vm-extent-start-position
-  (if (featurep 'xemacs) #'extent-start-position #'overlay-start))
+(defalias 'vm-extent-start-position #'overlay-start)
 
-(defalias 'vm-next-extent-change
-  (if (featurep 'xemacs) #'next-extent-change #'next-overlay-change))
+(defalias 'vm-next-extent-change #'next-overlay-change)
 
-(defalias 'vm-previous-extent-change
-  (if (featurep 'xemacs) #'previous-extent-change #'previous-overlay-change))
+(defalias 'vm-previous-extent-change #'previous-overlay-change)
 
-(defalias 'vm-detach-extent
-  (if (featurep 'xemacs) #'detach-extent #'delete-overlay))
+(defalias 'vm-detach-extent #'delete-overlay)
 
-(defalias 'vm-delete-extent
-  (if (featurep 'xemacs) #'delete-extent #'delete-overlay))
+(defalias 'vm-delete-extent #'delete-overlay)
 
-(defalias 'vm-disable-extents
-  (if (featurep 'xemacs)
-      ;; XEmacs doesn't need to disable extents because they don't
-      ;; slow things down
-      (lambda (&optional _beg _end _name _val) nil)
-    #'remove-overlays))
+(defalias 'vm-disable-extents #'remove-overlays)
 
-(defalias 'vm-extent-properties
-  (if (featurep 'xemacs) #'extent-properties #'overlay-properties))
+(defalias 'vm-extent-properties #'overlay-properties)
 
-(defalias 'vm-map-extents
-  (if (featurep 'xemacs)
-      (lambda (function)
-	(map-extents function (current-buffer) (point-min) (point-max)))
-    (lambda (function)
-      "Map FUNCTION over the extents in the current buffer.
-FUNCTION is called with two arguments: an extent and a dummy argument
+(defun vm-map-extents (function)
+  "Map FUNCTION over the overlays in the current buffer.
+FUNCTION is called with two arguments: an overlay and a dummy argument
 which should be ignored."
-      ;; This is based on old code in vm-page.el, rev. 1335
-      ;; BUFFER is being ignored, possibly yet to be handled. USR, 2019-04-04
-      (let (o-lists p)
-        (setq o-lists (overlay-lists))
-        (setq p (car o-lists))
-        (while p
-          (funcall function (car p) nil)
-          (setq p (cdr p)))
-        (setq p (cdr o-lists))
-        (while p
-          (funcall function (car p) nil)
-          (setq p (cdr p)))))))
-
+  ;; This is based on old code in vm-page.el, rev. 1335
+  (let ((o-lists (overlay-lists)))
+    (dolist (o (car o-lists)) (funcall function o nil))
+    (dolist (o (cdr o-lists)) (funcall function o nil))))
 
 (defun vm-extent-at (pos &optional property)
   "Find an extent at POS in the current buffer having PROPERTY.
 PROPERTY defaults nil, meaning any extent will do.
 
-In XEmacs, the extent is the \"smallest\" extent at POS.  In FSF Emacs,
-this may not be the case."
-  (if (fboundp 'extent-at)
-      (extent-at pos nil property)
-    (let ((o-list (overlays-at pos))
-	  (o nil))
-      (if (null property)
-	  (car o-list)
-	(while o-list
-	  (if (overlay-get (car o-list) property)
-	      (setq o (car o-list)
-		    o-list nil)
-	    (setq o-list (cdr o-list))))
-	o ))))
-
-(defun vm-extent-list (beg end &optional property)
-  "Returns a list of the extents that overlap the positions BEG to END.
-If PROPERTY is given, then only the extents have PROPERTY are returned."
-  (if (fboundp 'extent-list)
-      (extent-list nil beg end nil property)
-    (let ((o-list (overlays-in beg end)))
-      (if property
-	  (vm-delete (function (lambda (e)
-				 (vm-extent-property e property)))
-		     o-list t)
-	o-list))))
-
-(defun vm-copy-extent (e)
-  (let ((props (vm-extent-properties e))
-	(ee (vm-make-extent (vm-extent-start-position e)
-			    (vm-extent-end-position e))))
-    (while props
-      (vm-set-extent-property ee (car props) (car (cdr props)))
-      (setq props (cdr (cdr props))))))
+Not necessarily the smallest overlay there, XEmacs's `extent-at' having
+answered that and this not."
+  (let ((o-list (overlays-at pos))
+	(o nil))
+    (if (null property)
+	(car o-list)
+      (while o-list
+	(if (overlay-get (car o-list) property)
+	    (setq o (car o-list)
+		  o-list nil)
+	  (setq o-list (cdr o-list))))
+      o)))
 
 (defun vm-make-tempfile (&optional filename-suffix proposed-filename)
   (let ((modes (default-file-modes))
@@ -1152,8 +1219,6 @@ encoding/decoding, conversions, subprocess communication etc."
     (buffer-disable-undo work-buffer)
 ;; probably not worth doing since no one sets buffer-offer-save
 ;; non-nil globally, do they?
-;;    (with-current-buffer work-buffer
-;;      (setq buffer-offer-save nil))
     work-buffer ))
 
 (defun vm-make-multibyte-work-buffer (&optional name)
@@ -1162,18 +1227,16 @@ encoding/decoding, conversions, subprocess communication etc."
     (buffer-disable-undo work-buffer)
 ;; probably not worth doing since no one sets buffer-offer-save
 ;; non-nil globally, do they?
-;;    (with-current-buffer work-buffer
-;;      (setq buffer-offer-save nil))
     work-buffer ))
 
-(defalias 'vm-insert-char
-  (if (featurep 'xemacs)
-      #'insert-char
-    (lambda (char &optional count _ignored buffer)
-      (if (and buffer (eq buffer (current-buffer)))
-          (insert-char char count)
-        (with-current-buffer buffer
-          (insert-char char count))))))
+(defun vm-insert-char (char &optional count _ignored buffer)
+  "Insert COUNT copies of CHAR into BUFFER, or the current buffer.
+IGNORED is there because XEmacs's `insert-char', which this stood in for,
+took an argument here that Emacs's does not."
+  (if (or (null buffer) (eq buffer (current-buffer)))
+      (insert-char char count)
+    (with-current-buffer buffer
+      (insert-char char count))))
 
 (defun vm-symbol-lists-intersect-p (list1 list2)
   (catch 'done
@@ -1256,32 +1319,18 @@ encoding/decoding, conversions, subprocess communication etc."
     (setq 65536-secs (- (nth 0 t1) (nth 0 t2) carry))
     (+ (* 65536-secs 65536)
        secs
-       (/ usecs (if (featurep 'lisp-float-type) 1e6 1000000)))))
+       (/ usecs 1e6))))
 
-(defalias 'vm-char-to-int
-  (if (featurep 'xeamcs) #'char-to-int #'identity))
+(defalias 'vm-char-to-int #'identity)
 
-(defalias 'vm-charsets-in-region
-  (if (featurep 'xemacs) #'charsets-in-region #'find-charset-region))
+(defalias 'vm-charsets-in-region #'find-charset-region)
 
-;; Wrapper for coding-system-p:
-;; The XEmacs function expects a coding-system object as its argument,
-;; the GNU Emacs function expects a symbol.
-;; In the non-MULE case, return nil (is this the right fallback?).
-(defun vm-coding-system-p (name)
-  (cond ((featurep 'xemacs)
-	 (coding-system-p (find-coding-system name)))
-	((not (featurep 'xemacs))
-	 (coding-system-p name))))
+(defalias 'vm-coding-system-p #'coding-system-p)
 
-(defalias 'vm-coding-system-name
-  (if (featurep 'xemacs) #'coding-system-name #'identity))
+(defalias 'vm-coding-system-name #'identity)
 
 (defun vm-coding-system-name-no-eol (coding-system)
-  (if (featurep 'xemacs)
-      (coding-system-name
-       (coding-system-change-eol-conversion coding-system nil))
-    (coding-system-change-eol-conversion coding-system nil)))
+  (coding-system-change-eol-conversion coding-system nil))
 
 (defun vm-get-file-line-ending-coding-system (file)
   (let ((coding-system-for-read  (vm-binary-coding-system))
@@ -1293,11 +1342,11 @@ encoding/decoding, conversions, subprocess communication etc."
 	    (error nil))
 	  (goto-char (point-min))
 	  (cond ((re-search-forward "[^\r]\n" nil t)
-		 (if (not (featurep 'xemacs)) 'raw-text-unix 'no-conversion-unix))
+		 'raw-text-unix)
 		((re-search-forward "\r[^\n]" nil t)
-		 (if (not (featurep 'xemacs)) 'raw-text-mac 'no-conversion-mac))
+		 'raw-text-mac)
 		((search-forward "\r\n" nil t)
-		 (if (not (featurep 'xemacs)) 'raw-text-dos 'no-conversion-dos))
+		 'raw-text-dos)
 		(t (vm-line-ending-coding-system))))
       (and work-buffer (kill-buffer work-buffer)))))
 
@@ -1305,11 +1354,11 @@ encoding/decoding, conversions, subprocess communication etc."
   (cond ((eq vm-default-new-folder-line-ending-type nil)
 	 (vm-line-ending-coding-system))
 	((eq vm-default-new-folder-line-ending-type 'lf)
-	 (if (not (featurep 'xemacs)) 'raw-text-unix 'no-conversion-unix))
+	 'raw-text-unix)
 	((eq vm-default-new-folder-line-ending-type 'crlf)
-	 (if (not (featurep 'xemacs)) 'raw-text-dos 'no-conversion-dos))
+	 'raw-text-dos)
 	((eq vm-default-new-folder-line-ending-type 'cr)
-	 (if (not (featurep 'xemacs)) 'raw-text-mac 'no-conversion-mac))
+	 'raw-text-mac)
 	(t
 	 (vm-line-ending-coding-system))))
 
@@ -1367,26 +1416,48 @@ Returns t if there was a line longer than `fill-column'."
       (forward-line 1))
     long-line))
 
-(defun vm-fill-paragraphs-containing-long-lines (width start end)
-  "Fill paragraphs spanning more than WIDTH columns in region
-START to END.  If WIDTH is `window-width', the current width of
-the Emacs window is used.  If vm-word-wrap-paragraphs is set
-non-nil, then the longlines package is used to word-wrap long
-lines without removing any existing line breaks.
+(defun vm-fill-prefix-leaves-room-p ()
+  "Whether `fill-prefix' leaves any room for text inside `fill-column'.
+A paragraph whose prefix is as wide as the column cannot be filled to
+anything but one word a line, which is worse than the long lines it was
+filled to be rid of.  `vm-forward-paragraph' reads a paragraph's
+indentation as its prefix, and an HTML converter asked for a very wide page
+indents a centred paragraph by hundreds of columns (#540)."
+  (or (null fill-prefix)
+      (< (string-width fill-prefix) fill-column)))
 
-In order to fill also quoted text you will need `filladapt.el' as the adaptive
-filling of GNU Emacs does not work correctly here."
-  (if (and vm-word-wrap-paragraphs (locate-library "longlines"))
-      (vm-fill-paragraphs-by-longlines start end)
-    (if (eq width 'window-width)
-	(setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
+(defun vm-fill-paragraphs-containing-long-lines (width start end)
+  "Fill paragraphs spanning more than WIDTH columns in region START to END.
+If WIDTH is the symbol window-width, the current width of the Emacs window
+is used; if it is nil, vm-paragraph-fill-column is.  The column filled to is
+vm-paragraph-fill-column whatever WIDTH says.
+
+vm-word-wrap-paragraphs non-nil wraps the long lines instead, leaving
+every existing line break where it is.  That is the setting to use on
+quoted text: filling joins the lines of a paragraph before breaking them
+again, so a quoted block is drawn into the paragraph above it and its
+markers end up mid-line.
+
+In order to fill also quoted text you will need filladapt.el, the adaptive
+filling of GNU Emacs not working correctly here."
+  (when (eq width 'window-width)
+    (setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
+  ;; No WIDTH at all means every line longer than the column it would be
+  ;; wrapped to is long.  `vm-word-wrap-paragraphs' documents itself as
+  ;; needing nothing else set, and its three callers pass
+  ;; `vm-fill-paragraphs-containing-long-lines', which is nil for a reader who
+  ;; asked only to wrap: the longlines call this replaced took no width at all,
+  ;; so nothing noticed until it did (emacs-vm/vm#834).
+  (unless width
+    (setq width vm-paragraph-fill-column))
+  (if vm-word-wrap-paragraphs
+      (vm-word-wrap-long-lines width vm-paragraph-fill-column start end)
     (save-excursion
       (let ((buffer-read-only nil)
 	    (fill-column vm-paragraph-fill-column)
 	    (adaptive-fill-mode nil)
 	    (abbrev-mode nil)
 	    (fill-prefix nil)
-	    ;; (use-hard-newlines t)
 	    (filled 0)
 	    (_message (if (car vm-message-pointer)
 			  (vm-su-subject (car vm-message-pointer))
@@ -1404,66 +1475,41 @@ filling of GNU Emacs does not work correctly here."
 	  (setq start (point))
 	  (vm-skip-empty-lines)
 	  (when (and (< (point) end)	; if no newline at the end
-		     (let ((fill-column width)) (vm-forward-paragraph)))
+		     (let ((fill-column width)) (vm-forward-paragraph))
+		     (vm-fill-prefix-leaves-room-p))
 	    (fill-region start (point))
 	    (setq filled (1+ filled))))
       
 	;; Turning off these messages because they go by too fast and
 	;; are not particularly enlightening.  USR, 2010-01-26
-	;; (if (= filled 0)
-	;;    (vm-inform 7 "Nothing to fill")
-	;;  (vm-inform 7 "Filled %s paragraph%s"
-	;;           (if (> filled 1) (format "%d" filled) "one")
-	;;           (if (> filled 1) "s" "")))
 	))))
 
-(defun vm-fill-paragraphs-by-longlines (start end)
-  "Uses longlines.el for filling the region."
-  ;; prepare for longlines.el in XEmacs
-  (require 'overlay)
-  (require 'longlines)
-  (declare-function longlines-decode-region "ext:longlines"
-		    (start end))
-  (declare-function longlines-wrap-region "ext:longlines"
-		    (start end))
-  (defvar fill-nobreak-predicate nil)
-  (defvar undo-in-progress nil)
-  (defvar longlines-mode-hook nil)
-  (defvar longlines-mode-on-hook nil)
-  (defvar longlines-mode-off-hook nil)
-  (unless (functionp 'replace-regexp-in-string)
-    (defun replace-regexp-in-string (regexp rep string
-                                            &optional _fixedcase literal)
-      (vm-replace-in-string string regexp rep literal)))
-  (unless (functionp 'line-end-position)
-    (defun line-end-position ()
-      (save-excursion (end-of-line) (point))))
-  (unless (functionp 'line-beginning-position)
-    (defun line-beginning-position (&optional n)
-      (save-excursion
-        (if n (forward-line n))
-        (beginning-of-line)
-        (point)))
-    (unless (functionp 'replace-regexp-in-string)
-      (defun replace-regexp-in-string (regexp rep string
-                                              &optional _fixedcase literal)
-        (vm-replace-in-string string regexp rep literal))))
-  ;; now do the filling
-  (let ((buffer-read-only nil)
-        (fill-column 
-	 (if (numberp vm-fill-paragraphs-containing-long-lines)
-	     vm-fill-paragraphs-containing-long-lines
-	   (- (window-width (get-buffer-window (current-buffer))) 1)))
-	)
-    (save-excursion
-      (save-restriction
-       ;; longlines-wrap-region contains a (forward-line -1) which is causing
-       ;; wrapping of headers which is wrong, so we restrict it here!
-       (narrow-to-region start end)
-       (longlines-decode-region start end) ; make linebreaks hard
-       (longlines-wrap-region start end)  ; wrap, adding soft linebreaks
-       (widen)))))
+(defun vm-word-wrap-long-lines (width column start end)
+  "Wrap lines longer than WIDTH columns to COLUMN, between START and END.
 
+Each over-long line is filled on its own, so no existing line break is
+removed.  That is the difference from filling, and the reason this exists:
+`fill-region' joins the lines of a paragraph before breaking them again,
+which pulls a quoted block into the paragraph above it.
+
+A word longer than COLUMN is left whole rather than broken, so a long URL
+survives.
+
+This used the longlines package until 2026, which had been obsolete
+since Emacs 24.4 and warned as it was loaded (emacs-vm/vm#817).  Its output
+differed only in leaving a trailing space on each wrapped line, which was
+how it marked its own soft breaks; VM never unwrapped them."
+  (let ((end (copy-marker end))
+	(buffer-read-only nil)
+	(fill-column column)
+	(adaptive-fill-mode nil)
+	(fill-prefix nil))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end)
+	(when (> (- (line-end-position) (point)) width)
+	  (fill-region-as-paragraph (point) (line-end-position)))
+	(forward-line 1)))))
 
 (defun vm-make-message-id ()
   (let (hostname
@@ -1478,6 +1524,43 @@ filling of GNU Emacs does not work correctly here."
 	    (car time) (nth 1 time) (nth 2 time)
 	    (random 1000000)
 	    hostname)))
+
+(defvar vm-session-trace-max-size)
+
+(defun vm-insert-one-session-trace (buffer)
+  "Insert BUFFER's text, the middle left out if it is too long to send.
+`vm-session-trace-max-size' says how much; half of it comes from the start and
+half from the end, which are the two ends that say anything.  Nil carries the
+whole trace."
+  (let* ((size (buffer-size buffer))
+	 (limit vm-session-trace-max-size))
+    (if (or (null limit) (<= size limit))
+	(insert-buffer-substring buffer)
+      ;; the positions are BUFFER's, read here rather than by making it
+      ;; current: `insert-buffer-substring' inserts into the buffer that is
+      ;; current, so making BUFFER current copies the trace into itself
+      (let* ((first (with-current-buffer buffer (point-min)))
+	     (last (with-current-buffer buffer (point-max)))
+	     (half (/ limit 2)))
+	(insert-buffer-substring buffer first (+ first half))
+	(insert (format (concat "\n[%d characters left out of the middle of"
+				" this trace; set vm-session-trace-max-size"
+				" to nil for the whole of it]\n")
+			(- size limit)))
+	(insert-buffer-substring buffer (- last half) last)))))
+
+(defun vm-insert-session-traces (protocol buffers)
+  "Insert the text of BUFFERS into a bug report, newest first.
+PROTOCOL names them in the heading, \"IMAP\" or \"POP\".  A dead buffer is
+named and skipped rather than left out silently: a report that is missing a
+session says so."
+  (insert "\n\n" protocol " Trace buffers - most recent first\n\n")
+  (dolist (buffer buffers)
+    (insert "----" (format "%s" buffer) "----------\n")
+    (if (buffer-live-p buffer)
+	(vm-insert-one-session-trace buffer)
+      (insert "(this buffer is gone)\n")))
+  (insert "--------------------------------------------------\n"))
 
 (defun vm-keep-some-buffers (buffer ring-variable number-to-keep 
 				    &optional rename-prefix)
@@ -1513,10 +1596,7 @@ front before adding it to the RING-VARIABLE."
 (defvar enable-multibyte-characters)
 (defvar buffer-display-table)
 (defun vm-fsfemacs-nonmule-display-8bit-chars ()
-  (cond ((and (not (featurep 'xemacs))
-	      (or (not (not (featurep 'xemacs)))
-		  (and (boundp 'enable-multibyte-characters)
-		       (not enable-multibyte-characters))))
+  (cond ((not enable-multibyte-characters)
 	 (let* (tab (i 160))
 	   ;; We need the function make-display-table, but it is
 	   ;; in disp-table.el, which overwrites the value of
@@ -1555,21 +1635,10 @@ front before adding it to the RING-VARIABLE."
 	(delete-region (- (point) 1) (- (point) 4))))))
 
 (defun vm-process-kill-without-query (process &optional flag)
-  (if (fboundp 'process-kill-without-query)
-      (process-kill-without-query process flag)
-    (set-process-query-on-exit-flag process flag)))
+  (set-process-query-on-exit-flag process flag))
 
 (defun vm-process-sentinel-kill-buffer (process _what-happened)
   (kill-buffer (process-buffer process)))
-
-(defun vm-fsfemacs-scroll-bar-width ()
-  (or vm-fsfemacs-cached-scroll-bar-width
-      (let (size)
-	(setq size (frame-pixel-width))
-	(scroll-bar-mode nil)
-	(setq size (- size (frame-pixel-width)))
-	(scroll-bar-mode nil)
-	(setq vm-fsfemacs-cached-scroll-bar-width size))))
 
 (defvar vm-disable-modes-ignore nil
   "List of modes ignored by `vm-disable-modes'.
@@ -1593,76 +1662,60 @@ If MODES is nil the take the modes from the variable
 	   (setq vm-disable-modes-ignore (cons m vm-disable-modes-ignore)))
 	 nil)))))
 
-;; Don't use vm-device-type here because it may not not be loaded yet.
-(declare-function device-type "vm-xemacs" ())
-(declare-function device-matching-specifier-tag-list "vm-xemacs" ())
-
 (defun vm-menu-can-eval-item-name ()
-  (and (featurep 'xemacs)
-       (fboundp 'check-menu-syntax)
-       (condition-case nil
-	   (check-menu-syntax '("bar" ((identity "foo") 'ding t)))
-	 (error nil))))
+  "Whether a menu item's name may be a form to evaluate.
+Only XEmacs allowed it, so this is always nil.  The callers keep their
+other branch, which spells the name out."
+  nil)
 
 (defun vm-multiple-frames-possible-p ()
-  (cond ((featurep 'xemacs)
-	 (or (memq 'win (device-matching-specifier-tag-list))
-	     (featurep 'tty-frames)))
-        ((not (featurep 'xemacs))
-         (fboundp 'make-frame))))
+  "Whether VM may put a buffer in a frame of its own.
+Never in a batch Emacs: `make-frame' is defined there and fails, with
+\"Unknown terminal type\", so a composition made by a script died at the
+point where VM went to give it a frame."
+  (and (not noninteractive) (fboundp 'make-frame)))
  
 (defun vm-mouse-support-possible-p ()
-  (cond ((featurep 'xemacs)
-         (featurep 'window-system))
-        ((not (featurep 'xemacs))
-         (fboundp 'track-mouse))))
+  (fboundp 'track-mouse))
  
 (defun vm-mouse-support-possible-here-p ()
-  (cond ((featurep 'xemacs)
-	 (memq 'win (device-matching-specifier-tag-list)))
-	((not (featurep 'xemacs))
-	 (memq window-system '(x mac w32 win32)))))
+  (memq window-system '(x mac w32 win32)))
 
 (defun vm-menu-support-possible-p ()
-  (cond ((featurep 'xemacs)
-	 (featurep 'menubar))
-	((not (featurep 'xemacs))
-	 (fboundp 'menu-bar-mode))))
+  (fboundp 'menu-bar-mode))
  
 (defun vm-menubar-buttons-possible-p ()
   "Menubar buttons are menus that have an immediate action.  Some
 Windowing toolkits do not allow such buttons.  This says whether such
 buttons are possible under the current windowing system."
-  (not
-   (cond ((featurep 'xemacs) (memq (device-type) '(gtk ns)))
-	 ((not (featurep 'xemacs)) (or (and (eq window-system 'x) (featurep 'gtk))
-			    (eq window-system 'ns))))))
+  (not (or (and (eq window-system 'x) (featurep 'gtk))
+	   (eq window-system 'ns))))
 
 (defun vm-toolbar-support-possible-p ()
-  (or (and (featurep 'xemacs) (featurep 'toolbar))
-      (and (not (featurep 'xemacs)) (fboundp 'tool-bar-mode) (boundp 'tool-bar-map))))
+  (and (fboundp 'tool-bar-mode) (boundp 'tool-bar-map)))
 
 (defun vm-multiple-fonts-possible-p ()
-  (cond ((featurep 'xemacs)
-	 (memq (device-type) '(x gtk mswindows)))
-	((not (featurep 'xemacs))
-	 (memq window-system '(x mac w32 win32)))))
+  (memq window-system '(x mac w32 win32)))
 
 (defun vm-images-possible-here-p ()
-  (or (and (featurep 'xemacs) (memq (device-type) '(x gtk mswindows)))
-      (and (not (featurep 'xemacs)) window-system
-	   (or (fboundp 'image-type-available-p)
-	       (vm-imagemagick-available-p)))))
+  (and window-system
+       (or (fboundp 'image-type-available-p)
+	   (vm-imagemagick-available-p))))
 
-(defun vm-image-type-available-p (type)
-  (if (fboundp 'image-type-available-p)
-      (image-type-available-p type)
-    (or (featurep type) (eq type 'xbm))))
+(defalias 'vm-image-type-available-p #'image-type-available-p)
 
 (defun vm-load-features (feature-list &optional silent)
   "Try to load those features listed in FEATURE_LIST.
 If SILENT is t, do not display warnings for unloadable features.
-Return the list of loaded features."
+Return the list of loaded features.
+
+Silent in a batch Emacs whatever SILENT says.  The warning is for a reader who
+asked for a feature and is not getting it, and a batch Emacs has nobody to
+read it: eighteen lines of it came out of `make', where four WARNINGs in the
+middle of a build read as a broken build (emacs-vm/vm#485, emacs-vm/vm#753).
+Building the manual loads every module to read its docstrings, which is where
+they were coming from -- SILENT is `byte-compile-current-file' at every call
+site, and that is nil when a file is loaded rather than compiled."
   (setq feature-list
         (mapcar (lambda (f)
                   (condition-case nil
@@ -1671,12 +1724,9 @@ Return the list of loaded features."
                     (error
                      (if (load (format "%s" f) t)
                          f
-                       (when (not silent)
+                       (unless (or silent noninteractive)
                          (message "WARNING: Could not load feature %S." f)
-                         ;; (sit-for 1)
-                         (message "WARNING: Related functions may not work correctly!")
-                         ;; (sit-for 1)
-			 )
+                         (message "WARNING: Related functions may not work correctly!"))
                        nil))))
                 feature-list))
   (delete nil feature-list))
@@ -1754,26 +1804,31 @@ this returns `vm-imagemagick-program' (magick); callers should prepend
        (string-match-p "magick\\'" program)))
 
 (defun vm-imagemagick-convert-shell-command ()
-  "Return the shell command string for ImageMagick convert.
-For ImageMagick 7, returns \"magick convert\".
-For older versions, returns the convert program path."
-  (let ((program (vm-imagemagick-convert-command)))
-    (when program
-      (if (vm-imagemagick-program-is-magick-p program)
-	  (concat program " convert")
-	program))))
+  "Return the shell command string for converting an image with ImageMagick.
+
+For ImageMagick 7 that is `magick' on its own.  Version 7 deprecated the
+`convert' command, and it says so on every run:
+
+    WARNING: The convert command is deprecated in IMv7, use \"magick\"
+    instead of \"convert\" or \"magick convert\"
+
+so `magick convert' printed that warning for every image VM displayed.  For
+version 6 there is no `magick', and the program is `convert' itself."
+  (vm-imagemagick-convert-command))
 
 (defun vm-imagemagick-call-convert (infile buffer args)
-  "Call ImageMagick convert with ARGS, handling v6 vs v7 differences.
+  "Convert an image with ImageMagick and ARGS, and answer with the exit status.
 INFILE and BUFFER are passed to `vm-call-process'.
-ARGS is a list of arguments for the convert command.
-Returns the exit status."
+
+ARGS go to `magick' as they are: version 7 deprecated the `convert'
+command and warns about it on every run, so VM does not ask for it.  Version 6
+has no `magick' and the program is `convert' itself, which takes the same
+arguments.  `identify' is a different matter -- version 7 has it as a
+subcommand of `magick' and does not deprecate it -- so
+`vm-imagemagick-call-identify' still names it."
   (let ((program (vm-imagemagick-convert-command)))
     (when program
-      (vm-call-process program infile buffer
-		       (if (vm-imagemagick-program-is-magick-p program)
-			   (cons "convert" args)
-			 args)))))
+      (vm-call-process program infile buffer args))))
 
 (defun vm-imagemagick-call-identify (infile buffer args)
   "Call ImageMagick identify with ARGS, handling v6 vs v7 differences.
@@ -1786,6 +1841,51 @@ Returns the exit status."
 		       (if (vm-imagemagick-program-is-magick-p program)
 			   (cons "identify" args)
 			 args)))))
+
+;;; auth-source access
+
+;; VM asks auth-source for a password under two names: the account name
+;; from vm-imap-account-alist / vm-pop-folder-alist, and the real host
+;; name.  Users write either one in ~/.authinfo, so both are tried.
+
+(defun vm-auth-source-password (hosts port user)
+  "Return the auth-source password for USER at PORT on any of HOSTS.
+HOSTS is a list of machine names to try in order; nil entries are
+ignored.  Returns nil if `auth-sources' has no matching entry, and
+also when USER is nil: `auth-source-search' treats a nil :user as no
+constraint rather than as a wildcard to match, so it would hand back
+whichever entry for that host comes first -- someone else's password."
+  (catch 'done
+    (unless user
+      (throw 'done nil))
+    (dolist (host hosts)
+      (when host
+	(let ((found (car (auth-source-search :host host :port port
+					      :user user :max 1))))
+	  (when found
+	    (let ((secret (plist-get found :secret)))
+	      ;; auth-source returns the secret as a lambda when the
+	      ;; backend can defer decryption (e.g. authinfo.gpg)
+	      (throw 'done (if (functionp secret)
+			       (funcall secret)
+			     secret)))))))
+    nil))
+
+(defun vm-percent-quote (string)
+  "STRING as a `format' control string standing for itself.
+The summary and MIME button compilers copy the text between the specifiers
+into the control string they hand to `format', so a percent in that text has
+to be doubled.  Without it a format of \"%s %q\" reached `format' with a %q
+in it, and every line failed with \"Not enough arguments for format
+string\" (emacs-vm/vm#847)."
+  (replace-regexp-in-string "%" "%%" string t t))
+
+(defun vm-percent-unquote (string)
+  "STRING with each doubled percent back to a single one.
+For a format holding no specifier at all: nothing calls `format' on it, so
+the doubling has to be undone by hand or \"100%% done\" comes out as
+\"100%% done\" where the docstrings promise \"100% done\"."
+  (replace-regexp-in-string "%%" "%" string t t))
 
 (provide 'vm-misc)
 ;;; vm-misc.el ends here

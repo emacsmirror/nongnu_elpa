@@ -1,0 +1,122 @@
+;;; vm-live-config.el --- Servers for the live tests -*- lexical-binding: t; -*-
+
+;; Copy to test/vm-live-config.el and fill in.  That file is gitignored and
+;; holds passwords in the clear; this one is checked in and must not.
+;;
+;; The copy's presence is the opt-in.  Without it every live test skips.  Bind
+;; `vm-imap-live-enabled' or `vm-pop-live-enabled' to nil to suppress one half
+;; without deleting the file.
+;;
+;; Server-side setup is in dev/docs/dev-guide.org under "testing"; the design
+;; notes are in dev/docs/design/imap-live-tests.org.
+;;
+;; Rules:
+;;
+;;   - Tests ask for servers by :name.  "plain" and "tls" for IMAP, "pop" and
+;;     "pop-tls" for POP.  A server under any other name is never used.
+;;   - A password cannot hold a colon.  Maildrop specifications are
+;;     colon-delimited.
+;;   - A server listed here that cannot be reached is a failure.  Drop the
+;;     ones you have not set up; their tests skip.
+
+;;; Code:
+
+;; :name       what tests ask for
+;; :host       with :tls, the certificate's subjectAltName, not its CN
+;; :port
+;; :tls        t for an SSL port
+;; :auth       "login", "cram-md5" or "preauth"; POP also takes "pass" and "apop"
+;; :trustfile  CA file, for a certificate the system does not trust
+;; :accounts   (USER . PASSWORD).  The cross-account tests use the second;
+;;             everything else uses the first.
+
+(setq vm-imap-test-servers
+      '((:name     "plain"
+	 :host     "127.0.0.1"
+	 :port     143
+	 :tls      nil
+	 :auth     "login"
+	 :accounts (("vmtest1" . "PASSWORD1")
+		    ("vmtest2" . "PASSWORD2")))
+	(:name     "tls"
+	 :host     "localhost"
+	 :port     993
+	 :tls      t
+	 :auth     "login"
+	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+	 :accounts (("vmtest1" . "PASSWORD1")))
+	;; Gmail.  Needs IMAP enabled on the account and an app password:
+	;; sixteen letters, written without the spaces Google shows.  VM has no
+	;; OAuth.  Use a throwaway account -- the tests create and delete
+	;; mailboxes, which are labels there.  Nothing asks for the name
+	;; "gmail" yet.
+	;; (:name     "gmail"
+	;;  :host     "imap.gmail.com"
+	;;  :port     993
+	;;  :tls      t
+	;;  :auth     "login"
+	;;  :accounts (("you@gmail.com" . "APPPASSWORD")))
+	))
+
+;; POP needs pop3 in dovecot's protocols; it ships with imap alone.  The live
+;; POP tests also use the IMAP server named "plain", for the same account:
+;; POP3 has no APPEND, so a fixture goes in over IMAP and is read back over POP.
+
+(setq vm-pop-test-servers
+      '((:name     "pop"
+	 :host     "127.0.0.1"
+	 :port     110
+	 :tls      nil
+	 :auth     "pass"
+	 :accounts (("vmtest1" . "PASSWORD1")))
+	(:name     "pop-tls"
+	 :host     "localhost"
+	 :port     995
+	 :tls      t
+	 :auth     "pass"
+	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+	 :accounts (("vmtest1" . "PASSWORD1")))))
+
+;; The mail-sending tests, `./test-runner --send'.  They send real mail and run
+;; only from that target, only with this set.
+;;
+;; :from
+;; :to             your own address, never anyone else's
+;; :verify-server  a server above whose account receives :to.  A local test
+;;                 account does not; that wants an entry for your own IMAP.
+;; :verify-mailbox where it arrives
+;; :wait           seconds allowed for delivery.  A mirrored mailbox wants
+;;                 the mirror's interval on top; 600 costs nothing, the test
+;;                 stopping as soon as the mail arrives.
+;;
+;; Each message carries an `X-VM-Send-Test' header and is deleted again.
+;;
+;; How this machine sends mail is set below rather than in the plist.
+
+;; (setq vm-send-test-config
+;;       '(:from           "you@example.com"
+;;         :to             "you@example.com"
+;;         :verify-server  "your-own-account"
+;;         :verify-mailbox "INBOX"
+;;         :wait           600))
+
+;; (setq send-mail-function 'sendmail-send-it
+;;       sendmail-program "/opt/local/bin/msmtp"
+;;       mail-specify-envelope-from t
+;;       mail-envelope-from 'header)
+
+;; msmtp with the account named rather than left to a `default' account.
+;; `sendmail-send-it' has nowhere to put the -a, so this uses the message.el
+;; sender, which is not autoloaded.
+;;
+;; (require 'message)
+;; (setq send-mail-function 'message-send-mail-with-sendmail
+;;       message-sendmail-extra-arguments '("-a" "ACCOUNT")
+;;       sendmail-program "/opt/local/bin/msmtp"
+;;       mail-specify-envelope-from t
+;;       mail-envelope-from 'header)
+;;
+;; Whatever sends has to do it without being asked anything: batch Emacs has
+;; nobody to answer a password prompt, and msmtp exits 69 with "authentication
+;; method PLAIN needs a password" rather than hanging.  A `password' or a
+;; `passwordeval' that works with no terminal is what that takes.

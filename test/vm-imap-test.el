@@ -1,6 +1,6 @@
 ;;; vm-imap-test.el --- Tests for vm-imap.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -81,6 +81,41 @@
   (let ((result (vm-imap-normalize-spec
                  "imap:mail.example.com:143:inbox:cram-md5:user:secret")))
     (should (string-match ":inbox:\\*:user:" result))))
+
+(ert-deftest vm-imap-test-which-maildrops-share-a-cache ()
+  "What the cache name runs together, and what it keeps apart.
+
+The manual says only the scheme, the host, the mailbox and the login name go
+into the name.  Three of the four consequences are the point of it: `imap'
+and `imap-ssl' for one mailbox share a cache, and changing the password or
+the authentication method does not orphan one.
+
+The fourth is a restriction, emacs-vm/vm#716: two servers on one host reached
+on different ports, with the same login and mailbox, name the same file and
+so share one cache, and visiting the second gets the first one's folder.  The
+manual documents that and offers the way round it, which is giving them
+different host names, so this pins the way round it too.  The port cannot
+simply be added: every cache that exists is named without it."
+  (let ((base "imap:mail.example.com:143:inbox:login:me:pass"))
+    (dolist (spec (list (cons "another port"
+                              "imap:mail.example.com:1143:inbox:login:me:pass")
+                        (cons "imap-ssl"
+                              "imap-ssl:mail.example.com:993:inbox:login:me:pass")
+                        (cons "another password"
+                              "imap:mail.example.com:143:inbox:login:me:other")
+                        (cons "another auth method"
+                              "imap:mail.example.com:143:inbox:cram-md5:me:pass")))
+      (should (equal (list (car spec) (vm-imap-normalize-spec base))
+                     (list (car spec) (vm-imap-normalize-spec (cdr spec))))))
+    ;; and what must not be run together
+    (dolist (spec (list (cons "another host"
+                              "imap:other.example.com:143:inbox:login:me:pass")
+                        (cons "another mailbox"
+                              "imap:mail.example.com:143:archive:login:me:pass")
+                        (cons "another login"
+                              "imap:mail.example.com:143:inbox:login:you:pass")))
+      (should-not (equal (vm-imap-normalize-spec base)
+                         (vm-imap-normalize-spec (cdr spec)))))))
 
 (ert-deftest vm-imap-test-normalize-spec-standardizes-protocol ()
   "Test that normalize-spec standardizes the protocol to 'imap'."
@@ -407,44 +442,6 @@
 
 ;;; vm-imap-send-command tests with mock
 
-(ert-deftest vm-imap-test-send-command-basic ()
-  "Test vm-imap-send-command sends tagged command."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "NOOP")
-      ;; Should have sent "VM NOOP\r\n"
-      (should (member "VM NOOP\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-imap-test-send-command-custom-tag ()
-  "Test vm-imap-send-command with custom tag."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "CAPABILITY" "A001")
-      ;; Should have sent "A001 CAPABILITY\r\n"
-      (should (member "A001 CAPABILITY\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-imap-test-send-command-hides-login ()
-  "Test vm-imap-send-command hides LOGIN parameters in buffer."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "LOGIN user password")
-      ;; Command should be sent
-      (should (member "VM LOGIN user password\r\n" vm-test-mock-commands))
-      ;; But buffer should show <omitted>
-      (should (string-match "LOGIN <parameters omitted>" (buffer-string))))))
-
-(ert-deftest vm-imap-test-send-command-no-tag ()
-  "Test vm-imap-send-command with no-tag option."
-  (vm-test-with-imap-session '("* OK ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-imap-read-point (point-min-marker))
-      (vm-imap-send-command process "DONE" nil t)  ; no-tag = t
-      ;; Should have sent "DONE\r\n" without tag
-      (should (member "DONE\r\n" vm-test-mock-commands)))))
-
 ;;; IMAP plist functions tests
 
 (ert-deftest vm-imap-test-plist-get-basic ()
@@ -519,6 +516,224 @@
     (should (equal (vm-imap-folder-name-for-spec
                     "imap:mail.example.com:143:Archive/2024:login:user:pass")
                    "Archive/2024"))))
+
+;;; vm-imap-save-composition tests
+
+(defmacro vm-imap-test-with-composition (&rest body)
+  "Run BODY in a mail buffer holding an IMAP-FCC header and no parent folder.
+With no parent folder there is no IMAP maildrop to inherit, which is
+the case that sends `vm-imap-save-composition' to
+`vm-imap-default-account'."
+  (declare (indent 0))
+  `(with-temp-buffer
+     (insert "To: someone@example.com\n"
+             "IMAP-FCC: Sent\n"
+             mail-header-separator "\n"
+             "body\n")
+     (let ((vm-mail-buffer nil)
+           ;; `error' formats through `format-message', which would
+           ;; otherwise curve the quotes in the expected strings
+           (text-quoting-style 'grave))
+       ,@body)))
+
+(ert-deftest vm-imap-test-save-composition-no-default-account ()
+  "Test that a nil `vm-imap-default-account' is reported clearly.
+Regression test for issue #427: the guard used to skip the error in
+exactly this case, leaving `maildrop' nil for `vm-imap-make-session'."
+  (vm-imap-test-with-composition
+    (let ((vm-imap-default-account nil)
+          (vm-imap-account-alist nil))
+      (should (equal (should-error (vm-imap-save-composition) :type 'error)
+                     '(error "Set `vm-imap-default-account' to use IMAP-FCC"))))))
+
+(ert-deftest vm-imap-test-save-composition-unknown-default-account ()
+  "Test that a default account missing from the alist is reported clearly."
+  (vm-imap-test-with-composition
+    (let ((vm-imap-default-account "nosuch")
+          (vm-imap-account-alist
+           '(("imap:mail.example.com:143:*:login:user:*" "work"))))
+      (should (equal (should-error (vm-imap-save-composition) :type 'error)
+                     '(error "No IMAP account named \"nosuch\" in `vm-imap-account-alist'"))))))
+
+(ert-deftest vm-imap-test-save-composition-uses-default-account ()
+  "Test that the default account's spec is what the session is made from."
+  (vm-imap-test-with-composition
+    (let ((vm-imap-default-account "work")
+          (vm-imap-account-alist
+           '(("imap:mail.example.com:143:*:login:user:*" "work")))
+          (session-spec 'unset))
+      ;; `vm-imap-net-append-text' is the one way this is filed now
+      ;; (emacs-vm/vm#822), so the spec it is given is what is measured.
+      (cl-letf (((symbol-function 'vm-imap-net-append-text)
+                 (lambda (spec &rest _) (setq session-spec spec) t)))
+        (vm-imap-save-composition))
+      (should (equal session-spec
+                     "imap:mail.example.com:143:*:login:user:*")))))
+
+;;; vm-imap-get-password / auth-source tests
+
+(ert-deftest vm-imap-test-get-password-from-authinfo ()
+  "Test that an IMAP password is read from auth-source.
+Regression test for issue #460: VM called the long-removed
+`auth-source-user-or-password' behind an `fboundp' guard, so on current
+Emacs the authinfo lookup silently did nothing and, with no way to
+prompt, this errored instead of returning the password."
+  (let ((file (make-temp-file "vm-authinfo")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "machine imap.example.com login user port 143"
+                    " password s3cret\n"))
+          (let ((auth-sources (list file))
+                (auth-source-do-cache nil)
+                (vm-imap-passwords nil)
+                (vm-imap-account-alist nil))
+            (auth-source-forget-all-cached)
+            (should (equal (vm-imap-get-password
+                            "INBOX"
+                            "imap:imap.example.com:143:inbox:login:user:*"
+                            "user" "imap.example.com" 143
+                            nil        ; ask-password
+                            "testing")
+                           "s3cret"))))
+      (delete-file file)
+      (auth-source-forget-all-cached))))
+
+
+;;; naming a folder rather than its cache file (issue #547)
+
+(defconst vm-imap-test--spec
+  "imap:mail.example.com:143:INBOX:login:someone:secret"
+  "A maildrop specification, with an account nickname in the tests below.")
+
+(ert-deftest vm-imap-test-cache-file-for-folder-name ()
+  "REGRESSION: an IMAP folder can be named ACCOUNT:MAILBOX, not just by file.
+Issue #547.  A cache file is named after the MD5 of the maildrop
+specification -- imap-cache-d0c3b3a91bbebdf09dd2f78ab0f4c4cc -- so it cannot be
+recognised or typed from memory, which is what made `vm-recover-folder'
+unusable for a server folder.  The name resolved here is exactly the one
+`vm-imap-folder-for-spec' produces and the mode line shows."
+  (let* ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+         (vm-imap-account-alist (list (list vm-imap-test--spec "myaccount")))
+         (cache (vm-imap-make-filename-for-spec vm-imap-test--spec)))
+    ;; the name a user sees for this folder ...
+    (should (equal "myaccount:INBOX"
+                   (vm-imap-folder-for-spec vm-imap-test--spec)))
+    ;; ... resolves to the file the folder is really cached in
+    (should (equal cache
+                   (vm-imap-cache-file-for-folder-name "myaccount:INBOX")))
+    ;; another mailbox on the same account is a different file
+    (should-not (equal cache
+                       (vm-imap-cache-file-for-folder-name "myaccount:Sent")))))
+
+(ert-deftest vm-imap-test-cache-file-for-folder-name-declines ()
+  "Anything that is not ACCOUNT:MAILBOX for a known account gives nil.
+The caller falls back to treating the answer as a file name, so guessing here
+would turn a mistyped file name into a wrong cache file."
+  (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+        (vm-imap-account-alist (list (list vm-imap-test--spec "myaccount"))))
+    (dolist (name '("INBOX"                  ; no account part
+                    "/var/mail/someone"      ; a file
+                    "nosuchaccount:INBOX"    ; unknown account
+                    "myaccount:"))           ; no mailbox
+      (should-not (vm-imap-cache-file-for-folder-name name)))))
+
+(ert-deftest vm-imap-test-response-matches-looks-inside-a-vector ()
+  "A bracketed pattern is matched on its contents, not merely its brackets.
+`(vector READ-WRITE)' must not match [READ-ONLY]: `vm-imap-select-mailbox'
+tries the two in that order, so a match on the brackets alone reports every
+EXAMINE as a writable selection."
+  (with-temp-buffer
+    (insert "VM OK [READ-ONLY] EXAMINE completed")
+    ;; VM 1-3, OK 4-6, the vector 7-18 holding READ-ONLY 8-17
+    (let ((response `((atom 1 3) (atom 4 6) (vector (atom 8 17)))))
+      (should (vm-imap-response-matches response 'VM 'OK '(vector READ-ONLY)))
+      (should-not
+       (vm-imap-response-matches response 'VM 'OK '(vector READ-WRITE))))))
+
+(ert-deftest vm-imap-test-response-matches-an-empty-vector-pattern ()
+  "A pattern of `(vector)' still matches any vector, whatever is in it.
+That is what the BODY[] and BODY[HEADER] responses are matched with, where
+the brackets are the point and their contents are not."
+  (with-temp-buffer
+    (insert "VM OK [READ-ONLY] EXAMINE completed")
+    (let ((response `((atom 1 3) (atom 4 6) (vector (atom 8 17)))))
+      (should (vm-imap-response-matches response 'VM 'OK '(vector))))))
+
+(ert-deftest vm-imap-test-response-matches-an-empty-vector-token ()
+  "An empty vector matches `(vector)' too.
+BODY[] is exactly that -- brackets with nothing between them -- and it is how
+every fetched message arrives, so a stricter reading of the pattern loses the
+lot.  A recursive check of the contents must not be made here: there are
+none, and no response at all is no match."
+  (with-temp-buffer
+    (insert "VM OK BODY[] {5}")
+    (let ((response `((atom 1 3) (atom 4 6) (atom 7 11) (vector) (atom 13 16))))
+      (should (vm-imap-response-matches response 'VM 'OK 'BODY '(vector))))))
+
+(ert-deftest vm-imap-test-cached-server-data-is-not-read-from-the-global-obarray ()
+  "A folder with no server data of its own answers nothing, not Emacs.
+
+The obarrays are dropped at the end of a session, and `intern' with a nil
+obarray reads the global one: the accessors then answered a UID out of
+Emacs's own symbols, and interned every UID they were asked about into it.
+Two folders reading each other's numbers that way is a flag stored against
+the wrong message."
+  (let ((vm-folder-access-data (make-vector 20 nil)))
+    (should-not (vm-folder-imap-uid-msn "vm-test-uid"))
+    (should-not (vm-folder-imap-uid-message-flags "vm-test-uid"))
+    (should-not (vm-folder-imap-uid-message-size "vm-test-uid"))
+    (should-not (intern-soft "vm-test-uid" obarray))
+    ;; a name that is bound globally is answered no differently
+    (should-not (vm-folder-imap-uid-msn "most-positive-fixnum"))
+    ;; and with a table, what is in the table
+    (let ((uids (obarray-make 17))
+          (flags (obarray-make 17)))
+      (set (intern "17" uids) 3)
+      (set (intern "17" flags) (cons "42" (list "\\Seen")))
+      (aset vm-folder-access-data 9 uids)
+      (aset vm-folder-access-data 10 flags)
+      (should (equal (vm-folder-imap-uid-msn "17") 3))
+      (should (equal (vm-folder-imap-uid-message-size "17") "42"))
+      (should (equal (vm-folder-imap-uid-message-flags "17") '("\\Seen")))
+      (should-not (vm-folder-imap-uid-msn "18")))))
+
+(ert-deftest vm-imap-test-synchronize-asks-only-for-the-queued-expunges ()
+  "`vm-imap-synchronize' asks for the expunges the reader made, prefix or not.
+
+The prefix argument used to ask for `all', which meant \"delete on the server
+every message the mailbox has and the cache has not\".  A cache that had been
+truncated or read as the wrong type says the same thing as a reader who
+expunged, so that destroyed mail with no confirmation (emacs-vm/vm#752).  What
+the prefix means now is every message's flags rather than only the changed
+ones.
+
+The driver is the only path, so it is the driver that is measured
+(emacs-vm/vm#822)."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+Message-ID: <test1@example.com>
+
+Body
+"
+    (setq vm-folder-access-method 'imap)
+    ;; `vm-select-folder-buffer-and-validate' is a defsubst, so it is inlined
+    ;; into the compiled command and cannot be stubbed; it asks for the mode
+    (setq major-mode 'vm-mode)
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'vm-imap-net-synchronize)
+                 (lambda (&optional full &rest _) (push full asked) t))
+                ((symbol-function 'vm-update-summary-and-mode-line)
+                 (lambda (&rest _) nil)))
+        (vm-imap-synchronize nil)
+        (vm-imap-synchronize t))
+      ;; The prefix reaches the driver as FULL and means every message's
+      ;; flags, not `delete on the server what the cache does not have\\='.
+      ;; The expunges the reader made are sent either way, which is
+      ;; `vm-imap-net-synchronize's own documented behaviour.
+      (should (equal asked '(t nil))))))
 
 (provide 'vm-imap-test)
 

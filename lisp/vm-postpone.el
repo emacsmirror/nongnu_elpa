@@ -3,7 +3,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 1998-2006 Robert Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Author:      Robert Fenk
 ;; Status:      Tested with XEmacs 21.4.19 & VM 7.19
@@ -32,7 +32,7 @@
 ;;
 ;;  A Pine-like postpone message function and folder.  There are two new
 ;;  functions. `vm-postpone-message' bound to [C-c C-d] in
-;;  the `vm-mail-mode' and the function `vm-continue-postponed-message'
+;;  the composition buffer and the function `vm-continue-postponed-message'
 ;;  is bound to [C] in a folder buffer.
 ;;
 ;;  Typical usage: If you are writing a mail message, and you wish to
@@ -48,6 +48,15 @@
 ;;  behaviour:
 ;;
 ;;  (define-key vm-mode-map "m" 'vm-continue-what-message)
+;;
+;;  Switch it on with
+;;
+;;  (vm-postpone-mode 1)
+;;
+;;  (require 'vm-postpone) on its own switched this on until 2026, and does
+;;  nothing now beyond making the mode available: loading a file and asking
+;;  for what it does are separate acts, and Customize loads this one without
+;;  being asked (emacs-vm/vm#788).
 ;;  (setq vm-zero-drafts-start-compose t)
 ;;
 ;;  If you have postponed messages you will be asked if you want to continue
@@ -97,10 +106,9 @@
 (require 'vm-mime)
 (require 'vm-reply)
 
-(declare-function deiconify-frame "vm-xemacs" (&optional frame))
-(declare-function frames-of-buffer "vm-xemacs" 
-		  (&optional buffer visible-only))
-(declare-function user-mail-address "vm-xemacs" ())
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-session-initialization "vm" ())
 (declare-function vm-visit-folder "vm" (folder &optional read-only))
@@ -109,25 +117,17 @@
 		  "ext:bbdb" (adstring &optional ignore-errors))
 (declare-function bbdb/vm-alternate-full-name "ext:bbdb-vm" (address))
 
-(if (not (boundp 'user-mail-address))
-    (if (functionp 'user-mail-address)
-        (setq user-mail-address (user-mail-address))
-      (setq user-mail-address "unknown")
-      (message "Please set the variable `user-mail-address'")
-      (sit-for 2)))
-
 ; Group already defined in vm-vars.el      
-;; (defgroup vm nil
-;;   "VM"
-;;   :group 'mail)
 
 (defgroup vm-postpone nil
   "Postponed message handling and draft support in VM."
   :group  'vm-ext)
 
-;; Backward compatibility alias for the old group name
-(defvaralias 'vm-pine 'vm-postpone)
-(make-obsolete-variable 'vm-pine 'vm-postpone "8.4.0")
+;; This group was called `vm-pine' before 8.4.0.  There is nothing to write
+;; here for that: Customize has no group-alias mechanism, and the two lines that
+;; used to stand here -- a `defvaralias' from `vm-pine' to `vm-postpone' and an
+;; obsolescence notice on it -- aliased one non-variable to another and made
+;; `vm-pine' a variable alias pointing at nothing.
 
 ;;-----------------------------------------------------------------------------
 ;;;###autoload
@@ -138,7 +138,7 @@ this function returns the \"To:\" or \"Newsgroups:\" header field with a
 \"To:\" as prefx.
 
 For example the outgoing message box will now list to whom you sent the
-messages.  Use `vm-fix-summary' to update the summary of a folder! With
+messages.  Use `vm-fix-my-summary' to update the summary of a folder! With
 loaded BBDB it uses `vm-summary-function-B' to obtain the full name of the
 sender.  The only difference to VM's default behavior is the honoring of
 messages sent to news groups.)
@@ -154,7 +154,7 @@ See also:    `vm-summary-uninteresting-senders'"
         header-name arrow
         addresses
         address
-        first)
+        first first-arrow)
 
     (while (and (not address) headers)
       (if (listp (car headers))
@@ -164,11 +164,19 @@ See also:    `vm-summary-uninteresting-senders'"
       (if addresses
           (setq addresses (vm-decode-mime-encoded-words-in-string addresses)
                 addresses
-                (or (if (functionp 'bbdb-extract-address-components)
-                        (bbdb-extract-address-components addresses t))
-                    (list (mail-extract-address-components addresses))
-                    addresses)))
-      (if (not first) (setq first (car addresses)))
+                (if (equal header-name "Newsgroups:")
+                    ;; a group is not an address: extraction reads
+                    ;; comp.emacs as somebody called "comp emacs"
+                    (mapcar (lambda (group) (list group nil))
+                            (vm-parse addresses
+                                      "[ \t\f\r\n,]*\\([^ \t\f\r\n,]+\\)"))
+                  (or (if (functionp 'bbdb-extract-address-components)
+                          (bbdb-extract-address-components addresses t))
+                      (list (mail-extract-address-components addresses))
+                      addresses))))
+      ;; the label goes with the address, so it is kept with it: the fallback
+      ;; below used whichever header was examined last
+      (if (not first) (setq first (car addresses) first-arrow arrow))
       (while addresses
         (if (or (not vm-summary-uninteresting-senders)
                 (and vm-summary-uninteresting-senders
@@ -181,7 +189,7 @@ See also:    `vm-summary-uninteresting-senders'"
     (if (and (null address) (null first))
         ""
       (if (and (null address) first)
-          (setq address first))
+          (setq address first arrow first-arrow))
       (concat arrow
               (cond ((functionp 'bbdb/vm-alternate-full-name)
                      (or (bbdb/vm-alternate-full-name (cadr address))
@@ -240,7 +248,8 @@ Mime-Version, Content-Type, Content-Transfer-Encoding."
   "Similar to `vm-unforwarded-header-regexp'.
 A regular expression matching all headers that should be discard when
 when continuing a postponed message."
-  :type 'regexp
+  :type '(choice (const :tag "Discard nothing" nil)
+		 (regexp))
   :group 'vm-postpone)
 
 ;;;###autoload
@@ -251,7 +260,22 @@ when continuing a postponed message."
 
 ;;;###autoload
 (defcustom vm-postpone-message-hook nil
-  "List of hook functions to be run before postponing a message."
+  "List of hook functions to be run before postponing a message.
+They run in the composition buffer, before it is written to the folder, so a
+function here can still change what is filed.  See
+`vm-after-postpone-message-hook' for after it is filed."
+  :type 'hook
+  :group 'vm-postpone)
+
+(defcustom vm-after-postpone-message-hook nil
+  "List of hook functions to be run after a message has been postponed.
+They run in the composition buffer, after the draft is in the folder and the
+source message has been dealt with, and before the composition is killed.  So
+the buffer is still there to be read, and changing it changes nothing: what
+was filed is already filed.
+
+`vm-postpone-message-hook' is the one that runs before, where a change still
+reaches the folder."
   :type 'hook
   :group 'vm-postpone)
 
@@ -260,7 +284,6 @@ when continuing a postponed message."
 This is only for internal use of vm-postpone.el.")
 
 ;;-----------------------------------------------------------------------------
-;; (define-key vm-mode-map "C"      'vm-continue-what-message)
 
 ;;-----------------------------------------------------------------------------
 (defun vm-get-persistent-message-ids-for (mlist)
@@ -410,32 +433,49 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
       ;; Prepare headers
       (insert-buffer-substring folder-buffer hstart tstart)
       (goto-char (point-min))
-      (cond ((or (vm-mime-plain-message-p (car vmp)) is-decoded)
+      ;; The MIME headers must be kept if and only if the body we are
+      ;; about to insert is the raw, still-encoded one.  Dropping them
+      ;; while copying raw text leaves boundary lines in the body with
+      ;; nothing declaring them, and the send-time re-encoding then
+      ;; buries them in a fresh part -- the attachments are lost.
+      ;; Keeping them while copying decoded text is just as wrong.
+      (cond ((or (vm-mime-plain-message-p (car vmp))
+		 (and is-decoded presentation-buffer))
              (vm-reorder-message-headers
 	      nil :keep-list vm-postponed-message-headers
 	      :discard-regexp vm-postponed-message-discard-header-regexp))
             (t ; copy undecoded messages with mime headers
-             (vm-reorder-message-headers 
+             (vm-reorder-message-headers
 	      nil
-	      :keep-list (append '("MIME-Version:" "Content-type:")
+	      :keep-list (append '("MIME-Version:" "Content-type:"
+				   "Content-Transfer-Encoding:")
 				 vm-postponed-message-headers)
 	      :discard-regexp vm-postponed-message-discard-header-regexp)))
       (vm-decode-mime-encoded-words)
       (search-forward-regexp "\n\n")
       (replace-match (concat "\n" mail-header-separator "\n") t t)
 
-      ;; Add message body as previewed
+      ;; Add the message body.  Widened, in both buffers: a message being
+      ;; previewed has its presentation buffer narrowed to the headers and
+      ;; however many lines `vm-preview-lines' says, and the folder buffer is
+      ;; narrowed to the message being shown -- so the body was copied from
+      ;; whatever happened to be visible, and continuing a draft without
+      ;; showing it first produced a composition with no text in it at all
+      ;; (emacs-vm/vm#621).
       (goto-char (point-max))
-      (if presentation-buffer
-          ;; when using presentation buffer we have to
-          (with-current-buffer presentation-buffer
-            (goto-char (point-min))
-            (search-forward-regexp "\n\n")
-            (setq tstart (match-end 0)
-                  tend (point-max)))
-        (setq presentation-buffer folder-buffer))
-            
-      (insert-buffer-substring presentation-buffer tstart tend)
+      (insert
+       (if presentation-buffer
+           (with-current-buffer presentation-buffer
+             (save-excursion
+               (save-restriction
+                 (widen)
+                 (goto-char (point-min))
+                 (search-forward-regexp "\n\n")
+                 (buffer-substring (match-end 0) (point-max)))))
+         (with-current-buffer folder-buffer
+           (save-restriction
+             (widen)
+             (buffer-substring tstart tend)))))
       ;; in order to show headers hidden by vm-shrunken-headers 
       (put-text-property (point-min) (point-max) 'invisible nil)
       
@@ -481,11 +521,17 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
   (run-hooks 'vm-reply-hook))
 
 ;;-----------------------------------------------------------------------------
+;;;###autoload
 (defun vm-delete-postponed-message ()
   "Delete the source message belonging to the continued composition."
   (interactive)
   (when vm-message-pointer
-    (condition-case nil
+    ;; A warning, not an error.  By the time this runs the draft is already
+    ;; in the folder, and this is on `mail-send-hook' too, so signalling
+    ;; would abandon a send over a failure that has already been survived.
+    ;; The handler used to be the bare string below, which `condition-case'
+    ;; returns rather than signals, so every failure here was silent.
+    (condition-case err
 	(let* ((msg (car vm-message-pointer))
 	       (buffer (vm-buffer-of msg)))
 	  ;; only delete messages which have been postponed by us before
@@ -495,8 +541,6 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
 	  ;; in the postponded folder expunge them right now 
 	  (when (string= (buffer-name buffer)
 			 (file-name-nondirectory vm-postponed-folder))
-	    (if (and (featurep 'xemacs) (frames-of-buffer buffer t))
-		(iconify-frame (car (frames-of-buffer buffer))))
 	    (when vm-auto-expunge-postponed-folder
               (save-excursion
                 (switch-to-buffer buffer)
@@ -505,30 +549,40 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
                 (when (not vm-message-list)
                   (let ((this-command 'vm-quit))
                     (vm-quit)))))))
-      (error "Folder buffer closed before deletion of source message."))))
+      (error
+       (vm-warn 0 2 "Source message not deleted, its folder is gone: %s"
+		(error-message-string err))))))
 
 ;;-----------------------------------------------------------------------------
 
 ;; The following functions have been integrated into vm-mime.el
 ;; USR, 2011-01-25
 
-(defalias 'vm-decode-postponed-mime-message
-  'vm-mime-convert-to-attachment-buttons)
-(make-obsolete 'vm-decode-postponed-mime-message
-	       'vm-mime-convert-to-attachment-buttons "8.2.0")
 
-(defalias 'vm-pine-fake-attachment-overlays
-  'vm-mime-re-fake-attachment-overlays)
-(make-obsolete 'vm-pine-fake-attachment-overlays
-	       'vm-mime-re-fake-attachment-overlays "8.2.0")
+;; `vm-pine-fake-attachment-overlays' was aliased here to
+;; `vm-mime-re-fake-attachment-overlays', which was deleted as unused in 2011
+;; (see the note in vm-mime.el).  The alias has been a void function ever
+;; since, and `make-obsolete' was telling anyone who called it to use a name
+;; that does not exist either, so both are gone.
 
-(defalias 'vm-decode-postponed-mime-button
-  'vm-mime-replace-by-attachment-button)
-(make-obsolete 'vm-decode-postponed-mime-button
-	       'vm-mime-replace-by-attachment-button "8.2.0")
 
 ;;-----------------------------------------------------------------------------
-(define-key vm-mail-mode-map "\C-c\C-d" 'vm-postpone-message)
+(defconst vm-postpone-key-bindings
+  '(("\C-c\C-f\C-a" . vm-mail-return-receipt-to)
+    ("\C-c\C-f\C-p" . vm-mail-priority)
+    ("\C-c\C-f\C-f" . vm-mail-fcc)
+    ("\C-c\C-f\C-n" . vm-mail-notice-requested-upon-delivery-to))
+  "The `vm-mail-mode-map' keys `vm-postpone-mode' binds, each inserting a header.
+
+`C-c C-d' is not among them.  This file bound it to `vm-postpone-message' as
+it loaded, but `vm-mail-mode-map' in vm-vars.el already binds it to the same
+command, so that was a no-op -- and unbinding it with the mode would take away
+a binding VM's core owns.
+
+Two of these four shadow `mail-mode-map', the parent map: it has
+`mail-mail-reply-to' on C-c C-f C-a and `mail-fcc' on C-c C-f C-f.  Turning
+the mode off removes the shadow and those show through again, rather than
+leaving the keys undefined.")
 
 (defvar vm-postpone-message-modes-to-disable
   '(font-lock-mode ispell-minor-mode filladapt-mode auto-fill-mode)
@@ -542,7 +596,15 @@ Before saving the composition the `vm-postpone-message-hook' functions
 are executed and it is written into the FOLDER `vm-postponed-folder'.
 When called with a prefix argument you will be asked for
 the folder.
-Optional argument DONT-KILL is positive, then do not kill source message."
+
+With DONT-KILL, keep the composition buffer rather than killing it, and
+insert an FCC header naming FOLDER so that sending it later files it there
+again.  The source message is deleted either way.
+
+With NO-POSTPONE-HEADER, leave out the `vm-postponed-header' line that
+records the reply, forward and redistribute lists.  The draft is then an
+ordinary message, and `vm-continue-what-message' offers to continue only a
+message carrying that header."
   (interactive "P")
   
   (let ((message-buffer (current-buffer))
@@ -640,6 +702,12 @@ Optional argument DONT-KILL is positive, then do not kill source message."
              (widen)
              (goto-char (point-max))
              (vm-write-string (current-buffer) (vm-leading-message-separator))
+             ;; An mboxcl2 folder cannot be read back without this.  The
+             ;; type is this buffer's, the message is the other one's.
+             (let* ((type vm-folder-type)
+                    (line (with-current-buffer message-buffer
+			    (vm-content-length-header-line type))))
+               (when line (vm-write-string (current-buffer) line)))
              (insert-buffer-substring message-buffer)
              (vm-write-string (current-buffer) (vm-trailing-message-separator))
 
@@ -651,18 +719,28 @@ Optional argument DONT-KILL is positive, then do not kill source message."
              (vm-assimilate-new-messages)
              (vm-update-summary-and-mode-line))))
       ;; well the folder is not visited, so we write to the file
+      ;; A folder created as mboxcl2 is created under a name that says so, or
+      ;; it would be read back as From_ (#767).
+      (setq folder (vm-new-folder-file-name folder))
       (setq target-type (or (vm-get-folder-type folder)
+                            (vm-folder-type-for-name folder)
                             vm-default-folder-type))
       
       (if (eq target-type 'unknown)
           (error "Folder `%s' type is unrecognized" folder))
       
       (vm-write-string folder (vm-leading-message-separator target-type))
+      (let ((line (vm-content-length-header-line target-type)))
+        (when line (vm-write-string folder line)))
       (write-region (point-min) (point-max) folder t 'quiet)
       (vm-write-string folder (vm-trailing-message-separator target-type)))
     
     ;; delete source message
     (vm-delete-postponed-message)
+
+    ;; the draft is filed and the source is dealt with, so this is what
+    ;; "postponed" means; the composition is still here to be read
+    (run-hooks 'vm-after-postpone-message-hook)
 
     ;; mess around with the window configuration 
     (let ((b (current-buffer))
@@ -683,7 +761,24 @@ Optional argument DONT-KILL is positive, then do not kill source message."
     ;; and kill this buffer?
     (if dont-kill
         (insert (concat "FCC: " folder "\n" mail-header-separator))
-      (kill-this-buffer))
+      ;; The draft is in the folder now, so the auto-save file has done its
+      ;; job.  Nothing else would delete it: Emacs deletes a fileless
+      ;; buffer's auto-save file when `mail-send' succeeds and at no other
+      ;; time -- not when the buffer is killed -- so every postponed
+      ;; composition left one behind, in `vm-folder-directory', which is
+      ;; where VM points them.
+      (delete-auto-save-file-if-necessary t)
+      ;; Nothing to confirm: the composition is in the folder.  The guard on
+      ;; `kill-buffer-query-functions' cannot see that, because it asks whether
+      ;; killing will keep the writing and `vm-postpone-message-hook' has just
+      ;; taken `vm-save-killed-message-hook' off -- rightly, the draft being
+      ;; filed already.  So postponing asked "has writing in it and has not
+      ;; been sent; kill it?" over a composition it had just saved.
+      ;;
+      ;; `kill-current-buffer', not `kill-this-buffer': that one signals
+      ;; unless a menu or a tool bar invoked it (emacs-vm/vm#855).
+      (let ((vm-confirm-killing-a-composition nil))
+        (kill-current-buffer)))
 
     (if (vm-interactive-p)
         (message "Message postponed to folder `%s'" folder))))
@@ -711,7 +806,13 @@ Optional argument DONT-KILL is positive, then do not kill source message."
 (defun vm-continue-what-message-composing ()
   "Decide whether to compose a new message or continue a draft.
 This checks if the postponed folder contains drafts.
-Drafts in other folders are not recognized!"
+Drafts in other folders are not recognized!
+
+One of `force-continue', `continue', `visit', `none', `declined' or `new'.
+`declined' is drafts being there and not being continued -- the question
+answered no, or `vm-continue-what-message' nil -- as against `new', which is
+there being none.  The two were one value, and the caller told a reader who
+had just declined the question that there were no drafts."
   (save-excursion
     (vm-session-initialization)
     
@@ -747,8 +848,6 @@ Drafts in other folders are not recognized!"
                     (not (vm-deleted-flag (car vm-message-pointer))))
               (message "Please select a draft!")
               (select-window (car (get-buffer-window-list buffer nil 0)))
-              (if (and (featurep 'xemacs) (frames-of-buffer buffer))
-                  (deiconify-frame (car (frames-of-buffer buffer))))
               (setq action 'none))
           (setq action 'visit)))
 
@@ -762,13 +861,13 @@ Drafts in other folders are not recognized!"
       ;; decide what to do
       (setq action 
             (cond ((eq vm-continue-what-message nil)
-                   'new)
+                   (if (eq action 'visit) 'declined 'new))
                   ((eq vm-continue-what-message 'ask)
                    (if (equal action 'visit)
                        (if (y-or-n-p
                             "Continue composition of postponed messages? ")
                            'visit
-                         'new)
+                         'declined)
                      action))
                   ((eq vm-continue-what-message 'continue)
                    action)
@@ -781,6 +880,11 @@ Drafts in other folders are not recognized!"
 
 With a prefix arg, call `vm-continue-postponed-message', i.e. continue the
 currently selected message.
+
+Declining the offer of the drafts folder starts a new message instead, as
+does `vm-continue-what-message' nil with drafts on disk: the drafts stay
+where they are.  With no drafts anywhere, a new message is started only
+when `vm-zero-drafts-start-compose' is t.
 
 See `vm-continue-what-message' and `vm-zero-drafts-start-compose' for
 configuration."
@@ -808,9 +912,19 @@ configuration."
                     (funcall mail)))
                  ((= (length vm-message-list) 1)
                   (vm-continue-postponed-message))))
-          ((and vm-zero-drafts-start-compose (equal action 'new))
+          ((or (eq action 'declined)
+               (and vm-zero-drafts-start-compose (eq action 'new)))
+           ;; Declining the drafts is not declining to write: the key that
+           ;; offered them is the key you press to compose, so it composes.
+           ;; Doing nothing made it a dead key -- the drafts folder was
+           ;; offered, refused, and that was the whole of the keystroke.
            (let ((this-command mail))
              (funcall mail)))
+          ((eq action 'none)
+           ;; The drafts folder is on screen and the reader has been asked
+           ;; to pick one, with the cursor moved to that window.  Saying
+           ;; there are none over the top of that is what this used to do.
+           nil)
           (t
            (message "There are no known drafts.")))))
 
@@ -830,14 +944,22 @@ configuration."
 ;; And now do some cool stuff when killing a mail buffer
 ;; This was inspired by Uwe Brauer
 (defcustom vm-save-killed-message
-  'ask
-  "How `vm-save-killed-message-hook' handles saving of a mail as a draft.
-If set to `ask' it will ask whether to save the mail as draft or not.
-If set to `always' it will save without asking.
-If set to nil it will never save them nor it will ask."
-  :type '(choice (const ask)
-                 (const always)
-                 (const :tag "never" nil))
+  'always
+  "What killing a composition with writing in it does with the writing.
+
+`always', the default, files it in `vm-save-killed-messages-folder' and says
+so.  Nothing is lost by killing a composition, which is what a reader who has
+lost drafts to a keystroke needs (emacs-vm/vm#824).
+
+`ask' asks whether to keep it.  Nil neither keeps it nor asks, and then
+`vm-confirm-killing-a-composition' is what stands between a keystroke and the
+writing.
+
+A composition nothing has been written in is not kept and is not asked about,
+whichever this is."
+  :type '(choice (const :tag "keep it" always)
+                 (const :tag "ask" ask)
+                 (const :tag "never keep it" nil))
   :group 'vm-postpone)
 
 (defcustom vm-save-killed-messages-folder
@@ -849,28 +971,112 @@ If set to nil it will never save them nor it will ask."
 (defun vm-add-save-killed-message-hook ()
   (add-hook 'kill-buffer-hook 'vm-save-killed-message-hook nil t))
 
+;;;###autoload
 (defun vm-remove-save-killed-message-hook ()
+  "Stop keeping this composition as a draft when it is killed.
+On `mail-send-hook' and `vm-postpone-message-hook' in every composition
+buffer: the writing is somewhere else by then."
   (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t))
 
+;;;###autoload
 (defun vm-save-killed-message-hook ()
-  (if (or (and (equal vm-save-killed-message 'ask)
-               (y-or-n-p (format "Save `%s' as draft in folder `%s'? "
-                                 (buffer-name)
-                                 vm-save-killed-messages-folder)))
-          (equal vm-save-killed-message 'always))
-      (vm-postpone-message vm-save-killed-messages-folder t)
-    (message "`%s' is gone forever!" (buffer-name))))
+  "Keep this composition as a draft, as `vm-save-killed-message' says to.
 
-(add-hook 'vm-mail-mode-hook 'vm-add-save-killed-message-hook)
-(add-hook 'mail-send-hook 'vm-remove-save-killed-message-hook)
-(add-hook 'vm-postpone-message-hook 'vm-remove-save-killed-message-hook)
+On `kill-buffer-hook' in every composition buffer.  A composition nothing has
+been written in is neither kept nor asked about nor complained over: VM writes
+the headers itself, so every composition is modified from the moment it
+appears, and a `vm-mail' typed by mistake is not a draft."
+  (when (vm-composition-worth-keeping-p)
+    (let ((name (buffer-name)))
+      (if (or (eq vm-save-killed-message 'always)
+              (and (eq vm-save-killed-message 'ask)
+                   (y-or-n-p (format "Save `%s' as draft in folder `%s'? "
+                                     name vm-save-killed-messages-folder))))
+          (progn
+            (vm-postpone-message vm-save-killed-messages-folder t)
+            ;; said, since nobody asked for it: a draft nobody knows about is
+            ;; one nobody goes back to
+            (vm-inform 5 "%s kept as a draft in %s; %s takes it up again"
+                       name vm-save-killed-messages-folder
+                       (substitute-command-keys
+                        "\\[vm-continue-postponed-message]")))
+        (vm-inform 1 "%s is gone forever" name)))))
 
-;;-----------------------------------------------------------------------------
-;; New header fields
-(define-key vm-mail-mode-map "\C-c\C-f\C-a" 'vm-mail-return-receipt-to)
-(define-key vm-mail-mode-map "\C-c\C-f\C-p" 'vm-mail-priority)
-(define-key vm-mail-mode-map "\C-c\C-f\C-f" 'vm-mail-fcc)
-(define-key vm-mail-mode-map "\C-c\C-f\C-n" 'vm-mail-notice-requested-upon-delivery-to)
+(defconst vm-postpone-hooks nil
+  "The hooks `vm-postpone-mode' adds to, and what it adds.
+
+Nothing now.  It used to arrange for a composition killed unsent to be kept as
+a draft, which meant that a reader who had not switched the mode on lost the
+writing to any key bound to `kill-buffer'.  Every composition arranges it, in
+`vm-new-composition-buffer' (emacs-vm/vm#824).  What the mode still does is
+bind four keys.")
+
+(defun vm-postpone--drop-empty-prefix (prefix)
+  "Take PREFIX out of `vm-mail-mode-map' if this mode left it holding nothing.
+`define-key' on a multi-key sequence makes the intermediate keymap it needs,
+and unbinding the leaf does not take it away again: turning the mode off left
+`vm-mail-mode-map' holding an empty keymap for C-c C-f where it had no entry
+for that prefix at all.  Harmless, in that lookup still falls through to
+`mail-mode-map', but it is a keymap left changed behind the mode, which
+`test-runner --leaks' reports and which would make a second look at this code
+wonder what put it there.
+
+Only an empty one, so a prefix something else has put a binding under is left
+alone."
+  (let ((under (lookup-key vm-mail-mode-map prefix)))
+    (when (equal under '(keymap))
+      (vm-postpone--unbind prefix))))
+
+(defun vm-postpone--unbind (key)
+  "Take KEY out of `vm-mail-mode-map', letting `mail-mode-map' show through.
+Removing the entry and not binding it to nil: `vm-mail-mode-map' has
+`mail-mode-map' for its parent, and a nil binding in the child shadows the
+parent rather than falling through to it, so C-c C-f C-a would be dead where
+Mail mode has `mail-mail-reply-to' on it.
+
+`keymap-unset' with its REMOVE argument does that and arrived in Emacs 29;
+VM supports 28.1, where the nil is the best available and leaves those two
+keys undefined until the mode is turned back on.  It takes a key in the
+`key-valid-p' syntax rather than the raw string `define-key' takes, so the
+key is described for it."
+  (if (fboundp 'keymap-unset)
+      (keymap-unset vm-mail-mode-map (key-description key) t)
+    (define-key vm-mail-mode-map key nil)))
+
+;;;###autoload
+(define-minor-mode vm-postpone-mode
+  "Postpone a composition and continue it later, as Pine does.
+\\<vm-mail-mode-map>\\[vm-postpone-message] in a composition files it in
+`vm-save-killed-messages-folder'; visit that folder and type
+\\<vm-mode-map>\\[vm-continue-postponed-message] to take it up again.  That
+key is bound by VM itself and works whether this mode is on or off.
+
+What turning this on adds is four keys that insert a header field.  Turning it
+off takes them away again and leaves any postponed folder where it is.
+
+It used to arrange for a composition killed unsent to be kept as a draft as
+well, which meant a reader who had not switched it on lost the writing to any
+key bound to `kill-buffer'.  Every composition arranges that now; see
+`vm-save-killed-message' (emacs-vm/vm#824).
+
+Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
+loads it whenever it is asked about a VM option, so loading no longer enables:
+say so here."
+  :global t
+  :group 'vm-postpone
+  (dolist (binding vm-postpone-key-bindings)
+    (if vm-postpone-mode
+	(define-key vm-mail-mode-map (car binding) (cdr binding))
+      ;; Only what this mode bound, so a key another package has taken since
+      ;; is left to it.
+      (when (eq (lookup-key vm-mail-mode-map (car binding)) (cdr binding))
+	(vm-postpone--unbind (car binding)))))
+  (unless vm-postpone-mode
+    (vm-postpone--drop-empty-prefix "\C-c\C-f"))
+  (dolist (pair vm-postpone-hooks)
+    (if vm-postpone-mode
+	(add-hook (car pair) (cdr pair))
+      (remove-hook (car pair) (cdr pair)))))
 
 ;;;###autoload
 (defcustom vm-mail-return-receipt-to
@@ -881,7 +1087,7 @@ If set to nil it will never save them nor it will ask."
 
 ;;;###autoload
 (defun vm-mail-return-receipt-to ()
-  "Insert the \"Return-Receipt-To\" header into a `vm-mail-mode' buffer.
+  "Insert the \"Return-Receipt-To\" header into a VM composition buffer.
 See the variable `vm-mail-return-receipt-to'."
   (interactive)
   (expand-abbrev)
@@ -915,7 +1121,7 @@ See the variable `vm-mail-return-receipt-to'."
 
 ;;;###autoload
 (defun vm-mail-priority ()
-  "Insert priority headers into a `vm-mail-mode' buffer.
+  "Insert priority headers into a VM composition buffer.
 See the variable `vm-mail-priority'."
   (interactive)
   (expand-abbrev)
@@ -923,11 +1129,6 @@ See the variable `vm-mail-priority'."
     (or (mail-position-on-field "Priority" t)
         (progn (mail-position-on-field "Subject")
                (insert "\n" vm-mail-priority)))))
-
-;;-----------------------------------------------------------------------------
-(if (not (featurep 'xemacs))
-    (defun user-home-directory ()
-      (getenv "HOME")))
 
 (defun vm-mail-fcc-file-join (dir file)
   "Returns a nice path to a folder."
@@ -959,7 +1160,7 @@ outgoing message."
 
 ;;;###autoload
 (defun vm-mail-fcc (&optional arg)
-  "Insert the FCC-header into a `vm-mail-mode' buffer.
+  "Insert the FCC-header into a VM composition buffer.
 Like `mail-fcc', but honors VM variables and offers a default folder
 according to `vm-mail-folder-alist'.
 Called with prefix ARG it just removes the FCC-header."
@@ -1012,11 +1213,18 @@ or if sure about what you are doing you can add it to `mail-send-hook'."
       
       (vm-mail-mode-remove-header "FCC:")
       (setq fcc (eval vm-mail-fcc-default))
-      (if fcc
-          (if (file-directory-p fcc)
-              (error "Folder `%s' in no file, but a directory!" fcc)
-            (progn (mail-position-on-field "FCC")
-                   (insert (vm-mail-fcc-file-join dir fcc))))))))
+      (when fcc
+        ;; the name as it will be written: the check has to be on the file
+        ;; the copy would go to, not on the same name read against whatever
+        ;; directory the composition happens to be in
+        (setq fcc (vm-mail-fcc-file-join dir fcc))
+        (if (file-directory-p fcc)
+            (error (concat "%s is a directory, so no copy can be filed there;"
+                           " name a folder in `vm-mail-folder-alist' or"
+                           " `mail-archive-file-name'")
+                   fcc)
+          (mail-position-on-field "FCC")
+          (insert fcc))))))
 
 ;;;###autoload
 (defun vm-mail-select-folder (folder-alist)
@@ -1045,8 +1253,7 @@ This function is a slightly changed version of `vm-auto-select-folder'."
                         ;; Set up a buffer that matches our cached
                         ;; match data.
                         (with-current-buffer buf
-                          (if (not (featurep 'xemacs))
-                              (set-buffer-multibyte nil)) ; for empty buffer
+                          (set-buffer-multibyte nil) ; for empty buffer
                           (widen)
                           (erase-buffer)
                           (insert header)
@@ -1091,7 +1298,7 @@ The string enclosed in \"\\\\(\\\\)\" is used as folder name."
 
 ;;;###autoload
 (defun vm-mail-to-fcc (&optional arg return-only)
-  "Insert a FCC-header into a `vm-mail-mode' buffer.
+  "Insert a FCC-header into a VM composition buffer.
 Like `mail-fcc', but honors VM variables and inserts the first email
 address (or the like matched by `vm-mail-to-regexp') found in the headers
 listed in `vm-mail-to-headers'.
@@ -1121,6 +1328,57 @@ If optional argument RETURN-ONLY is t just returns FCC."
                 (insert (vm-mail-fcc-file-join (or vm-folder-directory
                                                    default-directory)
                                                fcc)))))))))
+
+
+;;-----------------------------------------------------------------------------
+;;; Leaving Emacs with a composition unfinished (issue #160)
+
+(defun vm-composition-buffer-p (&optional buffer)
+  "Whether BUFFER, or the current buffer, is a composition VM started.
+Mail mode alone is not enough: another package's composition is in Mail
+mode too, and postponing it into a VM folder is not VM's business."
+  (with-current-buffer (or buffer (current-buffer))
+    (and (eq major-mode 'mail-mode)
+         (eq (current-local-map) vm-mail-mode-map))))
+
+(defun vm-unfinished-compositions ()
+  "The composition buffers with something in them, oldest first."
+  (nreverse
+   (seq-filter (lambda (buffer)
+                 (and (vm-composition-buffer-p buffer)
+                      (vm-composition-worth-keeping-p buffer)))
+               (buffer-list))))
+
+(defun vm-postpone-composition-quietly (buffer)
+  "Kill BUFFER, so that `vm-save-killed-message-hook' offers to keep it.
+The offer is the one killing a composition has always made, rather than a
+second one of its own.  A failure is reported rather than raised: this runs
+while Emacs is being left, where an error would put a debugger between the
+user and the door."
+  (condition-case err
+      (progn (kill-buffer buffer) t)
+    (error
+     (vm-warn 0 2 "Could not save %s as a draft: %s"
+              (buffer-name buffer) (error-message-string err))
+     nil)))
+
+;;;###autoload
+(defun vm-postpone-unfinished-compositions ()
+  "Offer each unfinished composition to the drafts folder as Emacs is left.
+Killing a composition already offers this -- see `vm-save-killed-message',
+which says whether to ask, to save without asking, or to do neither, and
+`vm-save-killed-messages-folder', which says where.  But Emacs does not kill
+buffers one at a time as it exits, so on the way out the offer was never
+made and the drafts went with it.  Issue #160.
+
+Runs from `kill-emacs-query-functions', where a nil return would stop Emacs
+leaving.  This always returns t: losing a draft is a reason to ask a
+question, not to stand in the doorway."
+  (when vm-save-killed-message
+    (dolist (buffer (vm-unfinished-compositions))
+      (when (buffer-live-p buffer)
+        (vm-postpone-composition-quietly buffer))))
+  t)
 
 ;;-----------------------------------------------------------------------------
 

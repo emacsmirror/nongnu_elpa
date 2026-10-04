@@ -1,6 +1,6 @@
 ;;; vm-accessors-test.el --- Tests for VM message accessor functions -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -342,13 +342,6 @@ This is the test message body.
       ;; Number may be nil initially
       (vm-set-number-of msg "1")
       (should (equal (vm-number-of msg) "1")))))
-
-(ert-deftest vm-accessors-test-padded-number-of ()
-  "Test vm-padded-number-of accessor."
-  (vm-test-with-folder vm-accessors-test-folder
-    (let ((msg (car vm-message-list)))
-      (vm-set-padded-number-of msg "  1")
-      (should (equal (vm-padded-number-of msg) "  1")))))
 
 (ert-deftest vm-accessors-test-mark-of ()
   "Test vm-mark-of accessor."

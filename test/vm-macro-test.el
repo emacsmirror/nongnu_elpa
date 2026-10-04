@@ -1,6 +1,6 @@
 ;;; vm-macro-test.el --- Tests for vm-macro.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -244,44 +244,163 @@
     (should (member 'exit vm-buffer-type-trail))))
 
 ;;; Folder buffer selection macros
+;;; What the folder-selection and guard macros do.  There was a test for each
+;;; of the eight below asserting only that it was bound.
 
-(ert-deftest vm-macro-test-select-folder-buffer-exists ()
-  "Test vm-select-folder-buffer macro exists."
-  (should (fboundp 'vm-select-folder-buffer)))
+(defmacro vm-macro-test-with-buffers (spec &rest body)
+  "Run BODY with a folder buffer and another buffer pointing at it.
+SPEC is (FOLDER-VAR OTHER-VAR).  Both buffers are killed afterwards, and the
+buffer BODY started in is restored, since these macros call `set-buffer'."
+  (declare (indent 1) (debug t))
+  (let ((folder (nth 0 spec)) (other (nth 1 spec)))
+    `(let ((,folder (generate-new-buffer " *vm-macro-test-folder*"))
+           (,other (generate-new-buffer " *vm-macro-test-other*")))
+       (unwind-protect
+           (save-current-buffer
+             (with-current-buffer ,folder (setq major-mode 'vm-mode))
+             (with-current-buffer ,other (setq vm-mail-buffer ,folder))
+             ,@body)
+         (kill-buffer ,folder)
+         (kill-buffer ,other)))))
 
-(ert-deftest vm-macro-test-select-folder-buffer-if-possible-exists ()
-  "Test vm-select-folder-buffer-if-possible macro exists."
-  (should (fboundp 'vm-select-folder-buffer-if-possible)))
+(ert-deftest vm-macro-test-select-folder-buffer-follows-vm-mail-buffer ()
+  "From a summary or presentation buffer, the folder buffer is selected."
+  (vm-macro-test-with-buffers (folder other)
+    (set-buffer other)
+    (vm-select-folder-buffer)
+    (should (eq (current-buffer) folder))))
 
-(ert-deftest vm-macro-test-select-folder-buffer-and-validate-exists ()
-  "Test vm-select-folder-buffer-and-validate macro exists."
-  (should (fboundp 'vm-select-folder-buffer-and-validate)))
+(ert-deftest vm-macro-test-select-folder-buffer-stays-in-a-folder ()
+  "In a folder or virtual folder there is nothing to select, and no error."
+  (vm-macro-test-with-buffers (folder _other)
+    (set-buffer folder)
+    (vm-select-folder-buffer)
+    (should (eq (current-buffer) folder))
+    (setq major-mode 'vm-virtual-mode)
+    (vm-select-folder-buffer)
+    (should (eq (current-buffer) folder))))
+
+(ert-deftest vm-macro-test-select-folder-buffer-says-what-is-wrong ()
+  "A buffer with no folder, and a folder that was killed, each get an error.
+The two are different faults and the messages say which."
+  (let ((text-quoting-style 'grave))
+    (with-temp-buffer
+      (setq major-mode 'fundamental-mode)
+      (should-error (vm-select-folder-buffer)
+                    :type 'error))
+    (vm-macro-test-with-buffers (folder other)
+      (kill-buffer folder)
+      (set-buffer other)
+      (should (equal (cadr (should-error (vm-select-folder-buffer)))
+                     "Folder buffer has been killed.")))))
+
+(ert-deftest vm-macro-test-select-folder-buffer-if-possible-does-not-complain ()
+  "The if-possible form returns normally where the plain one errors.
+That is the whole difference between them, and nothing tested it."
+  (with-temp-buffer
+    (setq major-mode 'fundamental-mode)
+    (should-not (vm-select-folder-buffer-if-possible))
+    (should (eq (current-buffer) (current-buffer))))
+  (vm-macro-test-with-buffers (folder other)
+    (set-buffer other)
+    (vm-select-folder-buffer-if-possible)
+    (should (eq (current-buffer) folder)))
+  ;; a killed folder buffer is not selected, and is not an error either
+  (vm-macro-test-with-buffers (folder other)
+    (kill-buffer folder)
+    (set-buffer other)
+    (vm-select-folder-buffer-if-possible)
+    (should (eq (current-buffer) other))))
+
+(ert-deftest vm-macro-test-validate-records-the-interaction-buffer ()
+  "Called for an interactive command, validate records where the user was.
+`vm-summary-operation-p' reads that later to tell a summary command from a
+folder command, and the warning state is reset for the new command."
+  (vm-macro-test-with-buffers (folder other)
+    (set-buffer other)
+    (let ((vm-user-interaction-buffer nil)
+          (vm-current-warning "left over from the last command"))
+      (cl-letf (((symbol-function 'vm-check-for-killed-summary) #'ignore)
+                ((symbol-function 'vm-check-for-killed-presentation) #'ignore))
+        (vm-select-folder-buffer-and-validate 0 t)
+        (should (eq vm-user-interaction-buffer other))
+        (should-not vm-current-warning)
+        (should (eq (current-buffer) folder))
+        ;; and not recorded when the command did not come from the user
+        (setq vm-user-interaction-buffer nil)
+        (set-buffer other)
+        (vm-select-folder-buffer-and-validate 0 nil)
+        (should-not vm-user-interaction-buffer)))))
+
+(ert-deftest vm-macro-test-error-if-folder-read-only-signals-that-condition ()
+  "A read-only folder gets the `folder-read-only' signal, naming the buffer.
+Callers catch that condition by name, so a plain `error' would not do."
+  (with-temp-buffer
+    (setq vm-folder-read-only nil)
+    (should-not (vm-error-if-folder-read-only))
+    (setq vm-folder-read-only t)
+    (let ((signalled (should-error (vm-error-if-folder-read-only)
+                                   :type 'folder-read-only)))
+      (should (eq (cadr signalled) (current-buffer))))))
+
+(ert-deftest vm-macro-test-error-if-virtual-folder-names-the-command ()
+  "A command refused on a virtual folder says which command it was."
+  (with-temp-buffer
+    (setq major-mode 'vm-mode)
+    (should-not (vm-error-if-virtual-folder))
+    (setq major-mode 'vm-virtual-mode)
+    (let ((this-command 'vm-expunge-folder)
+          (text-quoting-style 'grave))
+      (should (string-match-p "vm-expunge-folder"
+                              (cadr (should-error
+                                     (vm-error-if-virtual-folder))))))))
+
+(ert-deftest vm-macro-test-buffer-p-knows-vms-own-buffers ()
+  "`vm-buffer-p' is true in the four VM modes and false elsewhere."
+  (with-temp-buffer
+    (dolist (mode '(vm-mode vm-presentation-mode vm-virtual-mode
+                            vm-summary-mode))
+      (setq major-mode mode)
+      (should (vm-buffer-p)))
+    (dolist (mode '(fundamental-mode text-mode mail-mode))
+      (setq major-mode mode)
+      (should-not (vm-buffer-p)))))
+
+(ert-deftest vm-macro-test-summary-operation-p-is-about-where-the-user-was ()
+  "A summary operation is one the user started in the summary buffer."
+  (with-temp-buffer
+    (let ((summary (generate-new-buffer " *vm-macro-test-summary*")))
+      (unwind-protect
+          (progn
+            (setq vm-summary-buffer nil)
+            (let ((vm-user-interaction-buffer summary))
+              (should-not (vm-summary-operation-p)))
+            (setq vm-summary-buffer summary)
+            (let ((vm-user-interaction-buffer summary))
+              (should (vm-summary-operation-p)))
+            (let ((vm-user-interaction-buffer (current-buffer)))
+              (should-not (vm-summary-operation-p))))
+        (kill-buffer summary)))))
+
+(ert-deftest vm-macro-test-build-threads-if-unbuilt-builds-only-once ()
+  "Threads are built when `vm-thread-obarray' is not yet a vector."
+  (with-temp-buffer
+    (let ((built 0))
+      (cl-letf (((symbol-function 'vm-build-threads)
+                 (lambda (&rest _) (cl-incf built))))
+        (setq vm-thread-obarray nil)
+        (vm-build-threads-if-unbuilt)
+        (should (= built 1))
+        (setq vm-thread-obarray (make-vector 3 0))
+        (vm-build-threads-if-unbuilt)
+        (should (= built 1))))))
+
 
 ;;; Error macros
 
-(ert-deftest vm-macro-test-error-if-folder-read-only-exists ()
-  "Test vm-error-if-folder-read-only macro exists."
-  (should (fboundp 'vm-error-if-folder-read-only)))
-
-(ert-deftest vm-macro-test-error-if-virtual-folder-exists ()
-  "Test vm-error-if-virtual-folder macro exists."
-  (should (fboundp 'vm-error-if-virtual-folder)))
-
 ;;; Buffer predicates
 
-(ert-deftest vm-macro-test-buffer-p-exists ()
-  "Test vm-buffer-p macro exists."
-  (should (fboundp 'vm-buffer-p)))
-
-(ert-deftest vm-macro-test-summary-operation-p-exists ()
-  "Test vm-summary-operation-p macro exists."
-  (should (fboundp 'vm-summary-operation-p)))
-
 ;;; Thread building
-
-(ert-deftest vm-macro-test-build-threads-if-unbuilt-exists ()
-  "Test vm-build-threads-if-unbuilt macro exists."
-  (should (fboundp 'vm-build-threads-if-unbuilt)))
 
 (provide 'vm-macro-test)
 

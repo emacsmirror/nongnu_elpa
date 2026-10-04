@@ -1,6 +1,6 @@
 ;;; vm-serial-test.el --- Tests for vm-serial.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -12,6 +12,12 @@
 
 (require 'vm-test-init)
 (require 'vm-serial)
+;; `warning-suppress-log-types' below is let-bound, and a `let' of a
+;; variable warnings.el has not yet declared special binds it lexically;
+;; the `defvar' that arrives with the file then signals.  The suite hid
+;; this by loading warnings.el in an earlier file, so it showed only in
+;; `test-runner --one vm-serial-test.el'.
+(require 'warnings)
 
 ;;; vm-serial-cookie tests
 
@@ -118,8 +124,13 @@ Returns everything after the first name, not just the last word."
     (should value)))
 
 (ert-deftest vm-serial-test-get-token-nonexistent ()
-  "Test vm-serial-get-token returns nil for nonexistent token."
-  (should (null (vm-serial-get-token "nonexistent-token-xyz-12345"))))
+  "Test vm-serial-get-token returns nil for nonexistent token.
+It warns as well, which `display-warning' logs in `*Warnings*', a buffer that
+then outlives the test (issue #559).  Logging is suppressed here rather than the
+buffer killed afterwards: the warning is not what this test is about, and
+nothing else in the run wants it."
+  (let ((warning-suppress-log-types '((emacs))))
+    (should (null (vm-serial-get-token "nonexistent-token-xyz-12345")))))
 
 ;;; vm-serial-set-token tests
 
@@ -170,6 +181,209 @@ Returns everything after the first name, not just the last word."
   (should (boundp 'vm-serial-fcc))
   (should (boundp 'vm-serial-mail-signature))
   (should (boundp 'vm-serial-unknown-to)))
+
+;;; Composing in a mail buffer
+
+(defmacro vm-serial-test--in-a-composition (headers body &rest forms)
+  "Run FORMS in a `mail-mode' buffer holding HEADERS and BODY."
+  (declare (indent 2))
+  `(with-temp-buffer
+     (mail-mode)
+     (insert ,headers mail-header-separator "\n" ,body)
+     ,@forms))
+
+(defun vm-serial-test--fake-bbdb-extract (address &optional all)
+  "Answer as BBDB 3's `bbdb-extract-address-components' does.
+BBDB is not in every test environment, and what these tests are about is
+the arguments VM passes and the answer it expects back, not BBDB itself."
+  (if all
+      (mail-extract-address-components address t)
+    (mail-extract-address-components address)))
+
+;;; vm-serial-get-emails tests
+
+(ert-deftest vm-serial-test-get-emails-answers-a-pair ()
+  "`vm-serial-get-emails' answers (NAME ADDRESS), with BBDB and without."
+  (vm-serial-test--in-a-composition "To: Alice Smith <alice@example.com>\n" ""
+    (cl-letf (((symbol-function 'bbdb-extract-address-components) nil))
+      (should (equal (vm-serial-get-emails "To:")
+                     '("Alice Smith" "alice@example.com"))))
+    (cl-letf (((symbol-function 'bbdb-extract-address-components)
+               #'vm-serial-test--fake-bbdb-extract))
+      (should (equal (vm-serial-get-emails "To:")
+                     '("Alice Smith" "alice@example.com"))))))
+
+(ert-deftest vm-serial-test-name-tokens-work-with-bbdb ()
+  "The name tokens read the recipient when BBDB is loaded.
+`vm-serial-get-emails' took a `car' of BBDB's answer, so every name token
+was reading `car' of a string and expanding to nothing."
+  (vm-serial-test--in-a-composition "To: Alice Smith <alice@example.com>\n" ""
+    (cl-letf (((symbol-function 'bbdb-extract-address-components)
+               #'vm-serial-test--fake-bbdb-extract))
+      (let ((vm-serial-to nil))
+        (should (equal (vm-serial-get-name) "Alice Smith"))
+        (should (equal (vm-serial-get-name 'first) "Alice"))
+        (should (equal (vm-serial-get-name 'last) "Smith"))))))
+
+(ert-deftest vm-serial-test-get-emails-with-no-such-header ()
+  "A missing or empty header answers nil, and the name falls back.
+`mail-extract-address-components' signals on nil, which reached the caller
+as a warning and left `vm-serial-unknown-to' unreachable."
+  (vm-serial-test--in-a-composition "Subject: hi\n" ""
+    (let ((vm-serial-to nil)
+          (vm-serial-unknown-to "unknown"))
+      (should (null (vm-serial-get-emails "To:")))
+      (should (equal (vm-serial-get-name) "unknown"))))
+  (vm-serial-test--in-a-composition "To:   \n" ""
+    (let ((vm-serial-to nil))
+      (should (null (vm-serial-get-emails "To:"))))))
+
+;;; vm-serial-eval-token-value warning tests
+
+(defun vm-serial-test--signals-plainly ()
+  (error "kaboom"))
+
+(defun vm-serial-test--signals-with-a-percent ()
+  (error "50%% off"))
+
+(ert-deftest vm-serial-test-eval-token-value-names-the-value-that-failed ()
+  "The warning names the token value, which clearing it first hid."
+  (let (captured)
+    (cl-letf (((symbol-function 'warn)
+               (lambda (&rest args) (setq captured args))))
+      (should (null (vm-serial-eval-token-value
+                     '(vm-serial-test--signals-plainly))))
+      (should captured)
+      (should (string-match-p "vm-serial-test--signals-plainly"
+                              (apply #'format captured))))))
+
+(ert-deftest vm-serial-test-eval-token-value-warns-through-a-percent ()
+  "A percent sign in the error text does not break the warning.
+`warn' formats its own message, so a string already run through `format'
+is formatted a second time and an error text of \"50% off\" made the
+warning signal in place of the token it was reporting."
+  (let (captured)
+    (cl-letf (((symbol-function 'warn)
+               (lambda (&rest args) (setq captured args))))
+      (should (null (vm-serial-eval-token-value
+                     '(vm-serial-test--signals-with-a-percent))))
+      (should (string-match-p "50% off" (apply #'format captured))))))
+
+;;; vm-serial-expand-tokens region tests
+
+(ert-deftest vm-serial-test-expand-tokens-honours-its-region ()
+  "RSTART and REND bound what is expanded.
+They were overwritten with the whole body, so `vm-serial-insert-token'
+re-expanded every token already in the message."
+  (vm-serial-test--in-a-composition "To: Alice Smith <alice@example.com>\n"
+      "leave $you alone\n"
+    (let ((vm-serial-to nil)
+          (start (point-max)))
+      (goto-char (point-max))
+      (insert "$mr")
+      (vm-serial-expand-tokens start (point))
+      (should (string-match-p "leave \\$you alone" (buffer-string)))
+      (should (string-match-p "Alice Smith" (buffer-string))))))
+
+(ert-deftest vm-serial-test-expand-tokens-can-expand-in-a-header ()
+  "`vm-serial-insert-token' expands where point is, header included.
+Expansion was confined to the body whatever the caller asked for, so a
+token inserted in a header was left standing as its own text."
+  (vm-serial-test--in-a-composition "To: Alice Smith <alice@example.com>\n"
+      "body\n"
+    (let ((vm-serial-to nil))
+      (goto-char (point-min))
+      (end-of-line)
+      (vm-serial-insert-token "mr")
+      (should (string-match-p "^To: Alice Smith <alice@example.com>Alice Smith$"
+                              (buffer-string))))))
+
+(ert-deftest vm-serial-test-expand-tokens-leaves-the-buffer-as-wide-as-it-found-it ()
+  "An invalid token expression does not leave the composition narrowed.
+`narrow-to-region' was undone by a `widen' the error jumped over, so the
+composition buffer showed the body alone from then on."
+  (vm-serial-test--in-a-composition "To: Alice Smith <alice@example.com>\n"
+      "bad ${you and more\n"
+    (let ((vm-serial-to nil)
+          (size (buffer-size)))
+      (should-error (vm-serial-expand-tokens) :type 'error)
+      (should (= (point-min) 1))
+      (should (= (point-max) (1+ size))))))
+
+;;; vm-serial-send-mail tests
+
+(defvar vm-serial-test--sent nil
+  "The To header of each message `vm-serial-send-mail' sent.")
+
+(defun vm-serial-test--work-buffer (&rest args)
+  "Stand in for `vm-mail-internal', which wants a running VM."
+  (let ((name (plist-get args :buffer-name)))
+    (with-current-buffer (get-buffer-create name)
+      (erase-buffer)
+      (mail-mode))
+    (get-buffer name)))
+
+(defun vm-serial-test--send-to-two (&optional bbdb)
+  "Send to two recipients, answering with the To header of each message.
+With BBDB non-nil, BBDB's address extractor is present."
+  (let ((vm-serial-test--sent nil))
+    (vm-serial-test--in-a-composition
+        "To: Alice Smith <alice@example.com>, Bob Jones <bob@example.com>\n"
+        "hello\n"
+      (cl-letf (((symbol-function 'bbdb-extract-address-components)
+                 (and bbdb #'vm-serial-test--fake-bbdb-extract))
+                ((symbol-function 'vm-mail-internal)
+                 #'vm-serial-test--work-buffer)
+                ((symbol-function 'vm-mail-send)
+                 (lambda (&rest _)
+                   (push (vm-mail-mode-get-header-contents "To:")
+                         vm-serial-test--sent)))
+                ((symbol-function 'switch-to-buffer) #'ignore)
+                ((symbol-function 'kill-this-buffer) #'ignore))
+        (unwind-protect
+            (vm-serial-send-mail t)
+          (let ((work (get-buffer vm-serial-send-mail-buffer)))
+            (when work (kill-buffer work))))))
+    (nreverse vm-serial-test--sent)))
+
+(ert-deftest vm-serial-test-send-mail-without-bbdb ()
+  "One message per recipient with no BBDB installed.
+The branch taken without BBDB called `bbdb-split', a BBDB function, so the
+command died with a void-function error for everyone who has no BBDB."
+  (should (equal (vm-serial-test--send-to-two nil)
+                 '("Alice Smith <alice@example.com>"
+                   "Bob Jones <bob@example.com>"))))
+
+(ert-deftest vm-serial-test-send-mail-with-bbdb ()
+  "One message per recipient with BBDB installed.
+BBDB's extractor was asked without its ALL argument, so it answered one
+pair for the whole header and a single message went out with no To at all."
+  (should (equal (vm-serial-test--send-to-two t)
+                 '("Alice Smith <alice@example.com>"
+                   "Bob Jones <bob@example.com>"))))
+
+
+;;; The mode, and loading not switching it on (emacs-vm/vm#788)
+
+(ert-deftest vm-serial-test-loading-does-not-advise-anything ()
+  "Loading vm-serial does not advise `vm-mail-send-and-exit'.
+Customize loads this file whenever it is asked about a VM option, and it
+required vm-postpone too, so one `C-h v' installed the advice here and the
+hooks and keys there."
+  (require 'vm-serial)
+  (let ((vm-serial-mode nil))
+    (should-not (advice-member-p #'vm-serial--send-mail
+                                'vm-mail-send-and-exit))))
+
+(ert-deftest vm-serial-test-mode-toggles-the-advice ()
+  "The mode adds the advice and removes it again."
+  (require 'vm-serial)
+  (let ((vm-serial-mode nil))
+    (vm-serial-mode 1)
+    (should (advice-member-p #'vm-serial--send-mail 'vm-mail-send-and-exit))
+    (vm-serial-mode -1)
+    (should-not (advice-member-p #'vm-serial--send-mail
+                                 'vm-mail-send-and-exit))))
 
 (provide 'vm-serial-test)
 

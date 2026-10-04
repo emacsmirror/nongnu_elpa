@@ -6,9 +6,8 @@ MKDIR = @MKDIR@
 RMDIR = @RMDIR@
 TAR = @TAR@
 RM   = @RM@
-XARGS = @XARGS@
-INSTALL = @INSTALL@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = @VM_INSTALL@
+INSTALL_DATA = $(INSTALL) -m 644
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
 EMACS_PROG = @EMACS_PROG@
 
@@ -18,13 +17,22 @@ datarootdir = @datarootdir@
 etcdir = @etcdir@
 docdir = @docdir@
 
-SUBDIRS = lisp info pixmaps
+# What to build and install: the info directory is left out when configure
+# found no makeinfo (emacs-vm/vm#718).
+SUBDIRS = lisp @INFO_SUBDIR@ pixmaps
 
-# the list of source (documentation) files
-SOURCES = NEWS
-SOURCES += CHANGES
-SOURCES += README
-SOURCES += TODO
+# What to clean: everything configure wrote a Makefile for, whether or not it
+# is built here, or `distclean' would leave info/Makefile behind.
+ALL_SUBDIRS = lisp info pixmaps
+
+# the list of source (documentation) files.
+#
+# A glob rather than each NEWS file by name, so that starting NEWS-4.md needs
+# no edit here: a file left out of this list is one that silently stops being
+# installed.  Expanded by the shell, in the `for' loops that are the only
+# things to use it, since $(wildcard) is GNU make only.
+SOURCES = NEWS-*.md
+SOURCES += README.md
 SOURCES += example.vm
 
 # the version of this package
@@ -58,24 +66,36 @@ install-pkg:
 	@$(MKDIR) -p "$(DESTDIR)$(docdir)"
 	for i in $(SOURCES) ; do                                  \
 	    echo "Installing $$i in '$(DESTDIR)$(docdir)'" ;      \
-	    $(INSTALL_DATA) $$i "$(DESTDIR)$(docdir)" ;           \
+	    $(INSTALL_DATA) $$i "$(DESTDIR)$(docdir)" || exit 1 ; \
 	done ;
 
 uninstall: uninstall-pkg
 	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i uninstall) || exit 1; done
-	-$(RMDIR) $(DESTDIR)$(docdir)/ 2> /dev/null
+	@$(RMDIR) $(DESTDIR)$(docdir)/ 2> /dev/null || true
 
 uninstall-pkg:
 	@for i in $(SOURCES) ; do                                  \
 	    echo "Uninstalling $$i from '$(DESTDIR)$(docdir)'" ;  \
 	    $(RM) -f "$(DESTDIR)$(docdir)/$$i" ;                     \
 	done ;
+# Then any NEWS file that is installed and no longer in the tree.  The loop
+# above matches $(SOURCES) against the source directory, so a file renumbered
+# out of it since the install stays behind for ever; the NEWS history is
+# numbered rather than renamed, which makes that the one name here that is
+# expected to change.  The `test' is for the no-match case, where the shell
+# hands the loop the pattern itself.
+	@for i in "$(DESTDIR)$(docdir)"/NEWS-*.md ; do             \
+	    if test -f "$$i" ; then                                \
+	      echo "Uninstalling stale $$i" ;                      \
+	      $(RM) -f "$$i" ;                                     \
+	    fi ;                                                   \
+	done ;
 
 clean:
-	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i clean) || exit 1; done
+	@for i in $(ALL_SUBDIRS) ; do ($(MAKE) -C $$i clean) || exit 1; done
 
 distclean:
-	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i distclean) || exit 1; done
+	@for i in $(ALL_SUBDIRS) ; do ($(MAKE) -C $$i distclean) || exit 1; done
 	-$(RM) -f Makefile vm-load.el config.status config.log
 	-$(RM) -rf autom4te.cache
 
@@ -84,10 +104,10 @@ distclean:
 #
 PACKAGE_INIT = --eval "(progn (require 'package) (package-initialize))"
 
-# emacs buildin lints.  Don't run them in parallel to prevent compiling at the same time issues
-
+# don't try to run in parallel as byte-compile-lint removes .elc files
 lint:
 	${MAKE} byte-compile-lint
+	${MAKE} cross-file-lint
 	${MAKE} native-compile-lint
 
 # leave out until we fix all issues. it is also very slow
@@ -96,7 +116,7 @@ lint:
 # byte compile check
 # Note: pgg is deprecated which also generated a warning, so can't generate errors
 byte-compile-lint:
-	rm -f list/*.elc
+	rm -f lisp/*.elc
 	$(EMACS_PROG) -batch -Q -L lisp \
 	    --eval '(setq byte-compile-error-on-warn nil)' \
 	    -f batch-byte-compile lisp/*.el
@@ -105,11 +125,39 @@ byte-compile-lint:
 native-compile-lint:
 	rm -rf eln.tmp
 	@mkdir -p eln.tmp
+	@# Nothing here compiles asynchronously, so the async-warning setting
+	@# that used to be bound has no bearing on what is reported.  What this
+	@# target does not see is a call across files: cross-file-lint does.
 	$(EMACS_PROG) -batch -Q -L lisp \
-	    --eval '(setq native-comp-async-report-warnings-errors nil)' \
 	    --eval '(setq byte-compile-error-on-warn nil)' \
 	    --eval '(dolist (f (directory-files "lisp" t "\\.el$$")) (let ((out (concat "eln.tmp/" (file-name-nondirectory f) ".eln"))) (message "Native compiling %s..." f) (native-compile f out)))'
 	rm -rf eln.tmp
+
+# Compile each file in an Emacs of its own and fail on a call to a function
+# nothing has defined.  byte-compile-lint cannot see these: it compiles the
+# whole directory in one Emacs, and compiling vm-imap.el teaches that session
+# the functions vm-reply.el goes on to call, so the warning never appears.
+# What a user sees is this: their Emacs native-compiles one file at a time, in
+# a process that knows nothing of the others, and prints the warnings.
+#
+# vm-autoloads.el is generated and its calls are to functions the files it
+# autoloads define, which is the whole idea.
+cross-file-lint:
+	@rm -f lisp/*.elc
+	@fail=; for f in lisp/*.el; do \
+		case "$$f" in lisp/vm-autoloads.el) continue;; esac; \
+		out=`$(EMACS_PROG) -batch -Q -L lisp \
+			--eval '(setq byte-compile-error-on-warn nil)' \
+			-f batch-byte-compile "$$f" 2>&1 \
+			| grep "not known to be defined"`; \
+		if test -n "$$out"; then echo "$$out"; fail=yes; fi; \
+	done; \
+	rm -f lisp/*.elc; \
+	if test -n "$$fail"; then \
+		echo "cross-file-lint: add a declare-function for each of those"; \
+		exit 1; \
+	fi
+	@echo "cross-file-lint: every file compiles on its own"
 
 # check with build-in elint
 elint-lint:
@@ -141,39 +189,20 @@ elisp-lint:
 ##############################################################################
 # testing
 #
+# test/test-runner does the work; ARGS goes through to it, so
+# `make test ARGS=--probe' and `make test ARGS="--one vm-imap-test.el"' work
+# from here as well.
+ARGS =
+
 test:
-	$(MAKE) -C test $@
+	$(MAKE) -C test test ARGS='$(ARGS)'
 
-test-coverage:
-	$(MAKE) -C test-coverage $@
+test-no-opt:
+	$(MAKE) -C test test-no-opt ARGS='$(ARGS)'
 
-.PHONY: test test-coverage
-
-##############################################################################
-# xemacs package (not tested)
-PKGDIR =  $(shell pwd)/,,package/
-PKGINFO = $(PKGDIR)/lisp/vm/_pkg.el
-xemacs-package:
-	if [ "x@EMACS_FLAVOR@" != "xxemacs" ]; then \
-	  echo "ERROR: Current build dir not configured for XEmacs,"; \
-	  echo "ERROR: Please re-run configure with --with-emacs=xemacs."; \
-	  exit 1; \
-	fi
-	-$(RM) -rf ,,package
-	cd lisp && $(MAKE) PACKAGEDIR=$(PKGDIR)/lisp/vm install-pkg
-	cd info && $(MAKE) infodir=$(PKGDIR)/info install-pkg
-	cd src && $(MAKE) infodir=$(PKGDIR)/bin install-pkg
-	echo ";;;###autoload" > $(PKGINFO)
-	echo "(package-provide 'vm'" > $(PKGINFO)
-	echo "         :version $(PACKAGE_VERSION)" >> $(PKGINFO)
-	echo '         :author-version "'`$(GIT) --git-dir="@top_srcdir@/.git" rev-parse HEAD`'"' >> $(PKGINFO)
-	echo "         :type 'regular)" >> $(PKGINFO)
-	mkdir $(PKGDIR)/pkginfo;
-	touch $(PKGDIR)/pkginfo/MANIFEST.vm;
-	cd $(PKGDIR) && find -type f | cut -c3- > pkginfo/MANIFEST.vm
-	cd ,,package && $(TAR) -cvzf ../vm-pkg.tar.gz *
+.PHONY: test test-no-opt
 
 ##############################################################################
 tags::
-	etags lisp/*.el contrib/*.el info/*.texinfo NEWS example.vm INSTALL Makefile.in lisp/Makefile.in info/Makefile.in src/Makefile.in pixmaps/Makefile.in
+	etags lisp/*.el info/*.texinfo NEWS-*.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
 

@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1990, 1993, 1994 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -31,6 +31,10 @@
 (require 'vm-sort)
 (require 'vm-virtual)
 (require 'vm-window)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 ;;;###autoload
 (defun vm-clear-all-marks ()
@@ -96,7 +100,6 @@ previous N-1 messages."
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (let ((direction (if (< count 0) 'backward 'forward))
 	(count (vm-abs count))
-	;; (oldmp vm-message-pointer)
 	(vm-message-pointer vm-message-pointer))
     (while (not (zerop count))
       (if (not (vm-mark-of (car vm-message-pointer)))
@@ -229,6 +232,7 @@ variable `vm-virtual-folder-alist' for more information."
        (vm-read-virtual-selector "Mark messages: "))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-by-selector t selector arg))
+;;;###autoload (autoload 'vm-mark-matching-messages "vm-mark" nil t)
 (defalias 'vm-mark-matching-messages 'vm-mark-messages-by-selector)
 
 ;;;###autoload
@@ -245,6 +249,7 @@ variable `vm-virtual-folder-alist' for more information."
        (vm-read-virtual-selector "Unmark messages: "))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-by-selector nil selector arg))
+;;;###autoload (autoload 'vm-unmark-matching-messages "vm-mark" nil t)
 (defalias 'vm-unmark-matching-messages 'vm-unmark-messages-by-selector)
 
 ;;;###autoload
@@ -272,26 +277,6 @@ variable `vm-virtual-folder-alist' for more information."
 	(vm-set-mark-of (car list) mark)
 	(vm-mark-for-summary-update (car list)))
       (setq list (cdr list))))
-;;   (let ((list (list (car vm-message-pointer)))
-;; 	(loop-obarray (make-vector 29 0))
-;; 	subject-sym id-sym)
-;;     (while list
-;;       (if (not (eq (vm-mark-of (car list)) mark))
-;; 	  (progn
-;; 	    (vm-set-mark-of (car list) mark)
-;; 	    (vm-mark-for-summary-update (car list))))
-;;       (setq id-sym (vm-last-elem (vm-thread-list (car list))))
-;;       (if (null (intern-soft (symbol-name id-sym) loop-obarray))
-;; 	  (progn
-;; 	    (intern (symbol-name id-sym) loop-obarray)
-;; 	    (nconc list (copy-sequence (vm-th-child-messages-of id-sym)))
-;; 	    (setq subject-sym (intern (vm-so-sortable-subject (car list))
-;; 				      vm-thread-subject-obarray))
-;; 	    (if (and (boundp subject-sym) 
-;; 		     (eq id-sym (aref (symbol-value subject-sym) 0)))
-;; 		(nconc list (copy-sequence
-;; 			     (aref (symbol-value subject-sym) 2))))))
-;;       (setq list (cdr list))))
   (vm-display nil nil
 	      '(vm-mark-thread-subtree vm-unmark-thread-subtree)
 	      (list this-command 'marking-message))
@@ -432,6 +417,7 @@ variable `vm-virtual-folder-alist' for more information."
        vm-virtual-folder-alist nil t))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-with-virtual-folder t name))
+;;;###autoload (autoload 'vm-mark-matching-messages-with-virtual-folder "vm-mark" nil t)
 (defalias 'vm-mark-matching-messages-with-virtual-folder 
   'vm-mark-messages-by-virtual-folder)
 
@@ -449,6 +435,7 @@ variable `vm-virtual-folder-alist' for more information."
        vm-virtual-folder-alist nil t))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-mark-or-unmark-messages-with-virtual-folder nil name))
+;;;###autoload (autoload 'vm-unmark-matching-messages-with-virtual-folder "vm-mark" nil t)
 (defalias 'vm-unmark-matching-messages-with-virtual-folder
   'vm-unmark-messages-by-virtual-folder)
 
@@ -475,6 +462,7 @@ not work."
 
 ;;;###autoload
 (defun vm-mark-help ()
+  "Show the mark commands and their keys in the echo area."
   (interactive)
   (vm-display nil nil '(vm-mark-help) '(vm-mark-help))
   (vm-inform 

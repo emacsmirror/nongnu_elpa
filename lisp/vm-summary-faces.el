@@ -4,7 +4,7 @@
 ;; 
 ;; Copyright (C) 2001 Robert Fenk
 ;; Copyright (C) 2010 Uday S Reddy
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Author:      Robert Fenk
 ;; Status:      Tested with XEmacs 21.4.15 & VM 7.18
@@ -36,18 +36,22 @@
 (require 'vm-misc)
 (require 'vm-avirtual)
 
-;; (eval-and-compile
-;;   (if (featurep 'xemacs) (require 'overlay)))
+;; vm-virtual.el requires this file, so it cannot be required back.
+(declare-function vm-vs-or "vm-virtual" (m &rest selectors))
+
 
 (declare-function vm-extent-property "vm-misc.el" (overlay prop) t)
 (declare-function vm-set-extent-property "vm-misc.el" (overlay prop value) t)
 
 
-(eval-and-compile
-  (if (fboundp 'mapcar-extents)
-      (defun vm-summary-faces-list-extents () (mapcar-extents 'identity))
-    (defun vm-summary-faces-list-extents ()
-      (let ((o (overlay-lists))) (nconc (car o) (cdr o))))))
+(defun vm-summary-faces-list-extents ()
+  "Every overlay in the current buffer."
+  (let ((o (overlay-lists))) (nconc (car o) (cdr o))))
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defvar vm-summary-faces-hide nil
   "Last face hidden by `vm-summary-faces-hide'.")
@@ -159,14 +163,6 @@ fonts and colors, for easy recogniton of the message status."
 ;; No need for advice because the code has been integrated into 
 ;; VM.  USR, 2010-08-01 
 
-;; (defadvice vm-mouse-set-mouse-track-highlight 
-;;	(after vm-summary-faces activate)
-;;   (when (and vm-summary-enable-faces
-;;              (eq major-mode 'vm-summary-mode)
-;;              (boundp 'm)
-;;              m)
-;;     ;; FIXME there is a warning about a free variable here, sorry!
-;;     (vm-summary-faces-add m)))
 
 (defun vm-summary-faces-fix-pointer ()
   (if vm-summary-overlay

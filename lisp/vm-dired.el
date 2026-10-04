@@ -3,7 +3,7 @@
 ;; This file is part of VM
 ;;
 ;; Copyright (C) 2011 Uday S. Reddy
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -40,6 +40,11 @@
 (require 'vm-mime)
 (require 'vm-digest)
 (require 'dired)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (declare-function vm-dired-file-name-at-point "vm-dired.el" ())
 

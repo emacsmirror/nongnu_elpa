@@ -5,7 +5,7 @@
 ;; Copyright (C) 1990-1997 Kyle E. Jones
 ;; Copyright (C) 2000-2006 Robert Widhopf-Fenk
 ;; Copyright (C) 2011 Uday S. Reddy
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -28,6 +28,10 @@
 (require 'vm-misc)
 (require 'vm-minibuf)
 
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
+
 ;; FIXME: Cyclic dependence between vm-virtual.el and vm-avirtual.el
 ;; prevents us from requiring `vm-avirtual' here.
 (defvar vm-virtual-message)
@@ -47,6 +51,8 @@
 		  (&optional read-only))
 (declare-function vm-get-folder-buffer "vm"
 		  (folder))
+(declare-function vm-quit "vm-folder"
+		  (&optional no-expunge no-change))
 
 
 (defvar inhibit-local-variables) ;; FIXME: Unknown var.  XEmacs?
@@ -189,13 +195,6 @@ all the real folder buffers involved."
 	    ;; But why are we doing this?  This is ugly and
 	    ;; error-prone, and breaks things for server folders!
 	    ;; USR, 2010-09-20
-	    ;; (when (bufferp folder)
-	    ;; 	(if virtual
-	    ;; 	    (setcar (car clauses)
-	    ;; 		    (delq nil
-	    ;; 			  (mapcar 'buffer-file-name vm-real-buffers)))
-	    ;; 	  (if buffer-file-name
-	    ;; 	      (setcar (car clauses) (list buffer-file-name)))))
 
 	    ;; if new-messages non-nil use it instead of the
 	    ;; whole message list
@@ -246,7 +245,6 @@ all the real folder buffers involved."
 		 message vm-message-id-number)
 		(vm-increment vm-message-id-number)
 		(vm-set-buffer-of message vbuffer)
-		(vm-set-reverse-link-sym-of message (make-symbol "<--"))
 		(vm-set-reverse-link-of message tail-cons)
 		(if (null tail-cons)
 		    (setq new-message-list (list message)
@@ -259,8 +257,6 @@ all the real folder buffers involved."
     (if dont-finalize
 	new-message-list
       ;; this doesn't need to work currently, but it might someday
-      ;; (if virtual
-      ;;    (setq real-buffers-used (vm-delete-duplicates real-buffers-used)))
       (vm-increment vm-modification-counter)
       ;; Until this point the user doesn't really have a virtual
       ;; folder, as the virtual messages haven't been linked to the
@@ -296,6 +292,7 @@ all the real folder buffers involved."
 	      (vm-set-numbering-redo-start-point new-message-list))
 	  (vm-set-summary-redo-start-point t)
 	  (vm-set-numbering-redo-start-point t)
+	  (vm-increment vm-message-list-generation)
 	  (setq vm-message-list new-message-list))
 	new-message-list ))))
 
@@ -339,6 +336,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
+;;;###autoload (autoload 'vm-create-search-folder "vm-virtual" nil t)
 (defalias 'vm-create-search-folder 'vm-create-virtual-folder)
 
 ;;;###autoload
@@ -382,6 +380,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
+;;;###autoload (autoload 'vm-create-search-folder-other-frame "vm-virtual" nil t)
 (defalias 'vm-create-search-folder-other-frame
   'vm-create-virtual-folder-other-frame)
 
@@ -426,6 +425,7 @@ Prefix arg means the new virtual folder should be visited read only."
   (when vm-use-menus
     (vm-menu-install-known-virtual-folders-menu)))
 
+;;;###autoload (autoload 'vm-create-search-folder-other-window "vm-virtual" nil t)
 (defalias 'vm-create-search-folder-other-window 
   'vm-create-virtual-folder-other-window)
 
@@ -636,7 +636,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-create-text-virtual-folder (&optional string read-only subject)
-  "Create a virtual folder (search folder) of all messsages with the
+  "Create a virtual folder (search folder) of all messages with the
 given string in its text.
 
 Prefix arg means the new virtual folder should be visited read only."
@@ -651,7 +651,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-create-date-virtual-folder (&optional arg read-only subject)
-  "Create a virtual folder (search folder) of all messsages with date
+  "Create a virtual folder (search folder) of all messages with date
 in given range.
 
 Prefix arg means the new virtual folder should be visited read only."
@@ -723,7 +723,19 @@ Prefix arg means the new virtual folder should be visited read only."
   (vm-create-virtual-folder 'unseen read-only name))
 
 
+;;;###autoload
 (defun vm-toggle-virtual-mirror ()
+  "Toggle whether this virtual folder mirrors the attributes of the real ones.
+
+Mirrored, which is the default, a virtual message and the real message it
+stands for are the same message: deleting or labelling it here does so in
+the real folder, and in every other virtual folder showing it.  Unmirrored,
+this folder keeps its own attributes, so it can be marked up without
+touching the real folders, and the undo history is kept separately too.
+
+Toggling back restores the attributes each message had on the other side, so
+nothing is lost by looking.  Only meaningful in a virtual folder; signals
+elsewhere."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (if (not (eq major-mode 'vm-virtual-mode))
@@ -773,49 +785,71 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-virtual-help ()
+  "Show the virtual folder commands and their keys in the echo area."
 (interactive)
   (vm-display nil nil '(vm-virtual-help) '(vm-virtual-help))
   (vm-inform 0 "VV = visit, VX = apply selectors, VC = create, VM = toggle virtual mirror"))
 
+(defun vm-vs-diagnose (combinator result selector arglist)
+  "Print what COMBINATOR made of SELECTOR with ARGLIST, if asked to.
+Does nothing unless `vm-virtual-check-diagnostics\' is set.  The line is
+indented by `vm-virtual-check-level\', so nesting shows as nesting."
+  (when vm-virtual-check-diagnostics
+    (princ (format "%s%s: %s (%S%s)\n"
+		   (make-string vm-virtual-check-level ? )
+		   combinator (if result t nil) selector
+		   (if arglist (format " %S" arglist) "")))))
+
 (defun vm-vs-or (m &rest selectors)
   "Virtual selector combinator for checking the disjunction of the
 given SELECTORS."
-  (let ((result nil) selector arglist function)
+  (let ((case-fold-search vm-virtual-check-case-fold-search)
+	(vm-virtual-check-level (+ 2 vm-virtual-check-level))
+	(result nil) selector arglist function)
     (while selectors
       (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
+	    function (cdr (assq selector vm-vs-alist)))
       (if (null function)
 	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
 	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist)))
+	      result (apply function m arglist))
+	(vm-vs-diagnose "or" result selector arglist))
       (setq selectors (if result nil (cdr selectors))))
     result ))
 
 (defun vm-vs-and (m &rest selectors)
   "Virtual selector combinator for checking the conjunction of the
 given SELECTORS."
-  (let ((result t) selector arglist function)
+  (let ((case-fold-search vm-virtual-check-case-fold-search)
+	(vm-virtual-check-level (+ 2 vm-virtual-check-level))
+	(result t) selector arglist function)
     (while selectors
       (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
+	    function (cdr (assq selector vm-vs-alist)))
       (if (null function)
 	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
 	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist)))
+	      result (apply function m arglist))
+	(vm-vs-diagnose "and" result selector arglist))
       (setq selectors (if (null result) nil (cdr selectors))))
     result ))
 
 (defun vm-vs-not (m selector)
   "Virtual selector combinator for checking the negation of the
-given SELECTOR."
-  (let ((selector (car selector))
+given SELECTOR.
+An invalid selector matches nothing, so this returns nil for one rather than
+negating a result it never got."
+  (let ((case-fold-search vm-virtual-check-case-fold-search)
+	(vm-virtual-check-level (+ 2 vm-virtual-check-level))
+	(selector (car selector))
 	(selectorlist (cdr selector))
 	function
 	(result nil))
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
+    (setq function (cdr (assq selector vm-vs-alist)))
     (if (null function)
 	(vm-warn 0 2 "Invalid virtual selector: %s" selector)
-      (setq result (not (apply function m selectorlist))))
+      (setq result (not (apply function m selectorlist)))
+      (vm-vs-diagnose "not" result selector selectorlist))
     result))
 
 (defun vm-vs-sexp (m expression)
@@ -842,7 +876,7 @@ message in a thread."
 	(root (vm-thread-root m))
 	tree function)
     (setq tree (vm-thread-subtree-safe root))
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
+    (setq function (cdr (assq selector vm-vs-alist)))
     (vm-find tree
 	     (lambda (m)
 	       (apply function m selectorlist)))))
@@ -855,7 +889,7 @@ messages in a thread."
 	(root (vm-thread-root m))
 	tree function)
     (setq tree (vm-thread-subtree-safe root))
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
+    (setq function (cdr (assq selector vm-vs-alist)))
     (vm-for-all tree
 	     (lambda (m)
 	       (apply function m selectorlist)))))
@@ -947,9 +981,11 @@ i.e., sent by the user of this VM."
 
 (defun vm-vs-uninteresting-senders (m)
   "Virtual selector to check of the sender is an \"uninteresting\"
-sender.  (See `vm-summary-uninteresting-senders'.)"
-  (string-match vm-summary-uninteresting-senders
-                (vm-get-header-contents m "From:")))
+sender.  (See `vm-summary-uninteresting-senders'.)
+A message with no From: header has no sender to find uninteresting, and does
+not match; it used to signal, as `vm-vs-header-field' did."
+  (let ((from (vm-get-header-contents m "From:")))
+    (and from (string-match vm-summary-uninteresting-senders from))))
 
 (defun vm-vs-attachment (m)
   "Virtual selector to check if the message has an attachment.
@@ -988,8 +1024,8 @@ any) for this selector to detect the occurrences in the text."
 (defun vm-vs-spam-score (m min &optional max)
   "Virtual selector to check if the spam score is >= MIN and
 optionally <= MAX.  The headers that will be checked are those
-listed in `vm-vs-spam-score-headers'."
-  (let ((spam-headers vm-vs-spam-score-headers)
+listed in `vm-spam-score-headers'."
+  (let ((spam-headers vm-spam-score-headers)
         it-is-spam)
     (while spam-headers
       (let* ((spam-selector (car spam-headers))
@@ -1012,9 +1048,13 @@ listed in `vm-vs-spam-score-headers'."
 
 (defun vm-vs-header-field (m field regexp)
   "Virtual selector to check if the given header FIELD contains
-an instance of REGEXP."
+an instance of REGEXP.  A message without the header does not match.
+`vm-get-header-contents' answers nil for a header that is not there, and
+passing that to `string-match' signalled: nothing catches a selector's error,
+so a folder picking out the messages that carry a header stopped at the first
+message that did not."
   (let ((header (vm-get-header-contents m field)))
-    (string-match regexp header)))
+    (and header (string-match regexp header))))
 
 (defun vm-vs-uid (m arg)
   "Virtual selector to check if the message UID is ARG."
@@ -1171,7 +1211,7 @@ folders currently being viewed."
 (defun vm-read-virtual-selector (prompt)
   (let (selector (arg nil))
     (setq selector
-	  (vm-read-string prompt vm-supported-interactive-virtual-selectors)
+	  (vm-read-string prompt vm-vs-interactive)
 	  selector (intern selector))
     (let ((arg-type (get selector 'vm-virtual-selector-arg-type)))
       (if (null arg-type)
@@ -1201,6 +1241,77 @@ folders currently being viewed."
 	  (error "Invalid selector"))
       (list selector real-arg))))
 
+
+(defun vm-virtual-buffers-live ()
+  "Return the live virtual folder buffers of the current real folder.
+`vm-virtual-buffers' cannot be trusted on its own: a virtual folder buffer
+that was killed rather than quit is still registered there.  The dead ones are
+dropped from the list as a side effect, as everything else walking it does."
+  (setq vm-virtual-buffers (vm-delete 'buffer-name vm-virtual-buffers t)))
+
+(defun vm-virtual-buffers-modified ()
+  "Return the live virtual folder buffers of this folder that have changes."
+  (vm-delete 'buffer-modified-p
+	     (copy-sequence (vm-virtual-buffers-live)) t))
+
+;;;###autoload
+(defun vm-virtual-kill-buffer-query ()
+  "Ask before killing a real folder whose virtual folders hold changes.
+On `kill-buffer-query-functions' in a real folder buffer: killing it kills the
+virtual folders mirroring it, which `vm-virtual-kill-buffers' does, and any
+changes they have go with them.  Returning nil stops the kill.
+
+A virtual folder is marked modified by a change to any of its messages, and is
+unmarked when every real folder behind it has been saved, so this asks exactly
+when there is something to lose.  Issue #573."
+  (let ((modified (and (eq major-mode 'vm-mode)
+		       (vm-virtual-buffers-modified))))
+    (or (null modified)
+	;; A batch Emacs has nobody to ask, and `kill-buffer' there must not
+	;; block on a prompt no one can answer.
+	noninteractive
+	(y-or-n-p
+	 (format "%s: killing this folder kills %s, with unsaved changes; kill anyway? "
+		 (buffer-name)
+		 (mapconcat #'buffer-name modified ", "))))))
+
+;;;###autoload
+(defun vm-virtual-kill-buffers ()
+  "Kill the virtual folders of the real folder buffer being killed.
+On `kill-buffer-hook' in a real folder buffer.  Every message in a virtual
+folder keeps its text in the real folder's buffer, so once that buffer is gone
+the virtual folder can do almost nothing with what it lists: it cannot expunge
+\(issue #573), and an expunge that was allowed to finish would take the message
+out of the virtual folder while its text stayed in a file nobody has open.
+Killing the virtual folders too leaves VM in a state it can reason about.
+
+`vm-virtual-kill-buffer-query' has already asked about any changes, and it is
+on `kill-buffer-query-functions' so that the answer can still stop the kill;
+here the buffer is going whatever happens.
+
+Each virtual folder is quit rather than killed, so that its messages are
+deregistered from every real folder it mirrors and not only from this one, and
+its summary and presentation buffers go with it.  A virtual folder that fails
+to quit is reported and the rest still go: this runs while a buffer is being
+killed, which cannot be called off."
+  (when (eq major-mode 'vm-mode)
+    (let ((buffers (copy-sequence (vm-virtual-buffers-live))))
+      (when buffers
+	(vm-inform 5 "%s: quitting virtual folder%s %s"
+		   (buffer-name) (if (cdr buffers) "s" "")
+		   (mapconcat #'buffer-name buffers ", "))
+	(vm-virtual-kill-buffer-list buffers)))))
+
+(defun vm-virtual-kill-buffer-list (buffers)
+  "Quit each virtual folder buffer in BUFFERS, reporting any that will not."
+  (dolist (buffer buffers)
+    (condition-case error-data
+	(with-current-buffer buffer
+	  (let ((vm-confirm-quit nil))
+	    (vm-quit t t)))
+      (error (vm-warn 0 2 "Unable to quit virtual folder %s: %s"
+		      (buffer-name buffer)
+		      (prin1-to-string error-data))))))
 
 ;;;###autoload
 (defun vm-virtual-quit (&optional no-expunge no-change)
@@ -1295,6 +1406,7 @@ real or virtual)."
 			   (vm-reverse-link-of (car vm-message-pointer))))))
 	       ;; expunge the virtual messages associated with
 	       ;; real messages that are going away.
+	       (vm-increment vm-message-list-generation)
 	       (setq vm-message-list
 		     (vm-delete (function
 				 (lambda (m)
@@ -1380,7 +1492,6 @@ folder buffer (which should be the virtual folder in which M occurs)."
     (set-marker (vm-end-of m) (+ (vm-start-of m) (- (vm-end-of real-m)
 						    (vm-start-of real-m))))))
 ;; ;; now load vm-avirtual to avoid a loading loop
-;; (require 'vm-avirtual)
 
 (provide 'vm-virtual)
 ;;; vm-virtual.el ends here

@@ -1,6 +1,6 @@
 ;;; vm-window-test.el --- Tests for vm-window.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -234,12 +234,18 @@ Creates initial frame and sets up all frame function mocks."
 
 ;;; vm-multiple-frames-possible-p tests
 
-(ert-deftest vm-window-test-multiple-frames-possible-p ()
-  "Test vm-multiple-frames-possible-p checks for make-frame."
-  ;; In batch mode with GUI Emacs, make-frame is usually fboundp
-  (if (fboundp 'make-frame)
-      (should (vm-multiple-frames-possible-p))
-    (should-not (vm-multiple-frames-possible-p))))
+(ert-deftest vm-window-test-multiple-frames-are-not-possible-in-batch ()
+  "A batch Emacs cannot make a frame, whatever `make-frame' says.
+`make-frame' is defined there and fails with \"Unknown terminal type\", so
+VM used to answer yes and die at the point where it went to give a
+composition a frame -- which is what `make test-send\\=' did
+(emacs-vm/vm#617).  Interactively the answer is `make-frame' as before."
+  (should noninteractive)                ; the suite runs in batch
+  (should-not (vm-multiple-frames-possible-p))
+  (let ((noninteractive nil))
+    (if (fboundp 'make-frame)
+        (should (vm-multiple-frames-possible-p))
+      (should-not (vm-multiple-frames-possible-p)))))
 
 ;;; vm-set-hooks-for-frame-deletion tests
 
@@ -307,26 +313,103 @@ Creates initial frame and sets up all frame function mocks."
       (should (equal (assq 'height comp-params) '(height . 40))))))
 
 ;;; Window loop tests (no frame mocking needed)
+;;; What the window functions do.  These four had a test each asserting the
+;;; function was bound.
 
-(ert-deftest vm-window-test-window-loop-exists ()
-  "Test that vm-window-loop function exists."
-  (should (fboundp 'vm-window-loop)))
+(defmacro vm-window-test-with-two-windows (spec &rest body)
+  "Run BODY with two windows, showing the buffers SPEC names.
+SPEC is (VAR-A VAR-B): each is bound to a fresh buffer shown in a window.
+The configuration is restored afterwards, so a test cannot strand the run in
+a window it made."
+  (declare (indent 1) (debug t))
+  (let ((a (nth 0 spec)) (b (nth 1 spec)))
+    `(let ((,a (generate-new-buffer " *vm-window-test-a*"))
+           (,b (generate-new-buffer " *vm-window-test-b*")))
+       (unwind-protect
+           (save-window-excursion
+             (delete-other-windows)
+             (switch-to-buffer ,a)
+             (select-window (split-window))
+             (switch-to-buffer ,b)
+             ,@body)
+         (kill-buffer ,a)
+         (kill-buffer ,b)))))
+
+(ert-deftest vm-window-test-window-loop-replace-changes-every-such-window ()
+  "`vm-window-loop' replace puts the second buffer wherever the first was."
+  (vm-window-test-with-two-windows (a b)
+    (let ((vm-search-other-frames nil))
+      (vm-window-loop 'replace a b)
+      (should-not (memq a (mapcar #'window-buffer (window-list))))
+      (should (memq b (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-window-test-window-loop-takes-a-buffer-name ()
+  "A buffer name works where a buffer does: `vm-window-loop' looks it up."
+  (vm-window-test-with-two-windows (a b)
+    (let ((vm-search-other-frames nil))
+      (vm-window-loop 'replace (buffer-name a) b)
+      (should-not (memq a (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-window-test-window-loop-delete-removes-the-window ()
+  "`vm-window-loop' delete deletes the window showing the buffer."
+  (vm-window-test-with-two-windows (a b)
+    (let ((vm-search-other-frames nil)
+          (before (length (window-list))))
+      (vm-window-loop 'delete a)
+      (should (= (length (window-list)) (1- before)))
+      (should-not (memq a (mapcar #'window-buffer (window-list)))))))
+
+(ert-deftest vm-window-test-window-loop-keeps-the-last-window ()
+  "Deleting the only window is refused, since a frame must have one.
+The deferred deletion the function goes to the trouble of is what makes this
+work: the window is deleted after point has moved off it."
+  (let ((a (generate-new-buffer " *vm-window-test-a*")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer a)
+          (let ((vm-search-other-frames nil))
+            (vm-window-loop 'delete a)
+            (should (= (length (window-list)) 1))))
+      (kill-buffer a))))
+
+(ert-deftest vm-window-test-bury-buffer-buries-the-current-one-by-default ()
+  "`vm-bury-buffer' with no argument buries the buffer you are in."
+  (let ((a (generate-new-buffer " *vm-window-test-a*"))
+        (b (generate-new-buffer " *vm-window-test-b*")))
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer b)
+          (switch-to-buffer a)
+          (should (eq (car (buffer-list)) a))
+          (vm-bury-buffer)
+          (should-not (eq (car (buffer-list)) a))
+          (should (memq a (buffer-list))))
+      (kill-buffer a)
+      (kill-buffer b))))
+
+(ert-deftest vm-window-test-unbury-buffer-leaves-the-windows-as-they-were ()
+  "`vm-unbury-buffer' raises a buffer without disturbing the display.
+It is called where VM wants a buffer out of the way of `bury-buffer' but has
+no intention of showing it."
+  (let ((a (generate-new-buffer " *vm-window-test-a*"))
+        (b (generate-new-buffer " *vm-window-test-b*")))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer b)
+          (bury-buffer a)
+          (should (eq (car (last (buffer-list))) a))
+          (vm-unbury-buffer a)
+          (should (eq (window-buffer (selected-window)) b))
+          (should-not (eq (car (last (buffer-list))) a)))
+      (kill-buffer a)
+      (kill-buffer b))))
+
 
 ;;; vm-bury-buffer tests
 
-(ert-deftest vm-window-test-bury-buffer-exists ()
-  "Test that vm-bury-buffer function exists."
-  (should (fboundp 'vm-bury-buffer)))
-
-(ert-deftest vm-window-test-unbury-buffer-exists ()
-  "Test that vm-unbury-buffer function exists."
-  (should (fboundp 'vm-unbury-buffer)))
-
 ;;; vm-display function tests
-
-(ert-deftest vm-window-test-display-function-exists ()
-  "Test that vm-display function exists."
-  (should (fboundp 'vm-display)))
 
 ;;; Frame compatibility function tests
 
@@ -345,6 +428,133 @@ Creates initial frame and sets up all frame function mocks."
   (when (fboundp 'next-frame)
     (should (fboundp 'vm-next-frame))
     (should (fboundp 'vm-frame-selected-window))))
+
+;;; The frame wrappers are functions, defined here (issue #595)
+
+;; `vm-delete-frame', `vm-raise-frame' and `vm-select-frame' used to be made
+;; with `(fset 'X (symbol-function (cond ...)))', choosing between the Emacs
+;; and XEmacs spellings at load time.  Two consequences, both fixed by writing
+;; them as ordinary functions that dispatch when called:
+;;
+;; `fset' writes the function cell and nothing else, so `symbol-file' returned
+;; nil and the reference appendix, which files a command by the file defining
+;; it, left them out of the manual entirely.
+;;
+;; And copying the function object copied `delete-frame''s interactive spec
+;; with it, so `vm-delete-frame' was a command -- offered by `M-x', asking to
+;; be used -- when it is an internal wrapper that VM never meant to expose.
+
+(defconst vm-window-test--frame-wrappers
+  '((vm-selected-frame        . (0 . 0))
+    (vm-delete-frame          . (0 . 2))
+    (vm-raise-frame           . (0 . 1))
+    (vm-select-frame          . (1 . 2))
+    (vm-frame-visible-p       . (1 . 1))
+    (vm-frame-iconified-p     . (0 . 1))
+    (vm-window-frame          . (1 . 1))
+    (vm-next-frame            . (0 . 2))
+    (vm-frame-selected-window . (0 . 1)))
+  "Wrapper, and the arity it takes from the Emacs function it stands for.")
+
+(ert-deftest vm-window-test-frame-wrappers-are-plain-functions ()
+  "Each wrapper is a function with a known file, and is not a command."
+  (require 'vm-window)
+  (dolist (entry vm-window-test--frame-wrappers)
+    (let ((wrapper (car entry)))
+      (should (fboundp wrapper))
+      (should (symbol-file wrapper))
+      (should-not (commandp wrapper))
+      (should (equal (cdr entry) (func-arity wrapper))))))
+
+(ert-deftest vm-window-test-frame-wrappers-reach-emacs ()
+  "Each wrapper calls through to what Emacs provides.
+Batch Emacs has one visible frame, so all of these can be asked for real.
+`vm-delete-frame' is the exception -- deleting the only frame is not
+something to do mid-suite -- and its dispatch is the same `cond' as the
+rest, checked by arity above."
+  (require 'vm-window)
+  (let ((frame (selected-frame)))
+    (should (eq frame (vm-selected-frame)))
+    (should (eq frame (vm-window-frame (selected-window))))
+    (should (eq frame (vm-select-frame frame)))
+    (should (eq frame (vm-next-frame frame)))
+    (should (eq (selected-window) (vm-frame-selected-window frame)))
+    (should (eq t (vm-frame-visible-p frame)))
+    (should-not (vm-frame-iconified-p frame))
+    (should-not (vm-raise-frame frame))
+    (should-not (vm-raise-frame))))
+
+;;; Saved window configurations (emacs-vm/vm#632)
+;;
+;; VM can remember a window layout per command and restore it next time.  The
+;; three commands that manage those had no test: what matters is that a
+;; configuration is recorded under the name given, written to the file so it
+;; outlives the session, applied without complaint, and forgotten on request.
+
+(defmacro vm-window-test--with-configuration-file (spec &rest body)
+  "Run BODY with an empty window-configuration file.
+SPEC is (FILE-VAR).  `vm-window-configurations' starts empty and the file is
+in a directory of its own, so nothing of the user's is read or written."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-window-config" t))))
+     (unwind-protect
+         (let* ((,(car spec) (expand-file-name "configurations" dir))
+                (vm-window-configuration-file ,(car spec))
+                (vm-window-configurations nil)
+                (vm-mutable-window-configuration t))
+           ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest vm-window-test-saving-a-window-configuration ()
+  "`vm-save-window-configuration' records the layout under the name given and
+writes it to `vm-window-configuration-file', which is what makes it outlive
+the session."
+  (vm-window-test--with-configuration-file (file)
+    (should (null vm-window-configurations))
+    (vm-save-window-configuration 'startup)
+    (should (equal (mapcar #'car vm-window-configurations) '(startup)))
+    (should (file-exists-p file))
+    (should (string-match-p "startup"
+                            (with-temp-buffer (insert-file-contents file)
+                                              (buffer-string))))))
+
+(ert-deftest vm-window-test-applying-and-deleting-a-configuration ()
+  "A saved configuration can be applied by name and then forgotten.
+Deleting it leaves nothing behind: the action has no configuration afterwards,
+which is the point of the command."
+  (vm-window-test--with-configuration-file (_file)
+    (vm-save-window-configuration 'startup)
+    (vm-apply-window-configuration 'startup)
+    (should (equal (mapcar #'car vm-window-configurations) '(startup)))
+    (vm-delete-window-configuration 'startup)
+    (should (null vm-window-configurations))))
+
+(ert-deftest vm-window-test-two-configurations-are-kept-apart ()
+  "Configurations are per action, so saving a second leaves the first alone
+and deleting one leaves the other."
+  (vm-window-test--with-configuration-file (_file)
+    (vm-save-window-configuration 'startup)
+    (vm-save-window-configuration 'reading-message)
+    (should (equal (sort (mapcar #'car vm-window-configurations)
+                         (lambda (a b) (string< (symbol-name a)
+                                                (symbol-name b))))
+                   '(reading-message startup)))
+    (vm-delete-window-configuration 'startup)
+    (should (equal (mapcar #'car vm-window-configurations)
+                   '(reading-message)))))
+
+(ert-deftest vm-window-test-configurations-need-a-file-to-be-enabled ()
+  "With no `vm-window-configuration-file' the commands say the feature is off
+rather than quietly doing nothing -- there would be nowhere to keep what they
+were asked to save."
+  (let ((vm-window-configuration-file nil)
+        (vm-window-configurations nil)
+        (text-quoting-style 'grave))
+    (dolist (command '(vm-save-window-configuration
+                       vm-delete-window-configuration))
+      (should (equal (cadr (should-error (funcall command 'startup)))
+                     (concat "Configurable windows not enabled.  "
+                             "Set vm-window-configuration-file to enable."))))))
 
 (provide 'vm-window-test)
 

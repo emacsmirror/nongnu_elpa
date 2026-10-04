@@ -1,0 +1,409 @@
+#!/bin/sh
+#
+# Run VM's tests: every pass this machine can run, and say what it could not.
+#
+# Nothing else runs them.  `make test' is this program, and the Makefile has no
+# Emacs of its own -- one place decides what a test run is.
+#
+# The suite skips what is not configured and fails what is configured but
+# unreachable, so an exit status on its own does not say whether VM is broken
+# or the machine is short of a server.  This asks first: test/vm-test-probe.el
+# reports what is there, and the reasons are printed before anything runs.
+#
+# The passes, all of which run by default, and each in its own Emacs:
+#
+#   suite         the whole of test/, with whatever this machine has: live
+#                 servers as configured, BBDB and emacs-w3m if installed
+#   mock          the IMAP and POP tests again with the live servers skipped,
+#                 so the mock servers run with nothing live covering for them.
+#                 Only where a live config exists; without one the suite was
+#                 already this
+#   no-optional   the test files that name BBDB, emacs-w3m or vcard, run
+#                 without them, which is how an ordinary checkout runs them.
+#                 Only where they are installed
+#   send          real mail, sent and read back, where the config says where to
+#
+# Every pass runs whichever fails, and the exit status is 1 if any did.
+
+set -u
+
+progname=$(basename "$0")
+root=$(cd "$(dirname "$0")/.." && pwd)
+
+usage () {
+    cat <<EOF
+usage: $progname [options]
+
+With no options: build, then every pass this machine can run.
+
+  --probe          print what this machine can test, run nothing
+  --one FILE       run one test file, e.g. --one vm-imap-test.el
+  --imap           the IMAP tests alone
+  --pop            the POP tests alone
+  --send           the mail-sending tests alone
+  --mock           the IMAP and POP tests with the live servers skipped
+  --no-optional    the tests that use BBDB, emacs-w3m and vcard, without them
+  --assert         the suite with VM's own assertions checked
+  --leaks          report tests that leave global state behind
+  --coverage       write test/coverage-results.txt (which functions were called)
+  --forms-coverage write test/forms-coverage-results.txt (what ran inside them)
+  --build          what configure hands to make, in a copy of the tree
+
+  --skip-live      no live servers in any pass
+  --skip-send      leave the sending pass out
+  --verbose        deeper printing of test results
+  --no-build       do not byte-compile first (the tests run from source)
+
+The Emacs used comes from \$EMACS, or from the configured test/Makefile, or is
+"emacs".  VM_TEST_LIVE and VM_TEST_OPTIONAL do what --skip-live and
+--no-optional do, for a pass run by hand.
+EOF
+}
+
+skip_live=no
+skip_send=no
+no_build=no
+verbose=no
+probe_only=no
+chosen=""
+one_file=""
+
+add_choice () {
+    chosen="$chosen $1"
+}
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        --probe)       probe_only=yes ;;
+        --build)       chosen="$chosen build" ;;
+        --one)         shift
+                       [ $# -gt 0 ] || { echo "$progname: --one wants a file" >&2; exit 2; }
+                       one_file=$1; add_choice one ;;
+        --imap)        add_choice imap ;;
+        --pop)         add_choice pop ;;
+        --send)        add_choice send ;;
+        --mock)        add_choice mock ;;
+        --no-optional) add_choice no-optional ;;
+        --assert)      add_choice assert ;;
+        --leaks)       add_choice leaks ;;
+        --coverage)    add_choice coverage ;;
+        --forms-coverage) add_choice forms_coverage ;;
+        --skip-live)   skip_live=yes ;;
+        --skip-send)   skip_send=yes ;;
+        --verbose)     verbose=yes ;;
+        --no-build)    no_build=yes ;;
+        --help|-h)     usage; exit 0 ;;
+        *) echo "$progname: unknown argument $1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+
+wanted () {
+    case " $chosen " in
+        *" $1 "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# The Emacs the tests were configured with, so this does not silently test a
+# different one from the build.
+emacs_prog=${EMACS:-}
+if [ -z "$emacs_prog" ] && [ -f "$root/test/Makefile" ]; then
+    emacs_prog=$(sed -n 's/^EMACS_PROG *= *//p' "$root/test/Makefile" | head -1)
+fi
+emacs_prog=${emacs_prog:-emacs}
+
+# Every pass runs here: what VM writes during a run -- the IMAP cache of a
+# folder a live test visits -- goes to test/scratch, which `make clean' knows
+# about, and not to wherever this was invoked from.
+cd "$root/test" || exit 2
+
+# One Emacs, told what this run wants: LIVE and OPTIONAL are what
+# VM_TEST_LIVE and VM_TEST_OPTIONAL are set to, the rest goes on the command
+# line.
+# The names here are its own: sh has no local variables, so calling this with
+# the mock pass' 0 once set $live to 0 for every pass after it, and the run
+# stopped using the live servers half way through without saying so.
+emacs_run () {
+    emacs_run_live=$1
+    emacs_run_optional=$2
+    shift 2
+    # What the pass asked for, so the log shows it rather than leaving the
+    # reader to work it out from the number of skips.
+    echo "   VM_TEST_LIVE=$emacs_run_live VM_TEST_OPTIONAL=$emacs_run_optional"
+    if [ "$verbose" = yes ]; then
+        env VM_TEST_LIVE="$emacs_run_live" \
+            VM_TEST_OPTIONAL="$emacs_run_optional" \
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+            --eval '(setq ert-batch-print-level 5)' \
+            --eval '(setq ert-batch-print-length 10)' "$@"
+    else
+        env VM_TEST_LIVE="$emacs_run_live" \
+            VM_TEST_OPTIONAL="$emacs_run_optional" \
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@"
+    fi
+}
+
+##############################################################################
+# What is here
+##############################################################################
+
+probe_output=$("$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
+                             -l "$root/test/vm-test-probe.el" \
+                             -f vm-test-probe-batch 2>/dev/null)
+if [ -z "$probe_output" ]; then
+    echo "$progname: could not probe this machine; is $emacs_prog usable?" >&2
+    exit 2
+fi
+
+probe () {
+    printf '%s\n' "$probe_output" | sed -n "s/^$1=//p" | head -1
+}
+
+config_present=$(probe config_present)
+imap_servers=$(probe imap_servers)
+imap_reached=$(probe imap_reached)
+imap_unreached=$(probe imap_unreached)
+pop_servers=$(probe pop_servers)
+pop_reached=$(probe pop_reached)
+pop_unreached=$(probe pop_unreached)
+send_configured=$(probe send_configured)
+send_to=$(probe send_to)
+optional_installed=$(probe optional_installed)
+optional_test_files=$(probe optional_test_files)
+
+say_servers () {
+    kind=$1 servers=$2 reached=$3 unreached=$4
+    if [ -z "$servers" ]; then
+        echo "  $kind: none configured, the live tests skip"
+    else
+        echo "  $kind: $servers"
+        if [ -n "$reached" ]; then echo "    answered:  $reached"; fi
+        if [ -n "$unreached" ]; then echo "    NO ANSWER: $unreached"; fi
+    fi
+}
+
+echo "What this machine can test"
+if [ "$config_present" = yes ]; then
+    echo "  config: $(probe config_file)"
+else
+    echo "  config: none, so every live test skips (copy"
+    echo "          test/vm-live-config.el.template to test/vm-live-config.el)"
+fi
+say_servers IMAP "$imap_servers" "$imap_reached" "$imap_unreached"
+say_servers POP "$pop_servers" "$pop_reached" "$pop_unreached"
+if [ "$send_configured" = yes ]; then
+    echo "  sending: to $send_to, read back from $(probe send_verify_server)"
+else
+    echo "  sending: not configured, those tests skip"
+fi
+if [ -n "$optional_installed" ]; then
+    echo "  optional: $optional_installed"
+else
+    echo "  optional: none installed, those tests skip (make optional-packages)"
+fi
+echo "  gpg: $(probe gpg)"
+
+if [ -n "$imap_unreached" ] || [ -n "$pop_unreached" ]; then
+    echo
+    echo "A configured server that does not answer fails its tests rather than"
+    echo "skipping them, on purpose: read those reasons before the failures."
+fi
+
+[ "$probe_only" = yes ] && exit 0
+
+##############################################################################
+# The passes
+##############################################################################
+
+if [ "$no_build" = no ]; then
+    echo
+    echo "== building =="
+    make -C "$root/lisp" || {
+        echo "$progname: the lisp did not build; nothing was run" >&2
+        exit 2
+    }
+else
+    # The tests set load-prefer-newer, so a .el newer than its .elc is loaded
+    # from source -- and VM's generators are 400 times slower interpreted, in
+    # pauses of seconds.  Every timing test then fails, and it reads as a
+    # driver that stalls: a git checkout that touched lisp/ produced 2-second
+    # timeouts in fifteen tests and a POP session that "never answered".
+    # Each .el against its own .elc, and only the ones that have one:
+    # vm-cus-load.el and vm-version-conf.el are written by the build and never
+    # compiled, so they are newer than everything by the time it finishes.
+    stale=
+    for el in "$root"/lisp/*.el; do
+        [ -f "${el}c" ] || continue
+        if [ -n "$(find "$el" -newer "${el}c" -print 2>/dev/null)" ]; then
+            stale="$stale
+  newer than its .elc: $el"
+        fi
+    done
+    if [ ! -f "$root/lisp/vm-net.elc" ] || [ -n "$stale" ]; then
+        echo "$progname: lisp/ is not built as new as its source:" >&2
+        if [ -n "$stale" ]; then
+            echo "$stale" | head -4 >&2
+        else
+            echo "  no lisp/*.elc at all" >&2
+        fi
+        echo "$progname: run without --no-build, or make -C lisp first;" >&2
+        echo "  from source the generators are 400 times slower and the" >&2
+        echo "  timing tests fail for that and nothing else" >&2
+        exit 2
+    fi
+fi
+
+status=0
+summary=""
+
+record () {
+    summary="$summary
+  $1"
+}
+
+run_pass () {
+    name=$1
+    shift
+    echo
+    echo "== $name =="
+    if "$@"; then
+        record "$name: passed"
+    else
+        record "$name: FAILED"
+        status=1
+    fi
+}
+
+# 1 or 0, as VM_TEST_LIVE takes them.
+live=1
+[ "$skip_live" = yes ] && live=0
+
+pass_suite () {
+    if [ "$skip_live" = yes ]; then
+        run_pass "suite (live servers skipped)" \
+            emacs_run "$live" 1 -l "$root/test/run-tests.el"
+    else
+        run_pass "suite" emacs_run "$live" 1 -l "$root/test/run-tests.el"
+    fi
+}
+
+pass_imap () {
+    run_pass "IMAP" emacs_run "$live" 1 -l "$root/test/run-imap-tests.el"
+}
+
+pass_pop () {
+    run_pass "POP" emacs_run "$live" 1 -l "$root/test/run-pop-tests.el"
+}
+
+pass_mock () {
+    run_pass "IMAP, live servers skipped" \
+        emacs_run 0 1 -l "$root/test/run-imap-tests.el"
+    run_pass "POP, live servers skipped" \
+        emacs_run 0 1 -l "$root/test/run-pop-tests.el"
+}
+
+pass_no_optional () {
+    if [ -z "$optional_test_files" ]; then
+        record "without the optional packages: no test file mentions one"
+        return
+    fi
+    # Only the files that name one: nothing else can tell whether a package is
+    # installed, and the whole suite again costs two minutes to prove it.
+    set --
+    for file in $optional_test_files; do
+        set -- "$@" -l "$root/test/$file"
+    done
+    run_pass "the tests that use BBDB, emacs-w3m and vcard, without them" \
+        emacs_run "$live" 0 -l "$root/test/vm-test-init.el" "$@" \
+        -f ert-run-tests-batch-and-exit
+}
+
+pass_send () {
+    run_pass "sending real mail to $send_to" \
+        emacs_run 1 1 -l "$root/test/run-send-tests.el"
+}
+
+pass_assert () {
+    run_pass "suite with VM's assertions checked" \
+        emacs_run "$live" 1 \
+        --eval '(setq inhibit-debugger t)' \
+        -l "$root/test/vm-test-init.el" \
+        --eval '(setq vm-assertion-checking-off nil)' \
+        -l "$root/test/run-tests.el"
+}
+
+pass_build () {
+    run_pass "the build system" "$root/test/build-check"
+}
+
+pass_leaks () {
+    run_pass "leak report" emacs_run "$live" 1 -l "$root/test/leak-report.el"
+}
+
+pass_coverage () {
+    run_pass "coverage report" \
+        emacs_run "$live" 1 -l "$root/test/coverage-report.el"
+}
+
+# Form coverage, which the function-call report above cannot give: a function
+# entered once counts as covered there however much of it never ran.  This
+# instruments every form with testcover, so a `cond' arm no test took is
+# reported.  Slower, since edebug instruments the whole tree.
+pass_forms_coverage () {
+    run_pass "form coverage report" \
+        emacs_run "$live" 1 -l "$root/test/forms-coverage-report.el"
+}
+
+pass_one () {
+    run_pass "$one_file" emacs_run "$live" 1 \
+        -l "$root/test/vm-test-init.el" -l "$root/test/$one_file" \
+        -f ert-run-tests-batch-and-exit
+}
+
+if [ -n "$chosen" ]; then
+    wanted one         && pass_one
+    wanted imap        && pass_imap
+    wanted pop         && pass_pop
+    wanted mock        && pass_mock
+    wanted no-optional && pass_no_optional
+    wanted assert      && pass_assert
+    wanted leaks       && pass_leaks
+    wanted coverage    && pass_coverage
+    wanted forms_coverage && pass_forms_coverage
+    wanted build       && pass_build
+    if wanted send; then
+        if [ "$send_configured" = yes ]; then
+            pass_send
+        else
+            record "send: nothing to run, no vm-send-test-config"
+        fi
+    fi
+else
+    pass_build
+    pass_suite
+
+    if [ "$config_present" = yes ] && [ "$skip_live" = no ]; then
+        pass_mock
+    else
+        record "mock servers: covered by the suite, which had no live servers"
+    fi
+
+    if [ -n "$optional_installed" ]; then
+        pass_no_optional
+    else
+        record "without the optional packages: covered by the suite, which had none"
+    fi
+
+    if [ "$skip_send" = yes ]; then
+        record "sending: not run, asked not to"
+    elif [ "$send_configured" = yes ]; then
+        pass_send
+    else
+        record "sending: not run, no vm-send-test-config"
+    fi
+fi
+
+echo
+echo "== summary ==$summary"
+exit $status

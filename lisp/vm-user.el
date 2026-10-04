@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (C) 1997 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -24,6 +24,11 @@
 
 (require 'vm-vars)
 (require 'vm-message)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defun vm-user-composition-folder-buffer ()
   "Return the folder buffer associated with the current buffer.

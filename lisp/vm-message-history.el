@@ -3,7 +3,7 @@
 ;; This file is an add-on for VM
 
 ;; Copyright © 2003 Kevin Rodgers, 2008 Robert Widhopf-Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 
 ;; Author: Kevin Rodgers <ihs_4664@yahoo.com>
 ;; Created: 6 Oct 2003
@@ -37,26 +37,37 @@
 
 ;;; Usage:
 ;;
-;; Add the follwoing line to your ~/.vm
+;; Add the following line to your ~/.vm
 ;;
-;; (require 'vm-message-history)
+;; (vm-message-history-mode 1)
 ;;
-;; Visit a folder, move around and the use the key bindings or menu items for
-;; the moving and browsing the history.
+;; Visit a folder, move around and then use the key bindings or menu items for
+;; moving through and browsing the history.
 ;; C-c p, Motion -> Backward in History
 ;; C-c n, Motion -> Forward in History
 ;; C-c b, Motion -> Browse History
+;;
+;; (require 'vm-message-history) on its own switched this on until 2026, and
+;; does nothing now beyond making the mode available: loading a file and
+;; asking for what it does are separate acts, and Customize loads this one
+;; without being asked (emacs-vm/vm#788).
 
 ;;; TODO: Handle Expunged messages in the history list?
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'easymenu)
 (require 'vm-menu)
 (require 'vm-misc)
 (require 'vm-summary)
 (require 'vm-window)
 (require 'vm-motion)
+(require 'vm-macro)
+
+;; Say so if this file's compiled form outlives the VM it was built
+;; against; see `vm-assert-version' (#791).
+(vm-assert-version)
 
 (defgroup vm-message-history nil
   "Message history for VM folders."
@@ -77,18 +88,20 @@
 
 (make-variable-buffer-local 'vm-message-history-pointer)
 
-(define-key vm-mode-map "\C-cp" 'vm-message-history-backward)
-(define-key vm-mode-map "\C-cn" 'vm-message-history-forward)
-(define-key vm-mode-map "\C-cb" 'vm-message-history-browse)
+(defconst vm-message-history-key-bindings
+  '(("\C-cp" . vm-message-history-backward)
+    ("\C-cn" . vm-message-history-forward)
+    ("\C-cb" . vm-message-history-browse))
+  "The `vm-mode-map' keys `vm-message-history-mode' binds.")
 
-(setq vm-menu-motion-menu
-      (append vm-menu-motion-menu
-	      '(["Backward in History" vm-message-history-backward t]
-		["Forward in History" vm-message-history-forward t]
-		["Browse History" vm-message-history-browse
-		 :active (save-excursion
-			   (vm-select-folder-buffer)
-			   vm-message-history)])))
+(defconst vm-message-history-menu-items
+  '(["Backward in History" vm-message-history-backward t]
+    ["Forward in History" vm-message-history-forward t]
+    ["Browse History" vm-message-history-browse
+     :active (save-excursion
+	       (vm-select-folder-buffer)
+	       vm-message-history)])
+  "The Motion menu entries `vm-message-history-mode' adds.")
 
 ;;;###autoload
 (defun vm-message-history-add ()
@@ -157,6 +170,7 @@ With prefix ARG, select the ARG'th previous message."
   "Select the next message in the current folder's history.
 With prefix ARG, select the ARG'th next message."
   (interactive "p")
+  (or arg (setq arg 1))
   (vm-message-history-backward (- arg)))
 
 (defvar vm-message-history-menu nil
@@ -172,6 +186,7 @@ With prefix ARG, select the ARG'th next message."
     (vm-display nil nil '(vm-goto-message-last-seen)
                 '(vm-goto-message-last-seen))
     (vm-message-history-browse)))
+(put 'vm-message-history-browse-select 'vm-called-by-vm t)
 
 (defvar vm-message-history-browse-mode-map
   (let ((map (make-sparse-keymap)))
@@ -232,7 +247,46 @@ With prefix ARG, select the ARG'th next message."
       ;; jump to selected message or last.
       (goto-char selected))))
 
-(add-hook 'vm-select-message-hook 'vm-message-history-add)
+;;;###autoload
+(define-minor-mode vm-message-history-mode
+  "Move backward and forward through the messages selected in each folder.
+Like a web browser's history: selecting a message forgets the ones selected
+after it, except where `vm-goto-message-last-seen' or one of this file's own
+commands did the selecting.
+
+Turning this on binds \\<vm-mode-map>\\[vm-message-history-backward],
+\\[vm-message-history-forward] and \\[vm-message-history-browse] in
+`vm-mode-map', adds three entries to the Motion menu, and records each message
+as it is selected.  Turning it off undoes all three, and leaves
+`vm-message-history' alone: turning it back on picks up where it left off.
+
+Loading this file switched it on until 2026 (emacs-vm/vm#788).  Customize
+loads it whenever it is asked about a VM option, so loading no longer enables:
+say so here."
+  :global t
+  :group 'vm-message-history
+  (dolist (binding vm-message-history-key-bindings)
+    (if vm-message-history-mode
+	(define-key vm-mode-map (car binding) (cdr binding))
+      ;; Only what this mode bound, so a key another package has taken since
+      ;; is left to it.
+      (when (eq (lookup-key vm-mode-map (car binding)) (cdr binding))
+	;; Removed rather than bound to nil, a nil binding shadowing a parent
+	;; keymap rather than falling through to it.  `keymap-unset' arrived in
+	;; Emacs 29 and VM supports 28.1.
+	(if (fboundp 'keymap-unset)
+	    (keymap-unset vm-mode-map (key-description (car binding)) t)
+	  (define-key vm-mode-map (car binding) nil)))))
+  ;; Removed first either way, so that turning it on twice does not list the
+  ;; entries twice.
+  (setq vm-menu-motion-menu
+	(append (cl-remove-if (lambda (item)
+				(member item vm-message-history-menu-items))
+			      vm-menu-motion-menu)
+		(and vm-message-history-mode vm-message-history-menu-items)))
+  (if vm-message-history-mode
+      (add-hook 'vm-select-message-hook #'vm-message-history-add)
+    (remove-hook 'vm-select-message-hook #'vm-message-history-add)))
 
 (provide 'vm-message-history)
 ;;; vm-message-history.el ends here

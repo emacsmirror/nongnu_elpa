@@ -3,7 +3,7 @@
 ;; This file is part of VM
 ;;
 ;; Copyright (C) 1991, 1993, 1994, 1995, 1997 Kyle E. Jones
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -233,22 +233,6 @@ ROOT-WINDOW-EDGES will be used."
 ;; duplicate this by creating a buffer that can be displayed
 ;; fully in the current window and then run
 ;;
-;;    (progn
-;;      (set-window-buffer (selected-window) (current-buffer))
-;;      (scroll-up nil))
-;;;;;;;;;;;
-;;(defun tapestry-set-buffer-map (buffer-map &optional first-window)
-;;  (let ((w-list (tapestry-window-list first-window)) wb)
-;;    (while (and w-list buffer-map)
-;;      (setq wb (car buffer-map))
-;;      (set-window-buffer
-;;       (car w-list)
-;;       (if (car wb)
-;;	   (or (get-file-buffer (car wb))
-;;	       (find-file-noselect (car wb)))
-;;	 (get-buffer-create (nth 1 wb))))
-;;      (setq w-list (cdr w-list)
-;;	    buffer-map (cdr buffer-map)))))
 
 (defun tapestry-set-buffer-map (buffer-map &optional first-window)
   (let ((w-list (tapestry-window-list first-window))
@@ -546,21 +530,10 @@ ROOT-WINDOW-EDGES will be used."
     (and left top right bottom (list left top right bottom))))
 
 (defun tapestry-window-edges (&optional window)
-  (if (and (fboundp 'window-pixel-edges)
-	   (fboundp 'face-width)
-	   (fboundp 'face-height))
-      (let ((edges (window-pixel-edges window))
-	    tmp)
-	(setq tmp edges)
-	(setcar tmp (/ (car tmp) (face-width 'default)))
-	(setq tmp (cdr tmp))
-	(setcar tmp (/ (car tmp) (face-height 'default)))
-	(setq tmp (cdr tmp))
-	(setcar tmp (/ (car tmp) (face-width 'default)))
-	(setq tmp (cdr tmp))
-	(setcar tmp (/ (car tmp) (face-height 'default)))
-	edges )
-    (window-edges window)))
+  ;; `face-width' and `face-height' were XEmacs's, and divided the pixel
+  ;; edges into character cells.  Emacs has neither, so this has always
+  ;; answered `window-edges', which is already in cells.
+  (window-edges window))
 
 ;; We call these functions instead of calling the Emacs 19 frame
 ;; functions directly to let this package work with v18 Emacs.

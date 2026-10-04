@@ -3,7 +3,7 @@
 ;;; -*- emacs-lisp -*-
 ;;;
 ;;; Copyright (C) 2007 Robert Widhopf-Fenk
-;;; Copyright (C) 2024-2025 The VM Developers
+;;; Copyright (C) 2024-2026 The VM Developers
 ;;;
 ;;; This program is free software; you can redistribute it and/or modify
 ;;; it under the terms of the GNU General Public License as published by
@@ -79,13 +79,10 @@
 ;;
 ;;*****************************************************************************
 
-(setq vm-primary-inbox
-      ;; use one of these two
-      ;; for POP server 
-      "pop:pop.google.com:110:pass:YourEmailID:*"
-      ;; for IMAP server 
-      "imap:imap.google.com:143:inbox:login:YourEmailID:*"
-      )
+;; One of these, not both.  For a POP server:
+(setq vm-primary-inbox "pop:pop.example.com:110:pass:YourEmailID:*")
+;; or for an IMAP server:
+;; (setq vm-primary-inbox "imap:imap.example.com:143:inbox:login:YourEmailID:*")
 
 (setq vm-pop-folder-cache-directory "~/mailcache")
 (setq vm-imap-folder-cache-directory "~/mailcache")
@@ -110,8 +107,8 @@
 ;;*****************************************************************************
 
 ;; See the recipients for emails you sent instead of yourself.
-(setq vm-summary-uninteresting-senders 
-      (regexp-opt '("@robf.de" "Robert Widhopf-Fenk")))
+(setq vm-summary-uninteresting-senders
+      (regexp-opt '("@example.com" "Your Name")))
 
 ;; Change the summary format by setting `vm-summary-format'.
 ;; Run "M-x vm-fix-my-summary!!! RET" to fix existing summaries.
@@ -119,23 +116,24 @@
 ;;*****************************************************************************
 ;; Viewing messages
 ;;
-;; HTML messages can be converted to text or the w3 resp. w3m Emacs viewers
-;; can be used for displaying. 
+;; HTML is displayed by whatever vm-mime-text/html-handler names.  Its default,
+;; auto-select, takes the best of what you have installed, so most people need
+;; set nothing here.  See the manual, HTML display.
+;;
+;; vm-mime-type-converter-alist is for the types nothing displays: name a
+;; program that turns one into something that does.
 ;;
 ;;*****************************************************************************
 
-(setq  vm-mime-type-converter-alist
-      '(("text/html" "text/plain" "lynx -force_html -dump /dev/stdin")
-        ("message/delivery-status"  "text/plain")
-        ("application/zip"  "text/plain" "listzip")
-        ("application/x-zip-compressed"  "text/plain" "zipinfo /dev/stdin")
-        ("application/x-www-form-urlencoded"  "text/plain")
-        ("message/disposition-notification"  "text/plain")
-        ("application/mac-binhex40" "application/octet-stream" "hexbin -s"))
+(setq vm-mime-type-converter-alist
+      '(("application/zip" "text/plain" "zipinfo /dev/stdin")
+        ("application/x-zip-compressed" "text/plain" "zipinfo /dev/stdin")
+        ;; these two carry no text of their own worth showing
+        ("message/delivery-status" "text/plain")
+        ("message/disposition-notification" "text/plain")))
 
-      
 ;; Set up w3m (you should check if it exists)
-(require 'vm-w3m)
+(require 'vm-w3m nil t)   ; nil t: carry on if it is not installed
 (setq vm-included-mime-types-list
       '("text/plain" "text/html" "text/enriched" "message/rfc822"))
 
@@ -143,117 +141,98 @@
 ;; Composing email
 ;;
 ;;*****************************************************************************
-(setq mail-default-headers "From: Robert Widhopf-Fenk <hack@robf.de>\n")
+(setq mail-default-headers "From: Your Name <you@example.com>\n")
 
-(vmpc-my-identities "me@company1.nil" "me@home.nil" "me@alterego.nil")
+;; Personality Crisis sends each message from whichever of your addresses
+;; suits it.  Switching the mode on is what installs it: loading the file
+;; alone has done nothing since VM 8.3.0.
 (require 'vm-pcrisis)
+(vm-pcrisis-mode 1)
+
+;; A quick start, for someone with no rules of their own.  It makes each
+;; address an action setting the From header and asks which to use as a
+;; composition begins.  It assigns vm-pcrisis-conditions, vm-pcrisis-actions
+;; and vm-pcrisis-default-rules outright, so write rules instead of this, not
+;; as well as it.  See the manual, Multiple Email Addresses.
+(vm-pcrisis-my-identities "me@company1.nil" "me@home.nil" "me@alterego.nil")
 
 ;;*****************************************************************************
 ;; A hook function to setup mail-composing buffers
 ;;
 ;;*****************************************************************************
-(defun robf-vm-mail-mode-hook ()
-  "Robert Widhopf-Fenks `vm-mail-mode-hook'."
-  (interactive)
-
+(defun my-vm-mail-mode-hook ()
+  "Set up a composition the way I like it."
+  ;; ask before quitting a composition begun from a message I received
   (when (string-match "received" (buffer-name))
-    (make-local-variable 'vm-confirm-quit)
-    (setq vm-confirm-quit t))
-  
+    (setq-local vm-confirm-quit t))
+
   (setq fill-column 60
-        comment-start "> "
-        indent-line-function 'indent-relative-maybe)
-  
-  ;; mark lines longer than `fill-column' chars red 
+        comment-start "> ")
+
+  ;; colour anything past `fill-column', so an over-long line shows up
   (add-to-list 'mail-font-lock-keywords
                (list (concat "^" (make-string fill-column ?.)
                              "\\(.+$\\)")
                      '(1 font-lock-warning-face t)))
-  
-  (ispell-change-dictionary "deutsch8")
 
   (font-lock-mode 1)
   (turn-on-auto-fill)
-  (turn-on-filladapt-mode)
-  (flyspell-mode 1)
-;  (enriched-mode 1)
-;  (auto-capitalize-mode)
-;  (vm-mail-subject-prefix-cleanup)
-  )
+  (flyspell-mode 1))
 
-(add-hook 'vm-mail-mode-hook 'robf-vm-mail-mode-hook)
-
-;; Do you like boxquotes? 
-(require 'boxquote)
-
-(defun boxquote-region-and-edit-title (s e)
-  (interactive "r")
-  (boxquote-region s e)
-  (call-interactively 'boxquote-title))
+(add-hook 'vm-mail-mode-hook 'my-vm-mail-mode-hook)
 
 ;;*****************************************************************************
 ;; Sending email via SMTP.
 ;;
-;; This is not done by VM, but by separate packages.  The standard package is
-;; smtpmail.el and it should come with your Emacs. If you have more than one
-;; email address and have to send them using different SMTP servers, the you
-;; might want to take a look at esmtpmail.el a fork from smtpmail.el targeted
-;; to deal with personal crisis support.
+;; VM does not send mail itself; Emacs does.  smtpmail.el comes with Emacs and
+;; the manual describes it under Configuration.
 ;;
 ;;*****************************************************************************
 
-(require 'esmtpmail)
-(setq send-mail-function 'esmtpmail-send-it
-      esmtpmail-default-smtp-server "smtp.someprovider.com"
-      ;; trace buffers help debugging problems 
-      esmtpmail-debug-info t)
-
-;; Select the SMTP server based on the From: header, i.e. the email address of
-;; the author.  There are also other authentication  methods, see the docs.
-(setq esmtpmail-send-it-by-alist 
-      (list
-       '("YourEmailAddress1" "SMTPSERVER1"
-         (vm-pop-login "pop:SMTPSERVER1:110:pass:YourEmailID:*"))
-       '("YourEmailAddress2" "SMTPSERVER2"
-         (vm-after-pop "pop:SMTPSERVER2:110:pass:YourEmailID:*"))))
+(setq send-mail-function 'smtpmail-send-it
+      smtpmail-smtp-server "smtp.example.com"
+      ;; 587 is the submission port most providers want
+      smtpmail-smtp-service 587
+      ;; nil tries plain and upgrades if the server asks; starttls requires it
+      smtpmail-stream-type 'starttls)
 
 ;;*****************************************************************************
 ;; Feed mail to a local queue if you are offline
 ;;
 ;;*****************************************************************************
-(require 'feedmail)
+(when (require 'feedmail nil t)
+  ;; This replaces the send-mail-function set above: mail goes to the queue
+  ;; and is sent from there.
+  (setq send-mail-function 'vm-mail-send-or-feed-it
+        feedmail-enable-queue t
+        feedmail-ask-before-queue nil
+        feedmail-buffer-eating-function 'feedmail-buffer-to-smtpmail
+        feedmail-queue-directory (expand-file-name "~/Mail/QUEUE"))
 
-(setq send-mail-function 'vm-mail-send-or-feed-it
-      feedmail-enable-queue t
-      feedmail-ask-before-queue nil
-      feedmail-buffer-eating-function 'feedmail-buffer-to-smtpmail
-      feedmail-queue-directory (expand-file-name "~/Mail/QUEUE"))
+  (define-key vm-mode-map "Qr"     'feedmail-run-the-queue)
+  (define-key vm-mode-map "Qc"     'vm-smtp-server-online-p)
+  (define-key vm-mode-map "Qw"     'feedmail-queue-reminder-medium))
 
-(define-key vm-mode-map "Qr"     'feedmail-run-the-queue)
-(define-key vm-mode-map "Qc"     'vm-smtp-server-online-p)
-(define-key vm-mode-map "Qw"     'feedmail-queue-reminder-medium)
+(when (featurep 'feedmail)
+  (add-to-list 'auto-mode-alist '("\\.fqm\\'" . mail-mode))
 
-(setq auto-mode-alist (cons '("\\.fqm$" . mail-mode) auto-mode-alist))
-
-;; Check the queue on startup 
-(when (and (> (car (feedmail-look-at-queue-directory
-                    feedmail-queue-directory)) 0))
-  (feedmail-queue-reminder-medium)
-  (sit-for 2)
-  (if (y-or-n-p "Send messages now? ")
-      (feedmail-run-the-queue)))
+  ;; Check the queue on startup
+  (when (> (car (feedmail-look-at-queue-directory feedmail-queue-directory)) 0)
+    (feedmail-queue-reminder-medium)
+    (sit-for 2)
+    (when (y-or-n-p "Send messages now? ")
+      (feedmail-run-the-queue))))
 
 ;;*****************************************************************************
 ;; BBDB - the address book for Emacs
 ;;
 ;;*****************************************************************************
-(require 'bbdb)
-(require 'bbdb-autoloads)
-(bbdb-initialize 'vm 'sendmail)
-(bbdb-insinuate-vm)
-
-;; create records for people you reply to
-(add-hook 'vm-reply-hook 'bbdb-force-record-create)
+(when (require 'bbdb nil t)
+  (require 'bbdb-autoloads nil t)
+  (bbdb-initialize 'vm 'sendmail)
+  (bbdb-insinuate-vm)
+  ;; create records for people you reply to
+  (add-hook 'vm-reply-hook 'bbdb-force-record-create))
 
 ;;*****************************************************************************
 ;; Now change some keyboard bindings 
@@ -270,14 +249,13 @@
 (define-key vm-mode-map "\C-R"  'vm-followup-other-frame)
 (define-key vm-mode-map "\C-r"  'vm-followup-include-text-other-frame)
 (define-key vm-mode-map "f"     'vm-forward-message-other-frame)
-(define-key vm-mode-map "m"     'vm-toggle-mark)
-(define-key vm-mode-map "d"     'vm-delete-message-action)
+(define-key vm-mode-map "m"     'vm-mark-message)
+(define-key vm-mode-map "d"     'vm-delete-message)
 (define-key vm-mode-map "s"     'vm-virtual-save-message)
-(define-key vm-mode-map "w"     'vm-save-message-preview)
+(define-key vm-mode-map "w"     'vm-save-message-sans-headers)
 (define-key vm-mode-map "lr"    'vm-delete-message-labels)
-(define-key vm-mode-map "li"    'rf-vm-label-toggle-important)
-(define-key vm-mode-map "ls"    'rf-vm-label-toggle-spam)
-(define-key vm-mode-map "W"     'vm-save-message-sans-headers)
+;; A prefix key has to be a keymap before anything hangs off it, and this one
+;; carries the window configuration commands below.
 (define-key vm-mode-map "W"     (make-sparse-keymap))
 (define-key vm-mode-map "WW"    'vm-apply-window-configuration)
 (define-key vm-mode-map "WS"    'vm-save-window-configuration)

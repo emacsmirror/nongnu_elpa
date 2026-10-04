@@ -1,6 +1,6 @@
 ;;; vm-pop-test.el --- Tests for vm-pop.el -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 The VM Developers
+;; Copyright (C) 2025-2026 The VM Developers
 
 ;; This file is part of VM.
 
@@ -200,24 +200,6 @@
   (should-error (signal 'vm-uidl-failed '("test"))
                 :type 'vm-uidl-failed))
 
-;;; vm-pop-stat-* accessor tests
-
-(ert-deftest vm-pop-test-stat-accessors ()
-  "Test POP status blob accessors."
-  (let ((blob (make-vector 12 nil)))
-    ;; Set some values
-    (aset blob 0 'timer)
-    (aset blob 1 t)
-    (aset blob 2 "inbox")
-    (aset blob 3 5)
-    (aset blob 4 10)
-    ;; Test accessors
-    (should (eq (vm-pop-stat-timer blob) 'timer))
-    (should (eq (vm-pop-stat-did-report blob) t))
-    (should (equal (vm-pop-stat-x-box blob) "inbox"))
-    (should (= (vm-pop-stat-x-currmsg blob) 5))
-    (should (= (vm-pop-stat-x-maxmsg blob) 10))))
-
 ;;; vm-maildrop-sans-password tests (handles both POP and IMAP)
 
 (ert-deftest vm-pop-test-maildrop-sans-password-pop ()
@@ -251,158 +233,9 @@
 
 ;;; POP protocol tests with mock network layer
 
-(ert-deftest vm-pop-test-send-command-records ()
-  "Test vm-pop-send-command records command sent."
-  (vm-test-with-pop-session '("+OK POP3 ready\r\n" "+OK\r\n")
-    (let ((process vm-test-mock-process))
-      (vm-pop-send-command process "USER testuser")
-      (should (member "USER testuser\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-pop-test-send-command-hides-password ()
-  "Test vm-pop-send-command obscures PASS command in buffer."
-  (vm-test-with-pop-session '("+OK POP3 ready\r\n" "+OK\r\n")
-    (let ((process vm-test-mock-process))
-      (vm-pop-send-command process "PASS secret123")
-      ;; Command should be sent
-      (should (member "PASS secret123\r\n" vm-test-mock-commands))
-      ;; But buffer should show <omitted>
-      (should (string-match "PASS <omitted>" (buffer-string))))))
-
-(ert-deftest vm-pop-test-read-response-ok ()
-  "Test vm-pop-read-response returns t for +OK."
-  (vm-test-with-pop-session '("+OK POP3 ready\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (should (eq (vm-pop-read-response process) t)))))
-
-(ert-deftest vm-pop-test-read-response-ok-with-string ()
-  "Test vm-pop-read-response returns response string when requested."
-  (vm-test-with-pop-session '("+OK Welcome to POP3\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((response (vm-pop-read-response process t)))
-        (should (stringp response))
-        (should (string-match "Welcome" response))))))
-
-(ert-deftest vm-pop-test-read-response-err ()
-  "Test vm-pop-read-response returns nil for -ERR."
-  (vm-test-with-pop-session '("-ERR Authentication failed\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (should (null (vm-pop-read-response process))))))
-
-(ert-deftest vm-pop-test-read-stat-response ()
-  "Test vm-pop-read-stat-response parses message count and size."
-  (vm-test-with-pop-session '("+OK 5 12345\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-stat-response process)))
-        (should (listp result))
-        (should (= (car result) 5))      ; message count
-        (should (= (cadr result) 12345)))))) ; total size
-
-(ert-deftest vm-pop-test-read-stat-response-empty ()
-  "Test vm-pop-read-stat-response with empty mailbox."
-  (vm-test-with-pop-session '("+OK 0 0\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-stat-response process)))
-        (should (= (car result) 0))
-        (should (= (cadr result) 0))))))
-
-(ert-deftest vm-pop-test-read-list-response ()
-  "Test vm-pop-read-list-response parses message size."
-  (vm-test-with-pop-session '("+OK 1 2048\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-list-response process)))
-        (should (= result 2048))))))
-
-(ert-deftest vm-pop-test-read-uidl-long-response ()
-  "Test vm-pop-read-uidl-long-response parses multi-line UIDL."
-  (vm-test-with-pop-session '("+OK\r\n1 UID001\r\n2 UID002\r\n3 UID003\r\n.\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (let ((result (vm-pop-read-uidl-long-response process)))
-        (should (listp result))
-        (should (= (length result) 3))
-        ;; Each entry is (msgnum-string . uidl), list is in reverse order
-        (should (equal (car (nth 0 result)) "3"))
-        (should (equal (cdr (nth 0 result)) "UID003"))
-        (should (equal (car (nth 2 result)) "1"))
-        (should (equal (cdr (nth 2 result)) "UID001"))))))
-
-(ert-deftest vm-pop-test-read-uidl-no-support ()
-  "Test vm-pop-read-uidl-long-response returns nil when UIDL not supported."
-  (vm-test-with-pop-session '("-ERR UIDL not supported\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (should (null (vm-pop-read-uidl-long-response process))))))
-
-(ert-deftest vm-pop-test-read-past-dot-sentinel ()
-  "Test vm-pop-read-past-dot-sentinel-line finds end of multi-line response."
-  (vm-test-with-pop-session '("Line 1\r\nLine 2\r\nLine 3\r\n.\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      (vm-pop-read-past-dot-sentinel-line process)
-      ;; vm-pop-read-point should now be past the dot line
-      (should (>= vm-pop-read-point (point-max))))))
+ ; total size
 
 ;;; POP session flow tests
-
-(ert-deftest vm-pop-test-login-sequence ()
-  "Test a typical POP login command sequence."
-  (vm-test-with-pop-session
-      '("+OK POP3 server ready\r\n"
-        "+OK User accepted\r\n"
-        "+OK Password accepted\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      ;; Read greeting
-      (should (vm-pop-read-response process))
-      ;; Send USER
-      (vm-pop-send-command process "USER testuser")
-      (should (vm-pop-read-response process))
-      ;; Send PASS
-      (vm-pop-send-command process "PASS secret")
-      (should (vm-pop-read-response process))
-      ;; Verify commands were sent
-      (should (member "USER testuser\r\n" vm-test-mock-commands))
-      (should (member "PASS secret\r\n" vm-test-mock-commands)))))
-
-(ert-deftest vm-pop-test-stat-list-sequence ()
-  "Test STAT and LIST command sequence."
-  (vm-test-with-pop-session
-      '("+OK 3 5000\r\n"
-        "+OK 1 1500\r\n"
-        "+OK 2 2000\r\n"
-        "+OK 3 1500\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      ;; STAT
-      (let ((stat (vm-pop-read-stat-response process)))
-        (should (= (car stat) 3))
-        (should (= (cadr stat) 5000)))
-      ;; LIST for each message
-      (vm-pop-send-command process "LIST 1")
-      (should (= (vm-pop-read-list-response process) 1500))
-      (vm-pop-send-command process "LIST 2")
-      (should (= (vm-pop-read-list-response process) 2000))
-      (vm-pop-send-command process "LIST 3")
-      (should (= (vm-pop-read-list-response process) 1500)))))
-
-(ert-deftest vm-pop-test-error-handling ()
-  "Test handling of POP error responses."
-  (vm-test-with-pop-session
-      '("+OK Ready\r\n"
-        "-ERR Invalid command\r\n")
-    (let ((process vm-test-mock-process))
-      (setq vm-pop-read-point (point-min-marker))
-      ;; First response OK
-      (should (vm-pop-read-response process))
-      ;; Second response is error
-      (vm-pop-send-command process "BADCMD")
-      (should (null (vm-pop-read-response process))))))
 
 ;;; Spec parsing edge cases
 
@@ -426,86 +259,30 @@
                  "pop:mail.example.com:110:pass:user:*")))
     (should (equal (nth 5 result) "*"))))
 
-;;; vm-pop-retrieve-to-target tests
+;;; vm-pop-get-password / auth-source tests
 
-(defconst vm-pop-test--retrieved-message
-  (concat "From: sender@example.com\r\n"
-          "To: recipient@example.com\r\n"
-          "Subject: POP retrieval test\r\n"
-          "\r\n"
-          "Hello, world.\r\n"
-          ".\r\n")
-  "A complete POP RETR response body, terminated by the \".\" line.")
-
-(defmacro vm-pop-test--with-retrieval (target-form &rest body)
-  "Run `vm-pop-retrieve-to-target' on a mocked session, then execute BODY.
-TARGET-FORM is evaluated to produce the target passed to the function.
-BODY is executed in the mock session buffer with `target' bound to the
-target and `result' bound to the function's return value."
-  (declare (indent 1) (debug t))
-  `(vm-test-with-pop-session (list vm-pop-test--retrieved-message)
-     (setq vm-folder-type 'From_)
-     (let* ((target ,target-form)
-            (statblob (make-vector 12 nil))
-            (result (vm-pop-retrieve-to-target
-                     vm-test-mock-process target statblob)))
-       (ignore result)
-       ,@body)))
-
-(ert-deftest vm-pop-test-retrieve-to-target-file-writes-message ()
-  "Test that retrieving to a file target actually writes the message.
-Regression test: a stray `defvar' became the then-branch of the
-\(if (stringp target) ...) form, so nothing was ever written to the
-crashbox while the message was still deleted from the session buffer,
-making retrieved mail disappear."
-  (let ((target-file (make-temp-file "vm-pop-test-crashbox-")))
+(ert-deftest vm-pop-test-get-password-from-authinfo ()
+  "Test that a POP password is read from auth-source.
+Regression test for issue #460; see the IMAP counterpart."
+  (let ((file (make-temp-file "vm-authinfo")))
     (unwind-protect
-        (vm-pop-test--with-retrieval target-file
-          (should result)
-          (let ((contents (with-temp-buffer
-                            (insert-file-contents target)
-                            (buffer-string))))
-            (should (string-prefix-p "From " contents))
-            (should (string-match-p "Subject: POP retrieval test" contents))
-            (should (string-match-p "Hello, world\\." contents))
-            ;; CRLF must have been converted to LF on the way out
-            (should-not (string-match-p "\r" contents))))
-      (delete-file target-file))))
-
-(ert-deftest vm-pop-test-retrieve-to-target-file-appends ()
-  "Test that retrieving to a file target appends to existing content."
-  (let ((target-file (make-temp-file "vm-pop-test-crashbox-" nil nil
-                                     "From preexisting@example.com\n\n")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-file
-          (let ((contents (with-temp-buffer
-                            (insert-file-contents target)
-                            (buffer-string))))
-            (should (string-match-p "preexisting@example.com" contents))
-            (should (string-match-p "Subject: POP retrieval test" contents))))
-      (delete-file target-file))))
-
-(ert-deftest vm-pop-test-retrieve-to-target-buffer-inserts-message ()
-  "Test that retrieving to a buffer target inserts the message."
-  (let ((target-buffer (generate-new-buffer " *vm-pop-test-target*")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-buffer
-          (should result)
-          (let ((contents (with-current-buffer target
-                            (buffer-string))))
-            (should (string-prefix-p "From " contents))
-            (should (string-match-p "Subject: POP retrieval test" contents))
-            (should (string-match-p "Hello, world\\." contents))))
-      (kill-buffer target-buffer))))
-
-(ert-deftest vm-pop-test-retrieve-to-target-consumes-session-text ()
-  "Test that the retrieved message is removed from the session buffer."
-  (let ((target-buffer (generate-new-buffer " *vm-pop-test-target*")))
-    (unwind-protect
-        (vm-pop-test--with-retrieval target-buffer
-          (should-not (string-match-p "Subject: POP retrieval test"
-                                      (buffer-string))))
-      (kill-buffer target-buffer))))
+        (progn
+          (with-temp-file file
+            (insert "machine pop.example.com login user port 110"
+                    " password s3cret\n"))
+          (let ((auth-sources (list file))
+                (auth-source-do-cache nil)
+                (vm-pop-passwords nil)
+                (vm-pop-folder-alist nil))
+            (auth-source-forget-all-cached)
+            (should (equal (vm-pop-get-password
+                            "pop.example.com"
+                            "pop:pop.example.com:110:pass:user:*"
+                            "user" "pop.example.com" 110
+                            nil)       ; ask-password
+                           "s3cret"))))
+      (delete-file file)
+      (auth-source-forget-all-cached))))
 
 (provide 'vm-pop-test)
 

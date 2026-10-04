@@ -4,6 +4,18 @@
 make byte-compile-lint
 make native-compile-lint
 
+** a call to a function no file defines
+make cross-file-lint
+
+Compiles each file in an Emacs of its own and fails on "not known to be
+defined".  byte-compile-lint cannot see those: it compiles the whole directory
+in one Emacs, so compiling vm-imap.el teaches that session the functions
+vm-reply.el goes on to call.  A user's Emacs native-compiles one file at a
+time and prints them, which is how seven of these were noticed.
+
+The fix is a declare-function beside the others at the top of the file, with
+the arglist the definition has.
+
 ** package-lint of vm.el (external package-lint)
 make package-lint
 
@@ -19,4 +31,337 @@ gets Lisp nesting exceeds `max-lisp-eval-depth': 1601
 ** elisp-lint (external package elisp-lint)
 make elisp-lint
 *** lots of errors, many false positives.
+
+* the manual
+** the reference appendix is generated and committed
+
+=info/vm-reference.texinfo= is built from the docstrings by
+=info/gen-reference.el=, and unlike VM's other generated files it *is*
+committed.  =info/vm.texinfo= has =@include vm-reference.texinfo=, and makeinfo
+writes no manual at all when the file is missing -- not a manual without its
+appendix, nothing.  So a build that never runs =make= gets no manual, and the
+NonGNU ELPA tarball is exactly such a build: it ships what git has.  Issue #589.
+
+=make= regenerates it, replacing it only when it changed.  After changing a
+docstring:
+
+: make -C info check-reference
+
+fails if the committed copy no longer matches the code, and says to =git add=
+the regenerated file.  Run it before a release.
+
+* testing
+** running the suite
+=test/test-runner= runs the tests, and nothing else does: the Makefile has no
+Emacs of its own, =make test= forwards to the runner, and =ARGS= goes through.
+
+#+begin_src sh
+cd test && ./test-runner            # every pass this machine can run
+cd test && ./test-runner --probe    # what is available, run nothing
+cd test && make test ARGS="--one vm-imap-test.el"
+#+end_src
+
+It asks what is there before running anything -- which configured servers
+answer, whether mail can be sent, which optional packages are installed -- so
+that a failure can be told from a machine that is short of a server.  Then it
+runs each pass in its own Emacs, every one this machine can:
+
+| suite       | everything, with whatever this machine has                    |
+| mock        | IMAP and POP again with the live servers skipped, where a config exists |
+| no-optional | the tests that name bbdb, emacs-w3m or vcard, run without them, where they are installed |
+| send        | real mail, sent and read back, where the config says where to |
+
+Every pass runs whichever fails; the summary at the end names each one.
+
+Options, from =./test-runner --help=:
+
+| --one FILE    | one test file                              |
+| --imap, --pop | those tests alone                          |
+| --send        | the mail-sending tests alone               |
+| --mock        | IMAP and POP with the live servers skipped |
+| --no-optional | those tests, run without the packages       |
+| --assert      | the suite with VM's own assertions checked |
+| --leaks       | what a run leaves behind, see below        |
+| --coverage    | writes test/coverage-results.txt           |
+| --verbose     | deeper printing                            |
+| --skip-live, --skip-send, --no-build | modify a run              |
+
+=make test= fetches bbdb, emacs-w3m and vcard into =test/opt/elpa= before it
+runs anything, and records that with the stamp =test/opt/installed=: a run
+should cover as much as the machine can, not skip whatever nobody remembered
+to install.  That is the one thing in the tests that needs the network, and it
+happens once.
+
+A failure leaves no stamp and stops the run, so the next one tries again.  A
+stamp written anyway would say the packages are here when they are not, and
+their tests would skip from then on with nothing to show for it.  =make
+test-no-opt= is the way past it: everything, fetching nothing, those tests
+skipping.  =make optional-packages= is the fetch by name, and removing the
+stamp asks for it again.
+
+The optional packages are what the bbdb, w3m and vcard tests need; without them
+those tests skip.  Fetching them takes the network, so =make clean= leaves them
+alone -- it removes only what a run produced, =test/scratch= and the coverage
+report.  =make distclean= removes them, being the target for everything that is
+not part of the checkout.  A run that reports eleven skipped tests rather than
+one has usually lost them.
+
+Each target byte-compiles =lisp/= first, deliberately: macros and =defsubst=
+forms are inlined at compile time, so a test that stubs one of those passes
+from source and silently does nothing against a =.elc=.  If a fix-reverted run
+still passes, suspect a stale =.elc= before suspecting the test.
+
+** tests that send mail
+Nothing else in the suite sends anything: every test stubs =mail-send=, so the
+send path is checked by reading code and by hand.  =./test-runner --send= closes that
+gap where the machine can send mail.  It composes with =vm-mail=, sends with
+=vm-mail-send=, and then reads the mailbox the mail arrives in with the live
+IMAP harness' own client, waiting for it.
+
+The opt-in is a =vm-send-test-config= in =test/vm-live-config.el=; the template
+describes it.  Without one every test skips.
+
+=:to= and =:verify-server= have to be two ends of the same mailbox, and this is
+the thing to get wrong: the servers in =vm-imap-test-servers= are usually test
+accounts on a local dovecot, and such an account receives nothing that is sent
+to your address.  Point =:verify-server= at one of those and every test sends
+its mail, waits =:wait= seconds and fails -- which is what happened the first
+time this was run against a real configuration.  The failure says so now, and
+reports how many messages the mailbox holds, an empty one being the giveaway.
+
+Mail that arrives in a mirror -- mbsync, offlineimap -- arrives when the mirror
+next runs, so =:wait= has to cover that or the message is there and the test has
+stopped looking.
+
+The messages a failed run leaves behind are yours to remove: the cleanup looks
+in the same wrong mailbox.  They carry =X-VM-Send-Test= and a subject beginning
+=vm-send-test=.
+
+These are a pass of their own, run when the config names an address to send
+to: =vm-test-excluded-files= in =vm-test-init.el= keeps them out of the suite
+itself, so they run once, in that pass, and =./test-runner --skip-send= leaves
+them out.
+
+Two rules the harness enforces, because real mail cannot be recalled:
+
+- Mail goes only to the =:to= in the config, which should be your own address.
+- Every message carries an =X-VM-Send-Test= header naming the Emacs process, and
+  each test deletes and expunges its own again, pass or fail.
+
+No password belongs in the config: how the machine sends mail is its own
+arrangement, so the config sets =send-mail-function= and whatever that needs --
+msmtp through =sendmail-program=, smtpmail with auth-source, or anything else.
+
+** live IMAP tests
+Tests that talk to a real IMAP server, for the parts of =vm-imap.el= that
+cannot be reached with mocks.  Design and rationale:
+[[file:design/imap-live-tests.org][design/imap-live-tests.org]].
+
+The opt-in is =test/vm-live-config.el=, copied from the checked-in
+=test/vm-live-config.el.template=.  Create it and these run as part of
+=make test= like any other test; without it they all skip and the suite still
+passes.  =./test-runner --imap= runs only them, which is the convenient thing
+while working on IMAP.
+
+So on a configured machine a run does reach the network and takes longer.  To
+suppress that without deleting the config:
+
+#+begin_src sh
+cd test && ./test-runner --skip-live
+#+end_src
+
+The mock servers run either way.  On a configured machine the default run
+includes a pass with the live servers skipped, so a mock that has stopped
+agreeing with the client fails there rather than on someone else's checkout.
+
+*** paths
+dovecot's location depends on how it was installed.  The commands below use
+=$DOVECOT_ETC=; set it once:
+
+#+begin_src sh
+DOVECOT_ETC=/opt/local/etc/dovecot            # MacPorts
+DOVECOT_ETC="$(brew --prefix)/etc/dovecot"    # Homebrew
+DOVECOT_ETC=/etc/dovecot                      # Linux distribution packages
+#+end_src
+
+| install       | prefix                  | reload                          |
+|---------------+-------------------------+---------------------------------|
+| MacPorts      | =/opt/local=            | =sudo port reload dovecot=      |
+| Homebrew arm  | =/opt/homebrew=         | =brew services restart dovecot= |
+| Homebrew x86  | =/usr/local=            | =brew services restart dovecot= |
+| Linux         | =/usr=, config in =/etc= | =sudo systemctl reload dovecot= |
+
+=doveadm reload= works anywhere, given the privileges to talk to the running
+instance.  =$(brew --prefix)= is the reliable way to get the Homebrew prefix
+rather than assuming which of the two it is.
+
+Two files matter: =$DOVECOT_ETC/users=, the =passwd-file= passdb named by the
+=passdb {}= block, and =dovecot.conf= or something it includes from
+=conf.d/=.  Confirm what your instance actually reads with =doveconf -n=.
+
+*** one-time dovecot setup
+Add two test users.  =doveadm pw= prompts for the password and prints the
+hash.  Check =doveadm pw -l= for the schemes your build actually has -- the
+MacPorts 2.3.21 build has no =SHA512-CRYPT=, so use =BLF-CRYPT=:
+
+#+begin_src sh
+doveadm pw -s BLF-CRYPT
+#+end_src
+
+=doveadm= may complain =net_connect_unix(.../stats-writer) failed: Permission
+denied= on the way; for =pw= that is noise, the hash is still printed.
+
+Append the users to =$DOVECOT_ETC/users=.  The userdb supplies uid, gid and
+home, so the remaining fields stay empty:
+
+#+begin_example
+vmtest1:{BLF-CRYPT}$2y$05$...:::::
+vmtest2:{BLF-CRYPT}$2y$05$...:::::
+#+end_example
+
+Then reload dovecot, per the table above.  It may need privileges.
+
+Two accounts, because the cross-account tests -- saving to another IMAP
+folder, IMAP-FCC -- need somewhere to save *to*.  Use throwaway accounts:
+the tests create and delete mailboxes named =vmtest*=.  Never point the
+config at an account holding real mail.
+
+*** one-time TLS setup, for the TLS tests only
+The plain tests need nothing further.  For TLS, dovecot ships listening on
+993 but with =ssl = no= and no certificate, so the port accepts a connection
+and then cannot complete a handshake.
+
+Generate a self-signed certificate.  The =subjectAltName= matters: modern
+GnuTLS checks it and ignores a bare CN, and the name has to match the =:host=
+in the config:
+
+#+begin_src sh
+sudo mkdir -p "$DOVECOT_ETC/ssl"
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+     -subj /CN=localhost -addext subjectAltName=DNS:localhost \
+     -keyout "$DOVECOT_ETC/ssl/vmtest-key.pem" \
+     -out   "$DOVECOT_ETC/ssl/vmtest-cert.pem"
+#+end_src
+
+Enable it in =$DOVECOT_ETC/conf.d/10-ssl.conf=, which =dovecot.conf= picks up
+through its =!include conf.d/*.conf=.  On this MacPorts install that file
+holds exactly one line, =ssl = no=, which is what leaves 993 listening but
+unable to handshake.  Replace it with:
+
+#+begin_example
+ssl = yes
+ssl_cert = </opt/local/etc/dovecot/ssl/vmtest-cert.pem
+ssl_key = </opt/local/etc/dovecot/ssl/vmtest-key.pem
+#+end_example
+
+Full paths, and the leading =<= on each: dovecot does no shell expansion, so
+=$DOVECOT_ETC= will not work here, and =<= means "read the file" rather than
+"use this string as the value".  =ssl_min_protocol= already defaults to
+TLSv1.2, which is fine.
+
+Reload, then check dovecot agrees:
+
+#+begin_src sh
+doveconf ssl ssl_cert ssl_key
+#+end_src
+
+Only implicit TLS on 993 is covered.  VM has no STARTTLS, and the
+=vm-stunnel-program= route is deliberately not tested.
+
+*** the config file
+Copy the checked-in template and edit it:
+
+#+begin_src sh
+cp test/vm-live-config.el.template test/vm-live-config.el
+#+end_src
+
+=test/vm-live-config.el= is gitignored -- it holds passwords, so keep it that
+way.  The template describes both protocols and every key; read it there.
+
+What it cannot tell you is what to put in =:trustfile= here: the self-signed
+certificate itself, which is its own trust anchor.  Without it Emacs either
+rejects the certificate or prompts, and a prompt under batch ert is a hang.
+
+*** running them
+#+begin_src sh
+cd test && ./test-runner --imap
+#+end_src
+
+Reading the result:
+
+- Everything skipped :: no config file, or it set no servers.
+- A configured server that cannot be reached fails, it does not skip.  That
+  is on purpose; a suite that quietly skips a server it was told about has no
+  coverage.
+- A slow cascade of timeouts rather than tidy authentication failures means
+  the password is wrong.  dovecot's anvil service escalates a per-IP penalty
+  on repeated auth failures until it exceeds the harness timeout, so check
+  the credentials before suspecting the harness.
+- TLS handshake failures :: =ssl = no= still set, the certificate's
+  =subjectAltName= not matching =:host=, or =:trustfile= pointing elsewhere.
+
+=mail_max_userip_connections= (10 by default) caps concurrent sessions per
+IP, so a test that leaks sessions will start failing its neighbours.
+
+** POP tests
+Two kinds, and only the second needs anything set up.
+
+*** the mock server, which always runs
+=test/vm-pop-mock.el= is a POP3 server inside the test process, on a port the
+operating system picks.  =make test= runs those tests everywhere, with no
+configuration and no network beyond the loopback interface.  They are where
+the failure paths live -- a download cut off half way, a server with no
+=UIDL=, a =DELE= answered =-ERR= -- since a real server will not do those on
+request.
+
+#+begin_src sh
+cd test && ./test-runner --pop
+#+end_src
+
+*** the live tests, against the same dovecot
+Add =pop3= to the protocols.  Out of the box the MacPorts and Homebrew
+configs list =imap= only, so nothing is listening on 110:
+
+#+begin_src sh
+grep -n '^protocols' "$DOVECOT_ETC"/dovecot.conf "$DOVECOT_ETC"/conf.d/*.conf
+#+end_src
+
+#+begin_example
+protocols = imap pop3
+#+end_example
+
+With =ssl = yes= already set for the IMAP TLS tests, 995 comes with it and
+uses the same certificate; there is nothing else to do.  Reload, then check:
+
+#+begin_src sh
+sudo port reload dovecot          # or the reload for your install
+doveconf -n protocols
+#+end_src
+
+Then add the POP servers.  They live in the same =test/vm-live-config.el=,
+whose template carries the =vm-pop-test-servers= form; fill in your own
+passwords.
+
+The live POP tests also need the IMAP server called =plain= for the same
+account, and skip without it: POP3 has no =APPEND=, so a fixture cannot be
+created over POP.  The message is put into =INBOX= over IMAP and read back
+over POP.
+
+That means these tests use your test account's real =INBOX= rather than a
+throwaway mailbox.  Each fixture carries an =X-VMTest-Id= header, the tests
+look for their own message rather than assuming the maildrop is empty, and the
+fixture is deleted and expunged over IMAP afterwards even when the test fails.
+Nothing else in the mailbox is touched.
+
+*** optional: covering VM's cram-md5 auth
+Only =login= is exercised by default.  VM also has a =cram-md5= branch, which
+needs both a server mechanism and a matching hash, since dovecot ships with
+=auth_mechanisms = plain=:
+
+#+begin_example
+auth_mechanisms = plain cram-md5
+#+end_example
+
+and a =doveadm pw -s CRAM-MD5= hash for the user.  Then add a third server
+entry with =:auth "cram-md5"=.  Nothing tests this yet.
 
