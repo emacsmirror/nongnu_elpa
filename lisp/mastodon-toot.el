@@ -2192,7 +2192,8 @@ VISIBILITY is the toot's visibility."
                    ;; if a user hits reply while a compose buffer is already
                    ;; open, we really ought to wipe it all and start over.
                    (switch-to-buffer-other-window buffer-exists)
-                   (if (not (y-or-n-p "Overwrite existing compose buffer?"))
+                   (if (and  mastodon-toot-current-toot-text ;; only ask if buffer not empty
+                             (not (y-or-n-p "Overwrite existing compose buffer?")))
                        (user-error "Aborting")
                      (kill-buffer-and-window)
                      (get-buffer-create buffer-name))))
