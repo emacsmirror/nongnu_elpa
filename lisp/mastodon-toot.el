@@ -1308,9 +1308,14 @@ With prefix ARG, read a visibility type in the minibuffer."
             (cond ((string= mastodon-toot--visibility "public")
                    "unlisted")
                   ((string= mastodon-toot--visibility "unlisted")
-                   "private")
+                   ;; XXX: followers-only means no quoting:
+                   (progn (setq mastodon-toot-quote-policy 'nobody)
+                          "private"))
                   ((string= mastodon-toot--visibility "private")
-                   "direct")
+                   (progn
+                     (setq mastodon-toot-quote-policy
+                           (mastodon-toot-default-quote-policy))
+                     "direct"))
                   (t
                    "public"))))
     (mastodon-toot--update-status-fields)))
