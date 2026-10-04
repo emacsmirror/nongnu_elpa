@@ -40,8 +40,9 @@
   any backend.
 
 ** Context provider
-+ With =codex-ide-context-auto-start= non-nil (default), new sessions
-  enable the IDE context IPC automatically.
++ With =codex-ide-context-auto-start= non-nil (default), new GNU Emacs
+  sessions enable the IDE context IPC automatically.  Neomacs skips this
+  legacy =/ide= server autostart; explicit context commands remain available.
 + Disable with =(setq codex-ide-context-auto-start nil)=.
 
 ** MCP tools

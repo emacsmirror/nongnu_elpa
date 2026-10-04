@@ -81,7 +81,9 @@ Frames larger than this are rejected before parsing."
   :group 'codex-ide)
 
 (defcustom codex-ide-context-auto-start t
-  "When non-nil, start the IDE context provider for new Codex sessions."
+  "When non-nil, start the IDE context provider for new GNU Emacs sessions.
+Automatic startup is disabled on Neomacs; explicit context commands
+remain available."
   :type 'boolean
   :group 'codex-ide)
 

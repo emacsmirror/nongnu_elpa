@@ -696,8 +696,8 @@ session-local overrides needed by enabled integration helpers."
    (or buffer (current-buffer))))
 
 (defun codex-ide--maybe-ensure-context-server ()
-  "Start the IDE context provider when auto-start is enabled."
-  (when codex-ide-context-auto-start
+  "Start the IDE context provider when auto-start is enabled on GNU Emacs."
+  (when (and codex-ide-context-auto-start (not (featurep 'neomacs)))
     (codex-ide-context-mode 1)))
 
 ;;; Session selection
