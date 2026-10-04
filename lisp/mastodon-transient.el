@@ -322,10 +322,11 @@ Do not add more than the server's maximum setting."
   "Finish setting poll details."
   :transient 'transient--do-exit
   (interactive (list (transient-args 'mastodon-create-poll)))
-  (let* ((options (member-if
-                   (lambda (x)
-                     (eq (car x) 'one))
-                   args))
+  (let* ((options ;; poll options sans other args:
+          (member-if
+           (lambda (x)
+             (eq (car x) 'one))
+           (reverse args)))
          (opt-vals (cl-loop for x in options
                             collect (cdr x)))
          (lengths (mapcar #'length opt-vals))
