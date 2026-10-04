@@ -336,7 +336,8 @@ Do not add more than the server's maximum setting."
          (opts-count (length (cl-remove 'nil opt-vals))))
     ;; this way of checking gets annoying if we want to just cancel out of
     ;; the poll (but to actually cancel user should C-g, not C-c C-c):
-    (if (or (and (< 50 (apply #'max lengths))
+    (if (or (and lengths
+                 (< 50 (apply #'max lengths))
                  (not (y-or-n-p "Options longer than server max. Proceed? ")))
             (and (not (alist-get 'expiry args))
                  (not (y-or-n-p "No expiry. Proceed? ")))
