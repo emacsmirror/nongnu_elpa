@@ -1331,19 +1331,24 @@ Return its two letter ISO 639 1 code."
     (message "Language set to %s" choice)
     (mastodon-toot--update-status-fields)))
 
+(defun mastodon-toot-default-quote-policy ()
+  "Return the quote policy set in user preferences."
+  (mastodon-profile--get-preferences-pref
+   'posting:default:quote_policy))
+
 (defun mastodon-toot-set-quote-policy ()
   "Set quote policy for the current toot."
   (interactive)
-  (let* ((default (alist-get 'posting:default:quote_policy
-                             (mastodon-http--get-json
-                              (mastodon-http--api "preferences"))))
-         (choice (completing-read
-                  (format "Quote policy for this toot [default: %s]"
-                          default)
-                  mastodon-profiles-quote-policy-types)))
-    (setq mastodon-toot-quote-policy choice)
-    (message (concat "Quote policy for this toot: " choice))
-    (mastodon-toot--update-status-fields)))
+  (if (string= mastodon-toot--visibility "private")
+      (user-error "Followers-only posts disallow quoting")
+    (let* ((default (mastodon-toot-default-quote-policy))
+           (choice (completing-read
+                    (format "Quote policy for this toot [default: %s]"
+                            default)
+                    mastodon-profiles-quote-policy-types)))
+      (setq mastodon-toot-quote-policy choice)
+      (message (concat "Quote policy for this toot: " choice))
+      (mastodon-toot--update-status-fields))))
 
 
 ;;; ATTACHMENTS
