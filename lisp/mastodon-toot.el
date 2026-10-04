@@ -2216,6 +2216,9 @@ VISIBILITY is the toot's visibility."
               ;; use toot visibility setting from the server:
               (mastodon-profile--get-source-value 'privacy)
               "public")) ; fallback
+    ;; set quote to user preference:
+    (setq mastodon-toot-quote-policy
+          (mastodon-toot-default-quote-policy))
     ;; default language:
     ;; NB: this is not necessarily set in
     ;; `mastodon-profile-credential-account' nor in
