@@ -931,5 +931,36 @@ Alice has initiated a session towards Bob's bundle."
                              (plist-get m1 :pre-key-p)
                              (plist-get m1 :data))))))))
 
+;;; Group: Unloadable module
+
+(ert-deftest jabber-test-omemo-module-unloadable-disables-omemo ()
+  "A module that cannot be opened disables OMEMO instead of failing load."
+  (let* ((dir (make-temp-file "jabber-omemo-broken" t))
+         (lisp-dir (file-name-directory (locate-library "jabber-omemo")))
+         (form `(progn
+                  (setq load-path (cons ,dir (delete ,dir load-path)))
+                  (setq jabber-db-path nil)
+                  (require 'jabber-omemo)
+                  (princ (format "%S" jabber-omemo--available)))))
+    (unwind-protect
+        (progn
+          ;; An empty file is found by `require' but rejected by dlopen.
+          (write-region "" nil (expand-file-name
+                                (concat "jabber-omemo-core" module-file-suffix)
+                                dir)
+                        nil 'silent)
+          (with-temp-buffer
+            (let ((status
+                   (call-process
+                    (expand-file-name invocation-name invocation-directory)
+                    nil '(t nil) nil "-Q" "--batch"
+                    "--eval" (format "(setq load-path '%S)"
+                                     (cons lisp-dir load-path))
+                    "--eval" (format "%S" form))))
+              ;; Standard output only; the warning goes to stderr.
+              (should (equal (list status (buffer-string))
+                             '(0 "unavailable"))))))
+      (delete-directory dir t))))
+
 (provide 'jabber-test-omemo-module)
 ;;; jabber-test-omemo-module.el ends here

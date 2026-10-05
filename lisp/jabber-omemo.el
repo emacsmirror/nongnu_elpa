@@ -97,13 +97,21 @@ rotation, so in-flight pre-key messages still decrypt."
   "Non-nil when the jabber-omemo-core native module is loaded.")
 
 ;; Module availability check.  Runs once at load time; `defvar' above
-;; preserves `jabber-omemo--available' across repeated loads.
+;; preserves `jabber-omemo--available' across repeated loads.  A module
+;; that exists but cannot be loaded (missing shared library, ABI
+;; mismatch) disables OMEMO instead of aborting the load of this file.
 (unless (or jabber-omemo--available
             (not jabber-omemo-enable))
-  (if (require 'jabber-omemo-core nil t)
-      (setq jabber-omemo--available t)
-    (setq jabber-omemo--available 'unavailable)
-    (message "OMEMO: native module not found, encryption disabled")))
+  (condition-case err
+      (if (require 'jabber-omemo-core nil t)
+          (setq jabber-omemo--available t)
+        (setq jabber-omemo--available 'unavailable)
+        (message "OMEMO: native module not found, encryption disabled"))
+    (error
+     (setq jabber-omemo--available 'unavailable)
+     (display-warning 'jabber
+                      (format "OMEMO native module failed to load, encryption disabled: %s"
+                              (error-message-string err))))))
 
 (defun jabber-omemo--require-module ()
   "Return non-nil if the native OMEMO module is available.

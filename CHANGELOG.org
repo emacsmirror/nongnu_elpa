@@ -7,6 +7,11 @@
   our own device list fails; distinguish authoritative empty lists from errors.
 - Preserve binary OMEMO module inputs on Neomacs runtimes that reject unibyte
   strings through the native string-copy API; keep GNU Emacs behavior unchanged.
+- Load the OMEMO module into any Emacs 28+ module interface, not only the one
+  it was compiled against; disable OMEMO with a warning when the module cannot
+  be loaded instead of failing to open chats.
+- Add =MBED_STATIC=1= to link Mbed TLS into the module; the Nix development
+  shell uses it so modules survive store garbage collection.
 
 * [0.15.0]
 #+date: 2026-10-02

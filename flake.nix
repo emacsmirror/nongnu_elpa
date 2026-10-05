@@ -244,6 +244,9 @@
             shellHook = ''
               export EMACS_CMD=emacs
               export CFLAGS="-I${jabber.full.emacs}/include''${CFLAGS:+ $CFLAGS}"
+              # The module is loaded by Emacs outside this shell, after
+              # its store paths may have been garbage-collected.
+              export MBED_STATIC=1
             '';
           };
         });

@@ -1520,7 +1520,10 @@ emacs_module_init(struct emacs_runtime *runtime)
         return 1;
 
     emacs_env *env = runtime->get_environment(runtime);
-    if (env->size < sizeof(*env))
+    /* Require only the newest interface used here (make_unibyte_string,
+       Emacs 28), not the possibly newer emacs-module.h this file was
+       compiled against, so one build loads into any Emacs >= 28.  */
+    if (env->size < sizeof(struct emacs_env_28))
         return 2;
 
     /* Cache symbols as global references so they survive GC */
