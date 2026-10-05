@@ -50,6 +50,42 @@ docstring:
 fails if the committed copy no longer matches the code, and says to =git add=
 the regenerated file.  Run it before a release.
 
+* the NonGNU ELPA package
+** .elpaignore decides what the tarball carries
+
+elpa-admin reads =.elpaignore= from the top of the tree and hands it to tar as
+=-X=, so what reaches a user is decided here rather than in the recipe on
+=nongnu.git=.  Issue #814.
+
+What it is for: package.el byte-compiles every =.el= in the tarball when the
+package installs.  Shipping =test/= put 91 lisp files in front of it with
+=test/= off the load-path, and every one failed with "Cannot open load file:
+vm-test-init".
+
+Writing it:
+
+- one pattern per line, no comments and no blank lines.  tar has no comment
+  syntax for this file and reads every line as a pattern.
+- bare names, no slashes and no wildcards.  Exclusion patterns default to
+  =--no-anchored=, so a pattern matches any subsequence of a name's
+  components, and a pattern that matches a directory excludes everything
+  under it.  So "test" is enough, and "Makefile.in" reaches all five of them.
+- =--exclude-vcs= already drops =.gitignore=, which is why it is not listed.
+
+=vm-build-test-elpaignore-accounts-for-every-top-level-entry= makes every
+top-level entry say which way it goes: shipped, or ignored.  A new top-level
+directory fails it until someone decides.
+
+** the manual ships built, not as source
+
+=info/= is excluded, and the tarball carries =vm.info= and =dir= at the root
+instead.  elpa-admin builds them from =info/vm.texinfo= before it makes the
+tarball, so excluding the sources costs nothing.
+
+This does not change what the build needs.  makeinfo still runs on the ELPA
+machine, against the worktree, so the committed =vm-reference.texinfo= above
+is still what keeps the manual from coming out empty.
+
 * testing
 ** running the suite
 =test/test-runner= runs the tests, and nothing else does: the Makefile has no
