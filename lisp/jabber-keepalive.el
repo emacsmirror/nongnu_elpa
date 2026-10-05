@@ -271,21 +271,26 @@ accounts."
     (setq jabber-whitespace-ping-timer nil)))
 
 (defun jabber-whitespace-ping-do ()
-  "Send a single space to every live connection as a whitespace ping."
+  "Send a single space to every established session as a whitespace ping.
+Streams still under negotiation are skipped: a space that reaches the
+server after SASL success, before the restarted stream header, makes
+that header's XML declaration ill-formed."
   (dolist (c jabber-connections)
     (let* ((state-data (fsm-get-state-data c))
-	   (connection (plist-get state-data :connection)))
+	   (connection (plist-get state-data :connection))
+	   (established (eq (get c :state) :session-established)))
       (if (and connection (process-live-p connection))
-	  (condition-case err
-	      (jabber-send-string c " ")
-	    (error
-	     (message "jabber-keepalive: whitespace ping failed: %s" err)
-	     (fsm-send c (list :connection-dead connection
-			       "Whitespace ping failed"))))
+	  (when established
+	    (condition-case err
+		(jabber-send-string c " ")
+	      (error
+	       (message "jabber-keepalive: whitespace ping failed: %s" err)
+	       (fsm-send c (list :connection-dead connection
+				 "Whitespace ping failed")))))
 	;; Connection process is dead but FSM didn't transition.
 	;; Only act when stuck in :session-established; other states
 	;; are transient and will resolve on their own.
-	(when (eq (get c :state) :session-established)
+	(when established
 	  (fsm-send c (list :connection-dead connection
 			    "Connection process lost")))))))
 

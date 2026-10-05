@@ -343,6 +343,26 @@
                    (list :connection-dead transport
                          "Whitespace ping failed")))))
 
+(ert-deftest jabber-test-whitespace-ping-skips-negotiating-streams ()
+  "Whitespace pings reach only established sessions.
+A space sent while SASL restarts the stream precedes the restarted
+stream's XML declaration, which the server rejects as not well-formed."
+  (let* ((established (make-symbol "established"))
+         (negotiating (make-symbol "negotiating"))
+         (jabber-connections (list established negotiating))
+         sent)
+    (put established :state :session-established)
+    (put established :state-data (list :connection 'established-transport))
+    (put negotiating :state :sasl-auth)
+    (put negotiating :state-data (list :connection 'negotiating-transport))
+    (cl-letf (((symbol-function 'process-live-p) (lambda (_) t))
+              ((symbol-function 'jabber-send-string)
+               (lambda (jc string) (push (cons jc string) sent)))
+              ((symbol-function 'fsm-send)
+               (lambda (&rest args) (error "Unexpected fsm-send %S" args))))
+      (jabber-whitespace-ping-do))
+    (should (equal sent (list (cons established " "))))))
+
 (ert-deftest jabber-test-keepalive-do-replaces-timeout-timer ()
   "Rearming keepalive cancels the previous timeout timer."
   (let* ((first (make-symbol "first"))
