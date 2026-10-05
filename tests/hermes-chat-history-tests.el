@@ -1085,14 +1085,52 @@
     (let ((hermes-chat--queued-messages '((:content "x"))))
       (should (hermes-chat--warm-restart-blocker)))))
 
+(defvar warm-restart-regenerable)
+(defvar warm-restart-blocker-functions)
+(require 'hermes-kanban)
+(require 'hermes-profiles)
+(require 'hermes-endpoints)
+
 (ert-deftest hermes-buffer-claim-marks-views-regenerable ()
-  "Claimed views without desktop data are regenerable; chats are not."
+  "Claimed views are marked regenerable per buffer, never per mode.
+Chats, with their own desktop data, are not marked at all."
   (with-temp-buffer
     (hermes-dashboard-mode)
     (hermes-buffer--claim 'hermes-dashboard-mode)
-    (should (get 'hermes-dashboard-mode 'warm-restart-regenerable)))
+    (should (local-variable-p 'warm-restart-regenerable))
+    (should (stringp warm-restart-regenerable))
+    (should-not (get 'hermes-dashboard-mode 'warm-restart-regenerable)))
   (hermes-test-with-chat-buffer
+    (should-not (local-variable-p 'warm-restart-regenerable))
     (should-not (get 'hermes-chat-mode 'warm-restart-regenerable))))
+
+(ert-deftest hermes-buffer-claim-never-marks-a-reused-generic-mode ()
+  "A Hermes diff view does not make a user's own diff buffer droppable."
+  (let ((view (hermes-buffer--get "*Hermes Diff test*" #'diff-mode t)))
+    (unwind-protect
+        (with-temp-buffer
+          (diff-mode)
+          (insert "my own patch")
+          (should (buffer-local-value 'warm-restart-regenerable view))
+          (should-not (local-variable-p 'warm-restart-regenerable))
+          (should-not (get 'diff-mode 'warm-restart-regenerable)))
+      (kill-buffer view))))
+
+(ert-deftest hermes-buffer-editors-block-warm-restart-with-unsaved-edits ()
+  "Edited Kanban bodies and SOUL drafts block a warm restart; drafts always."
+  (dolist (mode '(hermes-kanban-body-mode hermes-profiles-soul-mode))
+    (with-temp-buffer
+      (funcall mode)
+      (hermes-buffer--claim mode)
+      (should-not (get mode 'warm-restart-regenerable))
+      (should (memq #'hermes-buffer--warm-restart-blocker warm-restart-blocker-functions))
+      (should-not (hermes-buffer--warm-restart-blocker))
+      (insert "unsaved user text")
+      (should (string-match-p "unsaved" (hermes-buffer--warm-restart-blocker)))))
+  (with-temp-buffer
+    (hermes-endpoint-edit-mode)
+    (hermes-buffer--claim 'hermes-endpoint-edit-mode)
+    (should (string-match-p "draft" (hermes-buffer--warm-restart-blocker)))))
 
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here
