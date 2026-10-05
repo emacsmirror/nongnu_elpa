@@ -5429,3 +5429,20 @@ entry with JC=nil."
           (jabber-process-presence
            replacement `(presence ((from . ,room) (type . "error")))))
         (should (equal contacts (list replacement)))))))
+
+(ert-deftest jabber-test-muc-self-ping-skips-negotiating-streams ()
+  "Periodic self-ping reaches only established sessions.
+A reconnecting account keeps its rooms and `:ever-session-established',
+but an IQ sent before authentication completes breaks the new stream."
+  (let* ((established (make-symbol "established"))
+         (reconnecting (make-symbol "reconnecting"))
+         (jabber-connections (list established reconnecting))
+         pinged)
+    (put established :state :session-established)
+    (put established :state-data '(:ever-session-established t))
+    (put reconnecting :state :sasl-auth)
+    (put reconnecting :state-data '(:ever-session-established t))
+    (cl-letf (((symbol-function 'jabber-muc-self-ping-rooms)
+               (lambda (jc) (push jc pinged))))
+      (jabber-muc--self-ping-all-connections))
+    (should (equal pinged (list established)))))

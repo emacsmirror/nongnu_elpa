@@ -1051,9 +1051,11 @@ Pings all joined rooms on all connections every
     (setq jabber-muc--self-ping-timer nil)))
 
 (defun jabber-muc--self-ping-all-connections ()
-  "Self-ping rooms on all active connections."
+  "Self-ping rooms on all established connections.
+A reconnecting account keeps its rooms, but must not send IQs while its
+new stream is still negotiating."
   (dolist (jc jabber-connections)
-    (when (and jc (plist-get (fsm-get-state-data jc) :ever-session-established))
+    (when (and jc (eq (get jc :state) :session-established))
       (jabber-muc-self-ping-rooms jc))))
 
 (defun jabber-muc-participant-plist (group nickname)
