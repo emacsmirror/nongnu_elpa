@@ -709,9 +709,10 @@ BUF-PREFIX is a string to prepend to the buffer name."
     (when init-text
       (insert init-text)
       (delete-trailing-whitespace))
+    ;; separate body from header (for markdown-mode issues)
+    (insert "\n")
     (when reply-text
-      (insert "\n"
-              (fedi-post--render-reply-region-str reply-text)
+      (insert (fedi-post--render-reply-region-str reply-text)
               "\n"))))
 
 (defun fedi-post-fontify-body-region (&rest _args)
