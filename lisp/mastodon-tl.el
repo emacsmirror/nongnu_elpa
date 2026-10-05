@@ -4303,6 +4303,9 @@ NO-BYLINE means just insert toot body, used for announcements."
            ;; so as a fallback, load trending statuses:
            ;; FIXME: this could possibly be a fallback for all timelines not
            ;; just home?
+
+           ;; FIXME: if we have no JSON for erroneous reasons, then we hit
+           ;; this, and trending statuses also loads no JSON:
            (when (string= endpoint "timelines/home")
              (mastodon-search-trending-statuses)))
           ((eq (caar json) 'error)
