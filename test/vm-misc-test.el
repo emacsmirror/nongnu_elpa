@@ -1439,6 +1439,49 @@ sites pass while a file is being compiled."
                    (vm-load-features '(subr-x vm-test-no-such-feature)))
                  '(subr-x))))
 
+(defun vm-misc-test--feature-that-signals (dir)
+  "Write a feature into DIR that is installed and refuses to load.
+Returns its symbol.  w3m.el is the real one: it signals when the w3m program
+is not in `exec-path'."
+  (with-temp-file (expand-file-name "vm-test-signalling-feature.el" dir)
+    (insert ";;; vm-test-signalling-feature.el -*- lexical-binding: t; -*-\n"
+            "(error \"Install the vm-test thing in exec-path\")\n"
+            "(provide \'vm-test-signalling-feature)\n"))
+  'vm-test-signalling-feature)
+
+(ert-deftest vm-misc-test-load-features-survives-a-feature-that-signals ()
+  "REGRESSION: a feature that is installed and signals while loading.
+
+emacs-vm/vm#903.  The fallback `load' sat inside the handler of the
+`condition-case' around `require' with nothing catching it, and NOERROR
+covers a file that is not there rather than an error raised while loading.
+So the signal came back out and killed the caller: vm-w3m.el calls this
+inside `eval-and-compile', and a NonGNU ELPA install compiled it on a
+machine carrying emacs-w3m but no w3m program and wrote no vm-w3m.elc."
+  (vm-test-with-temp-dir
+    (let* ((load-path (cons temp-dir load-path))
+           (feature (vm-misc-test--feature-that-signals temp-dir))
+           (said (vm-misc-test--loading ((noninteractive nil))
+                   (should-not (vm-load-features (list feature)))))
+           ;; `load' announces the file it is reading, so the warnings are
+           ;; picked out rather than counted from the front.
+           (warnings (seq-filter (lambda (line) (string-prefix-p "WARNING:" line))
+                                 said)))
+      (should (equal (length warnings) 2))
+      (should (string-match-p "Could not load feature vm-test-signalling-feature"
+                              (car warnings)))
+      ;; The reason belongs in the warning: "could not load" on its own sends
+      ;; the reader looking for a file that is in fact right there.
+      (should (string-match-p "Install the vm-test thing" (car warnings)))
+      (should (string-match-p "may not work correctly" (cadr warnings))))))
+
+(ert-deftest vm-misc-test-load-features-reports-why-a-feature-is-absent ()
+  "The warning for a feature that is simply not there says that it is not."
+  (let ((said (vm-misc-test--loading ((noninteractive nil))
+                (vm-load-features '(vm-test-no-such-feature)))))
+    (should (string-match-p "Cannot open load file" (car said)))))
+
+
 
 ;;; Filling a paragraph the converter indented (issue #540)
 

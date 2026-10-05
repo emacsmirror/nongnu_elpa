@@ -3778,13 +3778,13 @@ it to an internal object by retrieving the body.       USR, 2011-03-28"
 (fset 'vm-mime-display-button-message/partial
       'vm-mime-display-internal-message/partial)
 
-(defun vm-mime-display-internal-image-xxxx (layout image-type name)
+(defun vm-mime-display-internal-image-xxxx (layout img-type name)
   "Display the image object described by LAYOUT internally.
 IMAGE-TYPE is its image type (png, jpeg etc.).  NAME is a string
 describing the image type.                             USR, 2011-03-25"
-  (vm-mime-display-internal-image-fsfemacs-xxxx layout image-type name))
+  (vm-mime-display-internal-image-fsfemacs-xxxx layout img-type name))
 
-(defun vm-mime-display-internal-image-fsfemacs-xxxx (layout image-type name)
+(defun vm-mime-display-internal-image-fsfemacs-xxxx (layout img-type name)
   "Display the image object described by LAYOUT internally.
 IMAGE-TYPE is its image type (png, jpeg etc.).  NAME is a string
 describing the image type.                            USR, 2011-03-25
@@ -3795,10 +3795,10 @@ part was, `vm-mime-frob-image-xxxx' having written it with ImageMagick's
 part's own type is not what the file holds, and IMAGE-TYPE is PNG for as
 long as the picture stays frobbed (emacs-vm/vm#885)."
   (when (vm-mm-layout-image-modified layout)
-    (setq image-type 'png
+    (setq img-type 'png
 	  name "PNG"))
   (if (and (vm-images-possible-here-p)
-	   (vm-image-type-available-p image-type))
+	   (vm-image-type-available-p img-type))
       (let (start end tempfile image work-buffer
 	    (selective-display nil)
 	    (incremental vm-mime-display-image-strips-incrementally)
@@ -3833,7 +3833,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 		   (let ((strips (vm-make-image-strips
 				  tempfile
 				  (* 2 (frame-char-height))
-				  image-type t incremental))
+				  img-type t incremental))
 			 (first t)
 			 start o process image-list overlay-list)
 		     (setq process (car strips)
@@ -3861,7 +3861,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 			 (overlay-put o 'vm-image vm-menu-fsfemacs-image-menu))
 		     (with-current-buffer (process-buffer process)
 		       (set (make-local-variable 'vm-image-list) image-list)
-		       (set (make-local-variable 'vm-image-type) image-type)
+		       (set (make-local-variable 'vm-image-type) img-type)
 		       (set (make-local-variable 'vm-image-type-name)
 			    name)
 		       (set (make-local-variable 'vm-overlay-list)
@@ -3881,7 +3881,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 		  ;; fallback to the non-strips way
 		  (setq do-strips nil)))))
 	(cond ((not do-strips)
-	       (setq image (list 'image ':type image-type ':file tempfile))
+	       (setq image (list 'image ':type img-type ':file tempfile))
 	       ;; insert one char so we can attach the image to it.
 	       (insert "z")
 	       (put-text-property (1- (point)) (point) 'display image)
@@ -3894,7 +3894,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 		 (if vm-use-menus
 		     (overlay-put o 'vm-image vm-menu-fsfemacs-image-menu)))))
 	t )
-    ;; otherwise, image-type not available here
+    ;; otherwise, img-type not available here
     nil ))
 
 (defun vm-get-image-dimensions (file)
@@ -3917,23 +3917,23 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
       (and work-buffer (kill-buffer work-buffer)))
     (list width height)))
 
-(defun vm-imagemagick-type-indicator-for (image-type)
-  (cond ((eq image-type 'jpeg) "jpeg:")
-	((eq image-type 'gif) "gif:")
-	((eq image-type 'png) "png:")
-	((eq image-type 'tiff) "tiff:")
-	((eq image-type 'xpm) "xpm:")
-	((eq image-type 'pbm) "pbm:")
-	((eq image-type 'xbm) "xbm:")
+(defun vm-imagemagick-type-indicator-for (img-type)
+  (cond ((eq img-type 'jpeg) "jpeg:")
+	((eq img-type 'gif) "gif:")
+	((eq img-type 'png) "png:")
+	((eq img-type 'tiff) "tiff:")
+	((eq img-type 'xpm) "xpm:")
+	((eq img-type 'pbm) "pbm:")
+	((eq img-type 'xbm) "xbm:")
 	(t "")))
 
-(defun vm-make-image-strips (file min-height image-type async incremental
+(defun vm-make-image-strips (file min-height img-type async incremental
 				  &optional hroll vroll)
   (or hroll (setq hroll 0))
   (or vroll (setq vroll 0))
   (let ((process-connection-type nil)
 	(i 0)
-	(output-type (vm-imagemagick-type-indicator-for image-type))
+	(output-type (vm-imagemagick-type-indicator-for img-type))
 	image-list dimensions width height starty newfile work-buffer
 	quotient remainder adjustment process)
     (setq dimensions (vm-get-image-dimensions file)
@@ -4020,12 +4020,12 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 	       (boundp 'vm-image-list))
       (let ((strips vm-image-list)
 	    (overlays vm-overlay-list)
-	    (image-type vm-image-type))
+	    (img-type vm-image-type))
 	(vm-display-image-strips-on-overlay-regions strips overlays
-						    image-type)))
+						    img-type)))
     (kill-buffer (current-buffer))))
 
-(defun vm-display-image-strips-on-overlay-regions (strips overlays image-type)
+(defun vm-display-image-strips-on-overlay-regions (strips overlays img-type)
   (let (prop value omodified)
     (with-current-buffer (overlay-buffer (car vm-overlay-list))
       (setq omodified (buffer-modified-p))
@@ -4037,7 +4037,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 	      (while (and strips
 			  (file-exists-p (car strips))
 			  (overlay-end (car overlays)))
-		(setq value (list 'image ':type image-type
+		(setq value (list 'image ':type img-type
 				  ':file (car strips)
 				  ':ascent 50))
 		(put-text-property (overlay-start (car overlays))
@@ -4059,12 +4059,12 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 		 (boundp 'vm-image-list))
 	(let ((strips vm-image-list)
 	      (overlays vm-overlay-list)
-	      (image-type vm-image-type))
+	      (img-type vm-image-type))
 	  (vm-display-some-image-strips-on-overlay-regions
-	   strips overlays image-type which-strips))))))
+	   strips overlays img-type which-strips))))))
 
 (defun vm-display-some-image-strips-on-overlay-regions
-  (strips overlays image-type which-strips)
+  (strips overlays img-type which-strips)
   (let (sss ooo prop value omodified)
     (with-current-buffer (overlay-buffer (car vm-overlay-list))
       (setq omodified (buffer-modified-p))
@@ -4079,7 +4079,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 		(cond ((and sss
 			    (file-exists-p (car sss))
 			    (overlay-end (car ooo)))
-		       (setq value (list 'image ':type image-type
+		       (setq value (list 'image ':type img-type
 					 ':file (car sss)
 					 ':ascent 50))
 		       (put-text-property (overlay-start (car ooo))

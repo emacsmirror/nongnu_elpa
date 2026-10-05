@@ -590,6 +590,80 @@ installed as it stands.  Skipped where the tree has not been built."
       (goto-char (point-min))
       (should-not (re-search-forward "^(autoload '[^ ]+ \"[^\"]*/" nil t)))))
 
+;;; The NonGNU ELPA package
+
+(defconst vm-build-test--elpa-shipped
+  '("COPYING" "NEWS-1.md" "NEWS-2.md" "NEWS-3.md" "README.md"
+    "example.vm" "lisp" "pixmaps")
+  "The top-level entries the NonGNU ELPA tarball is meant to carry.
+The recipe's :lisp-dir flattens lisp/ onto the root of the tarball; pixmaps/
+is there because the toolbar reads it, and example.vm because the manual
+sends the reader to it by name.  Everything else is either listed in
+`.elpaignore' or added to this list, and the test below says which.")
+
+(defconst vm-build-test--elpa-excluded-by-vcs
+  '(".gitignore")
+  "Top-level entries tar drops for itself, so `.elpaignore' need not name them.
+elpa-admin passes `--exclude-vcs', which covers .git and its sidecar files.")
+
+(defun vm-build-test--elpaignore-lines ()
+  "The lines of `.elpaignore', or nil where there is no such file."
+  (let ((file (expand-file-name ".elpaignore" vm-build-test--root)))
+    (when (file-exists-p file)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (split-string (buffer-string) "\n")))))
+
+(defun vm-build-test--top-level-entries (paths)
+  "The distinct first components of PATHS."
+  (let (entries)
+    (dolist (path paths)
+      (let ((entry (car (split-string path "/"))))
+        (unless (member entry entries)
+          (push entry entries))))
+    (nreverse entries)))
+
+(ert-deftest vm-build-test-elpaignore-accounts-for-every-top-level-entry ()
+  "Every top-level entry is either shipped to ELPA or named in `.elpaignore'.
+
+emacs-vm/vm#814.  elpa-admin passes the file to tar as `-X', so what the
+NonGNU ELPA tarball carries is decided here and not in the recipe.  package.el
+byte-compiles every .el in the tarball on install, which is why shipping
+test/ mattered: its 91 lisp files were compiled with test/ off the load-path
+and every one of them failed.
+
+A new top-level directory is the thing this catches.  Adding one and saying
+nothing ships it."
+  (let ((tracked (vm-build-test--tracked-files))
+        (ignored (vm-build-test--elpaignore-lines))
+        (unaccounted nil))
+    (skip-unless tracked)
+    (should ignored)
+    (dolist (entry (vm-build-test--top-level-entries tracked))
+      (unless (or (member entry vm-build-test--elpa-shipped)
+                  (member entry vm-build-test--elpa-excluded-by-vcs)
+                  (member entry ignored))
+        (push entry unaccounted)))
+    (should (equal nil unaccounted))))
+
+(ert-deftest vm-build-test-every-elpaignore-pattern-names-something ()
+  "No line of `.elpaignore' is dead, blank or a comment.
+
+GNU tar reads `-X' one pattern per line and has no comment syntax, so a `#'
+line is a pattern that matches nothing and a blank line is a pattern whose
+behaviour nobody should have to work out.  A pattern left behind by a file
+that has been deleted is the other way this rots."
+  (let ((lines (vm-build-test--elpaignore-lines))
+        (dead nil))
+    (skip-unless lines)
+    ;; `split-string' leaves the empty string after the final newline.
+    (should (equal "" (car (last lines))))
+    (dolist (pattern (butlast lines))
+      (unless (file-exists-p (expand-file-name pattern vm-build-test--root))
+        (push pattern dead)))
+    (should (equal nil dead))))
+
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here
