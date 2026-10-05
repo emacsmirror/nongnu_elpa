@@ -1,0 +1,13 @@
+.claude
+.elpaignore
+CLAUDE.md
+CONTRIBUTING.md
+HISTORY.md
+INSTALL.md
+Makefile.in
+configure.ac
+dev
+info
+install-sh
+test
+vm-load.el.in
