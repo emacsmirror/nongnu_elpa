@@ -35,6 +35,7 @@
 (require 'cl-lib)
 (require 'ewoc)
 (require 'seq)
+(require 'project)
 (require 'subr-x)
 (require 'text-property-search)
 (require 'hermes-chat-format)
@@ -2241,6 +2242,14 @@ This feeds the dashboard's per-session tool list via
   "Gateway-native working directory for this chat session.
 This path belongs to the Hermes instance and need not exist on Emacs's host.")
 
+(defvar-local hermes-chat--initial-working-directory nil
+  "First gateway working directory recorded for this chat, or nil.
+It names a chat without a launch project; later gateway directory changes
+leave it, and therefore the buffer name, unchanged.")
+
+(defvar-local hermes-chat--project-identity nil
+  "Cached (DIRECTORY ROOT . NAME) project identity for the naming directory.")
+
 (defvar-local hermes-chat--resolved-start-mode nil
   "Concrete `spawn' or `remote' transport mode owned by this chat buffer.")
 
@@ -2248,6 +2257,25 @@ This path belongs to the Hermes instance and need not exist on Emacs's host.")
   "Return this chat's gateway cwd, falling back only for local gateways."
   (or hermes-chat--working-directory
       (and (eq hermes-chat--resolved-start-mode 'spawn) default-directory)))
+
+(defun hermes-chat--naming-directory ()
+  "Return the directory naming this chat's project.
+Prefer the launch-project root, then the first recorded gateway directory.
+Before any is recorded, use the current gateway or editor directory."
+  (or hermes-chat--launch-project-root
+      hermes-chat--initial-working-directory
+      hermes-chat--working-directory
+      default-directory))
+
+(defun hermes-chat--local-directory-p (directory)
+  "Return non-nil when gateway-native DIRECTORY is a plain local directory.
+Refuse relative, `~'-prefixed and file-name-handler paths without probing
+them.  Existence does not prove the gateway shares Emacs's filesystem."
+  (and (stringp directory)
+       (file-name-absolute-p directory)
+       (not (string-prefix-p "~" directory))
+       (not (find-file-name-handler directory nil))
+       (file-directory-p directory)))
 
 (defun hermes-chat--directory-basename (&optional directory)
   "Return the final component of gateway-native DIRECTORY, or `detached'."
@@ -2259,10 +2287,72 @@ This path belongs to the Hermes instance and need not exist on Emacs's host.")
          (t trimmed)))
     "detached"))
 
+(defun hermes-chat--resolve-project-identity (directory)
+  "Return (ROOT . NAME) for DIRECTORY's project.
+Consult `project-current' and `project-name' only for an existing local
+DIRECTORY; otherwise ROOT is DIRECTORY and NAME its basename."
+  (or (and (hermes-chat--local-directory-p directory)
+           ;; Naming is cosmetic: a failing project backend or a malformed
+           ;; `.dir-locals.el' must not prevent opening or renaming a chat.
+           (condition-case nil
+               (when-let* ((project (project-current
+                                     nil (file-name-as-directory directory)))
+                           (root (expand-file-name (project-root project))))
+                 (cons root (or (hermes-transport--non-empty-string
+                                 (project-name project))
+                                (hermes-chat--directory-basename root))))
+             (error nil)))
+      (cons directory (hermes-chat--directory-basename directory))))
+
+(defun hermes-chat--project-identity (directory)
+  "Return (ROOT . NAME) for DIRECTORY.
+Cache the result when DIRECTORY is this chat buffer's naming directory."
+  (let ((cached hermes-chat--project-identity))
+    (if (and cached (equal directory (car cached)))
+        (cdr cached)
+      (let ((identity (hermes-chat--resolve-project-identity directory)))
+        (when (and (derived-mode-p 'hermes-chat-mode)
+                   (equal directory (hermes-chat--naming-directory)))
+          (setq hermes-chat--project-identity (cons directory identity)))
+        identity))))
+
+(defun hermes-chat--project-root-for-display ()
+  "Return the cached project root naming this chat, without probing paths."
+  (let ((directory (hermes-chat--naming-directory))
+        (cached hermes-chat--project-identity))
+    (if (and cached (equal directory (car cached))) (cadr cached) directory)))
+
+(defun hermes-chat--directory-key (directory)
+  "Return gateway-native DIRECTORY without trailing separators."
+  (let ((trimmed (replace-regexp-in-string "[/\\\\]+\\'" "" directory)))
+    (if (string-empty-p trimmed) directory trimmed)))
+
+(defun hermes-chat--directory-label (directory root)
+  "Return gateway-native DIRECTORY abbreviated for display beside ROOT.
+Show a descendant of ROOT relative to it, and abbreviate a path under the
+user's home directory with `~'.  Never consult the filesystem."
+  (let ((key (hermes-chat--directory-key directory))
+        (prefix (concat (hermes-chat--directory-key root) "/"))
+        (home (directory-file-name (expand-file-name "~"))))
+    (cond
+     ((string-prefix-p prefix key) (substring key (length prefix)))
+     ((or (equal key home) (string-prefix-p (concat home "/") key))
+      (concat "~" (substring key (length home))))
+     (t key))))
+
 (defun hermes-chat--header-directory-segment ()
-  "Return the propertized working-directory basename for the header."
-  (propertize (hermes-chat--directory-basename)
-              'face 'hermes-chat-header-directory))
+  "Return the propertized gateway cwd when it differs from the project root.
+Return `detached' while the cwd is unknown, and nil when it is the chat's
+project root."
+  (let ((directory (hermes-chat--current-working-directory))
+        (root (hermes-chat--project-root-for-display)))
+    (cond
+     ((null directory)
+      (propertize "detached" 'face 'hermes-chat-header-directory))
+     ((not (equal (hermes-chat--directory-key directory)
+                  (hermes-chat--directory-key root)))
+      (propertize (hermes-chat--directory-label directory root)
+                  'face 'hermes-chat-header-directory)))))
 
 (defun hermes-chat--header-detail (label)
   "Return the live detail to append after LABEL in the header, or nil.
@@ -2439,6 +2529,21 @@ Use COMPACT notation when non-nil; incomplete observations remain explicit."
       '(:delegates :processes) "\n")
      "\nRefresh: M-x hermes-chat-work-refresh. Disappearance does not prove completion.")))
 
+(defun hermes-chat--truncate-left (string width)
+  "Return STRING fitting WIDTH columns, keeping its end after an ellipsis.
+A path's final components are its most specific part."
+  (if (<= (string-width string) width)
+      string
+    (let ((start (length string))
+          (used 0))
+      (while (and (> start 0)
+                  (<= (+ used (char-width (aref string (1- start))))
+                      (- width (string-width "…"))))
+        (setq start (1- start)
+              used (+ used (char-width (aref string start)))))
+      (concat (propertize "…" 'face (get-text-property 0 'face string))
+              (substring string start)))))
+
 (defun hermes-chat--header-fit (width status yolo directory optional &optional work)
   "Fit STATUS, YOLO, DIRECTORY and OPTIONAL segments within WIDTH columns.
 Reserve state and risk, then WORK, before identity.
@@ -2457,8 +2562,9 @@ Drop optional segments whole."
                        (string-join (delq nil (list (unless (string-empty-p required) required) work)) separator) required))
          (room (- width (string-width required)
                   (if (string-empty-p required) 0 (string-width separator))))
-         (identity (and (or (>= width 30) (string-empty-p required)) (> room 0)
-                        (truncate-string-to-width directory room nil nil "…")))
+         (identity (and directory
+                        (or (>= width 30) (string-empty-p required)) (> room 0)
+                        (hermes-chat--truncate-left directory room)))
          (text (string-join (delq nil (list identity (unless (string-empty-p required) required))) separator)))
     (if (> (string-width text) width)
         (truncate-string-to-width (or risk status "") width nil nil "")
@@ -2538,7 +2644,9 @@ During redisplay Emacs selects the window whose header is being evaluated."
                 (hermes-chat--work-label (< width 50))))
          (text (if (and (char-displayable-p ?⚕)
                         (<= (+ (string-width text) (string-width "⚕ | ")) width))
-                   (concat "⚕" (propertize " | " 'face 'shadow) text)
+                   (if (string-empty-p text)
+                       "⚕"
+                     (concat "⚕" (propertize " | " 'face 'shadow) text))
                  text)))
     (propertize (string-replace "%" "%%" text)
                 'help-echo (hermes-chat--session-details-text))))

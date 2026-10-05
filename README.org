@@ -47,23 +47,27 @@ Install it with =M-x package-install RET hermes=.
 
 =M-x hermes= opens the dashboard.  =M-x hermes-project-chat= switches to a
 live chat for the current project or creates one at its root; with =C-u= it
-always creates another.  Project-chat names stay anchored to that launching
-project while the header reports the gateway working directory.  Customize
-=hermes-chat-buffer-name-function= to replace the default complete naming
-convention.  A direct or resumed remote chat uses the editor directory in its
-initial buffer name while its gateway cwd is unknown.  Its header stays
-detached, and the editor path is not sent to the gateway.  =M-x hermes-chat=
-always opens a new chat buffer:
+always creates another.  Chat buffers are named after their project, using
+=project-name= when the directory exists locally and its basename otherwise.
+A project chat is named after its launching project; any other chat after the
+project of the first gateway working directory it reports.  Later gateway
+directory changes, such as the agent moving into a worktree, never rename the
+buffer: the header shows the abbreviated cwd whenever it differs from the
+project root.  Customize =hermes-chat-buffer-name-function= to replace the
+default complete naming convention.  A direct or resumed remote chat uses the
+editor directory in its initial buffer name while its gateway cwd is unknown.
+Its header stays detached, and the editor path is not sent to the gateway.
+=M-x hermes-chat= always opens a new chat buffer:
 - =RET= to send.
 - =/= for slash commands.
 - =C-c C-o= for the actions menu.
 - Each chat pins its resolved spawned or remote transport mode.  A spawned
   chat starts from the editor's =default-directory=; a remote chat does not.
-- Passive gateway cwd updates change the header and a direct chat's buffer
-  name, but leave =default-directory= alone.
+- Passive gateway cwd updates change the header, but leave the buffer name
+  and =default-directory= alone.
 - “Set directory” browses or accepts a path in the gateway's namespace.  On
   success, the backend-returned path becomes both the gateway cwd and the
-  buffer's =default-directory=; a project chat keeps its launch-root name.
+  buffer's =default-directory=; the buffer keeps its project name.
 - =C-c C-o M m= (or bare =/model=) fetches model choices from the owning
   dashboard each time.  =/model= argument completion stays cached and
   nonblocking; opening the picker refreshes that cache after backend changes.

@@ -64,7 +64,7 @@
 (defvar-local hermes-chat--title nil
   "Human title for this chat session.
 Set by `hermes-chat-rename' and reported to the dashboard.  Buffer identity is
-derived separately from the owning instance, profile, and working directory.")
+derived separately from the owning instance, profile, and project.")
 
 (defvar-local hermes-chat--title-manual-p nil
   "Non-nil when the user set this chat's title via `hermes-chat-rename'.
@@ -1236,12 +1236,18 @@ Use the global user option so another chat's legacy local pin cannot leak."
           (hermes-transport--get info 'cwd))))))
 
 (defun hermes-chat--record-working-directory (directory)
-  "Record gateway-native DIRECTORY without changing Emacs's local directory."
-  (when (and directory
-             (not (equal directory hermes-chat--working-directory)))
-    (setq hermes-chat--working-directory directory)
-    (hermes-chat--refresh-buffer-name)
-    (force-mode-line-update)))
+  "Record gateway-native DIRECTORY without changing Emacs's local directory.
+The first recorded directory names a chat without a launch project; later
+directories update only the header, never the buffer name."
+  (when directory
+    (let ((first (null hermes-chat--initial-working-directory)))
+      (when first
+        (setq hermes-chat--initial-working-directory directory))
+      (unless (equal directory hermes-chat--working-directory)
+        (setq hermes-chat--working-directory directory)
+        (force-mode-line-update))
+      (when first
+        (hermes-chat--refresh-buffer-name)))))
 
 (defun hermes-chat--dashboard-active-id-from-result (_client result)
   "Return the live dashboard session id from RPC RESULT.
@@ -2233,10 +2239,7 @@ a local FIFO submission."
 
 (defun hermes-chat--apply-directory (directory)
   "Apply gateway-native DIRECTORY, adopting it locally only when usable."
-  (when (and (not (find-file-name-handler directory nil))
-             (file-name-absolute-p directory)
-             (not (string-prefix-p "~" directory))
-             (file-directory-p directory))
+  (when (hermes-chat--local-directory-p directory)
     (setq-local default-directory (file-name-as-directory directory)))
   (setq hermes-chat--cwd-explicit-p t)
   (hermes-chat--record-working-directory directory)
@@ -2522,20 +2525,28 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
 ;; tasks live with the session lifecycle that drives them.
 
 (defun hermes-chat-default-buffer-name (profile instance directory)
-  "Return the default chat name for PROFILE, INSTANCE, and DIRECTORY."
+  "Return the default chat name for PROFILE, INSTANCE, and DIRECTORY.
+Name DIRECTORY's project with `project-name' when DIRECTORY exists locally,
+otherwise with its basename."
   (let ((owner (if (and hermes-instances
                         (hermes-instance--valid-p instance))
                    (hermes-instance-name instance)
                  "Hermes"))
-        (project (hermes-chat--directory-basename directory)))
+        (project (cdr (hermes-chat--project-identity directory))))
     (format "*%s@%s: [%s]*" owner profile project)))
 
 (defun hermes-chat--buffer-name (profile &optional instance directory)
-  "Return the customized chat name for PROFILE, INSTANCE, and DIRECTORY."
+  "Return the customized chat name for PROFILE, INSTANCE, and DIRECTORY.
+DIRECTORY defaults to the chat's naming directory, which does not follow
+later gateway working-directory changes."
   (let* ((profile (or profile "default"))
          (instance (or instance (hermes-instance-context)))
-         (directory (or directory hermes-chat--working-directory
-                        hermes-chat--launch-project-root default-directory))
+         (directory (or directory
+                        (let ((naming (hermes-chat--naming-directory)))
+                          ;; Resolve once here so the header can compare
+                          ;; the cwd with the root even under custom names.
+                          (hermes-chat--project-identity naming)
+                          naming)))
          (name (funcall hermes-chat-buffer-name-function
                         profile instance directory)))
     (unless (and (stringp name) (not (string-empty-p name)))

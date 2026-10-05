@@ -2745,7 +2745,10 @@
            (cl-letf (((symbol-function 'hermes-dashboard-transport-session-cwd-set)
                       (lambda (_client cwd &rest args)
                         (setq request (list cwd (plist-get args :session-id))
-                              resolve (plist-get args :resolve)))))
+                              resolve (plist-get args :resolve))))
+                     ;; Keep the temp cwd's name independent of any VCS
+                     ;; checkout enclosing TMPDIR.
+                     ((symbol-function 'project-current) #'ignore))
              (hermes-chat-set-directory "C:/project")
              (should (equal request '("C:/project" "sid")))
              (should (equal (buffer-name) initial-name))
@@ -2755,14 +2758,21 @@
              (should (equal hermes-chat--working-directory
                             directory))
              (should (equal default-directory editor-directory))
-             (should (string-match-p
-                      "translated" (hermes-test--header-line-string)))
-             (should (string-match-p "\\[translated.*\\]" (buffer-name)))
-             (funcall resolve `((cwd . ,directory)))
-             (should (equal default-directory directory))
-             (should (equal hermes-chat--working-directory
-                            directory))
-             (should (string-match-p "\\[translated.*\\]" (buffer-name)))
+             ;; A launch project keeps its name and shows the moved cwd;
+             ;; otherwise the first recorded cwd names the chat.
+             (let ((name (if project-root "\\[project-a\\]"
+                           "\\[translated.*\\]")))
+               (should (string-match-p name (buffer-name)))
+               (if project-root
+                   (should (string-match-p
+                            "translated" (hermes-test--header-line-string)))
+                 (should-not (string-match-p
+                              "translated" (hermes-test--header-line-string))))
+               (funcall resolve `((cwd . ,directory)))
+               (should (equal default-directory directory))
+               (should (equal hermes-chat--working-directory
+                              directory))
+               (should (string-match-p name (buffer-name))))
              (should (equal hermes-chat--launch-project-root project-root))
              (should (equal hermes-chat--title "Saved session title"))
              (when project-root

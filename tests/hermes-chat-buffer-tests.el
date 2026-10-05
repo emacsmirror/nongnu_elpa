@@ -1257,6 +1257,7 @@
   "The header renders directory, status, and model from chat state."
   (hermes-test-with-chat-buffer
    (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--launch-project-root "/tmp/"
          hermes-chat--working-directory "/tmp/emacs-hermes/"
          hermes-chat--profile "coder")
    (hermes-chat--run-turn-reducer nil
@@ -1281,6 +1282,7 @@
                (lambda () (cadr hermes-instances))))
       (hermes-test-with-chat-buffer
        (setq default-directory "/tmp/project/"
+             hermes-chat--launch-project-root "/tmp/"
              hermes-chat--working-directory "/tmp/project/"
              hermes-chat--profile "coder")
        (let ((header (hermes-test--header-line-string)))
@@ -1367,7 +1369,8 @@
   (save-window-excursion
     (delete-other-windows)
     (hermes-test-with-chat-buffer
-     (setq hermes-chat--working-directory "/remote/界%project-with-a-long-name/"
+     (setq hermes-chat--launch-project-root "/remote/"
+           hermes-chat--working-directory "/remote/界%project-with-a-long-name/"
            hermes-chat--model "model%with-a-long-name"
            hermes-chat--runtime-flags '(:yolo t :fast t)
            hermes-chat--status-state '(:status running))
@@ -1515,6 +1518,7 @@
   "The compact header orders directory, activity, runtime, and context metadata."
   (hermes-test-with-chat-buffer
    (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--launch-project-root "/tmp/"
          hermes-chat--working-directory "/tmp/emacs-hermes/"
          hermes-chat--profile "scout"
          hermes-chat--agent-name "default"
@@ -1532,6 +1536,7 @@
   "Directory, model, runtime flags, and context values use distinct faces."
   (hermes-test-with-chat-buffer
    (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--launch-project-root "/tmp/"
          hermes-chat--working-directory "/tmp/emacs-hermes/"
          hermes-chat--profile "scout"
          hermes-chat--model "grok-4.5"
@@ -1550,17 +1555,33 @@
                        (cdr case)))))))))
 
 (ert-deftest hermes-chat-header-truncates-to-narrow-window ()
-  "A narrow header fits its window and preserves the leading directory face."
+  "A narrow header fits its window and keeps the directory's final component."
   (hermes-test-with-chat-buffer
    (setq default-directory "/tmp/emacs-hermes/"
+         hermes-chat--launch-project-root "/tmp/"
          hermes-chat--working-directory "/tmp/emacs-hermes/"
          hermes-chat--profile "scout"
          hermes-chat--model "grok-4.5")
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 10)))
      (let ((header (hermes-chat--header-line)))
        (should (<= (string-width header) 10))
-       (should (string-prefix-p "emacs" header))
+       (should (string-suffix-p "hermes" header))
+       (should (eq (get-text-property 0 'face header)
+                   'hermes-chat-header-directory))
        (should-not (string-match-p "RDY" header))))))
+
+(ert-deftest hermes-chat-truncate-left-respects-wide-characters ()
+  "Left truncation keeps the tail within WIDTH columns, even for wide text."
+  (should (equal (hermes-chat--truncate-left "abc" 3) "abc"))
+  (should (equal (hermes-chat--truncate-left "a界界" 4) "…界"))
+  (should (equal (hermes-chat--truncate-left "abcdef" 3) "…ef"))
+  (dolist (width '(1 2 3 4 5))
+    (should (<= (string-width (hermes-chat--truncate-left "/srv/界%app" width))
+                width)))
+  (let ((faced (propertize "/srv/project" 'face 'hermes-chat-header-directory)))
+    (should (eq (get-text-property
+                 0 'face (hermes-chat--truncate-left faced 5))
+                'hermes-chat-header-directory))))
 
 (ert-deftest hermes-chat-header-shows-context-window ()
   "The header surfaces context-window usage from `session.info'."

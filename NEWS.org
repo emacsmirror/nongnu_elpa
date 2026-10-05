@@ -8,6 +8,13 @@
   =hermes-chat-prompt-indicator= to =nil= to hide it.  Prompt, reply and
   error notifications are now suppressed only while the chat is in the
   selected window of the focused frame, not when it is merely visible.
+- Chat buffer names now follow the chat's project rather than the gateway's
+  live working directory.  The launch project, or else the project of the
+  first gateway directory, is named with =project-name= when it exists
+  locally.  When the agent later changes directory, the buffer keeps its name
+  and the header shows the abbreviated cwd while it differs from the project
+  root.  =hermes-chat-buffer-name-function= keeps its signature; its
+  DIRECTORY argument is now this stable naming directory.
 
 * Version 0.8.0 (2026-10-01)
 

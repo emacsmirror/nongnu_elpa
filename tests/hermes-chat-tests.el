@@ -3,6 +3,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'ert-x)
 (require 'delsel)
 (require 'hermes-test-helpers)
 
@@ -656,6 +657,8 @@
                        '((session_id . "live")
                          (info . ((cwd . "/srv/resumed")))))
               (should (string-match-p "\\[resumed\\]" (buffer-name)))
+              (hermes-chat--record-working-directory "/srv/other-worktree")
+              (should (string-match-p "\\[resumed\\]" (buffer-name)))
               (should-not
                (hermes-chat--project-buffers root (list buffer)))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))
@@ -923,7 +926,7 @@
       (delete-directory other-root t))))
 
 (ert-deftest hermes-project-chat-adopts-legacy-buffer-with-cwd-name ()
-  "Project switching adopts a legacy chat without masking its known cwd."
+  "Project switching names an adopted legacy chat by project, keeping its cwd."
   (let* ((root (file-name-as-directory
                 (make-temp-file "hermes-project-adopt-" t)))
          (target (generate-new-buffer "*local@default: [emacs-hermes]*"))
@@ -945,7 +948,12 @@
           (with-current-buffer target
             (should (equal (file-truename hermes-chat--launch-project-root)
                            (file-truename root)))
-            (should (string-match-p "\\[emacs-hermes\\]" (buffer-name)))))
+            (should (string-search
+                     (format "[%s]" (file-name-nondirectory
+                                     (directory-file-name root)))
+                     (buffer-name)))
+            (should (string-match-p "/srv/emacs-hermes"
+                                    (hermes-test--header-line-string)))))
       (when (buffer-live-p target) (kill-buffer target))
       (delete-directory root t))))
 
@@ -997,7 +1005,7 @@
                      "*Custom: local/coder/nema*")))))
 
 (ert-deftest hermes-chat-buffer-name-function-receives-display-directory ()
-  "A custom name receives explicit cwd, gateway cwd, then local fallbacks."
+  "A custom name receives explicit, launch-root, first-cwd, then editor paths."
   (let* (captured
          (hermes-chat-buffer-name-function
           (lambda (_profile _instance directory)
@@ -1010,16 +1018,115 @@
      (hermes-chat--refresh-buffer-name)
      (should (equal captured "/tmp/launch-project/"))
      (hermes-chat--record-working-directory "/srv/project")
-     (should (equal captured "/srv/project"))
+     (hermes-chat--refresh-buffer-name)
+     (should (equal captured "/tmp/launch-project/"))
      (hermes-chat--buffer-name nil nil "/srv/explicit")
      (should (equal captured "/srv/explicit"))
+     (setq hermes-chat--launch-project-root nil)
+     (hermes-chat--record-working-directory "/srv/project/subdir")
+     (hermes-chat--refresh-buffer-name)
+     (should (equal captured "/srv/project"))
      (setq hermes-chat--working-directory nil
-           hermes-chat--launch-project-root nil)
+           hermes-chat--initial-working-directory nil)
      (hermes-chat--refresh-buffer-name)
      (should (equal captured "/tmp/local-editor/")))))
 
-(ert-deftest hermes-project-chat-buffer-name-follows-working-directory ()
-  "A project chat name follows cwd without changing its launch association."
+(ert-deftest hermes-chat-buffer-name-uses-launch-project-name ()
+  "A launch project names the chat through `project-name', not its cwd."
+  (ert-with-temp-directory root
+    :prefix "hermes-launch-root-"
+    (let ((root (file-name-as-directory root))
+          (hermes-instances nil))
+      (make-directory (expand-file-name ".git" root))
+      (make-directory (expand-file-name "lisp/" root))
+      (with-temp-file (expand-file-name ".dir-locals.el" root)
+        (prin1 '((nil . ((project-vc-name . "Named Project"))))
+               (current-buffer)))
+      (hermes-test-with-chat-buffer
+       (setq default-directory root
+             hermes-chat--launch-project-root root
+             hermes-chat--working-directory nil)
+       (hermes-chat--refresh-buffer-name)
+       (should (equal (buffer-name) "*Hermes@default: [Named Project]*"))
+       (dolist (cwd (list (expand-file-name "lisp" root)
+                          "/srv/worktrees/elsewhere/"))
+         (hermes-chat--record-working-directory cwd)
+         (should (equal (buffer-name) "*Hermes@default: [Named Project]*")))))))
+
+(ert-deftest hermes-chat-buffer-name-anchors-first-gateway-directory ()
+  "Without a launch project, the first gateway cwd names the chat once."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--launch-project-root nil
+         hermes-chat--working-directory nil)
+   (setq-local hermes-chat--resolved-start-mode 'remote)
+   (hermes-chat--record-working-directory "/srv/hermes-missing/first/")
+   (let ((name (buffer-name)))
+     (should (string-match-p "\\[first\\]" name))
+     (hermes-chat--record-working-directory "/srv/hermes-missing/second")
+     (should (equal hermes-chat--working-directory
+                    "/srv/hermes-missing/second"))
+     (should (equal (buffer-name) name))
+     (should (string-match-p "/srv/hermes-missing/second"
+                             (hermes-test--header-line-string))))))
+
+(ert-deftest hermes-chat-project-identity-never-probes-nonlocal-paths ()
+  "Gateway paths missing on Emacs's host are named by basename unprobed."
+  (ert-with-temp-directory root
+    :prefix "hermes-identity-root-"
+    (let* ((root (file-name-as-directory root))
+           (nested (expand-file-name "src/deep/" root))
+           probed)
+      (make-directory nested t)
+      (make-directory (expand-file-name ".git" root))
+      (let ((original (symbol-function 'project-current)))
+        (cl-letf (((symbol-function 'project-current)
+                   (lambda (&rest args)
+                     (push (cadr args) probed)
+                     (apply original args))))
+          (dolist (case `(("/ssh:gateway:/srv/app/" . "app")
+                          ;; Both exist locally yet are not absolute.
+                          ("~/" . "~")
+                          ("tests/" . "tests")
+                          (,(expand-file-name "missing/app/" root) . "app")
+                          ("C:\\Users\\Thanos\\project\\" . "project")))
+            (should (equal (cdr (hermes-chat--project-identity (car case)))
+                           (cdr case))))
+          (should-not probed)
+          (let ((identity (hermes-chat--project-identity nested)))
+            (should probed)
+            (should (equal (file-truename (car identity))
+                           (file-truename root)))
+            (should (equal (cdr identity)
+                           (file-name-nondirectory
+                            (directory-file-name root))))))))))
+
+(ert-deftest hermes-chat-header-shows-only-divergent-working-directory ()
+  "The header shows an abbreviated gateway cwd only when off the project root."
+  (hermes-test-with-chat-buffer
+   (setq default-directory "/tmp/hermes-project/"
+         hermes-chat--launch-project-root "/tmp/hermes-project/")
+   (setq-local hermes-chat--resolved-start-mode 'remote)
+   (hermes-chat--refresh-buffer-name)
+   (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
+     (hermes-chat--record-working-directory "/tmp/hermes-project")
+     (let ((header (hermes-chat--header-line)))
+       (should-not (text-property-any 0 (length header) 'face
+                                      'hermes-chat-header-directory header)))
+     (hermes-chat--record-working-directory "/tmp/hermes-project/lisp/sub/")
+     (let* ((header (hermes-chat--header-line))
+            (position (string-match-p "lisp/sub" header)))
+       (should position)
+       (should (eq (get-text-property position 'face header)
+                   'hermes-chat-header-directory))
+       (should-not (string-match-p "/tmp/hermes-project" header)))
+     (hermes-chat--record-working-directory
+      (expand-file-name "worktrees/other" "~"))
+     (should (string-match-p (regexp-quote "~/worktrees/other")
+                             (hermes-test--header-line-string)))
+     (should (string-match-p "\\[hermes-project\\]" (buffer-name))))))
+
+(ert-deftest hermes-project-chat-buffer-name-stays-on-project ()
+  "A project chat keeps its project name while the header reports cwd."
   (let* ((root (file-name-as-directory
                 (make-temp-file "hermes-project-name-" t)))
          (nested (expand-file-name "src/" root))
@@ -1037,13 +1144,16 @@
                          (lambda () nil)))
                 (setq buffer (hermes-project-chat t)))))
           (with-current-buffer buffer
-            (hermes-chat--record-working-directory
-             "/srv/emacs-hermes")
-            (should (equal (file-truename hermes-chat--launch-project-root)
-                           (file-truename root)))
-            (should (string-match-p "\\[emacs-hermes\\]" (buffer-name)))
-            (should (string-match-p "emacs-hermes"
-                                    (hermes-test--header-line-string)))))
+            (let ((project (format "[%s]" (file-name-nondirectory
+                                           (directory-file-name root)))))
+              (should (string-search project (buffer-name)))
+              (hermes-chat--record-working-directory
+               "/srv/emacs-hermes")
+              (should (equal (file-truename hermes-chat--launch-project-root)
+                             (file-truename root)))
+              (should (string-search project (buffer-name)))
+              (should (string-match-p "/srv/emacs-hermes"
+                                      (hermes-test--header-line-string))))))
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (delete-directory root t))))
 

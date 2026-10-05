@@ -56,10 +56,14 @@
 The function receives PROFILE, INSTANCE, and DIRECTORY.  PROFILE is a non-empty
 profile name.  INSTANCE is the owning legacy pair or typed identity; use
 `hermes-instance-id', `hermes-instance-name', and `hermes-instance-url' to read
-it.  DIRECTORY is selected in order from an explicit caller argument, the
-gateway working directory, the launch-project root, or editor
-`default-directory'.  The editor fallback is display-only and need not be the
-gateway cwd.  The function must return the complete non-empty buffer name."
+it.  DIRECTORY names the chat's project and is selected in order from an
+explicit caller argument, the launch-project root, the first gateway working
+directory recorded for the session, or, until one is recorded, the current
+gateway or editor `default-directory'.  It does not follow later gateway
+directory changes, which the header line shows instead.  DIRECTORY is
+gateway-native and need not exist on Emacs's host; the default function names
+it with `project-name' only when it exists locally.  The function must return
+the complete non-empty buffer name."
   :type 'function
   :group 'hermes)
 
@@ -1917,7 +1921,7 @@ PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
 the owning Hermes instance.  A nil INSTANCE is resolved from the current
 context.  Non-nil PINNED-URL retains an explicit backend across reconnect.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
-Buffer names identify the instance, profile, and working directory; TITLE stays
+Buffer names identify the instance, profile, and project; TITLE stays
 session metadata.  This is the single side-effecting constructor every new-chat
 entry point funnels through."
   (let* ((directory default-directory)
