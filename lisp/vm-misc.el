@@ -1704,6 +1704,36 @@ buttons are possible under the current windowing system."
 
 (defalias 'vm-image-type-available-p #'image-type-available-p)
 
+(defun vm-load-feature-failure (feature)
+  "Nil once FEATURE is loaded, or a string saying why it would not load.
+`require' is tried first and `load' after it, a feature being able to sit in
+a file that provides nothing.  Both are guarded.  `load's NOERROR covers a
+file that is not there and nothing else, so a feature that is installed and
+signals while loading used to come straight back out of here and kill the
+caller: w3m.el signals when the w3m program is not in `exec-path', which is
+what stopped vm-w3m.el compiling in a NonGNU ELPA install (emacs-vm/vm#903).
+
+The `require' error is the one reported where `load' merely finds no file,
+that being the one that says what was looked for."
+  (condition-case absent
+      (progn (require feature) nil)
+    (error
+     (condition-case broken
+         (if (load (format "%s" feature) t)
+             nil
+           (error-message-string absent))
+       (error (error-message-string broken))))))
+
+(defun vm-load-feature (feature silent)
+  "FEATURE if it loads, nil if it does not, warning a reader where there is one.
+SILENT and a batch Emacs each suppress the warning; see `vm-load-features'."
+  (let ((failure (vm-load-feature-failure feature)))
+    (cond ((null failure) feature)
+          ((or silent noninteractive) nil)
+          (t (message "WARNING: Could not load feature %S: %s" feature failure)
+             (message "WARNING: Related functions may not work correctly!")
+             nil))))
+
 (defun vm-load-features (feature-list &optional silent)
   "Try to load those features listed in FEATURE_LIST.
 If SILENT is t, do not display warnings for unloadable features.
@@ -1716,20 +1746,7 @@ middle of a build read as a broken build (emacs-vm/vm#485, emacs-vm/vm#753).
 Building the manual loads every module to read its docstrings, which is where
 they were coming from -- SILENT is `byte-compile-current-file' at every call
 site, and that is nil when a file is loaded rather than compiled."
-  (setq feature-list
-        (mapcar (lambda (f)
-                  (condition-case nil
-                      (progn (require f)
-                             f)
-                    (error
-                     (if (load (format "%s" f) t)
-                         f
-                       (unless (or silent noninteractive)
-                         (message "WARNING: Could not load feature %S." f)
-                         (message "WARNING: Related functions may not work correctly!"))
-                       nil))))
-                feature-list))
-  (delete nil feature-list))
+  (delq nil (mapcar (lambda (f) (vm-load-feature f silent)) feature-list)))
 
 
 (defun vm-load-features-silent-when-compiling (feature-list)
