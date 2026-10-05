@@ -989,5 +989,110 @@
             (when (buffer-live-p buffer) (kill-buffer buffer))
             (hermes-dashboard-transport-stop-all)))))))
 
+;;;; Session restore (desktop.el and warm-restart)
+
+(defvar warm-restart-passive)
+(defvar warm-restart-activate-functions)
+
+(defmacro hermes-test--with-resume-stub (resumes &rest body)
+  "Run BODY counting `session.resume' calls in RESUMES, a list variable."
+  (declare (indent 1) (debug t))
+  `(let ((default-directory "/tmp/emacs-hermes/"))
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                (lambda (&rest _) (hermes-test--dashboard-client)))
+               ((symbol-function 'hermes-chat--dashboard-default-transport-p)
+                (lambda () t))
+               ((symbol-function 'hermes-dashboard-transport-session-resume)
+                (lambda (_client sid &rest args)
+                  (push (cons sid (plist-get args :profile)) ,resumes))))
+       ,@body)))
+
+(ert-deftest hermes-chat-desktop-save-carries-identity-and-draft ()
+  "Desktop data holds the durable id, routing and draft, never the transcript."
+  (let (resumes buffer)
+    (hermes-test--with-resume-stub resumes
+      (unwind-protect
+          (with-current-buffer
+              (setq buffer (hermes-chat-resume-session "sid-7" "Plans" "work"))
+            (setq hermes-chat--title-manual-p t)
+            (goto-char (point-max))
+            (insert "half written")
+            (backward-char 3)
+            (should (eq desktop-save-buffer #'hermes-chat--desktop-save))
+            (let ((data (hermes-chat--desktop-save "/tmp/")))
+              (should (equal (car (read-from-string (prin1-to-string data))) data))
+              (should (equal (plist-get data :session-id) "sid-7"))
+              (should (equal (plist-get data :title) "Plans"))
+              (should (plist-get data :title-manual-p))
+              (should (equal (plist-get data :profile) "work"))
+              (should (equal (plist-get data :draft) "half written"))
+              (should (= (plist-get data :point-offset) 9))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-desktop-restore-passive-attaches-on-activation ()
+  "Passive restore builds the chat offline; activation resumes it once."
+  (let (resumes buffer)
+    (hermes-test--with-resume-stub resumes
+      (unwind-protect
+          (let ((warm-restart-passive t)
+                (warm-restart-activate-functions nil))
+            (setq buffer (hermes-chat-desktop-restore
+                          nil "*my chat*"
+                          '(:version 1 :session-id "sid-9" :title "T"
+                            :title-manual-p t :profile "work"
+                            :draft "next question" :point-offset 4)))
+            (with-current-buffer buffer
+              (should (equal (buffer-name) "*my chat*"))
+              (should (equal hermes-chat--session-id "sid-9"))
+              (should (equal hermes-chat--profile "work"))
+              (should hermes-chat--title-manual-p)
+              (should (equal (hermes-chat-input-string) "next question"))
+              (should-not hermes-chat--dashboard-client))
+            (should-not resumes)
+            (should (= (length warm-restart-activate-functions) 1))
+            (mapc #'funcall warm-restart-activate-functions)
+            (should (equal resumes '(("sid-9" . "work"))))
+            (with-current-buffer buffer
+              (should (equal (hermes-chat-input-string) "next question"))
+              (should (= (- (point) (hermes-chat--input-position)) 4))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-desktop-restore-without-session-starts-fresh-chat ()
+  "A chat that never created a session restores as a draft with no resume."
+  (let (resumes buffer)
+    (hermes-test--with-resume-stub resumes
+      (unwind-protect
+          (let ((warm-restart-passive t)
+                (warm-restart-activate-functions nil))
+            (setq buffer (hermes-chat-desktop-restore
+                          nil "*fresh*" '(:version 1 :draft "hello")))
+            (mapc #'funcall warm-restart-activate-functions)
+            (should-not resumes)
+            (with-current-buffer buffer
+              (should-not hermes-chat--session-id)
+              (should (equal (hermes-chat-input-string) "hello"))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-warm-restart-blocks-unsettled-chats ()
+  "Active turns and queued input block a hand-over; an idle chat does not."
+  (hermes-test-with-chat-buffer
+    (should-not (hermes-chat--warm-restart-blocker))
+    (should (memq #'hermes-chat--warm-restart-blocker
+                  warm-restart-blocker-functions))
+    (let ((hermes-chat--pending-assistant-id "a1"))
+      (should (equal (hermes-chat--warm-restart-blocker)
+                     "Hermes turn in progress")))
+    (let ((hermes-chat--queued-messages '((:content "x"))))
+      (should (hermes-chat--warm-restart-blocker)))))
+
+(ert-deftest hermes-buffer-claim-marks-views-regenerable ()
+  "Claimed views without desktop data are regenerable; chats are not."
+  (with-temp-buffer
+    (hermes-dashboard-mode)
+    (hermes-buffer--claim 'hermes-dashboard-mode)
+    (should (get 'hermes-dashboard-mode 'warm-restart-regenerable)))
+  (hermes-test-with-chat-buffer
+    (should-not (get 'hermes-chat-mode 'warm-restart-regenerable))))
+
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here

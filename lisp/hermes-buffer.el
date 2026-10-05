@@ -39,6 +39,10 @@ Call only from a constructor, never from a major-mode body."
   (unless (and (eq major-mode mode) (not (hermes-buffer--retired-p)))
     (user-error "Hermes view changed during mode initialization"))
   (setq hermes-buffer--owner (cons (or name t) mode))
+  ;; Views without desktop.el data are regenerated from live state, so a
+  ;; warm restart lists them instead of carrying them.
+  (unless (local-variable-p 'desktop-save-buffer)
+    (put mode 'warm-restart-regenerable t))
   (add-hook 'after-set-visited-file-name-hook #'hermes-buffer--retire nil t))
 
 (defun hermes-buffer--find (name mode)

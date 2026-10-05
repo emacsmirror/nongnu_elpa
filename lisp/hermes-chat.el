@@ -2247,17 +2247,11 @@ visible while reading."
       (user-error "No Hermes input to send")))
     (when retry-p (hermes-chat--load-session-history (current-buffer)))))
 
-(defun hermes-chat-resume-session (session-id &optional title profile instance bot-root pinned-url)
-  "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
-TITLE, when given, records its server title metadata.  PROFILE selects its
-owning profile, and INSTANCE selects its owning Hermes instance.  A nil
-INSTANCE is resolved from the current context.  BOT-ROOT, when non-nil, is
-the backend-confirmed canonical Bot Chat root and enables its /new policy.
-PINNED-URL explicitly retains a verified backend through hooks and reconnect;
-when omitted, BOT-ROOT uses INSTANCE's endpoint.  Ordinary chats stay unpinned.
-Over the dashboard transport the prior messages are fetched and rendered; the
-durable session continues on send."
-  (interactive (list (read-string "Resume Hermes session id: ")))
+(defun hermes-chat--resume-buffer (session-id &optional title profile instance bot-root pinned-url)
+  "Return a new chat buffer for SESSION-ID that is not yet attached.
+TITLE, PROFILE, INSTANCE, BOT-ROOT and PINNED-URL are as for
+`hermes-chat-resume-session'.  The buffer acquires no client until its
+history is loaded."
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
   (let* ((directory default-directory)
@@ -2292,12 +2286,110 @@ durable session continues on send."
             hermes-chat--title title)
       (when pinned-url (run-mode-hooks))
       (rename-buffer (hermes-chat--buffer-name profile instance) t))
+    buffer))
+
+(defun hermes-chat-resume-session (session-id &optional title profile instance bot-root pinned-url)
+  "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
+TITLE, when given, records its server title metadata.  PROFILE selects its
+owning profile, and INSTANCE selects its owning Hermes instance.  A nil
+INSTANCE is resolved from the current context.  BOT-ROOT, when non-nil, is
+the backend-confirmed canonical Bot Chat root and enables its /new policy.
+PINNED-URL explicitly retains a verified backend through hooks and reconnect;
+when omitted, BOT-ROOT uses INSTANCE's endpoint.  Ordinary chats stay unpinned.
+Over the dashboard transport the prior messages are fetched and rendered; the
+durable session continues on send."
+  (interactive (list (read-string "Resume Hermes session id: ")))
+  (let ((buffer (hermes-chat--resume-buffer
+                 session-id title profile instance bot-root pinned-url)))
     (pop-to-buffer-same-window buffer)
     (when (hermes-chat--dashboard-default-transport-p)
       (hermes-chat--load-session-history buffer))
     (with-current-buffer buffer
       (goto-char (or (hermes-chat--input-position) (point-max))))
     buffer))
+
+;;;; Session restore (desktop.el and warm-restart)
+
+;; A restored chat carries its durable identity and unsent draft, never
+;; the transcript: the backend owns history and replays it on resume.
+
+(defvar warm-restart-passive)
+(defvar warm-restart-activate-functions)
+
+(defun hermes-chat--desktop-save (_dirname)
+  "Return this chat's durable identity and draft as desktop.el data."
+  (let ((input (hermes-chat--input-position))
+        (string (lambda (value) (and value (substring-no-properties value)))))
+    (list :version 1
+          :session-id (funcall string hermes-chat--session-id)
+          :title (funcall string hermes-chat--title)
+          :title-manual-p hermes-chat--title-manual-p
+          :profile (funcall string hermes-chat--profile)
+          :instance (copy-tree hermes-instance)
+          :pinned-url (funcall string hermes-chat--pinned-url)
+          :bot-root (funcall string hermes-chat--bot-chat-root)
+          :draft (hermes-chat-input-string)
+          :point-offset (and input (>= (point) input) (- (point) input)))))
+
+(defun hermes-chat--restore-point (buffer offset)
+  "Move point in BUFFER, and its windows, OFFSET characters into the composer."
+  (with-current-buffer buffer
+    (let ((position (min (point-max)
+                         (+ (or (hermes-chat--input-position) (point-max))
+                            (or offset 0)))))
+      (goto-char position)
+      (dolist (window (get-buffer-window-list buffer nil t))
+        (set-window-point window position)))))
+
+(defun hermes-chat-desktop-restore (_file name misc)
+  "Recreate chat buffer NAME from desktop data MISC and return it.
+The draft is restored as unsent composer text.  Attaching to the backend
+waits for `warm-restart' activation, when the previous editor has gone, or
+otherwise for the next command loop."
+  (let* ((session (plist-get misc :session-id))
+         (title (plist-get misc :title))
+         (buffer
+          (save-window-excursion
+            (if session
+                (hermes-chat--resume-buffer
+                 session title (plist-get misc :profile) (plist-get misc :instance)
+                 (plist-get misc :bot-root) (plist-get misc :pinned-url))
+              (hermes-chat--new-buffer
+               (plist-get misc :profile)
+               (and (plist-get misc :title-manual-p) title)
+               (plist-get misc :instance) (plist-get misc :pinned-url)))))
+         (attach
+          (lambda ()
+            (when (buffer-live-p buffer)
+              (hermes-chat--restore-point buffer (plist-get misc :point-offset))
+              (with-current-buffer buffer
+                (when (and session (hermes-chat--dashboard-default-transport-p))
+                  (hermes-chat--load-session-history buffer)))))))
+    (with-current-buffer buffer
+      (when (plist-get misc :title-manual-p)
+        (setq hermes-chat--title-manual-p t))
+      (let ((draft (plist-get misc :draft)))
+        (when (and draft (not (string-empty-p draft)))
+          (goto-char (point-max))
+          (insert draft)))
+      (unless (string-equal (buffer-name) name)
+        (rename-buffer name t)))
+    (if (bound-and-true-p warm-restart-passive)
+        (add-hook 'warm-restart-activate-functions attach t)
+      (run-at-time 0 nil attach))
+    buffer))
+
+(defun hermes-chat--warm-restart-blocker ()
+  "Return why this chat cannot be handed to another editor now, or nil."
+  (cond ((hermes-chat--active-turn-p) "Hermes turn in progress")
+        (hermes-chat--session-bootstrap "Hermes session still loading")
+        (hermes-chat--queued-messages "queued Hermes messages not yet sent")
+        ((> (hermes-chat--pending-prompt-count) 0)
+         "Hermes prompt awaiting an answer")
+        (hermes-chat--draft-images "image draft cannot be carried")))
+
+(add-to-list 'desktop-buffer-mode-handlers
+             '(hermes-chat-mode . hermes-chat-desktop-restore))
 
 (defun hermes-chat-send ()
   "Send the current Hermes chat input.
@@ -2970,6 +3062,9 @@ depth so a globalized linter re-enabled after the mode body is overridden."
             #'hermes-chat-todos--clear nil t)
   (add-hook 'hermes-chat-submit-inhibit-functions
             #'hermes-chat--images-inhibit nil t)
+  (setq-local desktop-save-buffer #'hermes-chat--desktop-save)
+  (add-hook 'warm-restart-blocker-functions
+            #'hermes-chat--warm-restart-blocker nil t)
   (hermes-chat--setup-buffer)
   (hermes-chat-draft--activate))
 
