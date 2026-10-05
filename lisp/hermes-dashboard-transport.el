@@ -101,7 +101,8 @@ Use nil to disable per-request timeouts."
 (defvar hermes-dashboard-transport-request-lossless-result nil
   "Non-nil requests lossless results at request registration.
 Supported methods are `delegation.status', `subagent.list', `process.list',
-`profiles.list', `session.list', `session.create', and `session.title'.
+`profiles.list', `session.list', `session.create', `session.title',
+`session.active_list', and `agents.list'.
 Bind this around the
 typed RPC invocation together with its request owner.  Inventory callers also
 bind a 10-second `hermes-dashboard-transport-request-timeout', even if the
@@ -1187,7 +1188,8 @@ id."
                       (and hermes-dashboard-transport-request-lossless-result
                            (member method '("delegation.status" "subagent.list" "process.list"
                                             "profiles.list" "session.list"
-                                            "session.create" "session.title"))))
+                                            "session.create" "session.title"
+                                            "session.active_list" "agents.list"))))
              pending)
     (hermes-dashboard-transport--when-ready
      client
@@ -1418,19 +1420,24 @@ Secret values are never placed in the outgoing RPC correlation table."
 
 (defun hermes-dashboard-transport--start-process (client command env)
   "Start CLIENT's dashboard process using COMMAND and ENV."
-  (let ((process-generation
-         (cl-incf (hermes-dashboard-transport-client-process-generation client))))
-    (funcall hermes-dashboard-transport-make-process-function
-             :name "hermes-dashboard"
-             :buffer " *hermes-dashboard*"
-             :command command
-             :env env
-             :connection-type 'pipe
-             :noquery t
-             :sentinel
-             (lambda (process _event)
-               (hermes-dashboard-transport--handle-process-exit
-                client process process-generation)))))
+  (let* ((process-generation
+          (cl-incf (hermes-dashboard-transport-client-process-generation client)))
+         (process
+          (funcall hermes-dashboard-transport-make-process-function
+                   :name "hermes-dashboard"
+                   :buffer " *hermes-dashboard*"
+                   :command command
+                   :env env
+                   :connection-type 'pipe
+                   :noquery t
+                   :sentinel
+                   (lambda (process _event)
+                     (hermes-dashboard-transport--handle-process-exit
+                      client process process-generation)))))
+    (when (processp process)
+      (process-put process 'warm-restart
+                   #'hermes-dashboard-transport--warm-restart-entry))
+    process))
 
 (defun hermes-dashboard-transport--connection-error (client)
   "Return a redacted connection failure message for CLIENT."
@@ -1800,6 +1807,158 @@ is reused, since attached buffers subscribe rather than seize the callback."
                 (hermes-dashboard-transport-client-endpoint-key client) key)
           (puthash key client hermes-dashboard-transport--clients)
           client)))))
+
+;;; Warm restart
+
+(defcustom hermes-dashboard-transport-warm-restart-timeout 3
+  "Seconds a warm-restart plan waits for the spawned dashboard to answer.
+A dashboard that does not answer in time is BLOCKED in the plan."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-warm-restart-hold 30
+  "Seconds a warm-restart successor keeps its restarted dashboard leased.
+The restored chats attach within this time; afterwards the dashboard
+lives as long as they use it."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
+(defun hermes-dashboard-transport--warm-restart-client (process)
+  "Return the registered spawn client whose child is PROCESS, or nil."
+  (cl-loop for client being the hash-values of hermes-dashboard-transport--clients
+           when (eq (hermes-dashboard-transport-client-process client) process)
+           return client))
+
+(defun hermes-dashboard-transport--warm-restart-query (client methods)
+  "Return the results of METHODS on CLIENT as an alist, or signal an error.
+Wait at most `hermes-dashboard-transport-warm-restart-timeout' seconds."
+  (let ((deadline (+ (float-time) hermes-dashboard-transport-warm-restart-timeout))
+        (hermes-dashboard-transport-request-lossless-result t)
+        (results nil) (failure nil))
+    (dolist (method methods)
+      (hermes-dashboard-transport-request
+       client method nil
+       (lambda (result) (push (cons method result) results))
+       (lambda (reason) (setq failure (format "%s failed: %s" method reason)))))
+    (while (and (not failure) (< (length results) (length methods))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (cond (failure (error "%s" failure))
+          ((< (length results) (length methods))
+           (error "The dashboard did not answer within %s seconds"
+                  hermes-dashboard-transport-warm-restart-timeout))
+          (t results))))
+
+(defun hermes-dashboard-transport--warm-restart-rows (results method key)
+  "Return METHOD's explicit collection KEY in RESULTS, or signal unknown state."
+  (let* ((result (cdr (assoc method results)))
+         (rows (hermes-transport--get result key)))
+    (unless (and (hermes-transport--object-p result)
+                 (seq-some (lambda (candidate)
+                             (not (eq (hermes-transport--member-value result candidate)
+                                      hermes-transport--missing)))
+                           (hermes-transport--key-candidates key))
+                 (or (vectorp rows) (proper-list-p rows))
+                 (seq-every-p #'hermes-transport--object-p rows))
+      (error "%s returned unknown or malformed %s state" method key))
+    (append rows nil)))
+
+(defun hermes-dashboard-transport--warm-restart-work (client results)
+  "Return a description of the work in RESULTS that a restart would lose.
+CLIENT's chat buffers own the sessions bound to them; any other live
+session, a running turn, an active subagent or a running background
+process is work.  Return nil when there is none."
+  (let ((owned (hermes-dashboard-transport-client-session-index client))
+        work)
+    (cl-flet ((rows (method key)
+                (hermes-dashboard-transport--warm-restart-rows results method key)))
+      (dolist (row (rows "session.active_list" 'sessions))
+        (let ((id (hermes-transport--get row 'id))
+              (status (hermes-transport--get row 'status))
+              (title (or (hermes-transport--get row 'title) "")))
+          (cond ((not (equal status "idle"))
+                 (push (format "session %s %S is %s" id title status) work))
+                ((not (gethash id owned))
+                 (push (format "session %s %S is not open in this Emacs" id title)
+                       work)))))
+      (dolist (row (rows "delegation.status" 'active))
+        (push (format "subagent %s is running"
+                      (or (hermes-transport--get row 'subagent_id)
+                          (hermes-transport--get row 'goal) "?"))
+              work))
+      (dolist (row (rows "agents.list" 'processes))
+        (unless (member (hermes-transport--get row 'status) '("running" "exited"))
+          (error "Agents.list returned unknown background process status"))
+        (when (equal (hermes-transport--get row 'status) "running")
+          (push (format "background process %s (%s) is running"
+                        (hermes-transport--get row 'session_id)
+                        (hermes-transport--get row 'command))
+                work))))
+    (and work (string-join (nreverse work) "; "))))
+
+(defun hermes-dashboard-transport--warm-restart-entry (process)
+  "Return the warm-restart declaration of the spawned dashboard PROCESS.
+The dashboard and its tui_gateway die with this Emacs.  The successor
+restarts it on the same endpoint when it holds no work; otherwise, or
+when its state cannot be read, the plan is BLOCKED.  See the process
+property `warm-restart' in the warm-restart package."
+  (let* ((client (hermes-dashboard-transport--warm-restart-client process))
+         (where (if client
+                    (format "Hermes dashboard on %s:%s"
+                            (hermes-dashboard-transport-client-host client)
+                            (hermes-dashboard-transport-client-port client))
+                  "Hermes dashboard")))
+    (condition-case err
+        (progn
+          (unless (and client (hermes-dashboard-transport-client-ready-p client))
+            (error "It is not connected, so its sessions cannot be checked"))
+          (if-let* ((work (hermes-dashboard-transport--warm-restart-work
+                           client
+                           (hermes-dashboard-transport--warm-restart-query
+                            client '("session.active_list" "delegation.status"
+                                     "agents.list")))))
+              (list :strategy 'blocked
+                    :reason (format "%s has work a restart would kill: %s" where work))
+            (list :strategy 'handler
+                  :reason (format "%s restarts after the handoff; open chats reattach"
+                                  where)
+                  :restore #'hermes-dashboard-transport-warm-restart-restore
+                  :data (list :host (hermes-dashboard-transport-client-host client)
+                              :port (hermes-dashboard-transport-client-port client)
+                              :command (car (process-command process))
+                              :pid (process-id process)))))
+      (error (list :strategy 'blocked
+                   :reason (format "%s: %s" where (error-message-string err)))))))
+
+(defun hermes-dashboard-transport--warm-restart-orphan-p (pid port)
+  "Return non-nil when PID is a Hermes dashboard still serving PORT."
+  (when-let* ((attributes (and pid (process-attributes pid)))
+              (args (alist-get 'args attributes)))
+    (and (string-match-p "\\_<dashboard\\_>" args)
+         (string-match-p (format "--port %d\\_>" port) args))))
+
+(defun hermes-dashboard-transport-warm-restart-restore (data)
+  "Restart the dashboard described by DATA in the warm-restart successor.
+A predecessor dashboard that outlived its Emacs on the same port is
+stopped first.  The new dashboard is started before the restored chats
+reattach, which then share it; its own lease is released after
+`hermes-dashboard-transport-warm-restart-hold' seconds."
+  (let ((pid (plist-get data :pid))
+        (port (plist-get data :port)))
+    (when (hermes-dashboard-transport--warm-restart-orphan-p pid port)
+      (signal-process pid 'term)
+      (let ((deadline (+ (float-time) 5)))
+        (while (and (process-attributes pid) (< (float-time) deadline))
+          (sleep-for 0.05)))
+      (when (process-attributes pid) (signal-process pid 'kill)))
+    (let ((client (hermes-dashboard-transport-acquire
+                   :host (plist-get data :host) :port port
+                   :command (plist-get data :command)
+                   :start-mode 'spawn :callback #'ignore)))
+      (when (hermes-dashboard-transport-client-p client)
+        (run-at-time hermes-dashboard-transport-warm-restart-hold nil
+                     #'hermes-dashboard-transport-release client))
+      client)))
 
 ;;; Idle close and release
 

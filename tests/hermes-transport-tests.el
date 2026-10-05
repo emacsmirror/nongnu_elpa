@@ -5628,5 +5628,191 @@ url.el flags every 4xx/5xx via the callback status; the useless
           (hermes-dashboard-transport--handle-frame client frame)
           (should (= (length events) 3)))))))
 
+;;;; Warm restart: the spawned dashboard is a declared, restartable process
+
+(defun hermes-test--wr-sleeper (&rest args)
+  "Start a disposable child process; ARGS are extra argv entries it carries."
+  (make-process :name "hermes-wr-fake-dashboard"
+                :command (append (list "python3" "-c" "import time; time.sleep(600)")
+                                 args)
+                :noquery t))
+
+(defmacro hermes-test--with-wr-dashboard (spec &rest body)
+  "Run BODY with SPEC = (CLIENT PROCESS ANSWERS) bound to a ready spawn client.
+ANSWERS is an alist (METHOD . RESULT-or-(:reject REASON)) used to answer
+`hermes-dashboard-transport-request'."
+  (declare (indent 1))
+  (let ((client (nth 0 spec)) (process (nth 1 spec)) (answers (nth 2 spec)))
+    `(let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+            (,process (hermes-test--wr-sleeper "dashboard" "--port" "19555"))
+            (,client (make-hermes-dashboard-transport-client
+                      :host "127.0.0.1" :port 19555 :process ,process
+                      :ready-p t :refcount 1 :callback #'ignore
+                      :endpoint-key (list 'spawn "127.0.0.1" 19555))))
+       (puthash (list 'spawn "127.0.0.1" 19555) ,client hermes-dashboard-transport--clients)
+       (unwind-protect
+           (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                      (lambda (_client method &optional _params resolve reject)
+                        (let ((answer (cdr (assoc method ,answers))))
+                          (run-at-time 0.01 nil
+                                       (lambda ()
+                                         (if (eq (car-safe answer) :reject)
+                                             (funcall reject (cadr answer))
+                                           (funcall resolve answer)))))
+                        1)))
+             ,@body)
+         (when (process-live-p ,process) (delete-process ,process))))))
+
+(defun hermes-test--wr-idle-answers (&rest overrides)
+  "Return dashboard answers for an idle dashboard, with OVERRIDES first."
+  (append overrides
+          '(("session.active_list"
+             . ((sessions . (((id . "live-1") (status . "idle") (title . "Chat")
+                              (session_key . "stored-1"))))))
+            ("delegation.status" . ((active . nil)))
+            ("agents.list" . ((processes . nil))))))
+
+(ert-deftest hermes-transport-dashboard-process-declares-warm-restart ()
+  "The spawned dashboard process carries a warm-restart declaration."
+  (let* ((client (make-hermes-dashboard-transport-client :callback #'ignore))
+         (process nil)
+         (hermes-dashboard-transport-make-process-function
+          (lambda (&rest _) (setq process (hermes-test--wr-sleeper)))))
+    (unwind-protect
+        (progn
+          (hermes-dashboard-transport--start-process client '("hermes") nil)
+          (should (eq (process-get process 'warm-restart)
+                      #'hermes-dashboard-transport--warm-restart-entry)))
+      (when (process-live-p process) (delete-process process)))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-idle-restarts ()
+  "An idle dashboard whose sessions all belong to Emacs chats restarts."
+  (hermes-test--with-wr-dashboard (client process (hermes-test--wr-idle-answers))
+    (puthash "live-1" 'chat-token (hermes-dashboard-transport-client-session-index client))
+    (let ((entry (hermes-dashboard-transport--warm-restart-entry process)))
+      (should (eq (plist-get entry :strategy) 'handler))
+      (should (string-match-p "Hermes dashboard" (plist-get entry :reason)))
+      (should (string-match-p "19555" (plist-get entry :reason)))
+      (should (eq (plist-get entry :restore) #'hermes-dashboard-transport-warm-restart-restore))
+      (should (equal (plist-get (plist-get entry :data) :port) 19555))
+      (should (equal (plist-get (plist-get entry :data) :host) "127.0.0.1"))
+      (should (eql (plist-get (plist-get entry :data) :pid) (process-id process))))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-blocks-running-work ()
+  "Turns, subagents, background processes and foreign clients BLOCK."
+  (dolist (case
+           `((("session.active_list"
+               . ((sessions . (((id . "live-1") (status . "working") (title . "Busy")))))))
+             (("delegation.status"
+               . ((active . (((subagent_id . "sa-1") (goal . "lane")))))))
+             (("agents.list"
+               . ((processes . (((session_id . "proc_1") (command . "cargo build")
+                                 (status . "running")))))))
+             (("session.active_list"
+               . ((sessions . (((id . "tui-1") (status . "idle") (title . "TUI")))))))
+             (("delegation.status" . (:reject "boom")))))
+    (hermes-test--with-wr-dashboard (client process (apply #'hermes-test--wr-idle-answers case))
+      (puthash "live-1" 'chat-token (hermes-dashboard-transport-client-session-index client))
+      (let ((entry (hermes-dashboard-transport--warm-restart-entry process)))
+        (should (eq (plist-get entry :strategy) 'blocked))
+        (should (string-match-p "Hermes dashboard" (plist-get entry :reason)))))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-unknown-state-blocks ()
+  "A dashboard that is not connected or does not answer is BLOCKED."
+  (let ((hermes-dashboard-transport-warm-restart-timeout 0.3))
+    (hermes-test--with-wr-dashboard (client process nil)
+      (setf (hermes-dashboard-transport-client-ready-p client) nil)
+      (should (eq (plist-get (hermes-dashboard-transport--warm-restart-entry process)
+                             :strategy)
+                  'blocked)))
+    (hermes-test--with-wr-dashboard (client process nil)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                 (lambda (&rest _) 1)))
+        (should (eq (plist-get (hermes-dashboard-transport--warm-restart-entry process)
+                               :strategy)
+                    'blocked))))
+    (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+          (stray (hermes-test--wr-sleeper)))
+      (unwind-protect
+          (should (eq (plist-get (hermes-dashboard-transport--warm-restart-entry stray)
+                                 :strategy)
+                      'blocked))
+        (delete-process stray)))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-malformed-state-blocks ()
+  "Successful missing, scalar, or malformed collections cannot certify idle."
+  (dolist (spec '(("session.active_list" . sessions)
+                  ("delegation.status" . active)
+                  ("agents.list" . processes)))
+    (dolist (result (list nil '((other . nil)) 42
+                         (list (cons (cdr spec) ""))
+                         (list (cons (cdr spec) :json-null))
+                         (list (cons (cdr spec) '((status . "idle"))))
+                         (list (cons (cdr spec) (list nil)))
+                         (list (cons (cdr spec) (list '((other . "unknown")))))))
+      (hermes-test--with-wr-dashboard
+          (client process (hermes-test--wr-idle-answers (cons (car spec) result)))
+        (puthash "live-1" 'chat-token (hermes-dashboard-transport-client-session-index client))
+        (let ((entry (hermes-dashboard-transport--warm-restart-entry process)))
+          (should (eq (plist-get entry :strategy) 'blocked)))))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-wire-state-validation ()
+  "Real request registration must distinguish empty arrays from null/false/objects."
+  (let ((request (symbol-function 'hermes-dashboard-transport-request)))
+    (dolist (spec '(("session.active_list" . "sessions")
+                    ("delegation.status" . "active")
+                    ("agents.list" . "processes")))
+      (dolist (value '("[]" "null" "false" "{}" "\"\""))
+        (hermes-test--with-wr-dashboard (client process nil)
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-request) request)
+                    ((symbol-function 'hermes-dashboard-transport--send-frame)
+                     (lambda (owner id method _frame _reject)
+                       (let ((key (cdr (assoc method '(("session.active_list" . "sessions")
+                                                      ("delegation.status" . "active")
+                                                      ("agents.list" . "processes"))))))
+                         (hermes-dashboard-transport--handle-frame
+                          owner (format "{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"%s\":%s}}"
+                                        (json-encode id) key (if (equal method (car spec)) value "[]")))))))
+            (let ((entry (hermes-dashboard-transport--warm-restart-entry process)))
+              (ert-info ((format "%s collection %s: %S" (car spec) value entry))
+                (should (eq (plist-get entry :strategy)
+                            (if (equal value "[]") 'handler 'blocked)))))))))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-explicit-empty-state ()
+  "Explicit empty arrays are idle in both ordinary and lossless JSON forms."
+  (dolist (parse '(hermes-transport-json-parse hermes-transport-json-parse-lossless))
+    (hermes-test--with-wr-dashboard
+        (client process
+                (list (cons "session.active_list" (funcall parse "{\"sessions\":[]}"))
+                      (cons "delegation.status" (funcall parse "{\"active\":[]}"))
+                      (cons "agents.list" (funcall parse "{\"processes\":[]}"))))
+      (should (eq (plist-get (hermes-dashboard-transport--warm-restart-entry process)
+                             :strategy)
+                  'handler)))))
+
+(ert-deftest hermes-transport-dashboard-warm-restart-restore-respawns ()
+  "The successor starts the same dashboard endpoint and keeps it up.
+An orphaned predecessor dashboard still bound to the port is stopped
+first; an unrelated process with that PID is left alone."
+  (let ((orphan (hermes-test--wr-sleeper "dashboard" "--port" "19556"))
+        (unrelated (hermes-test--wr-sleeper "something-else"))
+        acquired)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-acquire)
+                   (lambda (&rest args) (setq acquired args) 'client)))
+          (hermes-dashboard-transport-warm-restart-restore
+           (list :host "127.0.0.1" :port 19556 :command "/bin/hermes"
+                 :pid (process-id orphan)))
+          (should (equal (plist-get acquired :host) "127.0.0.1"))
+          (should (equal (plist-get acquired :port) 19556))
+          (should (equal (plist-get acquired :command) "/bin/hermes"))
+          (should (eq (plist-get acquired :start-mode) 'spawn))
+          (should-not (process-live-p orphan))
+          (hermes-dashboard-transport-warm-restart-restore
+           (list :host "127.0.0.1" :port 19557 :pid (process-id unrelated)))
+          (should (process-live-p unrelated)))
+      (dolist (p (list orphan unrelated))
+        (when (process-live-p p) (delete-process p))))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

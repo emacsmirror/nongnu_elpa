@@ -595,6 +595,56 @@
       (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t)))
         (kill-buffer recovery)))))
 
+(ert-deftest hermes-images-warm-restart-blocks-orphan-recovery ()
+  "Memory-only drafts block even after chat teardown or recovery retirement."
+  (let (chat recovery records)
+    (unwind-protect
+        (progn
+          (hermes-images-test-with-chat-buffer
+           (setq chat (current-buffer))
+           (hermes-chat--image-stage hermes-images-test-png)
+           (setq recovery hermes-chat--image-recovery-buffer
+                 records (buffer-local-value 'hermes-chat--image-records recovery))
+           (hermes-chat--images-invalidate))
+          (should-not (buffer-live-p chat))
+          (with-current-buffer recovery
+            (should buffer-read-only)
+            (should (hermes-buffer--owned-p 'hermes-chat-image-recovery-mode))
+            (should (run-hook-with-args-until-success 'warm-restart-blocker-functions))
+            (fundamental-mode)
+            (should-not (hermes-buffer--owned-p))
+            (should (eq records hermes-chat--image-records))
+            (should (run-hook-with-args-until-success 'warm-restart-blocker-functions))
+            (should (equal hermes-images-test-png
+                           (plist-get (car (plist-get (car records) :images)) :bytes)))))
+      (when (buffer-live-p recovery)
+        (with-current-buffer recovery (setq hermes-chat--image-records nil))
+        (kill-buffer recovery)))))
+
+(ert-deftest hermes-images-warm-restart-blocks-uncertain-recovery ()
+  "An uncertain send without composer images still blocks via recovery."
+  (hermes-images-test-with-send
+   (let* ((recovery hermes-chat--image-recovery-buffer)
+          (record (plist-get (car hermes-chat--queued-messages) :image-record)))
+     (hermes-chat--invalidate-transport-state)
+     (should-not hermes-chat--draft-images)
+     (should (eq (plist-get record :state) 'uncertain))
+     (with-current-buffer recovery
+       (should (memq record hermes-chat--image-records))
+       (should (run-hook-with-args-until-success 'warm-restart-blocker-functions))
+       (should (equal hermes-images-test-png
+                      (plist-get (car (plist-get record :images)) :bytes)))))))
+
+(ert-deftest hermes-images-warm-restart-allows-empty-recovery ()
+  "An explicitly emptied recovery view has no memory-only work to lose."
+  (hermes-images-test-with-chat-buffer
+   (let ((recovery (hermes-chat--image-recovery)))
+     (unwind-protect
+         (with-current-buffer recovery
+           (should-not hermes-chat--image-records)
+           (should-not (run-hook-with-args-until-success 'warm-restart-blocker-functions)))
+       (kill-buffer recovery)))))
+
 (ert-deftest hermes-images-rpc-pins-returned-backend-path ()
   (let (wire)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)

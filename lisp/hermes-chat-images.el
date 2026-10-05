@@ -178,6 +178,16 @@ Errors and local interruption do not prove that staging was consumed."
 ;; A mode change must not discard the only copies of recoverable bytes.
 (put 'hermes-chat--image-records 'permanent-local t)
 
+(defun hermes-chat--image-warm-restart-blocker ()
+  "Block a warm restart while this buffer retains memory-only recovery records."
+  (when hermes-chat--image-records
+    "retained Hermes image recovery cannot be carried; recover or discard it first"))
+
+;; Records survive both chat teardown and recovery view retirement.  Check
+;; them independently of the constructor claim or major mode, before a
+;; regenerable view can be admitted.  Never serialize or discard their bytes.
+(add-hook 'warm-restart-blocker-functions #'hermes-chat--image-warm-restart-blocker)
+
 (defun hermes-chat--image-kind (bytes)
   "Return the safe raster type of BYTES, or nil."
   (cond
