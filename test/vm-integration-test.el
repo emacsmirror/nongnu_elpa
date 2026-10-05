@@ -1551,6 +1551,65 @@ Clean over 500 typed options when this was written.  32 more carry no :type
 at all, which is a lesser gap and not what this holds."
   (should (equal nil (vm-integration-test--defcustoms-that-do-not-match-their-type))))
 
+(defconst vm-integration-test--libraries-that-name-variables
+  '(image-mode dired message shr url)
+  "Emacs libraries whose variables a VM argument name must not collide with.
+Any library a reader has loaded can make a name special, so this list is a
+sample and not a boundary.  It grows when the next collision is found.")
+
+(defun vm-integration-test--arguments-that-shadow ()
+  "Every VM function argument that is also a dynamic variable, one per line.
+
+In a child Emacs: `special-variable-p' answers from what is loaded, and
+loading these libraries into the suite's own Emacs would change an answer
+for every test after it, which `vm-test-isolate-global-state' does not undo."
+  (with-temp-buffer
+    (let ((status
+           (call-process
+            (expand-file-name invocation-name invocation-directory)
+            nil t nil "-batch" "-Q"
+            "--eval"
+            (prin1-to-string
+             `(progn
+                (dolist (lib ',vm-integration-test--libraries-that-name-variables)
+                  (require lib))
+                (dolist (file (directory-files ,vm-test-lisp-dir t "\\.el\\'"))
+                  (unless (string-match-p "vm-\\(autoloads\\|cus-load\\)\\.el\\'" file)
+                    (with-temp-buffer
+                      (insert-file-contents file)
+                      (goto-char (point-min))
+                      (condition-case nil
+                          (while t
+                            (let ((form (read (current-buffer))))
+                              (when (and (consp form)
+                                         (memq (car form)
+                                               '(defun defsubst defmacro cl-defun)))
+                                (dolist (arg (nth 2 form))
+                                  (when (and (symbolp arg) (special-variable-p arg))
+                                    (princ (format "%s: %s takes %s\n"
+                                                   (file-name-nondirectory file)
+                                                   (nth 1 form) arg)))))))
+                        (end-of-file nil))))))))))
+      (should (equal status 0))
+      (split-string (buffer-string) "\n" t))))
+
+(ert-deftest vm-integration-test-no-function-argument-shadows-a-dynamic-variable ()
+  "REGRESSION: no VM argument name is a variable some other library defines.
+
+emacs-vm/vm#904.  An argument whose name is special binds dynamically, so
+the call clobbers that variable for its duration and the byte compiler says
+\"Lexical argument shadows the dynamic variable\".  Six functions in
+vm-mime.el took one called `image-type', which `image-mode' defines, and
+`vm-mime-display-internal-image-fsfemacs-xxxx' assigns its own, so displaying
+an image part wrote over whatever an image-mode buffer was holding.  Two
+`let' bindings of the same name went with them, which the compiler does not
+report and which bound dynamically just the same.
+
+`make byte-compile-lint' loads none of these libraries and so has never
+reported it.  A NonGNU ELPA install does, and printed all six."
+  (should (equal nil (vm-integration-test--arguments-that-shadow))))
+
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
