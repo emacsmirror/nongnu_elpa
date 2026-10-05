@@ -79,6 +79,56 @@ errors are multi-line often enough for this to matter."
   (should (equal (vm-test-probe--reason '(error "one\ntwo\r\nthree"))
                  "one two three")))
 
+(defconst vm-probe-test--config-template
+  (expand-file-name "vm-live-config.el.template" vm-test-dir)
+  "The file a reader copies to make test/vm-live-config.el.")
+
+(defun vm-probe-test--template-forms ()
+  "Every top-level form of the config template, read and not evaluated.
+Evaluating it would reach for a secret store and set the live servers."
+  (with-temp-buffer
+    (insert-file-contents vm-probe-test--config-template)
+    (goto-char (point-min))
+    (let ((forms nil))
+      (condition-case nil
+          (while t (push (read (current-buffer)) forms))
+        (end-of-file nil))
+      (nreverse forms))))
+
+(ert-deftest vm-probe-test-the-config-template-is-readable-lisp ()
+  "The template parses, and nothing else reads it.
+
+It is copied to `vm-live-config.el' and loaded, so a syntax error in it is
+found by whoever next sets up the live tests and by nobody before them.
+Reading is as far as this goes: the template defines a function that asks a
+secret store for a password, and the `setq' forms would replace the servers
+this file configures for its own tests."
+  (should (file-readable-p vm-probe-test--config-template))
+  (let ((forms (vm-probe-test--template-forms)))
+    (should forms)
+    (should (seq-every-p #'consp forms))))
+
+(ert-deftest vm-probe-test-the-config-template-shows-a-secret-store ()
+  "REGRESSION: the template offers a password that is not written in the file.
+
+emacs-vm/vm#906.  `vm-live-config-keychain' has to raise rather than answer
+the empty string: a lookup that returns nothing sends an empty password, and
+`LOGIN \"user\" \"\" => NO [AUTHENTICATIONFAILED]' names authentication
+instead of the secret store that has lost the item.  Four send tests failed
+that way with nothing pointing at the cause.
+
+The template is the only place this pattern is written down, `vm-live-config.el'
+itself being gitignored."
+  (let ((definition (seq-find (lambda (form)
+                                (and (eq (car-safe form) 'defun)
+                                     (eq (nth 1 form) 'vm-live-config-keychain)))
+                              (vm-probe-test--template-forms))))
+    (should definition)
+    ;; `error' rather than a bare return is the whole point of it.
+    (should (seq-contains-p (flatten-tree definition) 'error))
+    ;; stderr is kept, which is where `security' says the item is missing.
+    (should (seq-contains-p (flatten-tree definition) 'call-process))))
+
 (provide 'vm-probe-test)
 
 ;;; vm-probe-test.el ends here
