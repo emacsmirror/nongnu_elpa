@@ -1205,5 +1205,88 @@
         (when (get-buffer "*Hermes Session: work/stored*")
           (kill-buffer "*Hermes Session: work/stored*"))))))
 
+(ert-deftest hermes-sessions-detail-updates-preserve-reading-windows ()
+  "Refresh, rename and reopening history retain all readers, not just point."
+  (dolist (action '(refresh rename reopen))
+    (let* ((instance '("remote" . "https://hermes.example.test"))
+           (hermes-instances (list instance))
+           (session '((id . "reader") (title . "cockpit: client")))
+           (messages (cl-loop for i below 40
+                              collect `((role . "assistant")
+                                        (text . ,(format "History line %02d" i)))))
+           (buffer (hermes-sessions--render-detail
+                    session messages 40 nil instance))
+           resolve released)
+      (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+                ((symbol-function 'hermes-dashboard-transport-acquire)
+                 (lambda (&rest _) 'fake-client))
+                ((symbol-function 'hermes-dashboard-transport-release)
+                 (lambda (&rest _) (setq released t)))
+                ((symbol-function 'hermes-dashboard-transport-session-history)
+                 (lambda (_client _id &rest args)
+                   (setq resolve (plist-get args :resolve))))
+                ((symbol-function 'hermes-dashboard-transport-session-title)
+                 (lambda (_client &rest args)
+                   (setq resolve (plist-get args :resolve))))
+                ((symbol-function 'read-string)
+                 (lambda (&rest _) "cockpit: renamed client")))
+        (unwind-protect
+            (save-window-excursion
+              (delete-other-windows)
+              (switch-to-buffer buffer)
+              (let ((other (split-window-below)))
+                (set-window-buffer other buffer)
+                (with-current-buffer buffer
+                  (should (= (point) (point-min)))
+                  (when (eq action 'refresh)
+                    (call-interactively (key-binding (kbd "g"))))
+                  ;; Move after dispatch too: the response must preserve where
+                  ;; the reader is now, not where the request began.
+                  (goto-char (point-min))
+                  (forward-line 21)
+                  (move-to-column 4)
+                  (set-window-start (selected-window)
+                                    (save-excursion (forward-line -4) (point)) t)
+                  (set-window-point other
+                                    (save-excursion (forward-line 30) (point)))
+                  (set-window-start other
+                                    (save-excursion (forward-line 26) (point)) t)
+                  (let ((position (hermes-browser--reading-position (point)))
+                        (windows (mapcar
+                                  (lambda (window)
+                                    (list window
+                                          (hermes-browser--reading-position
+                                           (window-start window))
+                                          (hermes-browser--reading-position
+                                           (window-point window))))
+                                  (list (selected-window) other))))
+                    (pcase action
+                      ('refresh
+                       (funcall resolve
+                                `((count . 41)
+                                  (messages . ,(append messages
+                                                       '(((role . "assistant")
+                                                          (text . "New result")))))))
+                       (should (string-match-p "New result" (buffer-string))))
+                      ('rename
+                       (hermes-sessions-rename)
+                       (funcall resolve '((ok . t)))
+                       (should (string-match-p "cockpit: renamed client"
+                                               (buffer-string))))
+                      ('reopen
+                       (hermes-sessions--render-detail
+                        session messages 40 nil instance)))
+                    (should (equal position
+                                   (hermes-browser--reading-position (point))))
+                    (dolist (entry windows)
+                      (should (equal (cadr entry)
+                                     (hermes-browser--reading-position
+                                      (window-start (car entry)))))
+                      (should (equal (caddr entry)
+                                     (hermes-browser--reading-position
+                                      (window-point (car entry))))))
+                    (unless (eq action 'reopen) (should released))))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
 (provide 'hermes-sessions-tests)
 ;;; hermes-sessions-tests.el ends here

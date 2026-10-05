@@ -445,10 +445,8 @@ Retain readback PROFILE for later pins without changing the row identity."
          (updated (if profile (hermes-sessions--with-field updated 'pin_profile profile)
                     updated)))
     (if (derived-mode-p 'hermes-session-detail-mode)
-        (hermes-browser--preserve-reading-position
-         (lambda ()
-           (hermes-sessions--render-detail-contents
-            updated hermes-sessions--detail-messages hermes-sessions--detail-count)))
+        (hermes-sessions--render-detail-contents
+         updated hermes-sessions--detail-messages hermes-sessions--detail-count)
       (when (hash-table-p hermes-sessions--session-map)
         (puthash identity updated hermes-sessions--session-map))
       (when-let* ((entry (assoc identity tabulated-list-entries)))
@@ -718,28 +716,31 @@ Never retry a mutation after an uncertain outcome."
 
 (defun hermes-sessions--render-detail-contents (session messages count)
   "Render SESSION's MESSAGES in the current detail buffer.
-COUNT, when non-nil, is the total history count reported by the gateway."
+COUNT, when non-nil, is the total history count reported by the gateway.
+Retain logical reading positions when replacing existing contents."
   (unless (derived-mode-p 'hermes-session-detail-mode)
     (hermes-session-detail-mode))
-  (setq hermes-sessions--detail-session session
-        hermes-sessions--detail-messages messages
-        hermes-sessions--detail-count count)
-  (let ((inhibit-read-only t))
-    (erase-buffer)
-    (let ((title (hermes-transport--display-field session 'title))
-          (id (hermes-sessions--id session))
-          (source (hermes-transport--display-field session 'source)))
-      (insert (format "Session: %s\n" (if (string-empty-p title) id title)))
-      (insert (format "ID: %s\n" id))
-      (insert (format "Pin: %s\n" (hermes-sessions--pin-state session)))
-      (unless (string-empty-p source)
-        (insert (format "Source: %s\n" source)))
-      (insert (format "Messages: %s\n\n" (or count (length messages)))))
-    (if messages
-        (dolist (message messages)
-          (hermes-sessions--insert-message message))
-      (insert "No messages.\n"))
-    (goto-char (point-min))))
+  (hermes-browser--preserve-reading-position
+   (lambda ()
+     (setq hermes-sessions--detail-session session
+           hermes-sessions--detail-messages messages
+           hermes-sessions--detail-count count)
+     (let ((inhibit-read-only t))
+       (erase-buffer)
+       (let ((title (hermes-transport--display-field session 'title))
+             (id (hermes-sessions--id session))
+             (source (hermes-transport--display-field session 'source)))
+         (insert (format "Session: %s\n" (if (string-empty-p title) id title)))
+         (insert (format "ID: %s\n" id))
+         (insert (format "Pin: %s\n" (hermes-sessions--pin-state session)))
+         (unless (string-empty-p source)
+           (insert (format "Source: %s\n" source)))
+         (insert (format "Messages: %s\n\n" (or count (length messages)))))
+       (if messages
+           (dolist (message messages)
+             (hermes-sessions--insert-message message))
+         (insert "No messages.\n"))
+       (goto-char (point-min))))))
 
 (defun hermes-sessions--render-detail
     (session messages &optional count display instance)
