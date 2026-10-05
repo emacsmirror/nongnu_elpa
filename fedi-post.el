@@ -144,7 +144,8 @@ for forming a URL.")
   (concat
    "\\(?1:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)" ;; uri prefix
    "[^ \n\t,]*\\)" ;; any old thing, that is, i.e. we allow invalid/unwise chars
-   "\\(\\b\\|\\.\\)")) ;; boundary or terminating period
+   ;; "\\>"
+   "\\b")) ;; boundary
 
 (defvar fedi-post-commit-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
@@ -708,9 +709,10 @@ BUF-PREFIX is a string to prepend to the buffer name."
     (when init-text
       (insert init-text)
       (delete-trailing-whitespace))
+    ;; separate body from header (for markdown-mode issues)
+    (insert "\n")
     (when reply-text
-      (insert "\n"
-              (fedi-post--render-reply-region-str reply-text)
+      (insert (fedi-post--render-reply-region-str reply-text)
               "\n"))))
 
 (defun fedi-post-fontify-body-region (&rest _args)
