@@ -1742,5 +1742,71 @@ PHASE defaults to `after-change-functions'."
                                                   (point))
                           text))))))))
 
+(defun hermes-test--stream-assistant-deltas (deltas &optional final)
+  "Stream DELTAS into a fresh assistant entry; return its content.
+With FINAL, settle the entry as done and return the settled content."
+  (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
+         (id (plist-get entry :id)))
+    (hermes-chat--insert-entry entry)
+    (dolist (delta deltas)
+      (hermes-chat--append-assistant-content id delta 'streaming))
+    (when final
+      (hermes-chat--mark-assistant id 'done nil t t))
+    (prog1 (hermes-chat--entry-content-by-id id)
+      (hermes-chat--remove-entry id))))
+
+(ert-deftest hermes-chat-stream-strips-session-id-lines-at-every-split ()
+  "Session-id lines are stripped however the stream splits them."
+  (hermes-test-with-chat-buffer
+    (dolist (case '(("intro\nsession_id: 1\nbody\nsession_id: x\nend"
+                     "intro\nbody\nend" "intro\nbody\nend")
+                    ("a\nsession_id: tail" "a\nsession_id: tail" "a\n")
+                    ("session_id: a\nsession_id: b\nok\n" "ok\n" "ok\n")
+                    ("say session_id: no\nα" "say session_id: no\nα"
+                     "say session_id: no\nα")))
+      (pcase-let* ((`(,message ,streamed ,settled) case)
+                   (n (length message)))
+        (dotimes (i (1+ n))
+          (let ((two (list (substring message 0 i) (substring message i))))
+            (should (equal (hermes-test--stream-assistant-deltas two)
+                           streamed))
+            (should (equal (hermes-test--stream-assistant-deltas two t)
+                           settled)))
+          (dotimes (j (1+ (- n i)))
+            (let ((three (list (substring message 0 i)
+                               (substring message i (+ i j))
+                               (substring message (+ i j)))))
+              (should (equal (hermes-test--stream-assistant-deltas three)
+                             streamed)))))
+        (should (equal (hermes-test--stream-assistant-deltas
+                        (mapcar #'char-to-string message))
+                       streamed))))))
+
+(ert-deftest hermes-chat-stream-deltas-create-no-buffers ()
+  "Streaming deltas, session-id lines included, creates no buffer per delta."
+  (let (callback (created 0))
+    (hermes-test-with-chat-buffer
+      (let ((hermes-transport-send-function
+             (lambda (_prompt cb) (setq callback cb) 'fake-process))
+            (count (lambda (&rest _) (cl-incf created))))
+        (insert "hi")
+        (hermes-chat-send)
+        (funcall callback '(:type delta :content "warm up\n"))
+        (advice-add 'generate-new-buffer :before count)
+        (unwind-protect
+            (dotimes (i 40)
+              (funcall callback
+                       (list :type 'delta
+                             :content (pcase (% i 4)
+                                        (0 (format "word %d\nsess" i))
+                                        (1 "ion_id: 20261006_x")
+                                        (2 "\n")
+                                        (_ "more text ")))))
+          (advice-remove 'generate-new-buffer count))
+        (should (= created 0))
+        (should-not (string-match-p
+                     "session_id:"
+                     (plist-get (hermes-test--assistant-entry) :content)))))))
+
 (provide 'hermes-chat-render-tests)
 ;;; hermes-chat-render-tests.el ends here
