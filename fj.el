@@ -1195,8 +1195,11 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
   "If we are in a `fj-host' repository, return its name.
 Also set `fj-current-repo' to the name."
   ;; NB: fails if remote url is diff to root dir!
-  (with-demoted-errors
-      "Error: %S"
+  (ignore-errors
+    ;; `with-demoted-errors' still errors if `debug-on-error' is t
+    ;; so let's disable:
+    ;; (with-demoted-errors
+    ;; "Error: %S"
     (when (magit-inside-worktree-p)
       ;; FIXME: this is slow, as we just fetch all our repos. why not repo
       ;; search, with dir name, and search repos with exclusive param set
