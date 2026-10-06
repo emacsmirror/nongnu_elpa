@@ -196,7 +196,7 @@ If BUFFER is passed, preview its output, otherwise use current buffer."
         '(1 2 3))
   "Regexp for Error in compilation buffer.")
 
-;;;###autoload
+;;;###autoload (autoload 'typst-ts-compilation-mode "typst-ts-compile" nil t)
 (define-compilation-mode typst-ts-compilation-mode "Typst Compilation"
   "Customized major mode for typst watch compilation."
   (setq-local compilation-error-regexp-alist-alist nil)
