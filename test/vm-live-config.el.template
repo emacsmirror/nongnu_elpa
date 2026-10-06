@@ -21,6 +21,57 @@
 
 ;;; Code:
 
+;; A password need not be written here.  `vm-live-config-keychain' fetches one
+;; from the macOS keychain; `pass show NAME' and `secret-tool lookup ...' drop
+;; into the same place, as does `auth-source-pick-first-password'.
+;;
+;;   :accounts (list (cons "vmtest1" (vm-live-config-keychain "vm-vmtest1")))
+;;
+;; Note that it raises.  A lookup that answers the empty string sends an empty
+;; password to the server, and what comes back is
+;;
+;;   LOGIN "user@example.com" "" => NO [AUTHENTICATIONFAILED]
+;;
+;; which names authentication rather than the secret store, several tests away
+;; from the thing that is wrong.  Anything written to replace this should fail
+;; the same way.
+;;
+;; This file is loaded by `vm-imap-live-load-config' with nothing catching what
+;; it signals, so a missing secret stops the IMAP, POP and send passes alike.
+
+(defun vm-live-config-keychain (service)
+  "The password the macOS keychain holds for SERVICE.
+Fetched the way mbsync fetches it, so nothing is written down here.
+
+Raises when the keychain has nothing, rather than answering the empty
+string.  `security' reports a missing item on stderr, which is why this runs
+it through `call-process' and keeps stderr: `shell-command-to-string' takes
+stdout only, and a renamed item is then indistinguishable from an empty
+password."
+  (let ((stderr (make-temp-file "vm-live-config-keychain"))
+        (password nil)
+        (status nil)
+        (complaint nil))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (setq status (call-process "security" nil (list t stderr) nil
+                                       "find-generic-password" "-s" service "-w"))
+            (setq password (string-trim (buffer-string))))
+          (with-temp-buffer
+            (insert-file-contents stderr)
+            (setq complaint (string-trim (buffer-string)))))
+      (delete-file stderr))
+    (when (or (not (eq status 0)) (string-empty-p password))
+      (error "Keychain has no password for %s (%s).  Add one with: %s"
+             service
+             (if (string-empty-p (or complaint ""))
+                 (format "security exited %s" status)
+               complaint)
+             (format "security add-generic-password -s '%s' -a $USER -w"
+                     service)))
+    password))
+
 ;; :name       what tests ask for
 ;; :host       with :tls, the certificate's subjectAltName, not its CN
 ;; :port
