@@ -3,10 +3,10 @@
 ;; Author: Marty Hiatt <martianh@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <martianh@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
+;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.5") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.47
+;; Version: 0.48
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -1195,8 +1195,11 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
   "If we are in a `fj-host' repository, return its name.
 Also set `fj-current-repo' to the name."
   ;; NB: fails if remote url is diff to root dir!
-  (with-demoted-errors
-      "Error: %S"
+  (ignore-errors
+    ;; `with-demoted-errors' still errors if `debug-on-error' is t
+    ;; so let's disable:
+    ;; (with-demoted-errors
+    ;; "Error: %S"
     (when (magit-inside-worktree-p)
       ;; FIXME: this is slow, as we just fetch all our repos. why not repo
       ;; search, with dir name, and search repos with exclusive param set
@@ -1900,8 +1903,10 @@ The upload is asynchronous."
 (defun fj--post-file-upload-cb (_status)
   "Callback for `fj--post-file-upload'.
 STATUS is the HTTP response, FILENAME the uploaded file."
-  (let* ((json (fj-resp-json (current-buffer))))
-    (message "File %s uploaded!" (alist-get 'name json))))
+  (if-let* ((json (fj-resp-json (current-buffer)))
+            (name (alist-get 'name json)))
+      (message "File %s uploaded!" name)
+    (user-error "Upload failed? %s" (alist-get 'message json))))
 
 (defun fj-delete-comment-asset (repo owner comment-id asset-id)
   "Delete asset with ASSET-ID in REPO by OWNER for COMMENT-ID."
