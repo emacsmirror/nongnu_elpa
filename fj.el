@@ -1903,8 +1903,10 @@ The upload is asynchronous."
 (defun fj--post-file-upload-cb (_status)
   "Callback for `fj--post-file-upload'.
 STATUS is the HTTP response, FILENAME the uploaded file."
-  (let* ((json (fj-resp-json (current-buffer))))
-    (message "File %s uploaded!" (alist-get 'name json))))
+  (if-let* ((json (fj-resp-json (current-buffer)))
+            (name (alist-get 'name json)))
+      (message "File %s uploaded!" name)
+    (user-error "Upload failed? %s" (alist-get 'message json))))
 
 (defun fj-delete-comment-asset (repo owner comment-id asset-id)
   "Delete asset with ASSET-ID in REPO by OWNER for COMMENT-ID."
