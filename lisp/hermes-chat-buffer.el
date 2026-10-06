@@ -1321,16 +1321,15 @@ With QUIET, leave state-change notification to the caller."
     (hermes-chat--update-entry
      assistant-id
      (lambda (entry)
-       (let ((text (if (eq status 'streaming)
-                       (hermes-chat--sanitize-stream-content content ansi-key)
-                     (hermes-chat--sanitize-content content))))
+       (let ((text (concat (or (plist-get entry :content) "")
+                           (if (eq status 'streaming)
+                               (hermes-chat--sanitize-stream-content
+                                content ansi-key)
+                             (hermes-chat--sanitize-content content)))))
          (hermes-chat--entry-with
           entry
           :status status
-          ;; Stored content is already stripped: only re-examine its open
-          ;; last line with the new text, never the whole message.
-          :content (hermes-chat--append-stripped-content
-                    (or (plist-get entry :content) "") text)))))))
+          :content (hermes-chat--strip-session-id-lines text)))))))
 
 (defun hermes-chat--mark-assistant (assistant-id status &optional content final quiet)
   "Set ASSISTANT-ID to STATUS, optionally replacing CONTENT.

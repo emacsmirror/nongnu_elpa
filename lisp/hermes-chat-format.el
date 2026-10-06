@@ -75,54 +75,18 @@ CSI, an OSC, or a lone ESC -- across stream chunks through FRAGMENT.
   "Return sanitized CONTENT for display in chat buffers."
   (car (hermes-chat--sanitize-content-with-fragment content nil)))
 
-(defconst hermes-chat--session-id-line-regexp "^session_id:[^\n]*\n"
-  "Regexp matching a complete Hermes CLI session-id line.")
-
-(defconst hermes-chat--final-session-id-line-regexp
-  "^session_id:[^\n]*\\(?:\n\\|\\'\\)"
-  "Regexp matching a session-id line, including one ending the text.")
-
-(defun hermes-chat--session-id-candidate-p (text)
-  "Return non-nil if TEXT has a session-id marker in any letter case."
-  ;; Case-insensitive, as the default temp-buffer search this replaced was.
-  (let ((case-fold-search t))
-    (string-match-p "session_id:" text)))
-
 (defun hermes-chat--strip-session-id-lines (content &optional final)
   "Return CONTENT without Hermes CLI session-id lines.
-When FINAL is non-nil, also remove a final session-id line without newline.
-Matching ignores letter case."
-  (if (not (hermes-chat--session-id-candidate-p content))
-      content
+When FINAL is non-nil, also remove a final session-id line without newline."
+  (with-temp-buffer
+    (insert content)
+    (goto-char (point-min))
     (let ((regexp (if final
-                      hermes-chat--final-session-id-line-regexp
-                    hermes-chat--session-id-line-regexp))
-          (case-fold-search t)
-          (start 0)
-          (pieces nil))
-      (save-match-data
-        (while (string-match regexp content start)
-          (push (substring content start (match-beginning 0)) pieces)
-          (setq start (match-end 0))))
-      (if (null pieces)
-          content
-        (apply #'concat (nreverse (cons (substring content start) pieces)))))))
-
-(defun hermes-chat--append-stripped-content (content delta)
-  "Return already-stripped CONTENT followed by DELTA, session-id lines removed.
-CONTENT must be output of `hermes-chat--strip-session-id-lines'.  Its
-complete lines are settled, so only its last, possibly unfinished line is
-examined again together with DELTA; a session-id line split across deltas
-is still removed once its newline arrives.  The result equals stripping the
-whole concatenation, without rescanning the settled lines."
-  (let ((cut (length content)))
-    (while (and (> cut 0) (/= (aref content (1- cut)) ?\n))
-      (setq cut (1- cut)))
-    (let ((tail (concat (substring content cut) delta)))
-      (if (not (hermes-chat--session-id-candidate-p tail))
-          (concat content delta)
-        (concat (substring content 0 cut)
-                (hermes-chat--strip-session-id-lines tail))))))
+                      "^session_id:[^\n]*\\(\n\\|\\'\\)"
+                    "^session_id:[^\n]*\n")))
+      (while (re-search-forward regexp nil t)
+        (replace-match "" nil nil)))
+    (buffer-string)))
 
 (defun hermes-chat--sanitize-assistant-content (content &optional final)
   "Return assistant CONTENT cleaned for display.

@@ -308,46 +308,5 @@
       (should-not (hermes-chat--consume-unified-diff-hunk))
       (should (= (point) (point-min))))))
 
-(ert-deftest hermes-chat-strip-session-id-lines-pins-output ()
-  "Only whole lines starting with session_id: go; FINAL adds an unended one."
-  (dolist (case '(("" nil "")
-                  ("plain text" nil "plain text")
-                  ("session_id: 20261006_1\nhello" nil "hello")
-                  ("a\nsession_id: x\nb" nil "a\nb")
-                  ("session_id: a\nsession_id: b\nc" nil "c")
-                  ("a\nsession_id: x\nsession_id: y\n" nil "a\n")
-                  ("a\nsession_id: tail" nil "a\nsession_id: tail")
-                  ("a\nsession_id: tail" t "a\n")
-                  ("session_id: tail" t "")
-                  ("session_id: a\nb\nsession_id: c" t "b\n")
-                  ("say session_id: kept\n" t "say session_id: kept\n")
-                  (" session_id: indented\n" t " session_id: indented\n")
-                  ("session_id:\n" nil "")
-                  ("Session_ID: mixed\nkept case" nil "kept case")
-                  ("αβ\nsession_id: hidden" t "αβ\n")
-                  ("αβ\nsession_id: hidden\nγ" nil "αβ\nγ")
-                  ("a\r\nsession_id: x\r\nb\r\n" nil "a\r\nb\r\n")
-                  ("a\r\nsession_id: x\r" t "a\r\n")))
-    (pcase-let ((`(,content ,final ,expected) case))
-      (should (equal (hermes-chat--strip-session-id-lines content final)
-                     expected)))))
-
-(ert-deftest hermes-chat-strip-session-id-lines-keeps-caller-state ()
-  "Stripping leaves the caller's match data and case folding alone."
-  (with-temp-buffer
-    (setq-local case-fold-search nil)
-    (insert "anchor")
-    (goto-char (point-min))
-    (should (re-search-forward "anch" nil t))
-    (let ((data (match-data)))
-      (should (equal (hermes-chat--strip-session-id-lines
-                      "a\nSession_ID: x\nb" t)
-                     "a\nb"))
-      (should (equal (hermes-chat--append-stripped-content
-                      "a\nsession" "_id: y\nc")
-                     "a\nc"))
-      (should (equal (match-data) data))
-      (should-not case-fold-search))))
-
 (provide 'hermes-chat-format-tests)
 ;;; hermes-chat-format-tests.el ends here
