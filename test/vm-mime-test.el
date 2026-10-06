@@ -216,9 +216,14 @@
 ;;; vm-mime-default-type-from-filename tests
 
 (ert-deftest vm-mime-test-default-type-from-filename ()
-  "Test guessing MIME type from filename."
-  ;; These depend on vm-mime-attachment-auto-type-alist
-  (let ((vm-mime-attachment-auto-type-alist
+  "What `vm-mime-attachment-auto-type-alist' answers, and only that.
+
+The mailcap fallback is stubbed away.  It reads the system's
+/etc/mime.types, so leaving it in makes the last assertion here a statement
+about the machine: .xyz is nothing on a host with no such file and
+chemical/x-xyz on Fedora, which ships one (emacs-vm/vm#907)."
+  (cl-letf (((symbol-function 'vm-mime-type-from-mailcap) #'ignore))
+   (let ((vm-mime-attachment-auto-type-alist
          '(("\\.txt$" . "text/plain")
            ("\\.html?$" . "text/html")
            ("\\.jpe?g$" . "image/jpeg")
@@ -228,7 +233,7 @@
     (should (equal (vm-mime-default-type-from-filename "page.html") "text/html"))
     (should (equal (vm-mime-default-type-from-filename "photo.jpg") "image/jpeg"))
     (should (equal (vm-mime-default-type-from-filename "photo.jpeg") "image/jpeg"))
-    (should (null (vm-mime-default-type-from-filename "unknown.xyz")))))
+    (should (null (vm-mime-default-type-from-filename "unknown.xyz"))))))
 
 ;;; vm-mime-make-multipart-boundary tests
 
@@ -4412,14 +4417,22 @@ choosing it left every HTML part failing on a void `w3-region'."
 misses was attached as application/octet-stream: no charset, and a text file
 arrives as something to download.  Emacs's mailcap tables know the rest, .org
 among them, and this list comes first so an entry here still wins."
-  ;; the alist, which is what a user sets
+  ;; the alist, which is what a user sets.  Both suffixes are in VM's own
+  ;; default, so these say nothing about the machine.
   (should (equal (vm-mime-default-type-from-filename "notes.txt") "text/plain"))
   (should (equal (vm-mime-default-type-from-filename "sheet.csv") "text/csv"))
-  ;; mailcap, for what the alist has no entry for
-  (should (equal (vm-mime-default-type-from-filename "notes.org") "text/x-org"))
-  (should (equal (vm-mime-default-type-from-filename "fix.patch") "text/x-patch"))
-  ;; a suffix nothing knows is still nil, and the callers say octet-stream
-  (should-not (vm-mime-default-type-from-filename "opaque.zzqq"))
+  ;; mailcap, for what the alist has no entry for.  What mailcap answers is
+  ;; not ours to assert: it reads the system's /etc/mime.types, where .org is
+  ;; text/x-org on a host that has no such file and
+  ;; application/vnd.lotus-organizer on Fedora (emacs-vm/vm#907).  That VM
+  ;; asks it at all is the thing worth holding.
+  (require 'mailcap)
+  (mailcap-parse-mimetypes)
+  (dolist (suffix '("org" "patch" "zzqq"))
+    (should (equal (vm-mime-default-type-from-filename (concat "f." suffix))
+                   (mailcap-extension-to-mime suffix))))
+  ;; a name with no suffix has nothing to ask about, and the callers then say
+  ;; octet-stream
   (should-not (vm-mime-default-type-from-filename "no-suffix"))
   ;; and the alist wins where the two disagree
   (let ((vm-mime-attachment-auto-type-alist '(("\\.org$" . "text/plain"))))

@@ -1402,24 +1402,33 @@ never came true."
   "A filed copy's envelope line names the address the message is from and
 carries the message's own Date.  Every other writer of an mbox puts an
 addr-spec there; VM used to write its own name and the moment of filing, so
-the line recorded neither fact (emacs-vm/vm#611)."
-  (let ((user-mail-address "me@example.com"))
+the line recorded neither fact (emacs-vm/vm#611).
+
+The rendering is computed rather than spelled out.  `current-time-string'
+answers in the local zone, so the literal this used to carry was right only
+at -0700: a Fedora builder at +0200 read the same instant as 23:24:13 and
+failed (emacs-vm/vm#907).  What the test is for survives, since an expected
+string built from the header's instant still fails if VM dates the line from
+the moment of filing."
+  (let* ((user-mail-address "me@example.com")
+         (dated (current-time-string
+                 (date-to-time "Sat, 8 Aug 2026 14:24:13 -0700"))))
     (with-temp-buffer
       (insert "To: someone@example.com\n"
               "From: Alice Adams <alice@example.com>\n"
               "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
               "Subject: dated\n\nBody.\n")
       (should (equal (vm-fcc-leading-separator 'From_)
-                     "From alice@example.com Sat Aug  8 14:24:13 2026\n"))
+                     (concat "From alice@example.com " dated "\n")))
       (should (equal (vm-fcc-leading-separator 'mboxcl2)
-                     "From alice@example.com Sat Aug  8 14:24:13 2026\n")))
+                     (concat "From alice@example.com " dated "\n"))))
     ;; a composition often has no From header -- the MTA adds one -- and the
     ;; copy is of your own outgoing mail, so you are its sender
     (with-temp-buffer
       (insert "To: someone@example.com\n"
               "Date: Sat, 8 Aug 2026 14:24:13 -0700\n\nBody.\n")
       (should (equal (vm-fcc-leading-separator 'From_)
-                     "From me@example.com Sat Aug  8 14:24:13 2026\n")))
+                     (concat "From me@example.com " dated "\n"))))
     ;; a From with a name and no address cannot be an envelope sender
     (with-temp-buffer
       (insert "To: someone@example.com\nFrom: Alice Adams\n\nBody.\n")
@@ -1446,7 +1455,7 @@ the line recorded neither fact (emacs-vm/vm#611)."
               "Date: Sat, 8 Aug 2026 14:24:13 -0700\n")
       (let ((line (vm-fcc-leading-separator 'From_)))
         (should (string-prefix-p "From me@example.com " line))
-        (should-not (string-match-p "Aug  8" line))))
+        (should-not (string-match-p (regexp-quote dated) line))))
     ;; a format with no From_ line is untouched
     (with-temp-buffer
       (insert "To: someone@example.com\nFrom: alice@example.com\n\nB\n")
@@ -1458,9 +1467,12 @@ The test above checks what the function returns; this one checks that the
 write path is the caller, which is the part a wiring mistake breaks."
   (let ((dir (file-name-as-directory (make-temp-file "vm-reply-fcc-date" t))))
     (unwind-protect
-        (let ((folder (expand-file-name "sent.mbox" dir))
-              (user-mail-address "me@example.com")
-              (vm-default-folder-type 'From_))
+        (let* ((folder (expand-file-name "sent.mbox" dir))
+               (user-mail-address "me@example.com")
+               (vm-default-folder-type 'From_)
+               ;; local zone, as above
+               (dated (current-time-string
+                       (date-to-time "Sat, 8 Aug 2026 14:24:13 -0700"))))
           (with-temp-buffer
             (insert "To: someone@example.com\n"
                     "From: Alice Adams <alice@example.com>\n"
@@ -1471,7 +1483,8 @@ write path is the caller, which is the part a wiring mistake breaks."
             (insert-file-contents folder)
             (goto-char (point-min))
             (should (looking-at
-                     "From alice@example.com Sat Aug  8 14:24:13 2026$"))))
+                     (concat "From alice@example.com "
+                             (regexp-quote dated) "$")))))
       (delete-directory dir t))))
 
 ;;; Replying, following up and forwarding (emacs-vm/vm#629)
@@ -3047,8 +3060,21 @@ that reached the wire, and fails against the old code for the right reason."
   "`vm-call-process-region-interruptibly' stands in for `call-process-region'.
 It is installed by rebinding the symbol for the length of the send, so
 anything the senders or the hooks do with it has to come back the same: the
-exit status, the signal, where the output lands and where point is left."
-  (dolist (call '(call-process-region vm-call-process-region-interruptibly))
+exit status, the signal, where the output lands and where point is left.
+
+What a signal answers with is the C library's strsignal, \"Terminated: 15\" on
+macOS and \"Terminated\" on glibc, so the real one is asked first and the
+stand-in compared against it.  The literal this used to carry named one
+platform and failed on Fedora (emacs-vm/vm#907).  Comparing the two is in
+any case the invariant the test is named for."
+  (let ((on-sigterm
+         (with-temp-buffer
+           (insert "x")
+           (call-process-region (point-min) (point-max) "sh" nil nil nil
+                                "-c" "kill -TERM $$"))))
+   ;; a signal is reported as a string whatever the platform calls it
+   (should (stringp on-sigterm))
+   (dolist (call '(call-process-region vm-call-process-region-interruptibly))
     (with-temp-buffer
       (insert "hello\n")
       (let ((status (funcall call (point-min) (point-max) "cat" nil t nil)))
@@ -3062,13 +3088,13 @@ exit status, the signal, where the output lands and where point is left."
                                 "-c" "exit 3"))))
     (with-temp-buffer
       (insert "x")
-      (should (equal "Terminated: 15"
+      (should (equal on-sigterm
                      (funcall call (point-min) (point-max) "sh" nil nil nil
                               "-c" "kill -TERM $$"))))
     (with-temp-buffer
       (insert "gone\n")
       (funcall call (point-min) (point-max) "true" t nil nil)
-      (should (equal "" (buffer-string))))))
+      (should (equal "" (buffer-string)))))))
 
 (ert-deftest vm-reply-test-the-interruptible-call-writes-the-same-bytes ()
   "The stand-in encodes the region the way `call-process-region' does.
