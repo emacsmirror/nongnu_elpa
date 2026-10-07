@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianh@disroot.org>
 ;; Maintainer: Marty Hiatt <martianh@disroot.org>
-;; Version: 2.1.6
+;; Version: 2.1.7
 ;; Package-Requires: ((emacs "29.1") (compat "31") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
