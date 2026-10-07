@@ -8,6 +8,21 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **Gathering mail takes a file of another type, and takes a single
+    message** (emacs-vm/vm#908).  `C-u M-x vm-get-new-mail` asks for a file
+    to gather from.  It used to refuse one whose folder type differed from
+    the folder's own, whatever `vm-convert-folder-types` said, although
+    `vm-check-folder-types` documents that option as deciding exactly this
+    and `vm-get-spooled-mail` has always honoured it.  It now converts, and
+    errors naming the option where the option says not to.
+
+    A `.eml` file is a single message with no envelope line, which VM calls
+    an unrecognised folder type, so it could not be gathered by any path at
+    all.  It is now wrapped in the folder's separators and gathered as one
+    message, with the envelope line naming the sender and carrying the
+    message's own Date.  A file that is neither a folder VM knows nor a
+    message is still refused.
+
   * **A name VM has renamed reports the name to use** (emacs-vm/vm#901).
     Seventy old names were aliases of their replacements, and an alias said
     nothing: `define-obsolete-variable-alias` warns where the file naming the

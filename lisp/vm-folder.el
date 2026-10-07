@@ -1379,6 +1379,57 @@ FILE is compatible if
     (or (not (and vm-folder-type type))
 	(eq vm-folder-type type))))
 
+(defun vm-buffer-holds-one-message-p ()
+  "Non-nil if this buffer reads as a single RFC822 message.
+A field name, a colon, and the blank line that ends the headers: as much as
+RFC 5322 asks for, and enough to tell a .eml file from a tarball.
+`vm-get-folder-type' answers `unknown' for both, having no envelope line to
+go on.
+
+The blank line is looked for as \"\\n\\n\", which is how VM finds the end of a
+header block everywhere else.  A regexp for an empty line matches at the end
+of the buffer as well, so a file of headers and nothing else would read as a
+message."
+  (save-excursion
+    (goto-char (point-min))
+    (and (looking-at "[!-9;-~]+:")
+	 (search-forward "\n\n" nil t)
+	 t)))
+
+(defun vm-gathered-folder-text (file type)
+  "The contents of FILE, ready to append to a folder of TYPE.
+
+A folder of TYPE is taken as it stands.  A folder of another type VM knows
+is converted where `vm-convert-folder-types' allows it, which is what
+`vm-check-folder-types' documents and what `vm-get-spooled-mail' has always
+done; this path used to refuse whatever the option said (emacs-vm/vm#908).
+
+A file VM does not recognise is one RFC822 message where it reads as one, a
+.eml file being the ordinary way to meet that, and is wrapped in TYPE's
+separators.  `vm-convert-folder-type' cannot do that: given `unknown' it
+finds no separators, reports nothing converted, and leaves the text as it
+stands, which would append a message with no envelope line."
+  (let ((gathered (vm-get-folder-type file)))
+    (with-temp-buffer
+      (let ((coding-system-for-read (vm-binary-coding-system)))
+	(insert-file-contents file))
+      (cond ((or (null gathered) (null type) (not vm-check-folder-types)
+		 (eq gathered type))
+	     (buffer-string))
+	    ((eq gathered 'unknown)
+	     (unless (vm-buffer-holds-one-message-p)
+	       (error (concat "Not gathering %s: VM does not recognize its"
+			      " folder type and it does not read as a message")
+		      file))
+	     (vm-message-text-for-folder type))
+	    (vm-convert-folder-types
+	     (vm-convert-folder-type gathered type)
+	     (buffer-string))
+	    (t
+	     (error (concat "Not gathering %s: it is %s and this folder is %s;"
+			    " set vm-convert-folder-types to convert it")
+		    file gathered type))))))
+
 (defun vm-existing-From_-separator (message)
   "MESSAGE's own From_ envelope line, or nil if it has none.
 A message in an mbox folder already has one, and it says who sent the
@@ -5260,6 +5311,11 @@ implementation than the expected one damages mail -- so this asks instead."
 (require 'vm-pop-net)
 (require 'vm-imap-net)
 
+;; `vm-message-text-for-folder', which wraps a bare message in a folder's
+;; separators.  Required rather than declared for the same reason: gathering
+;; mail is a poor place to discover that a file has not been loaded.
+(require 'vm-reply)
+
 (defvar vm-mail-check-answers nil
   "What the last check of each of this folder's maildrops said.
 An alist of maildrop to t or nil.  A check that does not wait cannot answer
@@ -5747,16 +5803,12 @@ files."
 		 folder mcount)
 	     (setq folder (read-file-name "Gather mail from folder: "
 					  vm-folder-directory nil t))
-	     (if (and vm-check-folder-types
-		      (not (vm-compatible-folder-p folder)))
-		 (error "Folder %s is not the same format as this folder."
-			folder))
-	     (save-excursion
-	       (save-restriction
-		(widen)
-		(goto-char (point-max))
-		(let ((coding-system-for-read (vm-binary-coding-system)))
-		  (insert-file-contents folder))))
+	     (let ((text (vm-gathered-folder-text folder vm-folder-type)))
+	       (save-excursion
+		 (save-restriction
+		   (widen)
+		   (goto-char (point-max))
+		   (insert text))))
 	     (setq mcount (length vm-message-list))
 	     (if (vm-assimilate-new-messages)
 		 (progn

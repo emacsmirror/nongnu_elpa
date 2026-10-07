@@ -419,6 +419,14 @@ another file from which to gather messages instead of the usual spool
 files.  In this case the source folder is copied but no messages are
 deleted from it as they would be for a spool file.
 
+The file need not be a folder of this folder's type.  One of another type
+VM knows is converted as it is gathered, which is what
+@code{vm-check-folder-types} and @code{vm-convert-folder-types} describe;
+set the latter to @code{nil} to be told of the mismatch instead.  A file
+holding a single message with no envelope line, which is what a @file{.eml}
+file saved out of another mailer is, is wrapped in this folder's separators
+and gathered as one message.  Anything else is refused.
+
 Two prefix arguments (@kbd{C-u C-u g}) mean something else again, and only
 for an @acronym{IMAP} folder: fetch every message the mailbox has and this
 folder has not, including the ones VM has recorded as retrieved once
