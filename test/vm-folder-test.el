@@ -6810,6 +6810,98 @@ which is not the same as zero: caching it would make the answer stick."
     ;; nothing was written to the cache, so a real count still happens
     (should (vm-spool-check-mail spool))))
 
+;;; Gathering mail from a file of another type (emacs-vm/vm#908)
+
+(defun vm-folder-test--gathered (contents type)
+  "What `vm-gathered-folder-text' makes of CONTENTS for a folder of TYPE."
+  (vm-test-with-temp-dir
+    (let ((file (expand-file-name "gathered" temp-dir)))
+      (with-temp-file file (insert contents))
+      (vm-gathered-folder-text file type))))
+
+(ert-deftest vm-folder-test-a-bare-message-is-wrapped-for-the-folder ()
+  "A .eml file is gathered into a folder as one message.
+
+emacs-vm/vm#908.  `vm-get-folder-type' answers `unknown' for a message with
+no envelope line, and every path that incorporates mail refused that, so the
+commonest thing anyone wants to drop into a folder could not be dropped into
+one.  The envelope line names the sender and carries the message's own Date,
+and mboxcl2 gets its `Content-Length'."
+  (let* ((eml (vm-test-read-fixture "emails" "job-advert.eml"))
+         (text (vm-folder-test--gathered eml 'mboxcl2))
+         (dated (current-time-string
+                 (date-to-time "Tue, 7 Oct 2026 16:30:11 +0200"))))
+    (should (string-prefix-p
+             (concat "From recruiting@example-institute.test " dated "\n")
+             text))
+    (should (string-match-p "^Content-Length: [0-9]+$" text))
+    (should (string-suffix-p "\n" text))
+    ;; and the result really is a folder of that type.  Named .mboxcl2,
+    ;; which is how VM is told the type now: reading it out of the lengths
+    ;; wants `vm-trust-content-length', which is deprecated.
+    (vm-test-with-temp-dir
+      (let ((folder (expand-file-name "cache.mboxcl2" temp-dir)))
+        (with-temp-file folder (insert text))
+        (should (eq (vm-get-folder-type folder) 'mboxcl2))))))
+
+(ert-deftest vm-folder-test-a-bare-message-suits-a-From_-folder-too ()
+  "The same message gathered into a From_ folder carries no Content-Length."
+  (let ((text (vm-folder-test--gathered
+               (vm-test-read-fixture "emails" "job-advert.eml") 'From_)))
+    (should (string-prefix-p "From recruiting@example-institute.test " text))
+    (should-not (string-match-p "^Content-Length:" text))))
+
+(ert-deftest vm-folder-test-gathering-converts-a-folder-of-another-type ()
+  "A folder of a type VM knows is converted, as `vm-check-folder-types' says.
+
+The option is `vm-convert-folder-types', which `vm-get-spooled-mail' has
+always honoured and this path used to ignore, refusing whatever it said."
+  (let* ((from_ (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                        "From: alice@example.com\n"
+                        "Subject: one\n\nA body line.\n\n"))
+         (vm-convert-folder-types t)
+         (text (vm-folder-test--gathered from_ 'mboxcl2)))
+    (should (string-match-p "^Content-Length: [0-9]+$" text))
+    (should (string-prefix-p "From alice@example.com " text))))
+
+(ert-deftest vm-folder-test-gathering-refuses-to-convert-when-told-not-to ()
+  "With `vm-convert-folder-types' nil it is an error, and the error says so."
+  (let ((from_ (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                       "From: alice@example.com\n"
+                       "Subject: one\n\nA body line.\n\n"))
+        (vm-convert-folder-types nil)
+        (text-quoting-style 'grave))
+    (should (string-match-p
+             "set vm-convert-folder-types"
+             (cadr (should-error (vm-folder-test--gathered from_ 'mboxcl2)))))))
+
+(ert-deftest vm-folder-test-gathering-refuses-what-is-not-a-message ()
+  "A file that is neither a folder VM knows nor a message is still refused.
+`unknown' covers a .eml file and a tarball alike, so wrapping whatever
+turns up would file rubbish as mail."
+  (let ((text-quoting-style 'grave))
+    (should (string-match-p
+             "does not read as a message"
+             (cadr (should-error
+                    ;; ASCII: a byte above 127 makes a batch Emacs ask which
+                    ;; coding system to write the file in, and wait for an
+                    ;; answer that is not coming.
+                    (vm-folder-test--gathered "rubbish, and no headers\n"
+                                              'mboxcl2)))))))
+
+(ert-deftest vm-folder-test-what-reads-as-a-message ()
+  "`vm-buffer-holds-one-message-p' wants a field name and a blank line."
+  (dolist (case '(("From: a@b\n\nbody\n" . t)
+                  ("From: a@b\nSubject: s\n\n" . t)
+                  ("From: a@b\nno blank line follows\n" . nil)
+                  ("\nleading blank line\n" . nil)
+                  ("not a header at all\n\n" . nil)
+                  ("" . nil)))
+    (with-temp-buffer
+      (insert (car case))
+      (should (eq (vm-buffer-holds-one-message-p) (cdr case))))))
+
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

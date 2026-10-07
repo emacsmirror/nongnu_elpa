@@ -1181,15 +1181,27 @@ own outgoing mail, and you are its sender."
 
 (defun vm-fcc-message-text (type)
   "The message in the current buffer, ready to append to a folder of TYPE.
-That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
-in TYPE's separators, and carrying a `Content-Length' where TYPE asks for
-one.  A composition has been through none of that yet."
+The Fcc headers come off first: the copy does not need to say where it was
+filed, and the composition keeps its own."
   (let ((mailbuf (current-buffer)))
     (with-temp-buffer
       (insert-buffer-substring mailbuf)
-      ;; The copy does not need to say where it was filed, and the
-      ;; composition keeps its own headers -- this is a copy.
       (vm-fcc-strip-headers (point-max))
+      (vm-message-text-for-folder type))))
+
+(defun vm-message-text-for-folder (type)
+  "The message in the current buffer, ready to append to a folder of TYPE.
+That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
+in TYPE's separators, and carrying a `Content-Length' where TYPE asks for
+one.  Neither a composition nor the message in a .eml file has been through
+any of that.
+
+The envelope line names the address the message is from and carries its own
+Date, which is why this reads the headers rather than taking a message
+struct: the caller has none.  See `vm-fcc-leading-separator'."
+  (let ((mailbuf (current-buffer)))
+    (with-temp-buffer
+      (insert-buffer-substring mailbuf)
       (vm-munge-message-separators type (point-min) (point-max))
       ;; A message written into a folder ends with a newline.  The trailing
       ;; separator then makes the blank line the next leading separator has
