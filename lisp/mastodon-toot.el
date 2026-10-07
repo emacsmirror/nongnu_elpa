@@ -274,7 +274,7 @@ send.")
       (group-n 2 ?#
                ;; mandate at least 1 non-digit:
                (zero-or-more (any "-_" alnum))
-               (one-or-more (not digit))
+               (one-or-more (not (any space digit)))
                (zero-or-more (any "-_" alnum)))
       (| "'" word-boundary))) ; boundary or possessive
 
