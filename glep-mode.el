@@ -54,9 +54,9 @@
 
 (defvar glep-mode-font-lock-keywords-1
   '((glep-mode-font-lock-match-delims
-     . font-lock-comment-delimiter-face)
+     0 'font-lock-comment-delimiter-face)
     (glep-mode-font-lock-match-preamble
-     . font-lock-keyword-face))
+     0 'font-lock-keyword-face))
   "Expressions to highlight in `glep-mode'.")
 
 (defvar glep-mode-delim-re "^---$"

@@ -1,3 +1,13 @@
+2026-10-07  Ulrich Müller  <ulm@gentoo.org>
+
+	* ebuild-mode-keywords.el (ebuild-mode-keywords-*):
+	* gentoo-newsitem-mode.el (gentoo-newsitem-font-lock-keywords):
+	* glep-mode.el (glep-mode-font-lock-keywords-1):
+	* test/ebuild-mode-tests.el (ebuild-mode-test-font-lock-keywords):
+	Use quoted symbols for faces. The font-lock face variables are
+	obsolete in GNU Emacs since 31.1, and exist in XEmacs "only for
+	horrid FSF compatibility reasons".
+
 2026-10-01  Ulrich Müller  <ulm@gentoo.org>
 
 	* Version 1.88 released.

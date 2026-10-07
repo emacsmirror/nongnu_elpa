@@ -44,12 +44,12 @@
 		    t)
 		   ":"))
 	 limit))
-     . font-lock-keyword-face)
+     0 'font-lock-keyword-face)
     ;; Warn about overlong title
     (,(lambda (limit)
 	(gentoo-newsitem-search-header
 	 "^Title:[ \t]*.\\{50\\}\\(.*\\)" limit))
-     1 font-lock-warning-face t))
+     1 'font-lock-warning-face t))
   "Expressions to highlight in Gentoo newsitem mode.")
 
 (defvar gentoo-newsitem-format-list

@@ -29,12 +29,25 @@
 
 ;;; Code:
 
+;; Note: In the variable definitions below, we use (0 'FACENAME)
+;; instead of plain 'FACENAME, for XEmacs compatibility.
+;;
+;; Font Lock mode in XEmacs cannot cope with (MATCHER . 'FACENAME)
+;; because it interprets the CDR as a MATCH-ANCHORED form rather than
+;; a FACE-FORM. It then tries to call "quote" as the anchor-matcher
+;; function, causing an error:
+;;
+;;    Invalid function: #<special-operator quote>
+;;
+;; (MATCHER 0 'FACENAME) works in both GNU Emacs and XEmacs and does
+;; not add any performance penalty.
+
 ;; Package manager keywords
 
 (defvar ebuild-mode-keywords-EAPI
   ;; highlight the EAPI variable itself
   '(("EAPI")
-    font-lock-warning-face))
+    (0 'font-lock-warning-face)))
 
 (defvar ebuild-mode-keywords-0
   '(("best_version" "debug-print" "debug-print-function" "debug-print-section"
@@ -60,7 +73,7 @@
      "dostrip" "eqawarn" "ver_cut" "ver_rs" "ver_test"
      ;; EAPI 9
      "edo" "pipestatus" "ver_replacing")
-    font-lock-builtin-face))
+    (0 'font-lock-builtin-face)))
 
 (defvar ebuild-mode-keywords-functions
   '(("pkg_nofetch" "pkg_setup" "src_unpack" "src_compile" "src_test"
@@ -70,11 +83,11 @@
      "pkg_info" "src_prepare" "src_configure"
      ;; EAPI 4
      "pkg_pretend")
-    font-lock-type-face))
+    (0 'font-lock-type-face)))
 
 (defvar ebuild-mode-keywords-sandbox
   '(("adddeny" "addpredict" "addread" "addwrite")
-    font-lock-warning-face))
+    (0 'font-lock-warning-face)))
 
 (defvar ebuild-mode-keywords-eapi-deprecated
   ;; deprecated or banned package manager commands
@@ -82,13 +95,13 @@
      "hasv" "libopts" "portageq" "prepall" "prepalldocs" "prepallinfo"
      "prepallman" "prepallstrip" "prepinfo" "preplib" "prepman" "prepstrip"
      "useq")
-    font-lock-warning-face))
+    (0 'font-lock-warning-face)))
 
 (defvar ebuild-mode-keywords-warn
   ;; warn about "which" usage, see <200703121910.26067.vapier@gentoo.org>
   ;; https://public-inbox.gentoo.org/gentoo-dev/200703121910.26067.vapier@gentoo.org/
   '(("which")
-    font-lock-warning-face))
+    (0 'font-lock-warning-face)))
 
 (defvar ebuild-mode-keywords-variables
   ;; only for completion, i.e. no face definition
@@ -109,14 +122,14 @@
      "@MAINTAINER" "@OUTPUT_VARIABLE" "@PRE_INHERIT" "@PROVIDES" "@REQUIRED"
      "@RETURN" "@ROFF" "@SUBSECTION" "@SUPPORTED_EAPIS" "@USAGE"
      "@USER_VARIABLE" "@VARIABLE" "@VCSURL")
-    (1 font-lock-type-face t)
+    (1 'font-lock-type-face t)
     "^# "))
 
 (defvar ebuild-mode-keywords-eclassdoc-warn
   ;; @ECLASS-VARIABLE (with a hyphen) is deprecated:
   ;; https://bugs.gentoo.org/835396
   '(("@DEAD" "@DEPRECATED" "@ECLASS-VARIABLE")
-    (1 font-lock-warning-face t)
+    (1 'font-lock-warning-face t)
     "^# "))
 
 ;; The list of eclass function keywords below is auto-generated
@@ -813,7 +826,7 @@
      "zig-utils_find_installation" "zig-utils_setup" "ezig"
      ;; @@KEYWORDS-END@@
      )
-    font-lock-type-face))
+    (0 'font-lock-type-face)))
 
 (provide 'ebuild-mode-keywords)
 
