@@ -242,8 +242,11 @@
     (process-put process 'jabber-link-preview-cbargs nil)
     (process-put process 'jabber-link-preview-url "https://example.org/")
     (process-send-eof process)
-    (while (process-live-p process) (accept-process-output process 0.1))
-    (accept-process-output nil 0.1)
+    ;; Process status can change before its sentinel runs; wait for the
+    ;; sentinel's callback rather than a fixed slice.
+    (let ((deadline (+ (float-time) 30)))
+      (while (and (null result) (< (float-time) deadline))
+        (accept-process-output nil 0.01)))
     (should (equal result '(:error response)))
     (should-not (buffer-live-p buffer))))
 

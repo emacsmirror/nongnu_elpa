@@ -244,12 +244,13 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-test-omemo-store-device-last-seen ()
   "last-seen is set on save."
   (jabber-test-omemo-store-with-db
-    (jabber-omemo-store-save-device "me@example.com" "alice@example.com" 42)
-    (let* ((d (car (jabber-omemo-store-load-devices "me@example.com"
-                                                     "alice@example.com")))
-           (ts (plist-get d :last-seen))
-           (now (truncate (float-time))))
-      (should (<= (abs (- ts now)) 2)))))
+    (let ((before (truncate (float-time))))
+      (jabber-omemo-store-save-device "me@example.com" "alice@example.com" 42)
+      (let ((ts (plist-get (car (jabber-omemo-store-load-devices
+                                 "me@example.com" "alice@example.com"))
+                           :last-seen)))
+        ;; Bracket the save instead of assuming it takes under N seconds.
+        (should (<= before ts (truncate (float-time))))))))
 
 ;;; Group 5: Session CRUD
 

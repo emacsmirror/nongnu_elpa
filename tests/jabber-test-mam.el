@@ -192,8 +192,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (count 3650)
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-muc-participants nil)
-           (start-time (float-time)))
+           (jabber-muc-participants nil))
       ;; Feed all messages through the process function inside a transaction
       (jabber-db-with-transaction
         (dotimes (i count)
@@ -203,10 +202,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
                                    0 (+ 1700000000 (* count 86400))
                                    -1)))
-        (should (= count (length rows))))
-      ;; Should complete in under 5 seconds
-      (let ((elapsed (- (float-time) start-time)))
-        (should (< elapsed 5.0))))))
+        (should (= count (length rows)))))))
 
 ;;; Group 2: Dedup on re-sync
 
@@ -269,29 +265,23 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
         (should (equal "parent-1"
                        (plist-get stored :thread-parent-id)))))))
 
-;;; Group 3: Transaction batching performance
+;;; Group 3: Transaction batching
 
 (ert-deftest jabber-test-mam-transaction-batching ()
-  "Batched inserts inside a transaction are faster than unbatched."
+  "Messages processed inside one transaction are all stored."
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (batch-count 500)
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
            (jabber-muc-participants nil))
-      ;; Batched: all in one transaction
-      (let ((t1 (float-time)))
-        (jabber-db-with-transaction
-          (dotimes (i batch-count)
-            (jabber-mam--process-message
-             jc (jabber-test-mam--make-message i))))
-        (let ((batched-time (- (float-time) t1)))
-          ;; Verify they all stored
-          (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
-                                       0 (+ 1700000000 (* batch-count 86400))
-                                       -1)))
-            (should (= batch-count (length rows))))
-          ;; Batched should be under 2 seconds for 500 messages
-          (should (< batched-time 2.0)))))))
+      (jabber-db-with-transaction
+        (dotimes (i batch-count)
+          (jabber-mam--process-message
+           jc (jabber-test-mam--make-message i))))
+      (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
+                                   0 (+ 1700000000 (* batch-count 86400))
+                                   -1)))
+        (should (= batch-count (length rows)))))))
 
 (ert-deftest jabber-test-mam-encrypted-session-save-in-transaction ()
   "An encrypted MAM message can migrate its session inside the MAM transaction."

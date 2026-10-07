@@ -1478,7 +1478,10 @@ nil after the first message, breaking subsequent composing detection."
       (cancel-timer timer)
       (timer-set-time timer (current-time))
       (timer-activate timer)
-      (sleep-for 0.01)
+      ;; A single short wait can expire before timers run on a slow host.
+      (let ((deadline (+ (float-time) 30)))
+        (while (and (memq timer timer-list) (< (float-time) deadline))
+          (sleep-for 0.01)))
       (should (equal sent '(paused composing)))
       (should-not jabber-chatstates-paused-timer)
       (should (timerp jabber-chatstates-inactive-timer))

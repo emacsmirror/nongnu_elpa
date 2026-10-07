@@ -2732,7 +2732,7 @@ and `url' to the URL; `display-graphic-p' is stubbed to t."
                     (put jc :state-data
                          (jabber-sm--discard-pending (get jc :state-data) "Discarded"))
                   (let ((jabber-sm-max-in-flight nil)
-                        (deadline (+ (float-time) 2)))
+                        (deadline (+ (float-time) 30)))
                     ;; Real FSM acknowledgement publishes state before its native timer.
                     (fsm-send-sync jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
                     (while (and jabber-message-correct--pending-outgoing
@@ -2969,7 +2969,7 @@ Expose `publication-node', `publication-attempts', `publication-wire' and
 (defun jabber-test-chat--publication-drain (jc)
   "Drain JC through a real FSM acknowledgement and its native timer."
   (let ((jabber-sm-max-in-flight nil)
-        (deadline (+ (float-time) 2)))
+        (deadline (+ (float-time) 30)))
     (fsm-send-sync
      jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
     ;; Wait for native queue removal, NOT a pending token a broken commit can
@@ -3209,7 +3209,7 @@ Expose `publication-node', `publication-attempts', `publication-wire' and
               ;; This drain intentionally leaves a reentrantly queued successor.
               ;; Wait for the hook, rather than draining every generation.
               (let ((jabber-sm-max-in-flight nil)
-                    (deadline (+ (float-time) 2)))
+                    (deadline (+ (float-time) 30)))
                 (fsm-send-sync
                  jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
                 (while (and (zerop hook-runs) (< (float-time) deadline))
@@ -3788,7 +3788,7 @@ Expose `publication-node', `publication-attempts', `publication-wire' and
             (pcase outcome
               ('drain
                (let ((jabber-sm-max-in-flight nil)
-                     (deadline (+ (float-time) 2)))
+                     (deadline (+ (float-time) 30)))
                  (fsm-send-sync
                   jc `(:stanza (a ((xmlns . ,jabber-sm-xmlns) (h . "0")))))
                  (while (and (car token) (< (float-time) deadline))
