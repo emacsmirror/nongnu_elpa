@@ -265,19 +265,20 @@ send.")
    (group-n 2 ; include domain
      (group-n 4 ; exclude domain
        ?@ ; first @
-       (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; username
+       (* (any ?- ?_ ?. alnum))) ; username
      (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
    (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
-      (group-n 2 ?# (+ (any "_" "A-Z" "a-z" "0-9")))
+      (group-n 2 ?#
+               (+ (any "-_" alnum)))
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-emoji-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
       (group-n 2 ?: ; opening :
-               (+ (any "A-Z" "a-z" "0-9" "_"))
+               (+ (any "-_" alnum))
                (? ?:)) ; closing :
       word-boundary)) ; boundary
 
