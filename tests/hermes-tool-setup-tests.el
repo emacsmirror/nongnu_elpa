@@ -255,7 +255,13 @@
             (should (equal hermes-instance instance))
             (should (string-match-p "Future" (buffer-string)))
             (should (string-match-p "needs_setup" (buffer-string)))
-            (should (string-match-p "second-profile" header-line-format))
+            (should (string-match-p "second-profile" hermes-browser--status))
+            ;; Status lives in the mode line; the header keeps columns (#148).
+            (let ((header header-line-format))
+              (dolist (column '("Provider" "Selection" "Readiness"))
+                (should (string-match-p column (format "%S" header))))
+              (tabulated-list-init-header)
+              (should (equal header header-line-format)))
             (should (eq (key-binding (kbd "k")) #'hermes-tool-setup-save-credentials))))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
@@ -318,7 +324,7 @@
       (cl-letf (((symbol-function 'hermes-browser--run-on-client)
                  (lambda (_make success &rest _) (funcall success nil))))
         (hermes-tool-setup-refresh)
-        (should (eq (not (null (string-match-p "Install unavailable" header-line-format)))
+        (should (eq (not (null (string-match-p "Install unavailable" hermes-browser--status)))
                     (not (equal profile "second"))))))))
 
 
@@ -673,7 +679,7 @@ client ownership, request construction, and cleanup."
                                 "http://setup.example.test"))
                  (should (equal (hermes-instance-name hermes-instance)
                                 (if legacy "default" "Setup")))
-                 (should (string-match-p "Profile: Research-2.*unknown" header-line-format))
+                 (should (string-match-p "Profile: Research-2.*unknown" hermes-browser--status))
                  (should-not hermes-tool-setup--config)
                  (should-not hermes-tool-setup--model-catalog)
                  (should-not hermes-tool-setup--post-status)
@@ -682,7 +688,7 @@ client ownership, request construction, and cleanup."
                  (should-error (call-interactively (key-binding (kbd "i"))) :type 'user-error)
                  (hermes--promise-resolve
                   config '(:body (:providers ((:name "New" :is_active t :post_setup "new-install")))))
-                 (should (string-match-p "Profile: Research-2" header-line-format))
+                 (should (string-match-p "Profile: Research-2" hermes-browser--status))
                  (should (equal (hermes-transport--get hermes-tool-setup--model-catalog 'current)
                                 "new-model"))
                  (goto-char (point-min))

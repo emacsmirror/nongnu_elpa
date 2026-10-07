@@ -122,7 +122,7 @@ owner, never a successor established by a hook."
       (hermes-browser--own-instance (hermes-browser--copy-identity instance))
       (setq hermes-skills--profile (and profile (copy-sequence profile))
             hermes-skills--parent parent)
-      (setq-local header-line-format '(:eval (hermes-skills--header))))
+      (hermes-browser--show-context '(:eval (hermes-skills--header))))
     buffer))
 
 (defun hermes-skills--header ()

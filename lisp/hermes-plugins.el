@@ -116,9 +116,9 @@
    (append (hermes-transport--get result 'plugins) nil)))
 
 (defun hermes-plugins--header ()
-  "Return the owning instance, process scope, and configuration status."
-  (format "%s Launch-home %s | Context: %s | %s"
-          (or (hermes-browser--instance-header-line) "")
+  "Return the process scope and configuration status for the mode line.
+The shared browser mode line names the instance when several exist."
+  (format " Launch-home %s | Context: %s | %s"
           (if hermes-plugins--catalog-p "catalog" "inventory")
           (or (hermes-transport--get
                (hermes-transport--get hermes-plugins--snapshot 'providers)
@@ -667,7 +667,7 @@ backend-declared settings and environment entries are editable here."
   (setq-local hermes-browser--snapshot-variables
               '(hermes-plugins--snapshot hermes-plugins--busy hermes-plugins--consent))
   (setq-local revert-buffer-function #'hermes-plugins-refresh)
-  (setq-local header-line-format '(:eval (hermes-plugins--header)))
+  (hermes-browser--show-context '(:eval (hermes-plugins--header)))
   (tabulated-list-init-header))
 
 ;;;###autoload
@@ -679,8 +679,7 @@ backend-declared settings and environment entries are editable here."
     (with-current-buffer buffer
       (hermes-plugins-mode)
       (hermes-buffer--claim 'hermes-plugins-mode)
-      (hermes-browser--own-instance instance)
-      (setq-local header-line-format '(:eval (hermes-plugins--header))))
+      (hermes-browser--own-instance instance))
     (pop-to-buffer buffer)
     (with-current-buffer buffer (hermes-plugins-refresh))))
 

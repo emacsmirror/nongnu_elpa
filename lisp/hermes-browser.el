@@ -266,11 +266,58 @@
     (hermes-browser--face-cell
      status face)))
 
-(defun hermes-browser--instance-header-line ()
-  "Return a compact instance header for the current browser, or nil."
+(defun hermes-browser--instance-label ()
+  "Return the current view's instance name when several exist, or nil."
   (when (and (hermes-instance-multiple-p)
              (hermes-instance--valid-p hermes-instance))
-    (format " Hermes instance: %s " (hermes-instance-name hermes-instance))))
+    (hermes-instance-name hermes-instance)))
+
+(defun hermes-browser--instance-header-line ()
+  "Return a compact instance header for the current view, or nil."
+  (when-let* ((name (hermes-browser--instance-label)))
+    (format " Hermes instance: %s " name)))
+
+(defun hermes-browser--instance-mode-line-label ()
+  "Return a compact mode-line label for the current view's instance, or nil."
+  (when-let* ((name (hermes-browser--instance-label)))
+    (concat " " (propertize (format "[%s]" name)
+                            'face 'hermes-browser-profile
+                            'help-echo (format "Hermes instance: %s" name)))))
+
+(defconst hermes-browser--instance-mode-line
+  '(:eval (hermes-browser--instance-mode-line-label))
+  "Mode-line construct naming a browser's instance when several exist.")
+
+(defun hermes-browser--mode-line-has-p (value construct)
+  "Return non-nil if mode-line VALUE already ends with CONSTRUCT.
+Search only the wrappers made by `hermes-browser--mode-line-add'."
+  (pcase value
+    (`("" ,inner ,last)
+     (or (equal last construct)
+         (hermes-browser--mode-line-has-p inner construct)))))
+
+(defun hermes-browser--mode-line-add (variable construct)
+  "Show CONSTRUCT after the buffer-local mode-line VARIABLE's value.
+The value may be any mode-line construct, such as a string or a single
+`:eval' form, so nest it whole rather than splicing into it."
+  (let ((value (symbol-value variable)))
+    (unless (hermes-browser--mode-line-has-p value construct)
+      (set (make-local-variable variable) (list "" value construct)))))
+
+(defun hermes-browser--show-instance ()
+  "Name the current view's instance after its mode-line buffer name.
+Leave `header-line-format' alone: tabulated browsers keep column titles there,
+and other views own their header text."
+  (hermes-browser--mode-line-add 'mode-line-buffer-identification
+                                 hermes-browser--instance-mode-line))
+
+(defun hermes-browser--show-context (construct)
+  "Show mode-line CONSTRUCT as the current view's scope or status context.
+Tabulated browsers keep their native column titles in the header line, so
+their context joins the mode line; other views show it in the header line."
+  (if (derived-mode-p 'tabulated-list-mode)
+      (hermes-browser--mode-line-add 'mode-line-misc-info construct)
+    (setq-local header-line-format construct)))
 
 (defvar-local hermes-browser--snapshot-variables nil
   "Buffer-local cache variables to clear when the browser changes instance.
@@ -302,8 +349,7 @@ Invalidate the previous instance's rows and registered caches first."
       (let ((inhibit-read-only t))
         (erase-buffer))))
   (setq-local hermes-instance instance)
-  (setq-local header-line-format
-              '(:eval (hermes-browser--instance-header-line))))
+  (hermes-browser--show-instance))
 
 (defun hermes-browser--existing-client ()
   "Return a live dashboard client for the current Hermes instance, or nil."
@@ -681,10 +727,9 @@ applies the shared notification policy.  Optional BUFFER is the notice target."
 
 (defun hermes-browser--setup-status ()
   "Expose read status and contextual help in this browser's mode line."
-  (setq-local mode-line-misc-info
-              (append mode-line-misc-info
-                      '((:eval (concat " [" (or hermes-browser--status "Not fetched")
-                                       "; ? help]"))))))
+  (hermes-browser--mode-line-add
+   'mode-line-misc-info
+   '(:eval (concat " [" (or hermes-browser--status "Not fetched") "; ? help]"))))
 
 (defun hermes-browser--read-error (reason)
   "Show read failure REASON while retaining the current snapshot."

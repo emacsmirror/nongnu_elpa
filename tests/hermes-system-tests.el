@@ -466,8 +466,7 @@
       (call-interactively (key-binding "a"))
       (should-not hermes-system--auto-refresh)
       (setq hermes-system--path "/api/status")
-      (should (equal (hermes-system--header-line)
-                     (concat (hermes-browser--instance-header-line))))
+      (should-not (hermes-system--header-line))
       (should (eq (key-binding "g") #'revert-buffer))
       (should (eq (key-binding "q") #'quit-window)))))
 

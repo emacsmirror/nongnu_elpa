@@ -335,8 +335,8 @@ Choose the exact destination profile; it is validated before preview/import."
           (hermes-browser--own-instance instance)
           (setq hermes-foreign--profile profile
                 hermes-foreign--endpoint (hermes-browser--copy-identity instance)
-                hermes-foreign--source (unless (equal source "all") source)
-                header-line-format '(:eval (hermes-foreign--header))))
+                hermes-foreign--source (unless (equal source "all") source))
+          (hermes-browser--show-context '(:eval (hermes-foreign--header))))
         (pop-to-buffer buffer)
         (with-current-buffer buffer (hermes-foreign-refresh))))))
 

@@ -265,6 +265,104 @@
               (hermes-work-log--open owner "hook-test" "/remote/log")))
         (when (buffer-live-p created) (kill-buffer created))))))
 
+(defun hermes-browser-test--check-columns-and-instance (columns several)
+  "Assert native COLUMNS in the header and the instance label iff SEVERAL.
+Inspect constructs directly: `format-mode-line' renders nothing in batch."
+  (let ((header header-line-format))
+    (dolist (column columns)
+      (should (string-match-p (regexp-quote column) (format "%S" header))))
+    (tabulated-list-init-header)
+    (should (equal header header-line-format)))
+  (should (hermes-browser--mode-line-has-p mode-line-buffer-identification
+                                           hermes-browser--instance-mode-line))
+  (should (equal (hermes-browser--instance-mode-line-label)
+                 (and several " [A]"))))
+
+(ert-deftest hermes-browser-instance-keeps-static-column-header ()
+  "Taking an instance keeps a static browser's columns, also after refresh.
+Several instances name the owner in the mode line, not the header (#148)."
+  (let ((a '("A" . "https://a.example.test"))
+        (b '("B" . "https://b.example.test")))
+    (dolist (instances (list (list a) (list a b)))
+      (let ((hermes-instances instances)
+            (columns '("Session" "Title" "Msgs" "Source" "Profile")))
+        (with-temp-buffer
+          (hermes-sessions-mode)
+          (hermes-browser--own-instance a)
+          (hermes-browser-test--check-columns-and-instance columns (cdr instances))
+          (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+                     (lambda (_fetch on-success &optional _on-error)
+                       (funcall on-success '((sessions . nil))))))
+            (revert-buffer))
+          (should (equal hermes-instance a))
+          (should (equal hermes-browser--status "Empty"))
+          (hermes-browser-test--check-columns-and-instance columns (cdr instances))
+          ;; Retaking the same instance leaves the mode line unchanged.
+          (let ((identification mode-line-buffer-identification)
+                (misc mode-line-misc-info))
+            (hermes-browser--own-instance a)
+            (hermes-browser--setup-status)
+            (should (eq identification mode-line-buffer-identification))
+            (should (eq misc mode-line-misc-info))))))))
+
+(ert-deftest hermes-browser-instance-keeps-every-list-header ()
+  "Every instance-owned list browser keeps its column header (#148)."
+  (dolist (feature '(hermes-admin hermes-cron hermes-endpoints hermes-files
+                     hermes-foreign hermes-kanban hermes-messaging
+                     hermes-onboarding hermes-plugins hermes-profiles
+                     hermes-projects hermes-rollback hermes-sessions
+                     hermes-skills hermes-subagents hermes-tool-setup))
+    (require feature))
+  (let ((a '("A" . "https://a.example.test")))
+    (dolist (instances (list (list a) (list a '("B" . "https://b.example.test"))))
+      (dolist (mode '(hermes-cron-mode hermes-endpoint-list-mode
+                      hermes-files-mode hermes-foreign-mode
+                      hermes-kanban-boards-mode hermes-kanban-mode
+                      hermes-kanban-diagnostics-mode hermes-mcp-mode
+                      hermes-messaging-mode hermes-pairing-mode
+                      hermes-plugins-mode hermes-profiles-mode
+                      hermes-project-sessions-mode hermes-projects-mode
+                      hermes-provider-accounts-mode hermes-rollback-mode
+                      hermes-sessions-mode hermes-skills-hub-mode
+                      hermes-subagents-mode hermes-tool-setup-mode
+                      hermes-webhooks-mode))
+        (ert-info ((format "%s with %d instances" mode (length instances)))
+          (let ((hermes-instances instances))
+            (with-temp-buffer
+              (funcall mode)
+              (hermes-browser--own-instance a)
+              (hermes-browser-test--check-columns-and-instance
+               (mapcar #'car tabulated-list-format) (cdr instances)))))))))
+
+(ert-deftest hermes-browser-mode-line-additions-nest-any-construct ()
+  "Instance and context labels survive non-list mode-line constructs (#148)."
+  (require 'hermes-admin)
+  (dolist (value '("Custom" (:eval "%b") (:propertize "%b" face bold)))
+    (with-temp-buffer
+      (tabulated-list-mode)
+      (setq-local mode-line-buffer-identification value
+                  mode-line-misc-info value)
+      (hermes-browser--own-instance '("A" . "https://a.example.test"))
+      (hermes-browser--setup-status)
+      (hermes-browser--show-context '(:eval "context"))
+      (should (equal mode-line-buffer-identification
+                     (list "" value hermes-browser--instance-mode-line)))
+      (should (equal (nth 1 (nth 1 mode-line-misc-info)) value))
+      (should (hermes-browser--mode-line-has-p mode-line-misc-info
+                                               '(:eval "context")))
+      (let ((misc mode-line-misc-info))
+        (hermes-browser--show-context '(:eval "context"))
+        (should (eq misc mode-line-misc-info)))))
+  (let ((default (default-value 'mode-line-misc-info)))
+    (unwind-protect
+        (progn
+          (setq-default mode-line-misc-info "Custom status")
+          (with-temp-buffer
+            (hermes-pairing-mode)
+            (should (hermes-browser--mode-line-has-p
+                     mode-line-misc-info '(:eval (hermes-admin--status))))))
+      (setq-default mode-line-misc-info default))))
+
 (defvar hermes-browser-test--fetch-function nil)
 
 (hermes-define-list-browser browseridentity

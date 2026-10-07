@@ -379,25 +379,24 @@ and auto-refresh controls.  With no prefix, request 100 lines."
    `((file . "agent") (lines . ,(hermes-system--bounded-log-lines lines)))))
 
 (defun hermes-system--header-line ()
-  "Return faced instance and log state for the current system view."
-  (concat
-   (hermes-browser--instance-header-line)
-   (when (equal hermes-system--path "/api/logs")
-     (concat
-      " "
-      (mapconcat
-       (lambda (field)
-         (concat (propertize (car field) 'face 'shadow)
-                 (propertize (cdr field) 'face 'font-lock-type-face)))
-       `(("Source " . ,(or (alist-get 'file hermes-system--query) "agent"))
-         ("Min " . ,(or (alist-get 'level hermes-system--query) "ALL"))
-         ("Component " . ,(or (alist-get 'component hermes-system--query) "all"))
-         ("" . ,(format "%s lines" (alist-get 'lines hermes-system--query))))
-       " · ")
-      (propertize " · Auto " 'face 'shadow)
-      (propertize (if hermes-system--auto-refresh "5s" "off")
-                  'face (if hermes-system--auto-refresh 'success 'shadow))
-      " · " (propertize "? Help" 'face 'help-key-binding)))))
+  "Return faced log state for the current system view, or nil.
+The shared browser mode line names the instance when several exist."
+  (when (equal hermes-system--path "/api/logs")
+    (concat
+     " "
+     (mapconcat
+      (lambda (field)
+        (concat (propertize (car field) 'face 'shadow)
+                (propertize (cdr field) 'face 'font-lock-type-face)))
+      `(("Source " . ,(or (alist-get 'file hermes-system--query) "agent"))
+        ("Min " . ,(or (alist-get 'level hermes-system--query) "ALL"))
+        ("Component " . ,(or (alist-get 'component hermes-system--query) "all"))
+        ("" . ,(format "%s lines" (alist-get 'lines hermes-system--query))))
+      " · ")
+     (propertize " · Auto " 'face 'shadow)
+     (propertize (if hermes-system--auto-refresh "5s" "off")
+                 'face (if hermes-system--auto-refresh 'success 'shadow))
+     " · " (propertize "? Help" 'face 'help-key-binding))))
 
 (defun hermes-system--filter-description (label key)
   "Return LABEL with this buffer's bounded log query value for KEY."

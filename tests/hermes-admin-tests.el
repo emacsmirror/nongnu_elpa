@@ -627,6 +627,39 @@
     (should-not tabulated-list-entries)
     (should (= releases (length requests)))))
 
+(ert-deftest hermes-admin-open-keeps-columns-with-mode-line-status ()
+  "An opened administrative list keeps native columns in its header line.
+Its scope and state move to the mode line instead (#148)."
+  (dolist (instances '((("A" . "http://example.test"))
+                       (("A" . "http://example.test") ("B" . "http://b.test"))))
+    (let ((hermes-instances instances) buffer)
+      (hermes-admin-test--with hermes-pairing-mode
+        (cl-letf (((symbol-function 'hermes-instance-resolve)
+                   (lambda () (car instances)))
+                  ((symbol-function 'pop-to-buffer)
+                   (lambda (value &rest _) (setq buffer value))))
+          (unwind-protect
+              (progn
+                (hermes-list-pairing)
+                (with-current-buffer buffer
+                  (hermes--promise-resolve (nth 3 (car requests))
+                                           hermes-admin-test--pairing)
+                  (should (eq hermes-admin--state 'ready))
+                  ;; `format-mode-line' renders nothing in batch; inspect
+                  ;; the constructs instead.
+                  (let ((header header-line-format))
+                    (dolist (column '("State" "Platform" "User ID" "Name"))
+                      (should (string-match-p column (format "%S" header))))
+                    (tabulated-list-init-header)
+                    (should (equal header header-line-format)))
+                  (should (hermes-browser--mode-line-has-p
+                           mode-line-misc-info '(:eval (hermes-admin--status))))
+                  (should (string-match-p "server profile · ready · 2 rows"
+                                          (hermes-admin--status)))
+                  (should (equal (hermes-browser--instance-mode-line-label)
+                                 (and (cdr instances) " [A]")))))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
 (ert-deftest hermes-admin-webhook-route-journey-and-secret ()
   "Create, toggle and delete never put one-time secrets into ordinary surfaces."
   (hermes-admin-test--with hermes-webhooks-mode

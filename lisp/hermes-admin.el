@@ -62,11 +62,11 @@
   (hermes-admin--forget-secret)
   (setq hermes-admin--state 'unknown hermes-admin--snapshot nil))
 
-(defun hermes-admin--header ()
-  "Return instance scope and the current administrative state."
-  (format " %s · Profile: %s · %s%s · ? Help "
-          (if (hermes-instance--valid-p hermes-instance)
-              (hermes-instance-name hermes-instance) "No instance")
+(defun hermes-admin--status ()
+  "Return the mode-line profile scope and current administrative state.
+The header line keeps the native column titles; the shared browser mode line
+names the instance when several are configured."
+  (format " [Profile: %s · %s%s; ? help]"
           (if (derived-mode-p 'hermes-webhooks-mode)
               (or hermes-admin--profile "unselected") "server profile")
           (propertize (pcase hermes-admin--state
@@ -352,8 +352,7 @@ Administrative views always rebuild complete rows under their exact owner."
       (with-current-buffer buffer
         (funcall mode)
         (hermes-buffer--claim mode)
-        (hermes-browser--own-instance instance)
-        (setq-local header-line-format '(:eval (hermes-admin--header)))))
+        (hermes-browser--own-instance instance)))
     (pop-to-buffer buffer)
     (with-current-buffer buffer (hermes-admin--revert))))
 
@@ -569,7 +568,7 @@ Those destinations may persist or synchronize it; only do this intentionally."
   "Parent mode for instance-owned administrative lists."
   :interactive nil
   (setq-local revert-buffer-function #'hermes-admin--revert)
-  (setq-local header-line-format '(:eval (hermes-admin--header)))
+  (hermes-browser--show-context '(:eval (hermes-admin--status)))
   (setq-local hermes-browser--snapshot-variables
               '(hermes-admin--snapshot hermes-admin--profile))
   (add-hook 'kill-buffer-hook #'hermes-admin--stop nil t)

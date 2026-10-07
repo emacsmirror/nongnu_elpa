@@ -154,12 +154,14 @@ Fence success and failure against buffer, instance and profile changes."
        (when (hermes-tool-setup--current-p owner)
          (message "Hermes: tool setup request failed; refresh to check state"))))))
 
-(defun hermes-tool-setup--header (status)
-  "Return the owning instance, toolset and profile header with STATUS."
-  (format " %s | %s | Profile: %s | %s"
-          (hermes-instance-name hermes-instance)
-          hermes-tool-setup--name
-          (or hermes-tool-setup--profile "server default") status))
+(defun hermes-tool-setup--show-status (status)
+  "Show the toolset and profile with STATUS in the browser mode line.
+The header line keeps the native column titles; the shared browser mode line
+names the instance when several are configured."
+  (setq hermes-browser--status
+        (format "%s | Profile: %s | %s" hermes-tool-setup--name
+                (or hermes-tool-setup--profile "server default") status))
+  (force-mode-line-update))
 
 (defun hermes-tool-setup-refresh (&rest _)
   "Recheck provider readiness without invoking a model or a tool."
@@ -171,18 +173,17 @@ Fence success and failure against buffer, instance and profile changes."
    (lambda (config)
      (setq hermes-tool-setup--config config
            tabulated-list-entries (hermes-tool-setup--rows config))
-     (setq-local header-line-format
-                 (hermes-tool-setup--header
-                  (concat "Backend prerequisites, not a tool test"
-                          (unless (hermes-tool-setup--install-scoped-p)
-                            " | Install unavailable: explicit non-default profile required")
-                          (if tabulated-list-entries "" " | No configurable providers")
-                          (when hermes-tool-setup--post-status
-                            (format " | Server-wide setup: %s" hermes-tool-setup--post-status))
-                          (when (hermes-transport--get config 'active_search_backend)
-                            (format " | Search: %s / Extract: %s"
-                                    (hermes-transport--get config 'active_search_backend)
-                                    (hermes-transport--get config 'active_extract_backend))))))
+     (hermes-tool-setup--show-status
+      (concat "Backend prerequisites, not a tool test"
+              (unless (hermes-tool-setup--install-scoped-p)
+                " | Install unavailable: explicit non-default profile required")
+              (if tabulated-list-entries "" " | No configurable providers")
+              (when hermes-tool-setup--post-status
+                (format " | Server-wide setup: %s" hermes-tool-setup--post-status))
+              (when (hermes-transport--get config 'active_search_backend)
+                (format " | Search: %s / Extract: %s"
+                        (hermes-transport--get config 'active_search_backend)
+                        (hermes-transport--get config 'active_extract_backend)))))
      (tabulated-list-print t)
      ;; Omitting provider asks the backend for its active selection.  A catalog
      ;; fetched for an inactive row is not evidence of the active model.
@@ -207,8 +208,7 @@ Fence success and failure against buffer, instance and profile changes."
           (setq hermes-tool-setup--profile name
                 hermes-tool-setup--config nil hermes-tool-setup--model-catalog nil
                 hermes-tool-setup--post-status nil tabulated-list-entries nil)
-          (setq-local header-line-format
-                      (hermes-tool-setup--header "Prerequisites unknown"))
+          (hermes-tool-setup--show-status "Prerequisites unknown")
           (tabulated-list-print t)
           (hermes-tool-setup-refresh))))))
 
@@ -423,6 +423,7 @@ Readiness reports backend prerequisites, not a successful tool invocation."
   (setq-local revert-buffer-function #'hermes-tool-setup-refresh)
   (setq-local hermes-browser--snapshot-variables '(hermes-tool-setup--config hermes-tool-setup--model-catalog hermes-tool-setup--post-status))
   (hermes-browser--next-request-generation)
+  (hermes-browser--setup-status)
   (tabulated-list-init-header))
 
 ;;;###autoload
