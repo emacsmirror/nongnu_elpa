@@ -662,7 +662,8 @@ With a double PREFIX arg, limit results to your own instance."
     (mastodon-tl--show-tag-timeline prefix tag)))
 
 (defun mastodon-tl-tag-prefix-arg (prefix)
-  "Handle PREFIX arg for tag timelines."
+  "Handle PREFIX arg for tag timelines.
+Single prefix = only media, double = local only."
   `(("limit" . ,mastodon-tl--timeline-posts-count)
     ,@(when (equal prefix '(4))
         '(("only_media" . "true")))
@@ -1372,7 +1373,8 @@ LINK-TYPE is the type of link to produce."
 
 (defun mastodon-tl-do-link-action-at-point (pos &optional prefix)
   "Do the action of the link at POS.
-Used for hitting RET on a given link."
+Used for hitting RET on a given link.
+If given, PREFIX is sent to `mastodon-url-lookup' as FORCE arg."
   (interactive "d\nP")
   (let ((link-type (get-text-property pos 'mastodon-tab-stop))
         (cont-thread (mastodon-tl--property 'continued-thread :nomove))
@@ -1437,21 +1439,26 @@ content should be hidden."
   (let ((spoiler (mastodon-tl--field 'spoiler_text toot)))
     (and spoiler (> (length spoiler) 0))))
 
-(defun mastodon-tl--toggle-spoiler-text (position)
-  "Toggle the visibility of the spoiler text at/after POSITION."
+(defun mastodon-tl--toggle-spoiler-text (position &optional state)
+  "Toggle the visibility of the spoiler text at/after POSITION.
+Optionally, set it to STATE, a keyword of either :visible or :invisible."
   (let* ((inhibit-read-only t)
          (spoiler-region (mastodon-tl--find-property-range
                           'mastodon-content-warning-body position nil))
-         (new-state (not (get-text-property (car spoiler-region)
-                                            'invisible))))
+         (new-state (if state
+                        (when (eq state :invisible)
+                          t)
+                      (not (get-text-property (car spoiler-region)
+                                              'invisible)))))
     (if (not spoiler-region)
         (user-error "No spoiler text here")
       (add-text-properties (car spoiler-region) (cdr spoiler-region)
                            (list 'invisible new-state))
       new-state))) ;; return what we set invisibility to
 
-(defun mastodon-tl-toggle-spoiler-text-in-toot ()
-  "Toggle the visibility of the spoiler text in the current toot."
+(defun mastodon-tl-toggle-spoiler-text-in-toot (&optional state)
+  "Toggle the visibility of the spoiler text in the current toot.
+Optionally, set it to STATE, a keyword of either :visible or :invisible."
   (interactive)
   (let* ((toot-range (or (mastodon-tl--find-property-range
                           'item-json (point))
@@ -1467,10 +1474,12 @@ content should be hidden."
                (> (car spoiler-range) (cdr toot-range)))
            (user-error "No content warning text here"))
           (t
-           (mastodon-tl--toggle-spoiler-text (car spoiler-range))))))
+           (mastodon-tl--toggle-spoiler-text (car spoiler-range) state)))))
 
 (defun mastodon-tl-toggle-spoiler-in-thread ()
-  "Toggler content warning for all posts in current thread."
+  "Toggle content warning for all posts in current thread.
+If some items are hidden and some not, toggle them all to the opposite
+of the status of the top item."
   (interactive)
   (let ((thread-p (eq (mastodon-tl--buffer-property 'update-function)
                       'mastodon-tl--thread-do)))
@@ -1478,18 +1487,34 @@ content should be hidden."
         (user-error "Not in a thread")
       (save-excursion
         (goto-char (point-min))
-        (while (not (string= "No more items" ; improve this hack test!
-                             (mastodon-tl-goto-next-item :no-refresh)))
-          (let* ((json (mastodon-tl--property 'item-json :no-move))
-                 (cw (alist-get 'spoiler_text json)))
-            (when (not (string= "" cw))
-              (let ((new-state
-                     (pcase
-                         (mastodon-tl-toggle-spoiler-text-in-toot)
-                       ('t 'folded)
-                       ('nil 'unfolded))))
-                (plist-put mastodon-tl--buffer-spec
-                           'thread-unfolded new-state)))))))))
+        ;; get top item's CW state:
+        (mastodon-tl-goto-next-item :no-refresh)
+        (let* ((json (mastodon-tl--property 'item-json :no-move))
+               (cw (alist-get 'spoiler_text json))
+               ;; FIXME: this would be painless if byline had CW-state prop!
+               (init-state (when (not (string= "" cw)) ;; top item has CW
+                             (save-excursion
+                               (forward-line -1) ;; back into toot body
+                               (if (mastodon-tl--property 'invisible :no-move)
+                                   :invisible
+                                 :visible))))
+               (new-state (if (eq init-state :visible)
+                              'folded
+                            'unfolded)))
+          (goto-char (point-min))
+          (while (not (string= "No more items" ; FIXME: improve this test!
+                               (mastodon-tl-goto-next-item :no-refresh)))
+            (let* ((json (mastodon-tl--property 'item-json :no-move))
+                   (cw (alist-get 'spoiler_text json)))
+              (when (not (string= "" cw))
+                (mastodon-tl-toggle-spoiler-text-in-toot
+                 ;; mandate all items to follow top item's
+                 ;; state:
+                 (if (eq init-state :visible)
+                     :invisible
+                   :visible)))))
+          (plist-put mastodon-tl--buffer-spec
+                     'thread-unfolded new-state))))))
 
 (defun mastodon-tl--spoiler (toot &optional filter)
   "Render TOOT with spoiler message.
@@ -2118,22 +2143,33 @@ TOOT is the data for the quoting toot."
           ((string= state "pending")
            (mastodon-tl--format-quote-non-display "quote pending" .url))
           (t
-           (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri)))
+           (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri))
+                 (nested-quote (alist-get 'quote quoted)))
              (concat
               "\n" (mastodon-tl--quote-symbol-str) "\n"
               ;; author byline without horiz bar/stats:
-              (concat
-               (mastodon-tl--byline-author quoted nil nil :base)
-               " "
-               ;; byline date as link to original:
-               (mastodon-tl-prop-quote (mastodon-tl-format-timestamp parsed-time)
-                                       .uri :nomatch)
-               "\n"
-               ;; quoted text:
-               (if foldable
-                   (mastodon-tl--fold-body quote-rendered
-                                           (mastodon-search--format-heading "click for full toot"))
-                 quote-rendered))))))
+              (mastodon-tl--byline-author quoted nil nil :base)
+              " "
+              ;; byline date as link to original:
+              (mastodon-tl-prop-quote (mastodon-tl-format-timestamp parsed-time)
+                           .uri :nomatch)
+              "\n"
+              ;; quoted text:
+              (if foldable
+                  (mastodon-tl--fold-body quote-rendered
+                               (mastodon-search--format-heading "click for full toot"))
+                quote-rendered)
+              (when nested-quote
+                (propertize
+                 ;; web UI shows handle of nested quote here, but the data
+                 ;; of the outermost quoting toot doesn't contain account
+                 ;; data for the nested quoted toot. it just contains
+                 ;; "quoted_toot_id"
+                 "[quotes another toot]\n"
+                 ;; (format "[quotes toot by %s]"
+                 ;;         (map-nested-elt nested-quote
+                 ;;                         '(quoted_status account acct)))
+                 'face 'font-lock-comment-face))))))
          'line-prefix bar
          'wrap-prefix bar
          'mastodon-content-warning-body (when cw t)
@@ -2153,7 +2189,7 @@ When NO-PROP, don't add properties, just format the string."
        str
      (apply #'propertize str
             (mastodon-tl-quote-props-list url)))
-   "]"))
+   "]\n"))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
 (defun mastodon-tl--change-post-quote-policy ()
@@ -2191,20 +2227,26 @@ Toot must be on you own."
         (mastodon-url-lookup (map-nested-elt quote '(quoted_status uri)))
       (user-error "No quote in this toot?"))))
 
-
 (defun mastodon-tl-view-toot-quotes ()
-  "View the toots that quote the toot at point.
-Also works if a quote toot is at point."
+  "View the toots that quote the toot at point."
   (interactive)
   (mastodon-tl--do-if-item
-   (let ((id ;; quote:
-          (if-let* ((data (alist-get 'quote (mastodon-tl--property 'item-json))))
-              (map-nested-elt data '(quoted_status id))
-            ;; boost or toot:
-            (mastodon-tl--property 'base-item-id :no-move))))
+   (let ((id (mastodon-tl--property 'base-item-id :no-move)))
      (mastodon-tl--init "toot-quotes"
              (format "/statuses/%s/quotes" id)
              'mastodon-tl--timeline nil))))
+
+(defun mastodon-tl-view-quoted-toot-quotes ()
+  "View the toots that also quote the toot quoted by the toot at point."
+  (interactive)
+  (mastodon-tl--do-if-item
+   (if-let* ((data (alist-get 'quote (mastodon-tl--property 'item-json)))
+             (id (map-nested-elt data '(quoted_status id))))
+       (mastodon-tl--init "toot-quotes"
+               (format "/statuses/%s/quotes" id)
+               'mastodon-tl--timeline nil)
+     (user-error "Toot at point doesn't contain a quote?"))))
+
 
 ;;; INSERT TOOTS 2
 
@@ -2403,7 +2445,8 @@ mastodon-content-warning-body."
 
 (defun mastodon-tl--fold-body (body &optional heading)
   "Fold toot BODY if it is very long.
-Folding decided by `mastodon-tl--fold-toots-at-length'."
+Folding decided by `mastodon-tl--fold-toots-at-length'.
+HEADING is a string to make an (un)fold heading with."
   (let* ((invis (get-text-property (1- (length body)) 'invisible body))
          (cw (get-text-property (1- (length body))
                                 'mastodon-content-warning-body body))
@@ -3666,7 +3709,9 @@ tags followed. For a faster alternative, consider
 Returns up to 20 items for every 4 tags followed.
 Pagination (adding more items at bottom of buffer) works, but because we
 do the requests then sort by recency client-side, items will not be in
-strictly reverse chronological order."
+strictly reverse chronological order.
+With a single PREFIX arg, only show posts with media.
+With a double PREFIX arg, limit results to your own instance."
   (interactive "P")
   (if (not mastodon-tl--tags-groups)
       (user-error "Set `mastodon-tl--tags-groups' to view tag group timelines")
@@ -4258,6 +4303,9 @@ NO-BYLINE means just insert toot body, used for announcements."
            ;; so as a fallback, load trending statuses:
            ;; FIXME: this could possibly be a fallback for all timelines not
            ;; just home?
+
+           ;; FIXME: if we have no JSON for erroneous reasons, then we hit
+           ;; this, and trending statuses also loads no JSON:
            (when (string= endpoint "timelines/home")
              (mastodon-search-trending-statuses)))
           ((eq (caar json) 'error)

@@ -204,43 +204,42 @@ When ASK is absent return nil."
           (json-string (buffer-substring-no-properties (point) (point-max))))
       (json-read-from-string json-string))))
 
-(defun mastodon-auth--plstore-token-check (&optional auth-source)
+(defun mastodon-auth--plstore-token-check ()
   "Signal an error if plstore contains unencrypted access-token.
-If AUTH-SOURCE, and if `mastodon-auth-use-auth-source' is non-nil,
-return non-nil if it contains any access token.
 Used to help users switch to the new encrypted auth token flow."
   ;; FIXME: is it poss to move this plstore read to have one less read?
   ;; e.g. inside of `mastodon-client--active-user'? the issue is that
   ;; ideally we want to test "user-" entry, even if fetching "active-user"
   ;; entry, so we would have to re-do the plstore read functions.
-  (when
-      (mastodon-auth--plstore-access-token-member auth-source)
-    (if auth-source
-        (user-error "Auth source storage of tokens is enabled,\
+  (cond
+   ((and mastodon-auth-use-auth-source
+         (mastodon-auth--plstore-access-token-member :secret))
+    (user-error "Auth source storage of tokens is enabled,\
  but there is also an access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and try again.
  If you don't want to use auth sources,\
- also set `mastodon-auth-use-auth-source' to nil.\
- If this message is in error, contact us on the mastodon.el repo")
-      (when mastodon-auth-encrypt-tokens-plstore
-        (user-error "Unencrypted access token in your plstore.\
+ then set `mastodon-auth-use-auth-source' to nil.\
+ If this message is in error, contact us on the mastodon.el repo"))
+   ((and mastodon-auth-encrypt-tokens-plstore
+         (mastodon-auth--plstore-access-token-member))
+    (user-error "Unencrypted access token in your plstore.\
  If you're seeing this message after updating,\
  call `mastodon-forget-all-logins', and log in again.
 Else set `mastodon-auth-encrypt-tokens-plstore' to `nil'.
- If this message is in error, contact us on the mastodon.el repo")))))
+ If this message is in error, contact us on the mastodon.el repo"))))
 
-(defun mastodon-auth--plstore-access-token-member (&optional auth-source)
+(defun mastodon-auth--plstore-access-token-member (&optional secret)
   "Return non-nil if the user entry of the plstore contains :access_token.
-If AUTH-SOURCE, also check if it contains :secret-access_token."
+If SECRET, also for :secret-access_token only."
   (let* ((plstore (plstore-open mastodon-client--token-file))
          (name (concat "user-" (mastodon-client--form-user-from-vars)))
          ;; get alist like plstore.el does, so that keys will display with
          ;; ":secret-" prefix if encrypted:
          (alist (assoc name (plstore--get-merged-alist plstore))))
-    (if (and auth-source mastodon-auth-use-auth-source)
-        (or (member :access_token alist)
-            (member :secret-access_token alist))
+    (if secret
+        (or (member :secret-access_token alist)
+            (member :access_token alist))
       (member :access_token alist))))
 
 (defun mastodon-auth--access-token ()
@@ -250,50 +249,45 @@ Also try to fetch token from `mastodon-auth-use-auth-source' if it is enabled.
 Note that this means it should be possible for a user to copy an
 existing token to their authinfo file manually, and mastodon.el will
 work, with no need for auth flow/JS-capable browser."
-  (cond
-   (mastodon-auth--token-alist
-    ;; user variables are known and initialised.
-    (alist-get mastodon-instance-url
-               mastodon-auth--token-alist nil nil #'string=))
-   ;; if auth source enabled, but we have an access token in plstore,
-   ;; error out and tell user to remove plstore and start over or disable
-   ;; auth source:
-   ((mastodon-auth--plstore-token-check))
-   ;; FIXME: remove :access_token from "active user" when auth-source:
-   ((plist-get (mastodon-client--active-user) :access_token)
-    ;; user variables need to be read from plstore active-user entry.
-    (push (cons mastodon-instance-url
-                (plist-get (mastodon-client--active-user) :access_token))
-          mastodon-auth--token-alist)
-    (alist-get mastodon-instance-url
-               mastodon-auth--token-alist nil nil #'string=))
-   ((null mastodon-active-user)
-    ;; user not aware of 2FA-related changes and has not set
-    ;; `mastodon-active-user'. Make user aware and error out.
-    (mastodon-auth--show-notice mastodon-auth--user-unaware
-                                "*mastodon-notice*")
-    (user-error "Variables not set properly"))
-   ;; Check auth-source for a token:
-   ((and mastodon-auth-use-auth-source
-         ;; nil if we have no entry (i.e. if we fail, don't error out, but
-         ;; continue to auth flow):
-         (mastodon-auth-source-get
-          mastodon-active-user
-          (url-domain
-           (url-generic-parse-url mastodon-instance-url))))
-    ;; if entry token is incorrect, we error in
-    ;; `mastodon-return-account-credentials'
-    (let ((token (cadr
-                  (mastodon-auth-source-get
-                   mastodon-active-user
-                   (url-domain
-                    (url-generic-parse-url mastodon-instance-url))))))
-      (push `(,mastodon-instance-url . ,token) mastodon-auth--token-alist)
-      token))
-   (t
-    ;; user access-token needs to fetched from the server and
-    ;; stored and variables initialised.
-    (mastodon-auth--handle-token-response (mastodon-auth--get-token)))))
+  (let ((host (url-domain
+               (url-generic-parse-url mastodon-instance-url))))
+    (cond
+     (mastodon-auth--token-alist
+      ;; user variables are known and initialised.
+      (alist-get mastodon-instance-url
+                 mastodon-auth--token-alist nil nil #'string=))
+     ;; if auth source enabled, but we have an access token in plstore,
+     ;; error out and tell user to remove plstore and start over or disable
+     ;; auth source:
+     ((mastodon-auth--plstore-token-check))
+     ;; FIXME: remove :access_token from "active user" when auth-source:
+     ((plist-get (mastodon-client--active-user) :access_token)
+      ;; user variables need to be read from plstore active-user entry.
+      (push (cons mastodon-instance-url
+                  (plist-get (mastodon-client--active-user) :access_token))
+            mastodon-auth--token-alist)
+      (alist-get mastodon-instance-url
+                 mastodon-auth--token-alist nil nil #'string=))
+     ((null mastodon-active-user)
+      ;; user not aware of 2FA-related changes and has not set
+      ;; `mastodon-active-user'. Make user aware and error out.
+      (mastodon-auth--show-notice mastodon-auth--user-unaware
+                     "*mastodon-notice*")
+      (user-error "Variables not set properly"))
+     ;; Check auth-source for a token:
+     ((and mastodon-auth-use-auth-source
+           ;; nil if we have no entry (i.e. if we fail, don't error out,
+           ;; but continue to auth flow):
+           (mastodon-auth-source-get mastodon-active-user host))
+      ;; if entry token is incorrect, we error in
+      ;; `mastodon-return-account-credentials'
+      (let ((token (cadr (mastodon-auth-source-get mastodon-active-user host))))
+        (push `(,mastodon-instance-url . ,token) mastodon-auth--token-alist)
+        token))
+     (t
+      ;; user access-token needs to fetched from the server and
+      ;; stored and variables initialised.
+      (mastodon-auth--handle-token-response (mastodon-auth--get-token))))))
 
 (defun mastodon-auth--handle-token-response (response)
   "Add token RESPONSE to `mastodon-auth--token-alist'.
@@ -315,27 +309,43 @@ Handle any errors from the server."
 If CREATE, use TOKEN or prompt for it, and save it if there is no such entry.
 If not CREATE, but only fetching, TOKEN must be non-nil (e.g. a flag) to
 return to return token.
-Return a list of user, password/secret, and the item's save-function."
+Return a list of user, password/secret, and the item's save-function.
+If multiple matching entries are found, try to return entry with a port
+field matching \"mastodon-el\", else just return first entry."
   (let* ((auth-source-creation-prompts
           '((secret . "%u access token: ")))
          (source
-          (car
-           (auth-source-search :host host :user user
-                               :require '(:user :secret)
-                               :secret (if token token nil)
-                               ;; "create" alone doesn't work here!:
-                               :create (if create t nil)))))
+          (auth-source-search :host host :user user
+                              ;; XXX: :secret only works here for
+                              ;; encrypted authinfo!:
+                              :require '(:user :host)
+                              :max 2
+                              :secret (if token token nil)
+                              ;; "create" alone doesn't work here!:
+                              :create (if create t nil)))
+         (source
+          (if (< 1 (length source))
+              ;; if multi entries, try to return entry with :port =
+              ;; mastodon.el:
+              (or (car
+                   (cl-remove-if-not
+                    (lambda (x)
+                      (when-let* ((entry (cl-member :port x)))
+                        (string= "mastodon.el" (plist-get entry :port))))
+                    source))
+                  (car source)) ;; fallback
+            (car source)))) ;; else just get entry
     (when source
       (let ((creds
              `(,(plist-get source :user)
                ,(auth-info-password source)
                ,(plist-get source :save-function))))
-        ;; FIXME: save-function is nil if auth-sources is ~/authinfo:
         (when create ;; call save function:
           (if (functionp (nth 2 creds))
               (funcall (nth 2 creds))
-            (user-error "Unable to save auth-source entry. \
-Create an auth-source entry yourself with token as password")))
+            (warn "Unable to save auth-source entry.
+Create an auth-source entry yourself with token as password.
+Format: machine $instance login $username password $token")))
         creds))))
 
 (defun mastodon-auth-source-token (url handle &optional token create)

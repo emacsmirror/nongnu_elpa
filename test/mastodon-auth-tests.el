@@ -15,11 +15,14 @@
   (let ((mastodon-auth-encrypt-tokens-plstore nil)
         ;; else we are interactively asked to save to ~/authinfo.gpg:
         (mastodon-auth-use-auth-source nil))
-    (should
-     (string=
-      "foo"
-      (mastodon-auth--handle-token-response
-       '(:access_token "foo" :token_type "Bearer" :scope "read write follow" :created_at 0))))))
+    (with-mock
+      ;; ensure no actual POST request (works offline):
+      (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+      (should
+       (string=
+        "foo"
+        (mastodon-auth--handle-token-response
+         '(:access_token "foo" :token_type "Bearer" :scope "read write follow" :created_at 0)))))))
 
 (ert-deftest mastodon-auth--handle-token-response--unknown ()
   "Should throw an error when the response is unparsable."
@@ -86,6 +89,11 @@
       (should-error (mastodon-auth--access-token)))))
 
 (ert-deftest mastodon-auth-plstore-token-check ()
+  "Check that saving token to plstore and fetching works.
+Store with `mastodon-client--store-access-token'.
+Fetch with `mastodon-auth--plstore-access-token-member'.
+We also check that fetching works `mastodon-auth-use-auth-source' is enabled after
+saving, but before fetching."
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
          (mastodon-client--token-file "stubfile.plstore")
@@ -114,19 +122,21 @@
       (let ((mastodon-auth-use-auth-source t))
         (should
          (equal
-          (mastodon-auth--plstore-access-token-member :auth-source)
+          (mastodon-auth--plstore-access-token-member)
           ;; if clause so we can not lose the encrypted plist structure:
           (if mastodon-auth-encrypt-tokens-plstore
               '(:secret-access_token t :username "test8000@mastodon.example"
                                      :instance "https://mastodon.example")
             '(:access_token "token")))))
-      ;; FIXME: ideally we would also mock up a non-encrypted plstore and
-      ;; test against it too, as that's the work we really want
-      ;; `mastodon-auth--plstore-access-token-member' to do
-      ;; but we don't currently have a way to mock one up.
       (delete-file "stubfile.plstore"))))
 
 (ert-deftest mastodon-auth-plstore-token-check-auth-source ()
+  ;; :expected-result :failed
+  "Test that, when `mastodon-auth-use-auth-source',
+`mastodon-client--store-access-token' does not store a token in
+`mastodon-client--token-file'. We call `mastodon-auth--plstore-access-token-member'
+to check if the token is present. To ensure we actually save to auth
+sources, we create a new file then delete it."
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
          (mastodon-client--token-file "fixture/stubfile-auth-source.plstore")
@@ -144,46 +154,101 @@
                :client_secret "secret"
                :access_token "token"))))
     ;; setup plstore: store access token, using auth source:
-    (let ((mastodon-auth-use-auth-source t)
-          (auth-sources "fixture/auth-source-stub"))
+    (let* ((mastodon-auth-use-auth-source t)
+           (auth-source-do-cache nil)
+           (auth-sources '("fixture/auth-info-check"))
+           (auth-source-save-behavior t) ;; disable prompting
+           (file (car auth-sources))
+           (filename (nth 1 (split-string file
+                                          "/"))))
+      (auth-source-forget-all-cached)
+      ;; create auth source file:
+      (find-file-noselect file)
+      ;; save and kill it:
+      (with-current-buffer filename
+        (save-buffer)
+        (kill-buffer filename))
       (with-mock
         (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
         (mastodon-client--store-access-token "token")
         ;; should nil if we don't check with auth source
         ;; because we saved in auth-source instead:
-
-        ;; FIXME: this fails because we currently DO save access-token in
-        ;; plstore even if using auth-source.
         (let ((mastodon-auth-use-auth-source nil))
           (should (equal
                    (mastodon-auth--plstore-access-token-member)
-                   nil))))
-      (delete-file mastodon-client--token-file))))
+                   nil)))
+        ;; NB: if we error in `mastodon-auth-source-get', this won't run:
+        (delete-file mastodon-client--token-file)
+        (delete-file file)))))
 
-(ert-deftest mastodon-auth-auth-source-search ()
+(ert-deftest mastodon-auth-auth-source-search-only ()
+  "Test searching an existing auth-source file.
+We test that fetching works, result is 3-elt list, with elt 2 a token.
+Test also that token is same as fetching it from same file using
+`mastodon-auth-source-token'."
+  ;; :expected-result :failed
   (let* ((mastodon-instance-url "https://mastodon.example")
          (mastodon-active-user "test8000")
-         (auth-source-backend 'netrc)
          (host (url-domain
                 (url-generic-parse-url mastodon-instance-url)))
-         (auth-sources "/home/mouse/code/elisp/mastodon.el/test/fixture/auth-source-stub.gpg")
+         (auth-sources '("fixture/auth-source-search-only"))
          (mastodon-auth-use-auth-source t)
-         (auth-source-debug t)
-         (token "token")
+         (auth-source-do-cache nil)
+         (token "12341234")
          (creds
-          (mastodon-auth-source-get mastodon-active-user host token :create))
-         (epa-file-encrypt-to "02348176F1E0FFC3"))
-    ;; try to save token to unencrypted auth-source:
-    (should (equal 3 ; should return list of user, token, save-fun:
-                   (length creds)))
-    ;; it does so but does not save to our file, so if we save then fetch,
-    ;; we get zilch
+          ;; no :create arg,
+          ;; fetch from manually added to fixture/auth-source-stub
+          (mastodon-auth-source-get mastodon-active-user host token)))
+    ;; should return list of user, token, (empty) save-fun:
+    (should (equal 3 (length creds)))
     (should
-     (not (eq nil (nth 2 creds))))
-    ;; ))
+     (not (eq token (nth 1 creds))))
+    (should
+     (equal token
+            ;; check against `mastodon-auth-source-token' too:
+            (mastodon-auth-source-token mastodon-instance-url
+                           (concat mastodon-active-user "@" host)
+                           :token)))))
 
-    (should
-     (equal "token"
-            (mastodon-auth-source-token mastodon-instance-url mastodon-active-user
-                           token)))
-    ))
+(ert-deftest mastodon-auth-auth-source-save-check ()
+  "Test that we can save an (unencrypted) auth-source entry.
+Test that creating a new entry works.
+Test that doing so returns a three element list, with elt 2 as token and
+elt three is a function."
+  (auth-source-forget-all-cached)
+  (let* ((mastodon-instance-url "https://mastodon.example")
+         (mastodon-active-user "test8000")
+         (host (url-domain
+                (url-generic-parse-url mastodon-instance-url)))
+         (auth-sources '("fixture/auth-source-save-check"))
+         (file (car auth-sources))
+         (filename (nth 1 (split-string file
+                                        "/")))
+         (mastodon-auth-use-auth-source t)
+         (auth-source-do-cache nil)
+         (auth-source-save-behavior t) ;; disable prompting
+         (backup-inhibited t)
+         (token "12341234"))
+    ;; to reliably add an entry to auth-source, we seem to need to create
+    ;; an empty file (deleting is unreliable/doesn't work). this way we
+    ;; know that auth-source won't withhold an entry's save-function:
+    ;; create auth source file:
+    (find-file-noselect file)
+    ;; save and kill it:
+    (with-current-buffer filename
+      (save-buffer)
+      (kill-buffer filename))
+    ;; create entry:
+    (let ((result
+           (mastodon-auth-source-get mastodon-active-user
+                        mastodon-instance-url
+                        token :create)))
+      ;; should return list of user, token, (non-empty) save-fun:
+      (should
+       (= 3 (length result)))
+      (should
+       (equal token (nth 1 result)))
+      ;; third elt should be (save) fun, non-nil:
+      (should
+       (functionp (nth 2 result))))
+    (delete-file file)))

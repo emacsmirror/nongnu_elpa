@@ -244,7 +244,9 @@ Takes its form from `window-configuration-to-register'.")
   "The text of the toot being composed.")
 
 (defvar-local mastodon-toot-quote-policy nil
-  "The quote policy for the current toot.")
+  "The quote policy for the current toot.
+Value must be a symbol, and a member of `mastodon-profiles-quote-policy-types', i.e.
+public, followers, or nobody.")
 
 (defvar-local mastodon-toot-quote-id nil)
 
@@ -263,19 +265,23 @@ send.")
    (group-n 2 ; include domain
      (group-n 4 ; exclude domain
        ?@ ; first @
-       (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; username
+       (* (any ?- ?_ ?. alnum))) ; username
      (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
    (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
-      (group-n 2 ?# (+ (any "_" "A-Z" "a-z" "0-9")))
+      (group-n 2 ?#
+               ;; mandate at least 1 non-digit:
+               (zero-or-more (any "-_" alnum))
+               (one-or-more (not (any space digit)))
+               (zero-or-more (any "-_" alnum)))
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-emoji-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
       (group-n 2 ?: ; opening :
-               (+ (any "A-Z" "a-z" "0-9" "_"))
+               (+ (any "-_" alnum))
                (? ?:)) ; closing :
       word-boundary)) ; boundary
 
@@ -1306,9 +1312,14 @@ With prefix ARG, read a visibility type in the minibuffer."
             (cond ((string= mastodon-toot--visibility "public")
                    "unlisted")
                   ((string= mastodon-toot--visibility "unlisted")
-                   "private")
+                   ;; XXX: followers-only means no quoting:
+                   (progn (setq mastodon-toot-quote-policy 'nobody)
+                          "private"))
                   ((string= mastodon-toot--visibility "private")
-                   "direct")
+                   (progn
+                     (setq mastodon-toot-quote-policy
+                           (mastodon-toot-default-quote-policy))
+                     "direct"))
                   (t
                    "public"))))
     (mastodon-toot--update-status-fields)))
@@ -1324,19 +1335,24 @@ Return its two letter ISO 639 1 code."
     (message "Language set to %s" choice)
     (mastodon-toot--update-status-fields)))
 
+(defun mastodon-toot-default-quote-policy ()
+  "Return the quote policy set in user preferences."
+  (mastodon-profile--get-preferences-pref
+   'posting:default:quote_policy))
+
 (defun mastodon-toot-set-quote-policy ()
   "Set quote policy for the current toot."
   (interactive)
-  (let* ((default (alist-get 'posting:default:quote_policy
-                             (mastodon-http--get-json
-                              (mastodon-http--api "preferences"))))
-         (choice (completing-read
-                  (format "Quote policy for this toot [default: %s]"
-                          default)
-                  mastodon-profiles-quote-policy-types)))
-    (setq mastodon-toot-quote-policy choice)
-    (message (concat "Quote policy for this toot: " choice))
-    (mastodon-toot--update-status-fields)))
+  (if (string= mastodon-toot--visibility "private")
+      (user-error "Followers-only posts disallow quoting")
+    (let* ((default (mastodon-toot-default-quote-policy))
+           (choice (completing-read
+                    (format "Quote policy for this toot [default: %s]"
+                            default)
+                    mastodon-profiles-quote-policy-types)))
+      (setq mastodon-toot-quote-policy choice)
+      (message (concat "Quote policy for this toot: " choice))
+      (mastodon-toot--update-status-fields))))
 
 
 ;;; ATTACHMENTS
@@ -1651,8 +1667,12 @@ If TRANSIENT, we are called from a transient, so nil
          (visibility (mastodon-tl--field 'visibility json)))
     (if (string=  user-policy "denied")
         (user-error "You don't have permission to quote this toot")
-      (when (or (not (string=  user-policy "unknown"))
-                (y-or-n-p "Quote permission unknown. Proceed?"))
+      (when (or
+             (and (string= user-policy "manual")
+                  (y-or-n-p "Quote requires author's approval. Proceed?"))
+             (and (string=  user-policy "unknown")
+                  (y-or-n-p "Quote permission unknown. Proceed?"))
+             (string=  user-policy "automatic"))
         (mastodon-toot--compose-buffer nil nil nil nil nil
                           quote-id json visibility)))))
 
@@ -2192,7 +2212,8 @@ VISIBILITY is the toot's visibility."
                    ;; if a user hits reply while a compose buffer is already
                    ;; open, we really ought to wipe it all and start over.
                    (switch-to-buffer-other-window buffer-exists)
-                   (if (not (y-or-n-p "Overwrite existing compose buffer?"))
+                   (if (and  mastodon-toot-current-toot-text ;; only ask if buffer not empty
+                             (not (y-or-n-p "Overwrite existing compose buffer?")))
                        (user-error "Aborting")
                      (kill-buffer-and-window)
                      (get-buffer-create buffer-name))))
@@ -2215,6 +2236,9 @@ VISIBILITY is the toot's visibility."
               ;; use toot visibility setting from the server:
               (mastodon-profile--get-source-value 'privacy)
               "public")) ; fallback
+    ;; set quote to user preference:
+    (setq mastodon-toot-quote-policy
+          (mastodon-toot-default-quote-policy))
     ;; default language:
     ;; NB: this is not necessarily set in
     ;; `mastodon-profile-credential-account' nor in

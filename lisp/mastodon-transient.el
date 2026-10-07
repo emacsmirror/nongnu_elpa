@@ -318,24 +318,29 @@ Do not add more than the server's maximum setting."
   (mastodon-toot-clear-poll :transient)
   (transient-reset))
 
+(defun mastodon-transient-poll-choices (args)
+  "Return the poll choices from ARGS, without other options."
+  (cl-remove-if
+   (lambda (x)
+     (member (car x) '(multi expiry hide)))
+   args))
+
 (transient-define-suffix mastodon-create-poll-done (args)
   "Finish setting poll details."
   :transient 'transient--do-exit
   (interactive (list (transient-args 'mastodon-create-poll)))
-  (let* ((options (member-if
-                   (lambda (x)
-                     (eq (car x) 'one))
-                   args))
-         (opt-vals (cl-loop for x in options
+  (let* ((opts (mastodon-transient-poll-choices args))
+         (opt-vals (cl-loop for x in opts
                             collect (cdr x)))
          (lengths (mapcar #'length opt-vals))
-         (vals (cl-remove 'nil
-                          (cl-loop for x in args
-                                   collect (cdr x))))
+         (all-vals (cl-remove 'nil
+                              (cl-loop for x in args
+                                       collect (cdr x))))
          (opts-count (length (cl-remove 'nil opt-vals))))
     ;; this way of checking gets annoying if we want to just cancel out of
     ;; the poll (but to actually cancel user should C-g, not C-c C-c):
-    (if (or (and (< 50 (apply #'max lengths))
+    (if (or (and lengths
+                 (< 50 (apply #'max lengths))
                  (not (y-or-n-p "Options longer than server max. Proceed? ")))
             (and (not (alist-get 'expiry args))
                  (not (y-or-n-p "No expiry. Proceed? ")))
@@ -345,7 +350,7 @@ Do not add more than the server's maximum setting."
                  (not (y-or-n-p "More options than server max. Proceed? "))))
         (call-interactively #'mastodon-create-poll)
       ;; if we are called with no poll data, do not set:
-      (unless (not vals)
+      (unless (not all-vals)
         ;; we set `mastodon-toot-poll' here not `tp-transient-settings'
         ;; as that is our var outside of our transient:
         (setq mastodon-toot-poll
