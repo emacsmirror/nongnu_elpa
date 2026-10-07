@@ -272,7 +272,10 @@ send.")
 (defvar mastodon-toot-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
       (group-n 2 ?#
-               (+ (any "-_" alnum)))
+               ;; mandate at least 1 non-digit:
+               (zero-or-more (any "-_" alnum))
+               (one-or-more (not digit))
+               (zero-or-more (any "-_" alnum)))
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-emoji-regex
