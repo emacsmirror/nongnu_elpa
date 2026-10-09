@@ -386,13 +386,50 @@ The symbol `none' means they do not.  Encoded words need it, and so does raw
 
 (fset 'vm-mime-B-decode-region 'vm-mime-base64-decode-region)
 
-(defun vm-mime-Q-encode-region (start end)
+(defconst vm-mime-Q-escaped-characters "?_"
+  "The characters quoted-printable leaves that Q encoding may not carry.
+RFC 2047 section 4.2 has the equals sign, the question mark and the
+underscore written as =XX.  Quoted-printable does the equals sign for itself;
+a question mark left bare ends the encoded word where it stands, and an
+underscore left bare comes back as a space.")
+
+(defconst vm-mime-Q-escaped-phrase-characters "^-A-Za-z0-9!*+/ "
+  "The characters Q encoding may not carry bare in a phrase, as a class body.
+RFC 2047 section 5(3) allows only letters, digits and the characters
+! * + - / in an encoded word standing where a display name does, so
+everything else is written as =XX.  A space is not in this set because
+`vm-mime-Q-encode-region' writes it as an underscore, which the same
+section allows.")
+
+(defun vm-mime-Q-escape-region (start end chars)
+  "Write =XX for each character between START and END that CHARS picks out.
+CHARS is the body of a regexp character class.  Quoted-printable has already
+written =XX for the equals sign and for every octet outside ASCII, so those
+sequences are stepped over whole and only the plain characters left among
+them are escaped."
+  (save-excursion
+    (goto-char start)
+    (while (re-search-forward
+	    (concat "=[0-9A-Fa-f][0-9A-Fa-f]\\|\\([" chars "]\\)") end t)
+      (when (match-beginning 1)
+	(replace-match (format "=%02X" (char-after (match-beginning 1)))
+		       t t nil 1)))))
+
+(defun vm-mime-Q-encode-region (start end &optional phrase)
+  "Q-encode the region from START to END as the body of an encoded word.
+PHRASE non-nil where that word will stand in an address display name, where
+RFC 2047 section 5(3) allows fewer characters bare than elsewhere.  Returns
+the length of the encoded region."
   (let ((buffer-read-only nil)
-	(val))
-    (setq val (vm-mime-qp-encode-region start end t)) ; may modify buffer
-    (subst-char-in-region start (min end (point-max))
+	(end (copy-marker end t)))
+    (vm-mime-qp-encode-region start end t) ; may modify buffer
+    (vm-mime-Q-escape-region start end (if phrase
+					   vm-mime-Q-escaped-phrase-characters
+					 vm-mime-Q-escaped-characters))
+    (subst-char-in-region start (min (marker-position end) (point-max))
                           (string-to-char " ") ?_ t)
-    val ))
+    (prog1 (- (marker-position end) start)
+      (set-marker end nil))))
 
 (defun vm-mime-B-encode-region (start end)
   (vm-mime-base64-encode-region start end nil t))
@@ -6513,9 +6550,10 @@ That section also sets a limit of 998 that a line MUST NOT exceed.  This is
 the smaller, softer one, which VM aims for by folding; a header with a single
 unbreakable run longer than this exceeds it and cannot be helped.")
 
-(defun vm-mime-encoded-word-payload (text coding encoding)
+(defun vm-mime-encoded-word-payload (text coding encoding &optional phrase)
   "TEXT encoded for the body of an RFC 2047 word, without the wrapper.
-CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'."
+CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'.
+PHRASE non-nil where the word will stand in an address display name."
   (with-temp-buffer
     (insert text)
     (when (and coding (not (eq coding 'no-conversion)))
@@ -6529,17 +6567,18 @@ CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'."
     ;; the encoded word where it stands.
     (let ((end (copy-marker (point-max) t)))
       (if (eq encoding 'Q)
-	  (vm-mime-Q-encode-region (point-min) end)
+	  (vm-mime-Q-encode-region (point-min) end phrase)
 	;; B-encoding, so that no line break is inserted: a break inside an
 	;; encoded word would end it.
 	(vm-mime-base64-encode-region (point-min) end nil t))
       (set-marker end nil))
     (buffer-string)))
 
-(defun vm-mime-encoded-word (text charset coding encoding)
-  "TEXT as one whole RFC 2047 encoded word."
+(defun vm-mime-encoded-word (text charset coding encoding &optional phrase)
+  "TEXT as one whole RFC 2047 encoded word.
+PHRASE non-nil where the word will stand in an address display name."
   (concat "=?" charset "?" (format "%s" encoding) "?"
-	  (vm-mime-encoded-word-payload text coding encoding)
+	  (vm-mime-encoded-word-payload text coding encoding phrase)
 	  "?="))
 
 (defun vm-mime-encoded-word-budget (charset encoding)
@@ -6547,7 +6586,8 @@ CODING is the coding system for the charset, ENCODING the symbol `Q' or `B'."
   (- vm-mime-encoded-word-limit
      (length (vm-mime-encoded-word "" charset nil encoding))))
 
-(defun vm-mime-split-for-encoded-words (text charset coding encoding)
+(defun vm-mime-split-for-encoded-words (text charset coding encoding
+					     &optional phrase)
   "TEXT split into the pieces that each fit in one encoded word.
 Split between characters, never inside one: a piece is encoded on its own, so
 a multibyte character cut in half would encode as two invalid ones.
@@ -6561,7 +6601,8 @@ rather than dropped."
 	(piece-length 0))
     (dolist (char (string-to-list text))
       (let* ((one (char-to-string char))
-	     (cost (length (vm-mime-encoded-word-payload one coding encoding))))
+	     (cost (length (vm-mime-encoded-word-payload
+			    one coding encoding phrase))))
 	(when (and (> piece-length 0) (> (+ piece-length cost) budget))
 	  (push piece pieces)
 	  (setq piece "" piece-length 0))
@@ -6571,31 +6612,43 @@ rather than dropped."
       (push piece pieces))
     (nreverse pieces)))
 
-(defun vm-mime-encoded-words (text charset coding encoding)
+(defun vm-mime-encoded-words (text charset coding encoding &optional phrase)
   "TEXT as one or more RFC 2047 encoded words, none over the limit.
 Several of them are written next to each other, separated by a space.  That
 is lossless: RFC 2047 section 6.2 has a decoder drop the whitespace between
 two adjacent encoded words, so the text comes back as it went in.  It is also
-where a folder may break the line."
-  (mapconcat (lambda (piece) (vm-mime-encoded-word piece charset coding encoding))
-	     (vm-mime-split-for-encoded-words text charset coding encoding)
+where a folder may break the line.
+
+PHRASE non-nil where the words will stand in an address display name."
+  (mapconcat (lambda (piece)
+	       (vm-mime-encoded-word piece charset coding encoding phrase))
+	     (vm-mime-split-for-encoded-words text charset coding encoding phrase)
 	     " "))
 
-(defun vm-mime-encode-words (&optional encoding)
+(defun vm-mime-encode-words-encoding (&optional encoding)
+  "The encoding to use for the words of the current buffer, `Q' or `B'.
+ENCODING, or `vm-mime-encode-headers-type' when it is nil.  A regexp value
+picks base64 where it matches what is in the buffer and quoted-printable
+where it does not; a symbol is itself the answer, so this may be called
+again on what it returned."
+  (setq encoding (or encoding vm-mime-encode-headers-type))
+  (if (not (stringp encoding))
+      encoding
+    (save-excursion
+      (goto-char (point-min))
+      (if (re-search-forward encoding (point-max) t) 'B 'Q))))
+
+(defun vm-mime-encode-words (&optional encoding phrase)
   "MIME encode all words in the current buffer.
 The optional argument ENCODING can be the symbol `Q' or `B' (for
 quoted-printable and base64 respectively).
-If none is specified, quoted-printable is used."
-  (goto-char (point-min))
+If none is specified, quoted-printable is used.
 
-  ;; find right encoding 
-  (setq encoding (or encoding vm-mime-encode-headers-type))
-  (save-excursion
-    (when (stringp encoding)
-      (setq encoding 
-            (if (re-search-forward encoding (point-max) t)
-                'B
-              'Q))))
+PHRASE non-nil where the buffer holds the value of an address header, so
+that what is encoded stands in a display name and RFC 2047 section 5(3)
+allows it fewer characters bare."
+  (setq encoding (vm-mime-encode-words-encoding encoding))
+  (goto-char (point-min))
   ;; now encode the words 
   (let ((case-fold-search nil)
         start end charset coding)
@@ -6608,7 +6661,7 @@ If none is specified, quoted-printable is used."
       ;; does not: RFC 2047 puts a limit of 75 on each (emacs-vm/vm#794).
       (let ((words (vm-mime-encoded-words
 		    (buffer-substring-no-properties start end)
-		    charset coding encoding)))
+		    charset coding encoding phrase)))
 	;; Insert first and delete after, not the other way about.  A marker
 	;; sitting at the end of this run -- `body-start' in
 	;; `vm-mime-encode-headers' is one -- collapses to START when the
@@ -6623,12 +6676,83 @@ If none is specified, quoted-printable is used."
 	(delete-region (point) end))
       (set-marker end nil))))
 
+(defconst vm-mime-quoted-string-regexp
+  "\"\\(\\(?:[^\"\\]\\|\\\\.\\)*\\)\""
+  "A regexp matching an RFC 5322 quoted string, its contents in group 1.
+A backslash quotes the character after it, so a quotation mark written that
+way does not end the string.")
+
+(defun vm-mime-quoted-string-contents (string)
+  "The text inside the quoted STRING, unfolded and with its escapes undone.
+RFC 5322 section 3.2.4 has a backslash stand for the character after it, and
+section 2.2.3 has a line break followed by whitespace stand for the
+whitespace alone."
+  (replace-regexp-in-string
+   "\\\\\\(.\\)" "\\1"
+   (replace-regexp-in-string "\n[ \t]+" " " string t t)
+   t))
+
+(defun vm-mime-encode-phrase (text encoding)
+  "TEXT as the RFC 2047 encoded words of an address display name.
+ENCODING is the symbol `Q' or `B'.  The charset is chosen for TEXT alone,
+which is what `vm-mime-encode-words' does for a run of words."
+  (with-temp-buffer
+    (insert text)
+    (let ((charset (vm-determine-proper-charset (point-min) (point-max))))
+      (vm-mime-encoded-words text charset (vm-mime-charset-to-coding charset)
+			     encoding t))))
+
+(defun vm-mime-encode-quoted-phrases (&optional encoding)
+  "Encode every quoted display name in the current buffer that holds non-ASCII.
+The quotation marks come off and the name is encoded whole.  RFC 2047
+section 5 forbids an encoded word inside a quoted string, and an encoded
+word is itself an atom that the address parser reads as the display name;
+leaving the quotes on put one of them inside the encoded word, and nothing
+downstream could parse the address (emacs-vm/vm#909).
+
+The name is encoded whole and not word by word because what made it need
+quoting, a comma or a period or a colon, is a character the address parser
+acts on where it stands bare; RFC 2047 section 5(3) has those written as
+=XX inside the encoded word instead.
+
+A quoted name that is all ASCII is left exactly as it is: there the quotes
+are what makes it safe, and nothing needs encoding."
+  (setq encoding (vm-mime-encode-words-encoding encoding))
+  (goto-char (point-min))
+  (while (re-search-forward vm-mime-quoted-string-regexp nil t)
+    (let ((start (match-beginning 0))
+	  (end (copy-marker (match-end 0) t))
+	  (text (vm-mime-quoted-string-contents (match-string 1))))
+      ;; The positions before anything else: encoding the name matches regexps
+      ;; of its own, and the match data this search left is gone by then.
+      (when (and (string-match "[^\x0-\x7f]" text)
+		 ;; A quoted string followed by @ is the local part of an
+		 ;; address and not a display name.  RFC 2047 reaches no part
+		 ;; of an addr-spec, so there is nothing to be done with one.
+		 (not (eq (char-after end) ?@)))
+	;; Insert first and delete after, so that a marker sitting at the end
+	;; of the header is carried past the new text rather than collapsing
+	;; to START, as `vm-mime-encode-words' does for the same reason.
+	(let ((words (vm-mime-encode-phrase text encoding)))
+	  (goto-char start)
+	  (insert words)
+	  (delete-region (point) end)))
+      (set-marker end nil))))
+
 ;;;###autoload
 (defun vm-mime-encode-words-in-string (string &optional _encoding)
   (and string
        (vm-with-string-as-temp-buffer 
 	(vm-substring-no-properties string 0)
 	'vm-mime-encode-words)))
+
+(defun vm-mime-address-header-p (name)
+  "Whether the header called NAME carries a list of addresses.
+`vm-mime-address-headers-regexp' names them."
+  (let ((case-fold-search t))
+    (and (string-match (concat "\\`\\(?:" vm-mime-address-headers-regexp "\\)\\'")
+                       name)
+         t)))
 
 (defun vm-mime-encode-headers ()
   "Encodes the headers of a message.
@@ -6650,7 +6774,7 @@ adjacent encoded words is dropped."
     (let ((headers (concat "^\\(" vm-mime-encode-headers-regexp "\\):"))
           (case-fold-search nil)
           body-start
-          start end)
+          start end phrase)
       (goto-char (point-min))
       (search-forward (concat "\n" mail-header-separator "\n"))
       (setq body-start (vm-marker (match-beginning 0)))
@@ -6658,7 +6782,11 @@ adjacent encoded words is dropped."
       
       (while (let ((case-fold-search t))
 	       (re-search-forward headers body-start t))
-        (goto-char (match-end 0))
+        ;; The name before point moves: `vm-mime-address-header-p' matches a
+        ;; string and so replaces the match data this search left.
+        (let ((name (match-string 1)))
+          (goto-char (match-end 0))
+          (setq phrase (vm-mime-address-header-p name)))
         (setq start (point))
         (when (not (looking-at "\\s-"))
           (insert " ")
@@ -6674,7 +6802,13 @@ adjacent encoded words is dropped."
                      t)))
         (save-restriction
          (narrow-to-region start end)
-         (vm-mime-encode-words))
+         (let ((encoding (vm-mime-encode-words-encoding)))
+           ;; An address header first: a quoted display name holding non-ASCII
+           ;; has to lose its quotes, and encoding its words where they stand
+           ;; would put one of them inside an encoded word.
+           (when phrase
+             (vm-mime-encode-quoted-phrases encoding))
+           (vm-mime-encode-words encoding phrase)))
         ;; and fold what is now there, counting the header name, which is part
         ;; of the first line (emacs-vm/vm#794)
         (vm-mime-fold-header (save-excursion (goto-char start)

@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
+  * **An addressee whose name is in quotation marks can be sent to**
+    (emacs-vm/vm#909).  `To: "Göran Uddeborg" <goeran@uddeborg.se>` could
+    not: the words of the name were encoded where they stood, which put the
+    opening quotation mark inside the encoded word and left the closing one
+    loose after it, and the send stopped with `Invalid data for rfc2047
+    encoding`.  RFC 2047 section 5 forbids an encoded word inside a quoted
+    string, so the quotation marks now come off and the whole name is
+    encoded, including any comma or period that made it need quoting.
+
+    The characters that section 4.2 reserves inside an encoded word are
+    written as =XX now too.  An underscore went out bare and came back as a
+    space, so a Subject of `a_ö` was read as `a ö`; a question mark went out
+    bare, which ends the encoded word for a reader that follows the grammar.
+
   * **Gathering mail takes a file of another type, and takes a single
     message** (emacs-vm/vm#908).  `C-u M-x vm-get-new-mail` asks for a file
     to gather from.  It used to refuse one whose folder type differed from

@@ -5536,6 +5536,132 @@ It used to answer nil, and VM then said it had no handler for text/html."
     (let ((vm-mime-text/html-handler 'auto-select))
       (should (eq 'shr (vm-mime-text/html-handler))))))
 
+;;; A display name in quotation marks (emacs-vm/vm#909)
+
+;; RFC 2047 section 5 forbids an encoded word inside a quoted string, and
+;; section 5(3) allows it fewer characters bare in a phrase than elsewhere.
+;; Encoding the words of an address header where they stood put a quotation
+;; mark inside the encoded word, and what came out was no longer an address.
+
+(defun vm-mime-test--encode-address-header (text)
+  "The value `vm-mime-encode-headers' writes for a To of TEXT.
+Unfolded and with the header name off, which is what goes on the wire."
+  (replace-regexp-in-string
+   "\\`To: ?" ""
+   (vm-mime-test--unfold
+    (let ((mail-header-separator "--text follows this line--"))
+      (with-temp-buffer
+        (insert "To: " text "\n" mail-header-separator "\nbody\n")
+        (vm-mime-encode-headers)
+        (string-trim-right
+         (buffer-substring-no-properties
+          (point-min)
+          (progn (goto-char (point-min))
+                 (re-search-forward
+                  (concat "^" (regexp-quote mail-header-separator)))
+                 (match-beginning 0)))
+         "\n"))))))
+
+(defun vm-mime-test--parse-addresses (value)
+  "VALUE parsed into addresses by Emacs\\='s own parser, which VM did not write."
+  (require 'mail-parse)
+  (mail-header-parse-addresses value t))
+
+(ert-deftest vm-mime-test-a-quoted-display-name-loses-its-quotes ()
+  "A quoted display name holding non-ASCII is encoded whole, quotes off.
+The reported header (emacs-vm/vm#909) went out as
+=?iso-8859-1?Q?\"G=F6ran?= Uddeborg\" <goeran@uddeborg.se>, with the opening
+quotation mark inside the encoded word and the closing one loose after it."
+  (let ((value (vm-mime-test--encode-address-header
+                "\"Göran Uddeborg\" <goeran@uddeborg.se>")))
+    (should-not (string-match-p "\"" value))
+    (should (equal (vm-mime-test--parse-addresses value)
+                   (list value)))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value)
+                   "Göran Uddeborg <goeran@uddeborg.se>"))))
+
+(ert-deftest vm-mime-test-sending-a-quoted-display-name-does-not-raise ()
+  "`mail-send' encodes each To address to look for a suspicious one.
+That is where emacs-vm/vm#909 was reported from: `rfc2047-encode-string'
+raised `Invalid data for rfc2047 encoding' on what VM had written, and the
+message was never sent."
+  (require 'rfc2047)
+  (dolist (text '("\"Göran Uddeborg\" <goeran@uddeborg.se>"
+                  "\"Uddeborg, Göran\" <goeran@uddeborg.se>"
+                  "\"Göran\" <a@b>, \"Åsa\" <c@d>"))
+    (let ((value (vm-mime-test--encode-address-header text)))
+      (dolist (address (vm-mime-test--parse-addresses value))
+        ;; should not raise
+        (should (stringp (rfc2047-encode-string address)))))))
+
+(ert-deftest vm-mime-test-a-comma-in-a-display-name-stays-in-it ()
+  "A quoted display name holding a comma stays one address.
+The quotation marks are what made the comma safe, so once they come off the
+comma has to be written as =2C: left bare it is where the address parser
+splits the header, and one addressee becomes two."
+  (let ((value (vm-mime-test--encode-address-header
+                "\"Uddeborg, Göran\" <goeran@uddeborg.se>")))
+    (should (equal (length (vm-mime-test--parse-addresses value)) 1))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value)
+                   "Uddeborg, Göran <goeran@uddeborg.se>"))))
+
+(ert-deftest vm-mime-test-an-ascii-display-name-keeps-its-quotes ()
+  "Nothing is done to a quoted display name that needs no encoding.
+There the quotation marks are what makes a comma or a period in the name
+safe, and taking them off would break the address."
+  (dolist (text '("\"Ada Lovelace\" <ada@example.com>"
+                  "\"Lovelace, Ada\" <ada@example.com>"))
+    (should (equal (vm-mime-test--encode-address-header text) text))))
+
+(ert-deftest vm-mime-test-a-quoted-local-part-is-not-a-display-name ()
+  "A quoted string before an @ is the local part of an address, not a name.
+Taking its quotes off would leave an encoded word where an addr-spec has to
+be, so it is left to the ordinary word encoding and comes back as it went
+in.  A local part outside ASCII cannot be sent either way: RFC 2047 reaches
+no part of an address, and it takes an SMTPUTF8 server to carry one."
+  (let ((value (vm-mime-test--encode-address-header "\"Göran\"@example.com")))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value)
+                   "\"Göran\"@example.com"))))
+
+(ert-deftest vm-mime-test-a-quotation-mark-in-a-subject-is-left-alone ()
+  "A Subject is not an address header, so a quotation mark in it is text.
+Only a header whose value is a list of addresses has a display name in it;
+`vm-mime-address-headers-regexp' names them."
+  (should (equal (vm-mime-test--decode-as-rfc2047
+                  (vm-mime-test--encode-subject "\"Löbe, Ada\" is the name"))
+                 "\"Löbe, Ada\" is the name")))
+
+;;; Characters RFC 2047 section 4.2 reserves inside a Q encoded word
+
+(ert-deftest vm-mime-test-q-encoding-escapes-the-underscore ()
+  "An underscore beside non-ASCII is written =5F, not left bare.
+RFC 2047 section 4.2 has an underscore stand for a space, so one left bare
+comes back as a space: `a_ö' read back as `a ö'."
+  (let ((value (vm-mime-test--encode-subject "a_ö b")))
+    (should (string-match-p "=5F" value))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value) "a_ö b"))
+    (should (equal (vm-mime-test--decode-as-vm value) "a_ö b"))))
+
+(ert-deftest vm-mime-test-q-encoding-escapes-the-question-mark ()
+  "A question mark beside non-ASCII is written =3F, not left bare.
+Section 4.2 reserves it: a question mark in the payload is where a reader
+that follows the grammar ends the encoded word."
+  (let ((value (vm-mime-test--encode-subject "Göran? really")))
+    (should (string-match-p "=3F" value))
+    (should-not (string-match-p "\\?\\?=" value))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value) "Göran? really"))
+    (should (equal (vm-mime-test--decode-as-vm value) "Göran? really"))))
+
+(ert-deftest vm-mime-test-a-phrase-escapes-the-characters-it-may-not-carry ()
+  "In an address header the encoded word carries only what section 5(3) allows.
+Letters, digits and `!*+-/' stand bare; a period does not, and one left bare
+is a character the address parser acts on where it stands."
+  (let ((value (vm-mime-test--encode-address-header "Ö. Uddeborg <a@b>")))
+    (should (string-match-p "=2E" value))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value)
+                   "Ö. Uddeborg <a@b>"))))
+
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

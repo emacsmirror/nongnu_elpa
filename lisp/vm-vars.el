@@ -2520,6 +2520,15 @@ outside US-ASCII, which this regexp matches for itself."
   :group 'vm-mime
   :type '(regexp))
 
+(defconst vm-mime-address-headers-regexp
+  "\\(Resent-\\)?\\(From\\|Sender\\|Reply-To\\|To\\|CC\\|BCC\\)\\|Mail-Followup-To\\|Mail-Reply-To\\|Disposition-Notification-To"
+  "A regexp matching the headers whose value is a list of addresses.
+What is encoded in one of these stands where a display name does, and RFC
+2047 section 5(3) allows an encoded word fewer characters bare there than
+elsewhere; a display name in quotation marks has to lose them before it can
+be encoded at all.  Which headers carry addresses is fixed by RFC 5322, so
+this is not an option.")
+
 (defcustom vm-mime-encode-headers-type 'Q
   "*The encoding to use for the words of a header, Q or B.
 Q is quoted-printable, which leaves the ASCII part of the word readable to
