@@ -419,6 +419,26 @@ cannot be determined."
          (jabber-mam--page-failed query))
        (signal (car err) (cdr err))))))
 
+(defun jabber-mam--message-identity (jc query inner-msg archive-id)
+  "Return accepted QUERY's identity for INNER-MSG and ARCHIVE-ID on JC.
+A room archive UID supplies missing room identity only for an owned query
+whose exact target is the forwarded message's room.  The caller must have
+validated the outer sender.  Explicit room stanza IDs take precedence;
+never promote a personal or foreign archive UID to room identity."
+  (let* ((archive (or (plist-get query :to)
+                      (jabber-connection-bare-jid jc)))
+         (identity (jabber-db--message-identity inner-msg archive archive-id)))
+    (when (and (not (plist-get identity :room-id))
+               (jabber-mam--current-query-p jc query)
+               (equal (jabber-xml-get-attribute inner-msg 'type) "groupchat")
+               (stringp archive-id) (not (string-empty-p archive-id))
+               (plist-get query :to)
+               (equal (plist-get query :to)
+                      (jabber-jid-user
+                       (jabber-xml-get-attribute inner-msg 'from))))
+      (setq identity (plist-put identity :room-id archive-id)))
+    identity))
+
 (defun jabber-mam--process-owned-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
@@ -463,22 +483,22 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                  (jabber-db--extract-occupant-id inner-msg)
                  (plist-get fields :our-jid) peer nil)))
              (:store
-              (let ((jabber-db-message-thread-stored-functions nil))
+              (let ((jabber-db-message-thread-stored-functions nil)
+                    (identity (jabber-mam--message-identity
+                               jc query inner-msg archive-id)))
                 (jabber-db-store-message
                  (plist-get fields :our-jid) peer
                  (plist-get fields :direction) (plist-get fields :type)
                  body timestamp (jabber-jid-resource (plist-get fields :from))
                  (plist-get fields :stanza-id)
                  (if (equal (plist-get fields :type) "groupchat")
-                     (plist-get (jabber-db--message-identity inner-msg) :room-id)
+                     (plist-get identity :room-id)
                    archive-id)
                  (jabber-db--extract-occupant-id inner-msg)
                  (plist-get fields :oob-entries) encrypted
                  (jabber-db--extract-reply-fields inner-msg)
                  (jabber-db--extract-thread-fields inner-msg)
-                 (jabber-db--message-identity
-                  inner-msg (or (plist-get query :to)
-                                (plist-get fields :our-jid)) archive-id)))))
+                 identity))))
            (jabber-mam--mark-dirty jc peer (plist-get fields :type))
            (setcdr (cdr xml-data) nil))
           (:unwrap
