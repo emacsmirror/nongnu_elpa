@@ -1510,9 +1510,17 @@ the timer-based connect and readiness flow without real timers.")
 (defun hermes-dashboard-transport--fail-ready (client message)
   "Report MESSAGE for CLIENT, reject its readiness, and release its resources.
 Used when the connection or `gateway.ready' handshake fails asynchronously."
-  (hermes-dashboard-transport-stop
-   client message
-   (list :type 'error :event "jsonrpc.error" :content message)))
+  (let ((message
+         (if (and (hermes-dashboard-transport-client-auth-method client)
+                  (hermes-dashboard-transport--loopback-host-p
+                   (hermes-dashboard-transport-client-host client)))
+             (concat message
+                     "; this dashboard is externally managed: check its service "
+                     "and reconnect (Emacs will not start it)")
+           message)))
+    (hermes-dashboard-transport-stop
+     client message
+     (list :type 'error :event "jsonrpc.error" :content message))))
 
 (defun hermes-dashboard-transport--generation-live-p (client generation)
   "Return non-nil when GENERATION still owns CLIENT startup work."

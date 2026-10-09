@@ -679,6 +679,28 @@
                            (plist-get plist :redacted-url)))
     (should (equal '("SEKRIT") (plist-get plist :secrets)))))
 
+(ert-deftest hermes-dashboard-external-local-startup-failure-never-spawns ()
+  "Failed service attachment settles with a hint, never an editor child."
+  (let ((hermes-dashboard-transport-start-mode 'remote)
+        (hermes-dashboard-transport-url "http://127.0.0.1:9119")
+        events client failure)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--start-spawn)
+               (lambda (&rest _) (ert-fail "External attachment spawned")))
+              ((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+               (lambda (&rest _) (hermes--promise-rejected "Connection refused"))))
+      (setq client (hermes-dashboard-transport-start
+                    :callback (lambda (event) (push event events))))
+      (hermes--promise-catch
+       (hermes-dashboard-transport-client-ready-promise client)
+       (lambda (reason) (setq failure reason)))
+      (should failure)
+      (should (string-match-p "externally managed" (format "%s" failure)))
+      (should (string-match-p "reconnect" (format "%s" failure)))
+      (should-not (hermes-dashboard-transport-client-process client))
+      (should-not (hermes-dashboard-transport--client-viable-p client))
+      (should (seq-some (lambda (event) (eq (plist-get event :type) 'error))
+                        events)))))
+
 (ert-deftest hermes-dashboard-kanban-events-url-async-reuses-client ()
   "A live client's resolved URL is reused without a fresh auth round-trip."
   (let ((client (make-hermes-dashboard-transport-client
