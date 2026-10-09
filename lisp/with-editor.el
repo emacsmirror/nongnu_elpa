@@ -250,8 +250,9 @@ non-nil then that indicates that the user used a prefix argument
 to force finishing the session despite issues.  Functions should
 usually honor that and return non-nil."
   :group 'with-editor
+  :local 'permanent-only
   :type 'hook)
-(put 'with-editor-finish-query-functions 'permanent-local t)
+(put 'with-editor-finish-query-functions 'permanent-local t) ;< 31.1
 
 (defcustom with-editor-cancel-query-functions nil
   "List of functions called to query before canceling session.
@@ -264,8 +265,9 @@ non-nil then that indicates that the user used a prefix argument
 to force canceling the session despite issues.  Functions should
 usually honor that and return non-nil."
   :group 'with-editor
+  :local 'permanent-only
   :type 'hook)
-(put 'with-editor-cancel-query-functions 'permanent-local t)
+(put 'with-editor-cancel-query-functions 'permanent-local t) ;< 31.1
 
 (defcustom with-editor-mode-lighter " WE"
   "The mode-line lighter of the With-Editor mode."
