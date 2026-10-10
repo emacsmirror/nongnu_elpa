@@ -137,12 +137,14 @@
   (let* ((name (codex-ide-mcp--object-get params "name"))
          (args (or (codex-ide-mcp--object-get params "arguments") nil))
          (tool (and (stringp name) (codex-ide-mcp--tool-by-name name))))
-    (unless tool
-      (user-error "Unknown MCP tool: %s" name))
+    (unless (and tool (not (member name codex-ide-mcp-disabled-tools)))
+      (user-error "Unknown or disabled MCP tool: %s" name))
     (condition-case err
         (progn
           (codex-ide-mcp--validate-args tool args)
-          (funcall (plist-get tool :function) args))
+          (let ((inhibit-quit nil))
+            (funcall (plist-get tool :function) args)))
+      (quit (codex-ide-mcp--text-error-result "Interrupted by user"))
       (error
        (codex-ide-mcp--text-error-result (error-message-string err))))))
 

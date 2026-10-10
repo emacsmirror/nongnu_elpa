@@ -21,6 +21,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+
+(declare-function handler-bind-1 "eval.c" (body &rest handlers))
 (require 'imenu)
 (require 'lisp-mode)
 (require 'project)
@@ -39,7 +41,7 @@
   "Maximum number of harness jobs retained in memory.")
 
 (defconst codex-ide-harness-job-output-limit (* 256 1024)
-  "Maximum characters retained per harness job output string.")
+  "Maximum characters retained per harness job output buffer.")
 
 (defconst codex-ide-harness-event-field-limit (* 32 1024)
   "Maximum characters retained for a single harness event string field.")
@@ -118,7 +120,9 @@
    (lambda (_id job)
      (when-let* ((process (plist-get job :process)))
        (when (process-live-p process)
-         (ignore-errors (delete-process process)))))
+         (ignore-errors (delete-process process))))
+     (when-let* ((buffer (plist-get job :output-buffer)))
+       (when (buffer-live-p buffer) (kill-buffer buffer))))
    codex-ide-harness--jobs)
   (clrhash codex-ide-harness--jobs)
   (setq codex-ide-harness--events nil
@@ -151,7 +155,8 @@
 
 (defun codex-ide-harness--buffer-for-args (args &optional live-only)
   "Return the buffer selected by ARGS.
-When LIVE-ONLY is non-nil, require an explicit buffer or open file path."
+When LIVE-ONLY is non-nil, require an open file path.
+When it is t, also require an explicit buffer or path."
   (let ((buffer (codex-ide-mcp--object-get args "buffer"))
         (path (codex-ide-mcp--object-get args "path")))
     (cond
@@ -161,7 +166,7 @@ When LIVE-ONLY is non-nil, require an explicit buffer or open file path."
       (if live-only
           (codex-ide-mcp--buffer-for-path path)
         (find-file-noselect (expand-file-name path))))
-     (live-only (user-error "Edit requires an explicit buffer or path"))
+     ((eq live-only t) (user-error "Edit requires an explicit buffer or path"))
      (t (current-buffer)))))
 
 (defun codex-ide-harness--directory-for-args (args buffer)
@@ -180,7 +185,7 @@ When LIVE-ONLY is non-nil, require an explicit buffer or open file path."
 
 (defun codex-ide-harness--context (args &optional live-only)
   "Return `(BUFFER DIRECTORY)' selected by ARGS.
-When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
+When LIVE-ONLY is non-nil, require an open file path; t requires a target."
   (let* ((buffer (codex-ide-harness--buffer-for-args args live-only))
          (directory (codex-ide-harness--directory-for-args args buffer)))
     (list buffer directory)))
@@ -300,8 +305,8 @@ Enumerate project files only when INCLUDE-FILE-COUNT is non-nil."
                                  (error nil))
                                ""))
               (cons "line" (or (codex-ide-mcp--xref-location-line
-                                 location)
-                                0))
+                                location)
+                               0))
               (cons "summary" (or (xref-item-summary item) ""))))
     (error nil)))
 
@@ -335,7 +340,7 @@ CATEGORY names the parent group when recursing into sublists."
                (codex-ide-mcp--imenu-flatten value name))
               ((or (markerp value) (integerp value))
                (and-let* ((line (codex-ide-mcp--imenu-position-line
-                                  value)))
+                                 value)))
                  (list (list (cons "name" name)
                              (cons "category" (or category ""))
                              (cons "line" line)))))
@@ -396,12 +401,12 @@ CATEGORY names the parent group when recursing into sublists."
                              (point))))
                  (list (cons "source" "flycheck")
                        (cons "type" (format "%s" (funcall
-                                                   (symbol-function
-                                                    'flycheck-error-level)
-                                                   err)))
+                                                  (symbol-function
+                                                   'flycheck-error-level)
+                                                  err)))
                        (cons "message" (funcall (symbol-function
-                                                  'flycheck-error-message)
-                                                 err))
+                                                 'flycheck-error-message)
+                                                err))
                        (cons "range" (codex-ide-mcp--range pos pos))))))))
 
 (defun codex-ide-harness-diagnostics (&optional args)
@@ -474,16 +479,25 @@ The `action' field is `references' or `apropos'."
     value))
 
 (defun codex-ide-harness--backtrace-string ()
-  "Return a best-effort backtrace string."
-  (with-output-to-string
-    (backtrace)))
+  "Return the tool evaluation stack without HTTP frames or bearer headers."
+  (let (frames done)
+    (dolist (frame (backtrace-frames))
+      (unless done
+        (push frame frames)
+        (when (eq (nth 1 frame) 'codex-ide-harness--eval-forms)
+          (setq done t))))
+    (when done
+      (with-output-to-string
+        (dolist (frame (nreverse frames))
+          (prin1 (cons (nth 1 frame) (nth 2 frame)))
+          (terpri))))))
 
-(defun codex-ide-harness--error-summary (err)
-  "Return JSON-ready data for error ERR."
+(defun codex-ide-harness--error-summary (err &optional backtrace)
+  "Return JSON-ready data for ERR with optional error-site BACKTRACE."
   (list (cons "type" (symbol-name (car err)))
         (cons "message" (error-message-string err))
         (cons "data" (prin1-to-string err t))
-        (cons "backtrace" (codex-ide-harness--backtrace-string))))
+        (cons "backtrace" backtrace)))
 
 (defun codex-ide-harness--selected-buffer-summary ()
   "Return metadata for the selected window buffer."
@@ -494,7 +508,7 @@ The `action' field is `references' or `apropos'."
 (defun codex-ide-harness--execute-captured (forms output-buffer)
   "Evaluate FORMS with output captured in OUTPUT-BUFFER."
   (let ((original-message (symbol-function 'message))
-        messages value error-data)
+        messages value error-data error-backtrace)
     (cl-letf (((symbol-function 'message)
                (lambda (format-string &rest message-args)
                  (when format-string
@@ -502,11 +516,19 @@ The `action' field is `references' or `apropos'."
                                 format-string message-args)
                          messages))
                  (apply original-message format-string message-args))))
-      (let ((standard-output output-buffer))
-        (condition-case err
-            (setq value (codex-ide-harness--eval-forms forms))
-          (error
-           (setq error-data (codex-ide-harness--error-summary err))))))
+	     (let ((standard-output output-buffer))
+               (condition-case err
+		   (setq value
+			 (if (fboundp 'handler-bind-1)
+			     (funcall #'handler-bind-1
+				      (lambda () (codex-ide-harness--eval-forms forms))
+				      '(error)
+				      (lambda (_err)
+					(setq error-backtrace
+					      (codex-ide-harness--backtrace-string))))
+			   (codex-ide-harness--eval-forms forms)))
+		 (error
+		  (setq error-data (codex-ide-harness--error-summary err error-backtrace))))))
     (list :value value :error error-data :messages (nreverse messages))))
 
 (defun codex-ide-harness--execute-result (capture output-buffer)
@@ -693,7 +715,7 @@ Roll back buffer text changes if editing or indentation exits abnormally."
   "Return selected buffer, project, windows, region, and state for ARGS.
 Include project fileCount only when ARGS's include_file_count is true."
   (pcase-let ((`(,buffer ,directory)
-               (codex-ide-harness--context args)))
+               (codex-ide-harness--context args 'open)))
     (with-current-buffer buffer
       (let ((default-directory directory))
         (list (cons "buffer" (codex-ide-harness--buffer-summary))
@@ -706,8 +728,8 @@ Include project fileCount only when ARGS's include_file_count is true."
               (cons "diagnostics" (codex-ide-harness-diagnostics))
               (cons "messages"
                     (codex-ide-harness--message-tail
-                    (codex-ide-mcp--bounded-integer
-                     (codex-ide-mcp--object-get args "messages") 40 1)))
+                     (codex-ide-mcp--bounded-integer
+                      (codex-ide-mcp--object-get args "messages") 40 1)))
               (cons "jobs" (codex-ide-harness--job-summaries))
               (cons "eventsCursor" codex-ide-harness--event-cursor))))))
 
@@ -739,7 +761,10 @@ Include project fileCount only when ARGS's include_file_count is true."
                       (string-lessp (cdr a) (cdr b)))))
         (while (and finished
                     (> (hash-table-count codex-ide-harness--jobs) limit))
-          (remhash (car (pop finished)) codex-ide-harness--jobs))))))
+          (let* ((id (car (pop finished)))
+                 (buffer (plist-get (gethash id codex-ide-harness--jobs) :output-buffer)))
+            (when (buffer-live-p buffer) (kill-buffer buffer))
+            (remhash id codex-ide-harness--jobs)))))))
 
 (defun codex-ide-harness--put-job (job)
   "Store JOB and return it."
@@ -753,37 +778,38 @@ Include project fileCount only when ARGS's include_file_count is true."
     (codex-ide-harness--put-job (funcall function job))))
 
 (defun codex-ide-harness--append-job-output (job chunk)
-  "Return JOB with CHUNK appended to its retained output tail."
-  (let* ((output (or (plist-get job :output) ""))
-         (start (or (plist-get job :output-start) 0))
-         (next (+ (or (plist-get job :output-next)
-                      (+ start (length output)))
-                  (length chunk)))
-         (combined (concat output chunk))
-         (limit codex-ide-harness-job-output-limit)
-         (drop (if (and (integerp limit)
-                        (> limit 0)
-                        (> (length combined) limit))
-                   (- (length combined) limit)
-                 0))
-         (with-output (plist-put (copy-sequence job) :output
-                                 (substring combined drop)))
-         (with-start (plist-put with-output :output-start (+ start drop))))
-    (plist-put with-start :output-next next)))
+  "Append CHUNK to JOB's hidden buffer and retain its bounded tail."
+  (let ((buffer (or (plist-get job :output-buffer)
+                    (generate-new-buffer " *codex-job-output*")))
+        (limit codex-ide-harness-job-output-limit))
+    (setf (plist-get job :output-buffer) buffer)
+    (with-current-buffer buffer
+      (setq buffer-undo-list t)
+      (goto-char (point-max))
+      (insert chunk)
+      (when (and (integerp limit) (> limit 0) (> (buffer-size) limit))
+        (delete-region (point-min) (- (point-max) limit)))
+      (setf (plist-get job :output-next)
+            (+ (or (plist-get job :output-next) 0) (length chunk))
+            (plist-get job :output-start)
+            (- (plist-get job :output-next) (buffer-size))))
+    job))
 
 (defun codex-ide-harness--job-output (job since)
   "Return JOB output starting at SINCE."
-  (let* ((output (or (plist-get job :output) ""))
-         (start (or (plist-get job :output-start) 0))
-         (next (or (plist-get job :output-next)
-                   (+ start (length output))))
+  (let* ((start (or (plist-get job :output-start) 0))
+         (next (or (plist-get job :output-next) 0))
          (requested (if (and (integerp since) (>= since 0)) since 0))
-         (offset (min next (max start requested))))
+         (offset (min next (max start requested)))
+         (buffer (plist-get job :output-buffer)))
     (list (cons "offset" offset)
           (cons "nextOffset" next)
-          (cons "truncated"
-                (codex-ide-mcp--json-false (< requested start)))
-          (cons "text" (substring output (- offset start))))))
+          (cons "truncated" (codex-ide-mcp--json-false (< requested start)))
+          (cons "text" (if (buffer-live-p buffer)
+                           (with-current-buffer buffer
+                             (buffer-substring-no-properties
+                              (+ (point-min) (- offset start)) (point-max)))
+                         "")))))
 
 (defun codex-ide-harness--job-summary (job &optional output)
   "Return JSON-ready metadata for JOB.
@@ -876,7 +902,7 @@ When OUTPUT is non-nil, include output data."
            (job (list :id id :command command :directory directory
                       :status "running" :exit-code nil
                       :started (codex-ide-harness--time-string)
-                      :finished nil :output "" :output-start 0
+                      :finished nil :output-buffer nil :output-start 0
                       :output-next 0 :process process)))
       (set-process-query-on-exit-flag process nil)
       (set-process-filter
@@ -957,15 +983,24 @@ Already-terminal jobs are left unchanged and emit no new events."
   "Queue the proposal in ARGS without waiting for a human decision."
   (codex-ide-mcp--json-text-result
    (apply #'codex-ide-diff--request-start
+          (or (codex-ide-mcp--object-get args "buffer")
+              (and (buffer-live-p codex-ide-mcp--request-session)
+                   (buffer-name codex-ide-mcp--request-session)))
           (mapcar (lambda (key) (codex-ide-mcp--object-get args key))
-                  '("buffer" "token" "path" "old" "new")))))
+                  '("token" "path" "old" "new")))))
 
 (defun codex-ide-mcp--tool-review-result (args)
   "Return ARGS' retained review result, optionally cancelling pending UI."
-  (codex-ide-mcp--json-text-result
-   (codex-ide-diff--request-result
-    (codex-ide-mcp--object-get args "review_id")
-    (eq t (codex-ide-mcp--object-get args "cancel")))))
+  (let ((result (codex-ide-diff--request-result
+                 (codex-ide-mcp--object-get args "review_id")
+                 (eq t (codex-ide-mcp--object-get args "cancel")))))
+    ;; Accepted text can approach a megabyte; keep it in one wire field.
+    (list (cons "structuredContent" result)
+          (cons "content"
+                (vector (list (cons "type" "text")
+                              (cons "text" (format "Review status: %s"
+                                                   (cdr (assoc "status" result)))))))
+          (cons "isError" :json-false))))
 
 ;;; Tool registry
 
@@ -1108,8 +1143,8 @@ Already-terminal jobs are left unchanged and emit no new events."
                             (cons "openWorldHint" :json-false))
          :function #'codex-ide-mcp--tool-events)
    (list :name "emacs_review_start"
-         :description "Propose one file for editable Ediff review.  Supply the explicit live Codex terminal buffer and a retry token.  Await emacs_review_result acceptance; apply exactly its returned content only if the base is unchanged, otherwise re-review.  This tool never writes the target file or enforces other file writes."
-         :args '((:name "buffer" :type string :description "Registered live Codex terminal buffer name.")
+         :description "Propose one file for editable Ediff review.  Supply a retry token; the authenticated session supplies the terminal buffer unless explicitly provided.  Await emacs_review_result acceptance; apply exactly its returned content only if the base is unchanged, otherwise re-review.  This tool never writes the target file or enforces other file writes."
+         :args '((:name "buffer" :type string :optional t :description "Registered live Codex terminal buffer name; defaults to the authenticated session.")
                  (:name "token" :type string :description "Unique retry token for this proposal and owner.")
                  (:name "path" :type string :description "Proposed target path, used as a display label.")
                  (:name "old" :type string :description "Original file text.")
@@ -1117,7 +1152,7 @@ Already-terminal jobs are left unchanged and emit no new events."
          :annotations '(("idempotentHint" . t) ("openWorldHint" . :json-false))
          :function #'codex-ide-mcp--tool-review-start)
    (list :name "emacs_review_result"
-         :description "Fetch a retained review result: pending, accepted with exact edited content, rejected, cancelled, or expired.  Repeat reads are safe; optionally cancel a pending review."
+         :description "Fetch a retained review result in structuredContent: pending, accepted with exact edited content, rejected, cancelled, or expired.  Repeat reads are safe; optionally cancel a pending review."
          :args '((:name "review_id" :type string :description "ID returned by emacs_review_start.")
                  (:name "cancel" :type boolean :optional t :description "Cancel if still pending."))
          :annotations '(("idempotentHint" . t) ("openWorldHint" . :json-false))
@@ -1129,7 +1164,9 @@ Already-terminal jobs are left unchanged and emit no new events."
 
 (defun codex-ide-mcp--catalog ()
   "Return built-in and custom tool descriptors."
-  (append codex-ide-mcp--tools codex-ide-mcp--custom-tools))
+  (cl-remove-if (lambda (tool)
+                  (member (plist-get tool :name) codex-ide-mcp-disabled-tools))
+                (append codex-ide-mcp--tools codex-ide-mcp--custom-tools)))
 
 (defun codex-ide-mcp--valid-tool-name-p (name)
   "Return non-nil when NAME is a supported tool or argument name."
@@ -1209,8 +1246,8 @@ Built-ins cannot be removed.  Restart Codex sessions after catalog changes."
                  :key (lambda (tool) (plist-get tool :name)) :test #'equal)
     (user-error "Cannot unregister built-in MCP tool: %s" name))
   (when-let* ((tool (cl-find name codex-ide-mcp--custom-tools
-                           :key (lambda (item) (plist-get item :name))
-                           :test #'equal)))
+                             :key (lambda (item) (plist-get item :name))
+                             :test #'equal)))
     (setq codex-ide-mcp--custom-tools (remq tool codex-ide-mcp--custom-tools))
     t))
 
@@ -1221,7 +1258,7 @@ Built-ins cannot be removed.  Restart Codex sessions after catalog changes."
 
 (defun codex-ide-mcp--tool-by-name (name)
   "Return registered tool named NAME, or nil."
-  (cl-find name (codex-ide-mcp--catalog)
+  (cl-find name (append codex-ide-mcp--tools codex-ide-mcp--custom-tools)
            :key (lambda (tool) (plist-get tool :name))
            :test #'equal))
 
