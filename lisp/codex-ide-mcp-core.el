@@ -21,7 +21,6 @@
 ;;; Code:
 
 (require 'json)
-(require 'lisp-mnt)
 (require 'project)
 (require 'subr-x)
 
@@ -66,9 +65,9 @@ Also bounds retained incomplete request pending data per client."
 
 ;;; Constants
 
-(defconst codex-ide-mcp--package-version
-  (lm-version (locate-library "codex-ide.el"))
-  "Package version advertised by the local MCP server.")
+(defconst codex-ide-mcp--package-version "0.1.4"
+  "Package version advertised by the local MCP server.
+Keep in sync with the Version header of codex-ide.el; a test enforces it.")
 
 (defconst codex-ide-mcp--server-name "emacs_tools"
   "Codex config key name for the Emacs MCP server.")
