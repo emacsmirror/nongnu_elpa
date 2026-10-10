@@ -663,7 +663,8 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           ;; fliboard post (works with modified hometown below):
           ;; either uri: https://flipboard.com/users/Gizmodo/statuses/UQ_TmLCbShiYB55LrrrzWQ:a:1876139665
           ;; or url: https://flipboard.com/@gizmodo/tech-fknh6odjz/-/a-UQ_TmLCbShiYB55LrrrzWQ%3Aa%3A1876139665-%2F0
-          (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:alnum:]-_:]+$" query) ; hometown
+          ;; hometown (obsolete? checking https://rage.love/@puf, seems same as mastodon):
+          (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:alnum:]-_:]+$" query)
           (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
           (string-match "^/c/[[:alnum:]_]+$" query) ;; peertube channel
