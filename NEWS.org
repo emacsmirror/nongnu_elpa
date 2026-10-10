@@ -1,5 +1,19 @@
 #+title: emacs-codex-ide NEWS
 
+* Unreleased
+
+- Queue MCP diff proposals until =codex-ide-diff-show= is invoked, with a
+  pending mode-line indicator and notification that never changes windows.
+- Show project-relative review targets and current accept, reject, and help
+  keys.  Select proposal major modes without file or mode hooks.
+  =codex-ide-diff-preview= is now a programmatic-only compatibility API.
+- Bound open-tab and selection collection work, track same-window source
+  changes, and use native context JSON when available without wire changes.
+- Scope selection broadcasts to the project and direct users to =/ide=;
+  socket delivery no longer implies that the TUI consumed the selection.
+- Close excess context connections without signaling from the filter.
+  Keep debug output in a bounded, read-only special-mode buffer.
+
 * Version 0.1.4 (unreleased)
 
 - Select native neo-term automatically in Neomacs, preserving explicit

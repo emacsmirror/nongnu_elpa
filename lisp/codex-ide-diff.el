@@ -29,6 +29,8 @@
 ;; keeps its proposal read-only.  Both interfaces own temporary buffers
 ;; and restore the original layout only while it still belongs to them.
 ;;
+;; MCP proposals always wait for `codex-ide-diff-show'; their notification
+;; timers never open Ediff or change the selected frame, tab, or window.
 ;; The module performs no file writes; the caller owns the target path.
 
 ;;; Code:
@@ -66,7 +68,24 @@ accept binding."
 Incremented each time a generic name is produced.")
 
 (defvar codex-ide-diff--queued-review nil
-  "Receipt whose Ediff UI is queued but has not started.")
+  "Receipt waiting for an explicit `codex-ide-diff-show' command.")
+
+(defface codex-ide-diff-pending
+  '((t :inherit warning))
+  "Face for a pending Codex review notification."
+  :group 'codex-ide-diff)
+
+(defvar codex-ide-diff--mode-line
+  '(:eval (propertize " Codex review pending"
+                      'face 'codex-ide-diff-pending
+                      'help-echo (substitute-command-keys
+                                  "Open with \\[codex-ide-diff-show]")))
+  "Mode line indicator installed only while a proposal is queued.")
+(put 'codex-ide-diff--mode-line 'risky-local-variable t)
+
+(defvar-local codex-ide-diff--header-line nil
+  "Literal review header, including target path and current key bindings.")
+(put 'codex-ide-diff--header-line 'risky-local-variable t)
 
 (defvar codex-ide-diff--active nil
   "Current asynchronous review owner, or nil.")
@@ -92,23 +111,37 @@ Naming follows `codex-ide-diff-buffer-naming'."
       (_ (error "Invalid naming policy: %S"
                 codex-ide-diff-buffer-naming)))))
 
-(defun codex-ide-diff--make-temp-buffer (name content)
-  "Create a temp buffer named NAME, insert CONTENT, return the buffer.
-The buffer is unmodified and read-only."
+(defun codex-ide-diff--make-temp-buffer (name content &optional file-path)
+  "Create a read-only buffer named NAME containing CONTENT.
+Use FILE-PATH to choose a major mode without visiting the target file,
+running mode or file hooks, or evaluating file-local variables."
   (let ((buf (generate-new-buffer name)))
-    (with-current-buffer buf
-      (insert (or content ""))
-      (set-buffer-modified-p nil)
-      (setq buffer-read-only t))
-    buf))
+    (condition-case err
+        (with-current-buffer buf
+          (insert (or content ""))
+          (when file-path
+            (let ((buffer-file-name file-path)
+                  (enable-local-variables nil)
+                  (enable-local-eval nil)
+                  (change-major-mode-hook nil))
+              (delay-mode-hooks (set-auto-mode)))
+            (setq delayed-mode-hooks nil))
+          (set-buffer-modified-p nil)
+          (setq buffer-read-only t)
+          buf)
+      ((error quit)
+       (kill-buffer buf)
+       (signal (car err) (cdr err))))))
 
 (defun codex-ide-diff--make-temp-buffer-pair (old-content new-content file-path)
   "Return (BUFFER-A . BUFFER-B) holding OLD-CONTENT and NEW-CONTENT.
-FILE-PATH is used only for buffer naming under the `path' policy."
-  (let ((name-a (codex-ide-diff--buffer-name file-path 'old))
-        (name-b (codex-ide-diff--buffer-name file-path 'new)))
-    (cons (codex-ide-diff--make-temp-buffer name-a old-content)
-          (codex-ide-diff--make-temp-buffer name-b new-content))))
+Use FILE-PATH for buffer naming and major mode selection."
+  (let ((a (codex-ide-diff--make-temp-buffer
+            (codex-ide-diff--buffer-name file-path 'old) old-content file-path)))
+    (condition-case err
+        (cons a (codex-ide-diff--make-temp-buffer
+                 (codex-ide-diff--buffer-name file-path 'new) new-content file-path))
+      ((error quit) (kill-buffer a) (signal (car err) (cdr err))))))
 
 ;;; Review lifecycle
 
@@ -257,23 +290,44 @@ Do nothing if OWNER has already completed or belongs to an older review."
     (add-hook 'kill-buffer-hook
               (lambda () (codex-ide-diff--killed owner)) nil t)))
 
+(defun codex-ide-diff-accept ()
+  "Accept the current Codex Ediff proposal after confirmation."
+  (interactive)
+  (when (and codex-ide-diff--active
+             (eq (current-buffer) (plist-get codex-ide-diff--active :control))
+             (y-or-n-p "Accept this diff? "))
+    (codex-ide-diff--close codex-ide-diff--active 'accepted)))
+
+(defun codex-ide-diff-reject ()
+  "Reject the current Codex Ediff proposal after confirmation."
+  (interactive)
+  (when (and codex-ide-diff--active
+             (eq (current-buffer) (plist-get codex-ide-diff--active :control))
+             (y-or-n-p "Reject this diff? "))
+    (codex-ide-diff--close codex-ide-diff--active 'rejected)))
+
 (defun codex-ide-diff--prepare-keys (owner read-only)
-  "Install OWNER's accept command and honor READ-ONLY compatibility mode."
+  "Install OWNER's review commands and honor READ-ONLY compatibility mode."
   (setf (plist-get owner :ready) t)
   (with-current-buffer (plist-get owner :buffer-b)
     (setq buffer-read-only read-only))
   (use-local-map (copy-keymap (current-local-map)))
-  (local-set-key "q" (lambda ()
-                       (interactive)
-                       (when (y-or-n-p "Reject this diff? ")
-                         (codex-ide-diff--close owner 'rejected))))
-  (local-set-key
-   codex-ide-diff-accept-key
-   (lambda ()
-     (interactive)
-     (when (and (eq owner codex-ide-diff--active)
-                (y-or-n-p "Accept this diff? "))
-       (codex-ide-diff--close owner 'accepted)))))
+  (local-set-key "q" #'codex-ide-diff-reject)
+  (local-set-key codex-ide-diff-accept-key #'codex-ide-diff-accept)
+  (let ((header
+         (format "%s | %s accept | %s reject | %s help"
+                 (file-relative-name (plist-get owner :path) (plist-get owner :root))
+                 (propertize (substitute-command-keys "\\[codex-ide-diff-accept]")
+                             'face 'help-key-binding)
+                 (propertize (substitute-command-keys "\\[codex-ide-diff-reject]")
+                             'face 'help-key-binding)
+                 (propertize (substitute-command-keys "\\[ediff-toggle-help]")
+                             'face 'help-key-binding))))
+    (dolist (buffer (list (current-buffer) (plist-get owner :buffer-a)
+                          (plist-get owner :buffer-b)))
+      (with-current-buffer buffer
+        (setq codex-ide-diff--header-line header
+              header-line-format 'codex-ide-diff--header-line)))))
 
 ;;; Public entry points
 
@@ -283,9 +337,10 @@ Do nothing if OWNER has already completed or belongs to an older review."
   "Review OLD-CONTENT and editable NEW-CONTENT for FILE-PATH asynchronously.
 Return an opaque owner for `codex-ide-diff-cancel'.  Call CALLBACK once
 with (STATUS CONTENT): `accepted' and the exact edited proposal string,
-or `rejected'/`cancelled' and nil.  FILE-PATH is only a display label;
-no target files or visiting buffers are modified.  Signal `user-error'
-when another review is active.  Setup errors cancel and are re-signaled.
+or `rejected'/`cancelled' and nil.  Use FILE-PATH for a label and major mode
+selection only; no target files or visiting buffers are modified.  Signal
+`user-error' when another review is active.  Setup errors cancel and are
+re-signaled.
 Non-nil READ-ONLY keeps the proposal read-only for boolean previews."
   (when (or codex-ide-diff--active codex-ide-diff--queued-review) (user-error "A Codex diff review is already active"))
   (unless (and (stringp old-content) (stringp new-content)
@@ -295,7 +350,7 @@ Non-nil READ-ONLY keeps the proposal read-only for boolean previews."
   (require 'tab-bar)
   (let* ((owner (list :control nil :buffer-a nil :buffer-b nil :ready nil
                       :closing nil :dying nil :layout nil :restore nil
-                      :timer nil
+                      :timer nil :path file-path :root default-directory
                       :status 'pending :callback callback
                       :frame (selected-frame) :tab (make-symbol "review-tab")
                       :saved-layout (codex-ide-diff--window-config)))
@@ -309,10 +364,10 @@ Non-nil READ-ONLY keeps the proposal read-only for boolean previews."
         (progn
           (setf (plist-get owner :buffer-a)
                 (codex-ide-diff--make-temp-buffer
-                 (codex-ide-diff--buffer-name file-path 'old) old-content)
+                 (codex-ide-diff--buffer-name file-path 'old) old-content file-path)
                 (plist-get owner :buffer-b)
                 (codex-ide-diff--make-temp-buffer
-                 (codex-ide-diff--buffer-name file-path 'new) new-content))
+                 (codex-ide-diff--buffer-name file-path 'new) new-content file-path))
           (dolist (key '(:buffer-a :buffer-b))
             (with-current-buffer (plist-get owner key)
               (add-hook 'kill-buffer-hook
@@ -331,10 +386,6 @@ Non-nil READ-ONLY keeps the proposal read-only for boolean previews."
   "Preview OLD-CONTENT and NEW-CONTENT for FILE-PATH, returning a boolean.
 Both temporary buffers are read-only.  Return t on acceptance, nil on
 rejection or cancellation.  Never write the target file."
-  (interactive
-   (list (read-string "Old content: ")
-         (read-string "New content: ")
-         (read-file-name "File: ")))
   (let (decision waiting)
     (let ((owner (codex-ide-diff-review
                   old-content new-content file-path
@@ -418,7 +469,9 @@ rejection or cancellation.  Never write the target file."
       (when-let* ((timer (plist-get receipt key))) (cancel-timer timer))
       (setf (plist-get receipt key) nil))
     (when (eq receipt codex-ide-diff--queued-review)
-      (setq codex-ide-diff--queued-review nil))
+      (setq codex-ide-diff--queued-review nil)
+      (setq global-mode-string (delq 'codex-ide-diff--mode-line global-mode-string))
+      (force-mode-line-update t))
     (setf (plist-get receipt :timer)
           (run-at-time codex-ide-diff--receipt-lifetime nil
                        #'codex-ide-diff--expire-request receipt (plist-get receipt :deadline)))
@@ -456,27 +509,53 @@ rejection or cancellation.  Never write the target file."
                  (codex-ide-diff--finish-request receipt 'cancelled))))
            codex-ide-diff--receipts))
 
-(defun codex-ide-diff--run-request (receipt)
-  "Open RECEIPT's Ediff UI outside the HTTP process filter."
-  (when (and (codex-ide-diff--request-current-p receipt)
-             (plist-get receipt :start-timer))
+(defun codex-ide-diff--notify-request (receipt)
+  "Notify about queued RECEIPT without changing the user's windows."
+  (when (codex-ide-diff--request-current-p receipt)
     (codex-ide-diff--refresh-requests)
-    (when (codex-ide-diff--request-current-p receipt)
-      (cancel-timer (plist-get receipt :start-timer))
+    (when (eq receipt codex-ide-diff--queued-review)
+      (when-let* ((timer (plist-get receipt :start-timer))) (cancel-timer timer))
       (setf (plist-get receipt :start-timer) nil)
-      (when (eq receipt codex-ide-diff--queued-review)
-        (setq codex-ide-diff--queued-review nil))
-      (condition-case nil
-          (let* ((input (plist-get receipt :input))
-                 (owner (codex-ide-diff-review
-                         (nth 1 input) (nth 2 input) (car input)
-                         (lambda (status content)
-                           (codex-ide-diff--finish-request receipt status content)))))
-            (if (codex-ide-diff--request-current-p receipt)
-                (setf (plist-get receipt :ui-owner) owner)
-              ;; A startup callback can settle before the owner is returned.
-              (codex-ide-diff-cancel owner)))
-        ((error quit) (codex-ide-diff--finish-request receipt 'cancelled))))))
+      (message "Codex review pending: %s; open with %s"
+               (car (plist-get receipt :input))
+               (substitute-command-keys "\\[codex-ide-diff-show]")))))
+
+(defun codex-ide-diff--run-request (receipt)
+  "Open queued RECEIPT's Ediff UI on explicit user request."
+  (codex-ide-diff--refresh-requests)
+  (when (and (codex-ide-diff--request-current-p receipt)
+             (eq receipt codex-ide-diff--queued-review))
+    (when-let* ((timer (plist-get receipt :start-timer))) (cancel-timer timer))
+    (setf (plist-get receipt :start-timer) nil)
+    (setq codex-ide-diff--queued-review nil
+          global-mode-string (delq 'codex-ide-diff--mode-line global-mode-string))
+    (force-mode-line-update t)
+    (condition-case nil
+        (let* ((input (plist-get receipt :input))
+               (default-directory (file-name-as-directory
+                                   (plist-get (plist-get receipt :session) :root)))
+               (owner (codex-ide-diff-review
+                       (nth 1 input) (nth 2 input) (car input)
+                       (lambda (status content)
+                         (codex-ide-diff--finish-request receipt status content)))))
+          (if (codex-ide-diff--request-current-p receipt)
+              (setf (plist-get receipt :ui-owner) owner)
+            ;; A startup callback can settle before the owner is returned.
+            (codex-ide-diff-cancel owner)))
+      ((error quit) (codex-ide-diff--finish-request receipt 'cancelled)))))
+
+;;;###autoload
+(defun codex-ide-diff-show ()
+  "Open the pending Codex proposal in the current frame and tab.
+MCP proposals always wait for this command, including when their owning
+session is selected.  Notification timers never open a review."
+  (interactive)
+  (when (active-minibuffer-window)
+    (user-error "Finish minibuffer input before opening a Codex review"))
+  (codex-ide-diff--refresh-requests)
+  (unless codex-ide-diff--queued-review
+    (user-error "No Codex review is pending"))
+  (codex-ide-diff--run-request codex-ide-diff--queued-review))
 
 (defun codex-ide-diff--request-start (buffer token path old new)
   "Queue a review for terminal BUFFER using TOKEN, PATH, OLD and NEW text."
@@ -505,7 +584,7 @@ rejection or cancellation.  Never write the target file."
       (when (>= (hash-table-count codex-ide-diff--receipts) codex-ide-diff--receipt-limit)
         (user-error "Review receipt capacity is full; wait for retention to expire"))
       (let ((receipt (list :id (format "review-%s-%d" codex-ide-diff--receipt-instance
-                                         (cl-incf codex-ide-diff--next-receipt))
+                                       (cl-incf codex-ide-diff--next-receipt))
                            :session session :token (copy-sequence token)
                            :input (mapcar #'copy-sequence input)
                            :status 'pending :content nil :ui-owner nil
@@ -513,11 +592,15 @@ rejection or cancellation.  Never write the target file."
                            :deadline (+ (float-time) codex-ide-diff--receipt-lifetime))))
         (puthash (plist-get receipt :id) receipt codex-ide-diff--receipts)
         (setq codex-ide-diff--queued-review receipt)
+        (unless (memq 'codex-ide-diff--mode-line global-mode-string)
+          (setq global-mode-string
+                (append (or global-mode-string '("")) '(codex-ide-diff--mode-line))))
+        (force-mode-line-update t)
         (setf (plist-get receipt :timer)
               (run-at-time codex-ide-diff--receipt-lifetime nil
                            #'codex-ide-diff--expire-request receipt (plist-get receipt :deadline))
               (plist-get receipt :start-timer)
-              (run-at-time 0 nil #'codex-ide-diff--run-request receipt))
+              (run-at-time 0 nil #'codex-ide-diff--notify-request receipt))
         (codex-ide-diff--request-summary receipt)))))
 
 (defun codex-ide-diff--request-result (id &optional cancel)
