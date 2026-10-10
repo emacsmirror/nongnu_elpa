@@ -1378,7 +1378,7 @@ falling back to the active session.  Other tabs and projects are unaffected."
   (let* ((working-dir (codex-ide--get-working-directory))
          (active-id (gethash working-dir codex-ide--active-session-ids)))
     (codex-ide--record-source-buffer working-dir)
-    (codex-ide--recover-live-sessions)
+    (codex-ide--ensure-session-registry working-dir)
     (let ((sessions (codex-ide--sorted-project-sessions working-dir)))
       (if sessions
           (codex-ide--cycle-project-session working-dir sessions active-id)
