@@ -1894,6 +1894,17 @@ before retrying.  Never invoke a slash worker or automatically replay a branch."
                    ((error quit) (failed (error-message-string err))))))))
         ((error quit) (failed (error-message-string err)))))))
 
+(defun hermes-chat--project-workspace (root instance start-mode)
+  "Return project ROOT as a gateway cwd when INSTANCE shares this filesystem.
+Spawned START-MODE and loopback gateways can resolve local roots; others
+keep their backend default."
+  (and root
+       (not (file-remote-p root))
+       (or (eq start-mode 'spawn)
+           (hermes-dashboard-transport--loopback-host-p
+            (url-host (url-generic-parse-url (hermes-instance-url instance)))))
+       (directory-file-name root)))
+
 (defun hermes-chat--new-buffer (&optional profile title instance pinned-url)
   "Create, display, and return a fresh chat buffer.
 PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
@@ -1924,14 +1935,15 @@ entry point funnels through."
       (hermes-buffer--claim 'hermes-chat-mode)
       (setq hermes-instance instance
             hermes-chat--launch-project-root project-root
-            ;; Local launch deliberately places the chat in the editor cwd.
-            ;; Remote inherited cwd remains display data, not a create override.
+            ;; Project and local launches deliberately place the chat; an
+            ;; unselected remote cwd stays backend-owned.
             hermes-chat--cwd-explicit-p (or (and project-root t)
                                           (eq start-mode 'spawn))
             hermes-chat--pinned-url (and pinned-url (copy-sequence pinned-url))
             hermes-chat--resolved-start-mode start-mode
             hermes-chat--working-directory
-            (and (eq start-mode 'spawn) directory)
+            (or (hermes-chat--project-workspace project-root instance start-mode)
+                (and (eq start-mode 'spawn) directory))
             hermes-chat--profile profile)
       (when pinned-url (run-mode-hooks))
       (hermes-chat--restore-draft-runtime)

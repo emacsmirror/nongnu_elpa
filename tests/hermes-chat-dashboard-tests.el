@@ -3863,6 +3863,30 @@
                                (and (eq mode 'spawn) "/deliberate/local/")))))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
+(ert-deftest hermes-chat-project-chat-sends-project-root-cwd ()
+  "Project launches request their root only from same-host gateways."
+  (pcase-dolist (`(,mode ,url ,expected)
+                 '((spawn "http://test" "/project/root")
+                   (remote "http://127.0.0.1:9119" "/project/root")
+                   (remote "http://localhost:9119" "/project/root")
+                   (remote "http://[::1]:9119" "/project/root")
+                   (remote "http://100.64.0.2:9119" nil)))
+    (let ((default-directory "/project/root/src/")
+          (hermes-chat--project-chat-root "/project/root/")
+          buffer)
+      (cl-letf (((symbol-function 'hermes-chat--instance-start-mode)
+                 (lambda (_) mode))
+                ((symbol-function 'pop-to-buffer-same-window) #'set-buffer))
+        (unwind-protect
+            (progn
+              (setq buffer (hermes-chat--new-buffer nil nil (cons "test" url)))
+              (with-current-buffer buffer
+                (should hermes-chat--cwd-explicit-p)
+                (should (equal (plist-get (hermes-chat--dashboard-create-params) :cwd)
+                               expected))
+                (should (string-match-p "\\[root\\]" (buffer-name)))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
 (ert-deftest hermes-chat-btw-foreign-and-retired-frames-stay-quiet ()
   (hermes-test-with-dashboard-prompt-session (client)
     (let ((parent (current-buffer)) resolve)
