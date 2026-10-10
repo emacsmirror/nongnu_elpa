@@ -133,6 +133,19 @@ DESCRIPTION is the description of the spec."
              (specs (cdr test)))
          (clojure-ts--check-faces content specs)))))
 
+(defun clojure-ts--anchor-bug-p ()
+  "Return non-nil if tree-sitter drops anchors around an empty quantifier.
+In a query like `A . Q* . B', libtree-sitter 0.26.11 stops requiring B
+to come right after A when Q matches nothing, so a few of the anchored
+font-lock queries match more than they should.  See
+https://github.com/tree-sitter/tree-sitter/issues/5759."
+  (with-clojure-ts-buffer "(a b c)"
+    (< 1 (length (treesit-query-capture
+                  'clojure
+                  '((list_lit :anchor (sym_lit)
+                              :anchor (comment) :*
+                              :anchor (sym_lit) @sym)))))))
+
 ;;;; Font locking
 
 (describe "clojure-ts-mode-syntax-table"
@@ -193,12 +206,15 @@ DESCRIPTION is the description of the spec."
      (24 30 font-lock-doc-face)
      (35 41 font-lock-string-face)))
 
-  (when-fontifying-it "defn-with-metadata-and-docstring"
-    ("^{:foo bar}(defn foo \n  \"usage\" \n [] \n \"hello\")"
-     (13 16 font-lock-keyword-face)
-     (18 20 font-lock-function-name-face)
-     (25 31 font-lock-doc-face)
-     (40 46 font-lock-string-face)))
+  (it "defn-with-metadata-and-docstring"
+    (assume (not (clojure-ts--anchor-bug-p))
+            "tree-sitter/tree-sitter#5759 fontifies \"hello\" as a docstring")
+    (clojure-ts--check-faces
+     "^{:foo bar}(defn foo \n  \"usage\" \n [] \n \"hello\")"
+     '((13 16 font-lock-keyword-face)
+       (18 20 font-lock-function-name-face)
+       (25 31 font-lock-doc-face)
+       (40 46 font-lock-string-face))))
 
   (when-fontifying-it "fn-with-name"
     ("(fn named-lambda [x] x)"
@@ -271,16 +287,6 @@ DESCRIPTION is the description of the spec."
      ("close" nil)
      ("close" font-lock-function-name-face))
 
-    ("(defrecord TestRecord [field]
-  AutoCloseable
-  (close [this]
-    (.close this)))"
-     ("defrecord" font-lock-keyword-face)
-     ("TestRecord" font-lock-type-face)
-     ;; Skip "close" in "AutoCloseable", match the method name
-     ("close" nil)
-     ("close" font-lock-function-name-face))
-
     ("(definterface MyInterface
   (^String name [])
   (^double mass []))"
@@ -312,7 +318,21 @@ DESCRIPTION is the description of the spec."
     clojure.lang.IPersistentMap
     (set-parameter [m ^PreparedStatement s i]
       (.setObject s i (->pgobject m))))"
-     ("set-parameter" font-lock-function-name-face))))
+     ("set-parameter" font-lock-function-name-face)))
+
+  (it "should highlight function names in a defrecord"
+    (assume (not (clojure-ts--anchor-bug-p))
+            "tree-sitter/tree-sitter#5759 fontifies AutoCloseable as the record name")
+    (clojure-ts--check-faces
+     "(defrecord TestRecord [field]
+  AutoCloseable
+  (close [this]
+    (.close this)))"
+     '(("defrecord" font-lock-keyword-face)
+       ("TestRecord" font-lock-type-face)
+       ;; Skip "close" in "AutoCloseable", match the method name
+       ("close" nil)
+       ("close" font-lock-function-name-face)))))
 
 ;;;; Numbers
 
