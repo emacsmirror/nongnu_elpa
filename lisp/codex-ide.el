@@ -1212,7 +1212,7 @@ falling back to the active session.  Other tabs and projects are unaffected."
         (codex-ide--panel-state root nil)))))
 
 ;;;###autoload
-(defun codex-ide-toggle ()
+(defun codex-ide-cycle-session ()
   "Cycle live Codex sessions for the current project."
   (interactive)
   (let* ((working-dir (codex-ide--get-working-directory))
@@ -1237,7 +1237,7 @@ If it is not visible, display it with `codex-ide-display-buffer-function'."
        "No Codex session for this project.  Use M-x codex-ide to start one"))))
 
 ;;;###autoload
-(defun codex-ide-list-project-sessions ()
+(defun codex-ide-switch-project-session ()
   "Switch to a live Codex terminal session for the current project."
   (interactive)
   (let* ((origin (current-buffer))
@@ -1247,7 +1247,7 @@ If it is not visible, display it with `codex-ide-display-buffer-function'."
     (codex-ide--switch-to-session session)))
 
 ;;;###autoload
-(defun codex-ide-list-sessions ()
+(defun codex-ide-switch-session ()
   "Switch to any live Codex terminal session."
   (interactive)
   (let* ((origin (current-buffer))
@@ -1255,6 +1255,14 @@ If it is not visible, display it with `codex-ide-display-buffer-function'."
          (directory (plist-get session :root)))
     (codex-ide--record-source-buffer directory origin)
     (codex-ide--switch-to-session session)))
+
+;;;###autoload
+(define-obsolete-function-alias 'codex-ide-toggle
+  #'codex-ide-cycle-session "0.1.5")
+
+;;;###autoload
+(define-obsolete-function-alias 'codex-ide-list-project-sessions
+  #'codex-ide-switch-project-session "0.1.5")
 
 (defun codex-ide--set-session-label (session label)
   "Rename SESSION using LABEL without changing its identity."
