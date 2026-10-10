@@ -35,8 +35,8 @@
 (declare-function neo-term--write "neo-term" (terminal-id string))
 (declare-function neo-term--resize "neo-term" (terminal-id cols rows))
 (declare-function neo-term--kill-buffer-terminal "neo-term" ())
-(declare-function codex-ide--cleanup-on-exit "codex-ide"
-                  (&optional directory session-id expected-buffer expected-process preserve-buffer &rest ignored))
+(declare-function codex-ide--finish-session "codex-ide"
+                  (root id buffer process success event))
 (defvar neo-term--id)
 (defvar neo-term--terminals)
 (defvar neo-term-settled-functions)
@@ -97,24 +97,31 @@
         (neo-term--kill-buffer-terminal))
       (setq codex-ide-term-neo--resource nil))))
 
-(defun codex-ide-term-neo--finished (resource terminal-id)
-  "Clean up RESOURCE only after its exact TERMINAL-ID finishes."
+(defun codex-ide-term-neo--finished (resource terminal-id success event)
+  "Retire RESOURCE after TERMINAL-ID finishes with SUCCESS and EVENT."
   (when (eql terminal-id (plist-get resource :id))
     (codex-ide-term-neo--remove-hooks resource)
     (let ((buffer (plist-get resource :buffer)))
       (when (and (buffer-live-p buffer)
                  (eq resource (buffer-local-value 'codex-ide-term-neo--resource buffer)))
         (with-current-buffer buffer
-          (codex-ide--cleanup-on-exit codex-ide--session-root codex-ide--session-id
-                                      buffer resource))))))
+          (codex-ide--finish-session codex-ide--session-root codex-ide--session-id
+                                     buffer resource success event))))))
 
 (defun codex-ide-term-neo--watch (resource)
   "Install native completion callbacks for RESOURCE."
-  (let ((settled (lambda (id &rest _status)
-                   (codex-ide-term-neo--finished resource id)))
-        (failed (lambda (id _error)
-                  (codex-ide-term-neo--finished resource id)))
-        (exited (lambda (id) (codex-ide-term-neo--finished resource id)))
+  (let ((settled (lambda (id code signal drained wait-error read-error)
+                   (codex-ide-term-neo--finished
+                    resource id (and (eql code 0) (null signal) drained
+                                     (null wait-error) (null read-error))
+                    (format "%s%s%s%s" (or signal code "unknown status")
+                            (if drained "" "; output not drained")
+                            (if wait-error (format "; %s" wait-error) "")
+                            (if read-error (format "; %s" read-error) "")))))
+        (failed (lambda (id error)
+                  (codex-ide-term-neo--finished resource id nil (format "%s" error))))
+        (exited (lambda (id)
+                  (codex-ide-term-neo--finished resource id nil "unknown status")))
         (title (lambda (id _title)
                  (let ((buffer (plist-get resource :buffer)))
                    (when (and (eql id (plist-get resource :id))

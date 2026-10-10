@@ -132,6 +132,9 @@ terminal input modes, also sync points a redraw set adrift."
       (codex-ide-term-eat--set-cursor
        eat-terminal (eat-term-cursor-type eat-terminal)))))
 
+(defvar eat-kill-buffer-on-exit)
+(declare-function eat--kill-buffer "eat" (process))
+
 ;;; Process lifecycle
 
 (defun codex-ide-term-eat--available-p ()
@@ -141,6 +144,8 @@ Missing Eat is optional; preserve errors loading an installed library."
 
 (defun codex-ide-term-eat--configure-buffer ()
   "Configure the current Codex Eat buffer."
+  (setq-local eat-kill-buffer-on-exit nil)
+  (remove-hook 'eat-exit-hook #'eat--kill-buffer t)
   (setq-local eat--synchronize-scroll-function
               #'codex-ide-term-eat--synchronize-scroll)
   (add-hook 'window-buffer-change-functions

@@ -28,6 +28,15 @@
 (require 'codex-ide-term)
 (require 'codex-ide-menu)
 
+(defun codex-ide-test--completion-candidates (table)
+  "Read TABLE's public completions with their registered session records."
+  (if (not (functionp table)) table
+    (mapcar (lambda (name)
+              (if-let* ((session (codex-ide--session-by-buffer (get-buffer name))))
+                  (cons name session)
+                name))
+            (all-completions "" table))))
+
 (defun codex-ide-test--with-vars (body)
   "Run BODY with controlled `codex-ide' variables, then restore them."
   (let ((codex-ide-cli-path "codex")
@@ -994,6 +1003,7 @@ region, where the scrollback-browsing rule alone would strand it."
           (cl-letf (((symbol-function 'completing-read)
                      (lambda (prompt collection _predicate require-match
                                      &rest _args)
+                       (setq collection (codex-ide-test--completion-candidates collection))
                        (should (equal prompt "Codex session: "))
                        (should (equal collection
                                       (list (cons
@@ -1066,6 +1076,7 @@ region, where the scrollback-browsing rule alone would strand it."
              (cl-letf (((symbol-function 'completing-read)
                         (lambda (_prompt collection _predicate _require-match
                                          &rest _args)
+                          (setq collection (codex-ide-test--completion-candidates collection))
                           (setq seen collection)
                           (car (cl-find 1 collection
                                         :key (lambda (candidate)
@@ -1098,7 +1109,7 @@ region, where the scrollback-browsing rule alone would strand it."
             process)
        (unwind-protect
            (cl-letf (((symbol-function 'codex-ide--display-buffer)
-                      (lambda (_buffer) (selected-window)))
+                      (lambda (_buffer &optional _select) (selected-window)))
                      ((symbol-function 'codex-ide-term--make-process)
                       (lambda (buffer _program _args _env)
                         (setq requested-name (buffer-name buffer))
@@ -1129,7 +1140,7 @@ region, where the scrollback-browsing rule alone would strand it."
                         (push (list 'prepare name directory) events)
                         (setq buffer (get-buffer-create name))))
                      ((symbol-function 'codex-ide--display-buffer)
-                      (lambda (display-buffer)
+                      (lambda (display-buffer &optional _select)
                         (push (list 'display display-buffer) events)
                         (selected-window)))
                      ((symbol-function 'codex-ide-term--make-process)
@@ -1153,7 +1164,7 @@ region, where the scrollback-browsing rule alone would strand it."
                   (lambda (name _directory)
                     (setq buffer (get-buffer-create name))))
                  ((symbol-function 'codex-ide--display-buffer)
-                  (lambda (_buffer) nil))
+                  (lambda (_buffer &optional _select) nil))
                  ((symbol-function 'codex-ide-term--make-process)
                   (lambda (&rest _args) (setq process-started t))))
          (let ((default-directory root))
@@ -1170,7 +1181,7 @@ region, where the scrollback-browsing rule alone would strand it."
                   (lambda (name _directory)
                     (setq buffer (get-buffer-create name))))
                  ((symbol-function 'codex-ide--display-buffer)
-                  (lambda (_buffer) (selected-window)))
+                  (lambda (_buffer &optional _select) (selected-window)))
                  ((symbol-function 'codex-ide-term--make-process)
                   (lambda (&rest _args) (error "Process failed"))))
          (let ((default-directory root))
@@ -1331,7 +1342,7 @@ region, where the scrollback-browsing rule alone would strand it."
           (with-current-buffer buffer (setq major-mode 'eat-mode))
           (codex-ide--recover-live-sessions)
           (cl-letf (((symbol-function 'codex-ide--display-buffer)
-                     (lambda (display-buffer)
+                     (lambda (display-buffer &optional _select)
                        (setq displayed display-buffer)))
                     ((symbol-function 'codex-ide-context-record-source-buffer)
                      (lambda (&rest _args) nil))
@@ -1362,8 +1373,8 @@ region, where the scrollback-browsing rule alone would strand it."
               (codex-ide-insert-newline)))
           (should (eq displayed buffer))
           (should (equal sent (list (list "hello" buffer)
-                                    (list "\\" buffer))))
-          (should (equal returned (list buffer buffer)))
+                                    (list "\n" buffer))))
+          (should (equal returned (list buffer)))
           (should (eq escaped buffer)))
       (codex-ide-test--kill-buffer-process buffer process)
       (delete-directory root t))))
@@ -1490,7 +1501,7 @@ region, where the scrollback-browsing rule alone would strand it."
                           (push session created)
                           session)))
                      ((symbol-function 'codex-ide--display-buffer)
-                      (lambda (_buffer) nil))
+                      (lambda (_buffer &optional _select) nil))
                      ((symbol-function 'codex-ide-context-record-source-buffer)
                       (lambda (&rest _args) nil))
                      ((symbol-function 'codex-ide-log)
@@ -1621,14 +1632,14 @@ region, where the scrollback-browsing rule alone would strand it."
                   (let ((default-directory root)
                         (codex-ide-display-buffer-function
                          #'pop-to-buffer-same-window))
-                    (codex-ide-toggle)
+                    (codex-ide-test--toggle-in-root root)
                     (should-not (cl-some #'codex-ide-test--session-visible-p
                                          sessions))
                     (dolist (session sessions)
                       (should (buffer-live-p (plist-get session :buffer)))
                       (should (process-live-p (plist-get session :process))))
                     (should (= (gethash root codex-ide--active-session-ids) 1))
-                    (codex-ide-toggle))))
+                    (codex-ide-test--toggle-in-root root))))
                (should (eq (window-buffer) (plist-get first :buffer)))
                (should (= (gethash root codex-ide--active-session-ids) 1))))))
       (delete-directory root t))))
@@ -1701,6 +1712,7 @@ region, where the scrollback-browsing rule alone would strand it."
              (cl-letf (((symbol-function 'completing-read)
                         (lambda (_prompt collection _predicate _require-match
                                          &rest _args)
+                          (setq collection (codex-ide-test--completion-candidates collection))
                           (setq seen collection)
                           (car (cl-find 2 collection
                                         :key (lambda (candidate)
@@ -1708,7 +1720,7 @@ region, where the scrollback-browsing rule alone would strand it."
                                                           :id))
                                         :test #'=))))
                        ((symbol-function 'codex-ide--display-buffer)
-                        (lambda (_buffer) nil))
+                        (lambda (_buffer &optional _select) nil))
                        ((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil)))
                (let ((default-directory root-a))
@@ -1736,6 +1748,7 @@ region, where the scrollback-browsing rule alone would strand it."
              (cl-letf (((symbol-function 'completing-read)
                         (lambda (_prompt collection _predicate _require-match
                                          &rest _args)
+                          (setq collection (codex-ide-test--completion-candidates collection))
                           (setq seen collection)
                           (car (cl-find root-b collection
                                         :key (lambda (candidate)
@@ -1743,7 +1756,7 @@ region, where the scrollback-browsing rule alone would strand it."
                                                           :root))
                                         :test #'equal))))
                        ((symbol-function 'codex-ide--display-buffer)
-                        (lambda (_buffer) nil))
+                        (lambda (_buffer &optional _select) nil))
                        ((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil)))
                (let ((default-directory root-a))
@@ -1778,6 +1791,7 @@ region, where the scrollback-browsing rule alone would strand it."
                        ((symbol-function 'completing-read)
                         (lambda (_prompt collection _predicate _require-match
                                          &rest _args)
+                          (setq collection (codex-ide-test--completion-candidates collection))
                           (car (cl-find 1 collection
                                         :key (lambda (candidate)
                                                (plist-get (cdr candidate)
@@ -1820,6 +1834,7 @@ region, where the scrollback-browsing rule alone would strand it."
              (cl-letf (((symbol-function 'completing-read)
                         (lambda (_prompt collection _predicate _require-match
                                          &rest _args)
+                          (setq collection (codex-ide-test--completion-candidates collection))
                           (car (cl-find 1 collection
                                         :key (lambda (candidate)
                                                (plist-get (cdr candidate)
@@ -1846,9 +1861,8 @@ region, where the scrollback-browsing rule alone would strand it."
                  (codex-ide-insert-newline)))
              (should (eq escaped (plist-get target :buffer)))
              (should (equal sent
-                            (list (list "\\" (plist-get target :buffer)))))
-             (should (equal returned
-                            (list (plist-get target :buffer))))
+                            (list (list "\n" (plist-get target :buffer)))))
+             (should-not returned)
              (should (= (gethash root codex-ide--active-session-ids)
                         1)))))
       (delete-directory root t))))
@@ -1976,8 +1990,9 @@ region, where the scrollback-browsing rule alone would strand it."
 (ert-deftest codex-ide-make-process-sentinel-chains-original ()
   "The Codex sentinel runs the replaced sentinel before cleaning up."
   (let (chained cleaned)
-    (cl-letf (((symbol-function 'process-status) (lambda (_) 'exit))
-              ((symbol-function 'codex-ide--cleanup-on-exit)
+    (cl-letf (((symbol-function 'process-exit-status) (lambda (_) 0))
+              ((symbol-function 'process-status) (lambda (_) 'exit))
+              ((symbol-function 'codex-ide--finish-session)
                (lambda (&rest args)
                  (setq cleaned args))))
       (funcall (codex-ide--make-process-sentinel
@@ -1986,13 +2001,14 @@ region, where the scrollback-browsing rule alone would strand it."
                   (setq chained (list proc event))))
                'fake-proc "finished\n"))
     (should (equal chained '(fake-proc "finished\n")))
-    (should (equal cleaned '("/tmp/root" 1 nil fake-proc)))))
+    (should (equal cleaned '("/tmp/root" 1 nil fake-proc t "finished\n")))))
 
 (ert-deftest codex-ide-make-process-sentinel-chains-on-non-exit-events ()
   "Non-exit events reach the chained sentinel without triggering cleanup."
   (let (chained cleaned)
-    (cl-letf (((symbol-function 'process-status) (lambda (_) 'run))
-              ((symbol-function 'codex-ide--cleanup-on-exit)
+    (cl-letf (((symbol-function 'process-exit-status) (lambda (_) 0))
+              ((symbol-function 'process-status) (lambda (_) 'run))
+              ((symbol-function 'codex-ide--finish-session)
                (lambda (&rest args)
                  (setq cleaned args))))
       (funcall (codex-ide--make-process-sentinel
@@ -2006,8 +2022,9 @@ region, where the scrollback-browsing rule alone would strand it."
 (ert-deftest codex-ide-make-process-sentinel-cleans-up-when-original-errors ()
   "A failing chained sentinel cannot block Codex session cleanup."
   (let (cleaned)
-    (cl-letf (((symbol-function 'process-status) (lambda (_) 'signal))
-              ((symbol-function 'codex-ide--cleanup-on-exit)
+    (cl-letf (((symbol-function 'process-exit-status) (lambda (_) 0))
+              ((symbol-function 'process-status) (lambda (_) 'signal))
+              ((symbol-function 'codex-ide--finish-session)
                (lambda (&rest args)
                  (setq cleaned args))))
       (funcall (codex-ide--make-process-sentinel
@@ -2015,7 +2032,7 @@ region, where the scrollback-browsing rule alone would strand it."
                 (lambda (_proc _event)
                   (error "Boom")))
                'fake-proc "killed\n"))
-    (should (equal cleaned '("/tmp/root" 1 nil fake-proc)))))
+    (should (equal cleaned '("/tmp/root" 1 nil fake-proc nil "killed\n")))))
 
 (ert-deftest codex-ide-setup-session-enables-mode ()
   "Session setup enables `codex-ide-mode' with the cleanup hook."
@@ -2069,7 +2086,7 @@ region, where the scrollback-browsing rule alone would strand it."
                           (codex-ide--make-session
                            root emacs-session-id buffer process)))
                        ((symbol-function 'codex-ide--display-buffer)
-                        (lambda (_buffer) nil))
+                        (lambda (_buffer &optional _select) nil))
                        ((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil))
                        ((symbol-function 'codex-ide-log)
@@ -2116,7 +2133,7 @@ region, where the scrollback-browsing rule alone would strand it."
                           (codex-ide--make-session
                            root emacs-session-id buffer process)))
                        ((symbol-function 'codex-ide--display-buffer)
-                        (lambda (_buffer) nil))
+                        (lambda (_buffer &optional _select) nil))
                        ((symbol-function 'codex-ide--toggle-existing-window)
                         (lambda (_buffer) nil))
                        ((symbol-function 'codex-ide-context-record-source-buffer)
@@ -2161,7 +2178,7 @@ region, where the scrollback-browsing rule alone would strand it."
                           (codex-ide--make-session
                            root emacs-session-id buffer process)))
                        ((symbol-function 'codex-ide--display-buffer)
-                        (lambda (_buffer) nil))
+                        (lambda (_buffer &optional _select) nil))
                        ((symbol-function 'codex-ide--toggle-existing-window)
                         (lambda (_buffer) nil))
                        ((symbol-function 'codex-ide-context-record-source-buffer)
@@ -2299,6 +2316,7 @@ region, where the scrollback-browsing rule alone would strand it."
   (let (offered)
     (cl-letf (((symbol-function 'completing-read)
                (lambda (_prompt collection &rest _)
+                 (setq collection (codex-ide-test--completion-candidates collection))
                  (setq offered collection)
                  "nil"))
               ((symbol-function 'codex-ide-log)
@@ -2585,6 +2603,29 @@ region, where the scrollback-browsing rule alone would strand it."
             (funcall body)))
       (set-frame-parameter nil 'tabs tabs))))
 
+(ert-deftest codex-ide-panel-honors-display-buffer-alist ()
+  "User display rules override panel fallback placement without selecting."
+  (dolist (action '(display-buffer-in-side-window display-buffer-same-window))
+    (codex-ide-test--call-with-project
+     (lambda (root)
+       (codex-ide-test--call-with-sessions
+	`((,root 1))
+	(lambda (sessions)
+          (codex-ide-test--call-with-panel-tabs
+           (lambda ()
+             (let* ((source (selected-window))
+                    (buffer (plist-get (car sessions) :buffer))
+                    (codex-ide-display-buffer-function #'display-buffer)
+                    (display-buffer-alist
+                     `((,(regexp-quote (buffer-name buffer))
+			,action (side . left)))))
+               (codex-ide--show-panel-session (car sessions))
+               (should (eq source (selected-window)))
+               (if (eq action 'display-buffer-same-window)
+                   (should (eq source (get-buffer-window buffer)))
+		 (should (eq (window-parameter (get-buffer-window buffer) 'window-side)
+                             'left))))))))))))
+
 (ert-deftest codex-ide-panel-restores-live-set-and-preserves-other-project ()
   "Hiding one project preserves others and never restores stopped sessions."
   (codex-ide-test--call-with-project
@@ -2846,7 +2887,7 @@ region, where the scrollback-browsing rule alone would strand it."
                          (list id)))
           (cl-letf (((symbol-function 'completing-read)
                      (lambda (&rest _)
-                       (format "%s  %s" id project))))
+                       id)))
             (should (equal (codex-ide--read-saved-session-id project) id)))
           (should (equal (codex-ide--build-command nil id)
                          (cons "codex" (list "resume" id)))))
@@ -2947,7 +2988,7 @@ region, where the scrollback-browsing rule alone would strand it."
           (should (equal (mapcar #'car (codex-ide--saved-session-candidates))
                          '("newest" "new")))
           (cl-letf (((symbol-function 'completing-read)
-                     (lambda (_prompt collection &rest _) (car collection))))
+                     (lambda (_prompt collection &rest _) (car (all-completions "" collection)))))
             (should (equal (codex-ide--read-saved-session-id "/tmp/absent")
                            "newest"))))
       (delete-directory dir t))))
@@ -3034,6 +3075,7 @@ region, where the scrollback-browsing rule alone would strand it."
                       ((symbol-function 'codex-ide--recover-live-sessions) #'ignore)
                       ((symbol-function 'completing-read)
                        (lambda (_prompt choices &rest _)
+                         (setq choices (codex-ide-test--completion-candidates choices))
                          (should (= (length choices) 2))
                          (should (assoc (buffer-name second) choices))
                          (erase-buffer) (insert "picker changed source")
@@ -3043,7 +3085,7 @@ region, where the scrollback-browsing rule alone would strand it."
               (codex-ide-attach-source))
             (should (equal writes
                            (list (cons second-process
-                                       "\e[200~Source: /tmp/source.el (lines 2-2)\nchosen line\e[201~")))))))))))
+                                       (format "\e[200~Source: %s (lines 2-2)\nchosen line\e[201~" (file-relative-name "/tmp/source.el" root)))))))))))))
 
 (ert-deftest codex-ide-attach-source-rejects-controls-and-size ()
   "Unsafe content and metadata fail before targeting or changing drafts."
@@ -3115,7 +3157,7 @@ region, where the scrollback-browsing rule alone would strand it."
   "Minibuffer, input and pause cannot redirect submission to a successor."
   (dolist (backend '(eat vterm))
     (dolist (mutation '(id root mode backend record process buffer))
-      (dolist (command '(codex-ide-send-prompt codex-ide-insert-newline))
+      (dolist (command '(codex-ide-send-prompt))
 	(dolist (boundary '(read send pause))
 	  (unless (and (eq command 'codex-ide-insert-newline) (eq boundary 'read))
             (codex-ide-test--call-with-project
@@ -3183,14 +3225,386 @@ region, where the scrollback-browsing rule alone would strand it."
   "Hangup cleans up; live stop and continue events do not."
   (dolist (status '(signal exit stop run))
     (let (cleaned chained)
-      (cl-letf (((symbol-function 'process-status) (lambda (_) status))
-                ((symbol-function 'codex-ide--cleanup-on-exit)
+      (cl-letf (((symbol-function 'process-exit-status) (lambda (_) 0))
+                ((symbol-function 'process-status) (lambda (_) status))
+                ((symbol-function 'codex-ide--finish-session)
                  (lambda (&rest _) (setq cleaned t))))
         (funcall (codex-ide--make-process-sentinel
                   "/tmp/root" 1 (lambda (&rest _) (setq chained t)))
                  'fake-proc "hangup\n"))
       (should chained)
       (should (eq cleaned (and (memq status '(signal exit)) t))))))
+
+(ert-deftest codex-ide-resume-preserves-running-session ()
+  "Public resume commands add live sessions without replacing existing ones."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1))
+      (lambda (sessions)
+        (let (created)
+          (unwind-protect
+              (cl-letf (((symbol-function 'codex-ide--ensure-cli) (lambda () t))
+                        ((symbol-function 'codex-ide--maybe-ensure-context-server) #'ignore)
+                        ((symbol-function 'codex-ide--record-source-buffer) #'ignore)
+                        ((symbol-function 'codex-ide-term--configure-buffer) #'ignore)
+                        ((symbol-function 'codex-ide--create-session)
+                         (lambda (id last saved)
+                           (let ((session (codex-ide-test--make-session root id)))
+                             (push (list id last saved session) created)
+                             session)))
+                        ((symbol-function 'codex-ide--read-saved-session-id)
+                         (lambda (&rest _) (list :id "saved" :cwd root))))
+                (call-interactively #'codex-ide-resume-last)
+                (call-interactively #'codex-ide-resume)
+                (should (equal (mapcar (lambda (entry) (seq-take entry 3)) created)
+                               '((3 nil "saved") (2 t nil))))
+                (should (= (length (codex-ide--project-sessions root)) 3))
+                (should (eq (codex-ide--session-by-id root 1) (car sessions)))
+                (dolist (session (codex-ide--project-sessions root))
+                  (should (process-live-p (plist-get session :process)))))
+            (dolist (entry created)
+              (codex-ide-test--kill-session (nth 3 entry))))))))))
+
+(ert-deftest codex-ide-newline-sends-only-lf ()
+  "Newline is a single LF write without waiting or submitting."
+  (let (writes)
+    (cl-letf (((symbol-function 'codex-ide--target-session) #'ignore)
+              ((symbol-function 'codex-ide--input-owner) #'ignore)
+              ((symbol-function 'codex-ide--validate-input-owner)
+               (lambda (_) (current-buffer)))
+              ((symbol-function 'codex-ide-term--send-string)
+               (lambda (text) (push text writes)))
+              ((symbol-function 'codex-ide-term--send-return)
+               (lambda () (push 'return writes)))
+              ((symbol-function 'sit-for)
+               (lambda (&rest _) (push 'wait writes))))
+      (codex-ide-insert-newline)
+      (should (equal writes '("\n"))))))
+
+(ert-deftest codex-ide-cli-caches-failure-and-version-by-path ()
+  "Failures are cached, path changes retry, and status probes only once."
+  (let ((codex-ide--cli-available nil)
+        (codex-ide--cli-cache nil)
+        (codex-ide-cli-path "/absent/codex")
+        calls)
+    (cl-letf (((symbol-function 'call-process)
+               (lambda (program _in destination &rest _)
+                 (push program calls)
+                 (when destination (insert "codex test-version\n"))
+                 (if (equal program "/absent/codex") 1 0))))
+      (should-not (codex-ide--ensure-cli))
+      (should-not (codex-ide--ensure-cli))
+      (setq codex-ide-cli-path "/present/codex")
+      (should (codex-ide--ensure-cli))
+      (codex-ide-check-status)
+      (should (= (length calls) 3))
+      (should (equal (plist-get codex-ide--cli-cache :version)
+                     "codex test-version")))))
+
+(ert-deftest codex-ide-hide-restores-created-split ()
+  "Hiding a display-created window restores the original layout."
+  (let ((buffer (generate-new-buffer " *codex hide*"))
+        (codex-ide-display-buffer-function #'display-buffer))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (let ((display-buffer-alist
+                 `((,(regexp-quote (buffer-name buffer))
+                    (display-buffer-below-selected)))))
+            (codex-ide--display-buffer buffer)
+            (should (= (length (window-list)) 2))
+            (codex-ide--hide-displayed-buffer buffer)
+            (should (= (length (window-list)) 1))
+            (should (buffer-live-p buffer))))
+      (kill-buffer buffer))))
+
+(ert-deftest codex-ide-start-continues-after-context-failure ()
+  "An optional context failure is logged without preventing session startup."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1))
+      (lambda (sessions)
+        (let (setup logs)
+          (cl-letf (((symbol-function 'codex-ide--ensure-cli) (lambda () t))
+                    ((symbol-function 'codex-ide--record-source-buffer) #'ignore)
+                    ((symbol-function 'codex-ide--maybe-ensure-context-server)
+                     (lambda () (user-error "Socket owned elsewhere")))
+                    ((symbol-function 'codex-ide--create-session)
+                     (lambda (&rest _) (car sessions)))
+                    ((symbol-function 'codex-ide--remember-session) #'ignore)
+                    ((symbol-function 'codex-ide--setup-session)
+                     (lambda (_) (setq setup t)))
+                    ((symbol-function 'codex-ide-log)
+                     (lambda (format &rest args)
+                       (push (apply #'format format args) logs))))
+            (codex-ide-new-session))
+          (should setup)
+          (should (seq-some (lambda (text)
+                              (string-match-p "Socket owned elsewhere" text)) logs))))))))
+
+(ert-deftest codex-ide-exit-policy-retains-output ()
+  "Exit policies preserve diagnostics, unregister owners and ignore repeats."
+  (dolist (backend '(eat vterm))
+    (dolist (policy '(nil t success))
+      (dolist (status '(exit signal))
+        (dolist (code '(0 9))
+          (codex-ide-test--call-with-project
+           (lambda (root)
+             (codex-ide-test--call-with-sessions
+              `((,root 1) (,root 2))
+              (lambda (sessions)
+                (let* ((session (car sessions))
+                       (buffer (plist-get session :buffer))
+                       (process (plist-get session :process))
+                       (codex-ide-kill-buffer-on-exit policy)
+                       (success (and (eq status 'exit) (= code 0)))
+                       (keep (not (or (eq policy t) (and (eq policy 'success) success))))
+                       (sentinel (codex-ide--make-process-sentinel
+                                  root 1 (lambda (&rest _) (codex-ide--all-sessions))
+                                  buffer)))
+                  (with-current-buffer buffer
+                    (insert "diagnostic output"))
+                  (cl-letf (((symbol-function 'codex-ide-term--configure-buffer)
+                             #'ignore))
+                    (codex-ide--setup-session session))
+                  (with-current-buffer buffer
+                    (setq-local codex-ide-term--backend backend))
+                  ;; Stub status only: cleanup still stops the actual fixture process.
+                  (cl-letf (((symbol-function 'process-status) (lambda (_) status))
+                            ((symbol-function 'process-exit-status) (lambda (_) code)))
+                    (funcall sentinel process "test exit\n"))
+                  (should-not (codex-ide--session-by-id root 1))
+                  (should (codex-ide--session-live-p (cadr sessions)))
+                  (should (eq (buffer-live-p buffer) keep))
+                  (when keep
+                    (with-current-buffer buffer
+                      (should-not codex-ide-mode)
+                      (should buffer-read-only)
+                      (should (string-match-p "diagnostic output" (buffer-string)))
+                      (should (string-match-p "\\[Codex exited: test exit\\]" (buffer-string)))
+                      (goto-char (point-max))
+                      (should (eq (get-text-property (- (point) 2) 'face)
+                                  (if success 'success 'error)))))
+                  (let ((before (and keep (with-current-buffer buffer (buffer-string)))))
+                    (codex-ide--finish-session root 1 buffer process nil "late")
+                    (when keep (should (equal before (with-current-buffer buffer
+                                                       (buffer-string))))))))))))))))
+
+(ert-deftest codex-ide-resume-fallback-metadata-and-cwd ()
+  "Fallback discovers once, preserves order, annotates IDs and resumes at cwd."
+  (let ((records '((:id "z-new" :cwd "/tmp/other/" :date "2026-10-11")
+                   (:id "a-old" :cwd "/tmp/old/" :date "2026-10-10")))
+        (codex-ide-resume-session-scan-limit 200)
+        (calls 0) started)
+    (cl-letf (((symbol-function 'codex-ide--get-working-directory)
+               (lambda () (or codex-ide--working-directory "/tmp/current/")))
+              ((symbol-function 'codex-ide--saved-sessions)
+               (lambda () (cl-incf calls) records))
+              ((symbol-function 'completing-read)
+               (lambda (prompt table &rest _)
+                 (should (string-match-p "all projects" prompt))
+                 (should (equal (all-completions "" table) '("z-new" "a-old")))
+                 (let ((meta (completion-metadata "" table nil)))
+                   (should (eq (completion-metadata-get meta 'display-sort-function) #'identity))
+                   (should (eq (completion-metadata-get meta 'cycle-sort-function) #'identity))
+                   (should (equal (funcall (completion-metadata-get meta 'annotation-function)
+                                           "z-new") "  2026-10-11  /tmp/other/")))
+                 "z-new"))
+              ((symbol-function 'codex-ide--start-session)
+               (lambda (last id new)
+                 (setq started (list last id new (codex-ide--get-working-directory))))))
+      (codex-ide-resume)
+      (should (= calls 1))
+      (should (equal started '(nil "z-new" t "/tmp/other/"))))))
+
+(ert-deftest codex-ide-rollout-cache-invalidates-on-time-or-size ()
+  "Unchanged files, including invalid JSON, are parsed only once."
+  (let ((file (make-temp-file "codex-rollout-cache-"))
+        (codex-ide--rollout-cache (make-hash-table :test 'equal))
+        (parse (symbol-function 'codex-ide--parse-rollout-session-meta))
+        (calls 0))
+    (unwind-protect
+        (cl-letf (((symbol-function 'codex-ide--parse-rollout-session-meta)
+                   (lambda (path) (cl-incf calls) (funcall parse path))))
+          (with-temp-file file (insert "invalid"))
+          (should-not (codex-ide--rollout-session-meta file))
+          (should-not (codex-ide--rollout-session-meta file))
+          (should (= calls 1))
+          (let ((stamp (file-attribute-modification-time (file-attributes file))))
+            (with-temp-file file
+              (insert "{\"type\":\"session_meta\",\"payload\":{\"id\":\"new\"}}"))
+            (set-file-times file stamp)
+            (should (equal (codex-ide--json-field (codex-ide--rollout-session-meta file) "id") "new")))
+          (should (= calls 2))
+          (set-file-times file (time-add (current-time) 60))
+          (codex-ide--rollout-session-meta file)
+          (should (= calls 3)))
+      (delete-file file))))
+
+(ert-deftest codex-ide-registered-lookups-do-not-recover ()
+  "Healthy registry lookups neither scan buffers nor repeat setup."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1))
+      (lambda (sessions)
+        (let ((codex-ide--recovery-pending nil) calls)
+          (cl-letf (((symbol-function 'codex-ide--recover-live-sessions)
+                     (lambda () (push 'recovery calls)))
+                    ((symbol-function 'codex-ide--setup-session)
+                     (lambda (_) (push 'setup calls))))
+            (should (eq (codex-ide--active-session root) (car sessions)))
+            (should (eq (codex-ide--target-session root) (car sessions)))
+            (codex-ide--session-candidates root)
+            (codex-ide--all-sessions)
+            (codex-ide--recover-live-session (plist-get (car sessions) :buffer))
+            (should-not calls))))))))
+
+(ert-deftest codex-ide-stop-interactive-confirmation ()
+  "Interactive refusal keeps the session, whereas Lisp calls do not ask."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1))
+      (lambda (sessions)
+        (let ((buffer (plist-get (car sessions) :buffer)) (asks 0))
+          (cl-letf (((symbol-function 'called-interactively-p) (lambda (_) t))
+                    ((symbol-function 'y-or-n-p) (lambda (_) (cl-incf asks) nil)))
+            (call-interactively #'codex-ide-stop))
+          (should (= asks 1))
+          (should (buffer-live-p buffer))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) (cl-incf asks) nil)))
+            (codex-ide-stop))
+          (should (= asks 1))
+          (should-not (buffer-live-p buffer))))))))
+
+(ert-deftest codex-ide-session-completion-category ()
+  "Session pickers expose the standard buffer category."
+  (cl-letf (((symbol-function 'codex-ide--session-candidates)
+             (lambda (_) '(("session" :id 1))))
+            ((symbol-function 'completing-read)
+             (lambda (_ table &rest _args)
+               (should (eq (completion-metadata-get
+                            (completion-metadata "" table nil) 'category) 'buffer))
+               "session")))
+    (should (equal (codex-ide--read-session) '(:id 1)))))
+
+(ert-deftest codex-ide-mode-line-session-label-and-backend ()
+  "The mode line reports identity and backend using semantic faces."
+  (with-temp-buffer
+    (setq-local codex-ide--session-id 3 codex-ide-term--backend 'eat)
+    (codex-ide-mode 1)
+    (let ((text (mapconcat #'identity (codex-ide--mode-line) "")))
+      (should (equal text " Codex:3/eat"))
+      (should (eq (get-text-property 1 'face text) 'mode-line-emphasis)))
+    (setq codex-ide--session-label "review")
+    (should (equal (mapconcat #'identity (codex-ide--mode-line) "") " Codex:review/eat"))
+    (codex-ide-mode -1)
+    (should-not (local-variable-p 'mode-line-process))))
+
+(ert-deftest codex-ide-prompt-uses-history ()
+  "Minibuffer prompts use their dedicated history variable."
+  (cl-letf (((symbol-function 'codex-ide--record-source-buffer) #'ignore)
+            ((symbol-function 'codex-ide--target-session) #'ignore)
+            ((symbol-function 'codex-ide--input-owner) #'ignore)
+            ((symbol-function 'read-string)
+             (lambda (_prompt _initial history &rest _)
+               (should (eq history 'codex-ide-prompt-history)) "")))
+    (codex-ide-send-prompt)))
+
+(ert-deftest codex-ide-nonselecting-display-preserves-selection ()
+  "Even a selecting user display function cannot steal attachment focus."
+  (let ((buffer (generate-new-buffer " *codex nonselect*"))
+        (codex-ide-display-buffer-function
+         (lambda (buffer) (pop-to-buffer buffer '(display-buffer-pop-up-window)))))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (let ((origin (selected-window)))
+            (should (window-live-p (codex-ide--display-buffer buffer nil)))
+            (should (eq origin (selected-window)))))
+      (kill-buffer buffer))))
+
+(ert-deftest codex-ide-display-and-hide-scope-frame-lookups ()
+  "Ordinary lookup and hiding pass the selected frame explicitly."
+  (let ((buffer (generate-new-buffer " *codex frame scope*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'get-buffer-window)
+                   (lambda (_buffer frame)
+                     (should (eq frame (selected-frame))) nil))
+                  ((symbol-function 'get-buffer-window-list)
+                   (lambda (_buffer _minibuffer frame)
+                     (should (eq frame (selected-frame))) nil)))
+          (let ((codex-ide-display-buffer-function #'ignore))
+            (should-not (codex-ide--display-buffer buffer))
+            (should-not (codex-ide--session-visible-p (list :buffer buffer)))
+            (codex-ide--hide-displayed-buffer buffer)))
+      (kill-buffer buffer))))
+
+(ert-deftest codex-ide-display-across-frames ()
+  "Existing windows stay frame-local; explicit cross-frame placement focuses."
+  (skip-unless (display-graphic-p))
+  (let ((origin (selected-frame))
+        (buffer (generate-new-buffer " *codex other frame*"))
+        other)
+    (unwind-protect
+        (progn
+          (setq other (make-frame '((name . "Codex display test"))))
+          (set-window-buffer (frame-selected-window other) buffer)
+          (select-frame-set-input-focus origin)
+          (let ((codex-ide-display-buffer-function #'display-buffer)
+                (display-buffer-alist
+                 `((,(regexp-quote (buffer-name buffer))
+                    (display-buffer-pop-up-window) (reusable-frames . nil)))))
+            (let ((window (codex-ide--display-buffer buffer t)))
+              (should (eq (window-frame window) origin))
+              (codex-ide--hide-displayed-buffer buffer)
+              (should (eq (window-buffer (frame-selected-window other)) buffer))))
+          (let ((codex-ide-display-buffer-function
+                 (lambda (_) (frame-selected-window other))))
+            (should (eq (codex-ide--display-buffer buffer t)
+                        (frame-selected-window other)))
+            (should (eq (selected-frame) other))))
+      (when (frame-live-p origin) (select-frame-set-input-focus origin))
+      (when (frame-live-p other) (delete-frame other))
+      (kill-buffer buffer))))
+
+(ert-deftest codex-ide-mode-restores-previous-process-mode-line ()
+  "Disabling the mode restores a backend's original local process display."
+  (with-temp-buffer
+    (setq-local mode-line-process '(" Backend"))
+    (codex-ide-mode 1)
+    (codex-ide-mode 1)
+    (codex-ide-mode -1)
+    (should (equal mode-line-process '(" Backend")))))
+
+(ert-deftest codex-ide-new-session-preserves-retained-buffer ()
+  "Starting again allocates a new buffer without reusing failed output."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let* ((name (codex-ide--get-buffer-name root 1))
+            (retained (get-buffer-create name))
+            (process nil) (created nil))
+       (unwind-protect
+           (progn
+             (with-current-buffer retained
+               (insert "failure evidence")
+               (setq-local codex-ide--session-root root codex-ide--session-id 1))
+             (cl-letf (((symbol-function 'codex-ide--session-config-overrides) #'ignore)
+                       ((symbol-function 'codex-ide--display-buffer)
+                        (lambda (&rest _) (selected-window)))
+                       ((symbol-function 'codex-ide-term--make-process)
+                        (lambda (buffer &rest _)
+                          (setq process (codex-ide-test--make-buffer-process buffer "retained-test")))))
+               (let ((session (codex-ide--create-session 1)))
+                 (setq created (plist-get session :buffer))
+                 (should-not (eq created retained))))
+             (should (equal (with-current-buffer retained (buffer-string)) "failure evidence")))
+         (when (process-live-p process) (delete-process process))
+         (when (buffer-live-p created) (kill-buffer created))
+         (kill-buffer retained))))))
 
 (provide 'codex-ide-tests)
 

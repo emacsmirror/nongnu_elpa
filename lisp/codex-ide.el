@@ -57,6 +57,8 @@
 (require 'codex-ide-mcp)
 (require 'codex-ide-term)
 
+(declare-function codex-ide-term-vterm--settle-buffer "codex-ide-term-vterm" ())
+
 (autoload 'codex-ide-menu "codex-ide-menu" nil t)
 
 ;;; Customization
@@ -86,6 +88,8 @@ duplicate session IDs do not count toward this limit."
 
 (defcustom codex-ide-display-buffer-function #'pop-to-buffer
   "Function used to display the Codex terminal buffer.
+Use `display-buffer-alist' to configure placement.  Focus is controlled
+by the calling command, independently of this function.
 The function is called with the Codex buffer and must make it visible.
 When it returns a live window, that window is used for terminal dimension
 sync; otherwise Codex uses any live window showing the buffer."
@@ -135,7 +139,32 @@ Codex IDE adds a root identity when another project already uses that name."
   :type 'function
   :group 'codex-ide)
 
+(defcustom codex-ide-kill-buffer-on-exit 'success
+  "When to kill a terminal buffer after Codex exits.
+Nil retains all output, t kills on every exit, and `success' kills only
+on a clean exit with status zero.  Retained buffers show an exit notice."
+  :type '(choice (const :tag "Keep all" nil)
+                 (const :tag "Kill all" t)
+                 (const :tag "Kill on success" success))
+  :group 'codex-ide)
+
 ;;; Variables
+
+(defvar codex-ide-prompt-history nil
+  "Minibuffer history of prompts sent to Codex.")
+
+(defvar codex-ide--cli-cache nil
+  "Last CLI probe, with :path, :state and :version fields.")
+
+(defvar codex-ide--rollout-cache (make-hash-table :test 'equal)
+  "Rollout metadata by filename, retaining modification time and size.")
+
+(defvar codex-ide--working-directory nil
+  "Dynamically bound exact directory for an explicitly resumed session.")
+
+(defvar codex-ide--recovery-pending t
+  "Whether session recovery is needed after loading the package.")
+(setq codex-ide--recovery-pending t)
 
 (defvar codex-ide--cli-available nil
   "Whether the Codex CLI was detected.")
@@ -148,6 +177,9 @@ Codex IDE adds a root identity when another project already uses that name."
 
 (defvar codex-ide--cleanup-in-progress nil
   "Cleanup targets currently being torn down, as (ROOT ID) lists.")
+
+(defvar-local codex-ide--saved-mode-line-process nil
+  "Original local binding and value of `mode-line-process' while enabled.")
 
 (defvar-local codex-ide--session-label nil
   "Optional display label of this live session.")
@@ -170,13 +202,23 @@ Codex IDE adds a root identity when another project already uses that name."
 (define-minor-mode codex-ide-mode
   "Minor mode for terminal buffers running a Codex CLI session."
   :interactive nil
-  :lighter " Codex"
+  :lighter nil
   (if codex-ide-mode
       (progn
+        (unless codex-ide--saved-mode-line-process
+          (setq codex-ide--saved-mode-line-process
+                (cons (local-variable-p 'mode-line-process) mode-line-process)))
+        (setq-local mode-line-process
+                    '(:eval (codex-ide--mode-line)))
         (add-hook 'kill-buffer-hook
                   #'codex-ide--cleanup-current-buffer-session nil t)
         (add-hook 'change-major-mode-hook
                   #'codex-ide--cleanup-before-major-mode-change nil t))
+    (when codex-ide--saved-mode-line-process
+      (if (car codex-ide--saved-mode-line-process)
+          (setq-local mode-line-process (cdr codex-ide--saved-mode-line-process))
+        (kill-local-variable 'mode-line-process))
+      (setq codex-ide--saved-mode-line-process nil))
     (remove-hook 'kill-buffer-hook
                  #'codex-ide--cleanup-current-buffer-session t)
     (remove-hook 'change-major-mode-hook
@@ -188,9 +230,10 @@ Codex IDE adds a root identity when another project already uses that name."
   "Return the working directory for a Codex session.
 Prefers the current project root; falls back to `default-directory'."
   (expand-file-name
-   (if-let* ((project (project-current)))
-       (project-root project)
-     default-directory)))
+   (or codex-ide--working-directory
+       (if-let* ((project (project-current)))
+           (project-root project)
+         default-directory))))
 
 (defun codex-ide--default-buffer-name (directory)
   "Return the buffer name for DIRECTORY, as `*codex[<basename>]*'."
@@ -279,7 +322,7 @@ Add a stable root identity when another project occupies the base name."
 (defun codex-ide--make-session (root id buffer process)
   "Return a Codex session record for ROOT, ID, BUFFER, and PROCESS.
 PROCESS is an Emacs process or an exact native Neomacs terminal resource."
-  (list :root root :id id :buffer buffer :process process))
+  (list :root root :id id :buffer buffer :process process :awaiting-exit nil))
 
 (defun codex-ide--raw-sessions ()
   "Return all session records without refreshing the table."
@@ -382,8 +425,8 @@ PROCESS is an Emacs process or an exact native Neomacs terminal resource."
 
 (defun codex-ide--active-session (&optional directory)
   "Return the active live Codex session for DIRECTORY."
-  (codex-ide--recover-live-sessions)
   (let ((root (or directory (codex-ide--get-working-directory))))
+    (codex-ide--ensure-session-registry root)
     (or (and-let* ((session (codex-ide--buffer-session)))
           (and (equal root (plist-get session :root))
                (codex-ide--activate-session session)))
@@ -463,7 +506,7 @@ Signal a user error when the first line exceeds the bound."
                                        (if end (1- end) (point-max)))
        'utf-8))))
 
-(defun codex-ide--rollout-session-meta (file)
+(defun codex-ide--parse-rollout-session-meta (file)
   "Return session_meta payload alist from rollout FILE, or nil.
 Signal a user error when the metadata line exceeds one MiB."
   (when (and (stringp file) (file-readable-p file))
@@ -478,25 +521,57 @@ Signal a user error when the metadata line exceeds one MiB."
                         "session_meta")))
       (codex-ide--json-field parsed "payload"))))
 
-(defun codex-ide--saved-session-candidate (file directory)
-  "Return (ID . ANNOTATION) for rollout FILE when it matches DIRECTORY.
-DIRECTORY may be nil to accept any cwd."
-  (when-let* ((payload (codex-ide--rollout-session-meta file))
-              (id (or (codex-ide--json-field payload "session_id")
-                      (codex-ide--json-field payload "id")))
-              ((and (stringp id) (not (string-empty-p (string-trim id))))))
-    (let* ((cwd (codex-ide--json-field payload "cwd"))
-           (want (and directory (codex-ide--normalize-directory directory)))
-           (have (and (stringp cwd)
-                      (codex-ide--normalize-directory cwd))))
-      (when (or (null want)
-                (and have (equal want have)))
-        (cons id
-              (string-join
-               (delq nil
-                     (list (and (stringp cwd) cwd)
-                           (file-name-nondirectory file)))
-               "  "))))))
+(defun codex-ide--rollout-session-meta (file)
+  "Return FILE's metadata, cached until modification time or size changes."
+  (when-let* ((attrs (file-attributes file)))
+    (let* ((stamp (list (file-attribute-modification-time attrs)
+                        (file-attribute-size attrs)))
+           (cached (gethash file codex-ide--rollout-cache)))
+      (unless (equal stamp (car cached))
+        (setq cached (cons stamp (codex-ide--parse-rollout-session-meta file)))
+        (puthash file cached codex-ide--rollout-cache))
+      (cdr cached))))
+
+(defun codex-ide--saved-sessions ()
+  "Discover saved sessions newest first, retaining IDs and recorded paths."
+  (let ((seen (make-hash-table :test 'equal)) records)
+    (dolist (file (codex-ide--newest-rollout-files codex-ide-sessions-directory nil))
+      (when-let* ((meta (codex-ide--rollout-session-meta file))
+                  (id (or (codex-ide--json-field meta "session_id")
+                          (codex-ide--json-field meta "id")))
+                  ((and (stringp id) (not (string-empty-p (string-trim id)))))
+                  ((not (gethash id seen))))
+        (puthash id t seen)
+        (push (list :id id :cwd (let ((cwd (codex-ide--json-field meta "cwd")))
+                                 (and (stringp cwd) (not (string-empty-p cwd)) cwd))
+                    :date (or (let ((date (codex-ide--json-field meta "timestamp")))
+                                (and (stringp date) date))
+                              (format-time-string "%Y-%m-%d %H:%M"
+                                                  (file-attribute-modification-time
+                                                   (file-attributes file)))))
+              records)))
+    (nreverse records)))
+
+(defun codex-ide--limit-saved-sessions (records)
+  "Apply the configured resume limit to RECORDS."
+  (if (and (> codex-ide-resume-session-scan-limit 0)
+           (> (length records) codex-ide-resume-session-scan-limit))
+      (seq-take records codex-ide-resume-session-scan-limit)
+    records))
+
+(defun codex-ide--saved-session-note (record)
+  "Return the date and abbreviated path for saved RECORD."
+  (concat "  " (plist-get record :date) "  "
+          (if-let* ((cwd (plist-get record :cwd)))
+              (abbreviate-file-name cwd)
+            "(unknown directory)")))
+
+(defun codex-ide--completion-table (candidates metadata)
+  "Return a completion table for CANDIDATES with METADATA."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        (cons 'metadata metadata)
+      (complete-with-action action candidates string predicate))))
 
 (defun codex-ide--newest-rollout-files (directory limit)
   "Return up to LIMIT newest *.jsonl files under DIRECTORY.
@@ -516,49 +591,44 @@ A nil or non-positive LIMIT includes all files."
         files))))
 
 (defun codex-ide--saved-session-candidates (&optional directory)
-  "Return alist of (SESSION-ID . ANNOTATION) for DIRECTORY.
-When DIRECTORY is nil, include sessions from any cwd.  Newest matching
-sessions are preferred up to `codex-ide-resume-session-scan-limit'."
-  (let ((seen (make-hash-table :test 'equal))
-        (limit codex-ide-resume-session-scan-limit)
-        candidates)
-    (catch 'complete
-      (dolist (file (codex-ide--newest-rollout-files
-                     codex-ide-sessions-directory nil))
-        (when-let* ((candidate (codex-ide--saved-session-candidate
-                                file directory))
-                    (id (car candidate))
-                    ((not (gethash id seen))))
-          (puthash id t seen)
-          (push candidate candidates)
-          (when (and (integerp limit) (> limit 0)
-                     (>= (hash-table-count seen) limit))
-            (throw 'complete nil)))))
-    (nreverse candidates)))
+  "Return newest saved (ID . ANNOTATION) pairs matching DIRECTORY."
+  (mapcar (lambda (record)
+            (cons (plist-get record :id) (codex-ide--saved-session-note record)))
+          (codex-ide--limit-saved-sessions
+           (seq-filter (lambda (record)
+                         (or (null directory)
+                             (codex-ide--same-root-p
+                              directory (plist-get record :cwd))))
+                       (codex-ide--saved-sessions)))))
 
-(defun codex-ide--read-saved-session-id (&optional directory)
-  "Read a saved Codex session id for DIRECTORY from the minibuffer."
+(defun codex-ide--read-saved-session-id (&optional directory details)
+  "Read a saved session ID for DIRECTORY; with DETAILS return its record."
   (let* ((root (or directory (codex-ide--get-working-directory)))
-         (candidates (or (codex-ide--saved-session-candidates root)
-                         (codex-ide--saved-session-candidates nil)))
-         (collection
-          (mapcar (lambda (candidate)
-                    (let ((id (car candidate))
-                          (note (cdr candidate)))
-                      (if (and (stringp note) (not (string-empty-p note)))
-                          (format "%s  %s" id note)
-                        id)))
-                  candidates))
-         (choice (progn
-                   (unless collection
-                     (user-error "No saved Codex sessions found under %s"
-                                 codex-ide-sessions-directory))
-                   (completing-read "Resume Codex session: " collection
-                                    nil t nil nil (car collection))))
-         (id (car (split-string choice "  " t))))
-    (unless (and (stringp id) (not (string-empty-p id)))
-      (user-error "Invalid Codex session selection"))
-    id))
+         (records (codex-ide--saved-sessions))
+         (project (seq-filter (lambda (record)
+                                (codex-ide--same-root-p root (plist-get record :cwd)))
+                              records))
+         (choices (codex-ide--limit-saved-sessions (or project records)))
+         (ids (mapcar (lambda (record) (plist-get record :id)) choices))
+         (table (codex-ide--completion-table
+                 ids `((display-sort-function . identity)
+                       (cycle-sort-function . identity)
+                       (annotation-function .
+                        ,(lambda (id)
+                           (codex-ide--saved-session-note
+                            (seq-find (lambda (record)
+                                        (equal id (plist-get record :id))) choices))))))))
+    (unless ids
+      (user-error "No saved Codex sessions found under %s" codex-ide-sessions-directory))
+    (let* ((id (completing-read (if project "Resume Codex session: "
+                                 "Resume Codex session (all projects): ")
+                               table nil t nil nil (car ids)))
+           (record (seq-find (lambda (record) (equal id (plist-get record :id))) choices)))
+      (unless record (user-error "Invalid Codex session selection"))
+      (if details
+          (if (stringp (plist-get record :cwd)) record
+            (user-error "Saved Codex session has no working directory"))
+        id))))
 
 (defun codex-ide--session-config-overrides ()
   "Return Codex config overrides for a new session.
@@ -574,31 +644,55 @@ session-local overrides needed by enabled integration helpers."
 ;;; CLI detection
 
 (defun codex-ide--detect-cli ()
-  "Detect whether the Codex CLI is available and cache the result."
-  (setq codex-ide--cli-available
-        (condition-case nil
-            (eq (call-process codex-ide-cli-path nil nil nil "--version") 0)
-          (error nil))))
+  "Probe the configured executable once and cache availability and version."
+  (let* ((path (or (executable-find codex-ide-cli-path) codex-ide-cli-path))
+         (version nil)
+         (available
+          (condition-case nil
+              (with-temp-buffer
+                (prog1 (eq (call-process path nil t nil "--version") 0)
+                  (setq version (string-trim (buffer-string)))))
+            (error nil))))
+    (setq codex-ide--cli-cache
+          (list :path path :state (if available 'available 'unavailable)
+                :version version)
+          codex-ide--cli-available available)))
 
 (defun codex-ide--invalidate-cli-cache ()
   "Forget cached CLI availability so the next check redetects."
-  (setq codex-ide--cli-available nil))
+  (setq codex-ide--cli-available nil
+        codex-ide--cli-cache nil))
 
 (defun codex-ide--ensure-cli ()
-  "Return non-nil if the Codex CLI is available, detecting if needed."
-  (unless codex-ide--cli-available
+  "Return cached availability, probing when the executable path changes."
+  (unless (equal (plist-get codex-ide--cli-cache :path)
+                 (or (executable-find codex-ide-cli-path) codex-ide-cli-path))
     (codex-ide--detect-cli))
   codex-ide--cli-available)
 
 ;;; Process lifecycle
 
 (defun codex-ide--cleanup-dead-sessions ()
-  "Remove entries for dead sessions from the session table."
+  "Remove dead records that no longer await terminal settlement."
   (maphash (lambda (root sessions)
-             (let ((live-sessions
-                    (cl-remove-if-not #'codex-ide--session-live-p sessions)))
-               (if live-sessions
-                   (puthash root live-sessions codex-ide--sessions)
+             (let* ((live-sessions
+                     (cl-remove-if-not #'codex-ide--session-live-p sessions))
+                    (owned-sessions
+                     (cl-remove-if-not
+                      (lambda (session)
+                        (or (memq session live-sessions)
+                            (and (plist-get session :awaiting-exit)
+                                 (buffer-live-p (plist-get session :buffer))
+                                 (with-current-buffer (plist-get session :buffer)
+                                   (and codex-ide-mode
+                                        (equal root codex-ide--session-root)
+                                        (eql (plist-get session :id)
+                                             codex-ide--session-id))))))
+                      sessions)))
+               ;; Backend exit hooks may query the registry before our callback.
+               ;; Keep their exact owner until output and exit policy settle.
+               (if owned-sessions
+                   (puthash root owned-sessions codex-ide--sessions)
                  (remhash root codex-ide--sessions))
                (codex-ide--sync-active-session root live-sessions)))
            codex-ide--sessions))
@@ -665,8 +759,7 @@ session-local overrides needed by enabled integration helpers."
 
 (defun codex-ide--recover-live-session (buffer)
   "Register BUFFER as a live Codex session when needed."
-  (or (and-let* ((session (codex-ide--session-by-buffer buffer)))
-        (codex-ide--setup-session session))
+  (or (codex-ide--session-by-buffer buffer)
       (let* ((process (codex-ide-term--process buffer))
              (root (with-current-buffer buffer
                      (or codex-ide--session-root (codex-ide--get-working-directory))))
@@ -681,11 +774,29 @@ session-local overrides needed by enabled integration helpers."
 
 (defun codex-ide--recover-live-sessions ()
   "Register live Codex terminal buffers missing session records."
+  (setq codex-ide--recovery-pending nil)
   (codex-ide--cleanup-dead-sessions)
   (mapc #'codex-ide--recover-live-session
         (cl-remove-if-not #'codex-ide--recoverable-buffer-p
                           (buffer-list)))
   (codex-ide--cleanup-dead-sessions))
+
+(defun codex-ide--ensure-session-registry (&optional root)
+  "Recover after reload or when ROOT has no registered sessions."
+  (codex-ide--cleanup-dead-sessions)
+  (when (or codex-ide--recovery-pending
+            (and root (null (gethash root codex-ide--sessions)))
+            (and codex-ide-mode codex-ide--session-root
+                 (not (codex-ide--session-by-buffer (current-buffer)))))
+    (codex-ide--recover-live-sessions)))
+
+(defun codex-ide--mode-line ()
+  "Return a concise session label and terminal backend."
+  (list " " (propertize
+             (format "Codex:%s" (or codex-ide--session-label
+                                    codex-ide--session-id "?"))
+             'face 'mode-line-emphasis)
+        (propertize (format "/%s" codex-ide-term--backend) 'face 'shadow)))
 
 ;;; IDE context
 
@@ -704,15 +815,15 @@ session-local overrides needed by enabled integration helpers."
 
 (defun codex-ide--all-sessions ()
   "Return all live Codex session records."
-  (codex-ide--recover-live-sessions)
-  (codex-ide--raw-sessions))
+  (codex-ide--ensure-session-registry)
+  (cl-remove-if-not #'codex-ide--session-live-p (codex-ide--raw-sessions)))
 
 (defun codex-ide--session-candidates (&optional directory)
   "Return (BUFFER-NAME . SESSION) pairs for live Codex sessions.
 When DIRECTORY is non-nil, return only sessions for that project root."
   (let* ((sessions (if directory
                        (progn
-                         (codex-ide--recover-live-sessions)
+                         (codex-ide--ensure-session-registry directory)
                          (codex-ide--project-sessions directory))
                      (codex-ide--all-sessions)))
          (candidates
@@ -744,7 +855,9 @@ DEFAULT-SESSION, when non-nil, is the initially selected session."
            (completion-extra-properties
             (list :annotation-function
                   (codex-ide--session-annotation-function candidates)))
-           (choice (completing-read "Codex session: " candidates nil t
+           (choice (completing-read "Codex session: "
+                                    (codex-ide--completion-table
+                                     candidates '((category . buffer))) nil t
                                     nil nil default-name)))
       (or (cdr (assoc choice candidates))
           (user-error "No Codex session selected")))))
@@ -762,7 +875,7 @@ When the current buffer owns a live session for the project, use it
 directly.  Otherwise prompt when the project has more than one live
 session."
   (let ((root (or directory (codex-ide--get-working-directory))))
-    (codex-ide--recover-live-sessions)
+    (codex-ide--ensure-session-registry root)
     (let ((sessions (codex-ide--sorted-project-sessions root))
           (own (codex-ide--buffer-session)))
       (cond
@@ -784,14 +897,14 @@ session."
   (unless (codex-ide--session-live-p session)
     (user-error "No live Codex session"))
   (codex-ide--activate-session session)
-  (pop-to-buffer-same-window (plist-get session :buffer)))
+  (codex-ide--display-buffer (plist-get session :buffer) t))
 
 (defun codex-ide--display-result-window (buffer result)
   "Return a live display window for BUFFER from display RESULT."
   (cond
    ((and (windowp result) (window-live-p result)) result)
-   ((bufferp result) (get-buffer-window result t))
-   (t (get-buffer-window buffer t))))
+   ((bufferp result) (get-buffer-window result (selected-frame)))
+   (t (get-buffer-window buffer (selected-frame)))))
 
 (defun codex-ide--display-window (buffer)
   "Display BUFFER and return its window."
@@ -799,31 +912,38 @@ session."
    buffer
    (funcall codex-ide-display-buffer-function buffer)))
 
-(defun codex-ide--display-buffer (buffer)
-  "Display BUFFER according to Codex window customization.
-Return the displayed window when one is available."
-  (when-let* ((session (codex-ide--buffer-session buffer)))
-    (codex-ide--activate-session session))
-  (when-let* ((window (or (get-buffer-window buffer t)
-                          (codex-ide--display-window buffer))))
-    (select-window window)
-    (codex-ide-term--sync-dimensions buffer window)
-    window))
+(cl-defun codex-ide--display-buffer (buffer &optional (select t))
+  "Display BUFFER through the configured policy and synchronize its size.
+SELECT defaults to t and focuses its window, including another frame when the
+configured policy chooses one.  Nil preserves the selected window."
+  (let* ((origin (selected-window))
+         (window (or (get-buffer-window buffer (selected-frame))
+                     (save-selected-window
+                       (codex-ide--display-window buffer)))))
+    (when (window-live-p window)
+      (when select
+        (when-let* ((session (codex-ide--buffer-session buffer)))
+          (codex-ide--activate-session session))
+        (unless (eq (window-frame window) (selected-frame))
+          (select-frame-set-input-focus (window-frame window)))
+        (select-window window))
+      (unless select (select-window origin))
+      (codex-ide-term--sync-dimensions buffer window)
+      window)))
 
 (defun codex-ide--hide-window (window)
-  "Hide WINDOW without killing its buffer."
+  "Hide WINDOW and restore the layout preceding its display."
   (when (window-live-p window)
-    (with-selected-window window
-      (bury-buffer))))
+    (quit-restore-window window 'bury)))
 
 (defun codex-ide--hide-displayed-buffer (buffer)
   "Hide every live window showing BUFFER."
-  (dolist (window (get-buffer-window-list buffer nil t))
+  (dolist (window (get-buffer-window-list buffer nil (selected-frame)))
     (codex-ide--hide-window window)))
 
 (defun codex-ide--session-visible-p (session)
   "Return non-nil when SESSION has a visible window."
-  (get-buffer-window (plist-get session :buffer) t))
+  (get-buffer-window (plist-get session :buffer) (selected-frame)))
 
 (defun codex-ide--selected-project-session (root sessions)
   "Return the selected project session for ROOT from SESSIONS."
@@ -873,12 +993,12 @@ ACTIVE-ID is the session that was active before session recovery."
 (defun codex-ide--toggle-existing-window (buffer)
   "Show or hide the window showing BUFFER.
 Used when a session is already running."
-  (let ((window (get-buffer-window buffer t)))
+  (let ((window (get-buffer-window buffer (selected-frame))))
     (if window
         (progn
           (codex-ide--hide-displayed-buffer buffer)
           (codex-ide-debug "Codex window hidden"))
-      (codex-ide--display-buffer buffer)
+      (codex-ide--display-buffer buffer t)
       (codex-ide-debug "Codex window shown"))))
 
 (defun codex-ide--cleanup-target-from-buffer (buffer)
@@ -955,6 +1075,35 @@ Reject vterm mode changes without disturbing its process or session."
      codex-ide--session-root codex-ide--session-id
      (current-buffer) (codex-ide-term--process (current-buffer)) t)))
 
+(defun codex-ide--finish-session (root id buffer process success event)
+  "Retire ROOT's ID with exact BUFFER and PROCESS ownership.
+SUCCESS is non-nil only for a clean exit; EVENT describes the outcome."
+  (let ((session (codex-ide--session-by-id root id)))
+    (when (and session (eq buffer (plist-get session :buffer))
+               (eq process (plist-get session :process)))
+      (let ((keep (not (or (eq codex-ide-kill-buffer-on-exit t)
+                           (and success
+                                (eq codex-ide-kill-buffer-on-exit 'success))))))
+        (codex-ide--cleanup-on-exit root id buffer process keep)
+        (when (and keep (buffer-live-p buffer)
+                   (not (codex-ide--session-by-buffer buffer))
+                   (equal root (buffer-local-value 'codex-ide--session-root buffer))
+                   (equal id (buffer-local-value 'codex-ide--session-id buffer))
+                   (buffer-local-value 'codex-ide-mode buffer))
+          (with-current-buffer buffer
+            (when (eq codex-ide-term--backend 'vterm)
+              (require 'codex-ide-term-vterm)
+              (codex-ide-term-vterm--settle-buffer))
+            (codex-ide-mode -1)
+            ;; Retain vterm's major mode without its dead terminal input map.
+            (use-local-map special-mode-map)
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert (propertize (format "\n[Codex exited: %s]\n"
+                                          (string-trim event))
+                                  'face (if success 'success 'error))))
+            (setq buffer-read-only t)))))))
+
 (defun codex-ide--make-process-sentinel
     (directory session-id &optional original buffer)
   "Return the process sentinel for DIRECTORY and SESSION-ID.
@@ -970,9 +1119,11 @@ terminal backend can finish its own teardown before Codex kills BUFFER."
          (codex-ide-debug "Chained sentinel failed: %s"
                           (error-message-string err)))))
     (when (memq (process-status proc) '(exit signal))
-      (codex-ide--cleanup-on-exit
+      (codex-ide--finish-session
        directory session-id
-       (or buffer (and (processp proc) (process-buffer proc))) proc))))
+       (or buffer (and (processp proc) (process-buffer proc))) proc
+       (and (eq (process-status proc) 'exit)
+            (zerop (process-exit-status proc))) event))))
 
 (defun codex-ide--make-env ()
   "Return the list of \"KEY=VALUE\" env vars for a Codex session."
@@ -1000,6 +1151,7 @@ terminal backend can finish its own teardown before Codex kills BUFFER."
       (codex-ide-term--configure-buffer)
       (unless codex-ide-mode
         (codex-ide-mode 1)))
+    (setf (plist-get session :awaiting-exit) t)
     session))
 
 (defun codex-ide--create-session (emacs-session-id &optional resume-last
@@ -1009,8 +1161,8 @@ EMACS-SESSION-ID identifies the live Emacs-managed session.  RESUME-LAST
 and CODEX-SESSION-ID are forwarded to `codex-ide--build-command'.
 Returns a session record."
   (let* ((working-dir (codex-ide--get-working-directory))
-         (buffer-name (codex-ide--get-buffer-name working-dir
-                                                  emacs-session-id))
+         (buffer-name (generate-new-buffer-name
+                       (codex-ide--get-buffer-name working-dir emacs-session-id)))
          (codex-ide-config-overrides
           (let ((default-directory working-dir))
             (codex-ide--session-config-overrides)))
@@ -1051,16 +1203,19 @@ CODEX-SESSION-ID is given, resume that specific saved session.  If a live
 session exists, toggle its window unless NEW-SESSION is non-nil."
   (unless (codex-ide--ensure-cli)
     (user-error "Codex CLI not available.  Install it and ensure it is in PATH"))
-  (let ((working-dir (codex-ide--get-working-directory)))
-    (when new-session
-      (codex-ide--recover-live-sessions))
+  (let ((working-dir (codex-ide--get-working-directory))
+        (new-session (or new-session resume-last codex-session-id)))
+    (codex-ide--ensure-session-registry working-dir)
     (let ((existing-session (and (not new-session)
                                  (codex-ide--active-session working-dir))))
       (codex-ide--record-source-buffer working-dir)
       (if existing-session
           (codex-ide--toggle-existing-window
            (plist-get existing-session :buffer))
-        (codex-ide--maybe-ensure-context-server)
+        (condition-case err
+            (codex-ide--maybe-ensure-context-server)
+          (error (codex-ide-log "Context server unavailable: %s"
+                                (error-message-string err))))
         (let* ((emacs-session-id (codex-ide--next-session-id working-dir))
                (session (codex-ide--create-session emacs-session-id
                                                    resume-last
@@ -1099,7 +1254,7 @@ With PREFIX, start another Codex session for the current project."
 (defun codex-ide-resume-last ()
   "Resume the most recent Codex session for the current project."
   (interactive)
-  (codex-ide--start-session t))
+  (codex-ide--start-session t nil t))
 
 ;;;###autoload
 (defun codex-ide-resume ()
@@ -1107,8 +1262,9 @@ With PREFIX, start another Codex session for the current project."
 Uses `codex resume <session-id>'.  Prefer `codex-ide-resume-last' for
 the most recent session without a picker."
   (interactive)
-  (let ((session-id (codex-ide--read-saved-session-id)))
-    (codex-ide--start-session nil session-id)))
+  (let* ((saved (codex-ide--read-saved-session-id nil t))
+         (codex-ide--working-directory (plist-get saved :cwd)))
+    (codex-ide--start-session nil (plist-get saved :id) t)))
 
 ;;;###autoload
 (defun codex-ide-stop ()
@@ -1120,7 +1276,8 @@ before stopping a different session."
   (let* ((working-dir (codex-ide--get-working-directory))
          (session (codex-ide--active-session working-dir)))
     (if-let* ((buffer (plist-get session :buffer)))
-        (progn
+        (when (or (not (called-interactively-p 'interactive))
+                  (y-or-n-p (format "Stop Codex session %s? " (buffer-name buffer))))
           (kill-buffer buffer)
           (codex-ide-log "Stopping active Codex session in %s..."
                          (file-name-nondirectory
@@ -1151,21 +1308,24 @@ before stopping a different session."
   (get-buffer-window-list (plist-get session :buffer) nil (selected-frame)))
 
 (defun codex-ide--show-panel-session (session)
-  "Show SESSION in its own side window in the current frame."
+  "Show SESSION in the current frame without displacing another session."
   (let* ((buffer (plist-get session :buffer))
          (before (window-list))
+         (owners (mapcar (lambda (window)
+                           (cons window (codex-ide--session-by-buffer
+                                         (window-buffer window)))) before))
          (saved (current-window-configuration))
-         (existing (car (codex-ide--panel-windows session)))
          (slots (mapcar (lambda (window)
                           (when (eq (window-parameter window 'window-side) 'right)
                             (window-parameter window 'window-slot))) before))
          (slot (cl-loop for number from 0 unless (memq number slots) return number))
-         (window (or existing
-                     (display-buffer
-                      buffer `((display-buffer-in-side-window)
-                               (side . right) (slot . ,slot) (window-width . 0.4))))))
-    ;; Side-window limits can make Emacs reuse an occupied slot instead of split.
-    (unless (and window (or existing (not (memq window before))))
+         (display-buffer-base-action
+          `((display-buffer-in-side-window)
+            (side . right) (slot . ,slot) (window-width . 0.4)))
+         (window (codex-ide--display-buffer buffer nil)))
+    ;; Honor user reuse rules, but not at the expense of another session panel.
+    (unless (and window (let ((owner (cdr (assq window owners))))
+                          (or (null owner) (eq owner session))))
       (set-window-configuration saved)
       (user-error "No room for another Codex session panel"))
     (codex-ide-term--sync-dimensions buffer window)))
@@ -1175,7 +1335,7 @@ before stopping a different session."
   "Show every live project session in the current tab without selecting it."
   (interactive)
   (let ((root (codex-ide--get-working-directory)))
-    (codex-ide--recover-live-sessions)
+    (codex-ide--ensure-session-registry root)
     (let ((sessions (codex-ide--sorted-project-sessions root)))
       (unless sessions (user-error "No Codex session for this project"))
       (codex-ide--panel-state)
@@ -1188,7 +1348,7 @@ Remember the visible set when hiding.  Restore that set when showing,
 falling back to the active session.  Other tabs and projects are unaffected."
   (interactive)
   (let ((root (codex-ide--get-working-directory)))
-    (codex-ide--recover-live-sessions)
+    (codex-ide--ensure-session-registry root)
     (let* ((sessions (codex-ide--sorted-project-sessions root))
            (visible (cl-remove-if-not #'codex-ide--panel-windows sessions))
            (saved (cdr (assoc root (codex-ide--panel-state)))))
@@ -1301,7 +1461,11 @@ Labels do not rename saved Codex conversations."
   (let* ((region (use-region-p))
          (beg (if region (region-beginning) (line-beginning-position)))
          (end (if region (region-end) (line-end-position)))
-         (source (or buffer-file-name (buffer-name)))
+         (source (if (and buffer-file-name
+                          (progn (codex-ide-term--validate-draft buffer-file-name) t))
+                     (file-relative-name buffer-file-name
+                                         (codex-ide--get-working-directory))
+                   (buffer-name)))
          (text (buffer-substring-no-properties beg end))
          (draft (format "Source: %s (lines %d-%d)\n%s" source
                         (line-number-at-pos beg t)
@@ -1329,7 +1493,8 @@ ring.  Reject terminal controls except TAB and LF, and drafts over 1 MiB."
                  (equal id (buffer-local-value 'codex-ide--session-id buffer)))
       (user-error "Codex session is no longer current"))
     (with-current-buffer buffer
-      (codex-ide-term--paste-draft process draft))))
+      (codex-ide-term--paste-draft process draft))
+    (codex-ide--display-buffer buffer nil)))
 
 (defun codex-ide--input-owner (session)
   "Capture and validate SESSION's exact terminal input owner."
@@ -1390,7 +1555,8 @@ TAB and LF, and prompts over 1 MiB of UTF-8 text."
     (codex-ide--record-source-buffer working-dir origin)
     (let* ((session (codex-ide--target-session working-dir))
            (owner (codex-ide--input-owner session))
-           (text (or prompt (read-string "Codex prompt: "))))
+           (text (or prompt (read-string "Codex prompt: " nil
+                                         'codex-ide-prompt-history))))
       (unless (string-empty-p text)
         (with-current-buffer (codex-ide--validate-input-owner owner)
           (codex-ide-term--paste-draft (plist-get owner :process) text))
@@ -1414,14 +1580,12 @@ TAB and LF, and prompts over 1 MiB of UTF-8 text."
 
 ;;;###autoload
 (defun codex-ide-insert-newline ()
-  "Insert a literal newline into the Codex prompt.
-Sends backslash followed by RET, which Codex interprets as a newline."
+  "Send a literal LF (Ctrl+J) to insert a newline in the Codex prompt."
   (interactive)
   (let* ((session (codex-ide--target-session))
          (owner (codex-ide--input-owner session)))
     (with-current-buffer (codex-ide--validate-input-owner owner)
-      (codex-ide-term--send-string "\\"))
-    (codex-ide--submit-input owner)))
+      (codex-ide-term--send-string "\n"))))
 
 ;;;###autoload
 (defun codex-ide-check-status ()
@@ -1429,10 +1593,8 @@ Sends backslash followed by RET, which Codex interprets as a newline."
   (interactive)
   (codex-ide--detect-cli)
   (if codex-ide--cli-available
-      (let ((version (with-temp-buffer
-                       (call-process codex-ide-cli-path nil t nil "--version")
-                       (string-trim (buffer-string)))))
-        (codex-ide-log "Codex CLI version: %s" version))
+      (codex-ide-log "Codex CLI version: %s"
+                     (plist-get codex-ide--cli-cache :version))
     (codex-ide-log "Codex CLI is not installed.")))
 
 (provide 'codex-ide)

@@ -29,8 +29,25 @@
 ** Saved sessions
 + =codex-ide-resume-session-scan-limit= limits matching unique sessions
   offered by the picker (default 200), after filtering by project.
-+ If the project has no saved sessions, the picker offers other projects.
++ Resume always creates another live session, preserving existing sessions.
++ Saved sessions are shown newest first, with dates and abbreviated paths.
+  Metadata is cached until a rollout's modification time or size changes.
++ If the project has no saved sessions, the prompt says "all projects";
+  selecting one starts it in its recorded working directory.
 + Metadata lines larger than one MiB produce an explicit error.
+
+** Session display and exit
++ =codex-ide-display-buffer-function= and =display-buffer-alist= control placement.
+  Switching selects the session; source attachment displays it without selecting.
+  Existing-window lookup and hiding use the selected frame. Hiding restores the
+  window layout where possible.
++ =codex-ide-kill-buffer-on-exit= defaults to =success=: clean exits with status 0
+  close the terminal buffer. Failed exits retain readable output and an exit notice.
+  Set it to =nil= to retain every exit, or =t= to close on every exit.
++ Interactive =codex-ide-stop= asks for confirmation. Calls from Lisp do not.
++ The mode line shows the live session label or number and terminal backend.
++ =S-<return>= sends Ctrl+J to insert a literal newline in the Codex prompt.
+  Minibuffer prompts use =codex-ide-prompt-history=.
 
 ** Terminal scrolling
 + With Eat, =C-c C-e= enters its read-only Emacs mode for ordinary scrolling,
@@ -43,6 +60,7 @@
 + With =codex-ide-context-auto-start= non-nil (default), new GNU Emacs
   sessions enable the IDE context IPC automatically.  Neomacs skips this
   legacy =/ide= server autostart; explicit context commands remain available.
+  Optional context startup failures are logged and do not prevent Codex startup.
 + Disable with =(setq codex-ide-context-auto-start nil)=.
 
 ** MCP tools
@@ -284,7 +302,8 @@ errors from loading an installed backend are preserved for diagnosis.
 
 ** Source attachments
 =codex-ide-attach-source= snapshots the region (or current line), source
-path or buffer name, and line range before choosing a project session.
+project-relative path or buffer name, and line range before choosing a project session.
+It displays the target session without moving focus from the source buffer.
 It inserts one literal bracketed paste on Eat, vterm or neo-term without pressing
 Return.  Review the draft in the Codex terminal before submitting it.
 Unicode, TAB and LF are supported; other control characters and drafts

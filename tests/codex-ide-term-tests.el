@@ -566,6 +566,54 @@
        (should-not (codex-ide--session-by-id default-directory 1))
        (should (codex-ide--session-live-p sibling))))))
 
+(ert-deftest codex-ide-real-terminal-exit-retains-final-output ()
+  "PTY exit hooks can enumerate sessions before every exit policy settles."
+  (dolist (backend '(eat vterm))
+    (dolist (policy '(nil t success))
+      (dolist (code '(0 7))
+        (ert-info ((format "Backend %s, policy %s, code %s" backend policy code))
+          (when (or (eq backend 'eat) (codex-ide-term-vterm--available-p))
+            (codex-ide-term-test--with-owners
+             backend
+             (lambda (start)
+               (let* ((codex-ide-kill-buffer-on-exit policy)
+                      (eat-kill-buffer-on-exit t)
+                      (vterm-timer-delay 0.1)
+                      (exit-queries 0)
+                      (vterm-exit-functions
+                       (list (lambda (&rest _)
+                               (cl-incf exit-queries)
+                               (codex-ide--all-sessions))))
+                      (keep (not (or (eq policy t)
+                                     (and (eq policy 'success) (= code 0)))))
+                      (session
+                       (funcall start 1
+                                (format "import os,sys; os.write(1,b'FINAL DIAGNOSTIC\\r\\n'); sys.exit(%d)" code)))
+                      (buffer (plist-get session :buffer)))
+                 (with-current-buffer buffer
+                   (add-hook 'eat-exit-hook
+                             (lambda (&rest _)
+                               (cl-incf exit-queries)
+                               (codex-ide--all-sessions)) nil t))
+                 (should (codex-ide-term-test--wait-for
+                          (lambda () (null (codex-ide--raw-sessions)))))
+                 (should (> exit-queries 0))
+                 (should (eq (buffer-live-p buffer) keep))
+                 (when keep
+                   (with-current-buffer buffer
+                     (should buffer-read-only)
+                     (should-not codex-ide-mode)
+                     (should (eq (current-local-map) special-mode-map))
+                     (should (string-match-p "FINAL DIAGNOSTIC" (buffer-string)))
+                     (should (string-match-p "Codex exited:" (buffer-string)))
+                     (goto-char (point-max))
+                     (should (eq (get-text-property (- (point) 2) 'face)
+                                 (if (= code 0) 'success 'error)))
+                     ;; Service delayed redraw that could erase the notice.
+                     (let ((before (buffer-string)))
+                       (sleep-for 0.2)
+                       (should (equal before (buffer-string)))))))))))))))
+
 (provide 'codex-ide-term-tests)
 
 ;;; codex-ide-term-tests.el ends here

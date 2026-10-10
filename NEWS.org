@@ -1,5 +1,20 @@
 #+title: emacs-codex-ide NEWS
 
+* Unreleased
+
+- Resume saved conversations in new live sessions, preserving existing sessions.
+  Keep the picker newest first, annotate IDs with date and directory, cache
+  rollout metadata, and resume global fallback choices in their recorded cwd.
+- Keep failed terminal output with an exit notice. Customize
+  =codex-ide-kill-buffer-on-exit= to retain all buffers or close all exits.
+- Confirm interactive session stops and continue after optional context startup
+  failures. Show the session label and backend in the mode line.
+- Use the configured display policy for session switching and panels, scope
+  window lookup to the selected frame, and restore splits when hiding.
+- Send literal Ctrl+J for newlines, retain minibuffer prompt history, and display
+  source attachments without selecting the session, using project-relative paths.
+- Cache CLI availability, failures and version output by executable path.
+
 * Version 0.1.4 (unreleased)
 
 - Select native neo-term automatically in Neomacs, preserving explicit

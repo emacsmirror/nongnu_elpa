@@ -64,7 +64,7 @@
 					   ((symbol-function 'codex-ide-term-neo--available-p) (lambda () t))
 					   ((symbol-function 'executable-find) (lambda (program) (concat "/bin/" program)))
 					   ((symbol-function 'codex-ide--display-buffer)
-					    (lambda (buffer) (set-window-buffer (selected-window) buffer) (selected-window)))
+					    (lambda (buffer &optional _select) (set-window-buffer (selected-window) buffer) (selected-window)))
 					   ((symbol-function 'neo-term-exec)
 					    (lambda (program args directory environment &optional _origin)
 					      (push (list program args directory environment) launched)
@@ -211,7 +211,9 @@
 
 (ert-deftest codex-ide-neomacs-completion-and-stale-callback ()
   (codex-ide-neomacs-tests--with-host
-   (dolist (status '((0 nil t nil nil) (nil "Hangup" t nil nil)))
+   (dolist (status '((0 nil t nil nil) (9 nil t nil nil) (nil "Hangup" t nil nil)
+                     (0 nil nil nil nil) (0 nil t "wait failed" nil)
+                     (0 nil t nil "read failed")))
      (let* ((session (codex-ide-neomacs-tests--start))
             (buffer (plist-get session :buffer))
             (resource (plist-get session :process))
@@ -221,8 +223,15 @@
        (with-current-buffer buffer
          (remhash neo-term--id neo-term--terminals)
          (setq neo-term--id nil))
+       ;; Earlier native settlement hooks can enumerate sessions.
+       (should-not (codex-ide--all-sessions))
        (apply callback id status)
-       (should-not (buffer-live-p buffer))
+       (if (equal status '(0 nil t nil nil))
+           (should-not (buffer-live-p buffer))
+         (should (buffer-live-p buffer))
+         (with-current-buffer buffer
+           (should buffer-read-only)
+           (should (string-match-p "Codex exited:" (buffer-string)))))
        (should-not (codex-ide--raw-sessions))
        (let ((successor (codex-ide-neomacs-tests--start)))
          (apply callback id status)
@@ -250,7 +259,10 @@
    (let* ((session (codex-ide-neomacs-tests--start))
           (resource (plist-get session :process)))
      (run-hook-with-args 'neo-term-create-failed-functions (plist-get resource :id) "spawn failed")
-     (should-not (buffer-live-p (plist-get session :buffer)))
+     (should (buffer-live-p (plist-get session :buffer)))
+     (with-current-buffer (plist-get session :buffer)
+       (should buffer-read-only)
+       (should (string-match-p "Codex exited: spawn failed" (buffer-string))))
      (should-not (codex-ide--raw-sessions))
      (should-not neo-term-settled-functions))))
 

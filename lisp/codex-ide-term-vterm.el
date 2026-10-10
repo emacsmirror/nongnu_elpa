@@ -30,6 +30,7 @@
 (require 'subr-x)
 
 (declare-function vterm-copy-mode "vterm" (&optional arg))
+(declare-function vterm--delayed-redraw "vterm" (buffer))
 (declare-function vterm-mode "vterm" ())
 (declare-function vterm-reset-cursor-point "vterm" ())
 (declare-function vterm-send-escape "vterm" ())
@@ -40,6 +41,8 @@
 (defvar vterm-environment)
 (defvar vterm-kill-buffer-on-exit)
 (defvar vterm-shell)
+(defvar vterm--redraw-timer)
+(defvar vterm--term)
 
 (defun codex-ide-term-vterm--available-p ()
   "Return non-nil when vterm can be loaded.
@@ -61,6 +64,14 @@ Missing vterm is optional; report module and shared-library load errors."
   "Validate the current Codex vterm buffer."
   (unless (derived-mode-p 'vterm-mode)
     (error "Codex vterm buffer has not started")))
+
+(defun codex-ide-term-vterm--settle-buffer ()
+  "Flush pending terminal output before adding the final exit notice."
+  (when (bound-and-true-p vterm--redraw-timer)
+    (cancel-timer vterm--redraw-timer)
+    (setq vterm--redraw-timer nil))
+  (when (bound-and-true-p vterm--term)
+    (vterm--delayed-redraw (current-buffer))))
 
 (defun codex-ide-term-vterm--make-process (buffer program args env)
   "Start PROGRAM with ARGS and ENV in prepared vterm BUFFER."
