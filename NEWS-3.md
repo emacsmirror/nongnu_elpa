@@ -8,19 +8,39 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.0 released
 
-  * **An addressee whose name is in quotation marks can be sent to**
+  * **An address header is encoded only where RFC 2047 allows it**
     (emacs-vm/vm#909).  `To: "Göran Uddeborg" <goeran@uddeborg.se>` could
-    not: the words of the name were encoded where they stood, which put the
-    opening quotation mark inside the encoded word and left the closing one
-    loose after it, and the send stopped with `Invalid data for rfc2047
-    encoding`.  RFC 2047 section 5 forbids an encoded word inside a quoted
-    string, so the quotation marks now come off and the whole name is
-    encoded, including any comma or period that made it need quoting.
+    not be sent at all: the words of the header were encoded where they
+    stood, which put the opening quotation mark inside the encoded word and
+    left the closing one loose after it, and the send stopped with `Invalid
+    data for rfc2047 encoding`.
 
-    The characters that section 4.2 reserves inside an encoded word are
-    written as =XX now too.  An underscore went out bare and came back as a
-    space, so a Subject of `a_ö` was read as `a ö`; a question mark went out
-    bare, which ends the encoded word for a reader that follows the grammar.
+    Section 5 of that standard names the only three places an encoded word
+    may stand, and VM now keeps to them.  A display name in quotation marks
+    loses them and is encoded whole, including any comma or period that made
+    it need quoting.  A comment keeps its parentheses, the encoded word
+    standing inside them.  A group keeps its colon and semicolon.  An
+    address is not touched at all, where an encoded word used to be written
+    straight across the angle brackets and leave a header with no address in
+    it; one outside US-ASCII is now refused, since RFC 2047 reaches no part
+    of an address and carrying it takes an SMTPUTF8 server that VM does not
+    speak.
+
+    What an encoded word may carry follows the same sections.  The
+    characters section 4.2 reserves are written as =XX: an underscore went
+    out bare and came back as a space, so a Subject of `a_ö` was read as
+    `a ö`, and a question mark went out bare, which ends the word for a
+    reader that follows the grammar.  In a display name only the letters,
+    digits and `!*+-/` of section 5(3) stand bare; in a comment no
+    parenthesis or quotation mark stands at all.
+
+    An encoded word now also ends where the reader looks for its end.  It
+    covers a whole run between whitespace, so a Subject of `Löbe, Ada` no
+    longer leaves the comma hanging off the word, which Python read back as
+    `Löbe , Ada`; and whitespace is put between an encoded word and a
+    special that would touch it.  A header carrying an encoded word folds at
+    76 characters, which is the limit section 2 sets for those lines, rather
+    than the 78 of RFC 5322.
 
   * **Gathering mail takes a file of another type, and takes a single
     message** (emacs-vm/vm#908).  `C-u M-x vm-get-new-mail` asks for a file
