@@ -974,9 +974,13 @@ terminal backend can finish its own teardown before Codex kills BUFFER."
        directory session-id
        (or buffer (and (processp proc) (process-buffer proc))) proc))))
 
-(defun codex-ide--make-env ()
-  "Return the list of \"KEY=VALUE\" env vars for a Codex session."
-  (list "TERM_PROGRAM=emacs"))
+(defun codex-ide--make-env (&optional buffer)
+  "Return the session environment, with a GNU MCP token owned by BUFFER."
+  (append (list "TERM_PROGRAM=emacs")
+          (when (and codex-ide-mcp-enabled (not (featurep 'neomacs)))
+            (list (concat "CODEX_IDE_MCP_TOKEN="
+                          (codex-ide-mcp--session-token
+                           (or buffer (current-buffer))))))))
 
 (defun codex-ide--setup-session (session)
   "Install process and buffer-local state for SESSION."
@@ -1017,8 +1021,8 @@ Returns a session record."
          (cmd (codex-ide--build-command resume-last codex-session-id))
          (program (car cmd))
          (args (cdr cmd))
-         (env (codex-ide--make-env))
-         (buffer (codex-ide-term--prepare-buffer buffer-name working-dir)))
+         (buffer (codex-ide-term--prepare-buffer buffer-name working-dir))
+         (env (codex-ide--make-env buffer)))
     (codex-ide-debug "Starting Codex: %s %s"
                      program (string-join args " "))
     (codex-ide-debug "Working directory: %s" working-dir)

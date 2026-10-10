@@ -51,17 +51,27 @@
 + Modern clients can discover capabilities with =server/discover= or call
   tools directly, with protocol metadata and matching routing headers.
 + When =codex-ide-mcp-enabled= is non-nil (default), session start
-  registers a transient local MCP URL via Codex =-c= overrides.
+  registers a transient local MCP URL via Codex =-c= overrides. GNU sessions
+  authenticate with a private per-session bearer token passed only through
+  =CODEX_IDE_MCP_TOKEN= in the terminal environment. Requests without the exact
+  token are refused; killing the terminal buffer revokes it.
 + The bridge can evaluate Elisp, edit buffers, and run shell commands. It
   exposes those control tools by default and only accepts loopback bind
-  addresses.
+  addresses. Set =codex-ide-mcp-disabled-tools= to a list of tool names to
+  hide and refuse them. Tool execution can be interrupted with =C-g=.
 + Commands: =codex-ide-mcp-start=, =codex-ide-mcp-stop=,
   =codex-ide-mcp-status=, =codex-ide-mcp-install-codex-config=.
 + Structured edits require an explicit =buffer= name or open file =path=.
   Supplied tool arguments must match their advertised types; for example,
   positions are integers and =indent= is a JSON boolean.
-+ Default port is ephemeral (=codex-ide-mcp-port= 0). Persistent Codex
-  config only stays reliable with a fixed port.
++ Default port is ephemeral (=codex-ide-mcp-port= 0). GNU persistent HTTP
+  installation is refused because it cannot supply session credentials;
+  start the session with =M-x codex-ide=. Native Neomacs installation is unchanged.
++ =emacs_context= accepts only already-open file paths. =emacs_review_start=
+  can omit =buffer= for an authenticated GNU session. =emacs_review_result=
+  returns its complete result, including accepted text, in =structuredContent=;
+  its text content is a short status message. Read =structuredContent.content=
+  when applying the accepted edit.
 + Disable auto registration with =(setq codex-ide-mcp-enabled nil)=.
 
 *** Custom tools

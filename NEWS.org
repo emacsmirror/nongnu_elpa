@@ -1,5 +1,19 @@
 #+title: emacs-codex-ide NEWS
 
+* Unreleased
+
+- Authenticate GNU HTTP MCP with per-session environment bearer tokens and
+  infer review owners from authenticated sessions. Refuse persistent GNU
+  HTTP installation; native Neomacs stdio registration is unchanged.
+- Add =codex-ide-mcp-disabled-tools= and allow =C-g= to interrupt tool calls.
+- Bound job output in hidden buffers and cache native MCP preflight results
+  by executable, directory, overrides, and configuration modification times.
+- Accelerate MCP JSON with native functions where available. Review results
+  now carry their complete data in =structuredContent= and a short text status,
+  avoiding a second encoding of large accepted edits.
+- Capture execution backtraces at the error site when supported, require
+  open buffers for context paths, and close excess HTTP clients cleanly.
+
 * Version 0.1.4 (unreleased)
 
 - Select native neo-term automatically in Neomacs, preserving explicit

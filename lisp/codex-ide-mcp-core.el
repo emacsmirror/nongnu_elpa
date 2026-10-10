@@ -20,6 +20,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'json)
 (require 'project)
 (require 'subr-x)
@@ -62,6 +63,36 @@ Also bounds retained incomplete request pending data per client."
   "Maximum simultaneous MCP client connections."
   :type 'integer
   :group 'codex-ide)
+
+(defcustom codex-ide-mcp-disabled-tools nil
+  "Names of GNU MCP tools to hide and refuse to execute.
+This option does not change the native Neomacs tool catalog."
+  :type '(repeat string)
+  :group 'codex-ide)
+
+(defvar codex-ide-mcp--tokens (make-hash-table :test 'equal)
+  "Private bearer tokens mapped to their owning terminal buffers.")
+
+(defvar codex-ide-mcp--request-session nil
+  "Terminal buffer authenticated for the current HTTP request.")
+
+(defun codex-ide-mcp--session-token (buffer)
+  "Generate a private bearer token owned by BUFFER until it is killed."
+  (let ((token (condition-case nil
+                   (with-temp-buffer
+                     (set-buffer-multibyte nil)
+                     (insert-file-contents-literally "/dev/urandom" nil 0 32)
+                     (unless (= (buffer-size) 32) (error "Short random read"))
+                     (secure-hash 'sha256 (current-buffer)))
+                 (file-error
+                  (secure-hash 'sha256
+                               (format "%s:%s:%s" (random t) (current-time)
+                                       (emacs-pid)))))))
+    (puthash token buffer codex-ide-mcp--tokens)
+    (with-current-buffer buffer
+      (add-hook 'kill-buffer-hook
+                (lambda () (remhash token codex-ide-mcp--tokens)) nil t))
+    token))
 
 ;;; Constants
 
@@ -115,7 +146,9 @@ Keep in sync with the Version header of codex-ide.el; a test enforces it.")
 (defun codex-ide-mcp-config-overrides (url)
   "Return Codex CLI config overrides registering the MCP server at URL."
   (list (cons (format "mcp_servers.%s.url" codex-ide-mcp--server-name)
-              (codex-ide-mcp--toml-quote-string url))))
+              (codex-ide-mcp--toml-quote-string url))
+        (cons "mcp_servers.emacs_tools.bearer_token_env_var"
+              "\"CODEX_IDE_MCP_TOKEN\"")))
 
 (defun codex-ide-mcp--namespace ()
   "Return the Codex-visible namespace for the Emacs MCP tools."
@@ -201,12 +234,43 @@ Lines are one-based and columns are zero-based."
       (user-error "No open buffer for %s" path))
     buffer))
 
+(defun codex-ide-mcp--native-json-value (value)
+  "Adapt VALUE's JSON objects to the native serializer without interning keys."
+  (cond
+   ((hash-table-p value)
+    (let ((table (make-hash-table :test 'equal)))
+      (maphash (lambda (key val)
+                 (puthash key (codex-ide-mcp--native-json-value val) table)) value)
+      table))
+   ((vectorp value) (vconcat (mapcar #'codex-ide-mcp--native-json-value value)))
+   ((consp value)
+    (if (or (keywordp (car value)) (consp (car value)))
+        (let ((table (make-hash-table :test 'equal)))
+          (dolist (entry (if (keywordp (car value))
+                             (cl-loop for (key val) on value by #'cddr
+                                      collect (cons (substring (symbol-name key) 1) val))
+                           value))
+            (puthash (if (symbolp (car entry)) (symbol-name (car entry)) (car entry))
+                     (codex-ide-mcp--native-json-value (cdr entry)) table))
+          table)
+      (vconcat (mapcar #'codex-ide-mcp--native-json-value value))))
+   (t value)))
+
+(defun codex-ide-mcp--json-encode (value)
+  "Encode VALUE as JSON with native acceleration when available."
+  (if (fboundp 'json-serialize)
+      (let ((text (json-serialize (codex-ide-mcp--native-json-value value)
+                                  :null-object nil :false-object :json-false)))
+        (if (multibyte-string-p text) text (decode-coding-string text 'utf-8)))
+    (let ((json-null nil) (json-false :json-false))
+      (json-encode value))))
+
 (defun codex-ide-mcp--json-text-result (value)
   "Return a MCP text content result containing VALUE encoded as JSON."
   (list (cons "content"
               (vector
                (list (cons "type" "text")
-                     (cons "text" (json-encode value)))))
+                     (cons "text" (codex-ide-mcp--json-encode value)))))
         (cons "isError" :json-false)))
 
 (defun codex-ide-mcp--text-error-result (message)

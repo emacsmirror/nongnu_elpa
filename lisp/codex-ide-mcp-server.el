@@ -51,9 +51,19 @@
 
 (defun codex-ide-mcp--json-read (bytes)
   "Decode JSON BYTES, preserving empty objects as hash tables."
-  (json-parse-string (decode-coding-string bytes 'utf-8)
-                     :object-type 'hash-table :array-type 'list
-                     :false-object :json-false :null-object nil))
+  (let ((text (decode-coding-string bytes 'utf-8)))
+    (if (fboundp 'json-parse-string)
+        (json-parse-string text :object-type 'hash-table :array-type 'list
+                           :false-object :json-false :null-object nil)
+      (let ((json-object-type 'hash-table) (json-array-type 'list)
+            (json-false :json-false) (json-null nil))
+        (with-temp-buffer
+          (insert text)
+          (goto-char (point-min))
+          (let ((value (json-read)))
+            (skip-chars-forward " \t\r\n")
+            (unless (eobp) (error "Trailing JSON input"))
+            value))))))
 
 (defun codex-ide-mcp--status-text (status)
   "Return HTTP reason phrase for STATUS."
@@ -62,6 +72,8 @@
     (202 "Accepted")
     (204 "No Content")
     (400 "Bad Request")
+    (401 "Unauthorized")
+    (503 "Service Unavailable")
     (403 "Forbidden")
     (404 "Not Found")
     (405 "Method Not Allowed")
@@ -71,7 +83,7 @@
 (defun codex-ide-mcp--send-json (proc status body)
   "Send HTTP STATUS and JSON BODY to PROC, then close the connection."
   (let* ((payload (if body
-                      (encode-coding-string (json-encode body) 'utf-8)
+                      (encode-coding-string (codex-ide-mcp--json-encode body) 'utf-8)
                     ""))
          (headers (concat
                    (format "HTTP/1.1 %d %s\r\n"
@@ -154,9 +166,25 @@
                            string-end)
                        (downcase content-type))))
 
+(defun codex-ide-mcp--request-owner (request)
+  "Return the live terminal authenticated by REQUEST's bearer header."
+  (let ((authorization (codex-ide-mcp--header request "authorization")) owner)
+    (when (stringp authorization)
+      (maphash
+       (lambda (token buffer)
+         (let ((expected (concat "Bearer " token)))
+           (when (and (buffer-live-p buffer)
+                      (= (length authorization) (length expected))
+                      (string= authorization expected))
+             (setq owner buffer))))
+       codex-ide-mcp--tokens))
+    owner))
+
 (defun codex-ide-mcp--request-error (request)
   "Return (STATUS . MESSAGE) when REQUEST should be rejected, else nil."
   (cond
+   ((not (codex-ide-mcp--request-owner request))
+    '(401 . "Valid session bearer token required"))
    ((not (equal (plist-get request :path) "/mcp"))
     '(404 . "Only /mcp is supported"))
    ((not (codex-ide-mcp--local-host-p
@@ -321,8 +349,8 @@ that limit return the symbol `too-large'."
                           method (codex-ide-mcp--modern-dispatch method params))))
             (user-error (codex-ide-mcp--modern-error message -32602 (error-message-string err)))
             (error (list 200 (codex-ide-mcp--make-error-response
-                             (codex-ide-mcp--object-get message "id")
-                             -32603 (error-message-string err)))))))))
+                              (codex-ide-mcp--object-get message "id")
+                              -32603 (error-message-string err)))))))))
 
 (defun codex-ide-mcp--handle-http-request (proc request)
   "Handle parsed HTTP REQUEST from PROC."
@@ -336,7 +364,8 @@ that limit return the symbol `too-large'."
          (codex-ide-mcp--make-error-response
           nil -32600 (cdr request-error)))
       (condition-case err
-          (let* ((message (codex-ide-mcp--json-read (plist-get request :body)))
+          (let* ((codex-ide-mcp--request-session (codex-ide-mcp--request-owner request))
+                 (message (codex-ide-mcp--json-read (plist-get request :body)))
                  (response (with-current-buffer (codex-ide-mcp--selected-buffer)
                              (if (codex-ide-mcp--modern-request-p request message)
                                  (codex-ide-mcp--modern-http-response request message)
@@ -364,8 +393,9 @@ that limit return the symbol `too-large'."
       (if (>= (hash-table-count codex-ide-mcp--clients)
               codex-ide-mcp-max-clients)
           (progn
-            (ignore-errors (delete-process proc))
-            (user-error "Codex MCP client limit reached"))
+            (codex-ide-debug "Codex MCP client limit reached")
+            (codex-ide-mcp--reject-client proc 503 "Codex MCP client limit reached")
+            nil)
         (let ((state (list :pending "")))
           (puthash proc state codex-ide-mcp--clients)
           state))))
@@ -384,7 +414,7 @@ that limit return the symbol `too-large'."
   (set-process-coding-system proc 'binary 'binary)
   (let* ((state (codex-ide-mcp--client-state proc))
          (pending (concat (plist-get state :pending) string))
-         (done nil))
+         (done (not state)))
     (while (and (not done) (process-live-p proc))
       (pcase (codex-ide-mcp--split-request pending)
         ('invalid

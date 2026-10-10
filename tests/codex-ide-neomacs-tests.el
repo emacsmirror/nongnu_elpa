@@ -449,7 +449,7 @@
       (should (assoc "mcp_servers.emacs_tools.url" (codex-ide--session-config-overrides))))))
 
 (ert-deftest codex-ide-neomacs-config-preflight-forwards-user-overrides ()
-  (let (argv)
+  (let (argv codex-ide-mcp-neo--config-cache)
     (cl-letf (((symbol-function 'executable-find) (lambda (_) "/relay"))
               ((symbol-function 'call-process)
                (lambda (program _input _destination _display &rest args)
@@ -462,10 +462,11 @@
                                "mcp" "list" "--json"))))))
 
 (ert-deftest codex-ide-neomacs-config-preflight-fails-closed ()
-  (cl-letf (((symbol-function 'executable-find) (lambda (_) "/relay"))
+  (let (codex-ide-mcp-neo--config-cache)
+   (cl-letf (((symbol-function 'executable-find) (lambda (_) "/relay"))
             ((symbol-function 'call-process) (lambda (&rest _) 1)))
     (should-error (codex-ide-mcp-neo--config-overrides "/exact/socket")
-                  :type 'user-error)))
+                  :type 'user-error))))
 
 (ert-deftest codex-ide-neomacs-install-confirmation-discloses-policy-loss ()
   (codex-ide-neomacs-tests--let (prompt logged ran)
@@ -511,6 +512,77 @@
       (should (equal (should-error (codex-ide-term--load-backend 'eat)
                                   :type 'file-missing)
                      condition)))))
+
+
+(ert-deftest codex-ide-neomacs-preflight-cache-identities ()
+  "Preflight caches empty results and invalidates each configuration identity."
+  (let* ((root (make-temp-file "native-cache-" t))
+         (default-directory (file-name-as-directory root))
+         (process-environment (copy-sequence process-environment))
+         (codex-ide-cli-path "codex")
+         (codex-ide-mcp-neo--config-cache nil)
+         (calls 0) (mtime '(0 0 0 0)))
+    (unwind-protect
+        (progn
+          (setenv "CODEX_HOME" (expand-file-name "codex-home" root))
+          (cl-letf (((symbol-function 'call-process)
+                     (lambda (&rest _) (cl-incf calls) (insert "[]") 0))
+                    ((symbol-function 'file-attributes)
+                     (lambda (_) (list nil nil nil nil nil mtime))))
+            (dotimes (_ 2) (should-not (codex-ide-mcp-neo--configured-servers nil)))
+            (should (= calls 1))
+            (let ((codex-ide-cli-path "other"))
+              (codex-ide-mcp-neo--configured-servers nil))
+            (should (= calls 2))
+            (let ((default-directory (file-name-as-directory (expand-file-name "other" root))))
+              (codex-ide-mcp-neo--configured-servers nil))
+            (should (= calls 3))
+            (codex-ide-mcp-neo--configured-servers '(("model" . "x")))
+            (should (= calls 4))
+            (setq mtime '(0 1 0 0))
+            (codex-ide-mcp-neo--configured-servers '(("model" . "x")))
+            (should (= calls 5))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-neomacs-environment-has-no-http-token ()
+  "Native stdio sessions never receive a GNU bearer token."
+  (codex-ide-neomacs-tests--let ((codex-ide-mcp-enabled t))
+    (should (equal (codex-ide--make-env) '("TERM_PROGRAM=emacs")))))
+
+
+(ert-deftest codex-ide-neomacs-preflight-cache-file-changes-and-failures ()
+  "Both user and project config mtimes invalidate cached preflight results."
+  (let* ((root (make-temp-file "native-config-cache-" t))
+         (default-directory (file-name-as-directory root))
+         (process-environment (copy-sequence process-environment))
+         (codex-ide-mcp-neo--config-cache nil)
+         (user (expand-file-name "config.toml" root))
+         (project (expand-file-name ".codex/config.toml" root))
+         (calls 0) fail)
+    (unwind-protect
+        (progn
+          (setenv "CODEX_HOME" root)
+          (make-directory (file-name-directory project))
+          (cl-letf (((symbol-function 'call-process)
+                     (lambda (&rest _)
+                       (cl-incf calls) (insert "[]") (if fail 1 0))))
+            (codex-ide-mcp-neo--configured-servers nil)
+            (dolist (file (list user project))
+              (with-temp-file file (insert "# fixture"))
+              (codex-ide-mcp-neo--configured-servers nil)
+              (let ((old calls))
+                (codex-ide-mcp-neo--configured-servers nil)
+                (should (= old calls))
+                (set-file-times file (time-add (file-attribute-modification-time
+                                               (file-attributes file)) 2))
+                (codex-ide-mcp-neo--configured-servers nil)
+                (should (= (1+ old) calls))))
+            (setq fail t)
+            (dotimes (_ 2)
+              (should-error (codex-ide-mcp-neo--configured-servers '(("changed" . "true")))
+                            :type 'user-error))
+            (should (= 7 calls))))
+      (delete-directory root t))))
 
 (provide 'codex-ide-neomacs-tests)
 ;;; codex-ide-neomacs-tests.el ends here

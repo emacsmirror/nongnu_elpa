@@ -203,5 +203,14 @@
                                   (insert-file-contents-literally profile)
                                   (secure-hash 'sha256 (current-buffer))))))))))
 
+
+(ert-deftest codex-ide-config-merge-gnu-bearer-env-key ()
+  "Installed Codex accepts the transient bearer environment variable key."
+  (codex-ide-config-merge-tests--with-config ""
+    (let* ((overrides (codex-ide-mcp-config-overrides "http://127.0.0.1:43210/mcp"))
+           (entry (codex-ide-config-merge-tests--get overrides "emacs_tools")))
+      (should (equal (alist-get 'bearer_token_env_var (alist-get 'transport entry))
+                     "CODEX_IDE_MCP_TOKEN")))))
+
 (provide 'codex-ide-config-merge-tests)
 ;;; codex-ide-config-merge-tests.el ends here

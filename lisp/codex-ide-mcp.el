@@ -56,12 +56,8 @@
 
 (defun codex-ide-mcp--setup-message (url)
   "Return user-facing persistent setup text for URL."
-  (string-join
-   (delq nil
-         (list (format "Persistent setup command: %s"
-                       (codex-ide-mcp--install-command url))
-               (codex-ide-mcp--persistent-warning)))
-   "\n"))
+  (ignore url)
+  "GNU MCP requires a session bearer token; start Codex with M-x codex-ide.  Persistent HTTP installation is unavailable.")
 
 (defun codex-ide-mcp--status-message ()
   "Return user-facing MCP server status text."
@@ -127,6 +123,8 @@
   "Add the running Emacs MCP server to Codex config after confirmation.
 Native setup can replace an existing entry and discard its tool policy."
   (interactive)
+  (unless (featurep 'neomacs)
+    (user-error "GNU MCP requires a session bearer token; start Codex with M-x codex-ide"))
   (let* ((url (codex-ide-mcp-ensure-server))
          (args (if (featurep 'neomacs)
                    (codex-ide-mcp-neo--install-command-args url)

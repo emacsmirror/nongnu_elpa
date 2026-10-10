@@ -40,12 +40,13 @@
 
 (defun codex-ide-mcp-test--result-text (result)
   "Return the first MCP text content string from RESULT."
-  (cdr (assoc "text" (aref (cdr (assoc "content" result)) 0))))
+  (cdr (assoc "text" (elt (cdr (assoc "content" result)) 0))))
 
 (defun codex-ide-mcp-test--decoded-result (result)
   "Decode the first MCP JSON text content from RESULT."
-  (codex-ide-mcp-test--json-read
-   (codex-ide-mcp-test--result-text result)))
+  (or (cdr (assoc "structuredContent" result))
+      (codex-ide-mcp-test--json-read
+       (codex-ide-mcp-test--result-text result))))
 
 (defun codex-ide-mcp-test--line-position (line)
   "Return buffer position at one-based LINE."
@@ -56,15 +57,17 @@
 
 (defun codex-ide-mcp-test--request (&rest headers)
   "Return a normal parsed MCP request with HEADERS."
+  (puthash "test-token" (current-buffer) codex-ide-mcp--tokens)
   (list :method "POST"
         :path "/mcp"
         :headers (append headers
-                         '(("host" . "127.0.0.1:43210")
+                         '(("authorization" . "Bearer test-token")
+                           ("host" . "127.0.0.1:43210")
                            ("content-type" . "application/json")))
         :body "{}"))
 
 (cl-defstruct codex-ide-mcp-test-node
-  type start end named field parent children)
+	      type start end named field parent children)
 
 (defun codex-ide-mcp-test--node
     (type start end &optional named field children)
@@ -126,7 +129,7 @@
                 #'codex-ide-mcp-test-node-start)
                ((symbol-function 'treesit-node-type)
                 #'codex-ide-mcp-test-node-type))
-       ,@body)))
+	      ,@body)))
 
 (defun codex-ide-mcp-test--sample-tree ()
   "Insert sample text and return stub tree metadata."
@@ -272,7 +275,8 @@
   (should (equal (codex-ide-mcp-config-overrides
                   "http://127.0.0.1:43210/mcp")
                  '(("mcp_servers.emacs_tools.url"
-                    . "\"http://127.0.0.1:43210/mcp\"")))))
+                    . "\"http://127.0.0.1:43210/mcp\"")
+                   ("mcp_servers.emacs_tools.bearer_token_env_var" . "\"CODEX_IDE_MCP_TOKEN\"")))))
 
 (ert-deftest codex-ide-mcp-install-command-fixed-port ()
   "Fixed-port persistent setup produces a stable Codex command."
@@ -285,20 +289,14 @@
                               " ")))
     (should-not (codex-ide-mcp--persistent-warning))))
 
-(ert-deftest codex-ide-mcp-setup-message-warns-for-ephemeral-port ()
-  "Ephemeral-port persistent setup reports that reuse is unreliable."
-  (let ((codex-ide-mcp-port 0))
-    (should (string-match-p
-             (regexp-quote
-              (concat "Persistent setup command: "
-                      (codex-ide-mcp--install-command
-                       "http://127.0.0.1:43210/mcp")))
-             (codex-ide-mcp--setup-message
-              "http://127.0.0.1:43210/mcp")))
-    (should (string-match-p
-             "ephemeral"
-             (codex-ide-mcp--setup-message
-              "http://127.0.0.1:43210/mcp")))))
+(ert-deftest codex-ide-mcp-setup-message-refuses-persistent-http ()
+  "Persistent HTTP setup must not install an unauthenticated endpoint."
+  (should (string-match-p "session bearer token"
+                          (codex-ide-mcp--setup-message "http://localhost/mcp")))
+  (cl-letf (((symbol-function 'featurep) (lambda (_) nil))
+            ((symbol-function 'codex-ide-mcp--run-install-command)
+             (lambda (_) (ert-fail "Persistent HTTP install executed"))))
+    (should-error (codex-ide-mcp-install-codex-config) :type 'user-error)))
 
 (ert-deftest codex-ide-mcp-status-message-running ()
   "Running status reports server key, namespace, URL, and harness tools."
@@ -351,7 +349,8 @@
       (should (equal (codex-ide--session-config-overrides)
                      '(("model" . "o3")
                        ("mcp_servers.emacs_tools.url"
-                        . "\"http://127.0.0.1:43210/mcp\""))))
+                        . "\"http://127.0.0.1:43210/mcp\"")
+                       ("mcp_servers.emacs_tools.bearer_token_env_var" . "\"CODEX_IDE_MCP_TOKEN\""))))
       (should started))))
 
 (ert-deftest codex-ide-mcp-build-command-session-overrides ()
@@ -370,6 +369,8 @@
                        '("codex"
                          "-c"
                          "mcp_servers.emacs_tools.url=\"http://127.0.0.1:43210/mcp\""
+                         "-c"
+                         "mcp_servers.emacs_tools.bearer_token_env_var=\"CODEX_IDE_MCP_TOKEN\""
                          "resume"
                          "--last")))))))
 
@@ -420,8 +421,11 @@
         deleted)
     (puthash 'existing '(:pending "") codex-ide-mcp--clients)
     (cl-letf (((symbol-function 'delete-process)
-               (lambda (proc) (setq deleted proc))))
-      (should-error (codex-ide-mcp--client-state 'new) :type 'user-error)
+               (lambda (proc) (setq deleted proc)))
+              ((symbol-function 'codex-ide-mcp--reject-client)
+               (lambda (proc status _message)
+                 (should (= status 503)) (delete-process proc))))
+      (should-not (codex-ide-mcp--client-state 'new))
       (should (eq deleted 'new))
       (should (= (hash-table-count codex-ide-mcp--clients) 1)))))
 
@@ -561,8 +565,8 @@
   (unwind-protect
       (let* ((result (codex-ide-mcp--handle-tools-call
                       '(:name "emacs_execute"
-                        :arguments
-                        (:code "(put 'codex-ide-mcp-test 'value 4)
+                              :arguments
+                              (:code "(put 'codex-ide-mcp-test 'value 4)
 (+ (get 'codex-ide-mcp-test 'value) 5)"))))
              (decoded (codex-ide-mcp-test--decoded-result result)))
         (should (eq (cdr (assoc "isError" result)) :json-false))
@@ -574,8 +578,8 @@
   "Execute returns printed output and messages emitted during execution."
   (let* ((result (codex-ide-mcp--handle-tools-call
                   '(:name "emacs_execute"
-                    :arguments
-                    (:code "(princ \"printed\")
+			  :arguments
+			  (:code "(princ \"printed\")
 (let ((inhibit-message t))
   (message \"hello %s\" \"world\"))
 42"))))
@@ -591,8 +595,8 @@
   (with-temp-buffer
     (let ((result (codex-ide-mcp--handle-tools-call
                    `(:name "emacs_execute" :arguments
-                     (:buffer ,(buffer-name)
-                      :code "(insert \"executed\") (unfinished")))))
+			   (:buffer ,(buffer-name)
+				    :code "(insert \"executed\") (unfinished")))))
       (should (equal (buffer-string) ""))
       (should (eq (cdr (assoc "isError" result)) t))
       (should (string-match-p
@@ -603,8 +607,8 @@
   (with-temp-buffer
     (let ((result (codex-ide-mcp--handle-tools-call
                    `(:name "emacs_execute" :arguments
-                     (:buffer ,(buffer-name)
-                      :code "(insert \"executed\") \"unfinished")))))
+			   (:buffer ,(buffer-name)
+				    :code "(insert \"executed\") \"unfinished")))))
       (should (equal (buffer-string) ""))
       (should (eq (cdr (assoc "isError" result)) t))
       (should (string-match-p
@@ -626,9 +630,9 @@
            (position (cdr (assoc "point" (cdr (assoc "buffer" context)))))
            (result (codex-ide-mcp--handle-tools-call
                     `(:name "emacs_edit" :arguments
-                      (:buffer ,(buffer-name) :operation "insert" :text "X"
-                       :line ,(cdr (assoc "line" position))
-                       :column ,(cdr (assoc "column" position)) :indent :json-false)))))
+			    (:buffer ,(buffer-name) :operation "insert" :text "X"
+				     :line ,(cdr (assoc "line" position))
+				     :column ,(cdr (assoc "column" position)) :indent :json-false)))))
       (should (= (cdr (assoc "line" position)) 3))
       (should (eq (cdr (assoc "isError" result)) :json-false))
       (should (buffer-narrowed-p))
@@ -702,7 +706,7 @@
          (url "http://127.0.0.1:43210/mcp")
          (args (codex-ide-mcp--install-command-args url)))
     (should (equal args (list codex-ide-cli-path "mcp" "add"
-                             "emacs_tools" "--url" url)))
+                              "emacs_tools" "--url" url)))
     (should (equal (codex-ide-mcp--install-command url)
                    (mapconcat #'shell-quote-argument args " ")))))
 
@@ -733,12 +737,16 @@
                       ((symbol-function 'codex-ide-log) #'ignore))
               (cl-assert (equal codex-ide-cli-path "codex"))
               (cl-assert (stringp (codex-ide-mcp-status)))
-              (cl-assert (stringp (codex-ide-mcp-install-codex-config)))
+              (cl-assert (condition-case nil
+                             (progn (codex-ide-mcp-install-codex-config) nil)
+                           (user-error t)))
               (let ((codex-ide-cli-path "/custom path/codex"))
                 (cl-assert
                  (equal (car (codex-ide-mcp--install-command-args "url"))
                         codex-ide-cli-path))
-                (cl-assert (stringp (codex-ide-mcp-install-codex-config)))))
+                (cl-assert (condition-case nil
+                               (progn (codex-ide-mcp-install-codex-config) nil)
+                             (user-error t)))))
             (princ "standalone-ok"))))
     (with-temp-buffer
       (let ((status (call-process
@@ -751,7 +759,7 @@
   "Execute returns structured errors instead of failing the tool call."
   (let* ((result (codex-ide-mcp--handle-tools-call
                   '(:name "emacs_execute"
-                    :arguments (:code "(let ((inhibit-message t))
+			  :arguments (:code "(let ((inhibit-message t))
   (message \"before boom\"))
 (error \"boom\")"))))
          (decoded (codex-ide-mcp-test--decoded-result result))
@@ -759,7 +767,9 @@
     (should (eq (cdr (assoc "isError" result)) :json-false))
     (should-not (cdr (assoc "ok" decoded)))
     (should (equal (cdr (assoc "message" error-data)) "boom"))
-    (should (stringp (cdr (assoc "backtrace" error-data))))))
+    (if (fboundp 'handler-bind-1)
+        (should (stringp (cdr (assoc "backtrace" error-data))))
+      (should-not (cdr (assoc "backtrace" error-data))))))
 
 (ert-deftest codex-ide-mcp-tools-call-execute-selects-context-args ()
   "Execute can run in a buffer/path/directory context."
@@ -772,10 +782,10 @@
           (setq buffer (find-file-noselect file))
           (let* ((result (codex-ide-mcp--handle-tools-call
                           `(:name "emacs_execute"
-                            :arguments
-                            (:code "(list (buffer-name) default-directory)"
-                             :path ,file
-                             :directory ,dir))))
+				  :arguments
+				  (:code "(list (buffer-name) default-directory)"
+					 :path ,file
+					 :directory ,dir))))
                  (decoded (codex-ide-mcp-test--decoded-result result))
                  (current (cdr (assoc "currentBuffer" decoded))))
             (should (eq (cdr (assoc "isError" result)) :json-false))
@@ -797,11 +807,11 @@
                    (setq indented (list beg end)))))
         (let* ((result (codex-ide-mcp--handle-tools-call
                         `(:name "emacs_edit"
-                          :arguments
-                          (:operation "insert"
-                           :text "(message \"x\")"
-                           :buffer ,(buffer-name)
-                           :start ,(point-min)))))
+				:arguments
+				(:operation "insert"
+					    :text "(message \"x\")"
+					    :buffer ,(buffer-name)
+					    :start ,(point-min)))))
                (decoded (codex-ide-mcp-test--decoded-result result)))
           (should (eq (cdr (assoc "isError" result)) :json-false))
           (should (equal (buffer-string) "(message \"x\")"))
@@ -819,12 +829,12 @@
                    (setq indented (list beg end)))))
         (let* ((result (codex-ide-mcp--handle-tools-call
                         `(:name "emacs_edit"
-                          :arguments
-                          (:operation "replace"
-                           :text "(new)\n"
-                           :buffer ,(buffer-name)
-                           :start ,(point-min)
-                           :end ,(point-max)))))
+				:arguments
+				(:operation "replace"
+					    :text "(new)\n"
+					    :buffer ,(buffer-name)
+					    :start ,(point-min)
+					    :end ,(point-max)))))
                (decoded (codex-ide-mcp-test--decoded-result result)))
           (should (eq (cdr (assoc "isError" result)) :json-false))
           (should (equal (buffer-string) "(new)\n"))
@@ -847,7 +857,7 @@
     (should-error
      (codex-ide-harness-edit
       `(:operation "insert" :text "x" :buffer ,(buffer-name)
-        :line 1 :column 99))
+		   :line 1 :column 99))
      :type 'user-error)))
 
 (ert-deftest codex-ide-mcp-edit-delete-requires-positions ()
@@ -868,9 +878,9 @@
     (let ((err (should-error
                 (codex-ide-harness-edit
                  `(:operation "replace"
-                   :text "x"
-                   :buffer ,(buffer-name)
-                   :start ,(point-min)))
+			      :text "x"
+			      :buffer ,(buffer-name)
+			      :start ,(point-min)))
                 :type 'user-error)))
       (should (string-match-p "Replace requires end or end_line"
                               (error-message-string err))))))
@@ -887,7 +897,7 @@
             (codex-ide-mcp-test--decoded-result
              (codex-ide-mcp--handle-tools-call
               `(:name "emacs_job"
-                :arguments (:action "poll" :job_id ,job-id))))))
+                      :arguments (:action "poll" :job_id ,job-id))))))
     result))
 
 (ert-deftest codex-ide-mcp-tools-call-job-start-poll-read ()
@@ -895,16 +905,16 @@
   (let* ((start (codex-ide-mcp-test--decoded-result
                  (codex-ide-mcp--handle-tools-call
                   '(:name "emacs_job"
-                    :arguments (:action "start"
-                                :command "printf harness-job")))))
+			  :arguments (:action "start"
+					      :command "printf harness-job")))))
          (job-id (cdr (assoc "id" start)))
          (done (codex-ide-mcp-test--wait-for-job job-id))
          (read (codex-ide-mcp-test--decoded-result
                 (codex-ide-mcp--handle-tools-call
                  `(:name "emacs_job"
-                   :arguments (:action "read"
-                               :job_id ,job-id
-                               :since 0)))))
+			 :arguments (:action "read"
+					     :job_id ,job-id
+					     :since 0)))))
          (output (cdr (assoc "output" read))))
     (should (member (cdr (assoc "status" done)) '("done" "failed")))
     (should (equal (cdr (assoc "text" output)) "harness-job"))))
@@ -914,13 +924,13 @@
   (let* ((start (codex-ide-mcp-test--decoded-result
                  (codex-ide-mcp--handle-tools-call
                   '(:name "emacs_job"
-                    :arguments (:action "start"
-                                :command "sleep 5")))))
+			  :arguments (:action "start"
+					      :command "sleep 5")))))
          (job-id (cdr (assoc "id" start)))
          (cancel (codex-ide-mcp-test--decoded-result
                   (codex-ide-mcp--handle-tools-call
                    `(:name "emacs_job"
-                     :arguments (:action "cancel" :job_id ,job-id))))))
+			   :arguments (:action "cancel" :job_id ,job-id))))))
     (should (equal (cdr (assoc "status" cancel)) "canceled"))))
 
 (ert-deftest codex-ide-mcp-tools-call-events-after-cursor ()
@@ -930,7 +940,7 @@
      '(:name "emacs_execute" :arguments (:code "(+ 1 2)")))
     (let* ((result (codex-ide-mcp--handle-tools-call
                     `(:name "emacs_events"
-                      :arguments (:since ,cursor))))
+			    :arguments (:since ,cursor))))
            (decoded (codex-ide-mcp-test--decoded-result result))
            (events (cdr (assoc "events" decoded))))
       (should (eq (cdr (assoc "isError" result)) :json-false))
@@ -964,10 +974,10 @@
   (with-temp-buffer
     (let ((tree (codex-ide-mcp-test--sample-tree)))
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (cl-letf (((symbol-function 'treesit-parser-list)
-                   (lambda (&rest _args) nil)))
-          (should-error (codex-ide-harness-tree-sitter nil)
-                        :type 'user-error))))))
+					(cl-letf (((symbol-function 'treesit-parser-list)
+						   (lambda (&rest _args) nil)))
+					  (should-error (codex-ide-harness-tree-sitter nil)
+							:type 'user-error))))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-node-at-point ()
   "Tree-sitter info returns structured node data at point."
@@ -977,25 +987,25 @@
            (symbol-end (plist-get tree :symbol-end)))
       (goto-char symbol-start)
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (let* ((decoded (codex-ide-harness-tree-sitter nil))
-               (parser (cdr (assoc "parser" decoded)))
-               (node (cdr (assoc "node" decoded)))
-               (point-range (cdr (assoc "pointRange" node)))
-               (byte-range (cdr (assoc "byteRange" node)))
-               (range (cdr (assoc "range" node)))
-               (range-start (cdr (assoc "start" range))))
-          (should (equal (cdr (assoc "language" parser)) "elisp"))
-          (should (equal (cdr (assoc "type" node)) "symbol"))
-          (should (eq (cdr (assoc "named" node)) t))
-          (should (equal (cdr (assoc "fieldName" node)) "function"))
-          (should (equal (cdr (assoc "text" node)) "message"))
-          (should (equal (cdr (assoc "start" point-range)) symbol-start))
-          (should (equal (cdr (assoc "end" point-range)) symbol-end))
-          (should (equal (cdr (assoc "start" byte-range))
-                         (- (position-bytes symbol-start)
-                            (position-bytes (point-min)))))
-          (should (equal (cdr (assoc "line" range-start)) 1))
-          (should (equal (cdr (assoc "column" range-start)) 1)))))))
+					(let* ((decoded (codex-ide-harness-tree-sitter nil))
+					       (parser (cdr (assoc "parser" decoded)))
+					       (node (cdr (assoc "node" decoded)))
+					       (point-range (cdr (assoc "pointRange" node)))
+					       (byte-range (cdr (assoc "byteRange" node)))
+					       (range (cdr (assoc "range" node)))
+					       (range-start (cdr (assoc "start" range))))
+					  (should (equal (cdr (assoc "language" parser)) "elisp"))
+					  (should (equal (cdr (assoc "type" node)) "symbol"))
+					  (should (eq (cdr (assoc "named" node)) t))
+					  (should (equal (cdr (assoc "fieldName" node)) "function"))
+					  (should (equal (cdr (assoc "text" node)) "message"))
+					  (should (equal (cdr (assoc "start" point-range)) symbol-start))
+					  (should (equal (cdr (assoc "end" point-range)) symbol-end))
+					  (should (equal (cdr (assoc "start" byte-range))
+							 (- (position-bytes symbol-start)
+							    (position-bytes (point-min)))))
+					  (should (equal (cdr (assoc "line" range-start)) 1))
+					  (should (equal (cdr (assoc "column" range-start)) 1)))))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-ancestors-children ()
   "Tree-sitter info can include ancestors and bounded children."
@@ -1003,39 +1013,39 @@
     (let ((tree (codex-ide-mcp-test--sample-tree)))
       (goto-char (plist-get tree :first-start))
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (let* ((decoded (codex-ide-harness-tree-sitter
-                         '(:include_ancestors t
-                           :include_children t
-                           :max_children 1)))
-               (node (cdr (assoc "node" decoded)))
-               (ancestors (cdr (assoc "ancestors" decoded)))
-               (children (cdr (assoc "children" decoded)))
-               (first-child (aref children 0)))
-          (should (equal (cdr (assoc "type" node)) "list"))
-          (should (equal (length ancestors) 1))
-          (should (equal (cdr (assoc "type" (aref ancestors 0)))
-                         "source_file"))
-          (should (equal (length children) 1))
-          (should (equal (cdr (assoc "type" first-child)) "symbol"))
-          (should (eq (cdr (assoc "childrenTruncated" decoded)) t)))))))
+					(let* ((decoded (codex-ide-harness-tree-sitter
+							 '(:include_ancestors t
+									      :include_children t
+									      :max_children 1)))
+					       (node (cdr (assoc "node" decoded)))
+					       (ancestors (cdr (assoc "ancestors" decoded)))
+					       (children (cdr (assoc "children" decoded)))
+					       (first-child (aref children 0)))
+					  (should (equal (cdr (assoc "type" node)) "list"))
+					  (should (equal (length ancestors) 1))
+					  (should (equal (cdr (assoc "type" (aref ancestors 0)))
+							 "source_file"))
+					  (should (equal (length children) 1))
+					  (should (equal (cdr (assoc "type" first-child)) "symbol"))
+					  (should (eq (cdr (assoc "childrenTruncated" decoded)) t)))))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-whole-file ()
   "Tree-sitter info can return a bounded whole-file tree."
   (with-temp-buffer
     (let ((tree (codex-ide-mcp-test--sample-tree)))
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (let* ((decoded (codex-ide-harness-tree-sitter
-                         '(:whole_file t
-                           :max_depth 1
-                           :max_children 1)))
-               (root (cdr (assoc "tree" decoded)))
-               (children (cdr (assoc "children" root)))
-               (first-child (aref children 0)))
-          (should (equal (cdr (assoc "type" root)) "source_file"))
-          (should (equal (length children) 1))
-          (should (equal (cdr (assoc "type" first-child)) "list"))
-          (should-not (assoc "children" first-child))
-          (should (eq (cdr (assoc "childrenTruncated" root)) t)))))))
+					(let* ((decoded (codex-ide-harness-tree-sitter
+							 '(:whole_file t
+								       :max_depth 1
+								       :max_children 1)))
+					       (root (cdr (assoc "tree" decoded)))
+					       (children (cdr (assoc "children" root)))
+					       (first-child (aref children 0)))
+					  (should (equal (cdr (assoc "type" root)) "source_file"))
+					  (should (equal (length children) 1))
+					  (should (equal (cdr (assoc "type" first-child)) "list"))
+					  (should-not (assoc "children" first-child))
+					  (should (eq (cdr (assoc "childrenTruncated" root)) t)))))))
 
 (ert-deftest codex-ide-mcp-tools-call-xref-references-no-buffer ()
   "Xref helper requires an already-open buffer."
@@ -1058,7 +1068,7 @@
             (rename-buffer "codex-ide-mcp-no-project" t)
             (let* ((result (codex-ide-mcp--handle-tools-call
                             '(:name "emacs_context"
-                              :arguments nil)))
+				    :arguments nil)))
                    (decoded (codex-ide-mcp-test--decoded-result result))
                    (project (cdr (assoc "project" decoded)))
                    (buffer (cdr (assoc "buffer" decoded))))
@@ -1077,7 +1087,7 @@
     (rename-buffer "codex-ide-mcp-test" t)
     (let* ((result (codex-ide-mcp--handle-tools-call
                     '(:name "emacs_context" :arguments nil)))
-           (content (aref (cdr (assoc "content" result)) 0))
+           (content (elt (cdr (assoc "content" result)) 0))
            (decoded (codex-ide-mcp-test--json-read
                      (cdr (assoc "text" content))))
            (buffer (cdr (assoc "buffer" decoded))))
@@ -1092,10 +1102,10 @@
     (unwind-protect
         (let* ((result (codex-ide-mcp--handle-tools-call
                         `(:name "emacs_edit"
-                          :arguments (:operation "insert"
-                                      :text "x"
-                                      :path ,path))))
-               (content (aref (cdr (assoc "content" result)) 0)))
+				:arguments (:operation "insert"
+						       :text "x"
+						       :path ,path))))
+               (content (elt (cdr (assoc "content" result)) 0)))
           (should (eq (cdr (assoc "isError" result)) t))
           (should (string-match-p "No open buffer"
                                   (cdr (assoc "text" content)))))
@@ -1125,10 +1135,12 @@
 
 (defun codex-ide-mcp-test--modern-request (method &optional params)
   "Build a modern HTTP request for METHOD with PARAMS."
+  (puthash "test-token" (current-buffer) codex-ide-mcp--tokens)
   (list :method "POST" :path "/mcp"
-        :headers (append (copy-tree '(("host" . "127.0.0.1")
-                           ("content-type" . "application/json")
-                           ("mcp-protocol-version" . "2026-07-28")))
+        :headers (append (copy-tree '(("authorization" . "Bearer test-token")
+                                      ("host" . "127.0.0.1")
+				      ("content-type" . "application/json")
+				      ("mcp-protocol-version" . "2026-07-28")))
                          (list (cons "mcp-method" method))
                          (when (equal method "tools/call")
                            (list (cons "mcp-name" (plist-get params :name)))))
@@ -1143,6 +1155,7 @@
 
 (defun codex-ide-mcp-test--http-response (request)
   "Return (STATUS BODY) produced by HTTP REQUEST."
+  (puthash "test-token" (current-buffer) codex-ide-mcp--tokens)
   (let (sent)
     (cl-letf (((symbol-function 'codex-ide-mcp--send-json)
                (lambda (_proc status body) (setq sent (list status body))))
@@ -1155,7 +1168,7 @@
   "Modern tools work before discovery, with complete cacheable results."
   (dolist (method '("tools/list" "server/discover"))
     (pcase-let* ((`(,status ,body) (codex-ide-mcp-test--http-response
-                                  (codex-ide-mcp-test--modern-request method)))
+                                    (codex-ide-mcp-test--modern-request method)))
                  (result (alist-get "result" body nil nil #'equal)))
       (should (= status 200))
       (should (= (alist-get "id" body nil nil #'equal) 42))
@@ -1247,7 +1260,7 @@
                      ["2026-07-28" "2025-06-18"]))))
   (dolist (method '("unknown" "initialize"))
     (pcase-let ((`(,status ,body) (codex-ide-mcp-test--http-response
-                                 (codex-ide-mcp-test--modern-request method))))
+                                   (codex-ide-mcp-test--modern-request method))))
       (should (= status 404))
       (should (= (codex-ide-mcp--object-get
                   (codex-ide-mcp--object-get body "error") "code") -32601)))))
@@ -1275,6 +1288,7 @@
 
 (ert-deftest codex-ide-mcp-http-notification-returns-accepted ()
   "HTTP notifications receive 202 Accepted and no JSON body."
+  (puthash "test-token" (current-buffer) codex-ide-mcp--tokens)
   (let (sent)
     (cl-letf (((symbol-function 'codex-ide-mcp--send-json)
                (lambda (_proc status body) (setq sent (list status body))))
@@ -1283,7 +1297,8 @@
       (codex-ide-mcp--handle-http-request
        'client
        (list :method "POST" :path "/mcp"
-             :headers '(("host" . "127.0.0.1")
+             :headers '(("authorization" . "Bearer test-token")
+                        ("host" . "127.0.0.1")
                         ("content-type" . "application/json"))
              :body "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")))
     (should (equal sent '(202 nil)))))
@@ -1331,22 +1346,26 @@
 (ert-deftest codex-ide-harness-job-output-is-capped ()
   "Retained output preserves absolute cursors after truncation."
   (let* ((codex-ide-harness-job-output-limit 8)
-         (job '(:output "" :output-start 0 :output-next 0))
+         (job (list :output "" :output-start 0 :output-next 0))
          (first (codex-ide-harness--append-job-output job "abcdef"))
          (second (codex-ide-harness--append-job-output first "ghij"))
          (summary (codex-ide-harness--job-summary second))
          (old-read (codex-ide-harness--job-output second 0))
          (new-read (codex-ide-harness--job-output second 6)))
-    (should (equal (plist-get second :output) "cdefghij"))
-    (should (= (plist-get second :output-start) 2))
-    (should (= (plist-get second :output-next) 10))
-    (should (equal (cdr (assoc "outputLength" summary)) 10))
-    (should (equal (cdr (assoc "offset" old-read)) 2))
-    (should (eq (cdr (assoc "truncated" old-read)) t))
-    (should (equal (cdr (assoc "text" old-read)) "cdefghij"))
-    (should (equal (cdr (assoc "offset" new-read)) 6))
-    (should (equal (cdr (assoc "nextOffset" new-read)) 10))
-    (should (equal (cdr (assoc "text" new-read)) "ghij"))))
+    (unwind-protect
+        (progn
+          (should (equal (with-current-buffer (plist-get second :output-buffer)
+                           (buffer-string)) "cdefghij"))
+          (should (= (plist-get second :output-start) 2))
+          (should (= (plist-get second :output-next) 10))
+          (should (equal (cdr (assoc "outputLength" summary)) 10))
+          (should (equal (cdr (assoc "offset" old-read)) 2))
+          (should (eq (cdr (assoc "truncated" old-read)) t))
+          (should (equal (cdr (assoc "text" old-read)) "cdefghij"))
+          (should (equal (cdr (assoc "offset" new-read)) 6))
+          (should (equal (cdr (assoc "nextOffset" new-read)) 10))
+          (should (equal (cdr (assoc "text" new-read)) "ghij")))
+      (kill-buffer (plist-get second :output-buffer)))))
 
 (ert-deftest codex-ide-harness-cancel-emits-single-terminal-event ()
   "Live cancel emits job-canceled and not job-finished."
@@ -1455,8 +1474,8 @@
                   (lambda (&rest _) (error "Indentation failed")))
       (let ((result (codex-ide-mcp--handle-tools-call
                      `(:name "emacs_edit" :arguments
-                       (:operation ,operation :buffer ,(buffer-name)
-                        :start 1 :end 9 :text "replacement")))))
+			     (:operation ,operation :buffer ,(buffer-name)
+					 :start 1 :end 9 :text "replacement")))))
         (should (eq (cdr (assoc "isError" result)) t))
         (should (equal (buffer-string) "original"))
         (should-not (buffer-modified-p))))))
@@ -1469,8 +1488,8 @@
               (lambda (&rest _) (error "Change hook failed")) nil t)
     (let ((result (codex-ide-mcp--handle-tools-call
                    `(:name "emacs_edit" :arguments
-                     (:operation "delete" :buffer ,(buffer-name)
-                      :start 1 :end 9)))))
+			   (:operation "delete" :buffer ,(buffer-name)
+				       :start 1 :end 9)))))
       (should (eq (cdr (assoc "isError" result)) t))
       (should (equal (buffer-string) "original")))))
 
@@ -1581,7 +1600,7 @@
                     ("new" "Invalid" ((:name "x" :type string :enum ("x"))) list)
                     ("new" "Invalid" ((:name "x" :type string :optional maybe)) list)
                     ("new" "Invalid" ((:name "x" :type string)
-                                       (:name "x" :type integer)) list)))
+                                      (:name "x" :type integer)) list)))
       (should-error (apply #'codex-ide-mcp-register-tool spec) :type 'user-error)
       (should (equal (codex-ide-mcp-tool-names)
                      (append (mapcar (lambda (tool) (plist-get tool :name)) builtins)
@@ -1606,7 +1625,7 @@
     (dolist (dispatch '(codex-ide-mcp--dispatch codex-ide-mcp--modern-dispatch))
       (let ((result (funcall dispatch "tools/call"
                              '(:name "custom" :arguments
-                               (:b :json-false :n 1.5 :i 2 :s "hello")))))
+				     (:b :json-false :n 1.5 :i 2 :s "hello")))))
         (should (equal received '("hello" 2 1.5 :json-false nil)))
         (should (equal (codex-ide-mcp-test--decoded-result result) "done")))
       (dolist (bad '((:s 4 :i 2 :n 1 :b t) (:s "x" :i 2.5 :n 1 :b t)
@@ -1638,7 +1657,7 @@
       (should (string-match-p "Handler refused hello"
                               (codex-ide-mcp-test--result-text result))))))
 
-(defun codex-ide-mcp-test--wire-request (request)
+(defun codex-ide-mcp-test--wire-request (request &optional status)
   "Send REQUEST over a real loopback socket and return its JSON response."
   (let ((body (encode-coding-string (plist-get request :body) 'utf-8))
         (response "") client)
@@ -1658,7 +1677,7 @@
           (let ((deadline (+ (float-time) 3)))
             (while (and (process-live-p client) (< (float-time) deadline))
               (accept-process-output nil 0.01)))
-          (should (string-prefix-p "HTTP/1.1 200 " response))
+          (should (string-prefix-p (format "HTTP/1.1 %d " (or status 200)) response))
           (should (string-match "\r\n\r\n" response))
           (codex-ide-mcp-test--json-read
            (decode-coding-string (substring response (match-end 0)) 'utf-8)))
@@ -1923,8 +1942,9 @@
          (result (cdr (assoc "result" response))))
     (should result)
     (should-not (cdr (assoc "isError" result)))
-    (codex-ide-mcp-test--json-read
-     (cdr (assoc "text" (car (cdr (assoc "content" result))))))))
+    (or (cdr (assoc "structuredContent" result))
+        (codex-ide-mcp-test--json-read
+         (cdr (assoc "text" (car (cdr (assoc "content" result)))))))))
 
 (ert-deftest codex-ide-mcp-review-real-http-ediff-journey ()
   "Both protocol modes close HTTP before a human verdict, then return exact edits."
@@ -2026,15 +2046,243 @@
     (let ((codex-ide-diff--receipt-instance "first")
           (codex-ide-diff--next-receipt 0))
       (codex-ide-mcp-test--with-review-session
-        (setq old-id (cdr (assoc "review_id" (codex-ide-mcp-test--review-start terminal))))))
+       (setq old-id (cdr (assoc "review_id" (codex-ide-mcp-test--review-start terminal))))))
     (let ((codex-ide-diff--receipt-instance "second")
           (codex-ide-diff--next-receipt 0))
       (codex-ide-mcp-test--with-review-session
-        (let ((new-id (cdr (assoc "review_id" (codex-ide-mcp-test--review-start terminal)))))
-          (should-not (equal old-id new-id))
-          (should-error (codex-ide-diff--request-result old-id) :type 'user-error)
-          (should (equal (cdr (assoc "status" (codex-ide-diff--request-result new-id)))
-                         "pending")))))))
+       (let ((new-id (cdr (assoc "review_id" (codex-ide-mcp-test--review-start terminal)))))
+         (should-not (equal old-id new-id))
+         (should-error (codex-ide-diff--request-result old-id) :type 'user-error)
+         (should (equal (cdr (assoc "status" (codex-ide-diff--request-result new-id)))
+                        "pending")))))))
+
+
+(ert-deftest codex-ide-mcp-security-session-token-lifecycle ()
+  "Distinct owners receive private, revocable environment tokens."
+  ;; Native sessions never execute GNU token creation; test their environment
+  ;; separately without reading a random device through the native file API.
+  (skip-when (or (featurep 'neomacs)
+                 (string-match-p "neomacs" invocation-name)))
+  (let ((codex-ide-mcp--tokens (make-hash-table :test 'equal))
+        (codex-ide-mcp-enabled t))
+    (cl-letf (((symbol-function 'featurep)
+               (let ((original (symbol-function 'featurep)))
+                 (lambda (feature &optional subfeature)
+                   (and (not (eq feature 'neomacs))
+                        (funcall original feature subfeature))))))
+      (let ((a (generate-new-buffer " *token-a*"))
+            (b (generate-new-buffer " *token-b*")))
+        (unwind-protect
+            (let* ((ea (codex-ide--make-env a))
+                   (eb (codex-ide--make-env b))
+                   (ta (substring (cadr ea) (length "CODEX_IDE_MCP_TOKEN=")))
+                   (tb (substring (cadr eb) (length "CODEX_IDE_MCP_TOKEN=")))
+                   (request (codex-ide-mcp-test--request
+                             (cons "authorization" (concat "Bearer " ta)))))
+              (should (= (length ta) 64))
+              (should-not (equal ta tb))
+              (should (eq a (codex-ide-mcp--request-owner request)))
+              (should-not (codex-ide-mcp--request-error request))
+              (dolist (header (list nil "Bearer wrong" (concat "bearer " ta)
+                                    (concat "Bearer " ta "x")))
+                (let ((bad (codex-ide-mcp-test--request)))
+                  (setf (plist-get bad :headers)
+                        (cons (cons "authorization" header)
+                              (assq-delete-all 'authorization nil)))
+                  (should (= 401 (car (codex-ide-mcp--request-error bad))))))
+              (kill-buffer a)
+              (should-not (gethash ta codex-ide-mcp--tokens))
+              (should-not (codex-ide-mcp--request-owner request)))
+          (when (buffer-live-p a) (kill-buffer a))
+          (kill-buffer b))))))
+
+(ert-deftest codex-ide-mcp-security-disabled-and-quit ()
+  "Disabled tools cannot run; interrupted tools leave dispatch usable."
+  (let ((codex-ide-mcp-disabled-tools '("emacs_execute")))
+    (should-not (cl-find "emacs_execute"
+                         (append (cdr (assoc "tools" (codex-ide-mcp--handle-tools-list nil))) nil)
+                         :key (lambda (tool) (cdr (assoc "name" tool))) :test #'equal))
+    (should-error (codex-ide-mcp--handle-tools-call
+                   '(:name "emacs_execute" :arguments (:code "(error \"ran\")")))))
+  (let ((inhibit-quit t))
+    (cl-letf (((symbol-function 'codex-ide-mcp--tool-context)
+               (lambda (_) (should-not inhibit-quit) (signal 'quit nil))))
+      (let ((result (codex-ide-mcp--handle-tools-call '(:name "emacs_context"))))
+        (should (eq t (cdr (assoc "isError" result))))
+        (should (equal "Interrupted by user" (codex-ide-mcp-test--result-text result))))))
+  (should (assoc "tools" (codex-ide-mcp--handle-tools-list nil))))
+
+(ert-deftest codex-ide-mcp-security-context-does-not-visit ()
+  "Read-only context refuses unopened files without running file hooks."
+  (let ((path (make-temp-file "mcp-context-")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'find-file-noselect)
+                   (lambda (&rest _) (ert-fail "Context visited a file"))))
+          (should-error (codex-ide-harness-context (list :path path)) :type 'user-error))
+      (delete-file path))))
+
+(ert-deftest codex-ide-mcp-security-many-output-chunks ()
+  "Thousands of Unicode chunks retain only the capped tail and offsets."
+  (let ((codex-ide-harness-job-output-limit 127)
+        (job (list :output-start 0 :output-next 0)))
+    (unwind-protect
+        (progn
+          (dotimes (_ 5000)
+            (setq job (codex-ide-harness--append-job-output job "αβγ\n")))
+          (let ((buffer (plist-get job :output-buffer))
+                (result (codex-ide-harness--job-output job 19996)))
+            (should (buffer-live-p buffer))
+            (should (= 127 (with-current-buffer buffer (buffer-size))))
+            (should (= 19873 (plist-get job :output-start)))
+            (should (= 20000 (plist-get job :output-next)))
+            (should (equal "αβγ\n" (cdr (assoc "text" result))))))
+      (when-let* ((buffer (plist-get job :output-buffer))) (kill-buffer buffer)))))
+
+(ert-deftest codex-ide-mcp-security-error-site-backtrace ()
+  "Execution reports the throwing function only when capture is supported."
+  (cl-letf (((symbol-function 'codex-ide-mcp-test--throwing-site)
+             (lambda () (error "site failure"))))
+    (let* ((result (codex-ide-harness-execute
+                    '(:code "(codex-ide-mcp-test--throwing-site)")))
+           (trace (cdr (assoc "backtrace" (cdr (assoc "error" result))))))
+      (if (fboundp 'handler-bind-1)
+          (should (string-match-p "codex-ide-mcp-test--throwing-site" trace))
+        (should-not trace)))))
+
+(ert-deftest codex-ide-mcp-security-json-wire-compatible ()
+  "Native and fallback encoders preserve nested values and large text."
+  (let* ((value (list (cons "text" (make-string 100000 ?λ))
+                      (cons "flags" [t :json-false nil])
+                      (cons "object" (make-hash-table :test 'equal))))
+         (native (codex-ide-mcp--json-encode value))
+         (fallback (cl-letf (((symbol-function 'json-serialize) nil))
+                     (codex-ide-mcp--json-encode value))))
+    (should (equal (codex-ide-mcp-test--json-read native)
+                   (codex-ide-mcp-test--json-read fallback)))
+    (cl-letf (((symbol-function 'json-parse-string) nil))
+      (should (hash-table-p (codex-ide-mcp--json-read "{\"empty\":{}}"))))))
+
+
+(ert-deftest codex-ide-mcp-security-review-infers-owner ()
+  "The authenticated terminal is used when review buffer is omitted."
+  (codex-ide-mcp-test--with-review-session
+   (let ((codex-ide-mcp--request-session terminal))
+     (cl-letf (((symbol-function 'codex-ide-diff--request-start)
+                (lambda (buffer &rest _) (list (cons "owner" buffer)))))
+       (should (equal (cdr (assoc "owner" (codex-ide-mcp-test--decoded-result
+                                           (codex-ide-mcp--handle-tools-call
+                                            '(:name "emacs_review_start"
+						    :arguments (:token "retry" :path "a" :old "b" :new "c"))))))
+                      (buffer-name terminal)))))))
+
+(ert-deftest codex-ide-mcp-security-client-overflow-is-a-response ()
+  "A filter at capacity closes its client without signalling user-error."
+  (let ((codex-ide-mcp-max-clients 0)
+        (codex-ide-mcp--clients (make-hash-table :test 'eq)) response)
+    (cl-letf (((symbol-function 'set-process-coding-system) #'ignore)
+              ((symbol-function 'process-live-p) (lambda (_) t))
+              ((symbol-function 'codex-ide-mcp--reject-client)
+               (lambda (_proc status message) (setq response (list status message)))))
+      (codex-ide-mcp--filter 'fixture "bad input")
+      (should (= 503 (car response)))
+      (should (= 0 (hash-table-count codex-ide-mcp--clients))))))
+
+(ert-deftest codex-ide-mcp-security-output-reset-and-prune ()
+  "Job reset and retention pruning release hidden output buffers."
+  (let ((codex-ide-harness--jobs (make-hash-table :test 'equal))
+        (codex-ide-harness-job-limit 1))
+    (let* ((a (codex-ide-harness--append-job-output
+               (list :id "a" :status "done" :finished "1") "a"))
+           (b (codex-ide-harness--append-job-output
+               (list :id "b" :status "done" :finished "2") "b"))
+           (ab (plist-get a :output-buffer)) (bb (plist-get b :output-buffer)))
+      (codex-ide-harness--put-job a)
+      (codex-ide-harness--put-job b)
+      (should-not (buffer-live-p ab))
+      (should (buffer-live-p bb))
+      (codex-ide-harness-reset)
+      (should-not (buffer-live-p bb)))))
+
+
+(ert-deftest codex-ide-mcp-security-review-text-encoded-once ()
+  "Large review text occurs once on both supported HTTP wire formats."
+  (let ((text (concat "review-unique-marker" (make-string 100000 ?λ))))
+    (cl-letf (((symbol-function 'codex-ide-diff--request-result)
+               (lambda (&rest _) (list (cons "status" "accepted") (cons "content" text)))))
+      (dolist (modern '(nil t))
+        (let* ((result (codex-ide-mcp--tool-review-result '(:review_id "test")))
+               (wire (codex-ide-mcp--json-encode
+                      (if modern (codex-ide-mcp--modern-result "tools/call" result) result)))
+               (decoded (codex-ide-mcp-test--json-read wire)))
+          (should (= 2 (length (split-string wire "review-unique-marker" t))))
+          (should (equal text (cdr (assoc "content" (cdr (assoc "structuredContent" decoded)))))))))))
+
+
+
+(ert-deftest codex-ide-mcp-security-http-authentication-and-owner ()
+  "Real HTTP rejects invalid credentials and associates both owners correctly."
+  (let ((codex-ide-mcp-port 0) (codex-ide-mcp--server nil)
+        (codex-ide-mcp--port nil)
+        (codex-ide-mcp--tokens (make-hash-table :test 'equal))
+        (codex-ide-mcp--clients (make-hash-table :test 'eq))
+        (a (generate-new-buffer " *http-owner-a*"))
+        (b (generate-new-buffer " *http-owner-b*")) calls)
+    (unwind-protect
+        (cl-letf (((symbol-function 'codex-ide-diff--request-start)
+                   (lambda (buffer &rest _)
+                     (push buffer calls) (list (cons "owner" buffer)))))
+          (codex-ide-mcp--start-server)
+          (dolist (modern '(nil t))
+            (dolist (owner (list nil nil a b))
+              (let* ((token (if owner (concat "fixture-" (buffer-name owner)) "wrong"))
+                     (params '(:name "emacs_review_start"
+                               :arguments (:token "r" :path "x" :old "o" :new "n")))
+                     (request (if modern
+                                  (codex-ide-mcp-test--modern-request "tools/call" params)
+                                (codex-ide-mcp-test--request))))
+                (when owner (puthash token owner codex-ide-mcp--tokens))
+                (setf (plist-get request :body)
+                      (if modern (plist-get request :body)
+                        (json-encode (list :jsonrpc "2.0" :id 1
+                                           :method "tools/call" :params params)))
+                      (plist-get request :headers)
+                      (cons (cons "authorization" (concat "Bearer " token))
+                            (assoc-delete-all "authorization" (plist-get request :headers))))
+                (let ((reply (codex-ide-mcp-test--wire-request request (if owner 200 401))))
+                  (when owner
+                    (should (equal (cdr (assoc "owner" (codex-ide-mcp-test--decoded-result
+                                                        (cdr (assoc "result" reply)))))
+                                   (buffer-name owner))))))))
+          (should (= 4 (length calls))))
+      (codex-ide-mcp--stop-server)
+      (kill-buffer a) (kill-buffer b))))
+
+(defvar codex-ide-mcp-test--at-error-site nil)
+
+(ert-deftest codex-ide-mcp-security-backtrace-capture-precedes-unwind ()
+  "Capture happens before the throwing form unwinds, only on supported Emacs."
+  (let ((codex-ide-mcp-test--at-error-site nil) seen)
+    (cl-letf (((symbol-function 'codex-ide-harness--backtrace-string)
+               (lambda () (setq seen codex-ide-mcp-test--at-error-site) "site")))
+      (codex-ide-harness-execute
+       '(:code "(unwind-protect (progn (setq codex-ide-mcp-test--at-error-site t) (error \"fail\")) (setq codex-ide-mcp-test--at-error-site nil))"))
+      (should (eq seen (and (fboundp 'handler-bind-1) t)))
+      (should-not codex-ide-mcp-test--at-error-site))))
+
+(ert-deftest codex-ide-mcp-security-backtrace-excludes-http-secrets ()
+  "The error-site trace never includes its enclosing HTTP bearer header."
+  (let* ((token "secret-fixture-never-log")
+         (codex-ide-mcp--tokens (make-hash-table :test 'equal))
+         (request (codex-ide-mcp-test--modern-request
+                   "tools/call" '(:name "emacs_execute" :arguments (:code "(error \"fail\")")))))
+    (puthash token (current-buffer) codex-ide-mcp--tokens)
+    (setf (plist-get request :headers)
+          (cons (cons "authorization" (concat "Bearer " token))
+                (assoc-delete-all "authorization" (plist-get request :headers))))
+    (let* ((response (codex-ide-mcp-test--http-response request))
+           (text (codex-ide-mcp--json-encode response)))
+      (should (= 200 (car response)))
+      (should-not (string-match-p token text)))))
 
 (provide 'codex-ide-mcp-tests)
 
