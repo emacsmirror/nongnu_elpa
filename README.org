@@ -17,14 +17,34 @@
 | =M-x codex-ide-resume= | Pick a saved session id, then =codex resume <id>= |
 | =M-x codex-ide-rename-session= | Label a live session; empty input restores automatic naming |
 | =M-x codex-ide-stop= | Stop only the *active* project session |
-| =M-x codex-ide-toggle= | Cycle live project sessions |
+| =M-x codex-ide-cycle-session= | Cycle live project sessions |
 | =M-x codex-ide-toggle-panel= | Hide or restore project session windows in this tab |
 | =M-x codex-ide-show-project-sessions= | Show all project sessions in separate side windows |
-| =M-x codex-ide-list-project-sessions= | Switch among project sessions |
-| =M-x codex-ide-list-sessions= | Switch among any live sessions |
+| =M-x codex-ide-switch-project-session= | Switch among project sessions |
+| =M-x codex-ide-switch-session= | Switch among any live sessions |
+| =M-x codex-ide-list-sessions= | Browse live sessions in =*Codex Sessions*= |
 | =M-x codex-ide-attach-source= | Attach region or current line to one session draft without submitting |
 | =M-x codex-ide-send-prompt= | Send a minibuffer prompt into the active session |
 | =M-x codex-ide-menu= | Popup menu (sessions, config, MCP, debug) |
+
+The session list shows project, label or buffer, backend, status, and directory.
+Use =n=/=p= to move, =RET= to switch using the configured display policy,
+=k= to kill the selected session after confirmation, =r= to set or clear its
+label, =g= to refresh while keeping the selected row, and =?= for popup help.
+The old =codex-ide-toggle= and =codex-ide-list-project-sessions= names remain
+obsolete aliases for =codex-ide-cycle-session= and
+=codex-ide-switch-project-session=.
+
+The popup groups Session, Switch, Send, Context, and Config in two columns.
+Use =l= for project session completion, =L= for all-session completion, and
+=B= for the session list.  =q= closes the popup or returns from a submenu;
+=k= kills a session and =K= stops MCP in its submenu.  Unavailable actions
+are dimmed.  Configuration shows current backend, approval, and sandbox
+overrides for new sessions; =CLI default= means the CLI chooses that value.
+Save configuration persists only options that differ from their defaults,
+and removes saved overrides for options restored to their defaults.
+Explicit choices equal to defaults stay active in the current Emacs session
+but are not written to Custom.
 
 ** Saved sessions
 + =codex-ide-resume-session-scan-limit= limits matching unique sessions

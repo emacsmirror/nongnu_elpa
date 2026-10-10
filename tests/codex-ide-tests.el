@@ -201,7 +201,7 @@ to the session.  The session is torn down afterwards."
    (lambda ()
      (let ((default-directory root)
            (codex-ide-display-buffer-function #'pop-to-buffer-same-window))
-       (codex-ide-toggle)))))
+       (codex-ide-cycle-session)))))
 
 (defun codex-ide-test--call-with-sessions (root-ids body)
   "Call BODY with live sessions for ROOT-IDS.
@@ -1724,7 +1724,7 @@ region, where the scrollback-browsing rule alone would strand it."
                        ((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil)))
                (let ((default-directory root-a))
-                 (codex-ide-list-project-sessions)))
+                 (codex-ide-switch-project-session)))
              (should (equal (delete-dups
                              (mapcar (lambda (candidate)
                                        (plist-get (cdr candidate) :root))
@@ -1760,7 +1760,7 @@ region, where the scrollback-browsing rule alone would strand it."
                        ((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil)))
                (let ((default-directory root-a))
-                 (codex-ide-list-sessions)))
+                 (codex-ide-switch-session)))
              (should (equal (sort (mapcar (lambda (candidate)
                                             (plist-get (cdr candidate)
                                                        :root))
@@ -2288,6 +2288,13 @@ region, where the scrollback-browsing rule alone would strand it."
   "Return non-nil when COMMAND is reachable in KEYMAP."
   (where-is-internal command (list keymap) t))
 
+(ert-deftest codex-ide-menu-reserves-popup-exit ()
+  "Exit keys never name a destructive source-map action."
+  (dolist (map (list codex-ide-map codex-ide-mcp-map))
+    (should-not (lookup-key map (kbd "q"))))
+  (should (eq (lookup-key codex-ide-map (kbd "k")) #'codex-ide-stop))
+  (should (eq (lookup-key codex-ide-mcp-map (kbd "K")) #'codex-ide-mcp-stop)))
+
 (ert-deftest codex-ide-menu-main-commands ()
   "Main menu exposes the core session/navigation/interaction commands."
   (dolist (command '(codex-ide
@@ -2295,12 +2302,12 @@ region, where the scrollback-browsing rule alone would strand it."
                      codex-ide-resume
                      codex-ide-stop
                      codex-ide-switch-to-buffer
-                     codex-ide-list-project-sessions
+                     codex-ide-switch-project-session
+                     codex-ide-switch-session
                      codex-ide-list-sessions
-                     codex-ide-toggle
+                     codex-ide-cycle-session
                      codex-ide-send-prompt
-                     codex-ide-send-escape
-                     codex-ide-insert-newline))
+                     codex-ide-send-escape))
     (should (codex-ide-test--command-bound-p codex-ide-map command))))
 
 (ert-deftest codex-ide-menu-config-commands ()
@@ -2332,17 +2339,168 @@ region, where the scrollback-browsing rule alone would strand it."
                      codex-ide-mcp-install-codex-config))
     (should (codex-ide-test--command-bound-p codex-ide-mcp-map command))))
 
-(ert-deftest codex-ide-menu-save-config-saves-current-symbols ()
-  "Save config persists the documented configuration set."
-  (let (saved)
+(ert-deftest codex-ide-menu-save-config-saves-only-nondefaults ()
+  "Save config compares current values with evaluated standard values."
+  (let ((codex-ide-menu--saved-config-symbols
+         '(codex-ide-cli-path codex-ide-no-alt-screen codex-ide-cli-extra-args))
+        (codex-ide-cli-path (eval (car (get 'codex-ide-cli-path 'standard-value)) t))
+        (codex-ide-no-alt-screen t)
+        (codex-ide-cli-extra-args '("--example"))
+        saved)
     (cl-letf (((symbol-function 'customize-save-variable)
-               (lambda (symbol _value)
-                 (push symbol saved)))
-              ((symbol-function 'codex-ide-log)
-               (lambda (&rest _args) nil)))
+               (lambda (symbol value) (push (cons symbol value) saved)))
+              ((symbol-function 'codex-ide-log) #'ignore))
       (codex-ide-menu--save-config))
     (should (equal (reverse saved)
-                   codex-ide-menu--saved-config-symbols))))
+                   '((codex-ide-no-alt-screen . t)
+                     (codex-ide-cli-extra-args "--example"))))))
+
+(ert-deftest codex-ide-menu-save-config-removes-restored-defaults ()
+  "Restored defaults survive reload without erasing unrelated settings."
+  (let* ((directory (make-temp-file "codex-custom-" t))
+         (custom-file (expand-file-name "custom.el" directory))
+         (user-init-file (expand-file-name "init.el" directory))
+         (symbols '(codex-ide-yolo codex-ide-no-alt-screen codex-ide-debug user))
+         (properties (mapcar (lambda (symbol) (copy-tree (symbol-plist symbol)))
+                             symbols))
+         (codex-ide-menu--saved-config-symbols
+          '(codex-ide-yolo codex-ide-no-alt-screen))
+         (codex-ide-yolo t)
+         (codex-ide-no-alt-screen t)
+         (codex-ide-debug t))
+    (unwind-protect
+        (progn
+          (customize-save-variable 'codex-ide-debug t)
+          (codex-ide-menu--save-config)
+          (setq codex-ide-yolo nil codex-ide-no-alt-screen nil)
+          (codex-ide-menu--save-config)
+          (with-temp-buffer
+            (insert-file-contents custom-file)
+            (should-not (search-forward "(codex-ide-yolo" nil t))
+            (goto-char (point-min))
+            (should-not (search-forward "(codex-ide-no-alt-screen" nil t)))
+          (with-temp-buffer
+            (should
+             (zerop
+              (call-process
+               (expand-file-name invocation-name invocation-directory) nil t nil
+               "-Q" "--batch" "--eval"
+               (prin1-to-string
+                `(progn
+                   (defcustom codex-ide-yolo nil "Test option." :type 'boolean)
+                   (defcustom codex-ide-no-alt-screen nil "Test option." :type 'boolean)
+                   (defcustom codex-ide-debug nil "Test option." :type 'boolean)
+                   (load ,custom-file nil t)
+                   (princ (list codex-ide-yolo codex-ide-no-alt-screen
+                                codex-ide-debug)))))))
+            (should (equal (buffer-string) "(nil nil t)"))))
+      (cl-mapc #'setplist symbols properties)
+      (when-let* ((buffer (get-file-buffer custom-file))) (kill-buffer buffer))
+      (delete-directory directory t))))
+
+(ert-deftest codex-ide-menu-save-default-preserves-explicit-backend ()
+  "Omitting a saved default does not change the current terminal choice."
+  (let ((codex-ide-menu--saved-config-symbols '(codex-ide-terminal-backend))
+        (codex-ide-terminal-backend 'eat)
+        (features (cons 'neomacs features))
+        (properties (copy-tree (symbol-plist 'codex-ide-terminal-backend)))
+        (user-properties (copy-tree (symbol-plist 'user))))
+    (unwind-protect
+        (progn
+          (put 'codex-ide-terminal-backend 'saved-value (list (list 'quote 'eat)))
+          (put 'codex-ide-terminal-backend 'customized-value nil)
+          (should (eq (codex-ide-term--selected-backend) 'eat))
+          (cl-letf (((symbol-function 'custom-file) (lambda (&optional _) nil)))
+            (codex-ide-menu--save-config))
+          (should (eq (codex-ide-term--selected-backend) 'eat))
+          (should-not (get 'codex-ide-terminal-backend 'saved-value)))
+      (setplist 'codex-ide-terminal-backend properties)
+      (setplist 'user user-properties))))
+
+(ert-deftest codex-ide-menu-cli-path-allows-bare-command ()
+  "CLI path completion supplies an executable default without must-match."
+  (let ((codex-ide-cli-path "missing") args)
+    (cl-letf (((symbol-function 'executable-find) (lambda (_) "/bin/codex"))
+              ((symbol-function 'read-file-name)
+               (lambda (&rest arguments) (setq args arguments) "other-codex"))
+              ((symbol-function 'codex-ide--invalidate-cli-cache) #'ignore)
+              ((symbol-function 'codex-ide-log) #'ignore))
+      (call-interactively #'codex-ide-menu--set-cli-path))
+    (should (equal (nth 2 args) "/bin/codex"))
+    (should-not (nth 3 args))
+    (should (equal codex-ide-cli-path "other-codex"))))
+
+(ert-deftest codex-ide-menu-exit-key-dismisses-without-stopping ()
+  "Real transient-map dispatch of q dismisses and backs out safely."
+  (let ((stopped 0) (keymap-popup-backend #'keymap-popup-backend-side-window))
+    (save-window-excursion
+      (with-temp-buffer
+        (switch-to-buffer (current-buffer))
+        (local-set-key (kbd "<f6>") #'codex-ide-menu)
+        (cl-letf (((symbol-function 'codex-ide-stop)
+                   (lambda () (interactive) (cl-incf stopped)))
+                  ((symbol-function 'codex-ide-mcp-stop)
+                   (lambda () (interactive) (cl-incf stopped))))
+          (unwind-protect
+              (progn
+                (execute-kbd-macro (kbd "<f6> q"))
+                (should-not (get-buffer keymap-popup--buffer-name))
+                (execute-kbd-macro (kbd "<f6> m q"))
+                (should (get-buffer keymap-popup--buffer-name))
+                (execute-kbd-macro (kbd "q"))
+                (should-not (get-buffer keymap-popup--buffer-name))
+                (should (= stopped 0)))
+            (keymap-popup-dismiss)))))))
+
+(ert-deftest codex-ide-menu-layout-and-availability ()
+  "Root groups occupy explicit two-column rows with meaningful predicates."
+  (let ((rows (keymap-popup--meta codex-ide-map 'descriptions)))
+    (should (equal (mapcar (lambda (row) (mapcar (lambda (group)
+                                                (plist-get group :name)) row)) rows)
+                   '(("Session" "Switch") ("Send" "Context") ("Config"))))
+    (dolist (row rows)
+      (dolist (group row)
+        (should (<= (length (plist-get group :entries)) 6)))))
+  (should (eq (lookup-key codex-ide-map "l") #'codex-ide-switch-project-session))
+  (should (eq (lookup-key codex-ide-map "L") #'codex-ide-switch-session))
+  (should-not (lookup-key codex-ide-map (kbd "C-l")))
+  (should-not (codex-ide-test--command-bound-p codex-ide-map
+                                             #'codex-ide-insert-newline))
+  (cl-letf (((symbol-function 'codex-ide--get-working-directory)
+             (lambda () "/example/"))
+            ((symbol-function 'codex-ide--project-sessions) (lambda (_) nil)))
+    (should (funcall (plist-get (codex-ide-test--popup-entry-by-command
+                                codex-ide-map #'codex-ide-send-prompt) :inapt-if))))
+  (cl-letf (((symbol-function 'codex-ide--project-sessions) (lambda (_) '(live))))
+    (should-not (codex-ide-menu--no-project-session-p))))
+
+(ert-deftest codex-ide-menu-descriptions-show-values ()
+  "Configuration entries render current values with semantic faces and help."
+  (let ((codex-ide-terminal-backend 'vterm)
+        (codex-ide-ask-for-approval 'on-request)
+        (codex-ide-yolo nil)
+        (codex-ide-config-overrides '(("sandbox_mode" . "workspace-write"))))
+    (dolist (pair '((codex-ide-menu--set-terminal-backend . "vterm")
+                    (codex-ide-menu--set-approval . "on-request")
+                    (codex-ide-menu--configure-sandbox . "workspace-write")))
+      (let* ((entry (codex-ide-test--popup-entry-by-command codex-ide-config-map
+                                                          (car pair)))
+             (text (funcall (plist-get entry :description)))
+             (start (string-match (cdr pair) text)))
+        (should start)
+        (should (eq (get-text-property start 'face text) 'keymap-popup-value))
+        (should (equal (get-text-property start 'help-echo text) (cdr pair)))))
+    (let* ((full (make-string 100 ?x))
+           (short (codex-ide-menu--value "Value" full)))
+      (should (< (string-width short) 40))
+      (should (equal (get-text-property 7 'help-echo short) full)))))
+
+(ert-deftest codex-ide-switch-obsolete-aliases ()
+  "Old cycle and project-picker commands retain their meanings."
+  (should (eq (indirect-function 'codex-ide-toggle)
+              (indirect-function 'codex-ide-cycle-session)))
+  (should (eq (indirect-function 'codex-ide-list-project-sessions)
+              (indirect-function 'codex-ide-switch-project-session))))
 
 (ert-deftest codex-ide-menu-debug-commands ()
   "Debug menu exposes status and log commands."

@@ -31,6 +31,10 @@
 (require 'codex-ide)
 (require 'codex-ide-debug)
 (require 'codex-ide-mcp)
+(require 'codex-ide-sessions)
+
+(declare-function custom-file "cus-edit" (&optional no-error))
+(declare-function custom-save-all "cus-edit" ())
 
 ;;; Suffixes
 
@@ -53,7 +57,9 @@
 (defun codex-ide-menu--set-cli-path (path)
   "Set `codex-ide-cli-path' to PATH."
   (interactive
-   (list (read-file-name "Codex CLI path: " nil codex-ide-cli-path t)))
+   (list (read-file-name "Codex CLI path: " nil
+                         (or (executable-find "codex") codex-ide-cli-path)
+                         nil)))
   (setq codex-ide-cli-path path)
   (codex-ide--invalidate-cli-cache)
   (codex-ide-log "CLI path set to %s" path))
@@ -82,15 +88,54 @@
 
 
 (defun codex-ide-menu--save-config ()
-  "Save the documented configuration symbols to the custom file.
-Persists `codex-ide-menu--saved-config-symbols' only: CLI path, terminal
-backend, display function, approval, YOLO, no-alt-screen, extra args, config
-overrides, debug, MCP enable/host/port, and context auto-start."
+  "Save nondefault options and remove saved overrides restored to defaults.
+Consider only `codex-ide-menu--saved-config-symbols'."
   (interactive)
-  (mapc (lambda (symbol)
-          (customize-save-variable symbol (symbol-value symbol)))
-        codex-ide-menu--saved-config-symbols)
+  (require 'cus-edit)
+  (let (reset)
+    (dolist (symbol codex-ide-menu--saved-config-symbols)
+      (if (equal (symbol-value symbol)
+                 (eval (car (get symbol 'standard-value)) t))
+          (when (or (get symbol 'saved-value)
+                    (get symbol 'saved-variable-comment))
+            (put symbol 'saved-value nil)
+            (put symbol 'saved-variable-comment nil)
+            ;; Retain explicit runtime choices, such as Eat on Neomacs,
+            ;; while omitting the default value from future startup files.
+            (customize-set-variable symbol (symbol-value symbol))
+            (setq reset t))
+        (customize-save-variable symbol (symbol-value symbol))))
+    (when (and reset (custom-file t)) (custom-save-all)))
   (codex-ide-log "Configuration saved"))
+
+(defun codex-ide-menu--value (label value)
+  "Return LABEL with a compact, propertized VALUE and full hover text."
+  (let ((text (format "%s" value)))
+    (concat label ": "
+            (propertize (truncate-string-to-width text 22 nil nil t)
+                        'face 'keymap-popup-value 'help-echo text))))
+
+(defun codex-ide-menu--no-project-session-p ()
+  "Return non-nil when the current project has no live session."
+  (null (codex-ide--project-sessions (codex-ide--get-working-directory))))
+
+(defun codex-ide-menu--no-session-p ()
+  "Return non-nil when no registered session is live."
+  (not (cl-some #'codex-ide--session-live-p (codex-ide--raw-sessions))))
+
+(defun codex-ide-menu--sandbox-description ()
+  "Describe configured sandbox overrides for new sessions."
+  (codex-ide-menu--value
+   "Sandbox"
+   (if codex-ide-yolo "disabled (YOLO)"
+     (or (cdr (assoc "sandbox_mode" codex-ide-config-overrides))
+         (cdr (assoc "sandbox_permissions" codex-ide-config-overrides))
+         "CLI default"))))
+
+(defun codex-ide-menu--configure-sandbox ()
+  "Customize CLI configuration overrides, including sandbox settings."
+  (interactive)
+  (customize-variable 'codex-ide-config-overrides))
 
 ;;; Menus
 
@@ -105,11 +150,17 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   :description "codex-ide Configuration"
   :group "CLI"
   "p" ("Set CLI path" codex-ide-menu--set-cli-path)
-  "t" ("Set terminal backend" codex-ide-menu--set-terminal-backend)
-  "a" ("Set approval policy" codex-ide-menu--set-approval)
+  "t" ((lambda () (codex-ide-menu--value
+                    "Backend" (codex-ide-term--selected-backend)))
+       codex-ide-menu--set-terminal-backend)
+  "a" ((lambda () (codex-ide-menu--value
+                    "Approval" (if codex-ide-yolo "never (YOLO)"
+                                 (or codex-ide-ask-for-approval "CLI default"))))
+       codex-ide-menu--set-approval)
+  "s" (#'codex-ide-menu--sandbox-description codex-ide-menu--configure-sandbox)
+  :group "Options"
   "y" ("YOLO full control" :switch codex-ide-yolo)
   "A" ("No-alt-screen" :switch codex-ide-no-alt-screen)
-  :group "Save"
   "S" ("Save configuration" codex-ide-menu--save-config))
 
 (keymap-popup-define codex-ide-debug-map
@@ -129,8 +180,10 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   :popup-key "?"
   :description "codex-ide MCP"
   :group "Server"
-  "s" ("Start MCP server" codex-ide-mcp-start)
-  "q" ("Stop MCP server" codex-ide-mcp-stop)
+  "s" ("Start MCP server" codex-ide-mcp-start
+       :inapt-if (lambda () (process-live-p codex-ide-mcp--server)))
+  "K" ("Stop MCP server" codex-ide-mcp-stop
+       :inapt-if (lambda () (not (process-live-p codex-ide-mcp--server))))
   "S" ("MCP status" codex-ide-mcp-status)
   "i" ("Install Codex MCP config" codex-ide-mcp-install-codex-config))
 
@@ -142,21 +195,40 @@ overrides, debug, MCP enable/host/port, and context auto-start."
   "s" ("Start" codex-ide :c-u "C-u: new session")
   "r" ("Resume last" codex-ide-resume-last)
   "R" ("Resume saved session" codex-ide-resume)
-  "q" ("Stop active session" codex-ide-stop)
-  "N" ("Rename session" codex-ide-rename-session)
-  :group "Navigation"
-  "b" ("Switch to buffer" codex-ide-switch-to-buffer)
-  "C-l" ("Switch project session" codex-ide-list-project-sessions)
-  "l" ("Switch any session" codex-ide-list-sessions)
-  "w" ("Cycle sessions" codex-ide-toggle)
-  "W" ("Toggle project panel" codex-ide-toggle-panel)
-  "A" ("Show project sessions" codex-ide-show-project-sessions)
-  :group "Interaction"
-  "p" ("Send prompt" codex-ide-send-prompt)
-  "a" ("Attach source to draft" codex-ide-attach-source)
-  "e" ("Send escape" codex-ide-send-escape)
-  "n" ("Insert newline" codex-ide-insert-newline)
-  :group "Submenus"
+  "k" ("Kill session" codex-ide-stop
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "N" ("Rename session" codex-ide-rename-session
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "B" ("Session list" codex-ide-list-sessions)
+  :group "Switch"
+  "b" ("Project buffer" codex-ide-switch-to-buffer
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "l" ("Project session" codex-ide-switch-project-session
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "L" ("Any session" codex-ide-switch-session
+       :inapt-if #'codex-ide-menu--no-session-p)
+  "w" ("Cycle sessions" codex-ide-cycle-session
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "W" ("Toggle project panel" codex-ide-toggle-panel
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "A" ("Show project panels" codex-ide-show-project-sessions
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  :row
+  :group "Send"
+  "p" ("Send prompt" codex-ide-send-prompt
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "e" ("Send escape" codex-ide-send-escape
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  :group "Context"
+  "a" ("Attach source to draft" codex-ide-attach-source
+       :inapt-if #'codex-ide-menu--no-project-session-p)
+  "c" ("Start context server" codex-ide-context-start
+       :inapt-if (lambda () (process-live-p codex-ide-context--server)))
+  "x" ("Stop context server" codex-ide-context-stop
+       :inapt-if (lambda () (not (process-live-p codex-ide-context--server))))
+  "S" ("Context status" codex-ide-context-status)
+  :row
+  :group "Config"
   "C" ("Configuration" :keymap codex-ide-config-map)
   "m" ("MCP" :keymap codex-ide-mcp-map)
   "d" ("Debug" :keymap codex-ide-debug-map))

@@ -14,6 +14,18 @@
 - Send literal Ctrl+J for newlines, retain minibuffer prompt history, and display
   source attachments without selecting the session, using project-relative paths.
 - Cache CLI availability, failures and version output by executable path.
+- Make =codex-ide-list-sessions= a native tabulated session list with
+  switching, confirmed kill, labels, refresh, and popup help.  Its former
+  completion behavior is now =codex-ide-switch-session=.
+- Rename project completion to =codex-ide-switch-project-session= and
+  cycling to =codex-ide-cycle-session=.  Keep the former
+  =codex-ide-list-project-sessions= and =codex-ide-toggle= as obsolete aliases.
+- Keep popup =q= for exit/back; move session kill to =k= and MCP stop to =K=.
+  Organize the menu by goal in two columns, add Context actions, use =l=/=L=
+  for project/all session completion, and dim unavailable actions.
+- Show current backend, approval, and sandbox overrides in configuration.
+  Save only nondefault options, remove saved overrides restored to defaults,
+  and allow a bare CLI executable name.
 
 * Version 0.1.4 (unreleased)
 
