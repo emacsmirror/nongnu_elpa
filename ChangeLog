@@ -1,3 +1,8 @@
+2026-10-10  Ulrich Müller  <ulm@gentoo.org>
+
+	* test/*.el: Add no-byte-compile and no-update-autoloads as
+	file-local vars to prevent package.el from compiling the tests.
+
 2026-10-07  Ulrich Müller  <ulm@gentoo.org>
 
 	* ebuild-mode-keywords.el (ebuild-mode-keywords-*):

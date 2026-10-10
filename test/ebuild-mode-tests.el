@@ -424,6 +424,8 @@
 
 ;; Local Variables:
 ;; coding: utf-8
+;; no-byte-compile: t
+;; no-update-autoloads: t
 ;; End:
 
 ;;; ebuild-mode-tests.el ends here

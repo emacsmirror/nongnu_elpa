@@ -76,4 +76,10 @@
 		   (setq ret 1)))))
     (ad-set-arg 0 ret)))
 
+;; Local Variables:
+;; coding: utf-8
+;; no-byte-compile: t
+;; no-update-autoloads: t
+;; End:
+
 ;;; xemacs-test-wrapper.el ends here

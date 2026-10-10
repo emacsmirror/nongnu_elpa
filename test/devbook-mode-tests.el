@@ -187,6 +187,8 @@
 
 ;; Local Variables:
 ;; coding: utf-8
+;; no-byte-compile: t
+;; no-update-autoloads: t
 ;; End:
 
 ;;; devbook-mode-tests.el ends here

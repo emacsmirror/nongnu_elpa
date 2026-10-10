@@ -91,6 +91,8 @@
 
 ;; Local Variables:
 ;; coding: utf-8
+;; no-byte-compile: t
+;; no-update-autoloads: t
 ;; End:
 
 ;;; gentoo-newsitem-mode-tests.el ends here
