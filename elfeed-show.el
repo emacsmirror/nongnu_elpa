@@ -593,7 +593,7 @@ not use cached content."
                  (with-current-buffer buffer
                    (when (eq entry elfeed-show-entry)
                      (funcall cb url (or content :error)))))))
-           :headers headers))
+           :headers `(,@headers ("User-Agent" . ,elfeed-user-agent))))
          elfeed-show--fetch)))))
 
 (defun elfeed-show-fetch-link (&optional force)
