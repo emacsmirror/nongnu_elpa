@@ -5613,15 +5613,15 @@ safe, and taking them off would break the address."
                   "\"Lovelace, Ada\" <ada@example.com>"))
     (should (equal (vm-mime-test--encode-address-header text) text))))
 
-(ert-deftest vm-mime-test-a-quoted-local-part-is-not-a-display-name ()
+(ert-deftest vm-mime-test-a-quoted-local-part-is-refused ()
   "A quoted string before an @ is the local part of an address, not a name.
-Taking its quotes off would leave an encoded word where an addr-spec has to
-be, so it is left to the ordinary word encoding and comes back as it went
-in.  A local part outside ASCII cannot be sent either way: RFC 2047 reaches
-no part of an address, and it takes an SMTPUTF8 server to carry one."
-  (let ((value (vm-mime-test--encode-address-header "\"Göran\"@example.com")))
-    (should (equal (vm-mime-test--decode-as-rfc2047 value)
-                   "\"Göran\"@example.com"))))
+RFC 2047 section 5: an encoded word may not appear in any portion of an
+addr-spec, so there is nothing VM can write for one outside US-ASCII.  It
+takes an SMTPUTF8 server to carry it, which VM does not speak, and the error
+says so rather than sending something no reader can parse."
+  (let ((err (should-error (vm-mime-test--encode-address-header
+                            "\"Göran\"@example.com"))))
+    (should (string-match-p "US-ASCII" (cadr err)))))
 
 (ert-deftest vm-mime-test-a-quotation-mark-in-a-subject-is-left-alone ()
   "A Subject is not an address header, so a quotation mark in it is text.
@@ -5660,6 +5660,297 @@ is a character the address parser acts on where it stands."
     (should (string-match-p "=2E" value))
     (should (equal (vm-mime-test--decode-as-rfc2047 value)
                    "Ö. Uddeborg <a@b>"))))
+
+
+;;; Where RFC 2047 lets an encoded word stand, and what it may carry there
+;;
+;; Section 5 names the only three places: the body of an unstructured header,
+;; the inside of a comment, and a word of a phrase.  It then names four
+;; places one may not be: any portion of an addr-spec, inside a quoted
+;; string, a Received header, and a MIME parameter.  Section 5(2) and 5(3)
+;; restrict what a Q encoded word may carry in the last two of the three, and
+;; section 4.2 restricts it everywhere.  These tests are that list.
+
+(defconst vm-mime-test--encoded-word-regexp
+  "=\\?\\([^?]*\\)\\?\\([BbQq]\\)\\?\\([^?]*\\)\\?="
+  "An RFC 2047 encoded word as section 2 defines it.
+The charset and the encoded text may hold no question mark, which is what
+makes the word self-delimiting, so the groups are spelled that way here
+rather than with a lazy match: a word carrying a bare question mark is not
+one this matches, and a test that wants to catch that must say so itself.")
+
+(defun vm-mime-test--encoded-words (value)
+  "The encoded text of every RFC 2047 encoded word in VALUE, in order."
+  (let ((found nil)
+        (pos 0))
+    (while (string-match vm-mime-test--encoded-word-regexp value pos)
+      (push (match-string 3 value) found)
+      (setq pos (match-end 0)))
+    (nreverse found)))
+
+(defun vm-mime-test--check-encoded-words (value context)
+  "Assert every encoded word in VALUE keeps the rules RFC 2047 sets for it.
+CONTEXT is `text', `phrase' or `comment', naming which of section 5 it
+stands in.  Answers how many words were examined, so a caller can assert
+that it tested something."
+  (let ((words (vm-mime-test--encoded-words value)))
+    (dolist (text words)
+      ;; section 2: 75 characters, the whole word and not only its payload
+      (should (<= (+ (length text) (length "=?iso-8859-1?Q??=")) 75))
+      ;; section 4.2(3): a space or tab may not stand for itself
+      (should-not (string-match-p "[ \t]" text))
+      ;; section 5: every = begins a pair of hex digits, the word being
+      ;; self-contained
+      (should-not (string-match-p "=\\($\\|[^0-9A-Fa-f]\\|[0-9A-Fa-f]$\\)" text))
+      ;; section 4.2(3): = ? and _ are reserved, and _ already stands for a
+      ;; space, so what is left of it is the space alone
+      (should-not (string-match-p "\\?" text))
+      (pcase context
+        ;; section 5(3): the restricted set, and nothing else
+        ('phrase (should-not (string-match-p "[^-A-Za-z0-9!*+/=_]" text)))
+        ;; section 5(2): not these three, whatever else
+        ('comment (should-not (string-match-p "[()\"]" text)))))
+    (length words)))
+
+(defconst vm-mime-test--address-headers
+  '(("Göran Uddeborg <goeran@uddeborg.se>"
+     "Göran Uddeborg <goeran@uddeborg.se>"
+     (("goeran@uddeborg.se" . "Göran Uddeborg")))
+    ("\"Göran Uddeborg\" <goeran@uddeborg.se>"
+     "Göran Uddeborg <goeran@uddeborg.se>"
+     (("goeran@uddeborg.se" . "Göran Uddeborg")))
+    ("\"Uddeborg, Göran\" <goeran@uddeborg.se>"
+     "Uddeborg, Göran <goeran@uddeborg.se>"
+     (("goeran@uddeborg.se" . "Uddeborg, Göran")))
+    ("Ö. Uddeborg <a@b>"
+     "Ö. Uddeborg <a@b>"
+     (("a@b" . "Ö. Uddeborg")))
+    ("Göran <a@b>, Åsa <c@d>"
+     "Göran <a@b>, Åsa <c@d>"
+     (("a@b" . "Göran") ("c@d" . "Åsa")))
+    ("Göran <a@b> (Åsa)"
+     "Göran <a@b> (Åsa)"
+     (("a@b" . "Göran")))
+    ("(Åsa) Göran <a@b>"
+     "(Åsa) Göran <a@b>"
+     (("a@b" . "Göran")))
+    ("Göran#1{x}'s <a@b>"
+     "Göran#1{x}'s <a@b>"
+     (("a@b" . "Göran#1{x}'s")))
+    ("Göran!*+-/ <a@b>"
+     "Göran!*+-/ <a@b>"
+     (("a@b" . "Göran!*+-/")))
+    ("\"Ada Lovelace\" <ada@example.com>"
+     "\"Ada Lovelace\" <ada@example.com>"
+     (("ada@example.com" . "Ada Lovelace")))
+    ("plain@example.com"
+     "plain@example.com"
+     (("plain@example.com"))))
+  "Address header values, each with what a reader gets back from it.
+One for each of the places RFC 2047 section 5 names, and for the quoting and
+the specials of RFC 5322 section 3.4 that surround them.  The second element
+is the text a decoder answers; the third is what an address parser answers,
+each entry an address and the display name beside it, and a comment dropped
+as a comment is.
+
+A display name in quotation marks comes back without them, and that is the
+same name: the quoting is syntax and not content, and section 5 forbids an
+encoded word inside a quoted string, so they have to go for the name to be
+encoded at all.  A name that needs no encoding keeps them, nothing having
+been done to it.")
+
+(defun vm-mime-test--neighbours (value)
+  "The character on each side of every encoded word in VALUE.
+A list of (BEFORE . AFTER), either of them nil at an end of VALUE."
+  (let ((found nil)
+        (pos 0))
+    (while (string-match vm-mime-test--encoded-word-regexp value pos)
+      (push (cons (and (> (match-beginning 0) 0)
+                       (aref value (1- (match-beginning 0))))
+                  (and (< (match-end 0) (length value))
+                       (aref value (match-end 0))))
+            found)
+      (setq pos (match-end 0)))
+    (nreverse found)))
+
+(ert-deftest vm-mime-test-every-address-header-survives-a-conforming-reader ()
+  "Each of the corpus comes back from Emacs\\='s own decoder as it should.
+That decoder is not VM\\='s, so a round trip through it says the header really
+carries the text and not merely that VM agrees with itself."
+  (dolist (spec vm-mime-test--address-headers)
+    (should (equal (vm-mime-test--decode-as-rfc2047
+                    (vm-mime-test--encode-address-header (nth 0 spec)))
+                   (nth 1 spec)))))
+
+(ert-deftest vm-mime-test-an-address-header-parses-to-the-addresses-meant ()
+  "Emacs\\='s own address parser finds the addresses and the names in the output.
+That is the property emacs-vm/vm#909 broke: the header still looked like
+one, and parsed as something else.
+
+The question is not whether the parse is the same as the parse of the text
+VM was given, which is no test at all: that text holds characters RFC 5322
+does not allow in a header, which is the reason it is being encoded, and the
+parser makes what it can of it.  Asked for `Ö. Uddeborg\\=' it answers
+`Uddeborg\\='.  The encoded header is the valid one, and what it must parse to
+is written out beside it."
+  (require 'mail-parse)
+  (dolist (spec vm-mime-test--address-headers)
+    (let ((parsed (mail-header-parse-addresses
+                   (vm-mime-test--encode-address-header (nth 0 spec)))))
+      (should (equal (mapcar #'car parsed) (mapcar #'car (nth 2 spec))))
+      (should (equal (mapcar (lambda (a)
+                               (and (cdr a)
+                                    (vm-mime-test--decode-as-rfc2047 (cdr a))))
+                             parsed)
+                     (mapcar #'cdr (nth 2 spec)))))))
+
+(ert-deftest vm-mime-test-an-encoded-word-stays-inside-its-phrase ()
+  "In a display name the encoded word carries only what section 5(3) allows.
+Letters, digits and ! * + - / stand bare; every other character, a period or
+a comma or an apostrophe among them, is written as =XX.  A bare one is a
+character the address parser acts on where it stands."
+  (let ((examined 0))
+    (dolist (text '("Ö. Uddeborg <a@b>"
+                    "Göran#1{x}'s <a@b>"
+                    "\"Uddeborg, Göran\" <a@b>"
+                    "Göran <a@b>"))
+      (setq examined (+ examined
+                        (vm-mime-test--check-encoded-words
+                         (vm-mime-test--encode-address-header text) 'phrase))))
+    (should (> examined 3))))
+
+(ert-deftest vm-mime-test-the-bare-phrase-characters-are-left-bare ()
+  "Section 5(3) allows ! * + - / to stand for themselves, and they do.
+Writing them as =XX would be legal and unreadable; the point of the Q
+encoding is that the ASCII part stays legible to someone whose reader does
+not decode it."
+  (let ((value (vm-mime-test--encode-address-header "Göran!*+-/ <a@b>")))
+    (should (string-match-p "!\\*\\+-/" value))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value)
+                   "Göran!*+-/ <a@b>"))))
+
+(ert-deftest vm-mime-test-a-comment-keeps-its-parentheses ()
+  "Section 5(2) has the encoded word stand inside the comment, not around it.
+The parentheses are the comment, so a word that carries them hides the
+comment from the parser; a word inside one may not hold a parenthesis or a
+quotation mark at all."
+  (dolist (text '("Göran <a@b> (Åsa)" "(Åsa) Göran <a@b>"))
+    (let ((value (vm-mime-test--encode-address-header text)))
+      (should (string-match-p "(=?" value))
+      (should (string-match-p "?=)" value))
+      (should (> (vm-mime-test--check-encoded-words value 'comment) 0)))))
+
+(ert-deftest vm-mime-test-no-encoded-word-reaches-into-an-address ()
+  "Section 5: an encoded word may not appear in any portion of an addr-spec.
+The angle brackets and what is between them are left exactly as they were,
+however much of the rest of the header is encoded."
+  (dolist (spec vm-mime-test--address-headers)
+    (let ((text (nth 0 spec))
+          (value (vm-mime-test--encode-address-header (nth 0 spec)))
+          (pos 0))
+      (while (string-match "<[^>]*>" text pos)
+        (should (string-match-p (regexp-quote (match-string 0 text)) value))
+        (setq pos (match-end 0))))))
+
+(ert-deftest vm-mime-test-an-address-outside-ascii-is-refused ()
+  "An address VM cannot encode is refused rather than written wrongly.
+Section 5 reaches no part of an addr-spec, so a non-ASCII local part or
+domain has no RFC 2047 form; carrying it takes an SMTPUTF8 server.  VM used
+to encode across the angle brackets, and what went out was a header with no
+address in it at all."
+  (dolist (text '("Göran <a@exämple.com>"
+                  "<göran@example.com>"
+                  "göran@example.com"
+                  "Göran <a@b>, <åsa@c.d>"))
+    (let ((err (should-error (vm-mime-test--encode-address-header text))))
+      (should (string-match-p "US-ASCII" (cadr err))))))
+
+(ert-deftest vm-mime-test-group-syntax-survives-encoding ()
+  "The colon and semicolon of a group are specials and stay outside the word.
+RFC 5322 section 3.4: a group is a display name, a colon, a list of
+mailboxes and a semicolon.  An encoded word reaching across the colon joins
+the group name to the first display name and the group is gone."
+  (let ((value (vm-mime-test--encode-address-header
+                "Grüppe: Göran <a@b>, Åsa <c@d>;")))
+    (should (string-match-p "?= :" value))
+    (should (string-suffix-p ";" value))
+    ;; the space before the colon is section 5(3) asking for it, and RFC 5322
+    ;; section 3.4 allows whitespace there
+    (should (equal (vm-mime-test--decode-as-rfc2047 value)
+                   "Grüppe : Göran <a@b>, Åsa <c@d>;"))))
+
+(ert-deftest vm-mime-test-an-encoded-word-is-separated-by-whitespace ()
+  "Sections 5(1) and 5(3): whitespace separates a word from what is beside it.
+What a reader examines is the run of printable characters between whitespace,
+section 6.1(1), so a character hanging off the end of an encoded word makes
+the whole run ordinary text and none of it is decoded.  The parentheses of a
+comment are the exception, section 5(2) and the examples of section 8
+allowing a word straight after the opening one and straight before the
+closing one."
+  (let ((examined 0))
+    (dolist (spec vm-mime-test--address-headers)
+      (dolist (sides (vm-mime-test--neighbours
+                      (vm-mime-test--encode-address-header (nth 0 spec))))
+        (setq examined (1+ examined))
+        (should (memq (car sides) '(nil ?\s ?\t ?\()))
+        (should (memq (cdr sides) '(nil ?\s ?\t ?\))))))
+    (should (> examined 5))))
+
+(ert-deftest vm-mime-test-a-special-beside-a-word-is-pushed-off-it ()
+  "A special that would touch an encoded word gets whitespace put in.
+RFC 5322 allows the whitespace wherever one of these stands, so putting it
+there costs nothing; leaving the special where it was costs the whole word."
+  (let ((value (vm-mime-test--encode-address-header "Göran<a@b>")))
+    (should (string-match-p "?= <a@b>" value))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value) "Göran <a@b>"))))
+
+(ert-deftest vm-mime-test-a-comma-rides-inside-the-word-it-follows ()
+  "A comma after an encoded run goes inside the word, not after it.
+In an unstructured header a comma is ordinary text, and one left outside
+makes the run something a reader will not decode: Python reads
+`=?iso-8859-1?Q?L=F6be?=, Ada\\=' as `Löbe , Ada\\=', a space the text never had.
+An address header is different, the comma there being the separator, and the
+scanner leaves that one where it is."
+  (should (equal (vm-mime-test--decode-as-rfc2047
+                  (vm-mime-test--encode-subject "Löbe, Ada"))
+                 "Löbe, Ada"))
+  (dolist (sides (vm-mime-test--neighbours
+                  (vm-mime-test--encode-subject "Löbe, Ada")))
+    (should (memq (cdr sides) '(nil ?\s ?\t)))))
+
+(ert-deftest vm-mime-test-a-subject-is-not-a-structured-header ()
+  "Section 5(1): in an unstructured header the specials are ordinary text.
+A parenthesis there does not begin a comment and a quotation mark does not
+begin a quoted string, so neither is touched and neither restricts what the
+encoded word may carry."
+  (let ((value (vm-mime-test--encode-subject "Göran (Åsa) \"q\"")))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value) "Göran (Åsa) \"q\""))
+    (should (> (vm-mime-test--check-encoded-words value 'text) 0))))
+
+(ert-deftest vm-mime-test-a-header-with-an-encoded-word-folds-to-76 ()
+  "RFC 2047 section 2 allows such a line two characters less than RFC 5322.
+A line of 77 or 78 holding an encoded word is within RFC 5322 and outside
+this, which is why the limit is its own constant."
+  (should (< vm-mime-encoded-word-line-limit vm-mime-header-line-limit))
+  (let ((found nil))
+    (dotimes (n 60)
+      (let* ((sent (vm-mime-test--encode-header
+                    (concat "ö " (make-string n ?x) " y")))
+             (lines (split-string (string-trim-right sent) "\n")))
+        (dolist (line lines)
+          (when (string-match-p "=\\?" line)
+            (setq found t)
+            (should (<= (length line) vm-mime-encoded-word-line-limit))))))
+    (should found)))
+
+(ert-deftest vm-mime-test-a-character-is-not-split-across-two-words ()
+  "Section 5: a multi-octet character may not be split between two words.
+Each word is decoded on its own, so half a character in each is two invalid
+ones.  A long run of three-octet characters is where this shows."
+  (let* ((text (make-string 60 ?日))
+         (value (vm-mime-test--encode-subject text)))
+    (should (> (length (vm-mime-test--encoded-words value)) 1))
+    (should (equal (vm-mime-test--decode-as-rfc2047 value) text))))
 
 
 (provide 'vm-mime-test)
