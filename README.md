@@ -56,8 +56,8 @@ Drop `nightpanel-theme.el` somewhere on your `custom-theme-load-path`:
 
 ## Requirements
 
-Emacs 27.1 or newer. The floor is set by the `tab-bar` and `tab-line` faces the
-theme styles; on older Emacs those are simply ignored and the rest still works.
+Emacs 24.1 or newer. The `tab-bar` and `tab-line` faces the
+theme styles need Emacs 27; on older Emacs they are simply ignored and the rest still works.
 
 ## Terminal use
 
