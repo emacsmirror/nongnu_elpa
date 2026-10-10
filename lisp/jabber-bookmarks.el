@@ -66,6 +66,8 @@
 (declare-function jabber-muc-leave "jabber-muc" (jc group))
 (declare-function jabber-muc-get-buffer "jabber-muc" (group &optional jc))
 (autoload 'jabber-muc-join "jabber-muc")
+(autoload 'jabber-muc--join-active-p "jabber-muc")
+(autoload 'jabber-muc--autojoin-queued-p "jabber-muc")
 (autoload 'jabber-muc-leave "jabber-muc")
 (autoload 'jabber-muc-get-buffer "jabber-muc")
 
@@ -196,7 +198,8 @@ Replaces any existing entry with the same :jid."
 (defun jabber-bookmarks2--maybe-join (jc bookmark)
   "Join the room in BOOKMARK on JC if autojoin is set and not already joined."
   (let ((jid (plist-get bookmark :jid)))
-    (unless (jabber-muc-joined-p jid jc)
+    (unless (or (jabber-muc--join-active-p jc jid)
+                (jabber-muc--autojoin-queued-p jc jid))
       (jabber-muc-join jc jid
                        (or (plist-get bookmark :nick)
                            (plist-get (fsm-get-state-data jc) :username))))))

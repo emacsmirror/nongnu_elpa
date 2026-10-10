@@ -1674,8 +1674,9 @@ Return t after synchronous completion, or :cancelled when superseded."
                      (not (plist-member entry :echo-key))
                      (fboundp 'jabber-omemo--current-echo-key))
             (plist-put entry :echo-key
-                       (jabber-omemo--current-echo-key jc (jabber-sm--pending-stanza entry)))))
-        (setq attempt (jabber-muc--start-attempt jc group nickname)))
+                       (jabber-omemo--current-echo-key jc (jabber-sm--pending-stanza entry))))))
+      ;; Ordinary joins need the same pending membership lease as recovery.
+      (setq attempt (jabber-muc--start-attempt jc group nickname))
       ;; Publish bookkeeping before handoff, but never roll it back afterward.
       (puthash (list jc group) password jabber-muc--session-passwords)
       (puthash (jabber-muc--pending-key jc group) nickname jabber-pending-groupchats)
@@ -2045,6 +2046,11 @@ RESULT is a list of item vectors on success or an error node."
          (count (if (and (listp result) (eq (car result) 'error))
                     most-positive-fixnum
                   (length result))))
+    (put jc :state-data
+         (plist-put (copy-sequence (fsm-get-state-data jc))
+                    :muc-autojoin-discovering
+                    (remove group (plist-get (fsm-get-state-data jc)
+                                             :muc-autojoin-discovering))))
     ;; Decrement in-flight disco counter.
     (when-let* ((cell (assq jc jabber-muc--autojoin-disco-count)))
       (cl-decf (cdr cell)))
@@ -2090,9 +2096,7 @@ never responds.  Does nothing if the queue is empty."
       (unless rooms
         (setq jabber-muc--autojoin-queue
               (assq-delete-all jc jabber-muc--autojoin-queue)))
-      (unless (memq (plist-get (jabber-sm--room-attempt
-                               (fsm-get-state-data jc) group) :status)
-                    '(pending ready))
+      (unless (jabber-muc--join-active-p jc group)
         (jabber-muc--send-join-presence jc group nick password nil))
       ;; Start timeout: if no self-presence arrives, try next room.
       (when (assq jc jabber-muc--autojoin-queue)
@@ -2101,15 +2105,31 @@ never responds.  Does nothing if the queue is empty."
                               (jabber-muc--continuation jc #'jabber-muc--autojoin-timeout) jc))))))
 
 (defun jabber-muc--autojoin-queued-p (jc group)
-  "Return non-nil if GROUP is already in the autojoin queue for JC."
-  (when-let* ((entry (assq jc jabber-muc--autojoin-queue)))
-    (cl-find group (cdr entry) :key #'cadr :test #'string=)))
+  "Return non-nil if GROUP has queued or in-flight autojoin work on JC."
+  (or (member group (plist-get (fsm-get-state-data jc) :muc-autojoin-discovering))
+      (assoc group (cdr (assq jc jabber-muc--autojoin-pending)))
+      (when-let* ((entry (assq jc jabber-muc--autojoin-queue)))
+        (cl-find group (cdr entry) :key #'cadr :test #'string=))))
+
+(defun jabber-muc--join-active-p (jc group)
+  "Return non-nil while JC owns membership or a native join for GROUP.
+The remembered pending nickname is not a lease: it survives failure."
+  (let ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group))
+        (request (cdr (assoc group (get jc 'jabber-muc--join-intents)))))
+    (or (jabber-muc-joined-p group jc)
+        (jabber-muc--attempt-current-p jc group attempt t)
+        (and request
+             (eq t (catch 'jabber-muc--cancelled
+                     (jabber-muc--check-intent request) t))))))
 
 (defun jabber-muc--autojoin-clear (jc)
   "Remove all autojoin queue entries for JC."
   (put jc :state-data
        (plist-put (copy-sequence (fsm-get-state-data jc))
                   :muc-autojoin-generation (make-symbol "autojoin")))
+  (put jc :state-data
+       (plist-put (copy-sequence (fsm-get-state-data jc))
+                  :muc-autojoin-discovering nil))
   (jabber-muc--autojoin-cancel-timer)
   (setq jabber-muc--autojoin-queue
         (assq-delete-all jc jabber-muc--autojoin-queue))
@@ -2148,7 +2168,9 @@ Rooms are added to the pending disco list for batched querying."
 
 (defun jabber-muc--autojoin-enqueue-pending (jc group nick)
   "Add (GROUP . NICK) to the pending disco list for JC."
-  (unless (jabber-sm--active-recovery-room-p (fsm-get-state-data jc) group)
+  (unless (or (jabber-sm--active-recovery-room-p (fsm-get-state-data jc) group)
+              (jabber-muc--join-active-p jc group)
+              (jabber-muc--autojoin-queued-p jc group))
   (if-let* ((cell (assq jc jabber-muc--autojoin-pending)))
       (setcdr cell (nconc (cdr cell) (list (cons group nick))))
     (push (cons jc (list (cons group nick))) jabber-muc--autojoin-pending))))
@@ -2168,9 +2190,20 @@ disco queries, respecting `jabber-muc-autojoin-max-disco'."
              (nick (cdr room-nick)))
         (setcdr pending-cell (cddr pending-cell))
         (cl-incf (cdr count-cell))
-        (jabber-disco-get-items jc group nil
-                                (jabber-muc--continuation jc #'jabber-muc--autojoin-disco-callback)
-                                (cons group nick))))
+        (put jc :state-data
+             (plist-put (copy-sequence (fsm-get-state-data jc))
+                        :muc-autojoin-discovering
+                        (cons group (plist-get (fsm-get-state-data jc)
+                                               :muc-autojoin-discovering))))
+        (let ((completed nil))
+          (jabber-disco-get-items
+           jc group nil
+           (jabber-muc--continuation
+            jc (lambda (account context result)
+                 (unless completed
+                   (setq completed t)
+                   (jabber-muc--autojoin-disco-callback account context result))))
+           (cons group nick)))))
     ;; Clean up empty pending entry.
     (unless (cdr pending-cell)
       (setq jabber-muc--autojoin-pending
@@ -2450,8 +2483,11 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                      ((and (jabber-muc-joined-p group jc)
                            (or (not attempt)
                                (and (jabber-muc--attempt-current-p jc group attempt t)
-                                    (equal (plist-get attempt :previous)
-                                           (jabber-muc-nickname group jc))))
+                                    (or (equal (plist-get attempt :previous)
+                                               (jabber-muc-nickname group jc))
+                                        (and (eq (plist-get attempt :status) 'ready)
+                                             (equal (plist-get attempt :nick)
+                                                    (jabber-muc-nickname group jc))))))
                            (or (member jabber-muc-status-nick-not-allowed status-codes)
                                (member jabber-muc-status-nick-conflict status-codes)
                                (memq (jabber-error-condition error-node)
@@ -2515,7 +2551,7 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
         (effects nil)))
     ;; This account wakeup is independent of the retired room's lease.
     ;; Cancellation by a successor must not strand unrelated queued rooms.
-    (when (and (not attempt) (string= type "error"))
+    (when (string= type "error")
       (run-with-timer 0 nil
                       (jabber-muc--continuation jc #'jabber-muc--autojoin-next) jc))))
 
@@ -2759,7 +2795,10 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                  (and (or (not attempt) (not (member "210" status-codes)))
                       (string= nickname our-nickname))))
     (let ((was-joined (jabber-muc-joined-p group jc))
-          (previous (jabber-muc-nickname group jc)))
+          (previous (jabber-muc-nickname group jc))
+          (recovery-p (cl-some (lambda (entry)
+                                 (equal group (jabber-sm--entry-room entry)))
+                               (plist-get (fsm-get-state-data jc) :sm-pending-queue))))
       (when (and previous (not (equal previous nickname)))
         (jabber-muc--identity-occupant jc group previous nil))
       (jabber-muc-add-groupchat group nickname jc)
@@ -2782,8 +2821,11 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
           (jabber-bookmarks-auto-add-maybe jc group nickname))
         ;; Stagger: join the next queued room now that this one succeeded.
         ;; Defer via timer so Emacs can redisplay between joins.
-        (unless attempt (run-with-timer 0 nil
-                      (jabber-muc--continuation jc #'jabber-muc--autojoin-next) jc)))))
+        ;; A join lease is not recovery ownership: ordinary joins have one too.
+        ;; Keep rooms with retained SM work on the recovery drain path.
+        (unless recovery-p
+          (run-with-timer 0 nil
+                          (jabber-muc--continuation jc #'jabber-muc--autojoin-next) jc)))))
   (when (or (not attempt) (jabber-muc--attempt-current-p jc group attempt t))
   (let* ((self-p (or (member jabber-muc-status-self-presence status-codes)
                      (and (or (not attempt) (not (member "210" status-codes)))

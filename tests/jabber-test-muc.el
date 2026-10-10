@@ -892,7 +892,7 @@ entry with JC=nil."
 		((symbol-function 'read-passwd) (lambda (&rest _) "secret"))
 		((symbol-function 'jabber-presence-children) (lambda (_jc) nil))
 		((symbol-function 'jabber-send-sexp)
-		 (lambda (_jc stanza) (push stanza sent)))
+		 (lambda (_jc stanza &rest _) (push stanza sent)))
 		((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
 		((symbol-function 'jabber-iq-error) (lambda (_xml) '(error nil)))
 		((symbol-function 'jabber-error-condition)
@@ -1931,7 +1931,7 @@ entry with JC=nil."
 		 ((symbol-function 'jabber-connection-bare-jid)
                   (lambda (account) (symbol-name account)))
 		 ((symbol-function 'jabber-send-sexp)
-                  (lambda (account stanza)
+                  (lambda (account stanza &rest _)
                     (push (list account (jabber-xml-get-attribute stanza 'to)
 				(jabber-xml-get-attribute stanza 'type)) sent))))
 	 ,@body))))
@@ -2167,7 +2167,7 @@ entry with JC=nil."
                            (push success callbacks)))
                         ((symbol-function 'jabber-bookmarks--refresh-buffer) #'ignore)
                         ((symbol-function 'jabber-send-sexp)
-                         (lambda (account stanza)
+                         (lambda (account stanza &rest _)
                            (push (list account (jabber-xml-get-attribute stanza 'to)
                                        (jabber-xml-get-attribute stanza 'type)) sent)
                            (interrupt 'send)))
@@ -2263,7 +2263,7 @@ entry with JC=nil."
      (save-window-excursion
        (unwind-protect
            (cl-letf (((symbol-function 'jabber-send-sexp)
-                      (lambda (account stanza) (push (list account stanza) sent)))
+                      (lambda (account stanza &rest _) (push (list account stanza) sent)))
                      ((symbol-function 'jabber-send-iq)
                       (lambda (account target type query callback context &rest _)
                         (when (equal (jabber-xml-get-attribute query 'xmlns)
@@ -2340,7 +2340,7 @@ entry with JC=nil."
                                       sent)
                              (deliver)))))))
             (cl-letf (((symbol-function 'jabber-send-sexp)
-                       (lambda (account stanza)
+                       (lambda (account stanza &rest _)
                          (funcall send account stanza)
                          (unless (eq phase 'switch) (deliver)))))
               (jabber-muc-create jc room "nick")))
@@ -2435,7 +2435,7 @@ entry with JC=nil."
         (let ((send (symbol-function 'jabber-send-sexp))
               fired new-arm caught)
           (cl-letf (((symbol-function 'jabber-send-sexp)
-                     (lambda (account stanza)
+                     (lambda (account stanza &rest _)
                        (funcall send account stanza)
                        (unless fired
                          (setq fired t)
@@ -2462,7 +2462,7 @@ entry with JC=nil."
     (jabber-test-muc-with-native-room
       (let ((send (symbol-function 'jabber-send-sexp)) fired caught)
         (cl-letf (((symbol-function 'jabber-send-sexp)
-                   (lambda (account stanza)
+                   (lambda (account stanza &rest _)
                      (funcall send account stanza)
                      (unless fired
                        (setq fired t)
@@ -2588,7 +2588,7 @@ entry with JC=nil."
             (open (symbol-function 'jabber-xdata-form-open))
             fired form-opened effects)
         (cl-letf (((symbol-function 'jabber-send-sexp)
-                   (lambda (account stanza)
+                   (lambda (account stanza &rest _)
                      (funcall send account stanza)
                      (push (list 'send account (jabber-xml-get-attribute stanza 'to)) effects)
                      (unless fired
@@ -2690,7 +2690,7 @@ entry with JC=nil."
   (jabber-test-muc-with-native-room
     (let ((send (symbol-function 'jabber-send-sexp)) old checked)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (account stanza)
+                 (lambda (account stanza &rest _)
                    (funcall send account stanza)
                    (if (null old)
                        (progn
@@ -2906,10 +2906,9 @@ entry with JC=nil."
                                          (jabber-xml-get-attribute (cadr entry) 'to))
                                        (reverse sent))
                                (pcase phase
-                                 ('nil (list (concat room "/old") (concat room "/old")))
+                                 ('nil (list (concat room "/old")))
                                  ((or 'presence 'buffer) (list (concat room "/new")))
-                                 ('publication (list (concat room "/old") (concat room "/new")
-                                                     (concat room "/old")))
+                                 ('publication (list (concat room "/old") (concat room "/new")))
                                  (_ (list (concat room "/old") (concat room "/new")))))))))
           (should-not (get jc 'jabber-muc--join-intents)))))))
 
@@ -4780,6 +4779,219 @@ entry with JC=nil."
           (should (= failed 1))
           (should (= completed 1)))))))
 
+;;; Ordinary overlapping automatic joins (Tracker #79).
+
+(defmacro jabber-test-muc-with-autojoin-overlap (&rest body)
+  "Run BODY with ordinary joins and captured discovery, without a server."
+  (declare (indent 0))
+  `(jabber-test-muc-with-native-room
+     (let ((jabber-muc--autojoin-queue nil)
+           (jabber-muc--autojoin-pending nil)
+           (jabber-muc--autojoin-disco-count nil)
+           (jabber-muc--autojoin-timer nil)
+           (jabber-muc-autojoin (list room))
+           (jabber-muc-disable-disco-check t)
+           (jabber-bookmarks (make-hash-table :test #'equal))
+           (jabber-bookmarks--legacy-accounts (make-hash-table :test #'equal))
+           items info bookmarks)
+       (cl-letf (((symbol-function 'jabber-send-sexp)
+                  (lambda (account stanza &rest _) (push (list account stanza) sent)))
+                 ((symbol-function 'jabber-disco-get-items)
+                  (lambda (account target _node callback context)
+                    (push (list account target callback context) items)))
+                 ((symbol-function 'jabber-disco-get-info)
+                  (lambda (account target _node callback context)
+                    (push (list account target callback context) info)))
+                 ((symbol-function 'jabber-get-bookmarks)
+                  (lambda (_account callback) (setq bookmarks callback))))
+         (ignore items info bookmarks)
+         ,@body))))
+
+(ert-deftest jabber-test-muc-overlap-global-bookmark-discovery ()
+  "Global and bookmark discovery share one room request before self-presence."
+  (jabber-test-muc-with-autojoin-overlap
+    (jabber-muc-autojoin jc)
+    (funcall bookmarks jc (list (list :jid room :nick "bookmark" :autojoin t)))
+    (should (= (length items) 1))
+    (pcase-let ((`(,account ,_ ,callback ,context) (car items)))
+      (funcall callback account context nil)
+      (jabber-muc--autojoin-next jc)
+      ;; A repeated completion cannot queue another presence or free a slot.
+      (funcall callback account context nil)
+      (jabber-muc--autojoin-next jc))
+    (should (= (length sent) 1))
+    (should (= (cdr (assq jc jabber-muc--autojoin-disco-count)) 0))))
+
+(ert-deftest jabber-test-muc-overlap-success-advances-immediately ()
+  "Ordinary self-presence advances the queue without waiting for its timeout."
+  (dolist (status-codes '(nil ("110")))
+    (jabber-test-muc-with-autojoin-overlap
+      (let (timers)
+        (cl-letf (((symbol-function 'run-with-timer)
+                   (lambda (seconds repeat callback &rest args)
+                     (push (list seconds repeat callback args) timers) nil)))
+          (jabber-muc--autojoin-insert jc 0 room "nick")
+          (jabber-muc--autojoin-insert jc 1 "next@example.org" "nick")
+          (jabber-muc--autojoin-next jc)
+          (should (= (length sent) 1))
+          (should (cl-find jabber-muc-autojoin-timeout timers :key #'car))
+          (setq timers nil)
+          (jabber-muc-process-presence
+           jc `(presence ((from . ,(concat room "/nick")))
+                         (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                            (item ((affiliation . "member") (role . "participant")))
+                            ,@(mapcar (lambda (code) `(status ((code . ,code))))
+                                      status-codes))))
+          (should (jabber-muc-joined-p room jc))
+          (let ((wakeup (cl-find 0 timers :key #'car)))
+            (should wakeup)
+            (apply (nth 2 wakeup) (nth 3 wakeup)))
+          (should (= (length sent) 2))
+          (should (equal (jabber-xml-get-attribute (cadar sent) 'to)
+                         "next@example.org/nick")))))))
+
+(ert-deftest jabber-test-muc-overlap-recovery-success-keeps-queue-owner ()
+  "Recovery self-presence schedules SM draining, not ordinary queue advancement."
+  (jabber-test-muc-with-autojoin-overlap
+    (let ((entry (list :retained-room room
+                       :stanza `(message ((to . ,room) (type . "groupchat")))))
+          timers drains)
+      (put jc :state-data
+           (plist-put (copy-sequence (fsm-get-state-data jc))
+                      :sm-pending-queue (list entry)))
+      (cl-letf (((symbol-function 'run-with-timer)
+                 (lambda (seconds repeat callback &rest args)
+                   (push (list seconds repeat callback args) timers) nil))
+                ((symbol-function 'jabber-sm--schedule-drain)
+                 (lambda (&rest _) (push 'drain drains))))
+        (jabber-muc--send-join-presence jc room "nick" nil nil)
+        (jabber-muc--autojoin-insert jc 0 "next@example.org" "nick")
+        (setq timers nil)
+        (let ((queue (copy-tree jabber-muc--autojoin-queue)))
+          (jabber-test-muc-native-201 jc room)
+          (should (equal drains '(drain)))
+          (should-not (cl-find 0 timers :key #'car))
+          (should (equal queue jabber-muc--autojoin-queue))
+          (should (eq entry (car (plist-get (fsm-get-state-data jc) :sm-pending-queue))))
+          (should (= (length sent) 1)))))))
+
+(ert-deftest jabber-test-muc-overlap-duplicate-queued-presence ()
+  "Duplicate ready entries cannot send two ordinary pending joins."
+  (jabber-test-muc-with-autojoin-overlap
+    (dotimes (_ 2) (jabber-muc--autojoin-insert jc 0 room "nick"))
+    (dotimes (_ 2) (jabber-muc--autojoin-next jc))
+    (should (= (length sent) 1))))
+
+(ert-deftest jabber-test-muc-overlap-bookmarks2-events ()
+  "Repeated real bookmark events do not rejoin before self-presence."
+  (jabber-test-muc-with-autojoin-overlap
+    (let ((event `((item ((id . ,room))
+                        (conference ((xmlns . "urn:xmpp:bookmarks:1")
+                                     (autojoin . "true"))
+                                    (nick () "nick"))))))
+      (dotimes (_ 2)
+        (jabber-bookmarks2--handle-event jc (jabber-connection-bare-jid jc) nil event)))
+    (should (= (length sent) 1))
+    ;; Manual retry and another connection remain independent.
+    (jabber-muc-join jc room "new")
+    (jabber-muc-join other room "other")
+    (should (= (length sent) 3))))
+
+(ert-deftest jabber-test-muc-overlap-bookmarks2-info-discovery ()
+  "Bookmark events cannot supersede an outstanding join disco request."
+  (jabber-test-muc-with-autojoin-overlap
+    (let ((jabber-muc-disable-disco-check nil)
+          (bookmark (list :jid room :nick "nick" :autojoin t)))
+      (dotimes (_ 2) (jabber-bookmarks2--maybe-join jc bookmark))
+      (should (= (length info) 1))
+      (pcase-let ((`(,account ,_ ,callback ,context) (car info)))
+        (funcall callback account context '((["room" "conference"]) nil)))
+      (jabber-bookmarks2--maybe-join jc bookmark)
+      (should (= (length sent) 1)))))
+
+(ert-deftest jabber-test-muc-overlap-global-bookmark-wire ()
+  "Complete every overlapping discovery reply before any self-presence."
+  (jabber-test-muc-with-autojoin-overlap
+    (jabber-muc-autojoin jc)
+    (funcall bookmarks jc (list (list :jid room :nick "bookmark" :autojoin t)))
+    (dolist (reply (reverse items))
+      (pcase-let ((`(,account ,_ ,callback ,context) reply))
+        (funcall callback account context nil)
+        (jabber-muc--autojoin-next jc)))
+    (should (= (length sent) 1))))
+
+(ert-deftest jabber-test-muc-overlap-disco-completion-once ()
+  "A discovery callback owns exactly one completion and one capacity slot."
+  (jabber-test-muc-with-autojoin-overlap
+    (jabber-muc-autojoin jc)
+    (pcase-let ((`(,account ,_ ,callback ,context) (car items)))
+      (dotimes (_ 2)
+        (funcall callback account context nil)
+        (jabber-muc--autojoin-next jc)))
+    (should (= (length sent) 1))
+    (should (= (cdr (assq jc jabber-muc--autojoin-disco-count)) 0))))
+
+(ert-deftest jabber-test-muc-overlap-pending-discovery ()
+  "The undispatched backlog also excludes overlapping bookmark work."
+  (jabber-test-muc-with-autojoin-overlap
+    (let ((jabber-muc-autojoin-max-disco 0))
+      (jabber-muc-autojoin jc)
+      (funcall bookmarks jc (list (list :jid room :autojoin t)))
+      (jabber-bookmarks2--maybe-join jc (list :jid room :autojoin t))
+      (should-not sent)
+      (should (= (length (cdr (assq jc jabber-muc--autojoin-pending))) 1)))))
+
+(ert-deftest jabber-test-muc-overlap-discovery-generation ()
+  "Old discovery cannot mutate a fresh generation's room or counter."
+  (jabber-test-muc-with-autojoin-overlap
+    (jabber-muc-autojoin jc)
+    (let ((old (car items)))
+      (jabber-muc-autojoin jc)
+      (pcase-let ((`(,account ,_ ,callback ,context) old))
+        (funcall callback account context nil))
+      (should (= (cdr (assq jc jabber-muc--autojoin-disco-count)) 1))
+      (should-not jabber-muc--autojoin-queue)
+      (should (jabber-muc--autojoin-queued-p jc room)))))
+
+(ert-deftest jabber-test-muc-overlap-manual-nick-and-owner ()
+  "Manual retries and nickname changes stay explicit, with exact room owners."
+  (jabber-test-muc-with-autojoin-overlap
+    (jabber-muc-join jc room "nick")
+    (jabber-muc-join jc room "nick")
+    (jabber-muc-join jc "second@example.org" "nick")
+    (jabber-muc-join other room "nick")
+    (should (= (length sent) 4))
+    (jabber-test-muc-native-201 jc room)
+    (jabber-muc-nick jc room "changed")
+    (should (= (length sent) 5))
+    (should (equal (plist-get (jabber-sm--room-attempt (fsm-get-state-data jc) room)
+                             :previous) "nick"))
+    (jabber-bookmarks2--maybe-join jc (list :jid room :autojoin t))
+    (should (= (length sent) 5))))
+
+(ert-deftest jabber-test-muc-overlap-server-error-retry ()
+  "Real ordinary join errors retire the lease but not the retry permission."
+  (jabber-test-muc-with-autojoin-overlap
+    (let ((bookmark (list :jid room :nick "nick" :autojoin t)))
+      (jabber-bookmarks2--maybe-join jc bookmark)
+      (jabber-muc-process-presence
+       jc `(presence ((from . ,(concat room "/nick")) (type . "error"))
+                     (error ((code . "403"))
+                            (forbidden ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+      (jabber-bookmarks2--maybe-join jc bookmark)
+      (should (= (length sent) 2)))))
+
+(ert-deftest jabber-test-muc-overlap-failed-retry ()
+  "Failed ordinary automatic joins allow a fresh bookmark retry."
+  (jabber-test-muc-with-autojoin-overlap
+    (let ((bookmark (list :jid room :nick "nick" :autojoin t)))
+      (jabber-bookmarks2--maybe-join jc bookmark)
+      (let ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) room)))
+        (should attempt)
+        (jabber-muc--fail-attempt jc room attempt "test failure"))
+      (jabber-bookmarks2--maybe-join jc bookmark)
+      (should (= (length sent) 2)))))
+
 (provide 'jabber-test-muc)
 ;;; jabber-test-muc.el ends here
 
@@ -4867,7 +5079,7 @@ entry with JC=nil."
           (should (equal (cdar timers) (list jc)))
           (let (wire)
             (cl-letf (((symbol-function 'jabber-send-sexp)
-                       (lambda (_jc stanza) (push stanza wire))))
+                       (lambda (_jc stanza &rest _) (push stanza wire))))
               (apply (caar timers) (cdar timers)))
             (should (= (length wire) 1))
             (should (equal (jabber-xml-get-attribute (car wire) 'to)
@@ -4949,7 +5161,7 @@ entry with JC=nil."
             (jabber-bookmarks-auto-add t)
             retracted caught)
         (cl-letf (((symbol-function 'jabber-send-sexp)
-                   (lambda (account stanza)
+                   (lambda (account stanza &rest _)
                      (funcall send account stanza)
                      (when (equal (jabber-xml-get-attribute stanza 'type) "unavailable")
                        (should-not (jabber-muc-joined-p room jc))
@@ -5074,8 +5286,9 @@ entry with JC=nil."
             (should (eq caught outcome))
             (should (equal (car effects) boundary))
             (should-not (get jc 'jabber-muc--join-intents))
-            ;; Only the successor self-enter may have scheduled a wakeup.
-            (should (= (length timers) (if successor 1 0)))
+            ;; The successor reserves its join timeout and, after self-enter,
+            ;; schedules immediate advancement.  The failed old tail adds none.
+            (should (= (length timers) (if successor 2 0)))
             (should (eq (not (null (jabber-muc-joined-p room jc))) successor))
             (should (equal (gethash (list jc room) jabber-muc--session-passwords)
                            (and successor "new-fixture")))))))))
@@ -5234,7 +5447,7 @@ entry with JC=nil."
     (jabber-muc-join-3 jc room "same" "old-fixture" nil)
     (let (wire)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_jc stanza) (setq wire stanza))))
+                 (lambda (_jc stanza &rest _) (setq wire stanza))))
         (should (eq t (jabber-muc-join-3 jc room "same" nil nil))))
       (should-not (jabber-xml-get-children
                    (car (jabber-xml-get-children wire 'x)) 'password)))
@@ -5251,7 +5464,7 @@ entry with JC=nil."
     (jabber-test-ms-confirm jc room)
     (let (target)
       (cl-letf (((symbol-function 'jabber-send-sexp)
-                 (lambda (_jc stanza)
+                 (lambda (_jc stanza &rest _)
                    (setq target (jabber-xml-get-attribute stanza 'to))
                    (should-not (jabber-muc-joined-p room jc))
                    (should-not (gethash (list jc room)
