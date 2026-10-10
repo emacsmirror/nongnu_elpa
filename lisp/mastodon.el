@@ -631,30 +631,31 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
                     (string-trim-right url-filename "/")
                   url-filename)))
     (save-match-data
-      (or (string-match "^/@[^/]+$" query)
-          (string-match "^/@[^/]+/[[:digit:]]+$" query)
-          (string-match "^/user[s]?/@?[[:alnum:]_]+$" query) ; @: pleroma or soapbox
+      (or (string-match "^/@[^/]+$" query) ;; user handle
+          (string-match "^/@[^/]+/[[:digit:]]+$" query) ;; user item
+          (string-match "^/user[s]?/@?[[:alnum:]_]+$" query) ;; @: pleroma or soapbox user
+          (string-match "^/tags/[[:alnum:]_-]+$" query) ;; tag
           ;; URI is used for quote posts, due to flipboard formats, so we
           ;; need to match some ap/ URIs?
           ;; e.g. "/ap/users/116739186617842944/statuses/117224123424001867"
           ;; maybe in the long run we would just rather regex the flipboard format though?
           (string-match "^/ap/user[s]?/@?[[:alnum:]_]+$" query)
           (string-match "^/ap/user[s]?/@?[[:alnum:]_]+/statuses/[[:alnum:]_]+$" query)
-          (string-match "^/notice/[[:alnum:]]+$" query)
-          (string-match "^/objects/[-a-f0-9]+$" query)
-          (string-match "^/notes/[a-z0-9]+$" query)
-          (string-match "^/display/[-a-f0-9]+$" query)
+          (string-match "^/notice/[[:alnum:]]+$" query) ;; pleroma post
+          (string-match "^/objects/[-a-f0-9]+$" query) ;; ?
+          ;; (string-match "^/notes/[a-z0-9]+$" query) ;; duplicated below:
+          (string-match "^/display/[-a-f0-9]+$" query) ;; ?
           (string-match "^/profile/[[:alpha:]_]+$" query)
           (string-match "^/p/[[:alpha:]_]+/[[:digit:]]+$" query)
-          (string-match "^/[[:alpha:]_]+$" query)
+          (string-match "^/[[:alpha:]_]+$" query) ;; ?
           (string-match "^/u/[[:alpha:]_]+$" query)
-          (string-match "^/c/[[:alnum:]_]+$" query)
           ;; a lemmy post must NOT open in mastodon.el lest we get stuck in
           ;; a self-loading circle and can't load the URL in the lemmy
           ;; post itself:
           ;; (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
-          (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
+          (string-match "^/@[^/]+/posts/[[:alnum:]]+$" query) ;; akkoma post
+          (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS status
           ;; (string-match "^/@[[:alpha:]-_]/" query) ;; flipboard post
           ;; fliboard post (works with modified hometown below):
           ;; either uri: https://flipboard.com/users/Gizmodo/statuses/UQ_TmLCbShiYB55LrrrzWQ:a:1876139665
@@ -662,6 +663,7 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:alnum:]-_:]+$" query) ; hometown
           (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
+          (string-match "^/c/[[:alnum:]_]+$" query) ;; peertube channel
           ;; bsky via fed.brid.gy (unsure if this needs narrowing down?):
           (string-prefix-p "https://fed.brid.gy/r/" url)
           (string-match "^/collections/[[:digit:]_]+$" query) ;; collection
