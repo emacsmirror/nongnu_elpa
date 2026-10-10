@@ -21,8 +21,11 @@
 ;;; Code:
 
 (require 'json)
+(require 'lisp-mnt)
 (require 'project)
 (require 'subr-x)
+
+(defvar codex-ide-cli-path "codex")
 
 ;;; Customization
 
@@ -62,6 +65,10 @@ Also bounds retained incomplete request pending data per client."
   :group 'codex-ide)
 
 ;;; Constants
+
+(defconst codex-ide-mcp--package-version
+  (lm-version (locate-library "codex-ide.el"))
+  "Package version advertised by the local MCP server.")
 
 (defconst codex-ide-mcp--server-name "emacs_tools"
   "Codex config key name for the Emacs MCP server.")
@@ -125,11 +132,12 @@ Also bounds retained incomplete request pending data per client."
 
 (defun codex-ide-mcp--install-command-args (url)
   "Return Codex CLI arguments for persistently adding URL."
-  (list "codex" "mcp" "add" codex-ide-mcp--server-name "--url" url))
+  (list codex-ide-cli-path "mcp" "add" codex-ide-mcp--server-name "--url" url))
 
 (defun codex-ide-mcp--install-command (url)
   "Return the persistent Codex MCP setup command for URL."
-  (format "codex mcp add %s --url %s" codex-ide-mcp--server-name url))
+  (mapconcat #'shell-quote-argument
+             (codex-ide-mcp--install-command-args url) " "))
 
 (defun codex-ide-mcp--persistent-warning ()
   "Return an ephemeral-port warning for persistent Codex setup."

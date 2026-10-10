@@ -123,7 +123,7 @@
                           (list (cons "listChanged" :json-false)))))
         (cons "serverInfo"
               (list (cons "name" "emacs-codex")
-                    (cons "version" "0.1.3")))))
+                    (cons "version" codex-ide-mcp--package-version)))))
 
 (defun codex-ide-mcp--handle-tools-list (_params)
   "Return MCP tools/list result."

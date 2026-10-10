@@ -22,6 +22,7 @@
 
 (require 'cl-lib)
 (require 'imenu)
+(require 'lisp-mode)
 (require 'project)
 (require 'subr-x)
 (require 'xref)
@@ -206,30 +207,30 @@ When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
   (let* ((active (use-region-p))
          (beg (if active (region-beginning) (point)))
          (end (if active (region-end) (point)))
-         (text (if active (buffer-substring-no-properties beg end) ""))
-         (truncated (> (length text) codex-ide-mcp-selection-content-limit))
-         (content (if truncated
-                      (substring text 0 codex-ide-mcp-selection-content-limit)
-                    text)))
+         (content-end
+          (min end (+ beg (max 0 codex-ide-mcp-selection-content-limit))))
+         (content (buffer-substring-no-properties beg content-end)))
     (list (cons "active" (codex-ide-mcp--json-false active))
           (cons "range" (codex-ide-mcp--range beg end))
           (cons "text" content)
-          (cons "truncated" (codex-ide-mcp--json-false truncated)))))
+          (cons "truncated" (codex-ide-mcp--json-false (< content-end end))))))
 
-(defun codex-ide-harness--project-summary (&optional buffer)
-  "Return project metadata for BUFFER."
+(defun codex-ide-harness--project-summary (&optional buffer include-file-count)
+  "Return project metadata for BUFFER.
+Enumerate project files only when INCLUDE-FILE-COUNT is non-nil."
   (with-current-buffer (or buffer (current-buffer))
-    (let* ((root (codex-ide-mcp--buffer-project-root))
-           (file-count
-            (if root
-                (condition-case nil
-                    (if-let* ((project (project-current nil root)))
-                        (length (project-files project))
-                      0)
-                  (error 0))
-              0)))
-      (list (cons "root" root)
-            (cons "fileCount" file-count)))))
+    (let ((root (codex-ide-mcp--buffer-project-root)))
+      (delq nil
+            (list (cons "root" root)
+                  (when include-file-count
+                    (cons "fileCount"
+                          (if root
+                              (condition-case nil
+                                  (if-let* ((project (project-current nil root)))
+                                      (length (project-files project))
+                                    0)
+                                (error 0))
+                            0))))))))
 
 (defun codex-ide-harness--window-summary (window)
   "Return JSON-ready metadata for WINDOW."
@@ -455,15 +456,14 @@ The `action' field is `references' or `apropos'."
 ;;; Execution
 
 (defun codex-ide-harness--read-forms (code)
-  "Read every Emacs Lisp form from CODE."
+  "Read every Emacs Lisp form from CODE, rejecting incomplete forms."
   (with-temp-buffer
+    (set-syntax-table emacs-lisp-mode-syntax-table)
     (insert code)
     (goto-char (point-min))
-    (let (forms done)
-      (while (not done)
-        (condition-case nil
-            (push (read (current-buffer)) forms)
-          (end-of-file (setq done t))))
+    (let (forms)
+      (while (progn (forward-comment (point-max)) (not (eobp)))
+        (push (read (current-buffer)) forms))
       (nreverse forms))))
 
 (defun codex-ide-harness--eval-forms (forms)
@@ -630,6 +630,7 @@ When INDENT is non-nil, indent the inserted region."
 (defun codex-ide-harness-edit (args)
   "Apply a structured edit described by ARGS to an explicitly named buffer.
 ARGS must specify a buffer name or open file path.
+Coordinates are absolute; preserve the buffer's narrowing after the edit.
 Roll back buffer text changes if editing or indentation exits abnormally."
   (let ((operation (codex-ide-mcp--object-get args "operation"))
         (text (codex-ide-mcp--object-get args "text"))
@@ -637,47 +638,49 @@ Roll back buffer text changes if editing or indentation exits abnormally."
     (pcase-let ((`(,buffer ,directory)
                  (codex-ide-harness--context args t)))
       (with-current-buffer buffer
-        (let ((default-directory directory))
-          (atomic-change-group
-            (pcase operation
-              ("insert"
-               (unless (stringp text)
-                 (user-error "Insert requires text"))
-               (pcase-let ((`(,beg ,end)
-                            (codex-ide-harness--insert-text
-                             text
-                             (codex-ide-harness--position-from-args
-                              args "start" "line" "column" (point))
-                             indent)))
-                 (codex-ide-harness--edit-result operation beg end)))
-              ("replace"
-               (unless (stringp text)
-                 (user-error "Replace requires text"))
-               (let ((beg (codex-ide-harness--position-from-args
-                           args "start" "line" "column" nil))
-                     (end (codex-ide-harness--position-from-args
-                           args "end" "end_line" "end_column" nil)))
-                 (unless beg
-                   (user-error "Replace requires start or line"))
-                 (unless end
-                   (user-error "Replace requires end or end_line"))
-                 (pcase-let ((`(,new-beg ,new-end)
-                              (codex-ide-harness--replace-range
-                               text beg end indent)))
-                   (codex-ide-harness--edit-result
-                    operation new-beg new-end))))
-              ("delete"
-               (let ((beg (codex-ide-harness--position-from-args
-                           args "start" "line" "column" nil))
-                     (end (codex-ide-harness--position-from-args
-                           args "end" "end_line" "end_column" nil)))
-                 (unless beg
-                   (user-error "Delete requires start or line"))
-                 (unless end
-                   (user-error "Delete requires end or end_line"))
-                 (delete-region beg end)
-                 (codex-ide-harness--edit-result operation beg beg)))
-              (_ (user-error "Unknown edit operation: %s" operation)))))))))
+        (save-restriction
+          (widen)
+          (let ((default-directory directory))
+            (atomic-change-group
+              (pcase operation
+                ("insert"
+                 (unless (stringp text)
+                   (user-error "Insert requires text"))
+                 (pcase-let ((`(,beg ,end)
+                              (codex-ide-harness--insert-text
+                               text
+                               (codex-ide-harness--position-from-args
+                                args "start" "line" "column" (point))
+                               indent)))
+                   (codex-ide-harness--edit-result operation beg end)))
+                ("replace"
+                 (unless (stringp text)
+                   (user-error "Replace requires text"))
+                 (let ((beg (codex-ide-harness--position-from-args
+                             args "start" "line" "column" nil))
+                       (end (codex-ide-harness--position-from-args
+                             args "end" "end_line" "end_column" nil)))
+                   (unless beg
+                     (user-error "Replace requires start or line"))
+                   (unless end
+                     (user-error "Replace requires end or end_line"))
+                   (pcase-let ((`(,new-beg ,new-end)
+                                (codex-ide-harness--replace-range
+                                 text beg end indent)))
+                     (codex-ide-harness--edit-result
+                      operation new-beg new-end))))
+                ("delete"
+                 (let ((beg (codex-ide-harness--position-from-args
+                             args "start" "line" "column" nil))
+                       (end (codex-ide-harness--position-from-args
+                             args "end" "end_line" "end_column" nil)))
+                   (unless beg
+                     (user-error "Delete requires start or line"))
+                   (unless end
+                     (user-error "Delete requires end or end_line"))
+                   (delete-region beg end)
+                   (codex-ide-harness--edit-result operation beg beg)))
+                (_ (user-error "Unknown edit operation: %s" operation))))))))))
 
 (defun codex-ide-harness-insert (text &optional args)
   "Insert TEXT using optional edit ARGS."
@@ -687,13 +690,17 @@ Roll back buffer text changes if editing or indentation exits abnormally."
 ;;; Context
 
 (defun codex-ide-harness-context (&optional args)
-  "Return selected buffer, project, windows, region, and state for ARGS."
+  "Return selected buffer, project, windows, region, and state for ARGS.
+Include project fileCount only when ARGS's include_file_count is true."
   (pcase-let ((`(,buffer ,directory)
                (codex-ide-harness--context args)))
     (with-current-buffer buffer
       (let ((default-directory directory))
         (list (cons "buffer" (codex-ide-harness--buffer-summary))
-              (cons "project" (codex-ide-harness--project-summary))
+              (cons "project"
+                    (codex-ide-harness--project-summary
+                     nil (codex-ide-mcp--truthy-p
+                          (codex-ide-mcp--object-get args "include_file_count"))))
               (cons "windows" (codex-ide-harness--window-summaries))
               (cons "region" (codex-ide-harness--region-summary))
               (cons "diagnostics" (codex-ide-harness-diagnostics))
@@ -1001,6 +1008,10 @@ Already-terminal jobs are left unchanged and emit no new events."
                      (list :name "messages"
                            :type 'integer
                            :description "Number of message lines to include."
+                           :optional t)
+                     (list :name "include_file_count"
+                           :type 'boolean
+                           :description "Enumerate project files to include fileCount (default false)."
                            :optional t))
          :annotations (list (cons "readOnlyHint" t)
                             (cons "idempotentHint" t)

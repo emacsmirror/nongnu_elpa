@@ -279,14 +279,20 @@
   (let ((codex-ide-mcp-port 43210))
     (should (equal (codex-ide-mcp--install-command
                     "http://127.0.0.1:43210/mcp")
-                   "codex mcp add emacs_tools --url http://127.0.0.1:43210/mcp"))
+                   (mapconcat #'shell-quote-argument
+                              '("codex" "mcp" "add" "emacs_tools"
+                                "--url" "http://127.0.0.1:43210/mcp")
+                              " ")))
     (should-not (codex-ide-mcp--persistent-warning))))
 
 (ert-deftest codex-ide-mcp-setup-message-warns-for-ephemeral-port ()
   "Ephemeral-port persistent setup reports that reuse is unreliable."
   (let ((codex-ide-mcp-port 0))
     (should (string-match-p
-             "Persistent setup command: codex mcp add emacs_tools --url http://127.0.0.1:43210/mcp"
+             (regexp-quote
+              (concat "Persistent setup command: "
+                      (codex-ide-mcp--install-command
+                       "http://127.0.0.1:43210/mcp")))
              (codex-ide-mcp--setup-message
               "http://127.0.0.1:43210/mcp")))
     (should (string-match-p
@@ -579,6 +585,167 @@
     (should (equal (cdr (assoc "value" decoded)) "42"))
     (should (equal (cdr (assoc "output" decoded)) "printed"))
     (should (member "hello world" messages))))
+
+(ert-deftest codex-ide-mcp-execute-rejects-incomplete-list-before-mutation ()
+  "An unfinished list rejects the whole script before evaluating it."
+  (with-temp-buffer
+    (let ((result (codex-ide-mcp--handle-tools-call
+                   `(:name "emacs_execute" :arguments
+                     (:buffer ,(buffer-name)
+                      :code "(insert \"executed\") (unfinished")))))
+      (should (equal (buffer-string) ""))
+      (should (eq (cdr (assoc "isError" result)) t))
+      (should (string-match-p
+               "End of file" (codex-ide-mcp-test--result-text result))))))
+
+(ert-deftest codex-ide-mcp-execute-rejects-incomplete-string-before-mutation ()
+  "An unfinished string rejects the whole script before evaluating it."
+  (with-temp-buffer
+    (let ((result (codex-ide-mcp--handle-tools-call
+                   `(:name "emacs_execute" :arguments
+                     (:buffer ,(buffer-name)
+                      :code "(insert \"executed\") \"unfinished")))))
+      (should (equal (buffer-string) ""))
+      (should (eq (cdr (assoc "isError" result)) t))
+      (should (string-match-p
+               "End of file" (codex-ide-mcp-test--result-text result))))))
+
+(ert-deftest codex-ide-mcp-execute-allows-trailing-comments ()
+  "Whitespace and comments after complete forms do not signal EOF."
+  (should (equal (codex-ide-harness--read-forms
+                  "; before\n(+ 1 2) ; after\n ; final comment")
+                 '((+ 1 2)))))
+
+(ert-deftest codex-ide-mcp-context-edit-round-trip-narrowed ()
+  "Context coordinates target the same text when the buffer is narrowed."
+  (with-temp-buffer
+    (insert "one\ntwo\nthree\nfour\nfive\n")
+    (narrow-to-region (codex-ide-mcp-test--line-position 3) (point-max))
+    (goto-char (point-min))
+    (let* ((context (codex-ide-harness-context))
+           (position (cdr (assoc "point" (cdr (assoc "buffer" context)))))
+           (result (codex-ide-mcp--handle-tools-call
+                    `(:name "emacs_edit" :arguments
+                      (:buffer ,(buffer-name) :operation "insert" :text "X"
+                       :line ,(cdr (assoc "line" position))
+                       :column ,(cdr (assoc "column" position)) :indent :json-false)))))
+      (should (= (cdr (assoc "line" position)) 3))
+      (should (eq (cdr (assoc "isError" result)) :json-false))
+      (should (buffer-narrowed-p))
+      (should (equal (buffer-string) "Xthree\nfour\nfive\n")))))
+
+(ert-deftest codex-ide-mcp-context-file-count-opt-in ()
+  "Ordinary context skips project enumeration and explicit requests count."
+  (with-temp-buffer
+    (let ((calls 0))
+      (cl-letf (((symbol-function 'codex-ide-mcp--buffer-project-root)
+                 (lambda (&optional _) default-directory))
+                ((symbol-function 'project-current) (lambda (&rest _) 'fixture))
+                ((symbol-function 'project-files)
+                 (lambda (_) (cl-incf calls) '("one" "two"))))
+        (dolist (args '(nil (:include_file_count :json-false)))
+          (let* ((result (codex-ide-mcp--handle-tools-call
+                          `(:name "emacs_context" :arguments ,args)))
+                 (project (cdr (assoc "project"
+                                      (codex-ide-mcp-test--decoded-result result)))))
+            (should-not (assoc "fileCount" project))))
+        (should (= calls 0))
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        '(:name "emacs_context" :arguments (:include_file_count t))))
+               (project (cdr (assoc "project"
+                                    (codex-ide-mcp-test--decoded-result result)))))
+          (should (= (cdr (assoc "fileCount" project)) 2)))
+        (should (= calls 1))))))
+
+(ert-deftest codex-ide-mcp-context-file-count-schema ()
+  "Context advertises and validates its optional file-count argument."
+  (let* ((tool (codex-ide-mcp--tool-by-name "emacs_context"))
+         (schema (cdr (assoc "inputSchema" (codex-ide-mcp--tool->mcp tool))))
+         (properties (cdr (assoc "properties" schema)))
+         (count (cdr (assoc "include_file_count" properties))))
+    (should (equal (cdr (assoc "type" count)) "boolean"))
+    (should-error (codex-ide-mcp--validate-args tool '(:include_file_count "yes"))
+                  :type 'user-error)))
+
+(ert-deftest codex-ide-mcp-selection-bounds-copy ()
+  "Selection copies only the requested prefix but retains the full range."
+  (with-temp-buffer
+    (insert "αβγδεζηθ")
+    (goto-char (point-min))
+    (set-mark (point-max))
+    (let ((transient-mark-mode t)
+          (mark-active t)
+          (codex-ide-mcp-selection-content-limit 3)
+          (original (symbol-function 'buffer-substring-no-properties))
+          copied)
+      (cl-letf (((symbol-function 'buffer-substring-no-properties)
+                 (lambda (beg end)
+                   (push (list beg end) copied)
+                   (funcall original beg end))))
+        (let ((region (codex-ide-harness--region-summary)))
+          (should (equal (cdr (assoc "text" region)) "αβγ"))
+          (should (eq (cdr (assoc "truncated" region)) t))
+          (let ((end (cdr (assoc "end" (cdr (assoc "range" region))))))
+            (should (= (cdr (assoc "column" end)) 8)))))
+      (should (equal copied '((1 4)))))))
+
+(ert-deftest codex-ide-mcp-version-matches-package ()
+  "Initialization advertises the version of the main package source."
+  (require 'lisp-mnt)
+  (let ((info (cdr (assoc "serverInfo" (codex-ide-mcp--handle-initialize nil)))))
+    (should (equal (cdr (assoc "version" info))
+                   (lm-version (locate-library "codex-ide.el"))))))
+
+(ert-deftest codex-ide-mcp-install-uses-configured-executable ()
+  "Persistent setup preserves the configured executable and quotes argv."
+  (let* ((codex-ide-cli-path "/custom path/codex")
+         (url "http://127.0.0.1:43210/mcp")
+         (args (codex-ide-mcp--install-command-args url)))
+    (should (equal args (list codex-ide-cli-path "mcp" "add"
+                             "emacs_tools" "--url" url)))
+    (should (equal (codex-ide-mcp--install-command url)
+                   (mapconcat #'shell-quote-argument args " ")))))
+
+(ert-deftest codex-ide-mcp-native-install-uses-configured-executable ()
+  "Native persistent setup also uses the configured Codex executable."
+  (let ((codex-ide-cli-path "/custom path/codex"))
+    (cl-letf (((symbol-function 'codex-ide-mcp-neo--command)
+               (lambda () "/native relay")))
+      (should (equal (codex-ide-mcp-neo--install-command-args "/socket path")
+                     '("/custom path/codex" "mcp" "add" "neomacs" "--"
+                       "/native relay" "--socket" "/socket path"))))))
+
+(ert-deftest codex-ide-mcp-standalone-install-and-status ()
+  "MCP commands work without first loading the main Codex package."
+  (let ((lisp-dir (file-name-directory (locate-library "codex-ide-mcp")))
+        (script
+         '(progn
+            (require 'cl-lib)
+            (require 'codex-ide-mcp)
+            (cl-assert (not (featurep 'codex-ide)))
+            (cl-letf (((symbol-function 'codex-ide-mcp--running-p)
+                       (lambda () t))
+                      ((symbol-function 'codex-ide-mcp--url)
+                       (lambda () "http://127.0.0.1:43210/mcp"))
+                      ((symbol-function 'codex-ide-mcp-ensure-server)
+                       (lambda () "http://127.0.0.1:43210/mcp"))
+                      ((symbol-function 'y-or-n-p) (lambda (&rest _) nil))
+                      ((symbol-function 'codex-ide-log) #'ignore))
+              (cl-assert (equal codex-ide-cli-path "codex"))
+              (cl-assert (stringp (codex-ide-mcp-status)))
+              (cl-assert (stringp (codex-ide-mcp-install-codex-config)))
+              (let ((codex-ide-cli-path "/custom path/codex"))
+                (cl-assert
+                 (equal (car (codex-ide-mcp--install-command-args "url"))
+                        codex-ide-cli-path))
+                (cl-assert (stringp (codex-ide-mcp-install-codex-config)))))
+            (princ "standalone-ok"))))
+    (with-temp-buffer
+      (let ((status (call-process
+                     (expand-file-name invocation-name invocation-directory)
+                     nil t nil "-Q" "--batch" "-L" lisp-dir
+                     "--eval" (prin1-to-string script))))
+        (should (equal (list status (buffer-string)) '(0 "standalone-ok")))))))
 
 (ert-deftest codex-ide-mcp-tools-call-execute-returns-structured-error ()
   "Execute returns structured errors instead of failing the tool call."
@@ -897,7 +1064,7 @@
                    (buffer (cdr (assoc "buffer" decoded))))
               (should (eq (cdr (assoc "isError" result)) :json-false))
               (should-not (cdr (assoc "root" project)))
-              (should (equal (cdr (assoc "fileCount" project)) 0))
+              (should-not (assoc "fileCount" project))
               (should (equal (cdr (assoc "buffer" buffer))
                              "codex-ide-mcp-no-project"))
               (should (equal (cdr (assoc "majorMode" buffer))

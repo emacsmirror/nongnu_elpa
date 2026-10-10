@@ -122,7 +122,7 @@ that the local config inspection cannot account for."
 
 (defun codex-ide-mcp-neo--install-command-args (socket)
   "Return the explicit persistent Codex setup argv for native SOCKET."
-  (list "codex" "mcp" "add" "neomacs" "--"
+  (list codex-ide-cli-path "mcp" "add" "neomacs" "--"
         (codex-ide-mcp-neo--command) "--socket" socket))
 
 (defun codex-ide-mcp-neo--status-message ()
