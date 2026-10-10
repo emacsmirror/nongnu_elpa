@@ -1439,8 +1439,7 @@ If NS is defined, then the fully qualified symbol is passed to
                        (seq-sort (lambda (spec1 _spec2)
                                    (equal (car spec1) :block)))))))))
 
-(defvar-local clojure-ts--dynamic-indent-for-symbol-cache
-  (make-hash-table :test 'equal))
+(defvar-local clojure-ts--dynamic-indent-for-symbol-cache (make-hash-table :test 'equal))
 
 (defvar-local clojure-ts--use-dynamic-indent-cache nil
   "If set to nil, do not use cache for dynamic indentation rules.")
