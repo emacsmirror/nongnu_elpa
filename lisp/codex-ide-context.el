@@ -134,22 +134,53 @@ BYTES must be at least 4 bytes long."
      (ash (aref bytes 2) 16)
      (ash (aref bytes 3) 24)))
 
+(defun codex-ide-context--native-json-p ()
+  "Return non-nil when native JSON encoding and parsing are available."
+  (and (fboundp 'json-serialize) (fboundp 'json-parse-string)
+       (fboundp 'json-available-p) (json-available-p)))
+
+(defun codex-ide-context--native-json-value (value)
+  "Adapt legacy JSON VALUE to native objects without copying text."
+  (cond
+   ((consp value)
+    (cond
+     ((json-alist-p value)
+      (mapcar (lambda (entry)
+                (cons (if (stringp (car entry)) (intern (car entry)) (car entry))
+                      (codex-ide-context--native-json-value (cdr entry))))
+              value))
+     ((json-plist-p value)
+      (let (result)
+        (while value
+          (push (pop value) result)
+          (push (codex-ide-context--native-json-value (pop value)) result))
+        (nreverse result)))
+     (t (vconcat (mapcar #'codex-ide-context--native-json-value value)))))
+   ((vectorp value) (vconcat (mapcar #'codex-ide-context--native-json-value value)))
+   (t value)))
+
 (defun codex-ide-context--encode-frame (message)
   "Return a unibyte string frame encoding MESSAGE.
 MESSAGE is a plist or alist suitable for `json-encode'.  The frame is
 a little-endian u32 length prefix followed by the UTF-8 JSON payload."
-  (let* ((payload (encode-coding-string (json-encode message) 'utf-8))
-         (length (length payload)))
-    (concat (codex-ide-context--u32-le-bytes length) payload)))
+  (let* ((json (if (codex-ide-context--native-json-p)
+                   (json-serialize (codex-ide-context--native-json-value message)
+                                   :null-object nil :false-object :json-false)
+                 (json-encode message)))
+         (payload (encode-coding-string json 'utf-8)))
+    (concat (codex-ide-context--u32-le-bytes (length payload)) payload)))
 
 (defun codex-ide-context--decode-payload (bytes)
   "Decode BYTES (a unibyte string) as JSON into a plist."
-  (let ((json-object-type 'plist)
-        (json-array-type 'list)
-        (json-false :json-false)
-        (json-null nil))
-    (json-read-from-string
-     (decode-coding-string bytes 'utf-8))))
+  (let ((text (decode-coding-string bytes 'utf-8)))
+    (if (codex-ide-context--native-json-p)
+        (json-parse-string text :object-type 'plist :array-type 'list
+                           :false-object :json-false :null-object nil)
+      (let ((json-object-type 'plist)
+            (json-array-type 'list)
+            (json-false :json-false)
+            (json-null nil))
+        (json-read-from-string text)))))
 
 ;;; Protocol builders (pure)
 
@@ -312,9 +343,15 @@ recorded buffer, or nil when BUFFER is not a project file buffer."
       (puthash root buf codex-ide-context--source-buffers)
       buf)))
 
-(defun codex-ide-context--record-window-selection (&rest _args)
-  "Record the selected file buffer after a window-selection change."
-  (codex-ide-context-record-source-buffer))
+(defun codex-ide-context--record-window-selection (&optional frame-or-window)
+  "Record the selected source after a change on FRAME-OR-WINDOW.
+Global window change hooks pass a frame; buffer-local hooks pass a window."
+  (let ((window (cond ((framep frame-or-window)
+                       (frame-selected-window frame-or-window))
+                      ((windowp frame-or-window) frame-or-window)
+                      (t (selected-window)))))
+    (when (window-live-p window)
+      (codex-ide-context-record-source-buffer nil (window-buffer window)))))
 
 (defun codex-ide-context--tracked-source-buffer (workspace-root)
   "Return the tracked live source buffer for WORKSPACE-ROOT, or nil."
@@ -352,17 +389,14 @@ region is active.  Returns nil when BUFFER is not visiting a file."
                 (end (with-current-buffer buf
                        (and (region-active-p) (region-end)))))
           (let* ((content (with-current-buffer buf
-                            (buffer-substring-no-properties beg end)))
-                 (trimmed (if (> (length content)
-                                 codex-ide-context-selection-content-limit)
-                              (substring content 0
-                                         codex-ide-context-selection-content-limit)
-                            content))
+                            (buffer-substring-no-properties
+                             beg (min end
+                                      (+ beg (max 0 codex-ide-context-selection-content-limit))))))
                  (range (with-current-buffer buf
                           (codex-ide-context--region->range beg end))))
             (append descriptor
                     (list (cons "selection" range)
-                          (cons "activeSelectionContent" trimmed)
+                          (cons "activeSelectionContent" content)
                           (cons "selections"
                                 (list range)))))
         (let* ((pos (with-current-buffer buf (point)))
@@ -376,8 +410,10 @@ region is active.  Returns nil when BUFFER is not visiting a file."
 (defun codex-ide-context--buffer-under-root-p (buffer root)
   "Return non-nil when BUFFER visits a file under ROOT."
   (and-let* ((file (buffer-file-name buffer)))
-    (string-prefix-p (file-name-as-directory (file-truename root))
-                     (file-truename file))))
+    (and (or (file-remote-p root) (not (file-remote-p file)))
+         (string-prefix-p (file-name-as-directory (file-truename root))
+                          (with-current-buffer buffer
+                            (or buffer-file-truename (file-truename file)))))))
 
 (defun codex-ide-context--open-tabs (workspace-root)
   "Return a list of file-descriptor alists for open file buffers.
@@ -385,27 +421,31 @@ When WORKSPACE-ROOT is non-nil, only buffers visiting files under that
 root are included.  Without WORKSPACE-ROOT, all file-visiting buffers
 are included.  The list is capped at
 `codex-ide-context-open-tabs-limit' entries and deduplicated by path."
-  (let* ((root (and workspace-root (file-truename workspace-root)))
-         (file-buffers (cl-remove-if-not #'buffer-file-name (buffer-list)))
-         (root-buffers (and root
-                            (cl-remove-if-not
-                             (lambda (buf)
-                               (codex-ide-context--buffer-under-root-p
-                                buf root))
-                             file-buffers)))
-         (chosen (if root root-buffers file-buffers))
-         (seen (make-hash-table :test 'equal))
-         (deduped nil))
-    (dolist (buf chosen)
-      (when-let* ((desc (codex-ide-context--buffer->file-descriptor
-                         buf workspace-root))
-                  (path (cdr (assoc "path" desc))))
-        (unless (gethash path seen)
-          (puthash path t seen)
-          (push desc deduped))))
-    (let ((tabs (nreverse deduped)))
-      (cl-subseq tabs 0
-                 (min (length tabs) codex-ide-context-open-tabs-limit)))))
+  (let ((root (and workspace-root
+                   (file-name-as-directory (file-truename workspace-root))))
+        (buffers (buffer-list))
+        (seen (make-hash-table :test 'equal))
+        (count 0)
+        tabs)
+    (while (and buffers (< count codex-ide-context-open-tabs-limit))
+      (let* ((buffer (pop buffers))
+             (file (buffer-file-name buffer)))
+        ;; An unrelated TRAMP buffer must not trigger remote path resolution.
+        (when (and file (or (not root) (file-remote-p root)
+                            (not (file-remote-p file))))
+          (let ((true-file (and root
+                                (with-current-buffer buffer
+                                  (or buffer-file-truename (file-truename file))))))
+            (when (or (not root) (string-prefix-p root true-file))
+              (let ((path (if root (file-relative-name file workspace-root) file)))
+                (unless (gethash path seen)
+                  (puthash path t seen)
+                  (push (list (cons "label" (file-name-nondirectory file))
+                              (cons "path" path)
+                              (cons "fsPath" (expand-file-name file)))
+                        tabs)
+                  (setq count (1+ count)))))))))
+    (nreverse tabs)))
 
 (defun codex-ide-context--collect (workspace-root &optional buffer)
   "Build the `ideContext' alist for WORKSPACE-ROOT.
@@ -415,7 +455,7 @@ BUFFER is the active buffer to serialize."
     (delq nil
           (list (when active (cons "activeFile" active))
                 (cons "openTabs" (vconcat (codex-ide-context--open-tabs
-                                            workspace-root)))))))
+                                           workspace-root)))))))
 
 ;;; Socket / process (boundary)
 
@@ -587,7 +627,8 @@ cannot be secured or another live provider owns the socket."
               codex-ide-context-max-clients)
           (progn
             (ignore-errors (delete-process proc))
-            (user-error "Codex IDE context client limit reached"))
+            (codex-ide-debug "Codex IPC client limit reached, dropping client")
+            nil)
         (let ((state (list :pending (unibyte-string)
                            :length nil)))
           (puthash proc state codex-ide-context--clients)
@@ -636,30 +677,30 @@ a declared payload length exceeds the configured maximum."
 
 (defun codex-ide-context--filter (proc string)
   "Process filter: accumulate STRING for PROC and dispatch complete frames."
-  (let* ((state (codex-ide-context--client-state proc))
-         (pending (concat (plist-get state :pending)
-                          (string-to-unibyte string)))
-         (len (plist-get state :length)))
-    (pcase-let ((`(,messages . (,tail . ,tail-len))
-                 (condition-case err
-                     (codex-ide-context--parse-frames pending len)
-                   (codex-ide-context-frame-too-large
-                    (codex-ide-debug "Codex IPC frame too large, dropping client")
-                    (ignore-errors (delete-process proc))
-                    nil)
-                   (error
-                    (codex-ide-debug "Codex IPC parse error: %S" err)
-                    (ignore-errors (delete-process proc))
-                    nil))))
-      (if messages
+  (when-let* ((state (codex-ide-context--client-state proc)))
+    (let* ((pending (concat (plist-get state :pending)
+                            (string-to-unibyte string)))
+           (len (plist-get state :length)))
+      (pcase-let ((`(,messages . (,tail . ,tail-len))
+                   (condition-case err
+                       (codex-ide-context--parse-frames pending len)
+                     (codex-ide-context-frame-too-large
+                      (codex-ide-debug "Codex IPC frame too large, dropping client")
+                      (ignore-errors (delete-process proc))
+                      nil)
+                     (error
+                      (codex-ide-debug "Codex IPC parse error: %S" err)
+                      (ignore-errors (delete-process proc))
+                      nil))))
+        (if messages
+            (progn
+              (plist-put state :pending tail)
+              (plist-put state :length tail-len)
+              (dolist (msg messages)
+                (codex-ide-context--handle-connection-message proc msg)))
           (progn
-            (plist-put state :pending tail)
-            (plist-put state :length tail-len)
-            (dolist (msg messages)
-              (codex-ide-context--handle-connection-message proc msg)))
-        (progn
-          (plist-put state :pending pending)
-          (plist-put state :length len))))))
+            (plist-put state :pending pending)
+            (plist-put state :length len)))))))
 
 (defun codex-ide-context--handle-connection-message (proc message)
   "Handle one decoded MESSAGE from client PROC."
@@ -713,6 +754,8 @@ clients reached."
   "Install source-buffer tracking hooks for the provider."
   (add-hook 'window-selection-change-functions
             #'codex-ide-context--record-window-selection)
+  (add-hook 'window-buffer-change-functions
+            #'codex-ide-context--record-window-selection)
   (add-hook 'kill-emacs-hook
             #'codex-ide-context--cleanup-on-exit)
   (codex-ide-context-record-source-buffer))
@@ -720,6 +763,8 @@ clients reached."
 (defun codex-ide-context--uninstall-tracking ()
   "Remove source-buffer tracking hooks for the provider."
   (remove-hook 'window-selection-change-functions
+               #'codex-ide-context--record-window-selection)
+  (remove-hook 'window-buffer-change-functions
                #'codex-ide-context--record-window-selection)
   (remove-hook 'kill-emacs-hook
                #'codex-ide-context--cleanup-on-exit))
@@ -786,19 +831,24 @@ Return the listening process."
 ;;;###autoload
 (defun codex-ide-send-selection (&optional workspace-root)
   "Compatibility command for pushing context to connected Codex clients.
-WORKSPACE-ROOT defaults to `default-directory'.  If no client is
-connected, copy the active selection to the kill ring when present and
-tell the user to use `/ide' in the Codex TUI."
+WORKSPACE-ROOT defaults to the current project root, or `default-directory'
+outside a project.  A broadcast does not imply TUI consumption; use `/ide'
+to request context.  If no client is connected, copy the active selection
+to the kill ring when present and tell the user to use `/ide' in the Codex TUI."
   (interactive)
   (let* ((buffer (current-buffer))
          (sent (codex-ide-context--selection-broadcast
-                (or workspace-root default-directory)
+                (or workspace-root
+                    (when-let* ((project (project-current nil))) (project-root project))
+                    default-directory)
                 buffer))
-         (selection (and (region-active-p)
+         (selection (and (zerop sent) (region-active-p)
                          (buffer-substring-no-properties
                           (region-beginning) (region-end)))))
     (if (> sent 0)
-        (codex-ide-log "Sent selection context to %d Codex client(s)" sent)
+        (codex-ide-log
+         "Broadcast selection context to %d client(s); use /ide in Codex to request context"
+         sent)
       (when selection
         (kill-new selection))
       (codex-ide-log

@@ -405,5 +405,157 @@
               (should (equal (buffer-string) "foreign contents")))))
       (mapc #'kill-buffer shared))))
 
+
+;;; Queued presentation
+
+(defmacro codex-ide-diff-test--with-queued-review (&rest body)
+  "Run BODY with isolated receipt state and a stable terminal owner."
+  (declare (indent 0))
+  `(let* ((codex-ide-diff--receipts (make-hash-table :test 'equal))
+          (codex-ide-diff--queued-review nil)
+          (codex-ide-diff--active nil)
+          (global-mode-string nil)
+          (terminal (generate-new-buffer " *queued-terminal*"))
+          (session (list :root temporary-file-directory :id 1 :buffer terminal)))
+     (unwind-protect
+         (cl-letf (((symbol-function 'codex-ide-diff--request-session)
+                    (lambda (buffer) (and (eq buffer terminal) session))))
+           ,@body)
+       (codex-ide-diff--cancel-requests)
+       (maphash (lambda (_ receipt)
+                  (dolist (key '(:timer :start-timer))
+                    (when-let* ((timer (plist-get receipt key))) (cancel-timer timer))))
+                codex-ide-diff--receipts)
+       (kill-buffer terminal))))
+
+(ert-deftest codex-ide-diff-queued-notification-preserves-layout ()
+  "A timer only notifies; explicit show opens the queued review."
+  (save-window-excursion
+    (codex-ide-diff-test--with-queued-review
+     (let* ((config (current-window-configuration))
+            (tab (tab-bar--current-tab-find))
+            (result (codex-ide-diff--request-start
+                     (buffer-name terminal) "queued" "nested/a.el" "old" "new"))
+            (receipt (gethash (cdr (assoc "review_id" result)) codex-ide-diff--receipts))
+            notified)
+       (cl-letf (((symbol-function 'message)
+                  (lambda (format-string &rest args)
+                    (setq notified (apply #'format format-string args)))))
+         (timer-event-handler (plist-get receipt :start-timer)))
+       (should-not codex-ide-diff--active)
+       (should (eq tab (tab-bar--current-tab-find)))
+       (should (window-configuration-equal-p config (current-window-configuration)))
+       (should (memq 'codex-ide-diff--mode-line global-mode-string))
+       (should (string-match-p "codex-ide-diff-show" notified))
+       (call-interactively #'codex-ide-diff-show)
+       (should (eq codex-ide-diff--active (plist-get receipt :ui-owner)))
+       (should-not codex-ide-diff--queued-review)
+       (should-not (memq 'codex-ide-diff--mode-line global-mode-string))
+       (codex-ide-diff-test--accept codex-ide-diff--active)
+       (should (equal (cdr (assoc "content" (codex-ide-diff--request-result
+                                             (plist-get receipt :id)))) "new"))))))
+
+(ert-deftest codex-ide-diff-cancelled-queue-cannot-notify-or-open ()
+  "Late queue notifications and explicit opening cannot revive cancellation."
+  (codex-ide-diff-test--with-queued-review
+   (let* ((result (codex-ide-diff--request-start
+                   (buffer-name terminal) "cancel" "a.el" "old" "new"))
+          (receipt (gethash (cdr (assoc "review_id" result)) codex-ide-diff--receipts))
+          (timer (plist-get receipt :start-timer)) notified)
+     (codex-ide-diff--request-result (plist-get receipt :id) t)
+     (cl-letf (((symbol-function 'message) (lambda (&rest _) (setq notified t))))
+       (timer-event-handler timer))
+     (should-not notified)
+     (should-not (memq 'codex-ide-diff--mode-line global-mode-string))
+     (should-error (codex-ide-diff-show) :type 'user-error)
+     (should-not codex-ide-diff--active))))
+
+(ert-deftest codex-ide-diff-show-refuses-minibuffer ()
+  "Explicit show preserves a queued proposal during minibuffer input."
+  (codex-ide-diff-test--with-queued-review
+   (codex-ide-diff--request-start (buffer-name terminal) "mini" "a.el" "old" "new")
+   (cl-letf (((symbol-function 'active-minibuffer-window) (lambda () (selected-window))))
+     (should-error (codex-ide-diff-show) :type 'user-error))
+   (should codex-ide-diff--queued-review)
+   (should-not codex-ide-diff--active)))
+
+(ert-deftest codex-ide-diff-proposal-skips-change-major-mode-hook ()
+  "Choosing a proposal's mode does not run global mode-change hooks."
+  (let ((change-major-mode-hook
+         (list (lambda () (error "Mode change hook must not run")))))
+    (let ((buffer (codex-ide-diff--make-temp-buffer
+                   " *test-proposal-mode*" "(example)" "/tmp/example.el")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should (eq major-mode 'emacs-lisp-mode)))
+        (kill-buffer buffer)))))
+
+(ert-deftest codex-ide-diff-proposal-mode-and-header ()
+  "Proposals use the target mode without hooks or file association, with key hints."
+  (let ((emacs-lisp-mode-hook (list (lambda () (error "Mode hook must not run"))))
+        (find-file-hook (list (lambda () (error "File hook must not run"))))
+        (codex-ide-diff-accept-key (kbd "C-c C-y"))
+        (default-directory temporary-file-directory)
+        owner)
+    (unwind-protect
+        (progn
+          (setq owner (codex-ide-diff-review
+                       "(old)" "(new)\n;; Local Variables:\n;; eval: (error \"No eval\")\n;; End:\n"
+                       (expand-file-name "nested/target.el" default-directory) #'ignore))
+          (with-current-buffer (plist-get owner :buffer-b)
+            (should (eq major-mode 'emacs-lisp-mode))
+            (should-not buffer-file-name))
+          (with-current-buffer (plist-get owner :control)
+            (let ((header (symbol-value header-line-format)))
+              (should (string-match-p "nested/target.el" header))
+              (should (string-match-p "C-c C-y" header))
+              (should (string-match-p "q.*reject" header))
+              (should (string-match-p "?.*help" header))
+              (let ((start (string-match "C-c C-y" header)))
+                (should (eq (get-text-property start 'face header)
+                            'help-key-binding))))))
+      (when owner (codex-ide-diff-cancel owner)))))
+
+(ert-deftest codex-ide-diff-preview-is-programmatic ()
+  "The legacy boolean preview has no interactive raw-content prompts."
+  (should-not (commandp #'codex-ide-diff-preview)))
+
+(ert-deftest codex-ide-diff-renders-literal-header-and-pending-indicator ()
+  "Render actual mode lines, preserving percent characters and semantic faces."
+  ;; GNU Emacs returns an empty string from `format-mode-line' in batch mode.
+  (skip-when noninteractive)
+  (save-window-excursion
+    (dolist (existing '(nil (" existing")))
+      (codex-ide-diff-test--with-queued-review
+        (setq global-mode-string (copy-tree existing))
+        (let* ((codex-ide-diff-accept-key (kbd "C-c %"))
+               (result (codex-ide-diff--request-start
+                        (buffer-name terminal) "render" "nested/%b.el" "old" "new"))
+               (id (cdr (assoc "review_id" result)))
+               (rendered (format-mode-line 'global-mode-string)))
+          (should (string-match-p "Codex review pending" rendered))
+          (should (eq (get-text-property
+                       (string-match "Codex review pending" rendered) 'face rendered)
+                      'codex-ide-diff-pending))
+          (codex-ide-diff-show)
+          (should (equal (format-mode-line 'global-mode-string)
+                         (if existing " existing" "")))
+          (with-current-buffer (plist-get codex-ide-diff--active :control)
+            (let ((header (format-mode-line header-line-format)))
+              (should (string-match-p "nested/%b.el" header))
+              (should (string-match-p "C-c % accept" header))
+              (should (eq (get-text-property (string-match "C-c %" header) 'face header)
+                          'help-key-binding))
+              (should (eq (key-binding codex-ide-diff-accept-key)
+                          #'codex-ide-diff-accept))))
+          (codex-ide-diff-test--accept codex-ide-diff--active)
+          (should (equal (cdr (assoc "status" (codex-ide-diff--request-result id)))
+                         "accepted")))
+        (codex-ide-diff--request-start
+         (buffer-name terminal) "cancel-render" "a.el" "old" "new")
+        (codex-ide-diff--request-result (plist-get codex-ide-diff--queued-review :id) t)
+        (should (equal (format-mode-line 'global-mode-string)
+                       (if existing " existing" "")))))))
+
 (provide 'codex-ide-diff-tests)
 ;;; codex-ide-diff-tests.el ends here

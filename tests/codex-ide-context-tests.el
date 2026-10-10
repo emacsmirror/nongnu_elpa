@@ -839,8 +839,8 @@
                (lambda (&rest _) nil))
               ((symbol-function 'delete-process)
                (lambda (proc) (setq deleted proc))))
-      (should-error (codex-ide-context--client-state 'new)
-                    :type 'user-error)
+      (should-not (codex-ide-context--client-state 'new))
+      (should-not (codex-ide-context--filter 'new "ignored"))
       (should (eq deleted 'new))
       (should (= (hash-table-count codex-ide-context--clients) 1)))))
 
@@ -989,7 +989,7 @@
    (lambda (directory path)
      (write-region "" nil path nil 'silent)
      (cl-letf (((symbol-function 'codex-ide-context--socket-state)
-               (lambda (_path) 'live))
+                (lambda (_path) 'live))
                ((symbol-function 'delete-file)
                 (lambda (_file)
                   (error "should not delete live socket"))))
@@ -1004,9 +1004,9 @@
    (lambda (directory path)
      (write-region "" nil path nil 'silent)
      (cl-letf (((symbol-function 'codex-ide-context--socket-state)
-               (lambda (_path) 'stale))
-              ((symbol-function 'codex-ide-context--socket-file-p)
-               (lambda (_path) t)))
+                (lambda (_path) 'stale))
+               ((symbol-function 'codex-ide-context--socket-file-p)
+                (lambda (_path) t)))
        (codex-ide-context--prepare-socket-path directory path)
        (should-not (file-exists-p path))))))
 
@@ -1028,7 +1028,7 @@
    (lambda (directory path)
      (write-region "" nil path nil 'silent)
      (cl-letf (((symbol-function 'codex-ide-context--socket-state)
-               (lambda (_path) 'unknown))
+                (lambda (_path) 'unknown))
                ((symbol-function 'delete-file)
                 (lambda (_file)
                   (error "should not delete unknown socket"))))
@@ -1045,6 +1045,194 @@
     (should (string-suffix-p
              (format "ipc-%d.sock" (user-uid))
              (codex-ide-context--socket-path)))))
+
+
+;;; Bounded context collection and logging
+
+(ert-deftest codex-ide-context-open-tabs-bounded-cached-paths ()
+  "Hundreds of cached files require one root resolution and bounded visits."
+  (let ((buffers nil) (calls nil) (visits 0)
+        (codex-ide-context-open-tabs-limit 100))
+    (unwind-protect
+        (progn
+          (dotimes (i 400)
+            (let ((buf (generate-new-buffer " *tabs-bench*")))
+              (with-current-buffer buf
+                (setq buffer-file-name (format "/repo/f%d.el" i)
+                      buffer-file-truename buffer-file-name))
+              (push buf buffers)))
+          (setq buffers (nreverse buffers))
+          (cl-letf (((symbol-function 'buffer-list) (lambda (&rest _) buffers))
+                    ((symbol-function 'file-truename)
+                     (lambda (path) (push path calls) path))
+                    ((symbol-function 'buffer-file-name)
+                     (let ((original (symbol-function 'buffer-file-name)))
+                       (lambda (&optional buffer)
+                         (cl-incf visits) (funcall original buffer)))))
+            (let ((tabs (codex-ide-context--open-tabs "/repo")))
+              (should (= (length tabs) 100))
+              (should (equal (car tabs)
+                             '(("label" . "f0.el") ("path" . "f0.el")
+                               ("fsPath" . "/repo/f0.el"))))
+              (should (equal calls '("/repo")))
+              (should (<= visits 100)))))
+      (mapc #'kill-buffer buffers))))
+
+(ert-deftest codex-ide-context-open-tabs-skips-remote-before-resolution ()
+  "A local root rejects remote buffers before true-name or relative work."
+  (with-temp-buffer
+    (setq buffer-file-name "/ssh:example.invalid:/repo/source.el")
+    (let ((buf (current-buffer)) calls)
+      (cl-letf (((symbol-function 'buffer-list) (lambda (&rest _) (list buf)))
+                ((symbol-function 'file-truename)
+                 (lambda (path) (push path calls) path)))
+        (should-not (codex-ide-context--open-tabs "/repo"))
+        (should (equal calls '("/repo")))))))
+
+(ert-deftest codex-ide-context-open-tabs-fallback-dedup-and-alias ()
+  "Uncached files resolve once; aliases retain their display paths."
+  (let ((a (generate-new-buffer " *tabs-a*"))
+        (b (generate-new-buffer " *tabs-b*")) calls)
+    (unwind-protect
+        (progn
+          (dolist (buf (list a b))
+            (with-current-buffer buf (setq buffer-file-name "/alias/src/a.el")))
+          (cl-letf (((symbol-function 'buffer-list) (lambda (&rest _) (list a b)))
+                    ((symbol-function 'file-truename)
+                     (lambda (path)
+                       (push path calls)
+                       (if (equal path "/alias") "/real" "/real/src/a.el"))))
+            (should (equal (codex-ide-context--open-tabs "/alias")
+                           '((("label" . "a.el") ("path" . "src/a.el")
+                              ("fsPath" . "/alias/src/a.el")))))
+            (should (= (length calls) 3))))
+      (kill-buffer a) (kill-buffer b))))
+
+(ert-deftest codex-ide-context-selection-clamps-before-copy ()
+  "Selection copying is bounded while the reported range stays complete."
+  (with-temp-buffer
+    (setq buffer-file-name "/repo/selection.el")
+    (insert (make-string 10000 ?λ))
+    (let ((transient-mark-mode t)
+          (codex-ide-context-selection-content-limit 7)
+          (original (symbol-function 'buffer-substring-no-properties)) copies)
+      (goto-char (point-min)) (push-mark (point-max) t t)
+      (cl-letf (((symbol-function 'buffer-substring-no-properties)
+                 (lambda (beg end)
+                   (push (- end beg) copies) (funcall original beg end))))
+        (let* ((active (codex-ide-context--active-file nil))
+               (end (cdr (assoc "end" (cdr (assoc "selection" active))))))
+          (should (equal (cdr (assoc "activeSelectionContent" active))
+                         (make-string 7 ?λ)))
+          (should (= (cdr (assoc "character" end)) 10000))
+          (should (equal copies '(7))))))))
+
+(ert-deftest codex-ide-context-tracks-same-window-buffer-change ()
+  "A to B to terminal in one window retains B across frame hook calls."
+  (save-window-excursion
+    (let ((a (generate-new-buffer " *source-a*"))
+          (b (generate-new-buffer " *source-b*"))
+          (terminal (generate-new-buffer " *context-terminal*"))
+          (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+          (window-buffer-change-functions nil)
+          (window-selection-change-functions nil)
+          (kill-emacs-hook nil))
+      (unwind-protect
+          (cl-letf (((symbol-function 'codex-ide-context--buffer-project-root)
+                     (lambda (_) "/repo/")))
+            (with-current-buffer a (setq buffer-file-name "/repo/a.el"))
+            (with-current-buffer b (setq buffer-file-name "/repo/b.el"))
+            (switch-to-buffer a)
+            (codex-ide-context--install-tracking)
+            (switch-to-buffer b)
+            ;; Batch redisplay does not run window change hooks.  Drive the
+            ;; documented global hook boundary with its real frame argument.
+            (cl-letf (((symbol-function 'codex-ide-context--selected-buffer)
+                       (lambda () a)))
+              (run-hook-with-args 'window-buffer-change-functions (selected-frame)))
+            (switch-to-buffer terminal)
+            (run-hook-with-args 'window-buffer-change-functions (selected-frame))
+            (should (eq b (codex-ide-context--resolve-source-buffer "/repo")))
+            (codex-ide-context--uninstall-tracking)
+            (should-not window-buffer-change-functions))
+        (mapc #'kill-buffer (list a b terminal))))))
+
+(ert-deftest codex-ide-context-send-selection-project-root-and-message ()
+  "The broadcast uses the project root and does not promise consumption."
+  (with-temp-buffer
+    (setq default-directory "/repo/nested/" buffer-file-name "/repo/nested/a.el")
+    (let (root message)
+      (cl-letf (((symbol-function 'project-current) (lambda (&rest _) '(transient . "/repo/")))
+                ((symbol-function 'codex-ide-context--selection-broadcast)
+                 (lambda (workspace &optional _) (setq root workspace) 1))
+                ((symbol-function 'codex-ide-log)
+                 (lambda (format-string &rest args)
+                   (setq message (apply #'format format-string args)))))
+        (codex-ide-send-selection)
+        (should (equal root "/repo/"))
+        (should (string-match-p "[Bb]roadcast" message))
+        (should (string-match-p "/ide" message))))))
+
+(ert-deftest codex-ide-context-json-native-and-fallback-wire ()
+  "Native JSON preserves legacy frame bytes, key order, null and false."
+  (skip-unless (and (fboundp 'json-serialize) (json-available-p)))
+  (dolist (value (list nil
+                       '(("type" . "response") ("null" . nil)
+                         ("false" . :json-false) ("true" . t)
+                         ("text" . "λ/\n\t\"\\") ("empty" . [])
+                         ("array" . [(("nested" . 1))]))
+                       '(:type "test" :items (1 2 3))
+                       (codex-ide-context--discovery-response "id" nil)
+                       (codex-ide-context--success-response
+                        "id" '(("openTabs" . [])))))
+    (let ((legacy (encode-coding-string (json-encode value) 'utf-8))
+          native fallback)
+      (setq native (codex-ide-context--encode-frame value))
+      (cl-letf (((symbol-function 'json-available-p) (lambda () nil)))
+        (setq fallback (codex-ide-context--encode-frame value)))
+      (should (equal native fallback))
+      (should (equal (substring native 4) legacy))
+      (should (equal (codex-ide-context--decode-payload (substring native 4))
+                     (cl-letf (((symbol-function 'json-available-p) (lambda () nil)))
+                       (codex-ide-context--decode-payload (substring fallback 4))))))))
+
+(ert-deftest codex-ide-context-json-uses-native-when-available ()
+  "Exercise native encode and decode, then force the no-native fallback."
+  (skip-unless (codex-ide-context--native-json-p))
+  (let ((serialize (symbol-function 'json-serialize))
+        (parse (symbol-function 'json-parse-string))
+        (encoded 0) (decoded 0))
+    (cl-letf (((symbol-function 'json-serialize)
+               (lambda (&rest args) (cl-incf encoded) (apply serialize args)))
+              ((symbol-function 'json-parse-string)
+               (lambda (&rest args) (cl-incf decoded) (apply parse args))))
+      (dolist (native '(t nil))
+        (cl-letf (((symbol-function 'json-available-p) (lambda () native)))
+          (should (equal (codex-ide-context--decode-payload
+                          (substring (codex-ide-context--encode-frame '(:key t)) 4))
+                         '(:key t)))))
+      (should (= encoded 1))
+      (should (= decoded 1)))))
+
+(ert-deftest codex-ide-debug-bounded-special-buffer ()
+  "Debug output is read-only, bounded, and can still be cleared."
+  (let ((codex-ide-debug t)
+        (codex-ide-log-with-context nil)
+        (codex-ide-debug-max-size 90)
+        (codex-ide-debug-buffer " *codex-debug-test*"))
+    (unwind-protect
+        (progn
+          (dotimes (i 20) (codex-ide-debug "entry-%s" i))
+          (with-current-buffer codex-ide-debug-buffer
+            (should (derived-mode-p 'special-mode))
+            (should buffer-read-only)
+            (should (<= (buffer-size) 90))
+            (should (string-match-p "entry-19" (buffer-string))))
+          (codex-ide-debug "%s" (make-string 200 ?x))
+          (with-current-buffer codex-ide-debug-buffer (should (<= (buffer-size) 90)))
+          (codex-ide-clear-debug)
+          (with-current-buffer codex-ide-debug-buffer (should (= (buffer-size) 0))))
+      (when (get-buffer codex-ide-debug-buffer) (kill-buffer codex-ide-debug-buffer)))))
 
 (provide 'codex-ide-context-tests)
 

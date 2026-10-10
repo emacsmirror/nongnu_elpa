@@ -48,6 +48,11 @@
   :type 'string
   :group 'codex-ide)
 
+(defcustom codex-ide-debug-max-size (* 256 1024)
+  "Maximum characters retained in the debug buffer."
+  :type 'natnum
+  :group 'codex-ide)
+
 ;;; Functions
 
 (defun codex-ide--get-session-context ()
@@ -61,16 +66,32 @@
                   "no-project"))
     ""))
 
+(defun codex-ide--debug-buffer ()
+  "Return the debug buffer, initializing its read-only special mode."
+  (let ((buffer (get-buffer-create codex-ide-debug-buffer)))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'special-mode) (special-mode)))
+    buffer))
+
+(defun codex-ide--debug-insert (text)
+  "Append TEXT to the debug buffer and retain only its bounded tail."
+  (with-current-buffer (codex-ide--debug-buffer)
+    (let ((inhibit-read-only t))
+      (save-excursion
+        (goto-char (point-max))
+        (insert text)
+        (when (> (buffer-size) (max 0 codex-ide-debug-max-size))
+          (delete-region (point-min)
+                         (- (point-max) (max 0 codex-ide-debug-max-size)))))
+      (set-buffer-modified-p nil))))
+
 (defmacro codex-ide-debug (format-string &rest args)
   "Log FORMAT-STRING formatted with ARGS when `codex-ide-debug' is on.
 The arguments are only evaluated when debugging is enabled."
   `(when codex-ide-debug
-     (let ((msg (format ,format-string ,@args))
-           (ts (format-time-string "%Y-%m-%d %H:%M:%S"))
-           (ctx (codex-ide--get-session-context)))
-       (with-current-buffer (get-buffer-create codex-ide-debug-buffer)
-         (goto-char (point-max))
-         (insert (format "%s %s%s\n" ts ctx msg))))))
+     (codex-ide--debug-insert
+      (format "%s %s%s\n" (format-time-string "%Y-%m-%d %H:%M:%S")
+              (codex-ide--get-session-context) (format ,format-string ,@args)))))
 
 (defun codex-ide-log (format-string &rest args)
   "Log FORMAT-STRING with ARGS to `*Messages*'."
@@ -82,14 +103,15 @@ The arguments are only evaluated when debugging is enabled."
 (defun codex-ide-show-debug ()
   "Show the `codex-ide' debug buffer."
   (interactive)
-  (display-buffer (get-buffer-create codex-ide-debug-buffer)))
+  (display-buffer (codex-ide--debug-buffer)))
 
 ;;;###autoload
 (defun codex-ide-clear-debug ()
   "Clear the `codex-ide' debug buffer."
   (interactive)
-  (with-current-buffer (get-buffer-create codex-ide-debug-buffer)
-    (erase-buffer)
+  (with-current-buffer (codex-ide--debug-buffer)
+    (let ((inhibit-read-only t)) (erase-buffer))
+    (set-buffer-modified-p nil)
     (message "Debug buffer cleared")))
 
 (provide 'codex-ide-debug)
