@@ -648,12 +648,15 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/profile/[[:alpha:]_]+$" query)
           (string-match "^/p/[[:alpha:]_]+/[[:digit:]]+$" query)
           (string-match "^/[[:alpha:]_]+$" query) ;; ?
-          (string-match "^/u/[[:alpha:]_]+$" query)
+          (string-match "^/u/[[:alnum:]_]+$" query)
           ;; a lemmy post must NOT open in mastodon.el lest we get stuck in
           ;; a self-loading circle and can't load the URL in the lemmy
           ;; post itself:
           ;; (string-match "^/post/[[:digit:]]+$" query)
-          (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
+          ;; FIXME: or perhaps we need to load lemmy posts in mastodon.el,
+          ;; but then force the self-link that they contain to load
+          ;; externally?
+          (string-match "^/comment/[[:digit:]]+$" query) ; lemmy comment
           (string-match "^/@[^/]+/posts/[[:alnum:]]+$" query) ;; akkoma post
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS status
           ;; (string-match "^/@[[:alpha:]-_]/" query) ;; flipboard post

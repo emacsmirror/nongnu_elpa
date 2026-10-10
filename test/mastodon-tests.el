@@ -46,6 +46,14 @@
    (not (mastodon--fedi-url-p
          "https://lemmy.ml/post/53786458/28261605")))
   (should
+   ;; lemmy comment 2:
+   (mastodon--fedi-url-p
+    "https://lemmy.ml/comment/28252098"))
+  (should
+   ;; Lemmy user:
+   (mastodon--fedi-url-p
+    "https://lemmy.ml/u/Trying2KnowMyself"))
+  (should
    ;; Misskey post:
    (mastodon--fedi-url-p
     "https://misskey.noellabo.jp/notes/as5y0n7y98"))
@@ -66,5 +74,14 @@
    (mastodon--fedi-url-p
     "https://todon.nl/collections/116879312823651190"))
   ;; TODO: Fed.brid.gy:
-  
-  )
+
+  ;; Non-fedi links
+  (should
+   (not (mastodon--fedi-url-p
+         "https://x.com/asdf/status/3412352456345")))
+  (should
+   (not (mastodon--fedi-url-p
+         "https://example.com")))
+  (should
+   (not (mastodon--fedi-url-p
+         "https://www.theguardian.com/profile/kitty-sayers"))))
