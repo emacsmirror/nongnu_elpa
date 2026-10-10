@@ -76,18 +76,29 @@ This option does not change the native Neomacs tool catalog."
 (defvar codex-ide-mcp--request-session nil
   "Terminal buffer authenticated for the current HTTP request.")
 
+(defun codex-ide-mcp--random-token ()
+  "Return a 64-character hex token from 32 bytes of system randomness.
+Read the device through a bounded subprocess: some Emacs builds ignore the
+END argument of `insert-file-contents' for character devices and never
+return.  Fall back to Emacs' entropy-seeded `random'."
+  (or (ignore-errors
+        (with-temp-buffer
+          (set-buffer-multibyte nil)
+          (let ((coding-system-for-read 'binary)
+                (default-directory "/"))
+            (when (and (eq 0 (call-process "head" nil t nil
+                                           "-c" "32" "/dev/urandom"))
+                       (= (buffer-size) 32))
+              (secure-hash 'sha256 (current-buffer))))))
+      (progn
+        (random t)
+        (secure-hash 'sha256
+                     (format "%s:%s:%s:%s:%s" (random) (random) (random)
+                             (current-time) (emacs-pid))))))
+
 (defun codex-ide-mcp--session-token (buffer)
   "Generate a private bearer token owned by BUFFER until it is killed."
-  (let ((token (condition-case nil
-                   (with-temp-buffer
-                     (set-buffer-multibyte nil)
-                     (insert-file-contents-literally "/dev/urandom" nil 0 32)
-                     (unless (= (buffer-size) 32) (error "Short random read"))
-                     (secure-hash 'sha256 (current-buffer)))
-                 (file-error
-                  (secure-hash 'sha256
-                               (format "%s:%s:%s" (random t) (current-time)
-                                       (emacs-pid)))))))
+  (let ((token (codex-ide-mcp--random-token)))
     (puthash token buffer codex-ide-mcp--tokens)
     (with-current-buffer buffer
       (add-hook 'kill-buffer-hook

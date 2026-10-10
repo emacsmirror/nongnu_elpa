@@ -2057,12 +2057,29 @@
                         "pending")))))))
 
 
+(ert-deftest codex-ide-mcp-random-token-avoids-device-file-reads ()
+  "Token generation is bounded and never reads a device via file APIs.
+Some Emacs builds ignore `insert-file-contents' END on character devices."
+  (cl-letf (((symbol-function 'insert-file-contents-literally)
+             (lambda (&rest _) (error "Unbounded device read")))
+            ((symbol-function 'insert-file-contents)
+             (lambda (&rest _) (error "Unbounded device read"))))
+    (let ((a (codex-ide-mcp--random-token))
+          (b (codex-ide-mcp--random-token)))
+      (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'" a))
+      (should-not (equal a b)))))
+
+(ert-deftest codex-ide-mcp-random-token-falls-back-without-subprocess ()
+  "A failing randomness subprocess still yields a distinct hex token."
+  (cl-letf (((symbol-function 'call-process)
+             (lambda (&rest _) (error "No head"))))
+    (let ((a (codex-ide-mcp--random-token))
+          (b (codex-ide-mcp--random-token)))
+      (should (string-match-p "\\`[0-9a-f]\\{64\\}\\'" a))
+      (should-not (equal a b)))))
+
 (ert-deftest codex-ide-mcp-security-session-token-lifecycle ()
   "Distinct owners receive private, revocable environment tokens."
-  ;; Native sessions never execute GNU token creation; test their environment
-  ;; separately without reading a random device through the native file API.
-  (skip-when (or (featurep 'neomacs)
-                 (string-match-p "neomacs" invocation-name)))
   (let ((codex-ide-mcp--tokens (make-hash-table :test 'equal))
         (codex-ide-mcp-enabled t))
     (cl-letf (((symbol-function 'featurep)
