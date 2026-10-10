@@ -235,8 +235,13 @@ END"
   PRIMARY KEY (hash, ver))")
   "DDL statements for the latest database schema.")
 
+(defconst jabber-db--archive-message-index-ddl
+  "CREATE INDEX IF NOT EXISTS idx_archive_message_id
+  ON message_archive(message_id)"
+  "Index for exact occurrence reparenting and foreign-owner checks.")
+
 (defconst jabber-db--archive-ddl
-  '("CREATE TABLE IF NOT EXISTS mam_progress (
+  `("CREATE TABLE IF NOT EXISTS mam_progress (
   account TEXT NOT NULL,
   archive TEXT NOT NULL,
   scope TEXT NOT NULL,
@@ -248,7 +253,8 @@ END"
   archive TEXT NOT NULL,
   uid TEXT NOT NULL,
   message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
-  PRIMARY KEY (account, archive, uid))")
+  PRIMARY KEY (account, archive, uid))"
+    ,jabber-db--archive-message-index-ddl)
   "Archive coverage and occurrence schema; empty scope means all peers.
 An absent start records an unbounded scan, not an inferred history date.")
 
@@ -321,7 +327,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 13
+(defconst jabber-db--schema-version 14
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -573,6 +579,169 @@ Never reinterpret historical server IDs or invent historical scan coverage."
       (sqlite-execute db ddl))
     (sqlite-execute db "PRAGMA user_version=13")))
 
+(defconst jabber-db--split-merge-columns
+  '("occupant_id" "delivered_at" "displayed_at" "retracted_by"
+    "retraction_reason" "reply_to_id" "reply_to_jid" "fallback_start"
+    "fallback_end" "thread_id" "thread_parent_id")
+  "Nullable metadata that may be combined only without conflicting values.")
+
+(defun jabber-db--split-reactions-compatible-p (db old live)
+  "Check shared reaction actors on OLD and LIVE in DB for exact agreement.
+An empty actor snapshot is meaningful; never union conflicting snapshots."
+  (let ((senders (sqlite-select db
+                 "SELECT sender FROM message_reaction_actor WHERE message_id = ?
+UNION SELECT sender FROM message_reaction WHERE message_id = ?"
+                 (list old old))))
+    (cl-every
+     (lambda (entry)
+       (let* ((sender (car entry))
+              (actors (mapcar
+                       (lambda (id)
+                         (sqlite-select db
+                          "SELECT updated_at FROM message_reaction_actor
+WHERE message_id = ? AND sender = ?" (list id sender)))
+                       (list old live)))
+              (reactions (mapcar
+                          (lambda (id)
+                            (sqlite-select db
+                             "SELECT reaction, updated_at FROM message_reaction
+WHERE message_id = ? AND sender = ? ORDER BY reaction" (list id sender)))
+                          (list old live))))
+         (or (and (null (cadr actors)) (null (cadr reactions)))
+             (and (equal (car actors) (cadr actors))
+                  (equal (car reactions) (cadr reactions))))))
+     senders)))
+
+(defun jabber-db--split-read-boundaries-compatible-p (db old live)
+  "Reject OLD/LIVE merges crossing an affected thread read boundary in DB.
+A scalar watermark cannot encode two copies on opposite sides as one row.
+Check thread membership and non-FK root/read references, even when the
+watermark points at another message.  Remapping OLD's own watermark can
+also change intervening replies, so reject that case conservatively.
+Implicit roots use NULL-sensitive stanza/server comparisons; leave those
+incoming thread pairs untouched rather than changing their unread state."
+  (not
+   (sqlite-select
+    db "SELECT 1 FROM message_thread AS mt
+JOIN message AS old ON old.id = ? JOIN message AS live ON live.id = ?
+WHERE mt.account = old.account AND mt.peer = old.peer AND mt.type = old.type
+AND (mt.thread_id = COALESCE(live.thread_id, old.thread_id)
+ OR mt.root_message_id IN (old.id, live.id)
+ OR mt.read_message_id IN (old.id, live.id))
+AND (mt.read_message_id = old.id
+ OR (mt.read_message_id >= MIN(old.id, live.id)
+     AND mt.read_message_id < MAX(old.id, live.id))
+ OR (old.direction = 'in' AND
+     ((mt.root_message_id = old.id AND live.thread_id = mt.thread_id
+       AND (mt.read_message_id IS NULL OR live.id > mt.read_message_id))
+      OR (mt.root_message_id = live.id AND old.thread_id = mt.thread_id
+          AND (mt.read_message_id IS NULL OR old.id > mt.read_message_id))
+      OR (mt.root_message_id IS NULL
+          AND (mt.root_server_id IS NOT NULL
+               OR mt.root_stanza_id IS NOT NULL))))) LIMIT 1"
+    (list old live))))
+
+(defun jabber-db--reconcile-room-split (db old live)
+  "Collapse compatible historical OLD into canonical LIVE in DB.
+Caller owns the transaction and proves an unambiguous same-account room
+archive UID equal to LIVE's room ID.  OLD has no stanza/server/origin/room
+IDs.  Equal content is a compatibility check, never discovery evidence.
+Bodies and encryption/edit/retraction states must agree exactly; no
+ciphertext is decrypted or failed placeholder installed.  Nullable
+metadata conflicts, foreign references and reaction conflicts fail closed.
+Read boundaries that cannot preserve all affected replies also fail closed.
+The archived timestamp is authoritative.  OOB rows retain every distinct
+ID, URL and description, including equal URLs with differing descriptions;
+only their message owner changes, with no attachment deduplication guesses.
+Reparent all SQL references before deleting OLD; ordinary triggers maintain
+FTS.  Return success."
+  (let* ((columns (append '("account" "peer" "type" "resource" "direction"
+                           "body" "encrypted" "edited" "retracted")
+                         jabber-db--split-merge-columns))
+         (sql (format "SELECT %s FROM message WHERE id = ?"
+                      (string-join columns ", ")))
+         (a (car (sqlite-select db sql (list old))))
+         (b (car (sqlite-select db sql (list live)))))
+    (when (and a b
+               (not (sqlite-select db
+                     "SELECT 1 FROM message WHERE id = ?
+AND server_id IS NOT NULL AND server_id != room_id" (list live)))
+               (not (sqlite-select db
+                     "SELECT 1 FROM message_archive WHERE message_id IN (?, ?)
+AND archive = ? AND uid != (SELECT room_id FROM message WHERE id = ?)"
+                     (list old live (cadr a) live)))
+               (equal (seq-take a 9) (seq-take b 9))
+               (cl-every (lambda (pair)
+                           (or (null (car pair)) (null (cdr pair))
+                               (equal (car pair) (cdr pair))))
+                         (cl-mapcar #'cons (nthcdr 9 a) (nthcdr 9 b)))
+               (not (sqlite-select db
+                     "SELECT 1 FROM message_archive WHERE message_id IN (?, ?)
+AND (account != ? OR archive != ?) LIMIT 1"
+                     (list old live (car a) (cadr a))))
+               (not (sqlite-select db
+                     "SELECT 1 FROM message_thread
+WHERE (root_message_id IN (?, ?) OR read_message_id IN (?, ?))
+AND (account != ? OR peer != ? OR type != 'groupchat') LIMIT 1"
+                     (list old live old live (car a) (cadr a))))
+               (jabber-db--split-read-boundaries-compatible-p db old live)
+               (jabber-db--split-reactions-compatible-p db old live))
+      (sqlite-execute
+       db (format "UPDATE message SET %s,
+timestamp = (SELECT timestamp FROM message WHERE id = ?) WHERE id = ?"
+                  (mapconcat
+                   (lambda (column)
+                     (format "%s = COALESCE(%s, (SELECT %s FROM message WHERE id = ?))"
+                             column column column))
+                   jabber-db--split-merge-columns ",\n"))
+       (append (make-list (length jabber-db--split-merge-columns) old)
+               (list old live)))
+      ;; Identical shared snapshots have already passed exact comparison.
+      (dolist (table '("message_reaction" "message_reaction_actor"))
+        (sqlite-execute db
+         (format "DELETE FROM %s WHERE message_id = ? AND sender IN
+(SELECT sender FROM message_reaction_actor WHERE message_id = ?
+ UNION SELECT sender FROM message_reaction WHERE message_id = ?)" table)
+         (list old live live)))
+      (dolist (table '("message_archive" "message_oob"
+                       "message_reaction" "message_reaction_actor"))
+        (sqlite-execute db
+                        (format "UPDATE %s SET message_id = ? WHERE message_id = ?" table)
+                        (list live old)))
+      (dolist (column '("root_message_id" "read_message_id"))
+        (sqlite-execute db
+                        (format "UPDATE message_thread SET %s = ? WHERE %s = ?"
+                                column column)
+                        (list live old)))
+      (sqlite-execute db "DELETE FROM message WHERE id = ?" (list old))
+      t)))
+
+(defun jabber-db--migrate-v13-to-v14 (db)
+  "Repair unambiguous historical room UID splits atomically in DB.
+Discover only exact archive UID/room ID joins, never timestamp/body scans.
+Count incompatible candidates too: collisions cannot select a winner.
+A row participating in more than one pair is left unchanged."
+  (jabber-db--with-savepoint db
+    (sqlite-execute db jabber-db--archive-message-index-ddl)
+    (let ((pairs (and (sqlite-select db "SELECT 1 FROM message_archive LIMIT 1")
+                      (sqlite-select db
+                  "SELECT DISTINCT old.id, live.id FROM message_archive AS ma
+JOIN message AS old ON old.id = ma.message_id
+JOIN message AS live ON live.account = ma.account AND live.room_id = ma.uid
+AND live.peer = ma.archive AND live.type = 'groupchat'
+WHERE old.account = ma.account AND old.peer = ma.archive
+AND old.type = 'groupchat' AND old.id != live.id
+AND old.stanza_id IS NULL AND old.server_id IS NULL
+AND old.origin_id IS NULL AND old.room_id IS NULL")))
+          (counts (make-hash-table :test #'eql)))
+      (dolist (pair pairs)
+        (dolist (id pair)
+          (puthash id (1+ (gethash id counts 0)) counts)))
+      (dolist (pair pairs)
+        (when (cl-every (lambda (id) (= 1 (gethash id counts))) pair)
+          (jabber-db--reconcile-room-split db (car pair) (cadr pair)))))
+    (sqlite-execute db "PRAGMA user_version=14")))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (jabber-db--with-savepoint db
@@ -620,6 +789,10 @@ Never reinterpret historical server IDs or invent historical scan coverage."
         (jabber-db--migrate-v12-to-v13 db)
         (setq version 13))
       (when (= version 13)
+        (jabber-db--repair-reaction-actors db)
+        (jabber-db--migrate-v13-to-v14 db)
+        (setq version 14))
+      (when (= version 14)
         (jabber-db--repair-reaction-actors db)))))
 
 (defun jabber-db-ensure-open ()
