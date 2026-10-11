@@ -168,6 +168,12 @@ Optional TARGET is an already displayed inert viewer, never a local path."
   (let ((print-escape-newlines t) (print-escape-control-characters t))
     (prin1-to-string text)))
 
+(defun hermes-files--header-text (text)
+  "Return TEXT for use as a literal `header-line-format' string.
+Mode-line strings are %-constructs, so a remote path such as
+\"My%20Report.pdf\" would otherwise render as padded garbage."
+  (string-replace "%" "%%" text))
+
 (defun hermes-files--entry (entry)
   "Return a tabulated row for server ENTRY, rejecting malformed identities."
   (let ((path (hermes-transport--get entry 'path))
@@ -353,9 +359,10 @@ Retain the original bytes independently for saving, even without image support."
       (goto-char (point-min)))
     (setq hermes-files--bytes bytes hermes-files--status "Ready"
           header-line-format
-          (format " %s | %s | %s | ? Help"
-                  (hermes-instance-name hermes-instance)
-                  (hermes-files--label path) label))))
+          (hermes-files--header-text
+           (format " %s | %s | %s | ? Help"
+                   (hermes-instance-name hermes-instance)
+                   (hermes-files--label path) label)))))
 
 (defun hermes-files-open ()
   "Descend into the selected directory or open an inert file preview."
@@ -375,7 +382,8 @@ Retain the original bytes independently for saving, even without image support."
           (hermes-buffer--claim 'hermes-file-view-mode)
           (setq-local hermes-instance instance)
           (setq header-line-format
-                (format " %s | ? Help" (hermes-files--label path))))
+                (hermes-files--header-text
+                 (format " %s | ? Help" (hermes-files--label path)))))
         ;; Display now, never from a network callback.  Subsequent typing or
         ;; window switches are not displaced by completion.
         (pop-to-buffer viewer)

@@ -146,10 +146,12 @@ is requested, and no refresh runs automatically."
       (hermes-browser--own-instance (nth 2 owner))
       (setq hermes-context--owner owner
             header-line-format
-            (format " %s · Runtime %s · Explicit refresh may invoke backend memory hooks "
-                    (propertize (hermes-instance-name (nth 2 owner))
-                                'face 'hermes-browser-profile)
-                    (propertize (nth 5 owner) 'face 'font-lock-constant-face))))
+            (string-replace
+             "%" "%%"
+             (format " %s · Runtime %s · Explicit refresh may invoke backend memory hooks "
+                     (propertize (hermes-instance-name (nth 2 owner))
+                                 'face 'hermes-browser-profile)
+                     (propertize (nth 5 owner) 'face 'font-lock-constant-face)))))
     (pop-to-buffer buffer)
     (with-current-buffer buffer (hermes-context-refresh))))
 

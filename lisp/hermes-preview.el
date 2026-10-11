@@ -161,9 +161,10 @@ Reject unknown tags and attributes, URI values, CSS and event handlers."
       (setq hermes-preview--image
             (and (eq (car-safe image) 'image) (copy-sequence image))))
     (setq header-line-format
-          (format " Preview | %s | %s | s Save bytes | ? Help"
-                  (hermes-files--label path)
-                  (if hermes-preview--source-p "Source" "Inert view")))))
+          (hermes-files--header-text
+           (format " Preview | %s | %s | s Save bytes | ? Help"
+                   (hermes-files--label path)
+                   (if hermes-preview--source-p "Source" "Inert view"))))))
 
 (defun hermes-preview-source ()
   "Toggle between inert presentation and retained literal source.

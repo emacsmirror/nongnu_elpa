@@ -424,6 +424,28 @@
   (base64-decode-string
    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"))
 
+(ert-deftest hermes-files-header-keeps-percent-signs-literal ()
+  "A remote path containing % stays literal in the viewer header line."
+  (hermes-files-test--with-api
+    (hermes-files)
+    (push (current-buffer) buffers)
+    (hermes--promise-resolve
+     (nth 3 (car calls))
+     (list :path "/remote" :parent nil
+           :entries (list (list :name "My%20Report.txt"
+                                :path "/remote/My%20Report.txt"
+                                :is_directory :false :size 3))))
+    (goto-char (point-min))
+    (hermes-files-open)
+    (push (current-buffer) buffers)
+    (should (string-search "My%%20Report.txt" header-line-format))
+    (hermes--promise-resolve
+     (nth 3 (car calls))
+     '(:path "/remote/My%20Report.txt" :size 3
+             :data_url "data:application/octet-stream;base64,aGkK"))
+    (should (string-search "My%%20Report.txt" header-line-format))
+    (should-not (string-match-p "[^%]%2" header-line-format))))
+
 (ert-deftest hermes-files-preview-unicode-and-save-original ()
   (hermes-files-test--with-api
     (hermes-files)

@@ -232,8 +232,10 @@ The catalogue is point-in-time evidence, not an atomic profile lock."
         (setq hermes-foreign--profile profile hermes-foreign--row row
               hermes-foreign--endpoint endpoint
               header-line-format
-              (format "Host %s · Source %s · Destination %s"
-                      host (hermes-transport--get row 'source) profile)))
+              (string-replace
+               "%" "%%"
+               (format "Host %s · Source %s · Destination %s"
+                       host (hermes-transport--get row 'source) profile))))
       (pop-to-buffer buffer)
       (with-current-buffer buffer (hermes-foreign-preview-refresh)))))
 
