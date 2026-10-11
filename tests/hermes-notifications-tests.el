@@ -188,6 +188,25 @@ buffer, still leave the chat unattended."
        (hermes-notifications-notify 'chat-error "Hermes error" "Failed"))
       (should (equal text "Hermes error: Failed")))))
 
+(ert-deftest hermes-notifications-fallback-does-not-repeat-title-text ()
+  "The echo fallback shows a body already ending the title only once."
+  (let (texts)
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &rest _)
+                 (not (eq feature 'notifications))))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) texts))))
+      ;; Reply notifications put the preview in both the title and the body.
+      (hermes-notifications-notify 'chat-reply "chat: Done" "Done")
+      (hermes-notifications-notify 'chat-reply "Same" "Same")
+      (hermes-notifications-notify 'chat-reply "Title" "")
+      ;; A body that only shares a word with the title is still shown.
+      (hermes-notifications-notify 'chat-error "Hermes chat error" "error")
+      (should (equal (nreverse texts)
+                     '("chat: Done" "Same" "Title"
+                       "Hermes chat error: error"))))))
+
 (ert-deftest hermes-notifications-native-unavailable-bus-falls-back ()
   "A real native notification with an unavailable bus reaches the echo fallback."
   ;; A fresh process preserves the optional-load assertion and cannot inherit
@@ -214,6 +233,9 @@ buffer, still leave the chat unattended."
                                   (hermes-notifications-notify
                                    'chat-error "Native fallback" "Literal body"))))))))
             (should (string-match-p "Native fallback: Literal body" (buffer-string)))
+            ;; The fallback reports the event; the demoted D-Bus failure from
+            ;; notifications.el would only add a log line per notification.
+            (should-not (string-match-p "Notification error" (buffer-string)))
             (should (string-match-p "RESULT=nil" (buffer-string)))))
       (delete-directory directory t))))
 

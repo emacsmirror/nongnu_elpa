@@ -86,8 +86,14 @@ minibuffer is active, the window it was entered from counts as selected."
                    :key #'cadr :test #'eq)))
 
 (defun hermes-notifications--fallback (title body)
-  "Show notification TITLE and BODY in the echo area and return nil."
-  (message "%s: %s" title body)
+  "Show notification TITLE and BODY in the echo area and return nil.
+Omit BODY when it is empty or TITLE already ends with it, as reply
+notifications do, so the echo area does not repeat the text."
+  (if (or (string-empty-p (or body ""))
+          (string= body title)
+          (string-suffix-p (concat ": " body) title))
+      (message "%s" title)
+    (message "%s: %s" title body))
   nil)
 
 (cl-defun hermes-notifications-notify
@@ -121,7 +127,14 @@ policy for compatibility callers."
               (and (require 'notifications nil t)
                    (fboundp 'notifications-notify)
                    (condition-case nil
-                       (apply #'notifications-notify arguments)
+                       ;; Without a usable D-Bus (no session bus, or an Emacs
+                       ;; built without D-Bus) notifications.el logs a
+                       ;; "Notification error" message and returns nil.  The
+                       ;; echo-area fallback below reports the event, so keep
+                       ;; that per-notification noise out of *Messages*.
+                       (let ((inhibit-message t)
+                             (message-log-max nil))
+                         (apply #'notifications-notify arguments))
                      (error nil)))))
       (or id (hermes-notifications--fallback title body)))))
 
