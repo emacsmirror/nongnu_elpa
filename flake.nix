@@ -36,7 +36,7 @@
             config.permittedInsecurePackages = [ "emacs-nox-29.4" ];
           };
           lib = pkgs.lib;
-          version = "0.2.0";
+          version = "0.2.1";
 
           emacs = pkgs.emacs30-nox or pkgs.emacs;
           emacsPackages = pkgs.emacsPackagesFor emacs;
@@ -87,7 +87,6 @@
             packageRequires = [
               compat
               keymapPopup
-              # This GNU Emacs bundle includes its default optional backend.
               eat
             ];
             turnCompilationWarningToError = true;

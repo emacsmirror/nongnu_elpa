@@ -1,5 +1,12 @@
 #+title: emacs-codex-ide NEWS
 
+* Version 0.2.1 (2026-10-11)
+
+- Require Eat again.  It is the GNU Emacs default backend, so a fresh
+  install no longer fails on the first =codex-ide= until Eat is added by
+  hand.  Eat is still loaded only when an Eat session starts, so Neomacs
+  sessions on =neo-term= never load it.
+
 * Version 0.2.0 (2026-10-11)
 
 - Incompatible changes:

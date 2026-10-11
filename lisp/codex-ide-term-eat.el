@@ -139,7 +139,7 @@ terminal input modes, also sync points a redraw set adrift."
 
 (defun codex-ide-term-eat--available-p ()
   "Return non-nil when Eat can be loaded.
-Missing Eat is optional; preserve errors loading an installed library."
+Report a missing Eat actionably; preserve errors loading an installed library."
   (require 'eat nil t))
 
 (defun codex-ide-term-eat--configure-buffer ()

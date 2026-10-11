@@ -114,7 +114,7 @@ return.  Fall back to Emacs' entropy-seeded `random'."
 
 ;;; Constants
 
-(defconst codex-ide-mcp--package-version "0.2.0"
+(defconst codex-ide-mcp--package-version "0.2.1"
   "Package version advertised by the local MCP server.
 Keep in sync with the Version header of codex-ide.el; a test enforces it.")
 

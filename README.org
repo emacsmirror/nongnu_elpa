@@ -212,9 +212,9 @@ Install vterm separately, then select it for new sessions:
 (setq codex-ide-terminal-backend 'vterm)
 #+end_src
 
-Eat remains the GNU Emacs default but is now an optional package dependency.
-Install Eat 0.9.4 or newer separately when using that backend; the Nix GNU
-Emacs bundle still includes it.  Changing the option does not alter already
+Eat is the GNU Emacs default and a package dependency, so installing
+codex-ide also installs Eat 0.9.4 or newer from NonGNU ELPA.  It is loaded
+only when an Eat session starts.  Changing the option does not alter already
 running sessions.
 
 ** Native Neomacs support
