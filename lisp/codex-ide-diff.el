@@ -125,7 +125,15 @@ running mode or file hooks, or evaluating file-local variables."
                   (enable-local-eval nil)
                   (change-major-mode-hook nil))
               (delay-mode-hooks (set-auto-mode)))
-            (setq delayed-mode-hooks nil))
+            ;; Finish core mode setup without user hooks or local variables.
+            (let ((enable-local-variables nil)
+                  (enable-local-eval nil))
+              (cl-progv (append delayed-mode-hooks
+                                '(change-major-mode-after-body-hook
+                                  after-change-major-mode-hook font-lock-mode-hook))
+                  nil
+                (run-mode-hooks)
+                (font-lock-mode 1))))
           (set-buffer-modified-p nil)
           (setq buffer-read-only t)
           buf)

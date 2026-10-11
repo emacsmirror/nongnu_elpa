@@ -30,7 +30,7 @@ SRCS = lisp/codex-ide-debug.el lisp/codex-ide-term-eat.el \
        lisp/codex-ide-mcp-server.el lisp/codex-ide-mcp-neo.el lisp/codex-ide-mcp.el lisp/codex-ide.el \
        lisp/codex-ide-sessions.el lisp/codex-ide-menu.el
 
-TESTS = tests/codex-ide-term-tests.el tests/codex-ide-tests.el \
+TESTS = tests/codex-ide-autoload-tests.el tests/codex-ide-term-tests.el tests/codex-ide-tests.el \
         tests/codex-ide-sessions-tests.el tests/codex-ide-context-tests.el \
         tests/codex-ide-mcp-tests.el tests/codex-ide-diff-tests.el \
         tests/codex-ide-neomacs-tests.el tests/codex-ide-config-merge-tests.el

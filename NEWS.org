@@ -4,7 +4,8 @@
 
 - Resume saved conversations in new live sessions, preserving existing sessions.
   Keep the picker newest first, annotate IDs with date and directory, cache
-  rollout metadata, and resume global fallback choices in their recorded cwd.
+  rollout metadata, and resume global fallback choices in their recorded cwd
+  while routing project commands through the normalized ownership root.
 - Keep failed terminal output with an exit notice. Customize
   =codex-ide-kill-buffer-on-exit= to retain all buffers or close all exits.
 - Confirm interactive session stops and continue after optional context startup
@@ -24,14 +25,16 @@
   Organize the menu by goal in two columns, add Context actions, use =l=/=L=
   for project/all session completion, and dim unavailable actions.
 - Show current backend, approval, and sandbox overrides in configuration.
-  Save only nondefault options, remove saved overrides restored to defaults,
+  Retain explicit terminal backend choices across restarts. Save other
+  nondefault options, remove saved overrides restored to defaults,
   and allow a bare CLI executable name.
 - Authenticate GNU HTTP MCP with per-session environment bearer tokens and
   infer review owners from authenticated sessions. Refuse persistent GNU
-  HTTP installation; native Neomacs stdio registration is unchanged.
+  HTTP installation; native Neomacs stdio registration is unchanged. Revoke
+  session tokens at process exit even when terminal output is retained.
 - Add =codex-ide-mcp-disabled-tools= and allow =C-g= to interrupt tool calls.
-- Bound job output in hidden buffers and cache native MCP preflight results
-  by executable, directory, overrides, and configuration modification times.
+- Bound job output in hidden buffers. Read effective native MCP configuration
+  once on each start so inherited configuration changes are respected.
 - Accelerate MCP JSON with native functions where available. Review results
   now carry their complete data in =structuredContent= and a short text status,
   avoiding a second encoding of large accepted edits.
@@ -40,7 +43,8 @@
 - Queue MCP diff proposals until =codex-ide-diff-show= is invoked, with a
   pending mode-line indicator and notification that never changes windows.
 - Show project-relative review targets and current accept, reject, and help
-  keys.  Select proposal major modes without file or mode hooks.
+  keys. Select proposal major modes with core syntax and fontification setup,
+  without user mode hooks or file-local settings.
   =codex-ide-diff-preview= is now a programmatic-only compatibility API.
 - Bound open-tab and selection collection work, track same-window source
   changes, and use native context JSON when available without wire changes.

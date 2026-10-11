@@ -212,5 +212,28 @@
       (should (equal (alist-get 'bearer_token_env_var (alist-get 'transport entry))
                      "CODEX_IDE_MCP_TOKEN")))))
 
+(ert-deftest codex-ide-config-merge-reloads-ancestor-layer ()
+  "Starts in a nested trusted project see new ancestor config layers."
+  (codex-ide-config-merge-tests--with-config
+      (format "project_root_markers = [\"WORKSPACE\"]\n[projects.%s]\ntrust_level = \"trusted\"\n"
+              (json-serialize (expand-file-name "project" root)))
+    (let* ((project (expand-file-name "project" root))
+           (default-directory (file-name-as-directory
+                               (expand-file-name "sub/nested" project)))
+           (ancestor (expand-file-name ".codex/config.toml" project)))
+      (make-directory default-directory t)
+      (with-temp-file (expand-file-name "WORKSPACE" project))
+      (make-directory (file-name-directory ancestor))
+      (should-not (assoc "mcp_servers.emacs_tools.enabled"
+                         (codex-ide-mcp-neo--config-overrides "/fixture/socket")))
+      (with-temp-file ancestor
+        (insert "[mcp_servers.emacs_tools]\ncommand = \"/fixture/gnu\"\n"))
+      (should (assoc "mcp_servers.emacs_tools.enabled"
+                     (codex-ide-mcp-neo--config-overrides "/fixture/socket")))
+      (with-temp-file ancestor
+        (insert "[mcp_servers.neomacs]\nurl = \"http://127.0.0.1:43210/mcp\"\n"))
+      (should-error (codex-ide-mcp-neo--config-overrides "/fixture/socket")
+                    :type 'user-error))))
+
 (provide 'codex-ide-config-merge-tests)
 ;;; codex-ide-config-merge-tests.el ends here

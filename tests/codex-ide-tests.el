@@ -2399,7 +2399,7 @@ region, where the scrollback-browsing rule alone would strand it."
       (delete-directory directory t))))
 
 (ert-deftest codex-ide-menu-save-default-preserves-explicit-backend ()
-  "Omitting a saved default does not change the current terminal choice."
+  "Saving an explicit default preserves the current terminal choice."
   (let ((codex-ide-menu--saved-config-symbols '(codex-ide-terminal-backend))
         (codex-ide-terminal-backend 'eat)
         (features (cons 'neomacs features))
@@ -2413,7 +2413,7 @@ region, where the scrollback-browsing rule alone would strand it."
           (cl-letf (((symbol-function 'custom-file) (lambda (&optional _) nil)))
             (codex-ide-menu--save-config))
           (should (eq (codex-ide-term--selected-backend) 'eat))
-          (should-not (get 'codex-ide-terminal-backend 'saved-value)))
+          (should (get 'codex-ide-terminal-backend 'saved-value)))
       (setplist 'codex-ide-terminal-backend properties)
       (setplist 'user user-properties))))
 
@@ -3763,6 +3763,124 @@ region, where the scrollback-browsing rule alone would strand it."
          (when (process-live-p process) (delete-process process))
          (when (buffer-live-p created) (kill-buffer created))
          (kill-buffer retained))))))
+
+(ert-deftest codex-ide-resume-normalizes-owner-and-routes-siblings ()
+  "Saved cwd determines launch location, while the project owns all routing."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (dolist (fixture '((nil nil) (nil t) (t nil) (t t)))
+       (let* ((nested (car fixture))
+              (sibling (cadr fixture))
+              (cwd (if nested (expand-file-name "sub" root)
+                     (directory-file-name root)))
+              (codex-ide--recovery-pending nil)
+              (codex-ide-mcp-enabled nil)
+              (codex-ide-display-buffer-function #'pop-to-buffer-same-window)
+              launched resumed sent cycled)
+         (make-directory cwd t)
+         (codex-ide-test--call-with-sessions
+          (when sibling `((,root 1)))
+          (lambda (sessions)
+            (unwind-protect
+                (save-window-excursion
+                  (cl-letf (((symbol-function 'codex-ide--read-saved-session-id)
+                             (lambda (&rest _) (list :cwd cwd :id "saved")))
+                            ((symbol-function 'codex-ide--ensure-cli) (lambda () t))
+                            ((symbol-function 'codex-ide--maybe-ensure-context-server) #'ignore)
+                            ((symbol-function 'codex-ide-term--prepare-buffer)
+                             (lambda (name directory)
+                               (setq launched directory)
+                               (let ((buffer (generate-new-buffer name)))
+                                 (with-current-buffer buffer
+                                   (setq default-directory directory)
+                                   (setq major-mode 'eat-mode)
+                                   (setq-local codex-ide-term--backend 'eat))
+                                 buffer)))
+                            ((symbol-function 'codex-ide-term--make-process)
+                             (lambda (buffer &rest _)
+                               (codex-ide-test--make-buffer-process buffer "resumed")))
+                            ((symbol-function 'codex-ide-term--configure-buffer) #'ignore)
+                            ((symbol-function 'codex-ide-term--paste-draft)
+                             (lambda (process _text) (setq sent process)))
+                            ((symbol-function 'codex-ide--submit-input) #'ignore)
+                            ((symbol-function 'codex-ide--cycle-project-session)
+                             (lambda (owner candidates active)
+                               (setq cycled (list owner (length candidates) active)))))
+                    (codex-ide-resume)
+                    (setq resumed (codex-ide--buffer-session))
+                    (should resumed)
+                    (should (equal launched (file-name-as-directory cwd)))
+                    (should (equal (plist-get resumed :root) root))
+                    (should (= (if sibling 2 1) (length (codex-ide--project-sessions root))))
+                    ;; A sibling becoming active must not steal terminal commands.
+                    (when sibling (codex-ide--activate-session (car sessions)))
+                    (codex-ide-send-prompt "hello")
+                    (should (eq sent (plist-get resumed :process)))
+                    (codex-ide-cycle-session)
+                    (should (equal (car cycled) root))
+                    (should (= (cadr cycled) (if sibling 2 1)))
+                    (codex-ide-switch-to-buffer)
+                    (should (eq (current-buffer) (plist-get resumed :buffer)))
+                    (codex-ide-stop)
+                    (should-not (buffer-live-p (plist-get resumed :buffer)))
+                    (when sibling (should (codex-ide--session-live-p (car sessions))))))
+              (when resumed (codex-ide-test--kill-session resumed))))))))))
+
+(ert-deftest codex-ide-exit-revokes-retained-buffer-token ()
+  "Retired session tokens are revoked while sibling credentials stay valid."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (codex-ide-test--call-with-sessions
+      `((,root 1) (,root 2))
+      (lambda (sessions)
+        (let* ((session (car sessions))
+               (buffer (plist-get session :buffer))
+               (process (plist-get session :process))
+               (codex-ide-kill-buffer-on-exit nil)
+               (codex-ide-mcp--tokens (make-hash-table :test 'equal))
+               (token (codex-ide-mcp--session-token buffer))
+               (other (codex-ide-mcp--session-token (plist-get (cadr sessions) :buffer))))
+          (cl-letf (((symbol-function 'codex-ide-term--configure-buffer) #'ignore))
+            (codex-ide--setup-session session))
+          (delete-process process)
+          (should (codex-ide-test--wait-for
+                   (lambda () (not (codex-ide--session-by-id root 1)))))
+          (should (buffer-live-p buffer))
+          (should-not (gethash token codex-ide-mcp--tokens))
+          (should (gethash other codex-ide-mcp--tokens))))))))
+
+(ert-deftest codex-ide-menu-explicit-eat-survives-restart ()
+  "Saving an explicit default backend retains its effective native meaning."
+  (let* ((directory (make-temp-file "codex-backend-custom-" t))
+         (custom-file (expand-file-name "custom.el" directory))
+         (user-init-file (expand-file-name "init.el" directory))
+         (codex-ide-menu--saved-config-symbols '(codex-ide-terminal-backend))
+         (codex-ide-terminal-backend 'eat)
+         (symbols '(codex-ide-terminal-backend user))
+         (properties (mapcar (lambda (symbol) (copy-tree (symbol-plist symbol))) symbols))
+         (package-directory (file-name-directory (locate-library "codex-ide-term"))))
+    (unwind-protect
+        (progn
+          (customize-save-variable 'codex-ide-terminal-backend 'eat)
+          (customize-set-variable 'codex-ide-terminal-backend 'eat)
+          (codex-ide-menu--save-config)
+          (with-temp-buffer
+            (should
+             (= 0 (prog1 (call-process
+                   (expand-file-name invocation-name invocation-directory) nil t nil
+                   "-Q" "--batch" "-L" package-directory
+                   "--eval" (prin1-to-string
+                               `(progn
+                                  (setq load-path ',load-path)
+                                  (require 'codex-ide-term)
+                                  (provide 'neomacs)
+                                  (load ,custom-file nil t)
+                                  (unless (eq (codex-ide-term--selected-backend) 'eat)
+                                    (error "Explicit Eat choice was lost")))))
+                    (message "Restart probe: %s" (buffer-string)))))))
+      (cl-mapc #'setplist symbols properties)
+      (when-let* ((buffer (get-file-buffer custom-file))) (kill-buffer buffer))
+      (delete-directory directory t))))
 
 (provide 'codex-ide-tests)
 

@@ -94,14 +94,16 @@ Consider only `codex-ide-menu--saved-config-symbols'."
   (require 'cus-edit)
   (let (reset)
     (dolist (symbol codex-ide-menu--saved-config-symbols)
-      (if (equal (symbol-value symbol)
-                 (eval (car (get symbol 'standard-value)) t))
+      (if (and (equal (symbol-value symbol)
+                      (eval (car (get symbol 'standard-value)) t))
+               ;; Explicit Eat differs from the automatic native default.
+               (not (and (eq symbol 'codex-ide-terminal-backend)
+                         (or (get symbol 'customized-value)
+                             (get symbol 'saved-value)))))
           (when (or (get symbol 'saved-value)
                     (get symbol 'saved-variable-comment))
             (put symbol 'saved-value nil)
             (put symbol 'saved-variable-comment nil)
-            ;; Retain explicit runtime choices, such as Eat on Neomacs,
-            ;; while omitting the default value from future startup files.
             (customize-set-variable symbol (symbol-value symbol))
             (setq reset t))
         (customize-save-variable symbol (symbol-value symbol))))

@@ -523,7 +523,7 @@
 (ert-deftest codex-ide-diff-renders-literal-header-and-pending-indicator ()
   "Render actual mode lines, preserving percent characters and semantic faces."
   ;; GNU Emacs returns an empty string from `format-mode-line' in batch mode.
-  (skip-when noninteractive)
+  (when noninteractive (ert-skip "Mode-line rendering requires an interactive display"))
   (save-window-excursion
     (dolist (existing '(nil (" existing")))
       (codex-ide-diff-test--with-queued-review
@@ -556,6 +556,27 @@
         (codex-ide-diff--request-result (plist-get codex-ide-diff--queued-review :id) t)
         (should (equal (format-mode-line 'global-mode-string)
                        (if existing " existing" "")))))))
+
+(ert-deftest codex-ide-diff-proposal-initializes-core-mode ()
+  "Proposal buffers retain fontification and syntax setup without user hooks."
+  (let ((noninteractive nil)
+        (emacs-lisp-mode-hook (list (lambda () (error "User mode hook ran"))))
+        (after-change-major-mode-hook (list (lambda () (error "User after hook ran"))))
+        (change-major-mode-after-body-hook (list (lambda () (error "User body hook ran")))))
+    (let ((buffer (codex-ide-diff--make-temp-buffer
+                   "*proposal-core-test*" "(defun example () ##)" "/tmp/example.el")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should font-lock-mode)
+            (should syntax-propertize-function)
+            (should parse-sexp-lookup-properties)
+            (font-lock-ensure)
+            (goto-char (point-min))
+            (search-forward "defun")
+            (should (get-text-property (1- (point)) 'face))
+            (search-forward "##")
+            (should (get-text-property (- (point) 2) 'syntax-table)))
+        (kill-buffer buffer)))))
 
 (provide 'codex-ide-diff-tests)
 ;;; codex-ide-diff-tests.el ends here

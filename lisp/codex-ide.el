@@ -227,13 +227,16 @@ on a clean exit with status zero.  Retained buffers show an exit notice."
 ;;; Helpers (pure / mostly pure)
 
 (defun codex-ide--get-working-directory ()
-  "Return the working directory for a Codex session.
-Prefers the current project root; falls back to `default-directory'."
-  (expand-file-name
-   (or codex-ide--working-directory
-       (if-let* ((project (project-current)))
-           (project-root project)
-         default-directory))))
+  "Return the ownership root for a Codex session.
+Resolve the project at the resumed cwd, or at `default-directory'."
+  (let ((default-directory (file-name-as-directory
+                            (expand-file-name
+                             (or codex-ide--working-directory default-directory)))))
+    (file-name-as-directory
+     (expand-file-name
+      (if-let* ((project (project-current)))
+          (project-root project)
+        default-directory)))))
 
 (defun codex-ide--default-buffer-name (directory)
   "Return the buffer name for DIRECTORY, as `*codex[<basename>]*'."
@@ -522,7 +525,7 @@ Signal a user error when the metadata line exceeds one MiB."
       (codex-ide--json-field parsed "payload"))))
 
 (defun codex-ide--rollout-session-meta (file)
-  "Return FILE's metadata, cached until modification time or size changes."
+  "Return cached FILE metadata keyed by modification time and size."
   (when-let* ((attrs (file-attributes file)))
     (let* ((stamp (list (file-attribute-modification-time attrs)
                         (file-attribute-size attrs)))
@@ -664,7 +667,7 @@ session-local overrides needed by enabled integration helpers."
         codex-ide--cli-cache nil))
 
 (defun codex-ide--ensure-cli ()
-  "Return cached availability, probing when the executable path changes."
+  "Return cached availability, probing for an updated executable path."
   (unless (equal (plist-get codex-ide--cli-cache :path)
                  (or (executable-find codex-ide-cli-path) codex-ide-cli-path))
     (codex-ide--detect-cli))
@@ -1045,7 +1048,9 @@ Guard reentry for this target while allowing other sessions to clean up."
                                (codex-ide-term--process buffer)))))
         (when (and (or (not expected-buffer) (eq buffer expected-buffer))
                    (or (not expected-process) (eq process expected-process)))
-          (when buffer (codex-ide-diff--cancel-requests buffer process))
+          (when buffer
+            (codex-ide-mcp--revoke-session-tokens buffer)
+            (codex-ide-diff--cancel-requests buffer process))
           (codex-ide--remove-session directory session-id)
           (codex-ide-term--stop-process process buffer)
           (when (and (not preserve-buffer) (buffer-live-p buffer))
@@ -1165,19 +1170,21 @@ EMACS-SESSION-ID identifies the live Emacs-managed session.  RESUME-LAST
 and CODEX-SESSION-ID are forwarded to `codex-ide--build-command'.
 Returns a session record."
   (let* ((working-dir (codex-ide--get-working-directory))
+         (launch-dir (file-name-as-directory
+                      (expand-file-name (or codex-ide--working-directory working-dir))))
          (buffer-name (generate-new-buffer-name
                        (codex-ide--get-buffer-name working-dir emacs-session-id)))
          (codex-ide-config-overrides
-          (let ((default-directory working-dir))
+          (let ((default-directory launch-dir))
             (codex-ide--session-config-overrides)))
          (cmd (codex-ide--build-command resume-last codex-session-id))
          (program (car cmd))
          (args (cdr cmd))
-         (buffer (codex-ide-term--prepare-buffer buffer-name working-dir))
+         (buffer (codex-ide-term--prepare-buffer buffer-name launch-dir))
          (env (codex-ide--make-env buffer)))
     (codex-ide-debug "Starting Codex: %s %s"
                      program (string-join args " "))
-    (codex-ide-debug "Working directory: %s" working-dir)
+    (codex-ide-debug "Working directory: %s" launch-dir)
     (condition-case err
         (progn
           (unless (codex-ide--display-buffer buffer)

@@ -70,28 +70,6 @@ Refuse missing native support rather than silently using GNU MCP."
   (or (executable-find codex-ide-neomacs-mcp-command)
       (user-error "Native MCP relay not found: %s" codex-ide-neomacs-mcp-command)))
 
-(defvar codex-ide-mcp-neo--config-cache nil
-  "Last native config inspection key and server entries.")
-
-(defun codex-ide-mcp-neo--config-key (overrides)
-  "Return the identities affecting native config inspection with OVERRIDES."
-  (let ((home (or (getenv "CODEX_HOME") (expand-file-name "~/.codex"))))
-    (list codex-ide-cli-path (executable-find codex-ide-cli-path)
-          overrides default-directory home
-          (mapcar (lambda (path)
-                    (list path (file-attribute-modification-time
-                                (file-attributes path))))
-                  (list (expand-file-name "config.toml" home)
-                        (expand-file-name ".codex/config.toml" default-directory))))))
-
-(defun codex-ide-mcp-neo--configured-servers (overrides)
-  "Read effective MCP entries, caching by config files and OVERRIDES."
-  (let ((key (codex-ide-mcp-neo--config-key overrides)))
-    (unless (equal key (car codex-ide-mcp-neo--config-cache))
-      (setq codex-ide-mcp-neo--config-cache
-            (cons (copy-tree key) (codex-ide-mcp-neo--read-servers overrides))))
-    (copy-tree (cdr codex-ide-mcp-neo--config-cache))))
-
 (defun codex-ide-mcp-neo--read-servers (overrides)
   "Read effective Codex MCP entries with user OVERRIDES, without config writes.
 Ask the CLI to merge its own config layers rather than parsing TOML here."
@@ -126,7 +104,7 @@ that the local config inspection cannot account for."
          codex-ide-cli-extra-args)
     (user-error "Native MCP cannot inspect profile/config/cwd or remote options in codex-ide-cli-extra-args; move session settings to codex-ide-config-overrides and select the project directory in Emacs, or set codex-ide-mcp-enabled to nil"))
   (let* ((command (codex-ide-mcp-neo--command))
-         (servers (codex-ide-mcp-neo--configured-servers overrides))
+         (servers (codex-ide-mcp-neo--read-servers overrides))
          (native (seq-find (lambda (entry)
                              (equal (alist-get 'name entry) "neomacs")) servers)))
     (when (equal (alist-get 'type (alist-get 'transport native)) "streamable_http")

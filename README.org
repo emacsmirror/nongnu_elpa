@@ -41,10 +41,10 @@ Use =l= for project session completion, =L= for all-session completion, and
 =k= kills a session and =K= stops MCP in its submenu.  Unavailable actions
 are dimmed.  Configuration shows current backend, approval, and sandbox
 overrides for new sessions; =CLI default= means the CLI chooses that value.
-Save configuration persists only options that differ from their defaults,
+Save configuration persists options that differ from their defaults,
 and removes saved overrides for options restored to their defaults.
-Explicit choices equal to defaults stay active in the current Emacs session
-but are not written to Custom.
+Explicit terminal backend choices are also saved, including Eat, so they
+retain their meaning after restarting Neomacs.
 
 ** Saved sessions
 + =codex-ide-resume-session-scan-limit= limits matching unique sessions
@@ -56,6 +56,9 @@ but are not written to Custom.
   selecting one starts it in its recorded working directory.
 + Metadata lines larger than one MiB produce an explicit error.
 
+Saved sessions launch in their recorded directory and belong to that directory's
+project root, so project commands include resumed sessions from subdirectories.
+
 ** Session display and exit
 + =codex-ide-display-buffer-function= and =display-buffer-alist= control placement.
   Switching selects the session; source attachment displays it without selecting.
@@ -63,6 +66,7 @@ but are not written to Custom.
   window layout where possible.
 + =codex-ide-kill-buffer-on-exit= defaults to =success=: clean exits with status 0
   close the terminal buffer. Failed exits retain readable output and an exit notice.
+  Exiting sessions revoke their MCP credentials even when output is retained.
   Set it to =nil= to retain every exit, or =t= to close on every exit.
 + Interactive =codex-ide-stop= asks for confirmation. Calls from Lisp do not.
 + The mode line shows the live session label or number and terminal backend.
@@ -92,7 +96,7 @@ but are not written to Custom.
   registers a transient local MCP URL via Codex =-c= overrides. GNU sessions
   authenticate with a private per-session bearer token passed only through
   =CODEX_IDE_MCP_TOKEN= in the terminal environment. Requests without the exact
-  token are refused; killing the terminal buffer revokes it.
+  token are refused; session exit or killing the terminal buffer revokes it.
 + The bridge can evaluate Elisp, edit buffers, and run shell commands. It
   exposes those control tools by default and only accepts loopback bind
   addresses. Set =codex-ide-mcp-disabled-tools= to a list of tool names to
@@ -139,8 +143,8 @@ accept, or =q= to reject.  The callback receives =(accepted final-text)=,
 Review never changes the target file or its visiting buffer.  The caller
 owns applying accepted text.  =codex-ide-diff-preview= remains a synchronous
 programmatic boolean preview with both buffers read-only.  Proposal buffers
-use the target file's major mode without running file or mode hooks.  A
-header shows the project-relative target and current accept, reject, and
+use the target file's major mode with core syntax and fontification setup,
+without user mode hooks or file-local settings. A header shows the project-relative target and current accept, reject, and
 help keys.
 
 Codex can call =emacs_review_start= with =buffer= (the live terminal name),

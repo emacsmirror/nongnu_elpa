@@ -97,13 +97,20 @@ return.  Fall back to Emacs' entropy-seeded `random'."
                              (current-time) (emacs-pid))))))
 
 (defun codex-ide-mcp--session-token (buffer)
-  "Generate a private bearer token owned by BUFFER until it is killed."
+  "Generate a private bearer token owned by BUFFER until session exit."
   (let ((token (codex-ide-mcp--random-token)))
     (puthash token buffer codex-ide-mcp--tokens)
     (with-current-buffer buffer
       (add-hook 'kill-buffer-hook
                 (lambda () (remhash token codex-ide-mcp--tokens)) nil t))
     token))
+
+(defun codex-ide-mcp--revoke-session-tokens (buffer)
+  "Revoke every bearer token owned by BUFFER."
+  (maphash (lambda (token owner)
+             (when (eq owner buffer)
+               (remhash token codex-ide-mcp--tokens)))
+           codex-ide-mcp--tokens))
 
 ;;; Constants
 
