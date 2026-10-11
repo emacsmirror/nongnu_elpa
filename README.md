@@ -83,40 +83,17 @@ Callout types are case-insensitive.  Label colors use the current theme:
 | CAUTION | `error` |
 | Other | `markdown-ts-appear-block-quote-marker` |
 
-Configure ordinary colors and fonts through `markdown-ts-mode` faces, such as
-`markdown-ts-code-block`, `markdown-ts-block-quote`, and `markdown-ts-table`.
-Wrapped table stripe colors use the `markdown-ts-appear-table-zebra` face.
-By default it inherits `lazy-highlight`, so its background follows the active
-theme.  Customize the face directly with `M-x customize-face`, or set a fixed
-background in your Emacs configuration:
+Colors and fonts follow `markdown-ts-mode` faces.  Use
+`markdown-ts-table-auto-align` for source-table alignment and
+`markdown-ts-inline-images` for inline images.
 
-```emacs-lisp
-(set-face-attribute 'markdown-ts-appear-table-zebra nil
-                    :background "#303846")
-```
+Wrapped tables fit each window without changing the source.  Moving point into
+a row reveals it for editing; with source tracking paused, rows stay rendered.
+Visual-line motions keep the display column; logical motions keep the source column.
 
-An explicit background overrides the theme-derived color.  Leave the face's
-background unspecified to keep following the active theme.  Set
-`markdown-ts-appear-table-zebra-stripe` to `nil` to turn stripes off.
-Use `markdown-ts-table-auto-align` for table alignment and
-`markdown-ts-inline-images` to display image files.
-
-The `wrapped` table style displays canonical pipe-table source as a Unicode
-table fitted to each window.  Long cells wrap without changing buffer text;
-when source tracking is active, moving point into a row reveals it for editing.
-When tracking is paused, the row at point stays rendered while preserving
-the source position of each visible character, including across wrapped cells.
-Entering insert state edits that same source character.  Hidden markup uses
-the nearest visible character; normalized whitespace uses its display boundary.
-Only three additional overlays are needed for the active row.  Resizing or
-editing rebuilds the view.  This integration uses internal row-layout functions
-from `markdown-table-wrap` while its public display API is finalized.
-Window changes reuse the existing view when effective widths and fonts agree.
-Source and visual navigation share one lazily built row layout.
-
-Visual-line motions retain their display column across wrapped cells; logical
-line motions retain their source column.  Empty cell padding has no source
-character, so visual motion uses the nearest available character on that line.
+Stripe colors use the `markdown-ts-appear-table-zebra` face, which inherits
+`lazy-highlight`.  Set `markdown-ts-appear-table-zebra-stripe` to `nil` to
+disable stripes.
 
 ## Modal Editing
 
@@ -163,14 +140,10 @@ to each buffer and are removed when appear mode is disabled.
 - Enabling appear mode turns on `markdown-ts-hide-markup`.  Disabling it
   removes the buffer-local override and uses the current default value.
 - Indirect buffers are unsupported; clones are detached from active tracking.
-- Math rendering uses `mathjax-display`.  There are no separate cache, timeout,
-  scaling, or centering options.  Unchanged formulas keep their previews while
-  other text is edited; leaving an unedited formula restores its existing image.
-  Display formulas occupying their own lines are centered in each window;
-  inline formulas stay in the surrounding text.  Resizing uses the same image.
-  Ordinary cursor movement updates visibility without rescanning the document.
-  Missing math dependencies signal an error;
-  initialization is not rolled back, so disable the mode manually after failure.
+- Unchanged formulas reuse their previews.  Standalone display math is centered;
+  inline math stays in the text.
+- If math setup fails, disable appear mode, fix the missing dependency, then
+  re-enable it.
 
 ## Development
 
