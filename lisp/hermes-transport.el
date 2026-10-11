@@ -1098,7 +1098,11 @@ Delegate non-activity events to the notice and display fallback phase."
   "Return notice or fallback display events for TYPE, PARAMS and PAYLOAD."
   (pcase type
     ;; Voice and skin changes are client-UI concerns, not transcript content.
-    ((or "voice.status" "voice.transcript" "skin.changed") nil)
+    ;; Usage ticks, title pushes and goal/loop control snapshots are session
+    ;; bookkeeping the stock TUI routes to its status bar, never transcript.
+    ((or "voice.status" "voice.transcript" "skin.changed"
+         "session.usage" "session.title" "session.control.update")
+     nil)
     ("review.summary"
      (list (hermes-dashboard-transport--status-event
             type params payload "notification"

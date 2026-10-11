@@ -1123,6 +1123,8 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
     (when (hermes-chat--prompt-expire-event-p event)
       (hermes-chat--expire-pending-prompt event)
       (hermes-chat--show-pending-prompt-state))
+    (unless (memq (plist-get event :type) '(done error))
+      (hermes-chat--retain-pending-prompt-header))
     (when (memq (plist-get event :type) '(done error))
       (hermes-chat--notify-terminal-event assistant-id event))
     (when (memq (plist-get event :type) '(done error))

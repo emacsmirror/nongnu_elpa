@@ -3561,5 +3561,30 @@ PATH lists the symbols already being rendered around CONSTRUCT."
             (should-error (hermes-chat-prompt-indicator-respond)
                           :type 'user-error)))))))
 
+(ert-deftest hermes-chat-pending-prompt-header-survives-later-status-events ()
+  "Status events arriving while an approval waits keep its header state."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.start" nil)
+    (hermes-test--server-request
+     client "srq-hold" "approval"
+     '((request_id . "hold") (command . "rm -rf /tmp/x")
+       (description . "delete in root path")))
+    (should (eq (plist-get hermes-chat--status-state :status)
+                'approval-requested))
+    ;; The gateway sends a usage tick right after the model call that asked.
+    (hermes-test--emit-dashboard-prompt
+     client "session.usage" '((usage . ((model . "m") (calls . 1)))))
+    (hermes-test--emit-dashboard-prompt
+     client "notification.show"
+     '((text . "Context 80% full") (level . "warn") (kind . "context")))
+    (should (eq (plist-get hermes-chat--status-state :status)
+                'approval-requested))
+    (should-not (string-match-p "Session Usage" (buffer-string)))
+    (let ((hermes-dashboard-transport-websocket-send-function #'ignore))
+      (hermes-chat-respond-to-prompt nil "deny"))
+    (should-not (hermes-chat--pending-prompt-p))
+    (should-not (memq (plist-get hermes-chat--status-state :status)
+                      '(approval-requested requested)))))
+
 (provide 'hermes-chat-prompts-tests)
 ;;; hermes-chat-prompts-tests.el ends here

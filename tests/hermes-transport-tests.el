@@ -5814,5 +5814,15 @@ first; an unrelated process with that PID is left alone."
       (dolist (p (list orphan unrelated))
         (when (process-live-p p) (delete-process p))))))
 
+(ert-deftest hermes-transport-dashboard-drops-session-bookkeeping-events ()
+  "Usage ticks, title pushes and control snapshots are not transcript events."
+  (should-not (hermes-test--dashboard-events
+               '("session.usage" . ((usage . ((model . "m") (calls . 1)))))
+               '("session.title" . ((session_id . "stored") (title . "Title")))
+               '("session.control.update"
+                 . ((control . ((goal . :null) (loop . :null)
+                                (heartbeat . :null) (revision . "")
+                                (updated_at . 0))))))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

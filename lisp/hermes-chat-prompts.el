@@ -612,6 +612,15 @@ This is the mouse action of the global pending-prompt indicator."
      :activity (hermes-chat--prompt-header-activity pending))
     pending))
 
+(defun hermes-chat--retain-pending-prompt-header ()
+  "Restore the pending prompt's header state if later activity replaced it.
+A pending prompt blocks the turn, so unrelated status events arriving while
+it waits must not hide the header's only in-chat signal that input is due."
+  (when (and (hermes-chat--pending-prompt-p)
+             (not (memq (plist-get hermes-chat--status-state :status)
+                        '(approval-requested requested))))
+    (hermes-chat--show-pending-prompt-state)))
+
 (defun hermes-chat--clarify-prompt-p (prompt)
   "Return non-nil when PROMPT accepts recoverable clarification text."
   (equal (hermes-chat--prompt-event-type prompt) "clarify"))
