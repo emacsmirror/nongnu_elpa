@@ -424,7 +424,9 @@ PROCESS is an Emacs process or an exact native Neomacs terminal resource."
     (and-let* ((root codex-ide--session-root)
                (session-id codex-ide--session-id)
                (session (codex-ide--session-by-id root session-id)))
-      (and (codex-ide--session-live-p session) session))))
+      (and (eq (plist-get session :buffer) (current-buffer))
+           (codex-ide--session-live-p session)
+           session))))
 
 (defun codex-ide--active-session (&optional directory)
   "Return the active live Codex session for DIRECTORY."
@@ -1107,7 +1109,10 @@ SUCCESS is non-nil only for a clean exit; EVENT describes the outcome."
               (insert (propertize (format "\n[Codex exited: %s]\n"
                                           (string-trim event))
                                   'face (if success 'success 'error))))
-            (setq buffer-read-only t)))))))
+            (setq buffer-read-only t)
+            ;; Retire routing identity: a successor may reuse ROOT and ID.
+            (setq codex-ide--session-root nil
+                  codex-ide--session-id nil)))))))
 
 (defun codex-ide--make-process-sentinel
     (directory session-id &optional original buffer)
@@ -1281,8 +1286,8 @@ the most recent session without a picker."
 (defun codex-ide-stop ()
   "Stop the active Codex session for the current project.
 Other live sessions under the same project root are left running.
-Use `codex-ide-list-project-sessions' or `codex-ide-toggle' to switch
-before stopping a different session."
+Use `codex-ide-switch-project-session' or `codex-ide-cycle-session' to
+switch before stopping a different session."
   (interactive)
   (let* ((working-dir (codex-ide--get-working-directory))
          (session (codex-ide--active-session working-dir)))

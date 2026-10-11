@@ -3738,6 +3738,54 @@ region, where the scrollback-browsing rule alone would strand it."
     (codex-ide-mode -1)
     (should (equal mode-line-process '(" Backend")))))
 
+(ert-deftest codex-ide-retained-buffer-does-not-alias-reused-id ()
+  "A retained transcript never routes commands to a successor reusing its id."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let ((codex-ide--sessions (make-hash-table :test 'equal))
+           (codex-ide--active-session-ids (make-hash-table :test 'equal))
+           (codex-ide--recovery-pending nil)
+           (codex-ide-kill-buffer-on-exit nil)
+           buffers processes)
+       (cl-labels ((make (name id)
+                     (let* ((buffer (generate-new-buffer name))
+                            (process (codex-ide-test--make-buffer-process
+                                      buffer name))
+                            (session (codex-ide--make-session
+                                      root id buffer process)))
+                       (push buffer buffers)
+                       (push process processes)
+                       (set-process-query-on-exit-flag process nil)
+                       (with-current-buffer buffer
+                         (setq default-directory root)
+                         (setq-local codex-ide--session-root root
+                                     codex-ide--session-id id)
+                         (codex-ide-mode 1))
+                       (codex-ide--remember-session session)
+                       session)))
+         (unwind-protect
+             (let* ((a (make "*retained*" 1))
+                    (old (plist-get a :buffer))
+                    (b (make "*sibling*" 2))
+                    c)
+               (codex-ide--finish-session root 1 old (plist-get a :process)
+                                          nil "failed")
+               (setq c (make "*successor*" (codex-ide--next-session-id root)))
+               (should (= (plist-get c :id) 1))
+               (codex-ide--activate-session b)
+               (with-current-buffer old
+                 (should-not codex-ide-mode)
+                 (should-not (codex-ide--buffer-session))
+                 (should (eq b (codex-ide--active-session root)))
+                 (codex-ide-stop))
+               (should (codex-ide--session-live-p c))
+               (should-not (codex-ide--session-live-p b))
+               (should (buffer-live-p old)))
+           (dolist (process processes)
+             (when (process-live-p process) (delete-process process)))
+           (dolist (buffer buffers)
+             (when (buffer-live-p buffer) (kill-buffer buffer)))))))))
+
 (ert-deftest codex-ide-new-session-preserves-retained-buffer ()
   "Starting again allocates a new buffer without reusing failed output."
   (codex-ide-test--call-with-project
