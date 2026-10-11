@@ -73,8 +73,9 @@
    ;; collection
    (mastodon--fedi-url-p
     "https://todon.nl/collections/116879312823651190"))
-  ;; TODO: Fed.brid.gy:
-
+  (should
+   (mastodon--fedi-url-p
+    "https://fed.brid.gy/r/https://user.name/about"))
   ;; Non-fedi links
   (should
    (not (mastodon--fedi-url-p
