@@ -379,10 +379,11 @@ Empty by default; add symbols you never want run through the endpoint."
   '(eval funcall funcall-interactively apply macroexpand macroexpand-all
          call-interactively command-execute execute-kbd-macro
          unread-command-events intern intern-soft read read-from-string
-         symbol-function indirect-function)
+         eval-buffer eval-region)
   "Symbols that defeat static reading and so are always treated as sensitive.
 Besides direct dispatch, this covers naming a function at run time (from a
-string, a reader or a key binding), which hides it from the symbol scan.")
+string, a reader or a key binding) and evaluating buffer text, both of which
+hide the code that runs from the symbol scan.")
 
 (defun hermes-exec--code-symbols (code)
   "Return the symbols appearing in CODE's top-level forms.

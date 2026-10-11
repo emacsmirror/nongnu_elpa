@@ -539,6 +539,13 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
                   "(setq unread-command-events (listify-key-sequence (kbd \"M-! id RET\")))"))
     (should (eq 'sensitive (hermes-exec--classify-code code)))))
 
+(ert-deftest hermes-exec-test-classify-text-evaluation ()
+  "Evaluating buffer text is sensitive; reading a function cell is not."
+  (dolist (code '("(with-temp-buffer (insert \"(shell-command \\\"id\\\")\") (eval-buffer))"
+                  "(with-temp-buffer (insert \"(shell-command \\\"id\\\")\") (eval-region (point-min) (point-max)))"))
+    (should (eq 'sensitive (hermes-exec--classify-code code))))
+  (should (eq 'ordinary (hermes-exec--classify-code "(symbol-function 'car)"))))
+
 (ert-deftest hermes-exec-test-classify-unreadable-fails-closed ()
   "Code that cannot be read classifies as sensitive, not ordinary."
   (should (eq 'sensitive (hermes-exec--classify-code "(+ 1 2"))))
