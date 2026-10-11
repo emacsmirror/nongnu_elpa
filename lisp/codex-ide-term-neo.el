@@ -47,6 +47,12 @@
 (defvar codex-ide--session-root)
 (defvar codex-ide--session-id)
 
+(defconst codex-ide-term-neo--terminal-environment
+  '("TERM=xterm-256color" "COLORTERM=truecolor")
+  "Terminal identity for native children.
+Graphical frames keep TERM=dumb in `process-environment', which
+`neo-term-exec' passes through, so Codex would disable colour.")
+
 (defvar-local codex-ide-term-neo--resource nil
   "Exact native terminal resource owned by this buffer.")
 
@@ -147,7 +153,9 @@ Return a native resource, not an Emacs process or a shell launcher."
          (name (buffer-name placeholder))
          (directory (buffer-local-value 'default-directory placeholder))
          (buffer (neo-term-exec executable args directory
-                                (append env process-environment)))
+                                (append env
+                                        codex-ide-term-neo--terminal-environment
+                                        process-environment)))
          (resource (list :id (buffer-local-value 'neo-term--id buffer)
                          :buffer buffer :command (cons program args)
                          :settled nil :failed nil :exited nil :title nil :name name))

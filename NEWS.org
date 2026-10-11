@@ -2,6 +2,8 @@
 
 * Unreleased
 
+- Give native Neomacs sessions =TERM=xterm-256color= and =COLORTERM=truecolor=
+  instead of the frame's =TERM=dumb=, so Codex keeps its full colour styling.
 - Resume saved conversations in new live sessions, preserving existing sessions.
   Keep the picker newest first, annotate IDs with date and directory, cache
   rollout metadata, and resume global fallback choices in their recorded cwd

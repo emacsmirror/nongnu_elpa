@@ -165,6 +165,9 @@
        (should (equal (cadar launched) codex-ide-cli-extra-args))
        (should (equal (nth 2 (car launched)) temporary-file-directory))
        (should (equal (car (nth 3 (car launched))) "TERM_PROGRAM=emacs"))
+       (let ((process-environment (nth 3 (car launched))))
+         (should (equal (getenv "TERM") "xterm-256color"))
+         (should (equal (getenv "COLORTERM") "truecolor")))
        (should (equal (plist-get resource :command) (cons "codex" codex-ide-cli-extra-args)))))))
 
 (ert-deftest codex-ide-neomacs-prompt-paste-return-escape ()
