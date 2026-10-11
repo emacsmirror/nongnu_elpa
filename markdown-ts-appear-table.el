@@ -510,7 +510,7 @@ character.  Navigation stops are offsets from the source-row overlay."
 (defun markdown-ts-appear-table--row-overlay-at-point (window)
   "Return the effective wrapped-row overlay at point in WINDOW."
   (let ((positions (list (point))))
-    (when (and (= (point) (point-max)) (> (point) (point-min))
+    (when (and (eobp) (not (bobp))
                (not (eq (char-before) ?\n)))
       (setq positions (append positions (list (1- (point))))))
     (catch 'overlay
@@ -554,7 +554,7 @@ A negative LINE counts backwards from the last visual line."
   "Return the raw source column, or move to column TARGET, ignoring display."
   (let ((end (if target (line-end-position) (point)))
         (column 0))
-    (goto-char (line-beginning-position))
+    (beginning-of-line)
     (while (and (< (point) end) (or (null target) (< column target)))
       (let ((next (+ column (if (eq (char-after) ?\t)
                                (- tab-width (% column tab-width))
@@ -664,7 +664,7 @@ NOERROR and REST retain the native command's boundary behavior and options."
               ;; overshoot a narrowed buffer with NOERROR.  Keep its boundary
               ;; position instead of moving back into the same source line.
               (if (and (= remaining 0)
-                       (or (<= count 0) (< (point) (point-max))
+                       (or (<= count 0) (not (eobp))
                            (eq (char-before) ?\n)))
                   (markdown-ts-appear-table--source-column column)
                 (setq complete nil)
