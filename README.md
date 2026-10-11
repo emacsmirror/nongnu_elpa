@@ -25,10 +25,18 @@ labels, width-aware table views, and MathJax previews.
 
 ## Installation
 
-The required `markdown-table-wrap` dependency is available from
-[MELPA](https://melpa.org/#/markdown-table-wrap).  Ensure MELPA is configured in `package-archives` before installing.
-The package manager installs this dependency automatically; no separate
-`use-package markdown-table-wrap` declaration is needed.
+`markdown-ts-appear` is available from [MELPA](https://melpa.org/#/markdown-ts-appear).
+After [configuring the archive](https://melpa.org/#/getting-started), use:
+
+```emacs-lisp
+(use-package markdown-ts-appear
+  :ensure t
+  :hook (markdown-ts-mode . markdown-ts-appear-mode))
+```
+
+The `markdown-table-wrap` dependency is installed automatically.
+
+Or install the latest Git revision:
 
 ```emacs-lisp
 (use-package markdown-ts-appear
@@ -66,7 +74,8 @@ only for eligible formulas.
 | `markdown-ts-appear-block-quote-marker` | `"▎"` | Replacement string; `nil` keeps the original marker. |
 | `markdown-ts-appear-render-callouts` | `t` | `t` renders callout labels; does not implement folding. |
 | `markdown-ts-appear-table-style` | `wrapped` | `raw`, `unicode`, or width-aware `wrapped` tables. |
-| `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second wrapped table data row. |
+| `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second data row. |
+| `markdown-ts-appear-table-zebra` | `:inherit hl-line` | Stripe face. |
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 
 Disable and re-enable `markdown-ts-appear-mode` after changing structural or
@@ -86,14 +95,6 @@ Callout types are case-insensitive.  Label colors use the current theme:
 Colors and fonts follow `markdown-ts-mode` faces.  Use
 `markdown-ts-table-auto-align` for source-table alignment and
 `markdown-ts-inline-images` for inline images.
-
-Wrapped tables fit each window without changing the source.  Moving point into
-a row reveals it for editing; with source tracking paused, rows stay rendered.
-Visual-line motions keep the display column; logical motions keep the source column.
-
-Stripe colors use the `markdown-ts-appear-table-zebra` face, which inherits
-`hl-line`.  Set `markdown-ts-appear-table-zebra-stripe` to `nil` to
-disable stripes.
 
 ## Modal Editing
 
