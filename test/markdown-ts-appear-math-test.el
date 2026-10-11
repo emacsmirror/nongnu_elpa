@@ -517,7 +517,7 @@
               (markdown-ts-appear-unload-function)
               (should-not markdown-ts-appear-mode)
               (markdown-ts-appear-math-test--assert-clean)
-              (dolist (binding (markdown-ts-appear--advice-bindings))
+              (dolist (binding markdown-ts-appear--advice-bindings)
                 (should-not (advice-member-p (cdr binding) (car binding))))
               (dolist (object objects)
                 (should-not (overlay-buffer object)))

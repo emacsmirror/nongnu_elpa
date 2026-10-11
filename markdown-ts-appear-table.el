@@ -384,9 +384,8 @@ Return a single nil entry when the buffer is not currently displayed."
 
 (defun markdown-ts-appear-table--tables ()
   "Return current buffer's pipe-table syntax nodes."
-  (unless markdown-ts-appear-table--query
-    (setq markdown-ts-appear-table--query
-          (treesit-query-compile 'markdown '((pipe_table) @table))))
+  (with-memoization markdown-ts-appear-table--query
+    (treesit-query-compile 'markdown '((pipe_table) @table)))
   (when-let* ((parser (car (treesit-parser-list nil 'markdown t))))
     (treesit-query-capture
      (treesit-parser-root-node parser) markdown-ts-appear-table--query
@@ -398,8 +397,7 @@ Return a single nil entry when the buffer is not currently displayed."
     (markdown-ts-appear-table--delete-overlays)
     (when (and (eq markdown-ts-appear-table-style 'wrapped)
                (markdown-ts-appear--active-p))
-      (save-restriction
-        (widen)
+      (without-restriction
         (dolist (table (markdown-ts-appear-table--tables))
           (unless (markdown-ts--outline-invisible-p (treesit-node-start table))
             (markdown-ts-appear-table--render-table table windows))))

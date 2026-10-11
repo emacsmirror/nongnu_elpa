@@ -30,7 +30,6 @@
 
 ;;; Code:
 
-(require 'cl-lib)
 (require 'markdown-ts-mode)
 (require 'seq)
 (require 'subr-x)
@@ -66,8 +65,8 @@ POINT is nil when source tracking is paused.")
   (let ((staging (overlay-get preview 'markdown-ts-appear-math--buffer)))
     (delete-overlay preview)
     (setq markdown-ts-appear-math--scan-tick nil
-          markdown-ts-appear-math--view nil)
-    (setq markdown-ts-appear-math--objects
+          markdown-ts-appear-math--view nil
+          markdown-ts-appear-math--objects
           (delq preview markdown-ts-appear-math--objects))
     (when (buffer-live-p staging)
       (kill-buffer staging))))
@@ -135,8 +134,7 @@ POINT is nil when source tracking is paused.")
              (unwind-protect
                  (when (eq (overlay-buffer preview) target)
                    (with-current-buffer target
-                     (save-restriction
-                       (widen)
+                     (without-restriction
                        (let ((beg (overlay-start preview))
                              (end (overlay-end preview)))
                          (treesit-update-ranges beg end)
@@ -168,9 +166,8 @@ POINT is nil when source tracking is paused.")
 (defun markdown-ts-appear-math--scan ()
   "Reconcile formula overlays with the current text, without rendering."
   (treesit-update-ranges (point-min) (point-max))
-  (unless markdown-ts-appear-math--query
-    (setq markdown-ts-appear-math--query
-          (treesit-query-compile 'markdown-inline '((latex_block) @math))))
+  (with-memoization markdown-ts-appear-math--query
+    (treesit-query-compile 'markdown-inline '((latex_block) @math)))
   (let ((existing (make-hash-table :test #'eql))
         (current (make-hash-table :test #'eq)))
     (dolist (preview markdown-ts-appear-math--objects)
@@ -221,8 +218,7 @@ FORCE rechecks all preview visibility, for example after outline folding."
   (if (not (and markdown-ts-appear-enable-math-preview
                 (markdown-ts-appear--active-p)))
       (markdown-ts-appear-math--clear)
-    (save-restriction
-      (widen)
+    (without-restriction
       (let* ((tick (buffer-chars-modified-tick))
              (changed (not (equal tick markdown-ts-appear-math--scan-tick)))
              (region markdown-ts-appear--region)

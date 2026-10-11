@@ -37,7 +37,6 @@
 ;;; Code:
 
 (require 'markdown-ts-mode)
-(require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
 (require 'markdown-ts-appear-math)
@@ -144,9 +143,8 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
 
 (defun markdown-ts-appear--deactivate-mode ()
   "Clear Markdown TS Appear mode and unregister it locally."
-  (setq markdown-ts-appear-mode nil)
-  (setq local-minor-modes
-        (delq 'markdown-ts-appear-mode local-minor-modes)))
+  (setq markdown-ts-appear-mode nil
+        local-minor-modes (delq 'markdown-ts-appear-mode local-minor-modes)))
 
 (defun markdown-ts-appear--decorate (beg end string face)
   "Display STRING with FACE instead of text between BEG and END."
@@ -164,7 +162,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
     (with-silent-modifications
       (add-text-properties
        beg end `(line-prefix ,display wrap-prefix ,display
-			     markdown-ts-appear--decoration t)))))
+                            markdown-ts-appear--decoration t)))))
 
 (defun markdown-ts-appear--remove-markup-invisibility (beg end)
   "Remove Markdown markup invisibility between BEG and END."
@@ -234,22 +232,22 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                 (treesit-node-at position 'markdown)
                 "\\`\\(?:fenced_code_block\\|indented_code_block\\|html_block\\)\\'"
                 t))
-              (_ (<= (treesit-node-start block) position))
-              (_ (< position (treesit-node-end block))))
+              ((<= (treesit-node-start block) position))
+              ((< position (treesit-node-end block))))
     block))
 
 (defun markdown-ts-appear--wikilink-bounds-for-node (node)
   "Return Wiki link bounds around shortcut link NODE, if any."
-  (when-let* ((_ node)
-              (_ (equal (treesit-node-type node) "shortcut_link"))
+  (when-let* ((node)
+              ((equal (treesit-node-type node) "shortcut_link"))
               (previous (treesit-node-prev-sibling node))
               (next (treesit-node-next-sibling node))
-              (_ (equal (treesit-node-type previous) "["))
-              (_ (equal (treesit-node-type next) "]"))
-              (_ (= (treesit-node-end previous) (treesit-node-start node)))
-              (_ (= (treesit-node-start next) (treesit-node-end node)))
-              (_ (not (markdown-ts-appear--node-ancestor
-                       (treesit-node-parent node) "image"))))
+              ((equal (treesit-node-type previous) "["))
+              ((equal (treesit-node-type next) "]"))
+              ((= (treesit-node-end previous) (treesit-node-start node)))
+              ((= (treesit-node-start next) (treesit-node-end node)))
+              ((not (markdown-ts-appear--node-ancestor
+                     (treesit-node-parent node) "image"))))
     (cons (treesit-node-start previous) (treesit-node-end next))))
 
 (defun markdown-ts-appear--wikilink-bounds-at (position)
@@ -278,8 +276,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
       (set-marker (cdr region) nil)
       (setq markdown-ts-appear--region nil)
       (when (and beg end (not markdown-ts-appear--tearing-down-buffer-p))
-        (save-restriction
-          (widen)
+        (without-restriction
           (font-lock-flush beg end)
           (condition-case nil
               (font-lock-ensure beg end)
@@ -367,12 +364,12 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
             ("list_item"
              (when-let* ((marker
                           (treesit-node-child structural-node 0 'named))
-                         (_ (string-prefix-p
-                             "list_marker_" (treesit-node-type marker)))
-                         (_ (= line-beg
-                               (save-excursion
-                                 (goto-char (treesit-node-start marker))
-                                 (line-beginning-position)))))
+                         ((string-prefix-p
+                           "list_marker_" (treesit-node-type marker)))
+                         ((= line-beg
+                             (save-excursion
+                               (goto-char (treesit-node-start marker))
+                               (line-beginning-position)))))
                (cons (treesit-node-start marker)
                      (treesit-node-end marker))))
             ((or "task_list_marker_unchecked" "task_list_marker_checked"
@@ -448,20 +445,20 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
 
 (defun markdown-ts-appear--callout-bounds-at (position)
   "Return rendered callout marker bounds containing POSITION."
-  (when-let* ((_ markdown-ts-appear-render-callouts)
+  (when-let* ((markdown-ts-appear-render-callouts)
               (node (markdown-ts-appear--markdown-node-at position))
               (quote (markdown-ts-appear--node-ancestor node "block_quote"))
               (data (markdown-ts-appear--callout-data quote))
               (beg (nth 0 data))
               (end (nth 1 data))
-              (_ (<= beg position))
-              (_ (< position end)))
+              ((<= beg position))
+              ((< position end)))
     (cons beg end)))
 
 (defun markdown-ts-appear--callout-link-p (link)
   "Return non-nil when shortcut LINK is a rendered callout marker."
-  (when-let* ((_ markdown-ts-appear-render-callouts)
-              (_ (equal (treesit-node-type link) "shortcut_link"))
+  (when-let* ((markdown-ts-appear-render-callouts)
+              ((equal (treesit-node-type link) "shortcut_link"))
               (markdown-node
                (markdown-ts-appear--markdown-node-at
                 (treesit-node-start link)))
@@ -492,8 +489,8 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                  (equal tick markdown-ts-appear--last-range-tick))
       (treesit-update-ranges
        line-beg (min (point-max) (line-beginning-position 2)))
-      (setq markdown-ts-appear--last-range-line line-beg)
-      (setq markdown-ts-appear--last-range-tick tick))))
+      (setq markdown-ts-appear--last-range-line line-beg
+            markdown-ts-appear--last-range-tick tick))))
 
 (defun markdown-ts-appear--update ()
   "Reveal source for the rendered Markdown element at point."
@@ -504,12 +501,11 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
       (let* ((region markdown-ts-appear--region)
              (old-beg (and region (marker-position (car region))))
              (old-end (and region (marker-position (cdr region)))))
-        (save-restriction
-          (widen)
+        (without-restriction
           (markdown-ts-appear--update-inline-ranges)
           (let* ((bounds (markdown-ts-appear--bounds))
-                 (beg (car-safe bounds))
-                 (end (cdr-safe bounds)))
+                 (beg (car bounds))
+                 (end (cdr bounds)))
             (unless (if bounds
                         (and old-beg old-end
                              (= beg old-beg) (= end old-end))
@@ -520,17 +516,17 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                       (cons (copy-marker beg) (copy-marker end t)))
                 (font-lock-flush beg end)
                 (font-lock-ensure beg end)))))
-        (setq markdown-ts-appear--last-point position)
-        (setq markdown-ts-appear--last-tick tick)))))
+        (setq markdown-ts-appear--last-point position
+              markdown-ts-appear--last-tick tick)))))
 
 (defun markdown-ts-appear-start ()
   "Start tracking the semantic Markdown element at point."
   (interactive)
   (when (markdown-ts-appear--active-p)
-    (setq markdown-ts-appear--last-point nil)
-    (setq markdown-ts-appear--last-tick nil)
-    (setq markdown-ts-appear--last-range-line nil)
-    (setq markdown-ts-appear--last-range-tick nil)
+    (setq markdown-ts-appear--last-point nil
+          markdown-ts-appear--last-tick nil
+          markdown-ts-appear--last-range-line nil
+          markdown-ts-appear--last-range-tick nil)
     (add-hook 'post-command-hook #'markdown-ts-appear--update nil t)
     (markdown-ts-appear--update)
     (markdown-ts-appear-table--update-visibility)))
@@ -539,10 +535,10 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   "Stop tracking point and restore hidden Markdown markup."
   (interactive)
   (remove-hook 'post-command-hook #'markdown-ts-appear--update t)
-  (setq markdown-ts-appear--last-point nil)
-  (setq markdown-ts-appear--last-tick nil)
-  (setq markdown-ts-appear--last-range-line nil)
-  (setq markdown-ts-appear--last-range-tick nil)
+  (setq markdown-ts-appear--last-point nil
+        markdown-ts-appear--last-tick nil
+        markdown-ts-appear--last-range-line nil
+        markdown-ts-appear--last-range-tick nil)
   (markdown-ts-appear--restore)
   (markdown-ts-appear-table--update-visibility))
 
@@ -558,7 +554,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
         (when (get-text-property pos 'markdown-ts-appear--decoration text)
           (remove-text-properties
            pos next '(display nil line-height nil line-prefix nil wrap-prefix nil
-			      markdown-ts-appear--decoration nil)
+                              markdown-ts-appear--decoration nil)
            text))
         (setq pos next))))
   text)
@@ -890,7 +886,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
                  (treesit-node-start node) (treesit-node-end node))
                 (markdown-ts-appear--decorate
                  (treesit-node-start node) (treesit-node-end node)
-                 (if (equal label "") url label) nil))
+                 (if (string-empty-p label) url label) nil))
               (markdown-ts--make-link-button beg end url))
             (when icon
               (let ((overlay
@@ -1007,8 +1003,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
 
 (defun markdown-ts-appear--delete-rendering-overlays ()
   "Delete package icon overlays throughout the buffer."
-  (save-restriction
-    (widen)
+  (without-restriction
     (dolist (overlay (overlays-in (point-min) (point-max)))
       (when (or (overlay-get overlay 'markdown-ts-appear--image-label)
                 (overlay-get overlay 'markdown-ts-appear--link-icon))
@@ -1016,8 +1011,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
 
 (defun markdown-ts-appear--after-change (_beg _end _old-length)
   "Invalidate icons after edits, including distant structural changes."
-  (save-restriction
-    (widen)
+  (without-restriction
     (markdown-ts-appear--delete-rendering-overlays)
     ;; Rebuild unchanged icons too: their text may already be fontified.
     (font-lock-flush (point-min) (point-max))))
@@ -1057,8 +1051,8 @@ at most one following space or tab and are not clipped to START or LIMIT."
 Indirect buffers are otherwise unsupported and are not synchronized."
   (when (buffer-base-buffer)
     ;; Do not run normal teardown: text properties are shared with the base.
-    (setq markdown-ts-appear-mode nil)
-    (setq markdown-ts-appear--region nil)
+    (setq markdown-ts-appear-mode nil
+          markdown-ts-appear--region nil)
     (markdown-ts-appear-table--detach)
     (setq markdown-ts-appear-math--objects nil)
     (markdown-ts-appear-math--teardown)
@@ -1089,8 +1083,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
   (unless markdown-ts-hide-markup
     (setq markdown-ts-hide-markup t)
     (markdown-ts--set-hide-markup t))
-  (save-restriction
-    (widen)
+  (without-restriction
     (font-lock-flush (point-min) (point-max)))
   (markdown-ts-appear-start)
   (markdown-ts-appear-table--setup)
@@ -1105,8 +1098,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
   (markdown-ts-appear-stop)
   (markdown-ts-appear--remove-block-font-lock)
   (markdown-ts-appear--delete-rendering-overlays)
-  (save-restriction
-    (widen)
+  (without-restriction
     (kill-local-variable 'markdown-ts-hide-markup)
     (markdown-ts--set-hide-markup markdown-ts-hide-markup)
     (unless markdown-ts-appear--tearing-down-buffer-p
@@ -1152,8 +1144,7 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
     markdown-ts--fontify-thematic-break)
   "Markdown fontifiers that replace or hide source markup.")
 
-(defun markdown-ts-appear--advice-bindings ()
-  "Return fontification and table-motion functions with their package advice."
+(defconst markdown-ts-appear--advice-bindings
   (append
    `((markdown-ts--fontify-delimiter
       . ,#'markdown-ts-appear--fontify-delimiter)
@@ -1170,7 +1161,8 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
      (line-move . ,#'markdown-ts-appear-table--line-move))
    (mapcar (lambda (function)
              (cons function #'markdown-ts-appear--fontify-visible-markup))
-           markdown-ts-appear--visible-fontifiers)))
+           markdown-ts-appear--visible-fontifiers))
+  "Fontification and table-motion functions with their package advice.")
 
 (defconst markdown-ts-appear--required-private-functions
   '(markdown-ts--latex-block-valid-p
@@ -1183,17 +1175,16 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
   "Return required private Markdown functions that are unavailable."
   (seq-remove
    #'fboundp
-   (append (mapcar #'car (markdown-ts-appear--advice-bindings))
+   (append (mapcar #'car markdown-ts-appear--advice-bindings)
            markdown-ts-appear--required-private-functions)))
 
 (defun markdown-ts-appear--set-advice (install-p)
   "Install package advice when INSTALL-P is non-nil; otherwise remove it."
-  (dolist (binding (markdown-ts-appear--advice-bindings))
+  (dolist (binding markdown-ts-appear--advice-bindings)
     (if install-p
         (unless (advice-member-p (cdr binding) (car binding))
           (advice-add (car binding) :around (cdr binding)))
-      (when (advice-member-p (cdr binding) (car binding))
-        (advice-remove (car binding) (cdr binding))))))
+      (advice-remove (car binding) (cdr binding)))))
 
 (defun markdown-ts-appear--install-advice ()
   "Install Markdown fontification and table-motion advice."

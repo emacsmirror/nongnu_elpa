@@ -43,7 +43,7 @@
   (seq-every-p
    (lambda (binding)
      (advice-member-p (cdr binding) (car binding)))
-   (markdown-ts-appear--advice-bindings)))
+   markdown-ts-appear--advice-bindings))
 
 (defmacro markdown-ts-appear-test--with-buffer (content &rest body)
   "Create a Markdown buffer containing CONTENT and evaluate BODY."
@@ -1308,7 +1308,7 @@
             (markdown-ts-hide-markup 'original)
             (markdown-ts-inline-images 'original)
             (arguments '(node override 1 2 extra)))
-        (dolist (binding (markdown-ts-appear--advice-bindings))
+        (dolist (binding markdown-ts-appear--advice-bindings)
           (let ((calls 0))
             (should
              (eq 'result
