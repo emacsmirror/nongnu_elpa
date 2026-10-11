@@ -1729,10 +1729,21 @@ OWNER-CURRENT-P guards credential persistence and delivery."
        (hermes-dashboard-transport-client-port client)
        (hermes-dashboard-transport-client-token client))))
 
+(defun hermes-dashboard-transport--displayable-condition (condition)
+  "Return CONDITION without the argument list of a failed connection.
+`make-network-process' signals errors such as (file-error \"make client
+process failed\" \"Connection refused\" :name ... :host ...), whose message
+would otherwise list every connection argument after the reason."
+  (if (and (eq (car-safe condition) 'file-error)
+           (keywordp (nth 3 condition)))
+      (list (car condition) (nth 1 condition) (nth 2 condition))
+    condition))
+
 (defun hermes-dashboard-transport--condition-message (client condition)
   "Return a user-displayable CONDITION message for CLIENT."
   (hermes-dashboard-transport--redact-secret
-   (error-message-string condition)
+   (error-message-string
+    (hermes-dashboard-transport--displayable-condition condition))
    (hermes-dashboard-transport--client-secrets client)))
 
 

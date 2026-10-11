@@ -4054,6 +4054,29 @@ other's session."
                            ("gateway.ready" "ready"
                             "Hermes dashboard connected")))))))))
 
+(ert-deftest hermes-transport-dashboard-connection-error-omits-process-arguments ()
+  "A refused connection names the reason, not every connection argument."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :host "127.0.0.1" :port 4567 :token "secret-token")))
+    ;; The condition `make-network-process' signals when nothing listens.
+    (should (equal (hermes-dashboard-transport--connection-error-message
+                    client
+                    '(file-error "make client process failed" "Connection refused"
+                                 :name "websocket to ws://127.0.0.1:4567/api/ws?token=secret-token"
+                                 :buffer nil :host "127.0.0.1" :service 4567
+                                 :nowait nil))
+                   (concat "Hermes dashboard WebSocket did not become ready at "
+                           "ws://127.0.0.1:4567/api/ws?token=<redacted> "
+                           "(make client process failed: Connection refused)")))
+    ;; Other conditions keep their data, with secrets still redacted.
+    (should (equal (hermes-dashboard-transport--condition-message
+                    client '(file-error "Opening input file" "No such file or directory"
+                                        "/tmp/secret-token"))
+                   "Opening input file: No such file or directory, /tmp/<redacted>"))
+    (should (equal (hermes-dashboard-transport--condition-message
+                    client '(wrong-type-argument stringp :token))
+                   "Wrong type argument: stringp, :token"))))
+
 (ert-deftest hermes-transport-dashboard-start-timeout-cleans-websocket ()
   (let (closed deleted opened-client)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
