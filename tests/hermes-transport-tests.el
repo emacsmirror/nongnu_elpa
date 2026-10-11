@@ -4013,6 +4013,47 @@ other's session."
                            :key (lambda (event) (plist-get event :event))
                            :test #'equal)))))))
 
+(ert-deftest hermes-transport-dashboard-ready-settles-startup-event ()
+  "Readiness re-reports the startup event as settled before `gateway.ready'."
+  (let (events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
+               (lambda () "secret-token"))
+              ((symbol-function 'hermes-dashboard-transport--pick-port)
+               (lambda () 4567)))
+      (let ((hermes-dashboard-transport-command "hermes")
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) 'fake-process))
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (_url _client) 'fake-websocket)))
+        (let* ((client (hermes-dashboard-transport-start
+                        :callback (lambda (event) (push event events))))
+               (summary (lambda ()
+                          (mapcar (lambda (event)
+                                    (list (plist-get event :event)
+                                          (plist-get event :status)
+                                          (plist-get event :content)))
+                                  (seq-filter
+                                   (lambda (event)
+                                     (member (plist-get event :event)
+                                             '("dashboard.starting"
+                                               "gateway.ready")))
+                                   (reverse events)))))
+               (content (plist-get (car events) :content)))
+          (should (string-prefix-p "Starting Hermes dashboard on " content))
+          (should (equal (funcall summary)
+                         `(("dashboard.starting" "starting" ,content))))
+          (hermes-dashboard-transport--handle-frame
+           client (hermes-dashboard-transport--encode-frame
+                   '((jsonrpc . "2.0")
+                     (method . "event")
+                     (params . ((type . "gateway.ready"))))))
+          (should (equal (funcall summary)
+                         `(("dashboard.starting" "starting" ,content)
+                           ("dashboard.starting" "ready" ,content)
+                           ("gateway.ready" "ready"
+                            "Hermes dashboard connected")))))))))
+
 (ert-deftest hermes-transport-dashboard-start-timeout-cleans-websocket ()
   (let (closed deleted opened-client)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
@@ -4454,9 +4495,10 @@ other's session."
                      (params . ((type . "message.complete")
                                 (session_id . "sid")
                                 (payload . ((text . "done"))))))))
+          ;; Startup, the startup event settled by readiness, `gateway.ready'.
           (should (equal (mapcar (lambda (event) (plist-get event :type))
                                  (nreverse events))
-                         '(status status delta done))))))))
+                         '(status status status delta done))))))))
 
 (ert-deftest hermes-transport-dashboard-complete-status-is-preserved ()
   (let (events)

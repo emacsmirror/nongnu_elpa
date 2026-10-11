@@ -394,6 +394,18 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
         :content (format "Connecting to Hermes dashboard at %s" redacted-url)
         :url redacted-url))
 
+(defun hermes-dashboard-transport--settle-on-ready (client event)
+  "Dispatch startup EVENT again as settled once CLIENT becomes ready.
+The chat shows EVENT as an active row keyed by its `:event'.  Left active, the
+row takes the outcome of the turn that started the dashboard, so interrupting
+that turn would mark a dashboard that started fine as failed."
+  (when-let* ((ready (hermes-dashboard-transport-client-ready-promise client)))
+    (hermes--promise-then
+     ready
+     (lambda (_value)
+       (hermes-dashboard-transport--dispatch-event
+        client (plist-put (copy-sequence event) :status "ready"))))))
+
 (defun hermes-dashboard-transport--remote-connected-event (redacted-url)
   "Return remote dashboard connected status event for REDACTED-URL."
   (list :type 'status
@@ -1639,9 +1651,10 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
                   :callback (or callback #'ignore)))
          (argv (hermes-dashboard-transport--command host port command))
          (env (hermes-dashboard-transport--environment token base-environment))
-         (generation (hermes-dashboard-transport-client-generation client)))
-    (hermes-dashboard-transport--dispatch-event
-     client (hermes-dashboard-transport--start-event host port token))
+         (generation (hermes-dashboard-transport-client-generation client))
+         (start-event (hermes-dashboard-transport--start-event host port token)))
+    (hermes-dashboard-transport--dispatch-event client start-event)
+    (hermes-dashboard-transport--settle-on-ready client start-event)
     (condition-case err
         (let ((process
                (hermes-dashboard-transport--start-process client argv env)))
@@ -1680,11 +1693,12 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
 (defun hermes-dashboard-transport--remote-connect (client auth)
   "Store AUTH on CLIENT, announce connecting, and open its WebSocket.
 AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
-  (let ((generation (hermes-dashboard-transport-client-generation client)))
+  (let ((generation (hermes-dashboard-transport-client-generation client))
+        (connect-event (hermes-dashboard-transport--remote-connect-event
+                        (plist-get auth :redacted-url))))
     (hermes-dashboard-transport--install-auth client auth)
-    (hermes-dashboard-transport--dispatch-event
-     client (hermes-dashboard-transport--remote-connect-event
-             (plist-get auth :redacted-url)))
+    (hermes-dashboard-transport--dispatch-event client connect-event)
+    (hermes-dashboard-transport--settle-on-ready client connect-event)
     (when (hermes-dashboard-transport--generation-live-p client generation)
       (hermes-dashboard-transport--connect-async client nil generation))))
 

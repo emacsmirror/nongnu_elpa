@@ -4410,5 +4410,28 @@
             (with-current-buffer view (set-buffer-modified-p nil))
             (kill-buffer view)))))))
 
+(ert-deftest hermes-chat-dashboard-ready-startup-row-survives-turn-outcome ()
+  "A startup row settled by readiness keeps its status when the turn fails."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let ((ready (hermes--promise-make))
+          (start (hermes-dashboard-transport--start-event "127.0.0.1" 4567 nil))
+          (row-status
+           (lambda ()
+             (plist-get (cl-find "Starting Hermes dashboard on 127.0.0.1:4567"
+                                 (hermes-chat--entries)
+                                 :key (lambda (entry) (plist-get entry :content))
+                                 :test #'equal)
+                        :status))))
+      (setf (hermes-dashboard-transport-client-ready-promise client) ready)
+      (hermes-dashboard-transport--dispatch-event client start)
+      (hermes-dashboard-transport--settle-on-ready client start)
+      (should (equal (funcall row-status) "starting"))
+      (hermes--promise-resolve ready client)
+      (should (equal (funcall row-status) "ready"))
+      (hermes-dashboard-transport--dispatch-event
+       client '(:type error :status "interrupted" :content "Interrupted"))
+      (should-not hermes-chat--pending-assistant-id)
+      (should (equal (funcall row-status) "ready")))))
+
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
