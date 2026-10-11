@@ -32,6 +32,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'hl-line)
 (require 'markdown-ts-mode)
 (require 'markdown-table-wrap-pretty)
 (require 'seq)
@@ -55,12 +56,12 @@
   :group 'markdown-ts-appear)
 
 (defcustom markdown-ts-appear-table-zebra-stripe t
-  "When non-nil, give alternating wrapped table rows a background face."
+  "Whether to shade every second wrapped table data row."
   :type 'boolean
   :group 'markdown-ts-appear)
 
 (defface markdown-ts-appear-table-zebra
-  '((t :inherit lazy-highlight))
+  '((t :inherit hl-line))
   "Face for alternating data rows in rendered tables."
   :group 'markdown-ts-appear)
 
@@ -372,7 +373,7 @@ Return a single nil entry when the buffer is not currently displayed."
                   (zebra-p
                    (and markdown-ts-appear-table-zebra-stripe
                         (equal type "pipe_table_row")
-                        (cl-oddp (cl-incf data-row-index)))))
+                        (cl-evenp (cl-incf data-row-index)))))
              (when (equal type "pipe_table_header")
                (setq data-row-index 0))
              (when zebra-p

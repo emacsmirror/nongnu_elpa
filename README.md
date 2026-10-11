@@ -66,7 +66,7 @@ only for eligible formulas.
 | `markdown-ts-appear-block-quote-marker` | `"▎"` | Replacement string; `nil` keeps the original marker. |
 | `markdown-ts-appear-render-callouts` | `t` | `t` renders callout labels; does not implement folding. |
 | `markdown-ts-appear-table-style` | `wrapped` | `raw`, `unicode`, or width-aware `wrapped` tables. |
-| `markdown-ts-appear-table-zebra-stripe` | `t` | Alternate backgrounds on wrapped table data rows. |
+| `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second wrapped table data row. |
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 
 Disable and re-enable `markdown-ts-appear-mode` after changing structural or
@@ -92,7 +92,7 @@ a row reveals it for editing; with source tracking paused, rows stay rendered.
 Visual-line motions keep the display column; logical motions keep the source column.
 
 Stripe colors use the `markdown-ts-appear-table-zebra` face, which inherits
-`lazy-highlight`.  Set `markdown-ts-appear-table-zebra-stripe` to `nil` to
+`hl-line`.  Set `markdown-ts-appear-table-zebra-stripe` to `nil` to
 disable stripes.
 
 ## Modal Editing
