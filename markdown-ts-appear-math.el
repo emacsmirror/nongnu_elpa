@@ -38,6 +38,8 @@
 (declare-function mathjax-available-p "mathjax")
 (declare-function mathjax-display "mathjax")
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
+(declare-function markdown-ts-appear--add-outline-hook "markdown-ts-appear")
+(declare-function markdown-ts-appear--remove-outline-hook "markdown-ts-appear")
 (declare-function markdown-ts-appear--literal-block-at "markdown-ts-appear")
 (declare-function markdown-ts-appear--node-ancestor "markdown-ts-appear")
 (declare-function markdown-ts-appear--region-visible-p "markdown-ts-appear")
@@ -271,19 +273,14 @@ FORCE rechecks all preview visibility, for example after outline folding."
   (unless (image-type-available-p 'svg)
     (user-error "MathJax previews require an Emacs build with SVG support"))
   (add-hook 'post-command-hook #'markdown-ts-appear-math--refresh 90 t)
-  ;; Outline still emits this hook and provides no replacement.
-  (with-suppressed-warnings ((obsolete outline-view-change-hook))
-    (add-hook 'outline-view-change-hook
-              #'markdown-ts-appear-math--outline-change nil t))
+  (markdown-ts-appear--add-outline-hook #'markdown-ts-appear-math--outline-change)
   (add-hook 'before-change-functions #'markdown-ts-appear-math--clear nil t)
   (markdown-ts-appear-math--refresh))
 
 (defun markdown-ts-appear-math--teardown ()
   "Remove math preview hooks and dispose of pending and displayed results."
   (remove-hook 'post-command-hook #'markdown-ts-appear-math--refresh t)
-  (with-suppressed-warnings ((obsolete outline-view-change-hook))
-    (remove-hook 'outline-view-change-hook
-                 #'markdown-ts-appear-math--outline-change t))
+  (markdown-ts-appear--remove-outline-hook #'markdown-ts-appear-math--outline-change)
   (remove-hook 'before-change-functions #'markdown-ts-appear-math--clear t)
   (markdown-ts-appear-math--clear))
 

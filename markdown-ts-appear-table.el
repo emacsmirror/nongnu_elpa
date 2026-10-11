@@ -38,6 +38,8 @@
 (require 'subr-x)
 
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
+(declare-function markdown-ts-appear--add-outline-hook "markdown-ts-appear")
+(declare-function markdown-ts-appear--remove-outline-hook "markdown-ts-appear")
 (declare-function markdown-ts-appear--decorate "markdown-ts-appear")
 (declare-function markdown-ts-appear--direct-children-of-type
                   "markdown-ts-appear")
@@ -799,9 +801,7 @@ NOERROR and REST retain the native command's boundary behavior and options."
               #'markdown-ts-appear-table--schedule-render nil t)
     (add-hook 'window-selection-change-functions
               #'markdown-ts-appear-table--selection-change nil t)
-    (with-suppressed-warnings ((obsolete outline-view-change-hook))
-      (add-hook 'outline-view-change-hook
-                #'markdown-ts-appear-table--outline-change nil t))
+    (markdown-ts-appear--add-outline-hook #'markdown-ts-appear-table--outline-change)
     (markdown-ts-appear-table--render)))
 
 (defun markdown-ts-appear-table--teardown ()
@@ -822,9 +822,7 @@ base buffer."
                #'markdown-ts-appear-table--schedule-render t)
   (remove-hook 'window-selection-change-functions
                #'markdown-ts-appear-table--selection-change t)
-  (with-suppressed-warnings ((obsolete outline-view-change-hook))
-    (remove-hook 'outline-view-change-hook
-                 #'markdown-ts-appear-table--outline-change t))
+  (markdown-ts-appear--remove-outline-hook #'markdown-ts-appear-table--outline-change)
   (setq markdown-ts-appear-table--overlays nil
         markdown-ts-appear-table--windows nil
         markdown-ts-appear-table--view nil

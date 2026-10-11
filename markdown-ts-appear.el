@@ -991,6 +991,20 @@ at most one following space or tab and are not clipped to START or LIMIT."
 
 ;;; Buffer lifecycle
 
+;; Folding changes overlays, not text, so renderers need this notification.
+;; Obsoleted in 29.1 as a presumed lazy-lock-only hook; no replacement yet.
+;; A replacement API is discussed in Emacs bug#81632:
+;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=81632
+(defun markdown-ts-appear--add-outline-hook (function)
+  "Add FUNCTION to the current buffer's outline visibility notifications."
+  (with-suppressed-warnings ((obsolete outline-view-change-hook))
+    (add-hook 'outline-view-change-hook function nil t)))
+
+(defun markdown-ts-appear--remove-outline-hook (function)
+  "Remove FUNCTION from the current buffer's outline visibility notifications."
+  (with-suppressed-warnings ((obsolete outline-view-change-hook))
+    (remove-hook 'outline-view-change-hook function t)))
+
 (defun markdown-ts-appear--delete-rendering-overlays ()
   "Delete package icon overlays throughout the buffer."
   (save-restriction
