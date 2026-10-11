@@ -378,17 +378,35 @@ connected once it has answered."
 
 (ert-deftest vm-net-test-a-port-with-nothing-there-answers-no ()
   "A port nothing is listening on answers nil however often it is asked, and
-leaves no probe behind."
-  (let ((port (vm-net-free-port)))
+leaves no probe behind.
+
+How many asks an answer takes is the machine's business: a connection made
+with :nowait may still be connecting when the next ask comes, and under the
+load of a build it is.  So nothing here counts asks."
+  (let ((port (vm-net-free-port))
+        (deadline (+ (float-time) 5))
+        (answered nil))
     (clrhash vm-net--probes)
-    (dotimes (_ 5)
-      (should-not (vm-net-listening-p port))
+    (while (and (not answered) (< (float-time) deadline))
+      (let ((probe (gethash port vm-net--probes)))
+        (should-not (vm-net-listening-p port))
+        ;; one probe for this port at a time, whatever the answer: they do
+        ;; not pile up
+        (should (<= (hash-table-count vm-net--probes) 1))
+        ;; and reading one that has finished connecting closes it
+        (when (and (processp probe)
+                   (not (eq (process-status probe) 'connect)))
+          (setq answered t)
+          (should-not (process-live-p probe))
+          (should-not (gethash port vm-net--probes))))
       (accept-process-output nil 0.05))
-    ;; one probe for this port at a time, whatever the answer: they do not
-    ;; pile up, and reading the last one closes it
-    (should (processp (gethash port vm-net--probes)))
+    (should answered)
+    ;; whatever is still outstanding when the caller gives up goes too
     (should-not (vm-net-listening-p port))
-    (should-not (gethash port vm-net--probes))))
+    (let ((probe (gethash port vm-net--probes)))
+      (vm-net-forget-probe port)
+      (should-not (gethash port vm-net--probes))
+      (when (processp probe) (should-not (process-live-p probe))))))
 
 
 (ert-deftest vm-net-test-a-tunnel-leaves-no-probe-behind ()
