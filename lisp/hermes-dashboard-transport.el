@@ -85,7 +85,12 @@ under load, or on the first start after an update, when it may rebuild its
 web UI or install dependencies first.  Its exit still fails startup at once,
 so this does not delay reporting a dead dashboard.  Attaching to an
 external dashboard keeps `hermes-dashboard-transport-connect-retries'.  Nil
-disables the extension."
+disables the extension.
+
+This keeps the dashboard alive, not the requests queued behind it: a request
+sent during startup still expires after
+`hermes-dashboard-transport-request-timeout'.  A start longer than that can
+therefore fail the first message even though the dashboard comes up."
   :type '(choice (const :tag "No extension" nil) number))
 
 (defcustom hermes-dashboard-transport-ready-timeout 15
@@ -1559,7 +1564,7 @@ child's exit, not this budget, reports a dashboard that died."
     (if (and (numberp hermes-dashboard-transport-spawn-connect-timeout)
              (eq (hermes-dashboard-transport-client-credential-kind client) 'spawn)
              (processp process)
-             (process-live-p process))
+             (hermes-dashboard-transport--process-live-p process))
         (max retries
              (ceiling hermes-dashboard-transport-spawn-connect-timeout
                       (max 0.01 hermes-dashboard-transport-connect-retry-delay)))

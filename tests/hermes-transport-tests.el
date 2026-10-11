@@ -4104,6 +4104,24 @@ other's session."
       (should (stringp (hermes-dashboard-transport--condition-message
                         client condition))))))
 
+(ert-deftest hermes-transport-dashboard-connect-limit-uses-live-predicate ()
+  "The spawn connect window follows the injectable process-live predicate."
+  (skip-unless (executable-find "sleep"))
+  (let ((child (make-process :name "hermes-test-limit" :command '("sleep" "60")
+                             :noquery t)))
+    (unwind-protect
+        (let ((client (make-hermes-dashboard-transport-client
+                       :host "127.0.0.1" :port 4567 :token "secret-token"
+                       :credential-kind 'spawn :process child))
+              (hermes-dashboard-transport-connect-retries 2)
+              (hermes-dashboard-transport-connect-retry-delay 0.25)
+              (hermes-dashboard-transport-spawn-connect-timeout 1))
+          (should (= 4 (hermes-dashboard-transport--connect-attempt-limit client)))
+          (let ((hermes-dashboard-transport-process-live-p-function #'ignore))
+            (should (= 2 (hermes-dashboard-transport--connect-attempt-limit
+                          client)))))
+      (delete-process child))))
+
 (ert-deftest hermes-transport-dashboard-start-timeout-cleans-websocket ()
   (let (closed deleted opened-client)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
