@@ -1742,5 +1742,24 @@ PHASE defaults to `after-change-functions'."
                                                   (point))
                           text))))))))
 
+(ert-deftest hermes-chat-streaming-echo-check-ignores-reply-length ()
+  "Once a reply has text, the per-delta echo check never rescans the reply."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (let ((normalize (symbol-function 'hermes-chat--normalize-for-dedup))
+          (chunk "word word word word word\n")
+          (longest 0))
+      (cl-letf (((symbol-function 'hermes-chat--normalize-for-dedup)
+                 (lambda (text)
+                   (setq longest (max longest (length (or text ""))))
+                   (funcall normalize text))))
+        (hermes-test--emit-dashboard-prompt client "message.start" nil)
+        (dotimes (_ 40)
+          (hermes-test--emit-dashboard-prompt
+           client "message.delta" `((text . ,chunk)))))
+      (should (> (length (hermes-chat--entry-content-by-id
+                          hermes-chat--pending-assistant-id))
+                 (* 30 (length chunk))))
+      (should (<= longest (length chunk))))))
+
 (provide 'hermes-chat-render-tests)
 ;;; hermes-chat-render-tests.el ends here

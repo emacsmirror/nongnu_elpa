@@ -1387,16 +1387,16 @@ With QUIET, leave state-change notification to the caller."
          (string-empty-p assistant))))
 
 (defun hermes-chat--thinking-echo-delta-p (assistant-id content)
-  "Return non-nil when CONTENT is a transient echo of ASSISTANT-ID thinking."
-  (let ((content (hermes-chat--normalize-for-dedup
-                  (hermes-chat--sanitize-assistant-content content nil)))
-        (thinking (hermes-chat--normalize-for-dedup
-                   (hermes-chat--thinking-entry-content assistant-id)))
-        (assistant (hermes-chat--normalize-for-dedup
-                    (hermes-chat--entry-content-by-id assistant-id))))
-    (and (string-empty-p assistant)
-         (not (string-empty-p content))
-         (string= content thinking))))
+  "Return non-nil when CONTENT is a transient echo of ASSISTANT-ID thinking.
+Only a still-blank reply can receive an echo, so test that first: once the
+reply has text, no per-delta work may scale with the accumulated reply."
+  (and (string-blank-p (or (hermes-chat--entry-content-by-id assistant-id) ""))
+       (let ((content (hermes-chat--normalize-for-dedup
+                       (hermes-chat--sanitize-assistant-content content nil))))
+         (and (not (string-empty-p content))
+              (string= content
+                       (hermes-chat--normalize-for-dedup
+                        (hermes-chat--thinking-entry-content assistant-id)))))))
 
 (defun hermes-chat--assistant-segment-content (assistant-id content)
   "Return ASSISTANT-ID's portion of final or interim CONTENT.
