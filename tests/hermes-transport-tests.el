@@ -3928,6 +3928,65 @@ other's session."
     (should (>= window 5))
     (should (<= window 20))))
 
+(ert-deftest hermes-transport-dashboard-live-spawn-extends-connect-window ()
+  "A live spawned child keeps startup connecting past the attach budget."
+  (skip-unless (executable-find "sleep"))
+  (dolist (live '(t nil))
+    (let ((open-attempts 0) child)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
+                 (lambda () "secret-token"))
+                ((symbol-function 'hermes-dashboard-transport--pick-port)
+                 (lambda () 4567)))
+        (let ((hermes-dashboard-transport-make-process-function
+               (lambda (&rest _plist)
+                 (if (not live)
+                     'fake-process
+                   (setq child (make-process :name "hermes-test-spawn"
+                                             :command '("sleep" "60")
+                                             :noquery t)))))
+              (hermes-dashboard-transport-connect-retries 2)
+              (hermes-dashboard-transport-connect-retry-delay 0.25)
+              (hermes-dashboard-transport-spawn-connect-timeout 1)
+              (hermes-dashboard-transport-ready-timeout nil)
+              (hermes-dashboard-transport-schedule-function
+               (lambda (_delay fn &rest args) (apply fn args)))
+              (hermes-dashboard-transport-websocket-open-function
+               (lambda (_url _client)
+                 (cl-incf open-attempts)
+                 (error "dashboard not listening yet"))))
+          (unwind-protect
+              (progn
+                (hermes-dashboard-transport-start :start-mode 'spawn :port 4567)
+                (should (= open-attempts (if live 4 2))))
+            (when (process-live-p child) (delete-process child))))))))
+
+(ert-deftest hermes-transport-dashboard-ready-timeout-starts-at-socket-open ()
+  "The `gateway.ready' window opens with the socket, not at spawn time."
+  (let ((open-attempts 0) scheduled)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
+               (lambda () "secret-token"))
+              ((symbol-function 'hermes-dashboard-transport--pick-port)
+               (lambda () 4567)))
+      (let ((hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) 'fake-process))
+            (hermes-dashboard-transport-connect-retries 3)
+            (hermes-dashboard-transport-connect-retry-delay 0.25)
+            (hermes-dashboard-transport-ready-timeout 15)
+            (hermes-dashboard-transport-schedule-function
+             (lambda (delay fn &rest args) (push (list delay fn args) scheduled) 'timer))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (_url _client)
+               (cl-incf open-attempts)
+               (if (= open-attempts 1) (error "not listening yet") 'fake-websocket))))
+        (hermes-dashboard-transport-start :start-mode 'spawn :port 4567)
+        ;; Only the connect retry waits while the dashboard is not listening.
+        (should (equal (mapcar #'car scheduled) '(0.25)))
+        (let ((retry (car scheduled)))
+          (setq scheduled nil)
+          (apply (nth 1 retry) (nth 2 retry)))
+        (should (= open-attempts 2))
+        (should (equal (mapcar #'car scheduled) '(15)))))))
+
 (ert-deftest hermes-transport-dashboard-start-resolves-on-gateway-ready ()
   "Start returns a not-yet-ready client; `gateway.ready' marks it ready."
   (let (events)

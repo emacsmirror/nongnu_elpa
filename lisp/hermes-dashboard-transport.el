@@ -78,6 +78,16 @@ while surfacing a dead dashboard far sooner than the old 45-second budget."
   "Seconds to wait between dashboard WebSocket connection attempts."
   :type 'number)
 
+(defcustom hermes-dashboard-transport-spawn-connect-timeout 120
+  "Seconds to keep connecting while a spawned dashboard process is alive.
+A spawned dashboard can need far more than ten seconds to bind its port:
+under load, or on the first start after an update, when it may rebuild its
+web UI or install dependencies first.  Its exit still fails startup at once,
+so this does not delay reporting a dead dashboard.  Attaching to an
+external dashboard keeps `hermes-dashboard-transport-connect-retries'.  Nil
+disables the extension."
+  :type '(choice (const :tag "No extension" nil) number))
+
 (defcustom hermes-dashboard-transport-ready-timeout 15
   "Seconds to wait for `gateway.ready' after the WebSocket opens.
 Use nil to skip this wait.  The dashboard accepts the WebSocket before the TUI
@@ -1527,6 +1537,22 @@ Used when the connection or `gateway.ready' handshake fails asynchronously."
   (and (hermes-dashboard-transport--client-viable-p client)
        (= generation (hermes-dashboard-transport-client-generation client))))
 
+(defun hermes-dashboard-transport--connect-attempt-limit (client)
+  "Return how many WebSocket connection attempts CLIENT's startup may make.
+While CLIENT's spawned child process is alive, allow at least
+`hermes-dashboard-transport-spawn-connect-timeout' seconds of attempts: the
+child's exit, not this budget, reports a dashboard that died."
+  (let ((retries (max 1 hermes-dashboard-transport-connect-retries))
+        (process (hermes-dashboard-transport-client-process client)))
+    (if (and (numberp hermes-dashboard-transport-spawn-connect-timeout)
+             (eq (hermes-dashboard-transport-client-credential-kind client) 'spawn)
+             (processp process)
+             (process-live-p process))
+        (max retries
+             (ceiling hermes-dashboard-transport-spawn-connect-timeout
+                      (max 0.01 hermes-dashboard-transport-connect-retry-delay)))
+      retries)))
+
 (defun hermes-dashboard-transport--connect-async
     (client &optional attempt generation)
   "Open CLIENT's WebSocket, retrying dashboard cold-start races asynchronously.
@@ -1539,7 +1565,7 @@ readiness flow to resolve the readiness promise."
         (generation (or generation
                         (hermes-dashboard-transport-client-generation client)))
         (url (hermes-dashboard-transport--client-websocket-url client))
-        (max-attempts (max 1 hermes-dashboard-transport-connect-retries)))
+        (max-attempts (hermes-dashboard-transport--connect-attempt-limit client)))
     (when (hermes-dashboard-transport--generation-live-p client generation)
       (condition-case err
           (let ((websocket
@@ -1548,8 +1574,12 @@ readiness flow to resolve the readiness promise."
             (if (and websocket
                      (hermes-dashboard-transport--generation-live-p
                       client generation))
-                (setf (hermes-dashboard-transport-client-websocket client)
-                      websocket)
+                (progn
+                  (setf (hermes-dashboard-transport-client-websocket client)
+                        websocket)
+                  ;; The `gateway.ready' window starts once the socket is
+                  ;; open, so a slow cold start cannot use it up first.
+                  (hermes-dashboard-transport--arm-ready-timeout client))
               (when (and websocket (fboundp 'websocket-close))
                 (hermes-dashboard-transport--attempt
                  #'websocket-close websocket))))
@@ -1630,8 +1660,6 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
                       client err)))))
     (when (hermes-dashboard-transport--generation-live-p client generation)
       (hermes-dashboard-transport--connect-async client nil generation))
-    (when (hermes-dashboard-transport--generation-live-p client generation)
-      (hermes-dashboard-transport--arm-ready-timeout client))
     client))
 
 (defun hermes-dashboard-transport--install-auth (client auth)
@@ -1658,9 +1686,7 @@ AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
      client (hermes-dashboard-transport--remote-connect-event
              (plist-get auth :redacted-url)))
     (when (hermes-dashboard-transport--generation-live-p client generation)
-      (hermes-dashboard-transport--connect-async client nil generation))
-    (when (hermes-dashboard-transport--generation-live-p client generation)
-      (hermes-dashboard-transport--arm-ready-timeout client))))
+      (hermes-dashboard-transport--connect-async client nil generation))))
 
 (cl-defun hermes-dashboard-transport--start-remote
     (&key callback host port token remote-url remote-auth-method)
