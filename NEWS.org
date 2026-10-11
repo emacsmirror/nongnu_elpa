@@ -1,7 +1,16 @@
 #+title: emacs-codex-ide NEWS
 
-* Unreleased
+* Version 0.2.0 (2026-10-11)
 
+- Incompatible changes:
+  - =codex-ide-list-sessions= opens a session list buffer; completion moved
+    to =codex-ide-switch-session=.
+  - Menu =q= only closes the menu; kill a session with =k=.
+  - Failed sessions keep their buffer by default
+    (=codex-ide-kill-buffer-on-exit=).
+  - GNU HTTP MCP requires a per-session token, so persistent GNU
+    installation is refused.  Remove an old persistent =emacs_tools= entry
+    from the Codex configuration.
 - Give native Neomacs sessions =TERM=xterm-256color= and =COLORTERM=truecolor=
   instead of the frame's =TERM=dumb=, so Codex keeps its full colour styling.
 - Resume saved conversations in new live sessions, preserving existing sessions.
@@ -54,8 +63,6 @@
   socket delivery no longer implies that the TUI consumed the selection.
 - Close excess context connections without signaling from the filter.
   Keep debug output in a bounded, read-only special-mode buffer.
-
-* Version 0.1.4 (unreleased)
 
 - Select native neo-term automatically in Neomacs, preserving explicit
   customization and existing session backends. Eat is now a lazy optional
