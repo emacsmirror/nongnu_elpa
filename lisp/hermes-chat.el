@@ -470,6 +470,11 @@ and `upsert-entry'.  Other types return (STATE)."
                                 :interim-content content))))
   (hermes-chat--reasoning-row assistant-id nil)
   (hermes-chat--continue-assistant assistant-id)
+  ;; The sealed segment is finished, like a final reply: drop a reasoning
+  ;; preview that only repeats it and settle rows still marked running.
+  ;; Live tool rows already moved to the successor above.
+  (hermes-chat--drop-duplicate-thinking assistant-id)
+  (hermes-chat--settle-transport-entries assistant-id 'done)
   (setq hermes-chat--dashboard-interim-assistant-id assistant-id))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)

@@ -1555,6 +1555,36 @@ PHASE defaults to `after-change-functions'."
          (should commentary)
          (should (equal (plist-get commentary :status) 'done)))))))
 
+(ert-deftest hermes-chat-interim-drops-duplicate-reasoning-and-settles ()
+  "A reasoning preview repeating a pre-tool reply segment does not linger."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (dolist (frame '(("message.start")
+                     ("message.delta" (text . "I'll take care of that now."))
+                     ("reasoning.available" (text . "I'll take care of that now."))
+                     ("message.interim" (text . "I'll take care of that now.")
+                      (already_streamed . t))
+                     ("tool.start" (tool_id . "call_1") (name . "skill_manage")
+                      (context . "demo"))
+                     ("tool.complete" (tool_id . "call_1") (name . "skill_manage")
+                      (result . ((success . t))))
+                     ("message.delta" (text . "Done."))
+                     ("reasoning.available" (text . "Done."))
+                     ("message.complete" (text . "Done.") (status . "complete"))))
+      (hermes-test--emit-dashboard-prompt client (car frame) (cdr frame)))
+    (let ((entries (hermes-chat--entries)))
+      (should-not (cl-find 'commentary entries
+                           :key (lambda (entry) (plist-get entry :role))))
+      (should-not (cl-find-if
+                   (lambda (entry)
+                     (and (hermes-chat--transient-entry-p entry)
+                          (hermes-chat--active-status-p (plist-get entry :status))))
+                   entries))
+      (should (equal (mapcar (lambda (entry) (plist-get entry :content))
+                             (cl-remove-if-not
+                              (lambda (entry) (eq (plist-get entry :role) 'assistant))
+                              entries))
+                     '("I'll take care of that now." "Done."))))))
+
 (ert-deftest hermes-chat-keeps-thinking-that-differs-from-reply ()
   "Reasoning that genuinely differs from the reply is retained."
   (let (callback)
