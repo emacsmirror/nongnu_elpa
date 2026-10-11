@@ -46,6 +46,19 @@ authentication guards, browser acquisition and ownership remain in use."
    `(:body ((name . "sample") (content . ,(or content hermes-skills-tests--source))
             (path . "/remote/never-visit/SKILL.md")))))
 
+(ert-deftest hermes-skills-header-keeps-percent-signs-literal ()
+  "Remote skill and profile names containing % render literally."
+  (with-temp-buffer
+    (setq-local hermes-instance '("lab" . "http://127.0.0.1:9119"))
+    (setq-local hermes-skills--profile "p%d")
+    (setq-local hermes-skills--name "50%-off")
+    (let ((line (hermes-test--mode-line-literal
+                 (apply #'concat (hermes-skills--header)))))
+      (should (string-search "Profile: p%d" line))
+      (should (string-search "| 50%-off" line))
+      (should (eq (get-text-property (string-search "50%" line) 'face line)
+                  'hermes-browser-name)))))
+
 (ert-deftest hermes-skills-native-entry-contract ()
   "Installed inventory exposes content and a separate passive Hub."
   (should (eq (keymap-lookup hermes-inventory-mode-map "RET")

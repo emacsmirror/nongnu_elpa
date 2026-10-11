@@ -265,6 +265,20 @@
                  (should (= (length http) 1))
                  (should (equal (hermes-transport--get (car frames) 'method) "session.foreign.import")))))))))))
 
+(ert-deftest hermes-foreign-header-keeps-percent-signs-literal ()
+  "Remote host and profile labels containing % render literally."
+  (with-temp-buffer
+    (setq-local hermes-instance '("lab%d" . "http://127.0.0.1:9119"))
+    (setq-local hermes-foreign--page '((host . "box%s") (unreadable . "3%")))
+    (setq-local hermes-foreign--profile "work%-5d")
+    (let ((line (hermes-test--mode-line-literal (hermes-foreign--header))))
+      (should (string-search "lab%d" line))
+      (should (string-search "Host box%s" line))
+      (should (string-search "Destination work%-5d" line))
+      (should (string-search "Unreadable 3%" line))
+      (should (eq (get-text-property (string-search "work%" line) 'face line)
+                  'hermes-browser-profile)))))
+
 (ert-deftest hermes-foreign-missing-method-and-disappeared-preview-recovery ()
   (hermes-foreign-test--fixture
    (with-current-buffer (hermes-foreign-test--open)

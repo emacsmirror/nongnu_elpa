@@ -3,6 +3,15 @@
 (require 'cl-lib)
 (require 'hermes-plugins)
 
+(ert-deftest hermes-plugins-header-keeps-percent-signs-literal ()
+  "A remote context engine name containing % renders literally.
+`format-mode-line' renders nothing in batch, so check the escaped text."
+  (with-temp-buffer
+    (setq-local hermes-plugins--snapshot
+                '((providers . ((context_engine . "ctx%d")))))
+    (setq-local hermes-plugins--status "Ready")
+    (should (string-search "Context: ctx%%d |" (hermes-plugins--header)))))
+
 (ert-deftest hermes-plugins-mutation-acquisition-settles-and-retries ()
   (dolist (condition '(error quit))
     (dolist (replace '(nil t))

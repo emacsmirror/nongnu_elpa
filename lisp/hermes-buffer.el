@@ -33,6 +33,13 @@ KEY is a logical name for reusable views, or t for unique allocations.")
        (or (null mode) (eq major-mode mode))
        (not buffer-file-name)))
 
+(defun hermes-buffer--mode-line-literal (value)
+  "Return VALUE as text that mode and header lines display literally.
+Their strings are %-constructs, so a remote name such as \"100%\" would
+otherwise render as padding or vanish.  Escape each value, not a whole
+formatted line, so callers can still add faces and fixed constructs."
+  (string-replace "%" "%%" (format "%s" value)))
+
 (defvar warm-restart-regenerable)
 (defvar warm-restart-blocker-functions)
 

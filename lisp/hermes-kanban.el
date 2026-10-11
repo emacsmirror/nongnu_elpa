@@ -800,7 +800,7 @@ INSTANCE is the Hermes instance inherited from the boards overview."
             hermes-kanban--latest-event-id
             (hermes-transport--get payload 'latest_event_id)
             mode-line-process
-            (list (format " [%s]" (or name slug "board"))
+            (list (format " [%s]" (hermes-buffer--mode-line-literal (or name slug "board")))
                   '(:eval (hermes-kanban--triage-mode-indicator))
                   '(:eval (hermes-kanban--live-indicator)))
             tabulated-list-entries
@@ -862,7 +862,8 @@ With IN-PLACE non-nil, refresh without selecting the board buffer."
           (let ((inhibit-read-only t)) (erase-buffer)))
         (hermes-browser--own-instance instance)
         (setq hermes-kanban--slug slug hermes-kanban--name name
-              mode-line-process (format " [%s]" (or name slug "board")))))
+              mode-line-process (format " [%s]" (hermes-buffer--mode-line-literal
+                                                  (or name slug "board"))))))
     (hermes-kanban--read-view
      target
      (lambda () (hermes-kanban--api "GET" "/board" nil (hermes-kanban--query-for-board slug)))
@@ -1225,7 +1226,8 @@ INSTANCE is inherited from the owning board buffer."
             hermes-kanban-task--board-slug board-slug
             hermes-kanban-task--status task-status
             hermes-kanban-task--assignees assignees
-            mode-line-process (format " [%s]" (or task-id "task")))
+            mode-line-process (format " [%s]" (hermes-buffer--mode-line-literal
+                                                (or task-id "task"))))
       (hermes-browser--preserve-reading-position
        (lambda ()
          (let ((inhibit-read-only t))
@@ -1257,7 +1259,8 @@ With IN-PLACE non-nil, refresh the current detail without selecting it."
         (setq hermes-kanban-task--task-id task-id
               hermes-kanban-task--board-slug board-slug
               hermes-kanban-task--assignees assignees
-              mode-line-process (format " [%s]" task-id))))
+              mode-line-process (format " [%s]"
+                                        (hermes-buffer--mode-line-literal task-id)))))
     (hermes-kanban--read-view
      target
      (lambda () (hermes-kanban--api "GET" (hermes-kanban--task-path task-id)
@@ -1394,8 +1397,9 @@ INSTANCE is inherited from the owning board or task buffer."
       (when instance (hermes-browser--own-instance instance))
       (setq hermes-kanban-log--task-id task-id
             hermes-kanban-log--board-slug board-slug
-            mode-line-process (format " [%s]" (or (hermes-transport--non-empty-string task-id)
-                                                  "task")))
+            mode-line-process (format " [%s]" (hermes-buffer--mode-line-literal
+                                                (or (hermes-transport--non-empty-string task-id)
+                                                    "task"))))
       (hermes-browser--preserve-reading-position
        (lambda ()
          (let ((inhibit-read-only t))
@@ -1429,7 +1433,7 @@ INSTANCE is inherited from the owning board or task buffer."
         (let ((inhibit-read-only t)) (erase-buffer)))
       (hermes-browser--own-instance instance)
       (setq hermes-kanban-log--task-id id hermes-kanban-log--board-slug board-slug
-            mode-line-process (format " [%s]" id)))
+            mode-line-process (format " [%s]" (hermes-buffer--mode-line-literal id))))
     (hermes-kanban--read-view
      target (lambda () (hermes-kanban--fetch-log id board-slug))
      (lambda (payload) (hermes-kanban--display-log payload board-slug t instance))
@@ -1938,7 +1942,8 @@ With IN-PLACE non-nil, refresh without selecting the buffer."
       (hermes-browser--own-instance instance)
       (setq hermes-kanban-diagnostics--slug slug
             hermes-kanban-diagnostics--name name
-            mode-line-process (and slug (format " [%s]" slug))))
+            mode-line-process (and slug (format " [%s]"
+                                                (hermes-buffer--mode-line-literal slug)))))
     (with-current-buffer target
       (if in-place (hermes-kanban--diagnostics-revert)
         (hermes-kanban--list-diagnostics)))))

@@ -72,11 +72,15 @@ A new request is not a new owner; stored history survives transport retirement."
 (defun hermes-foreign--header ()
   "Return persistent backend and destination labels, including on read failure."
   (format " %s · Host %s · Source %s · Destination %s · Unreadable %s "
-          (hermes-instance-name hermes-instance)
-          (or (hermes-transport--get hermes-foreign--page 'host) "unknown")
-          (or hermes-foreign--source "all")
-          (propertize (or hermes-foreign--profile "unknown") 'face 'hermes-browser-profile)
-          (or (hermes-transport--get hermes-foreign--page 'unreadable) "unknown")))
+          (hermes-buffer--mode-line-literal (hermes-instance-name hermes-instance))
+          (hermes-buffer--mode-line-literal
+           (or (hermes-transport--get hermes-foreign--page 'host) "unknown"))
+          (hermes-buffer--mode-line-literal (or hermes-foreign--source "all"))
+          (propertize (hermes-buffer--mode-line-literal
+                       (or hermes-foreign--profile "unknown"))
+                      'face 'hermes-browser-profile)
+          (hermes-buffer--mode-line-literal
+           (or (hermes-transport--get hermes-foreign--page 'unreadable) "unknown"))))
 
 (defun hermes-foreign--error (reason)
   "Display REASON without retrying an import."

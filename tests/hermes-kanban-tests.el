@@ -574,6 +574,18 @@ READBACK retains the real board refresh."
                 legacy nil t)))
           (should (= (length requests) (if retire 0 1))))))))
 
+(ert-deftest hermes-kanban-mode-line-keeps-percent-signs-literal ()
+  "Board names and task ids containing % render literally in the mode line."
+  (with-temp-buffer
+    (hermes-kanban-mode)
+    (hermes-kanban--display-board '((tasks . [])) "ops" "Ops 100%" t)
+    (should (equal (hermes-test--mode-line-literal (car mode-line-process))
+                   " [Ops 100%]")))
+  (with-temp-buffer
+    (hermes-kanban-task-mode)
+    (hermes-kanban--display-task '((task . ((id . "t%d") (body . "x")))) "work" t)
+    (should (equal (hermes-test--mode-line-literal mode-line-process) " [t%d]"))))
+
 (ert-deftest hermes-kanban-detail-preserves-literal-guarded-markdown ()
   "Literal copy and outline survive unsafe, nested and programming fences."
   (require 'autorevert)

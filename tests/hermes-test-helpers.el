@@ -158,6 +158,18 @@ The buffer is captured by object so teardown still kills it after a rename."
   "Return the current chat header line as plain text."
   (substring-no-properties (hermes-chat--header-line)))
 
+(defun hermes-test--mode-line-literal (string)
+  "Return STRING as a mode line displays it, or nil if it has %-constructs.
+`format-mode-line' renders nothing in batch Emacs, so tests unescape
+\"%%\" themselves and treat any other construct as a failure."
+  (let ((pos 0) (out ""))
+    (catch 'construct
+      (while (string-match "%\\(.\\)?" string pos)
+        (unless (equal (match-string 1 string) "%") (throw 'construct nil))
+        (setq out (concat out (substring string pos (match-beginning 0)) "%")
+              pos (match-end 0)))
+      (concat out (substring string pos)))))
+
 (defun hermes-test--count-buttons-labeled (label)
   "Return the number of buttons whose text is LABEL in the current buffer."
   (let ((count 0)

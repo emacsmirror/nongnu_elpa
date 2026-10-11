@@ -127,11 +127,15 @@ owner, never a successor established by a hook."
 
 (defun hermes-skills--header ()
   "Return the owning skill view's compact provenance header."
-  (list " " (propertize (hermes-instance-name hermes-instance) 'face 'shadow)
-        " | Profile: " (propertize (or hermes-skills--profile "backend launch")
+  (list " " (propertize (hermes-buffer--mode-line-literal
+                         (hermes-instance-name hermes-instance))
+                        'face 'shadow)
+        " | Profile: " (propertize (hermes-buffer--mode-line-literal
+                                    (or hermes-skills--profile "backend launch"))
                                    'face 'font-lock-constant-face)
-        " | " (propertize (or hermes-skills--name
-                              (cadr hermes-skills--candidate) "Skill Hub")
+        " | " (propertize (hermes-buffer--mode-line-literal
+                           (or hermes-skills--name
+                               (cadr hermes-skills--candidate) "Skill Hub"))
                           'face 'hermes-browser-name)
         (when hermes-skills--path
           (propertize " | Backend path (label)" 'face 'shadow

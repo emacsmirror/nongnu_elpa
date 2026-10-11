@@ -120,10 +120,11 @@
 The shared browser mode line names the instance when several exist."
   (format " Launch-home %s | Context: %s | %s"
           (if hermes-plugins--catalog-p "catalog" "inventory")
-          (or (hermes-transport--get
-               (hermes-transport--get hermes-plugins--snapshot 'providers)
-               'context_engine) "unknown")
-          (propertize hermes-plugins--status 'face
+          (hermes-buffer--mode-line-literal
+           (or (hermes-transport--get
+                (hermes-transport--get hermes-plugins--snapshot 'providers)
+                'context_engine) "unknown"))
+          (propertize (hermes-buffer--mode-line-literal hermes-plugins--status) 'face
                       (if hermes-plugins--snapshot-stale-p 'warning 'shadow))))
 
 (defun hermes-plugins--guard ()
