@@ -1078,6 +1078,25 @@ reports its stderr diagnostic."
                                    "model unavailable"))))))))
       (delete-directory dir t))))
 
+;; A stderr pipe kept open by a chatty grandchild must not wedge the sentinel.
+(ert-deftest hermes-transport-stderr-drain-is-bounded ()
+  "Draining stderr stops even while another process keeps writing to it."
+  (skip-unless (executable-find "sh"))
+  (let* ((buffer (generate-new-buffer " *hermes-stderr-test*"))
+         (pipe (make-pipe-process :name "hermes-stderr-test" :buffer buffer
+                                  :noquery t))
+         (writer (make-process
+                  :name "hermes-stderr-writer" :noquery t
+                  :command '("sh" "-c" "while :; do echo x >&2; sleep 0.01; done")
+                  :stderr pipe)))
+    (unwind-protect
+        (let ((start (float-time)))
+          (with-timeout (10 (ert-fail "stderr drain did not stop"))
+            (should (string-prefix-p "x\n" (hermes-transport--stderr-output buffer))))
+          (should (< (- (float-time) start) 5)))
+      (delete-process writer)
+      (hermes-transport--retire-stderr buffer))))
+
 (ert-deftest hermes-transport-builds-quiet-chat-command ()
   (cl-letf (((symbol-function 'executable-find) #'ignore)
             ((symbol-function 'file-executable-p) #'ignore))

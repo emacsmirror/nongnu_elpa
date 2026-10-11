@@ -61,13 +61,17 @@ is searched on variable `exec-path', with ~/.local/bin/hermes as a fallback."
 (defun hermes-transport--stderr-output (buffer)
   "Return the diagnostic text collected in standard-error BUFFER.
 Drain its pipe first: the child has exited, but its last writes may still be
-unread.  Drop the `session_id:' line that `hermes chat -Q' always prints on
-stderr; it is metadata, not part of a failure."
+unread.  Stop draining after one second, since a grandchild that inherited
+the pipe can keep it open and busy indefinitely.  Drop the `session_id:'
+line that `hermes chat -Q' always prints on stderr; it is metadata, not part
+of a failure."
   (if (not (buffer-live-p buffer))
       ""
     (when-let* ((pipe (get-buffer-process buffer)))
-      (while (and (process-live-p pipe)
-                  (accept-process-output pipe 0.05 nil t))))
+      (let ((deadline (+ (float-time) 1.0)))
+        (while (and (process-live-p pipe)
+                    (< (float-time) deadline)
+                    (accept-process-output pipe 0.05 nil t)))))
     (with-current-buffer buffer
       (replace-regexp-in-string
        "^session_id:[^\n]*\n?" ""
