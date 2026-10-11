@@ -350,12 +350,23 @@ must carry a matching bearer authorization header."
 ;; sensitive, and unreadable code fails closed to a prompt.
 
 (defcustom hermes-exec-confirm-functions
-  '(delete-file delete-directory rename-file copy-file make-symbolic-link
-                write-region append-to-file set-file-modes set-file-times
+  '(delete-file delete-directory rename-file copy-file copy-directory
+                make-symbolic-link add-name-to-file make-directory
+                write-region append-to-file with-temp-file write-file
+                save-buffer basic-save-buffer set-visited-file-name
+                set-file-modes set-file-times
                 shell-command shell-command-to-string async-shell-command
+                shell-command-on-region dired-do-shell-command
+                dired-do-async-shell-command eshell-command compile
                 call-process call-process-region start-process make-process
                 start-process-shell-command call-process-shell-command
-                url-retrieve url-retrieve-synchronously kill-emacs)
+                process-file process-file-shell-command process-lines
+                process-lines-ignore-status start-file-process
+                start-file-process-shell-command make-pipe-process
+                make-network-process open-network-stream make-serial-process
+                url-retrieve url-retrieve-synchronously url-copy-file
+                load load-file load-library byte-compile-file native-compile
+                kill-emacs)
   "Function symbols whose presence makes `hermes-exec-confirm-by-risk' prompt."
   :type '(repeat symbol))
 
@@ -365,8 +376,13 @@ Empty by default; add symbols you never want run through the endpoint."
   :type '(repeat symbol))
 
 (defconst hermes-exec--dynamic-dispatch
-  '(eval funcall funcall-interactively apply macroexpand macroexpand-all)
-  "Symbols that defeat static reading and so are always treated as sensitive.")
+  '(eval funcall funcall-interactively apply macroexpand macroexpand-all
+         call-interactively command-execute execute-kbd-macro
+         unread-command-events intern intern-soft read read-from-string
+         symbol-function indirect-function)
+  "Symbols that defeat static reading and so are always treated as sensitive.
+Besides direct dispatch, this covers naming a function at run time (from a
+string, a reader or a key binding), which hides it from the symbol scan.")
 
 (defun hermes-exec--code-symbols (code)
   "Return the symbols appearing in CODE's top-level forms.

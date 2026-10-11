@@ -526,6 +526,19 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
   (should (eq 'sensitive (hermes-exec--classify-code "(shell-command \"ls\")")))
   (should (eq 'sensitive (hermes-exec--classify-code "(funcall fn)"))))
 
+(ert-deftest hermes-exec-test-classify-indirect-effects ()
+  "Programs, file writes, loads and run-time dispatch are not ordinary."
+  (dolist (code '("(process-lines \"sh\" \"-c\" \"id\")"
+                  "(start-file-process \"x\" nil \"sh\" \"-c\" \"id\")"
+                  "(make-pipe-process :name \"x\")"
+                  "(with-temp-file \"~/.bashrc\" (insert \"x\"))"
+                  "(load \"/tmp/payload.el\")"
+                  "(url-copy-file \"https://example.invalid/x\" \"/tmp/x\")"
+                  "(run-at-time 0 nil (intern (concat \"shell\" \"-command\")) \"id\")"
+                  "(call-interactively (key-binding (kbd \"M-!\")))"
+                  "(setq unread-command-events (listify-key-sequence (kbd \"M-! id RET\")))"))
+    (should (eq 'sensitive (hermes-exec--classify-code code)))))
+
 (ert-deftest hermes-exec-test-classify-unreadable-fails-closed ()
   "Code that cannot be read classifies as sensitive, not ordinary."
   (should (eq 'sensitive (hermes-exec--classify-code "(+ 1 2"))))
