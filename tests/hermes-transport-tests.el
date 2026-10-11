@@ -1037,6 +1037,47 @@
       (should-error (hermes-transport-send "hello" #'ignore))
       (should-not (buffer-live-p buffer)))))
 
+(ert-deftest hermes-transport-send-keeps-cli-stderr-out-of-replies ()
+  "The -Q session_id line on stderr never reaches the reply stream.
+Reply lines that merely look like metadata survive, and a failure still
+reports its stderr diagnostic."
+  (skip-unless (executable-find "sh"))
+  (let* ((dir (make-temp-file "hermes-cli-stub" t))
+         (script (expand-file-name "hermes" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file script
+            (insert "#!/bin/sh\n"
+                    "if [ \"$4\" = fail ]; then\n"
+                    "  echo 'model unavailable' >&2\n"
+                    "  printf '\\nsession_id: 20261011_000000_abcdef\\n' >&2\n"
+                    "  exit 3\n"
+                    "fi\n"
+                    "printf 'hello\\nsession_id: part of the reply\\n'\n"
+                    "printf '\\nsession_id: 20261011_000000_abcdef\\n' >&2\n"))
+          (set-file-modes script #o755)
+          (let ((hermes-command script))
+            (dolist (prompt '("ok" "fail"))
+              (let (events)
+                (hermes-transport-send
+                 prompt (lambda (event) (push event events)))
+                (with-timeout (10 (ert-fail "CLI transport did not finish"))
+                  (while (not (memq (plist-get (car events) :type) '(done error)))
+                    (accept-process-output nil 0.05)))
+                (let ((reply (mapconcat (lambda (event) (plist-get event :content))
+                                        (seq-filter (lambda (event)
+                                                      (eq (plist-get event :type) 'delta))
+                                                    (reverse events))
+                                        "")))
+                  (if (equal prompt "ok")
+                      (progn
+                        (should (eq (plist-get (car events) :type) 'done))
+                        (should (equal reply "hello\nsession_id: part of the reply\n")))
+                    (should (eq (plist-get (car events) :type) 'error))
+                    (should (equal (plist-get (car events) :content)
+                                   "model unavailable"))))))))
+      (delete-directory dir t))))
+
 (ert-deftest hermes-transport-builds-quiet-chat-command ()
   (cl-letf (((symbol-function 'executable-find) #'ignore)
             ((symbol-function 'file-executable-p) #'ignore))

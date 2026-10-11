@@ -75,25 +75,12 @@ CSI, an OSC, or a lone ESC -- across stream chunks through FRAGMENT.
   "Return sanitized CONTENT for display in chat buffers."
   (car (hermes-chat--sanitize-content-with-fragment content nil)))
 
-(defun hermes-chat--strip-session-id-lines (content &optional final)
-  "Return CONTENT without Hermes CLI session-id lines.
-When FINAL is non-nil, also remove a final session-id line without newline."
-  (with-temp-buffer
-    (insert content)
-    (goto-char (point-min))
-    (let ((regexp (if final
-                      "^session_id:[^\n]*\\(\n\\|\\'\\)"
-                    "^session_id:[^\n]*\n")))
-      (while (re-search-forward regexp nil t)
-        (replace-match "" nil nil)))
-    (buffer-string)))
-
-(defun hermes-chat--sanitize-assistant-content (content &optional final)
+(defun hermes-chat--sanitize-assistant-content (content &optional _final)
   "Return assistant CONTENT cleaned for display.
-When FINAL is non-nil, strip trailing transport metadata too."
-  (hermes-chat--strip-session-id-lines
-   (hermes-chat--sanitize-content content)
-   final))
+Transport metadata never reaches reply text: the CLI transport keeps the
+`hermes chat -Q' session_id line on stderr, and the dashboard gateway
+streams model text only.  The optional FINAL argument is ignored."
+  (hermes-chat--sanitize-content content))
 
 (defun hermes-chat--offset-range (start end)
   "Return zero-based half-open range for buffer positions START and END."

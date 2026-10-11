@@ -545,7 +545,8 @@
          (should (equal (plist-get assistant :content) "hello\nλ"))
          (should-not (string-match-p "\r" (buffer-string))))))))
 
-(ert-deftest hermes-chat-transport-removes-session-id-lines ()
+(ert-deftest hermes-chat-keeps-session-id-lines-in-replies ()
+  "A reply line that starts with session_id: is reply text, not metadata."
   (let (callback)
     (hermes-test-with-chat-buffer
      (let ((hermes-transport-send-function
@@ -556,25 +557,13 @@
        (hermes-chat-send)
        (funcall callback
                 (list :type 'delta
-                      :content "session_id: 20260614_223306_254697\nhello"))
-       (let ((assistant (hermes-test--assistant-entry)))
-         (should (equal (plist-get assistant :content) "hello"))
-         (should-not (string-match-p "session_id:" (buffer-string))))))))
-
-(ert-deftest hermes-chat-transport-removes-final-session-id-line ()
-  (let (callback)
-    (hermes-test-with-chat-buffer
-     (let ((hermes-transport-send-function
-            (lambda (_prompt cb)
-              (setq callback cb)
-              'fake-process)))
-       (insert "hi")
-       (hermes-chat-send)
+                      :content "```yaml\nsession_id: abc123\ntimeout: 30\n```\n"))
        (funcall callback '(:type delta :content "session_id: trailing"))
        (funcall callback '(:type done))
        (let ((assistant (hermes-test--assistant-entry)))
-         (should (equal (plist-get assistant :content) ""))
-         (should-not (string-match-p "session_id:" (buffer-string))))))))
+         (should (equal (plist-get assistant :content)
+                        (concat "```yaml\nsession_id: abc123\ntimeout: 30\n```\n"
+                                "session_id: trailing"))))))))
 
 (ert-deftest hermes-chat-table-ragged-insertion-and-reflow ()
   "Narrow insertion and reflow preserve ragged source, EWOC and draft undo."
@@ -1204,25 +1193,21 @@ PHASE defaults to `after-change-functions'."
                      '("**candidate**" "")))
       (should (equal (hermes-chat-input-string) "draft")))))
 
-(ert-deftest hermes-chat-streaming-prefix-change-uses-full-printer ()
-  "Split ANSI stays hidden; completed metadata can retract a displayed prefix."
+(ert-deftest hermes-chat-streaming-appends-reply-lines-in-place ()
+  "Split ANSI stays hidden; every reply line, metadata-like or not, appends."
   (hermes-test-with-dashboard-prompt-session (client)
     (insert "draft")
     (let ((inserter (symbol-function 'hermes-chat--insert-entry-content)) (prints 0))
       (cl-letf (((symbol-function 'hermes-chat--insert-entry-content)
                  (lambda (&rest args) (cl-incf prints) (apply inserter args))))
-        (dolist (text '("α\e[38;2" ";1;2;3mβ\e[0m\n" "session_" "id: hidden"))
+        (dolist (text '("α\e[38;2" ";1;2;3mβ\e[0m\n" "session_" "id: shown"
+                        "\nγ" "δ"))
           (hermes-test--emit-dashboard-prompt client "message.delta" `((text . ,text))))
         (should (= prints 1))
         (should (equal (hermes-chat--entry-content-by-id hermes-chat--pending-assistant-id)
-                       "αβ\nsession_id: hidden"))
-        (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "\nγ")))
-        (should (= prints 2))
-        (should (equal (hermes-chat--entry-content-by-id hermes-chat--pending-assistant-id)
-                       "αβ\nγ"))
-        (should-not (string-match-p "session_id\\|hidden\\|38;2" (buffer-string)))
-        (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "δ")))
-        (should (= prints 2)))
+                       "αβ\nsession_id: shown\nγδ"))
+        (should (string-match-p "session_id: shown" (buffer-string)))
+        (should-not (string-match-p "38;2" (buffer-string))))
       (should (equal (hermes-chat-input-string) "draft"))
       (should-not (text-property-not-all (point-min) (hermes-chat--input-position)
                                          'read-only t))
@@ -1555,7 +1540,7 @@ PHASE defaults to `after-change-functions'."
                 '(:type commentary :event "reasoning.available"
                         :content "I will inspect the repo first."))
        (funcall callback
-                '(:type done :content "I will inspect the repo first.\nsession_id: sid"))
+                '(:type done :content "I will inspect the repo first."))
        (let* ((entries (hermes-chat--entries))
               (assistant (cl-find-if
                           (lambda (entry)

@@ -1326,14 +1326,11 @@ With QUIET, leave state-change notification to the caller."
                                (hermes-chat--sanitize-stream-content
                                 content ansi-key)
                              (hermes-chat--sanitize-content content)))))
-         (hermes-chat--entry-with
-          entry
-          :status status
-          :content (hermes-chat--strip-session-id-lines text)))))))
+         (hermes-chat--entry-with entry :status status :content text))))))
 
 (defun hermes-chat--mark-assistant (assistant-id status &optional content final quiet)
   "Set ASSISTANT-ID to STATUS, optionally replacing CONTENT.
-When FINAL is non-nil, strip any trailing transport metadata.
+When FINAL is non-nil, re-sanitize the stored content as settled text.
 With QUIET, leave state-change notification to the caller."
   (hermes-chat--clear-ansi-fragment
    (hermes-chat--assistant-ansi-key assistant-id))

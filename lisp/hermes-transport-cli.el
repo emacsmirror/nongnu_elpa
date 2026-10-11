@@ -58,6 +58,28 @@ is searched on variable `exec-path', with ~/.local/bin/hermes as a fallback."
           (buffer-substring-no-properties (point-min) (point-max)))
       "")))
 
+(defun hermes-transport--stderr-output (buffer)
+  "Return the diagnostic text collected in standard-error BUFFER.
+Drain its pipe first: the child has exited, but its last writes may still be
+unread.  Drop the `session_id:' line that `hermes chat -Q' always prints on
+stderr; it is metadata, not part of a failure."
+  (if (not (buffer-live-p buffer))
+      ""
+    (when-let* ((pipe (get-buffer-process buffer)))
+      (while (and (process-live-p pipe)
+                  (accept-process-output pipe 0.05 nil t))))
+    (with-current-buffer buffer
+      (replace-regexp-in-string
+       "^session_id:[^\n]*\n?" ""
+       (buffer-substring-no-properties (point-min) (point-max))))))
+
+(defun hermes-transport--retire-stderr (buffer)
+  "Delete standard-error BUFFER and its pipe process."
+  (when (buffer-live-p buffer)
+    (when-let* ((pipe (get-buffer-process buffer)))
+      (delete-process pipe))
+    (kill-buffer buffer)))
+
 (defun hermes-transport--start-event ()
   "Return fallback status event emitted before Hermes process startup."
   (list :type 'status
@@ -80,11 +102,15 @@ Structured transports may additionally emit `status', `progress', `tool',
 
 Return the process object created by `make-process'."
   (hermes-transport--emit callback (hermes-transport--start-event))
-  (let ((buffer (generate-new-buffer " *hermes-transport*")))
+  (let ((buffer (generate-new-buffer " *hermes-transport*"))
+        (stderr (generate-new-buffer " *hermes-transport-stderr*")))
     (condition-case err
         (make-process
          :name "hermes-chat"
          :buffer buffer
+         ;; `hermes chat -Q' prints its session_id line on stderr.  Keep
+         ;; stderr out of the reply stream; it only explains a failure.
+         :stderr stderr
          :command (hermes-transport--command prompt)
          :connection-type 'pipe
          :noquery t
@@ -102,9 +128,12 @@ Return the process object created by `make-process'."
                            (if (zerop (process-exit-status process))
                                (hermes-transport--emit callback '(:type done))
                              (let ((message (string-trim
-                                             (or (hermes-transport--process-output
-                                                  process)
-                                                 event))))
+                                             (concat
+                                              (hermes-transport--process-output
+                                               process)
+                                              "\n"
+                                              (hermes-transport--stderr-output
+                                               stderr)))))
                                (hermes-transport--emit
                                 callback
                                 (list :type 'error
@@ -112,10 +141,12 @@ Return the process object created by `make-process'."
                                                    event
                                                  message)))))
                          (when (buffer-live-p (process-buffer process))
-                           (kill-buffer (process-buffer process)))))))
+                           (kill-buffer (process-buffer process)))
+                         (hermes-transport--retire-stderr stderr)))))
       (error
        (when (buffer-live-p buffer)
          (kill-buffer buffer))
+       (hermes-transport--retire-stderr stderr)
        (signal (car err) (cdr err))))))
 
 (defcustom hermes-transport-send-function #'hermes-transport-send
