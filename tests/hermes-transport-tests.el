@@ -4096,6 +4096,14 @@ other's session."
                     client '(wrong-type-argument stringp :token))
                    "Wrong type argument: stringp, :token"))))
 
+(ert-deftest hermes-transport-dashboard-dotted-condition-message ()
+  "Dotted conditions still produce a message instead of signalling."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :host "127.0.0.1" :port 4567 :token "secret-token")))
+    (dolist (condition '((file-error . "x") (file-error "a" . "b")))
+      (should (stringp (hermes-dashboard-transport--condition-message
+                        client condition))))))
+
 (ert-deftest hermes-transport-dashboard-start-timeout-cleans-websocket ()
   (let (closed deleted opened-client)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)

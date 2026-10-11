@@ -1735,6 +1735,7 @@ OWNER-CURRENT-P guards credential persistence and delivery."
 process failed\" \"Connection refused\" :name ... :host ...), whose message
 would otherwise list every connection argument after the reason."
   (if (and (eq (car-safe condition) 'file-error)
+           (proper-list-p condition)
            (keywordp (nth 3 condition)))
       (list (car condition) (nth 1 condition) (nth 2 condition))
     condition))
