@@ -4964,5 +4964,15 @@ a command the heading shows whole."
                                     40)
                  (list (make-string 30 ?a) (make-string 30 ?b) "end")))
   (should (equal (length (hermes-work--wrap "a\nb\nc\nd\ne" 40)) 4)))
+
+(ert-deftest hermes-work-detail-meta-and-sections-are-lean ()
+  "Detail meta reads model, tools, time; no section repeats the latest tool."
+  (let* ((row '(:key (delegate . "w") :id "w" :kind delegate :state running :model "claude-opus-5-5"
+                     :tool-count 3 :started 0 :accepting-steer t
+                     :tools (("read_file" . "a.el") ("grep" . "needle"))))
+         (text (hermes-work--detail-text row (list row) 72)))
+    (should (string-match-p "^running · opus · 3 tools · 1:12$" text))
+    (should-not (string-match-p "^Now$" text))
+    (should (string-match-p "^Tools (3)\n· grep needle\n· read_file a.el" text))))
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here

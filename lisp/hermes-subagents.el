@@ -813,9 +813,9 @@ their card."
                (mapcar (lambda (part) (propertize part 'face 'hermes-work-meta))
                        (delq nil
                              (list (hermes-work--model (plist-get row :model))
-                                   (and elapsed (hermes-work-duration elapsed))
                                    (and (plist-get row :tool-count)
                                         (hermes-work--tools-text (plist-get row :tool-count)))
+                                   (and elapsed (hermes-work-duration elapsed))
                                    (and (> children 0)
                                         (format "%d child%s" children
                                                 (if (= children 1) "" "ren"))))))))))))
@@ -832,10 +832,6 @@ their card."
      (and parent (hermes-work--detail-field "Parent" (plist-get parent :goal)))
      (and running (not (plist-get row :accepting-steer))
           (hermes-work--detail-field "Steering" "closed"))
-     (when-let* ((tool (and running (hermes-chat--work-last-tool row))))
-       (concat (funcall title "Now")
-               (propertize (car tool) 'face 'hermes-work-tool) " "
-               (propertize (or (cdr tool) "") 'face 'hermes-work-activity) "\n"))
      (when-let* ((text (plist-get row :error)))
        (concat (funcall title "Error") (propertize text 'face 'hermes-work-failed) "\n"))
      (when-let* ((text (plist-get row :summary)))
