@@ -4997,5 +4997,52 @@ a command the heading shows whole."
       (should (string-match-p "last known" (format "%s" header-line-format)))
       (should-not (string-match-p "Detached\\|last known" (buffer-string)))
       (should (string-match-p "Parent goal" (buffer-string))))))
+
+(defun hermes-test--offered (rows key &optional detail log current)
+  "Return the actions the popup offers for KEY among ROWS.
+DETAIL asks from a detail buffer; LOG names a published log; CURRENT
+defaults to an attached chat."
+  (cl-letf (((symbol-function 'hermes-work--observations) (lambda (_) rows))
+            ((symbol-function 'hermes-work--log-path) (lambda (_ _) log)))
+    (with-temp-buffer
+      (if detail (hermes-work-detail-mode) (hermes-work-mode))
+      (setq hermes-work--owner (list :current-p (if (eq current 'detached) #'ignore #'always)))
+      (if detail (setq hermes-work--detail-key key)
+        (let ((inhibit-read-only t))
+          (hermes-work--insert (hermes-work--outline
+                                (list :agents (seq-filter (lambda (row) (eq (plist-get row :kind) 'delegate)) rows)
+                                      :processes (seq-filter (lambda (row) (eq (plist-get row :kind) 'process)) rows))
+                                '(:observed t) 0 80)))
+        (goto-char (hermes-work--find-line key)))
+      (seq-filter #'hermes-work--offers-p
+                  '(hermes-work-steer hermes-work-interrupt hermes-work-tail hermes-work-log)))))
+
+(ert-deftest hermes-work-popup-offers-only-applicable-actions ()
+  "Both popups offer exactly the actions the row's state allows."
+  (let ((rows (list '(:key (delegate . "r") :id "r" :kind delegate :state running :goal "R"
+                           :accepting-steer t)
+                    '(:key (delegate . "c") :id "c" :kind delegate :state running :goal "C")
+                    '(:key (delegate . "q") :id "q" :kind delegate :state queued :goal "Q")
+                    '(:key (delegate . "d") :id "d" :kind delegate :state completed :goal "D")
+                    '(:key (delegate . "f") :id "f" :kind delegate :state failed :goal "F")
+                    '(:key (process . "p") :id "p" :kind process :state running :command "make")
+                    '(:key (process . "x") :id "x" :kind process :state failed :command "make"
+                           :exit-code 2))))
+    (dolist (detail '(nil t))
+      (should (equal (hermes-test--offered rows '(delegate . "r") detail "/log")
+                     '(hermes-work-steer hermes-work-interrupt hermes-work-tail)))
+      (should (equal (hermes-test--offered rows '(delegate . "c") detail)
+                     '(hermes-work-interrupt hermes-work-tail)))
+      (should-not (hermes-test--offered rows '(delegate . "q") detail))
+      (should-not (hermes-test--offered rows '(delegate . "d") detail))
+      (should (equal (hermes-test--offered rows '(delegate . "f") detail "/log")
+                     '(hermes-work-log)))
+      (should (equal (hermes-test--offered rows '(process . "p") detail)
+                     '(hermes-work-interrupt)))
+      (should-not (hermes-test--offered rows '(process . "x") detail))
+      (should-not (hermes-test--offered rows '(delegate . "r") detail nil 'detached)))
+    (should-not (hermes-test--offered rows '(section . agents)))
+    (should-not (hermes-test--offered rows '(section . processes)))))
+
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here

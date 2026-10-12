@@ -899,6 +899,21 @@ Only a listed row of a current chat offers actions."
                                                              (car action) (cdr action)))
                                         (hermes-work--detail-actions row log) "  ")))))))
 
+(defun hermes-work--row-log (owner row)
+  "Return the published log of finished worker ROW in OWNER's chat, or nil."
+  (and row (eq (plist-get row :kind) 'delegate) (not (eq (plist-get row :state) 'running))
+       (hermes-work--log-path owner (plist-get row :id))))
+
+(defun hermes-work--offers-p (command)
+  "Return non-nil when COMMAND is an action of the row at point.
+Mirror the detail header: only a listed row of a current chat offers
+the actions `hermes-work--detail-actions' derives from its state."
+  (when-let* ((owner hermes-work--owner)
+              ((hermes-work--current-p owner))
+              (row (hermes-work--find (hermes-work--key-at-point)
+                                      (hermes-work--observations owner))))
+    (assq command (hermes-work--detail-actions row (hermes-work--row-log owner row)))))
+
 (defun hermes-work--detail-render (roster now)
   "Repaint this detail buffer from ROSTER at NOW, keeping place.
 A row that left the roster keeps its last-known text."
@@ -909,9 +924,7 @@ A row that left the roster keeps its last-known text."
                                               (plist-get roster :processes)))))
     (setq header-line-format
           (hermes-work--detail-header
-           key row current
-           (and current row (eq (car key) 'delegate) (not (eq (plist-get row :state) 'running))
-                (hermes-work--log-path owner (cdr key)))))
+           key row current (and current (hermes-work--row-log owner row))))
     (when row
       (hermes-browser--preserve-reading-position
        (lambda ()
@@ -1445,10 +1458,6 @@ Live tails time out after 10 seconds and the backend bounds them to 16 KiB."
   "Return non-nil when the row at point is a process."
   (eq (car-safe (hermes-work--key-at-point)) 'process))
 
-(defun hermes-work--worker-at-point-p ()
-  "Return non-nil when the row at point is a worker."
-  (eq (car-safe (hermes-work--key-at-point)) 'delegate))
-
 (defun hermes-work--stop-label ()
   "Return the label of `k' for the row at point."
   (if (hermes-work--process-at-point-p) "Kill process" "Interrupt"))
@@ -1476,12 +1485,13 @@ Live tails time out after 10 seconds and the backend bounds them to 16 KiB."
 (keymap-popup-annotate hermes-work-mode-map
   :popup-key "?" :exit-key "C-g" :description #'hermes-work--popup-title
   :group "Act"
-  hermes-work-steer ("Steer" :if #'hermes-work--worker-at-point-p)
-  hermes-work-interrupt #'hermes-work--stop-label
-  hermes-work-tail ("Live tail" :if #'hermes-work--worker-at-point-p)
+  hermes-work-steer ("Steer" :if (lambda () (hermes-work--offers-p #'hermes-work-steer)))
+  hermes-work-interrupt (#'hermes-work--stop-label
+                         :if (lambda () (hermes-work--offers-p #'hermes-work-interrupt)))
+  hermes-work-tail ("Live tail" :if (lambda () (hermes-work--offers-p #'hermes-work-tail)))
   :group "Read"
   hermes-work-open "Open details"
-  hermes-work-log ("Published log" :if #'hermes-work--worker-at-point-p)
+  hermes-work-log ("Published log" :if (lambda () (hermes-work--offers-p #'hermes-work-log)))
   hermes-work-scope-details "Scope"
   hermes-work-instance-subagents "Instance workers"
   :row
@@ -1520,11 +1530,12 @@ details, and \\[hermes-work-interrupt] interrupts a worker or kills a process."
 (keymap-popup-annotate hermes-work-detail-mode-map
   :popup-key "?" :exit-key "C-g" :description #'hermes-work--popup-title
   :group "Act"
-  hermes-work-steer ("Steer" :if #'hermes-work--worker-at-point-p)
-  hermes-work-interrupt #'hermes-work--stop-label
-  hermes-work-tail ("Live tail" :if #'hermes-work--worker-at-point-p)
+  hermes-work-steer ("Steer" :if (lambda () (hermes-work--offers-p #'hermes-work-steer)))
+  hermes-work-interrupt (#'hermes-work--stop-label
+                         :if (lambda () (hermes-work--offers-p #'hermes-work-interrupt)))
+  hermes-work-tail ("Live tail" :if (lambda () (hermes-work--offers-p #'hermes-work-tail)))
   :group "Read"
-  hermes-work-log ("Published log" :if #'hermes-work--worker-at-point-p)
+  hermes-work-log ("Published log" :if (lambda () (hermes-work--offers-p #'hermes-work-log)))
   hermes-work-scope-details "Scope"
   hermes-work-refresh "Refresh"
   quit-window "Quit view")
