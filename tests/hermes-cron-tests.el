@@ -1194,7 +1194,7 @@
                 ((symbol-function 'completing-read)
                  (lambda (prompt collection &rest _)
                    (if (string-prefix-p "Model choice" prompt)
-                       (car collection) choice)))
+                       (car (all-completions "" collection)) choice)))
                 ((symbol-function 'read-string) (lambda (&rest _) "/backend/new"))
                 ((symbol-function 'file-directory-p)
                  (lambda (&rest _) (setq local-probes t)))
@@ -1218,6 +1218,36 @@
                 ("Unchanged" (should-not updates)))
               (should-not local-probes))
           (mapc #'kill-buffer drafts))))))
+
+(ert-deftest hermes-cron-model-preference-absent-provider-marks-nothing ()
+  "A job provider without a catalogue row is neither current nor the default."
+  (let ((catalog '((providers . (((slug . "fixture") (models . ("exact-model")))))))
+        (job '((id . "j1") (model . "exact-model") (provider . "missing")))
+        seen-default annotation)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt table _pred _require _initial _history default)
+                 (setq seen-default default
+                       annotation
+                       (funcall (completion-metadata-get
+                                 (completion-metadata "" table nil)
+                                 'annotation-function)
+                                (car (all-completions "" table))))
+                 (or default ""))))
+      ;; Accepting the empty default selects nothing: no implicit provider.
+      (should-error (hermes-cron--read-model-preference catalog job)
+                    :type 'user-error))
+    (should-not seen-default)
+    (should-not (and annotation
+                     (string-search "current" (substring-no-properties annotation))))
+    ;; An exact provider match is still marked and offered as the default.
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _table _pred _require _initial _history default)
+                 (setq seen-default default)
+                 default)))
+      (should (equal (hermes-cron--read-model-preference
+                      catalog '((model . "exact-model") (provider . "fixture")))
+                     '((model . "exact-model") (provider . "fixture")))))
+    (should (equal seen-default "exact-model · fixture"))))
 
 (ert-deftest hermes-cron-create-profile-and-ownership-refusals ()
   "Unknown profiles and superseded catalogue reads send no create request."
@@ -1320,7 +1350,7 @@
                      (progn
                        (when (eq event 'model-retired)
                          (hermes-browser--next-request-generation))
-                       (car choices))
+                       (car (all-completions "" choices)))
                    "Set")))
               ((symbol-function 'read-string)
                (lambda (&rest _)

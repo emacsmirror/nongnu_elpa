@@ -1776,5 +1776,424 @@ PHASE defaults to `after-change-functions'."
                  (* 30 (length chunk))))
       (should (<= longest (length chunk))))))
 
+;;; Running, settled and failed rows
+
+(defun hermes-test--row-face-at (text)
+  "Return the face at the start of the first occurrence of TEXT."
+  (save-excursion
+    (goto-char (point-min))
+    (search-forward text)
+    (get-text-property (match-beginning 0) 'face)))
+
+(ert-deftest hermes-chat-transcript-rows-mark-running-done-and-failed ()
+  "Running rows show a live marker; failures colour the whole head line."
+  (dolist (case '(("running" "●" hermes-chat-tool-running nil)
+                  ("completed" "✓" success shadow)
+                  ("error" "!" error error)
+                  ("interrupted" "!" error shadow)))
+    (pcase-let ((`(,status ,marker ,marker-face ,head-face) case))
+      (with-temp-buffer
+        (hermes-chat--insert-transient-content
+         (list :id status :role 'tool :status status :content "💻 terminal: make"))
+        (should (string-prefix-p (format "  %s 💻 terminal: make" marker) (buffer-string)))
+        (should (eq (hermes-test--row-face-at marker) marker-face))
+        (should (eq (hermes-test--row-face-at "terminal: make") head-face))))))
+
+(ert-deftest hermes-chat-running-delegate-row-uses-running-face ()
+  "A running delegate row reads as alive, then settles without a re-render loop."
+  (let (callback timers)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest args) (push args timers) nil)))
+      (hermes-test-with-chat-buffer
+       (let ((hermes-transport-send-function
+              (lambda (_prompt cb) (setq callback cb) 'fake-process)))
+         (insert "delegate")
+         (hermes-chat-send)
+         (setq timers nil)
+         (funcall callback '(:type tool :event "tool.start" :tool-call-id "d1"
+                             :name "delegate_task" :status "running"
+                             :context "audit"))
+         (should (eq (hermes-test--row-face-at "●") 'hermes-chat-tool-running))
+         (should-not (hermes-test--row-face-at "delegate_task: audit"))
+         ;; The composer status rule owns its own one-second clock tick.
+         (should-not (cl-some (lambda (args) (and (numberp (cadr args)) (> (cadr args) 0)
+                                                  (not (eq (nth 2 args)
+                                                           #'hermes-chat--status-rule-fire))))
+                              timers))
+         (funcall callback '(:type tool :event "tool.complete" :tool-call-id "d1"
+                             :name "delegate_task" :status "failed"
+                             :context "audit" :error "boom"))
+         (should (eq (hermes-test--row-face-at "!") 'error))
+         (should (eq (hermes-test--row-face-at "delegate_task: audit") 'error))
+         (should (eq (hermes-test--row-face-at "boom") 'error)))))))
+
+;;; Unknown events and long notices
+
+(ert-deftest hermes-chat-unknown-event-collapses-with-raw-preserved ()
+  "Unknown events collapse to one line; expanding shows the full raw payload."
+  (let* ((long (make-string 400 ?x))
+         (event (list :type 'unknown :event "tool.foo"
+                      :raw `((payload . ,long) (kind . "alien")))))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--upsert-transport-entry nil event)
+     (let* ((entry (car (last (hermes-chat--entries))))
+            (text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+       (should (string-match-p "▸ Unknown event tool.foo" text))
+       (should-not (string-match-p "raw:" text))
+       (should-not (string-match-p long text))
+       (should (equal (plist-get (plist-get entry :metadata) :event) event))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.foo")
+       (should (string-match-p "raw: " (get-text-property (1- (point)) 'help-echo)))
+       (push-button (1- (point)))
+       (let ((expanded (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+         (should (string-match-p "▾ Unknown event tool.foo" expanded))
+         (should (string-match-p (regexp-quote long) expanded))
+         (should (string-match-p "alien" expanded)))))))
+
+(ert-deftest hermes-chat-unknown-event-detail-is-lazy-and-bounded ()
+  "Collapsed unknown events never pretty-print; expansion formats once, bounded."
+  (let* ((huge (number-sequence 1 100000))
+         (event (list :type 'unknown :event "tool.huge"
+                      :raw `((items . ,huge) (kind . "alien"))))
+         (pp-calls 0)
+         (real-pp (symbol-function 'pp-to-string)))
+    (cl-letf (((symbol-function 'pp-to-string)
+               (lambda (&rest args)
+                 (cl-incf pp-calls)
+                 (apply real-pp args))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry nil event)
+       (hermes-chat--upsert-transport-entry nil (list :type 'status :content "later"))
+       (should (= pp-calls 0))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.huge")
+       (push-button (1- (point)))
+       (let ((expanded (buffer-substring-no-properties
+                        (point-min) hermes-chat--input-marker)))
+         (should (string-match-p "▾ Unknown event tool.huge" expanded))
+         (should (string-match-p "(items 1 2 3" expanded))
+         (should-not (string-match-p "99999" expanded))
+         (should (< (length expanded)
+                    (+ hermes-chat--unknown-event-raw-detail-limit 500))))
+       (let ((calls pp-calls))
+         (should (<= calls 1))
+         ;; Repaints of the expanded entry reuse the cached detail.
+         (hermes-chat--upsert-transport-entry nil (list :type 'status :content "again"))
+         (goto-char (point-min))
+         (search-forward "Unknown event tool.huge")
+         (push-button (1- (point)))
+         (goto-char (point-min))
+         (search-forward "Unknown event tool.huge")
+         (push-button (1- (point)))
+         (should (= pp-calls calls)))))))
+
+(ert-deftest hermes-chat-unknown-event-collapsed-preview-printing-is-bounded ()
+  "Collapsed insertion prints only a bounded prefix of a huge raw payload."
+  (let* ((raw (number-sequence 1 100000))
+         (event (list :type 'unknown :event "tool.huge" :raw raw))
+         (printed 0)
+         (real-format (symbol-function 'format))
+         (real-prin1 (symbol-function 'prin1-to-string)))
+    (cl-letf (((symbol-function 'format)
+               (lambda (fmt &rest args)
+                 (let ((text (apply real-format fmt args)))
+                   (when (memq raw args)
+                     (setq printed (max printed (length text))))
+                   text)))
+              ((symbol-function 'prin1-to-string)
+               (lambda (object &rest args)
+                 (let ((text (apply real-prin1 object args)))
+                   (when (eq object raw)
+                     (setq printed (max printed (length text))))
+                   text))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry nil event)
+       (should-not hermes-chat--unknown-event-detail-cache)
+       (should (< printed 1000))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.huge")
+       (let ((help (get-text-property (1- (point)) 'help-echo)))
+         (should (string-match-p "raw: (1 2 3" help))
+         (should-not (string-match-p "99999" help))
+         (should (< (length help) 400)))))))
+
+(ert-deftest hermes-chat-unknown-event-nested-huge-string-is-bounded ()
+  "A huge string nested in the raw payload is cut in preview and detail."
+  (let* ((huge (make-string 1000000 ?y))
+         (event (list :type 'unknown :event "tool.blob"
+                      :raw `((kind . "alien") (blob . ,huge))))
+         (printed 0)
+         (real-prin1 (symbol-function 'prin1-to-string))
+         (real-pp (symbol-function 'pp-to-string)))
+    (cl-letf (((symbol-function 'prin1-to-string)
+               (lambda (&rest args)
+                 (let ((text (apply real-prin1 args)))
+                   (setq printed (max printed (length text)))
+                   text)))
+              ((symbol-function 'pp-to-string)
+               (lambda (&rest args)
+                 (let ((text (apply real-pp args)))
+                   (setq printed (max printed (length text)))
+                   text))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry nil event)
+       (should (< printed 3000))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.blob")
+       (let ((help (get-text-property (1- (point)) 'help-echo)))
+         (should (string-match-p "alien" help))
+         (should (< (length help) 400)))
+       (push-button (1- (point)))
+       (let ((expanded (buffer-substring-no-properties
+                        (point-min) hermes-chat--input-marker)))
+         (should (string-match-p "▾ Unknown event tool.blob" expanded))
+         (should (string-match-p "alien" expanded))
+         (should (string-match-p "yyyy…" expanded))
+         (should (< (length expanded) 3000)))
+       (should (< printed 3000))
+       (should (equal (plist-get event :raw) `((kind . "alien") (blob . ,huge))))))))
+
+(ert-deftest hermes-chat-unknown-event-bounded-copy-shapes ()
+  "The bounded copy keeps shapes, cuts strings and elides past the limits."
+  (let ((table (make-hash-table :test #'equal)))
+    (dotimes (i 5) (puthash i (make-string 10 ?z) table))
+    (let ((copy (hermes-chat--unknown-event-bounded-copy
+                 (list "abcdef" [1 2 3 4 5] '(a . "bcdefg") '((((deep)))) table)
+                 3 4 3 '(1000 . 1000))))
+      (should (equal (nth 0 copy) "abc…"))
+      (should (equal (nth 1 copy) [1 2 3 4 …]))
+      (should (equal (nth 2 copy) '(a . "bcd…")))
+      (should (equal (nth 3 copy) '((…))))
+      (should (eq (car (last copy)) '…))
+      (should (= (length copy) 5)))
+    (let ((copy (hermes-chat--unknown-event-bounded-copy table 2 3 3 '(1000 . 1000))))
+      (should (hash-table-p copy))
+      (should (= (hash-table-count copy) 3))
+      (should (equal (gethash 0 copy) "zzz…")))))
+
+;; Hostile payload shapes: each must render collapsed and expanded with a
+;; bounded walk and bounded printing.
+
+(defun hermes-test--unknown-event-hostile-run (name raw)
+  "Insert and expand an unknown event NAME carrying RAW.
+Return a plist with the walker :visits per call, the largest flat
+:printed and :pretty strings and the :expanded transcript length."
+  (let* ((visits 0) (max-visits 0) (printed 0) (pretty 0)
+         (real-walk (symbol-function 'hermes-chat--unknown-event-bounded-walk))
+         (real-copy (symbol-function 'hermes-chat--unknown-event-bounded-copy))
+         (real-prin1 (symbol-function 'prin1-to-string))
+         (real-pp (symbol-function 'pp-to-string))
+         expanded)
+    (cl-letf (((symbol-function 'hermes-chat--unknown-event-bounded-walk)
+               (lambda (&rest args)
+                 (cl-incf visits)
+                 (apply real-walk args)))
+              ((symbol-function 'hermes-chat--unknown-event-bounded-copy)
+               (lambda (&rest args)
+                 (setq visits 0)
+                 (prog1 (apply real-copy args)
+                   (setq max-visits (max max-visits visits)))))
+              ((symbol-function 'prin1-to-string)
+               (lambda (&rest args)
+                 (let ((text (apply real-prin1 args)))
+                   (setq printed (max printed (length text)))
+                   text)))
+              ((symbol-function 'pp-to-string)
+               (lambda (&rest args)
+                 (let ((text (apply real-pp args)))
+                   (setq pretty (max pretty (length text)))
+                   text))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry
+        nil (list :type 'unknown :event name :raw raw))
+       (goto-char (point-min))
+       (search-forward (concat "Unknown event " name))
+       (should (< (length (get-text-property (1- (point)) 'help-echo)) 400))
+       (push-button (1- (point)))
+       (setq expanded (buffer-substring-no-properties
+                       (point-min) hermes-chat--input-marker))
+       (should (string-match-p (concat "▾ Unknown event " name) expanded))))
+    (list :visits max-visits :printed printed :pretty pretty
+          :expanded (length expanded))))
+
+(defun hermes-test--unknown-event-assert-bounded (result)
+  "Assert RESULT from `hermes-test--unknown-event-hostile-run' is bounded."
+  (should (> (plist-get result :visits) 1))
+  (should (<= (plist-get result :visits)
+              (1+ (max (car hermes-chat--unknown-event-preview-budget)
+                       (car hermes-chat--unknown-event-detail-budget)))))
+  (should (< (plist-get result :printed) 5000))
+  ;; Indentation can inflate the pretty form of a deep copy, but its input
+  ;; is the bounded flat form and the shown detail is cut.
+  (should (< (plist-get result :pretty) 30000))
+  (should (< (plist-get result :expanded) 5000)))
+
+(ert-deftest hermes-chat-unknown-event-self-referencing-vector-is-bounded ()
+  "A vector whose slots all hold itself renders with a bounded walk."
+  (let ((raw (make-vector 20 nil)))
+    (dotimes (i 20) (aset raw i raw))
+    (hermes-test--unknown-event-assert-bounded
+     (hermes-test--unknown-event-hostile-run "tool.selfvec" raw))))
+
+(ert-deftest hermes-chat-unknown-event-wide-tree-is-bounded ()
+  "A wide acyclic tree (50 children, depth 6) renders with a bounded walk."
+  (let ((raw (let ((node 42))
+               (dotimes (_ 6) (setq node (make-vector 50 node)))
+               node)))
+    (hermes-test--unknown-event-assert-bounded
+     (hermes-test--unknown-event-hostile-run "tool.wide" raw))))
+
+(ert-deftest hermes-chat-unknown-event-cyclic-hash-is-bounded ()
+  "A hash table containing itself renders with a bounded walk."
+  (let ((raw (make-hash-table :test #'eq)))
+    (dotimes (i 50) (puthash i raw raw))
+    (puthash 'self (list raw raw raw) raw)
+    (hermes-test--unknown-event-assert-bounded
+     (hermes-test--unknown-event-hostile-run "tool.cychash" raw))))
+
+(ert-deftest hermes-chat-unknown-event-record-with-huge-string-is-opaque ()
+  "A record holding a huge string renders as an opaque placeholder."
+  (let* ((raw (list (record 'hostile (make-string 1000000 ?x)) "ok"))
+         (result (hermes-test--unknown-event-hostile-run "tool.record" raw)))
+    (hermes-test--unknown-event-assert-bounded result)
+    (should (< (plist-get result :printed) 200))))
+
+(ert-deftest hermes-chat-unknown-event-bounded-copy-opaque-types ()
+  "Objects outside the walked types become short placeholders."
+  (with-temp-buffer
+    (let ((copy (hermes-chat--unknown-event-bounded-copy
+                 (list (record (make-string 1000 ?t) 1)
+                       (point-marker) (current-buffer)
+                       (make-bool-vector 3 t) (make-char-table 'test)
+                       (lambda (x) x)
+                       (propertize "abc" 'face (make-string 1000 ?f))
+                       :key 1.5 nil t)
+                 4 20 10 '(100 . 100))))
+      (should (eq (nth 0 copy) '\#<record>))
+      (should (eq (nth 1 copy) '\#<marker>))
+      (should (eq (nth 2 copy) '\#<buffer>))
+      (should (eq (nth 3 copy) '\#<bool-vector>))
+      (should (eq (nth 4 copy) '\#<char-table>))
+      (should (string-prefix-p "#<" (symbol-name (nth 5 copy))))
+      (should-not (text-properties-at 0 (nth 6 copy)))
+      (should (equal (nthcdr 7 copy) '(:key 1.5 nil t))))))
+
+(ert-deftest hermes-chat-unknown-event-bounded-copy-shares-budget ()
+  "The node and character budgets are shared across the whole walk."
+  (let ((copy (hermes-chat--unknown-event-bounded-copy
+               (make-list 10 (list 1 2 3)) 4 20 100 '(8 . 100))))
+    (should (equal copy '((1 2 3) (1 2 …) …))))
+  (let ((copy (hermes-chat--unknown-event-bounded-copy
+               (list "abcdef" "ghijkl" "mnopqr") 4 20 100 '(100 . 14))))
+    (should (equal copy '("abcdef" "ghij…" …)))))
+
+(defun hermes-test--unknown-event-format-counting (raw)
+  "Format RAW as preview and detail, counting `maphash' calls.
+Return a plist with :maphash calls, the :preview and :detail strings."
+  (let ((calls 0) (real-maphash (symbol-function 'maphash)) preview detail)
+    (cl-letf (((symbol-function 'maphash)
+               (lambda (function table)
+                 (cl-incf calls)
+                 (funcall real-maphash function table))))
+      (setq preview (hermes-chat--unknown-event-raw-preview raw)
+            detail (hermes-chat--unknown-event-detail (list :raw raw))))
+    (list :maphash calls :preview preview :detail detail)))
+
+(ert-deftest hermes-chat-unknown-event-huge-empty-hash-is-not-scanned ()
+  "A huge empty hash table becomes a placeholder without being iterated."
+  (let* ((raw (make-hash-table :size 3000000))
+         (result (hermes-test--unknown-event-format-counting raw)))
+    (should (= (plist-get result :maphash) 0))
+    (should (equal (plist-get result :preview) "\\#<hash-table:count=0>"))
+    (should (string-match-p "hash-table:count=0" (plist-get result :detail)))))
+
+(ert-deftest hermes-chat-unknown-event-sparse-big-hash-is-not-scanned ()
+  "A sparse hash table with a large capacity is reported by its count."
+  (let ((raw (make-hash-table :test #'equal :size 100000)))
+    (puthash "a" 1 raw)
+    (puthash "b" (make-string 100 ?b) raw)
+    (let ((result (hermes-test--unknown-event-format-counting raw)))
+      (should (= (plist-get result :maphash) 0))
+      (should (string-match-p "hash-table:count=2" (plist-get result :preview)))
+      (should (string-match-p "hash-table:count=2" (plist-get result :detail)))
+      (should-not (string-match-p "bbb" (plist-get result :detail))))))
+
+(ert-deftest hermes-chat-unknown-event-hash-after-budget-is-not-visited ()
+  "A table nested after the budget runs out is elided without iteration."
+  (let* ((big (make-hash-table :size 3000000))
+         (small (make-hash-table)))
+    (puthash 'k 'v small)
+    (let ((calls 0) (real-maphash (symbol-function 'maphash)) copy)
+      (cl-letf (((symbol-function 'maphash)
+                 (lambda (function table)
+                   (cl-incf calls)
+                   (funcall real-maphash function table))))
+        (setq copy (hermes-chat--unknown-event-bounded-copy
+                    (list "abcdef" small big) 4 20 100 '(2 . 100))))
+      (should (= calls 0))
+      (should (equal copy '("abcdef" …))))))
+
+(ert-deftest hermes-chat-unknown-event-big-bignum-is-not-converted ()
+  "A huge bignum becomes a placeholder without decimal conversion."
+  (let ((converted 0) (real (symbol-function 'number-to-string))
+        (raw (list (expt 10 1000) (- (expt 10 1000)) (expt 2 200)))
+        preview detail)
+    (cl-letf (((symbol-function 'number-to-string)
+               (lambda (number)
+                 (let ((text (funcall real number)))
+                   (setq converted (max converted (length text)))
+                   text))))
+      (setq preview (hermes-chat--unknown-event-raw-preview raw)
+            detail (hermes-chat--unknown-event-detail (list :raw raw))))
+    (should (< converted 100))
+    (should (equal preview
+                   (format "(\\#<bignum> \\#<bignum> %d)" (expt 2 200))))
+    (should (< (length detail) 200))
+    (should (string-match-p (regexp-quote (number-to-string (expt 2 200)))
+                            detail))
+    (should-not (string-match-p "0000000000000000000000000000000000000000"
+                                detail))))
+
+(ert-deftest hermes-chat-clear-drops-unknown-event-detail-cache ()
+  "Clearing the transcript discards cached unknown event details."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--upsert-transport-entry
+    nil (list :type 'unknown :event "x" :raw '(1 2 3)))
+   (goto-char (point-min))
+   (search-forward "Unknown event x")
+   (push-button (1- (point)))
+   (should (= (hash-table-count hermes-chat--unknown-event-detail-cache) 1))
+   (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+     (call-interactively #'hermes-chat-clear))
+   (should-not hermes-chat--unknown-event-detail-cache)))
+
+(ert-deftest hermes-chat-unknown-event-detail-pretty-prints-small-payloads ()
+  "Small raw payloads are pretty-printed across lines when expanded."
+  (let ((detail (hermes-chat--unknown-event-detail
+                 (list :type 'unknown :event "x"
+                       :raw '((alpha . ((one . 1) (two . 2) (three . 3)))
+                              (beta . ((four . 4) (five . 5) (six . 6)))
+                              (gamma . "a fairly long string value to force wrapping"))))))
+    (should (string-match-p "\n" detail))
+    (should (string-match-p "gamma" detail))
+    (should-not (string-match-p "truncated" detail))))
+
+(ert-deftest hermes-chat-long-status-notice-collapses ()
+  "Status notices beyond three lines collapse; short ones stay inline."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-local-status "one\ntwo\nthree" 'done)
+   (hermes-chat--insert-local-status "alpha\nbeta\ngamma\ndelta" 'done)
+   (let ((text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+     (should (string-match-p "one\ntwo\nthree" text))
+     (should (string-match-p "▸ alpha  (4 lines)" text))
+     (should-not (string-match-p "delta" text)))
+   (goto-char (point-min))
+   (search-forward "▸ alpha")
+   (push-button (1- (point)))
+   (should (string-match-p "beta\ngamma\ndelta"
+                           (buffer-substring-no-properties
+                            (point-min) hermes-chat--input-marker)))))
+
 (provide 'hermes-chat-render-tests)
 ;;; hermes-chat-render-tests.el ends here

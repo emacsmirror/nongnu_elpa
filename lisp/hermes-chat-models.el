@@ -75,26 +75,113 @@
      (t "provider"))))
 
 (defun hermes-chat--model-label (provider model)
-  "Return completion label for MODEL in PROVIDER row."
-  (string-join
-   (delq nil
-         (list (hermes-chat--model-provider-label provider)
-               model
-               (hermes-chat--model-price provider model)))
-   " · "))
+  "Return the exact completion value for MODEL in PROVIDER row.
+The model leads so ordinary prefix completion finds it; the provider label
+keeps values unique when several providers serve the same model id."
+  (concat model " · " (hermes-chat--model-provider-label provider)))
+
+(defun hermes-chat--model-context-window (value)
+  "Return a compact context window string for numeric VALUE, or nil."
+  (when (and (numberp value) (> value 0))
+    (cond ((>= value 1000000)
+           (format "%sM ctx" (string-remove-suffix
+                              ".0" (format "%.1f" (/ value 1000000.0)))))
+          ((>= value 1000) (format "%dk ctx" (round value 1000)))
+          (t (format "%d ctx" value)))))
+
+(defun hermes-chat--model-details (provider model)
+  "Return catalogue facts for MODEL in PROVIDER row as a list of strings.
+Only facts the catalogue reports are included: context window, price and
+capabilities."
+  (let* ((caps (hermes-transport--get
+                (hermes-transport--get provider 'capabilities) model))
+         (prices (hermes-transport--get
+                  (hermes-transport--get provider 'pricing) model)))
+    (delq nil
+          (list (hermes-chat--model-context-window
+                 (hermes-transport--get caps 'context_window))
+                (if (eq (hermes-transport--get prices 'free) t)
+                    "free"
+                  (hermes-chat--model-price provider model))
+                (and (eq (hermes-transport--get caps 'reasoning) t) "reasoning")
+                (and (eq (hermes-transport--get caps 'fast) t) "fast")))))
 
 (defun hermes-chat--model-candidate (provider model)
   "Return one completion candidate for MODEL in PROVIDER row."
   (when-let* ((model-id (hermes-chat--model-id model)))
     (let* ((provider-slug (hermes-transport--scalar-string
                           (hermes-transport--get provider 'slug)))
+           (authenticated (eq (hermes-transport--get provider 'authenticated) t))
+           (provider-label (hermes-chat--model-provider-label provider))
            (label (hermes-chat--model-label provider model-id)))
       (cons label (list :model model-id
                         :provider provider-slug
+                        :provider-label provider-label
+                        :group (if authenticated
+                                   provider-label
+                                 (concat provider-label " · not connected"))
+                        :details (hermes-chat--model-details provider model-id)
                         :label label
-                        :authenticated (eq (hermes-transport--get
-                                            provider 'authenticated)
-                                           t))))))
+                        :authenticated authenticated)))))
+
+(defun hermes-chat--model-annotation (data &optional current)
+  "Return the shadowed annotation for candidate DATA.
+CURRENT non-nil marks the chat's current model."
+  (let ((details (plist-get data :details)))
+    (when (or details current)
+      (concat
+       "  "
+       (and details (propertize (string-join details " · ") 'face 'shadow))
+       (and details current " ")
+       (and current (propertize "• current" 'face 'success))))))
+
+(defun hermes-chat--model-completion-table (candidates &optional current)
+  "Return a completion table over CANDIDATES grouped by provider.
+CANDIDATES are (VALUE . PLIST) rows from `hermes-chat--model-candidates'.
+Values stay exact; inside a group only the model id is displayed.
+CURRENT, a value, is annotated as the current model.  Catalogue order,
+with authenticated providers first, is preserved."
+  (let ((values (mapcar #'car candidates)))
+    (lambda (string predicate action)
+      (if (eq action 'metadata)
+          `(metadata
+            (category . hermes-model)
+            (group-function
+             . ,(lambda (value transform)
+                  (let ((data (cdr (assoc value candidates))))
+                    (if transform
+                        (or (plist-get data :model) value)
+                      (or (plist-get data :group) "")))))
+            (annotation-function
+             . ,(lambda (value)
+                  (hermes-chat--model-annotation
+                   (cdr (assoc value candidates))
+                   (and current (equal value current)))))
+            (display-sort-function . identity)
+            (cycle-sort-function . identity))
+        (complete-with-action action values string predicate)))))
+
+(defun hermes-chat--model-current-value (candidates model &optional provider)
+  "Return the value in CANDIDATES naming MODEL under PROVIDER.
+When PROVIDER is non-nil only an exact model and provider match counts;
+the same model under another provider is a different choice, so return
+nil.  Without PROVIDER, return the first row naming MODEL."
+  (when model
+    (car (cl-find-if
+          (lambda (candidate)
+            (let ((data (cdr candidate)))
+              (and (equal (plist-get data :model) model)
+                   (or (null provider)
+                       (equal (plist-get data :provider) provider)))))
+          candidates))))
+
+(defun hermes-chat--read-model-candidate (prompt candidates &optional current)
+  "Read one of CANDIDATES with PROMPT; return its (VALUE . PLIST) or nil.
+CURRENT, an exact value, is marked and offered as the default."
+  (let ((choice (completing-read
+                 prompt (hermes-chat--model-completion-table candidates current)
+                 nil t nil nil current)))
+    (and (stringp choice) (assoc choice candidates))))
 
 (defun hermes-chat--model-candidates (payload)
   "Return completion candidates from `model.options' PAYLOAD.
@@ -133,7 +220,10 @@ identity is part of the selection."
    (lambda (candidate)
      (let ((data (cdr candidate)))
        (cons (hermes-chat--model-config-value data)
-             (concat "  " (plist-get data :label)))))
+             (concat "  " (string-join
+                           (cons (plist-get data :provider-label)
+                                 (plist-get data :details))
+                           " · ")))))
    (cl-remove-if-not
     (lambda (candidate) (plist-get (cdr candidate) :authenticated))
     (hermes-chat--model-candidates payload))))
@@ -314,6 +404,23 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
        (hermes-chat--model-provider-label provider)
        (if (equal auth-type "oauth") "OAuth" (or auth-type "external")))))))
 
+(defun hermes-chat--model-picker-current (candidates result)
+  "Return the value in CANDIDATES naming this chat's current model.
+A pending create-time choice wins; otherwise the owner's model, qualified by
+the catalogue RESULT's reported provider when it names the same model."
+  (let* ((pending (and (hermes-chat--pending-setting-p)
+                       hermes-chat--dashboard-create-model))
+         (model (or pending hermes-chat--model
+                    (hermes-transport--scalar-string
+                     (hermes-transport--get result 'model))))
+         (provider (if pending
+                       hermes-chat--dashboard-create-provider
+                     (and (equal model (hermes-transport--scalar-string
+                                        (hermes-transport--get result 'model)))
+                          (hermes-transport--scalar-string
+                           (hermes-transport--get result 'provider))))))
+    (hermes-chat--model-current-value candidates model provider)))
+
 (defun hermes-chat--prompt-and-set-model (buffer client result &optional context)
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
   (if (not (hermes-chat--model-switch-current-p context))
@@ -323,19 +430,20 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
               (cl-remove-if-not
                (lambda (candidate)
                  (or client (plist-get (cdr candidate) :authenticated)))
-               (hermes-chat--model-candidates result)))
-             (labels (mapcar #'car candidates)))
+               (hermes-chat--model-candidates result))))
         (if (null candidates)
             (message "Hermes: no models available to switch to")
           (let* ((prompt (with-current-buffer buffer
                            (format "Switch model (current: %s): "
                                    (hermes-chat--model-setting-value))))
-                 (choice (completing-read prompt labels nil t))
-                 (candidate (cdr (assoc choice candidates)))
+                 (current (with-current-buffer buffer
+                            (hermes-chat--model-picker-current candidates result)))
+                 (candidate (cdr (hermes-chat--read-model-candidate
+                                  prompt candidates current)))
                  (provider (and candidate
                                 (hermes-chat--find-provider
                                  result (plist-get candidate :provider)))))
-            (unless (or (string-empty-p choice) (null candidate))
+            (when candidate
               (if (not (hermes-chat--model-switch-current-p context))
                   (message "Hermes: model switch is stale or the chat is busy")
                 (hermes-chat--apply-selected-model

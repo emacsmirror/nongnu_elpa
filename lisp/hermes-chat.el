@@ -56,10 +56,14 @@
 The function receives PROFILE, INSTANCE, and DIRECTORY.  PROFILE is a non-empty
 profile name.  INSTANCE is the owning legacy pair or typed identity; use
 `hermes-instance-id', `hermes-instance-name', and `hermes-instance-url' to read
-it.  DIRECTORY is selected in order from an explicit caller argument, the
-gateway working directory, the launch-project root, or editor
-`default-directory'.  The editor fallback is display-only and need not be the
-gateway cwd.  The function must return the complete non-empty buffer name."
+it.  DIRECTORY names the chat's project and is selected in order from an
+explicit caller argument, the launch-project root, the first gateway working
+directory recorded for the session, or, until one is recorded, the current
+gateway or editor `default-directory'.  It does not follow later gateway
+directory changes, which the header line shows instead.  DIRECTORY is
+gateway-native and need not exist on Emacs's host; the default function names
+it with `project-name' only when it exists locally.  The function must return
+the complete non-empty buffer name."
   :type 'function
   :group 'hermes)
 
@@ -1400,13 +1404,30 @@ the current draft stays here.  Uncertain deliveries require history inspection."
     (run-hooks 'hermes-chat-cleanup-functions)
     (hermes-chat--invalidate-transport-state t)
     (hermes-chat--stop-dashboard-client)
-    (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
+    (hermes-chat--insert-offline-notice "Session disconnected — input kept")
     (when (buffer-live-p hermes-chat--recovery-buffer)
       (hermes-chat--insert-local-status
        (format "Input preserved in %s; resume via Sessions and send manually"
                (buffer-name hermes-chat--recovery-buffer)))
       (display-buffer hermes-chat--recovery-buffer))
     (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected")))
+
+(defun hermes-chat-show-recovery ()
+  "Display the editable document holding this chat's preserved input.
+It is filled by disconnect and restart; nothing in it is sent automatically."
+  (interactive nil hermes-chat-mode)
+  (unless (buffer-live-p hermes-chat--recovery-buffer)
+    (user-error "This chat has no recovery draft"))
+  (display-buffer hermes-chat--recovery-buffer))
+
+(defun hermes-chat--dashboard-client-reconnectable-p (client)
+  "Return non-nil when CLIENT's lost socket can be restarted in place.
+The client must still be attached, own its registry entry and not be
+stopping; a stopped client is replaced by the next send instead."
+  (and (hermes-dashboard-transport-client-p client)
+       (> (or (hermes-dashboard-transport-client-refcount client) 0) 0)
+       (not (hermes-dashboard-transport-client-stopping-p client))
+       (hermes-dashboard-transport--current-registry-owner-p client)))
 
 (defun hermes-chat--dashboard-client-active-turn-p (client)
   "Return non-nil when a chat sharing CLIENT has an active turn."
@@ -1422,7 +1443,9 @@ the current draft stays here.  Uncertain deliveries require history inspection."
 (defun hermes-dashboard-reconnect ()
   "Reconnect this chat's shared dashboard socket when every owner is idle."
   (interactive nil hermes-chat-mode)
-  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+  (unless (or (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+              (hermes-chat--dashboard-client-reconnectable-p
+               hermes-chat--dashboard-client))
     (user-error "This chat has no live dashboard client to reconnect"))
   (when (hermes-chat--dashboard-client-active-turn-p
          hermes-chat--dashboard-client)
@@ -1749,6 +1772,7 @@ forgets both the live and durable session ids so the next send starts fresh."
     (hermes-chat--prompt-indicator-sync)
     (hermes-chat-draft--activate)
     (hermes-chat--restore-draft-runtime)
+    (hermes-chat--placeholder-update)
     (when outermost
       (hermes-chat--drain-reset-clarify-owners
        hermes-chat--reset-clarify-owner-sink))))
@@ -1917,7 +1941,7 @@ PROFILE selects the agent profile, TITLE pins a manual title, and INSTANCE is
 the owning Hermes instance.  A nil INSTANCE is resolved from the current
 context.  Non-nil PINNED-URL retains an explicit backend across reconnect.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
-Buffer names identify the instance, profile, and working directory; TITLE stays
+Buffer names identify the instance, profile, and project; TITLE stays
 session metadata.  This is the single side-effecting constructor every new-chat
 entry point funnels through."
   (let* ((directory default-directory)
@@ -2574,12 +2598,19 @@ When DIRECTORY is nil, use the current buffer's `default-directory'."
   buffer)
 
 (defun hermes-chat--read-project-buffer (buffers)
-  "Read one chat from project-local BUFFERS with completion."
-  (let ((completion-extra-properties
-         (list :annotation-function #'hermes-chat--switch-annotation)))
-    (get-buffer
-     (completing-read "Project chat: "
-                      (mapcar #'buffer-name buffers) nil t))))
+  "Read one chat from project-local BUFFERS and return the exact buffer.
+Names are mapped back through the buffers captured before prompting, and
+the choice is checked like `hermes-chat--read-captured-chat'."
+  (let* ((candidates (mapcar (lambda (buffer)
+                               (cons (buffer-name buffer) buffer))
+                             buffers))
+         (completion-extra-properties
+          (list :annotation-function
+                (lambda (name)
+                  (hermes-chat--switch-annotation
+                   name (cdr (assoc name candidates)))))))
+    (hermes-chat--read-captured-chat
+     "Project chat: " candidates (mapcar #'car candidates))))
 
 ;;;###autoload
 (defun hermes-project-chat (&optional new)
@@ -2606,30 +2637,115 @@ With prefix argument NEW, always create another project chat."
       (pop-to-buffer-same-window
        (hermes-chat--read-project-buffer buffers))))))
 
-(defun hermes-chat--switch-annotation (name)
-  "Return a shadowed status annotation for chat buffer NAME in the switcher."
-  (when-let* ((buffer (get-buffer name)))
+(defun hermes-chat--switch-project (buffer-or-name)
+  "Return the project naming chat buffer BUFFER-OR-NAME, or nil."
+  (when-let* ((buffer (get-buffer buffer-or-name)))
     (with-current-buffer buffer
-      (let ((detail (string-join
-                     (delq nil
+      (cdr (hermes-chat--project-identity (hermes-chat--naming-directory))))))
+
+(defun hermes-chat--switch-group (name transform &optional buffer)
+  "Group chat buffer NAME by project; with TRANSFORM, return NAME unchanged.
+Optional BUFFER is the chat captured for NAME; it wins over a name lookup."
+  (if transform
+      name
+    (or (hermes-chat--switch-project (or buffer name)) "Other")))
+
+(defun hermes-chat--switch-annotation (name &optional buffer)
+  "Return a switcher annotation for chat buffer NAME.
+Optional BUFFER is the chat captured for NAME; it wins over a name lookup.
+Show the session title, the attention state, connection and activity, and
+the gateway cwd while it differs from the chat's project root."
+  (when-let* ((buffer (if (buffer-live-p buffer) buffer (get-buffer name))))
+    (with-current-buffer buffer
+      (let* ((title (and hermes-chat--title
+                         (hermes-transport--non-empty-string
+                          (hermes-session-title-chat-display hermes-chat--title))))
+             (state (plist-get hermes-chat--status-state :status))
+             (label (hermes-chat--header-status-label state))
+             (attention (and (member label '("Approval requested"
+                                             "Input requested" "Error"))
+                             (propertize label 'face
+                                         (hermes-chat--header-status-face state))))
+             (detail (delq nil
                            (list (hermes-chat--dashboard-connection-label)
                                  (hermes-transport--non-empty-string
-                                  (plist-get hermes-chat--status-state :activity))))
-                     " · ")))
-        (and (not (string-empty-p detail))
-             (concat "  " (propertize detail 'face 'shadow)))))))
+                                  (plist-get hermes-chat--status-state :activity))
+                                 (hermes-chat--divergent-directory-label))))
+             (parts (delq nil (list title attention
+                                    (and detail
+                                         (propertize (string-join detail " · ")
+                                                     'face 'shadow))))))
+        (and parts
+             (concat "  " (string-join parts (propertize " · " 'face 'shadow))))))))
+
+(defun hermes-chat--switch-candidates (buffers current)
+  "Return (NAME . BUFFER) for chat BUFFERS in completion order, CURRENT last.
+BUFFERS arrive in `buffer-list' order, most recently selected first."
+  (mapcar (lambda (buffer) (cons (buffer-name buffer) buffer))
+          (append (remq current buffers)
+                  (and (memq current buffers) (list current)))))
+
+(defun hermes-chat--switch-table (candidates)
+  "Return a completion table of (NAME . BUFFER) CANDIDATES grouped by project.
+Keep the given order instead of sorting alphabetically.  Group and
+annotate through the captured buffers, not their current names."
+  (let* ((names (mapcar #'car candidates))
+         (metadata
+          `(metadata
+            (category . hermes-chat)
+            (group-function
+             . ,(lambda (name transform)
+                  (hermes-chat--switch-group
+                   name transform (cdr (assoc name candidates)))))
+            (annotation-function
+             . ,(lambda (name)
+                  (hermes-chat--switch-annotation
+                   name (cdr (assoc name candidates)))))
+            (display-sort-function . identity)
+            (cycle-sort-function . identity))))
+    (lambda (string predicate action)
+      (if (eq action 'metadata)
+          metadata
+        (complete-with-action action names string predicate)))))
+
+(defun hermes-chat--live-chat-p (buffer)
+  "Return non-nil if BUFFER is a live chat that retains its constructor claim."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and (derived-mode-p 'hermes-chat-mode)
+              (hermes-buffer--owned-p 'hermes-chat-mode)))))
+
+(defun hermes-chat--read-captured-chat (prompt candidates collection)
+  "Read a chat with PROMPT among (NAME . BUFFER) CANDIDATES and return BUFFER.
+COLLECTION is the completion table offering the candidate names.  Names
+are mapped back through CANDIDATES, captured before prompting, so a rename
+or a foreign buffer taking a name while the reader is open never redirects
+the choice.  Signal `user-error' if the chosen chat is no longer a live
+chat after input."
+  (let* ((name (completing-read prompt collection nil t))
+         (buffer (cdr (assoc name candidates))))
+    (unless (hermes-chat--live-chat-p buffer)
+      (user-error "Hermes chat %s is no longer available" name))
+    buffer))
+
+(defun hermes-chat--read-switch-buffer ()
+  "Read a chat buffer with completion and return the exact buffer object.
+See `hermes-chat--read-captured-chat' for how the choice is checked."
+  (let ((buffers (hermes-chat--live-buffers)))
+    (unless buffers
+      (user-error "No Hermes chat buffers"))
+    (let ((candidates (hermes-chat--switch-candidates
+                       buffers (current-buffer))))
+      (hermes-chat--read-captured-chat
+       "Hermes chat: " candidates (hermes-chat--switch-table candidates)))))
 
 (defun hermes-switch-to-chat (buffer)
-  "Switch to a Hermes chat BUFFER chosen with completion."
-  (interactive
-   (let ((buffers (hermes-chat--live-buffers)))
-     (unless buffers
-       (user-error "No Hermes chat buffers"))
-     (let ((completion-extra-properties
-            (list :annotation-function #'hermes-chat--switch-annotation)))
-       (list (get-buffer
-              (completing-read "Hermes chat: "
-                               (mapcar #'buffer-name buffers) nil t))))))
+  "Switch to a Hermes chat BUFFER chosen with completion.
+Candidates are exact buffer names grouped by project, most recently used
+first and the current chat last, annotated with each chat's title and state."
+  (interactive (list (hermes-chat--read-switch-buffer)))
+  (unless (hermes-chat--live-chat-p buffer)
+    (user-error "Not a live Hermes chat"))
   (pop-to-buffer-same-window buffer))
 
 ;; `hermes-sessions' is downstream of this file; its autoloaded browser
@@ -2747,8 +2863,222 @@ Do not wrap into the composer or modify its draft."
   "Complete in the composer, or visit the next transcript button."
   (interactive nil hermes-chat-mode)
   (if (>= (point) hermes-chat--input-marker)
-      (completion-at-point)
+      (let ((hermes-chat--explicit-completion t))
+        (completion-at-point))
     (hermes-chat-next-button)))
+
+;;;; Transcript keys, turn navigation and detail levels
+
+(defun hermes-chat--composer-empty-p ()
+  "Return non-nil when the chat composer is empty."
+  (when-let* ((pos (hermes-chat--input-position)))
+    (save-restriction
+      (widen)
+      (= pos (point-max)))))
+
+(defun hermes-chat--transcript-key (command &optional empty-composer)
+  "Return a filtered key binding running COMMAND outside the composer.
+In the composer the key inserts itself, unless EMPTY-COMPOSER is non-nil
+and the composer is empty."
+  `(menu-item "" ,command
+              :filter ,(lambda (command)
+                         (if (or (not (hermes-chat--point-in-input-p))
+                                 (and empty-composer
+                                      (hermes-chat--composer-empty-p)))
+                             command
+                           #'self-insert-command))))
+
+(defun hermes-chat--user-turn-positions ()
+  "Return the transcript start of each submitted user turn, in order."
+  (let (positions)
+    (when hermes-chat--ewoc
+      (let ((node (ewoc-nth hermes-chat--ewoc 0)))
+        (while node
+          (when (eq (plist-get (ewoc-data node) :role) 'user)
+            (push (marker-position (ewoc-location node)) positions))
+          (setq node (ewoc-next hermes-chat--ewoc node)))))
+    (nreverse positions)))
+
+(defun hermes-chat-next-turn (&optional n)
+  "Move to the start of the Nth next user turn in the transcript.
+With negative N, move backward."
+  (interactive "p" hermes-chat-mode)
+  (let* ((n (or n 1))
+         (here (line-beginning-position))
+         (positions (if (> n 0)
+                        (seq-filter (lambda (pos) (> pos here))
+                                    (hermes-chat--user-turn-positions))
+                      (reverse (seq-filter (lambda (pos) (< pos here))
+                                           (hermes-chat--user-turn-positions)))))
+         (target (nth (1- (abs n)) positions)))
+    (unless target
+      (user-error (if (> n 0) "No later turn" "No earlier turn")))
+    (goto-char target)))
+
+(defun hermes-chat-previous-turn (&optional n)
+  "Move to the start of the Nth previous user turn in the transcript."
+  (interactive "p" hermes-chat-mode)
+  (hermes-chat-next-turn (- (or n 1))))
+
+(defun hermes-chat--imenu-index ()
+  "Return an `imenu' index naming each user turn by its first line."
+  (let (index)
+    (dolist (pos (hermes-chat--user-turn-positions))
+      (let* ((text (buffer-substring-no-properties
+                    (min (+ pos 2) (point-max))
+                    (save-excursion (goto-char pos) (line-end-position))))
+             (name (truncate-string-to-width (string-trim text) 60 nil nil "…")))
+        (push (cons (format "%d. %s" (1+ (length index))
+                            (if (string-empty-p name) "(empty)" name))
+                    pos)
+              index)))
+    (nreverse index)))
+
+(defun hermes-chat--detail-label (name kind)
+  "Return popup label NAME with KIND's current shown/hidden value."
+  (concat name ": "
+          (propertize (if (hermes-chat--details-hidden-p kind) "hidden" "shown")
+                      'face 'keymap-popup-value)))
+
+(defun hermes-chat--toggle-details (kind name)
+  "Toggle global visibility of KIND bodies and report it under NAME."
+  (hermes-chat--set-details-hidden kind (not (hermes-chat--details-hidden-p kind)))
+  (message "%s %s" name
+           (if (hermes-chat--details-hidden-p kind) "hidden" "shown")))
+
+(defun hermes-chat-toggle-tool-output ()
+  "Show or hide every expanded tool-output body in this chat.
+Hiding wins over per-entry expansion and keeps point; expanding a tool
+entry by hand shows tool output again."
+  (interactive nil hermes-chat-mode)
+  (hermes-chat--toggle-details 'hermes-tools "Tool output"))
+
+(defun hermes-chat-toggle-reasoning ()
+  "Show or hide every expanded reasoning body in this chat.
+Hiding wins over per-entry expansion and keeps point; expanding a
+reasoning entry by hand shows reasoning again."
+  (interactive nil hermes-chat-mode)
+  (hermes-chat--toggle-details 'hermes-reasoning "Reasoning"))
+
+(defun hermes-chat--expandable-entry-p (entry)
+  "Return non-nil when ENTRY has a collapsible body."
+  (let ((role (plist-get entry :role)))
+    (cond
+     ((eq role 'commentary) t)
+     ((memq role hermes-chat--transient-entry-roles)
+      (let ((content (or (plist-get entry :content) "")))
+        (and (not (string-empty-p content))
+             (hermes-chat--transient-disclosure
+              entry content (hermes-chat--diff-blocks content))
+             t))))))
+
+(defun hermes-chat--set-all-expanded (expanded)
+  "Set every collapsible transcript entry to EXPANDED; return the count."
+  (let ((count 0) ids)
+    (maphash (lambda (id node)
+               (let ((entry (ewoc-data node)))
+                 (when (and (hermes-chat--expandable-entry-p entry)
+                            (not (eq (and (hermes-chat--entry-expanded-p entry) t)
+                                     (and expanded t))))
+                   (push id ids))))
+             hermes-chat--nodes)
+    (dolist (id ids)
+      (when (hermes-chat--update-entry
+             id (lambda (entry)
+                  (hermes-chat--entry-with
+                   entry :metadata
+                   (plist-put (copy-sequence (plist-get entry :metadata))
+                              :expanded expanded)))
+             t)
+        (cl-incf count)))
+    (when ids (hermes-chat--notify-state-change))
+    count))
+
+(defun hermes-chat-expand-all-details ()
+  "Expand every tool-output and reasoning entry and show both kinds."
+  (interactive nil hermes-chat-mode)
+  (hermes-chat--set-details-hidden 'hermes-tools nil)
+  (hermes-chat--set-details-hidden 'hermes-reasoning nil)
+  (message "Expanded %d entries" (hermes-chat--set-all-expanded t)))
+
+(defun hermes-chat-collapse-all-details ()
+  "Collapse every tool-output and reasoning entry to its summary line."
+  (interactive nil hermes-chat-mode)
+  (message "Collapsed %d entries" (hermes-chat--set-all-expanded nil)))
+
+;;;; Composer placeholder
+
+(defcustom hermes-chat-composer-placeholder t
+  "Non-nil shows key hints in an empty chat composer.
+The hint is display-only: it is never buffer text, so it cannot be
+edited, copied, saved as a draft or sent, and it disappears as soon as
+the composer holds any text."
+  :type 'boolean
+  :group 'hermes)
+
+(defvar-local hermes-chat--placeholder-overlay nil
+  "Overlay displaying the empty-composer hint.")
+
+(defvar hermes-chat-mode-map)
+
+(defun hermes-chat--command-key-hint (command)
+  "Return COMMAND's chat key as a `help-key-binding' string.
+Prefer a binding that also works mid-draft over a self-inserting key."
+  (let* ((keys (where-is-internal command hermes-chat-mode-map))
+         (key (or (seq-find (lambda (key)
+                              (not (and (= (length key) 1)
+                                        (characterp (aref key 0))
+                                        (aref printable-chars (aref key 0)))))
+                            keys)
+                  (car keys))))
+    (propertize (if key (key-description key)
+                  (concat "M-x " (symbol-name command)))
+                'face 'help-key-binding)))
+
+(defun hermes-chat--placeholder-string ()
+  "Return the empty-composer hint, with keys from the chat keymap."
+  (let ((hint (concat "Message… · "
+                      (hermes-chat--command-key-hint
+                       #'hermes-chat-actions-map-popup)
+                      " actions · / commands · "
+                      (hermes-chat--command-key-hint
+                       #'hermes-chat-input-history-previous)
+                      " history")))
+    (add-face-text-property 0 (length hint) 'shadow t hint)
+    ;; Draw the cursor before the hint rather than after it.
+    (put-text-property 0 1 'cursor t hint)
+    hint))
+
+(defun hermes-chat--placeholder-update (&rest _)
+  "Show the composer hint exactly when the composer is empty."
+  (when-let* ((overlay hermes-chat--placeholder-overlay)
+              ((overlay-buffer overlay))
+              (pos (hermes-chat--input-position)))
+    (if (and hermes-chat-composer-placeholder (hermes-chat--composer-empty-p))
+        (progn
+          (move-overlay overlay pos pos)
+          (unless (overlay-get overlay 'after-string)
+            (overlay-put overlay 'after-string
+                         (hermes-chat--placeholder-string))))
+      (overlay-put overlay 'after-string nil))))
+
+(defun hermes-chat--placeholder-retire ()
+  "Delete the composer hint overlay this chat lifetime owns."
+  (when (overlayp hermes-chat--placeholder-overlay)
+    (delete-overlay hermes-chat--placeholder-overlay))
+  (setq hermes-chat--placeholder-overlay nil)
+  (remove-hook 'after-change-functions #'hermes-chat--placeholder-update t))
+
+(defun hermes-chat--placeholder-activate ()
+  "Install the empty-composer hint in the current chat.
+The overlay is retired when the major mode changes, including re-entry
+into `hermes-chat-mode', so each activation owns exactly one hint."
+  (hermes-chat--placeholder-retire)
+  (setq hermes-chat--placeholder-overlay (make-overlay (point-max) (point-max)))
+  (overlay-put hermes-chat--placeholder-overlay 'hermes-chat-placeholder t)
+  (add-hook 'change-major-mode-hook #'hermes-chat--placeholder-retire nil t)
+  (add-hook 'after-change-functions #'hermes-chat--placeholder-update t t)
+  (hermes-chat--placeholder-update))
 
 (autoload 'hermes-chat-work "hermes-subagents" nil
   '(hermes-chat-mode hermes-work-mode))
@@ -2775,12 +3105,25 @@ Do not wrap into the composer or modify its draft."
       (not hermes-chat--pending-assistant-id)
       (not (hermes-chat--dashboard-session-attached-p))))
 
+(defun hermes-chat--queue-count-suffix ()
+  "Return \" N\" with the queued count as a value, or \"\" when empty."
+  (let ((count (length hermes-chat--queued-messages)))
+    (if (> count 0)
+        (concat " " (propertize (number-to-string count) 'face 'font-lock-type-face))
+      "")))
+
 (defun hermes-chat--queue-label ()
   "Describe whether the queue command sends now or waits for a turn."
-  (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages
-          (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
-      "Queue message"
-    "Queue / send now"))
+  (concat
+   (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages
+           (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
+       "Queue message"
+     "Queue / send now")
+   (hermes-chat--queue-count-suffix)))
+
+(defun hermes-chat--queue-panel-label ()
+  "Describe the queue panel action with the queued count, hidden when zero."
+  (concat "Queue side panel" (hermes-chat--queue-count-suffix)))
 
 (defun hermes-chat--steer-label ()
   "Describe the cached steering target, including the idle send fallback."
@@ -2900,7 +3243,7 @@ Do not wrap into the composer or modify its draft."
   :popup-key "?"
   :exit-key "q"
   :group "Work"
-  "P" ("Queue side panel" hermes-chat-queue-panel)
+  "P" (#'hermes-chat--queue-panel-label hermes-chat-queue-panel)
   "W" (#'hermes-chat-workers-label hermes-chat-work)
   "T" ("Live tasks" hermes-chat-show-todos)
   "o" ("Preview output" hermes-chat-preview-output))
@@ -2927,7 +3270,8 @@ Do not wrap into the composer or modify its draft."
   "t" ("Session status" hermes-chat-show-status)
   :row
   :group "Connection"
-  "x" ("Reconnect socket" hermes-dashboard-reconnect))
+  "x" ("Reconnect socket" hermes-dashboard-reconnect)
+  "r" ("Refresh commands" hermes-chat-refresh-commands :stay-open t))
 
 (put 'hermes-chat-info-map-popup 'command-modes '(hermes-chat-mode))
 
@@ -2950,7 +3294,6 @@ Do not wrap into the composer or modify its draft."
   "q" (#'hermes-chat--queue-label hermes-chat-queue-message)
   :group "Compose"
   "RET" ("Send" hermes-chat-send)
-  "j" ("Go to composer" hermes-chat-go-to-composer)
   "Q" ("Quote region" hermes-chat-quote-region)
   "I" ("Images" :keymap hermes-chat-images-map)
   "F" ("Attachments" :keymap hermes-chat-files-map)
@@ -2964,12 +3307,23 @@ Do not wrap into the composer or modify its draft."
   "B" ("Work" :keymap hermes-chat-jobs-map)
   "X" ("Inspect" :keymap hermes-chat-info-map)
   "c" ("Show commands" hermes-chat-show-commands)
-  "r" ("Refresh commands" hermes-chat-refresh-commands :stay-open t)
   "W" (#'hermes-chat-workers-label hermes-chat-work)
   :row
+  :group "Show"
+  "O" ((lambda () (hermes-chat--detail-label "Tool output" 'hermes-tools))
+       hermes-chat-toggle-tool-output :stay-open t)
+  "E" ((lambda () (hermes-chat--detail-label "Reasoning" 'hermes-reasoning))
+       hermes-chat-toggle-reasoning :stay-open t)
+  "+" ("Expand all" hermes-chat-expand-all-details)
+  "-" ("Collapse all" hermes-chat-collapse-all-details)
   :group ("Prompt" :if #'hermes-chat--pending-prompt-p)
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt))
+
+;; `C-c C-j' covers the composer and Inspect now offers Refresh commands;
+;; keep both former menu keys as quiet aliases.
+(keymap-set hermes-chat-actions-map "j" #'hermes-chat-go-to-composer)
+(keymap-set hermes-chat-actions-map "r" #'hermes-chat-refresh-commands)
 
 (dolist (command '(hermes-chat-actions-map-popup
                   hermes-chat-actions-map--enter-hermes-chat-audio-map
@@ -3029,6 +3383,9 @@ Do not wrap into the composer or modify its draft."
                    (if (hermes-chat--point-in-input-p)
                        #'self-insert-command
                      command)))
+  "?" (hermes-chat--transcript-key #'hermes-chat-actions-map-popup t)
+  "n" (hermes-chat--transcript-key #'hermes-chat-next-turn)
+  "p" (hermes-chat--transcript-key #'hermes-chat-previous-turn)
   "<backtab>" #'hermes-chat-previous-button
   "<remap> <forward-button>" #'hermes-chat-next-button
   "<remap> <backward-button>" #'hermes-chat-previous-button
@@ -3081,10 +3438,12 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (add-hook 'hermes-chat-submit-inhibit-functions
             #'hermes-chat--images-inhibit nil t)
   (setq-local desktop-save-buffer #'hermes-chat--desktop-save)
+  (setq-local imenu-create-index-function #'hermes-chat--imenu-index)
   (add-hook 'warm-restart-blocker-functions
             #'hermes-chat--warm-restart-blocker nil t)
   (hermes-chat--setup-buffer)
-  (hermes-chat-draft--activate))
+  (hermes-chat-draft--activate)
+  (hermes-chat--placeholder-activate))
 
 ;;;###autoload
 (defun hermes-chat (&optional profile instance)

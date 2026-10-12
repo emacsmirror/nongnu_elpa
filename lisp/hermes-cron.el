@@ -677,15 +677,23 @@ Trigger can still force a run.  Interactive creation offers both initial states.
   (completing-read (format "%s (%s): " label value)
                    '("Unchanged" "Set" "Inherit") nil t nil nil "Unchanged"))
 
-(defun hermes-cron--read-model-preference (catalog)
-  "Select an exact provider-qualified preference from fresh CATALOG."
+(defun hermes-cron--read-model-preference (catalog &optional job)
+  "Select an exact provider-qualified preference from fresh CATALOG.
+JOB's configured model, when present in CATALOG, is marked and the default."
   (let* ((candidates (seq-filter
                       (lambda (candidate)
                         (hermes-transport--non-blank-string
                          (plist-get (cdr candidate) :provider)))
                       (hermes-chat--model-candidates catalog)))
-         (choice (completing-read "Model choice: " (mapcar #'car candidates) nil t))
-         (candidate (cdr (assoc choice candidates))))
+         (current (and job
+                       (hermes-chat--model-current-value
+                        candidates
+                        (hermes-transport--non-blank-string
+                         (hermes-transport--display-field job 'model))
+                        (hermes-transport--non-blank-string
+                         (hermes-transport--display-field job 'provider)))))
+         (candidate (cdr (hermes-chat--read-model-candidate
+                          "Model choice: " candidates current))))
     (unless candidate (user-error "No provider-qualified model selected"))
     `((model . ,(plist-get candidate :model))
       (provider . ,(plist-get candidate :provider)))))
@@ -767,7 +775,7 @@ workdir is refused locally.  Explicit quit abandons the edit instead."
                    (with-current-buffer origin
                      (hermes-cron--save-preferences
                       client id profile job
-                      (hermes-cron--read-model-preference catalog) origin guard))))))
+                      (hermes-cron--read-model-preference catalog job) origin guard))))))
           (hermes-cron--save-preferences
            client id profile job
            (and (equal action "Inherit") '((model . :null) (provider . :null)))

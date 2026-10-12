@@ -87,9 +87,9 @@ route requires both fields."
                         (hermes-transport--non-empty-string
                          (plist-get (cdr candidate) :provider)))
                       (hermes-chat--model-candidates catalog)))
-         (choice (completing-read "Profile model: "
-                                  (mapcar #'car candidates) nil t)))
-    (or (cdr (assoc choice candidates))
+         (choice (hermes-chat--read-model-candidate
+                  "Profile model: " candidates)))
+    (or (cdr choice)
         (user-error "No model selected"))))
 
 (defun hermes-profiles--put-model (client name candidate &optional current-p)

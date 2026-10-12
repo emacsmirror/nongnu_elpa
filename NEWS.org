@@ -2,6 +2,60 @@
 
 * Unreleased
 
+- The rule above the chat composer now shows the active turn's state,
+  elapsed time, current tool, task progress and queued count, then the last
+  turn's duration briefly.  Queued messages are listed above the rule and
+  open the queue panel on activation; the queue menu entries show the count.
+- Each turn with a task list gets one collapsible transcript line,
+  =▸ Tasks 3/5 · now: ITEM=, updated in place as the list changes.
+- Approval readers show the tool description and the full command.  When
+  opened explicitly they take one-key answers (=o=nce, =s=ession, =a=lways,
+  =d=eny; =q= or =C-g= leaves the request pending); a reader that opens
+  automatically still requires submitting a choice with =RET=.  Very long commands open in a separate window while
+  reading.  Clarification readers use the question as their prompt.  A
+  pending prompt's transcript line has an =[Answer]= button to reopen it.
+- Chat discoverability: =?= opens the actions menu from the transcript or an
+  empty composer, and an empty composer shows key hints
+  (=hermes-chat-composer-placeholder=).  =n= / =p= move between user turns
+  in the transcript, and =imenu= lists them.
+- A new Show group in =C-c C-o= hides or shows tool output and reasoning
+  everywhere at once and expands or collapses every disclosure.  Every chat
+  menu group now has at most four entries: Refresh commands moved to
+  Inspect (=C-c C-o X r=), and Go to composer stays on =C-c C-j=.
+- The chat model picker stays a single completion read but groups models by
+  provider, shows only the model inside each group, and annotates context
+  window, price and capabilities when the catalogue reports them.  The
+  current model is marked and offered as the default.  Profile and cron model
+  pickers share the same metadata.  Completion values now lead with the model,
+  for example =claude · Anthropic (anthropic)=.
+- Clicking the header's =🤖 N= / =⚙ N= work count opens that chat's observed
+  work view, even when its window is not selected.
+- Composer =@= path completion reopens automatically once the backend lookup
+  finishes, provided the composer is unchanged; a second =TAB= is no longer
+  needed.
+- Running tool, delegate and status rows show =●= in the new
+  =hermes-chat-tool-running= face; failed rows carry =error= on the whole
+  head line.  =/commands= opens a =*Hermes Commands*= help buffer instead of
+  writing the catalogue into the transcript; =RET= inserts a command into the
+  owning chat's empty composer.  Unknown events and notices longer than three
+  lines start collapsed, with the raw payload on expansion.  Disconnect and
+  socket-loss notices offer =[Reconnect]=, =[Recovery draft]= and
+  =[Session details]= buttons bound to that attachment; they turn inert once
+  it is replaced, and nothing is resent automatically.
+  =hermes-dashboard-reconnect= now also restarts a lost socket whose client
+  is still attached, not only a live one.
+- Chat buffer names now follow the chat's project rather than the gateway's
+  live working directory.  The launch project, or else the project of the
+  first gateway directory, is named with =project-name= when it exists
+  locally.  When the agent later changes directory, the buffer keeps its name
+  and the header shows the abbreviated cwd while it differs from the project
+  root.  =hermes-chat-buffer-name-function= keeps its signature; its
+  DIRECTORY argument is now this stable naming directory.  A directory in a
+  linked Git worktree names the main repository's project, and the header
+  shows the worktree quietly, for example =→ …/feature=.
+- =hermes-switch-to-chat= groups chats by project, lists the most recently
+  used first and the current chat last, and annotates each with its session
+  title, attention state, connection, activity and divergent cwd.
 - Pending chat prompts appear in the global mode line, for example
   =[Hermes: Clarify]=, until they are answered, expire or are cleared.
   Clicking the segment answers from the owning chat; set

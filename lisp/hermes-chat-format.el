@@ -154,6 +154,33 @@ Active statuses show a neutral dot rather than the settled checkmark."
      ((or (member name hermes-chat--error-statuses) (member name '("closed" "disconnected"))) "!")
      (t "·"))))
 
+(defface hermes-chat-tool-running
+  '((t :inherit font-lock-keyword-face))
+  "Face for the marker of a running tool, delegate or status row."
+  :group 'hermes)
+
+(defconst hermes-chat--failed-statuses '("error" "failed" "failure")
+  "Status names that mark a transcript row as a genuine failure.
+Interrupted and cancelled rows keep a quiet head line.")
+
+(defun hermes-chat--entry-marker (status)
+  "Return (MARKER . FACE) for a transcript row in STATUS.
+Running rows show a filled dot so they stand apart from settled rows; the
+marker alone keeps the state legible without faces."
+  (if (hermes-chat--active-status-p status)
+      (cons "●" 'hermes-chat-tool-running)
+    (cons (hermes-chat--status-icon status) (hermes-chat--status-face status))))
+
+(defun hermes-chat--entry-head-face (status)
+  "Return the face for a transcript row's head text in STATUS, or nil.
+Failures colour the whole head line, connection loss warns, running rows
+stay in the default face and settled rows recede into `shadow'."
+  (let ((name (hermes-chat--status-name status)))
+    (cond ((member name hermes-chat--failed-statuses) 'error)
+          ((member name '("closed" "disconnected")) 'warning)
+          ((hermes-chat--active-status-p status) nil)
+          (t 'shadow))))
+
 (defun hermes-chat--header-status-label (status)
   "Return compact header label for STATUS."
   (pcase (hermes-chat--status-name status)
@@ -818,19 +845,191 @@ FIXED-WIDTHS retains a streaming table's established column allocation."
        (hermes-chat--message-start-noise-content-p
         (hermes-chat--event-string event '(:content :text :preview)))))
 
+(defconst hermes-chat--unknown-event-preview-print-length 20
+  "`print-length' bound while printing unknown event raw previews.")
+
+(defconst hermes-chat--unknown-event-preview-print-level 4
+  "`print-level' bound while printing unknown event raw previews.")
+
+(defconst hermes-chat--unknown-event-preview-string-limit 200
+  "Maximum characters kept from each string in an unknown event preview.")
+
+(defconst hermes-chat--unknown-event-preview-budget '(200 . 180)
+  "Shared (NODES . CHARACTERS) budget for an unknown event raw preview.")
+
+(defun hermes-chat--unknown-event-bounded-copy
+    (object depth length string-limit budget)
+  "Return a copy of OBJECT that is cheap to print.
+BUDGET is a cons (NODES . CHARACTERS) shared by the whole walk: every
+visited object costs one node and about its printed size in characters.
+Once either runs out, remaining elements are not visited and become the
+symbol `…'; this bounds wide trees, shared structure, cycles and the
+printed size alike.  Containers nested deeper than DEPTH become `…'.  Lists,
+vectors and hash tables keep at most LENGTH elements, with `…' marking
+the rest of a list or vector.  Strings are cut to STRING-LIMIT
+characters and the remaining character budget, end in \"…\" when cut,
+and lose their text properties.  Only strings, numbers, symbols, conses,
+plain vectors and hash tables are walked; any other object becomes an
+opaque symbol such as `#<record>' or `#<buffer>' and is never printed.
+Bignums wider than `hermes-chat--unknown-event-bignum-bits' become
+`#<bignum>' without decimal conversion, and hash tables whose capacity
+exceeds `hermes-chat--unknown-event-hash-size-limit' become a symbol such
+as `#<hash-table:count=2>' without being iterated."
+  (hermes-chat--unknown-event-bounded-walk
+   object depth length string-limit (cons (car budget) (cdr budget))))
+
+(defconst hermes-chat--unknown-event-bignum-bits 256
+  "Bit width above which an unknown event bignum is not converted.")
+
+(defconst hermes-chat--unknown-event-hash-size-limit 1024
+  "Hash table capacity above which an unknown event table is not iterated.
+`maphash' scans the whole capacity, even when the table is nearly empty.")
+
+(defun hermes-chat--unknown-event-opaque (object)
+  "Return a short placeholder symbol naming the type of OBJECT."
+  ;; `type-of' of a record is its arbitrary first slot, so never use it.
+  (intern (format "#<%s>" (if (recordp object) 'record (type-of object)))))
+
+(defun hermes-chat--unknown-event-bounded-walk
+    (object depth length string-limit budget)
+  "Return the bounded copy of OBJECT, spending the mutable BUDGET cell.
+DEPTH, LENGTH and STRING-LIMIT are as in
+`hermes-chat--unknown-event-bounded-copy'.  Each visit costs one node and
+roughly its printed size in characters; a hash table costs its header."
+  (if (not (and (> (car budget) 0) (> (cdr budget) 0)))
+      '…
+    (setcar budget (1- (car budget)))
+    (let ((walk (lambda (child)
+                  (hermes-chat--unknown-event-bounded-walk
+                   child (1- depth) length string-limit budget)))
+          (more (lambda () (and (> (car budget) 0) (> (cdr budget) 0))))
+          (spend (lambda (chars) (setcdr budget (- (cdr budget) chars)))))
+      (cond
+       ((stringp object)
+        (let ((keep (min (length object) string-limit (cdr budget))))
+          (funcall spend (+ keep 2))
+          (if (< keep (length object))
+              (concat (substring-no-properties object 0 keep) "…")
+            (substring-no-properties object))))
+       ((and (bignump object)
+             (> (logb (abs object)) hermes-chat--unknown-event-bignum-bits))
+        (funcall spend 10)
+        '\#<bignum>)
+       ((or (numberp object) (symbolp object))
+        (let ((size (1+ (length (if (symbolp object) (symbol-name object)
+                                  (number-to-string object))))))
+          (if (> size (cdr budget))
+              (progn (funcall spend size) '…)
+            (funcall spend size)
+            object)))
+       ((recordp object) (funcall spend 10)
+        (hermes-chat--unknown-event-opaque object))
+       ((not (or (consp object) (vectorp object) (hash-table-p object)))
+        (funcall spend 10)
+        (hermes-chat--unknown-event-opaque object))
+       ((<= depth 0) (funcall spend 2) '…)
+       ((consp object)
+        (funcall spend 2)
+        (let ((tail object) (count 0) items)
+          (while (and (consp tail) (< count length) (funcall more))
+            (push (funcall walk (car tail)) items)
+            (setq tail (cdr tail) count (1+ count)))
+          (nconc (nreverse items)
+                 (cond ((null tail) nil)
+                       ((or (consp tail) (not (funcall more))) (list '…))
+                       (t (funcall walk tail))))))
+       ((vectorp object)
+        (funcall spend 2)
+        (let ((count 0) items)
+          (while (and (< count (min length (length object))) (funcall more))
+            (push (funcall walk (aref object count)) items)
+            (setq count (1+ count)))
+          (vconcat (nreverse items)
+                   (and (< count (length object)) (list '…)))))
+       ((> (hash-table-size object) hermes-chat--unknown-event-hash-size-limit)
+        (funcall spend 30)
+        (intern (format "#<hash-table:count=%d>" (hash-table-count object))))
+       (t
+        (funcall spend 60)
+        (let ((copy (make-hash-table :test (hash-table-test object)))
+              (count 0))
+          (catch 'full
+            (maphash (lambda (key value)
+                       (unless (and (< count length) (funcall more))
+                         (throw 'full nil))
+                       (puthash (funcall walk key) (funcall walk value) copy)
+                       (setq count (1+ count)))
+                     object))
+          copy))))))
+
+(defun hermes-chat--unknown-event-raw-preview (raw)
+  "Return a one-line preview of unknown event payload RAW.
+RAW is first reduced with `hermes-chat--unknown-event-bounded-copy', so
+the preview never traverses or prints all of a huge payload or string."
+  (let* ((width hermes-chat--unknown-event-raw-preview-width)
+         (print-length hermes-chat--unknown-event-preview-print-length)
+         (print-level hermes-chat--unknown-event-preview-print-level)
+         (print-escape-newlines t)
+         (object (hermes-chat--unknown-event-bounded-copy
+                  raw print-level print-length
+                  (min width hermes-chat--unknown-event-preview-string-limit)
+                  hermes-chat--unknown-event-preview-budget)))
+    (truncate-string-to-width (prin1-to-string object) width nil nil "…")))
+
 (defun hermes-chat--unknown-event-content (event)
   "Return visible diagnostic text for unknown transport EVENT."
   (let* ((name (or (hermes-chat--event-string event '(:event)) "unnamed"))
          (raw (plist-get event :raw))
-         (preview (and raw
-                       (truncate-string-to-width
-                        (format "%S" raw)
-                        hermes-chat--unknown-event-raw-preview-width
-                        nil nil "…"))))
+         (preview (and raw (hermes-chat--unknown-event-raw-preview raw))))
     (string-join
      (delq nil (list (format "Unknown Hermes transport event: %s" name)
                      (and preview (format "raw: %s" preview))))
      "\n")))
+
+(defconst hermes-chat--unknown-event-raw-detail-limit 4000
+  "Maximum characters of raw data shown in an expanded unknown event.")
+
+(defun hermes-chat--unknown-event-summary (event)
+  "Return the one-line collapsed summary for unknown transport EVENT."
+  (format "Unknown event %s"
+          (or (hermes-chat--event-string event '(:event)) "unnamed")))
+
+(defconst hermes-chat--unknown-event-print-length 200
+  "`print-length' bound while formatting unknown event raw payloads.")
+
+(defconst hermes-chat--unknown-event-print-level 12
+  "`print-level' bound while formatting unknown event raw payloads.")
+
+(defconst hermes-chat--unknown-event-string-limit 1000
+  "Maximum characters kept from each string in expanded unknown event detail.")
+
+(defconst hermes-chat--unknown-event-detail-budget '(1000 . 4000)
+  "Shared (NODES . CHARACTERS) budget for expanded unknown event detail.")
+
+(defun hermes-chat--unknown-event-detail (event)
+  "Return expanded raw detail for unknown transport EVENT.
+The raw payload is pretty-printed and bounded rather than truncated to one
+line, so the expanded disclosure retains the data needed for a bug report.
+RAW is first reduced with `hermes-chat--unknown-event-bounded-copy', and
+payloads whose flat form exceeds `hermes-chat--unknown-event-raw-detail-limit'
+are truncated without pretty-printing."
+  (let ((raw (plist-get event :raw)))
+    (if (null raw)
+        "No raw payload"
+      (let* ((print-length hermes-chat--unknown-event-print-length)
+             (print-level hermes-chat--unknown-event-print-level)
+             (limit hermes-chat--unknown-event-raw-detail-limit)
+             (raw (hermes-chat--unknown-event-bounded-copy
+                   raw print-level print-length
+                   hermes-chat--unknown-event-string-limit
+                   hermes-chat--unknown-event-detail-budget))
+             (flat (prin1-to-string raw)))
+        (if (> (length flat) limit)
+            (concat (substring flat 0 limit) "\n… (raw payload truncated)")
+          (let ((text (string-trim-right (pp-to-string raw))))
+            (if (> (length text) limit)
+                (concat (substring text 0 limit) "\n… (raw payload truncated)")
+              text)))))))
 
 
 (defun hermes-chat--model-config-value (candidate)

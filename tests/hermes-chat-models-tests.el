@@ -82,7 +82,7 @@
                            '((providers . (((slug . "p") (authenticated . t)
                                              (models . ("next")))))))))
                ((symbol-function 'completing-read)
-                (lambda (_prompt choices &rest _) (car choices)))
+                (lambda (_prompt choices &rest _) (car (all-completions "" choices))))
                ((symbol-function 'hermes-chat--dashboard-control-client)
                 (lambda () (hermes-test--dashboard-client))))
        (hermes-chat-switch-model)
@@ -245,15 +245,206 @@
                               (plist-get (cdr cand) :provider))
                             cands)))
     (should (equal providers '("anthropic" "openrouter" "openrouter" "openai")))
-    (should (string-match-p "Anthropic" (car labels)))
-    (should (string-match-p "(anthropic)" (car labels)))
-    (should (string-match-p "claude" (car labels)))
-    (should (string-match-p "\\$3" (car labels)))
-    (should-not (string-match-p "reasoning" (car labels)))
-    (should-not (string-match-p "fast" (car labels)))
-    (should-not (string-match-p "ctx" (car labels)))
+    (should (equal (car labels) "claude · Anthropic (anthropic)"))
+    (should (equal (plist-get (cdar cands) :details)
+                   '("200k ctx" "$3/$15" "reasoning" "fast")))
     (should (equal (hermes-chat--model-config-value (cdar cands))
                    "claude --provider anthropic"))))
+
+;; Fixture: the same model id served by two providers, one with full
+;; catalogue facts, plus an unconnected provider.
+(defconst hermes-test--grouped-model-catalog
+  '((model . "claude") (provider . "openrouter")
+    (providers
+     . (((slug . "anthropic") (name . "Anthropic") (authenticated . t)
+         (models . ("claude" "haiku"))
+         (pricing . ((claude . ((input . "$3") (output . "$15")))
+                     (haiku . ((free . t)))))
+         (capabilities . ((claude . ((reasoning . t) (context_window . 1000000))))))
+        ((slug . "openrouter") (name . "OpenRouter") (authenticated . t)
+         (models . ("claude")))
+        ((slug . "openai") (name . "OpenAI") (authenticated . :false)
+         (models . ("gpt")))))))
+
+(ert-deftest hermes-chat-model-picker-groups-by-provider-with-metadata ()
+  "One reader groups exact values by provider and annotates catalogue facts."
+  (let* ((cands (hermes-chat--model-candidates hermes-test--grouped-model-catalog))
+         (table (hermes-chat--model-completion-table
+                 cands "claude · OpenRouter (openrouter)"))
+         (metadata (completion-metadata "" table nil))
+         (group (completion-metadata-get metadata 'group-function))
+         (annotate (completion-metadata-get metadata 'annotation-function)))
+    (should (equal (all-completions "" table)
+                   '("claude · Anthropic (anthropic)" "haiku · Anthropic (anthropic)"
+                     "claude · OpenRouter (openrouter)" "gpt · OpenAI (openai)")))
+    (should (eq (completion-metadata-get metadata 'display-sort-function)
+                #'identity))
+    ;; Group titles carry the provider; inside a group only the model shows.
+    (should (equal (mapcar (lambda (value) (funcall group value nil))
+                           (all-completions "" table))
+                   '("Anthropic (anthropic)" "Anthropic (anthropic)"
+                     "OpenRouter (openrouter)" "OpenAI (openai) · not connected")))
+    (should (equal (funcall group "claude · OpenRouter (openrouter)" t) "claude"))
+    ;; Catalogue facts are quiet; only the current model is marked.
+    (let ((facts (funcall annotate "claude · Anthropic (anthropic)")))
+      (should (equal (substring-no-properties facts) "  1M ctx · $3/$15 · reasoning"))
+      (should (eq (get-text-property 2 'face facts) 'shadow)))
+    (should (equal (substring-no-properties
+                    (funcall annotate "haiku · Anthropic (anthropic)"))
+                   "  free"))
+    (let ((current (funcall annotate "claude · OpenRouter (openrouter)")))
+      (should (equal (substring-no-properties current) "  • current"))
+      (should (eq (get-text-property 2 'face current) 'success)))
+    (should-not (funcall annotate "gpt · OpenAI (openai)"))))
+
+(ert-deftest hermes-chat-model-picker-defaults-to-current-and-returns-exact-provider ()
+  "The current model is the default; duplicate ids keep their provider."
+  (dolist (pick '(default "claude · Anthropic (anthropic)"))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--model "claude"
+           hermes-chat--dashboard-active-session-id "sid"
+           hermes-chat--dashboard-session-ready-p t)
+     (let (seen-default applied)
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (_prompt table _pred require _initial _history default)
+                    (should require)
+                    (should (functionp table))
+                    (setq seen-default default)
+                    (if (eq pick 'default) default pick)))
+                 ((symbol-function 'hermes-dashboard-transport-config-set)
+                  (lambda (_client _key value &rest _) (setq applied value))))
+         (hermes-chat--prompt-and-set-model
+          (current-buffer) 'client hermes-test--grouped-model-catalog
+          (hermes-chat--model-switch-context)))
+       ;; The catalogue reports OpenRouter as the session's provider.
+       (should (equal seen-default "claude · OpenRouter (openrouter)"))
+       ;; Accepting the current default still dispatches the switch.
+       (should (equal applied (if (eq pick 'default)
+                                  "claude --provider openrouter"
+                                "claude --provider anthropic")))))))
+
+(ert-deftest hermes-chat-model-picker-current-requires-exact-provider ()
+  "A reported provider without a matching row marks and defaults nothing."
+  (let* ((catalog '((model . "claude") (provider . "missing")
+                    (providers . (((slug . "anthropic") (name . "Anthropic")
+                                   (authenticated . t) (models . ("claude")))))))
+         (cands (hermes-chat--model-candidates catalog)))
+    (should-not (hermes-chat--model-current-value cands "claude" "missing"))
+    (should (equal (hermes-chat--model-current-value cands "claude" "anthropic")
+                   "claude · Anthropic (anthropic)"))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--model "claude"
+           hermes-chat--dashboard-active-session-id "sid"
+           hermes-chat--dashboard-session-ready-p t)
+     (should-not (hermes-chat--model-picker-current cands catalog))
+     (let ((seen-default 'unset) annotation applied)
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (_prompt table _pred _require _initial _history default)
+                    (setq seen-default default
+                          annotation
+                          (funcall (completion-metadata-get
+                                    (completion-metadata "" table nil)
+                                    'annotation-function)
+                                   "claude · Anthropic (anthropic)"))
+                    ;; Accepting the (absent) default returns the empty string.
+                    (or default "")))
+                 ((symbol-function 'hermes-dashboard-transport-config-set)
+                  (lambda (_client _key value &rest _) (setq applied value))))
+         (hermes-chat--prompt-and-set-model
+          (current-buffer) 'client catalog (hermes-chat--model-switch-context)))
+       (should-not seen-default)
+       (should-not (and annotation
+                        (string-search "current" (substring-no-properties annotation))))
+       ;; No implicit provider change.
+       (should-not applied)))))
+
+(ert-deftest hermes-chat-model-picker-selecting-current-still-switches ()
+  "Choosing the current model and provider dispatches the switch."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "claude"
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t)
+   (let (applied seen-default)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _table _pred _require _initial _history default)
+                  (setq seen-default default)
+                  default))
+               ((symbol-function 'hermes-dashboard-transport-config-set)
+                (lambda (_client _key value &rest _) (setq applied value))))
+       (hermes-chat--prompt-and-set-model
+        (current-buffer) 'client hermes-test--grouped-model-catalog
+        (hermes-chat--model-switch-context)))
+     (should (equal seen-default "claude · OpenRouter (openrouter)"))
+     (should (equal applied "claude --provider openrouter")))))
+
+(ert-deftest hermes-chat-model-picker-pending-choice-default-switches-live ()
+  "A pending failed-create choice is the default, and choosing it switches."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "claude"
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t
+         hermes-chat--create-overrides-retry-session-id "sid"
+         hermes-chat--dashboard-create-model "haiku"
+         hermes-chat--dashboard-create-provider "anthropic")
+   (let (applied)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _table _pred _require _initial _history default)
+                  default))
+               ((symbol-function 'hermes-dashboard-transport-config-set)
+                (lambda (_client _key value &rest _) (setq applied value))))
+       (hermes-chat--prompt-and-set-model
+        (current-buffer) 'client hermes-test--grouped-model-catalog
+        (hermes-chat--model-switch-context)))
+     (should (equal applied "haiku --provider anthropic")))))
+
+(ert-deftest hermes-chat-model-picker-current-changed-during-read-switches ()
+  "A live model change while the reader is open never suppresses the switch."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "claude"
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t)
+   (let ((owner (current-buffer)) applied)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _table _pred _require _initial _history default)
+                  (with-current-buffer owner
+                    (hermes-chat--capture-session-identity '(:model "haiku")))
+                  default))
+               ((symbol-function 'hermes-dashboard-transport-config-set)
+                (lambda (_client _key value &rest _) (setq applied value))))
+       (hermes-chat--prompt-and-set-model
+        (current-buffer) 'client hermes-test--grouped-model-catalog
+        (hermes-chat--model-switch-context)))
+     (should (equal applied "claude --provider openrouter")))))
+
+(ert-deftest hermes-chat-model-picker-unconfirmed-provider-still-switches ()
+  "A model-only current match is not proof of provider; choosing it switches."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "haiku"
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t)
+   (let (applied seen-default)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _table _pred _require _initial _history default)
+                  (setq seen-default default)
+                  default))
+               ((symbol-function 'hermes-dashboard-transport-config-set)
+                (lambda (_client _key value &rest _) (setq applied value))))
+       (hermes-chat--prompt-and-set-model
+        (current-buffer) 'client hermes-test--grouped-model-catalog
+        (hermes-chat--model-switch-context)))
+     (should (equal seen-default "haiku · Anthropic (anthropic)"))
+     (should (equal applied "haiku --provider anthropic")))))
+
+(ert-deftest hermes-chat-model-picker-pending-choice-is-current ()
+  "A pending create-time model and provider win over the catalogue's report."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "claude"
+         hermes-chat--dashboard-create-model "claude"
+         hermes-chat--dashboard-create-provider "anthropic")
+   (let ((cands (hermes-chat--model-candidates hermes-test--grouped-model-catalog)))
+     (should (equal (hermes-chat--model-picker-current
+                     cands hermes-test--grouped-model-catalog)
+                    "claude · Anthropic (anthropic)")))))
 
 (ert-deftest hermes-chat-model-capf-completes-cached-authenticated-models ()
   "`/model' arguments complete from cached authenticated provider models."
@@ -356,7 +547,7 @@
                                  (models . ("alpha" "beta")))))))))
               ((symbol-function 'completing-read)
                (lambda (_prompt coll &rest _)
-                 (let ((choice (cl-find "beta" coll :test #'string-match-p)))
+                 (let ((choice (cl-find "beta" (all-completions "" coll) :test #'string-match-p)))
                    (should choice)
                    choice)))
               ((symbol-function 'hermes-dashboard-transport-config-set)
@@ -411,11 +602,11 @@
                     (setq applied value)))
                  (completing-read-function
                   (lambda (_prompt collection &rest _)
-                    (setq choices collection)
-                    (car collection))))
+                    (setq choices (all-completions "" collection))
+                    (car (all-completions "" collection)))))
          (call-interactively #'hermes-chat-switch-model)
          (should (eq requested client))
-         (should (equal choices '("local · Qwen")))
+         (should (equal choices '("Qwen · local")))
          (if attached
              (should (equal applied "Qwen --provider local"))
            (should (equal hermes-chat--dashboard-create-model "Qwen")))
@@ -461,7 +652,7 @@
               ((symbol-function 'hermes-dashboard-transport-session-create)
                (lambda (&rest _args) (ert-fail "must not create a session")))
               ((symbol-function 'completing-read)
-               (lambda (&rest _args) "p1 · beta")))
+               (lambda (&rest _args) "beta · p1")))
       (hermes-test-with-chat-buffer
        (hermes-chat-switch-model)
        (should (equal hermes-chat--dashboard-create-model "beta"))))))
@@ -547,7 +738,7 @@
                                  (models . ("beta")))))))))
               ((symbol-function 'completing-read)
                (lambda (_prompt coll &rest _)
-                 (cl-find "beta" coll :test #'string-match-p)))
+                 (cl-find "beta" (all-completions "" coll) :test #'string-match-p)))
               ((symbol-function 'yes-or-no-p)
                (lambda (text)
                  (setq prompt text)
@@ -587,7 +778,7 @@
                                  (models . ("beta")))))))))
               ((symbol-function 'completing-read)
                (lambda (_prompt coll &rest _)
-                 (cl-find "beta" coll :test #'string-match-p)))
+                 (cl-find "beta" (all-completions "" coll) :test #'string-match-p)))
               ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
               ((symbol-function 'hermes-dashboard-transport-config-set)
                (lambda (_client _key value &rest args)
@@ -620,7 +811,7 @@
                                  (models . ("beta")))))))))
               ((symbol-function 'completing-read)
                (lambda (_prompt coll &rest _)
-                 (cl-find "beta" coll :test #'string-match-p)))
+                 (cl-find "beta" (all-completions "" coll) :test #'string-match-p)))
               ((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
               ((symbol-function 'hermes-dashboard-transport-config-set)
                (lambda (_client _key value &rest args)
@@ -649,7 +840,7 @@
                                (models . ("beta")))))))))
             ((symbol-function 'completing-read)
              (lambda (_prompt coll &rest _)
-               (cl-find "beta" coll :test #'string-match-p)))
+               (cl-find "beta" (all-completions "" coll) :test #'string-match-p)))
             ((symbol-function 'hermes-dashboard-transport-config-set)
              (lambda (_client _key _value &rest args)
                (funcall (plist-get args :reject) "backend denied"))))
@@ -859,7 +1050,7 @@
   "Picking an unauthenticated provider's model connects it, then applies it."
   (let (saved applied)
     (cl-letf (((symbol-function 'completing-read)
-               (lambda (_prompt labels &rest _) (car labels)))
+               (lambda (_prompt labels &rest _) (car (all-completions "" labels))))
               ((symbol-function 'read-passwd) (lambda (&rest _) "sk-secret"))
               ((symbol-function 'hermes-dashboard-transport-model-save-key)
                (lambda (_client slug _key &rest args)
@@ -885,7 +1076,7 @@
   "Picking an unauthenticated OAuth model never enters the API-key flow."
   (let (read-key saved applied notice)
     (cl-letf (((symbol-function 'completing-read)
-               (lambda (_prompt labels &rest _) (car labels)))
+               (lambda (_prompt labels &rest _) (car (all-completions "" labels))))
               ((symbol-function 'read-passwd)
                (lambda (&rest _) (setq read-key t) "oauth-secret"))
               ((symbol-function 'hermes-dashboard-transport-model-save-key)
@@ -931,8 +1122,8 @@
                (push (json-parse-string text :object-type 'alist) requests)))
             (completing-read-function
              (lambda (_prompt collection &rest _)
-               (push collection choices)
-               (car collection))))
+               (push (all-completions "" collection) choices)
+               (car (all-completions "" collection)))))
        (setq hermes-chat--dashboard-client client)
        (setf (hermes-dashboard-transport-client-ready-p client) t)
        (call-interactively #'hermes-chat-switch-model)
@@ -944,12 +1135,12 @@
        (let ((before (buffer-string)))
          (hermes-test--model-picker-reply client (cadr requests) "Devstral" failure)
          (should (equal (buffer-string) before)))
-       (should (equal choices '(("local · Qwen"))))
+       (should (equal choices '(("Qwen · local"))))
        (should (equal hermes-chat--dashboard-create-model "Qwen"))
        (should (equal hermes-chat--dashboard-create-provider "local"))
        (should (equal (mapcar #'car (hermes-chat--model-candidates
                                     (hermes-dashboard-transport-cached-model-options client)))
-                      '("local · Qwen")))
+                      '("Qwen · local")))
        (should (= (hash-table-count
                    (hermes-dashboard-transport-client-pending client)) 0))))))
 
@@ -971,8 +1162,8 @@
 		 (with-current-buffer owner
                    (call-interactively #'hermes-chat-switch-model))
 		 (hermes-test--model-picker-reply client (car requests) "Qwen"))
-               (if (and cancel (equal (car collection) "local · Qwen"))
-                   "" (car collection)))))
+               (if (and cancel (equal (car (all-completions "" collection)) "Qwen · local"))
+                   "" (car (all-completions "" collection))))))
        (setq hermes-chat--dashboard-client client)
        (setf (hermes-dashboard-transport-client-ready-p client) t)
        (call-interactively #'hermes-chat-switch-model)
@@ -992,7 +1183,7 @@
            (lambda (_socket text)
              (push (json-parse-string text :object-type 'alist) requests)))
           (completing-read-function
-           (lambda (_prompt collection &rest _) (car collection))))
+           (lambda (_prompt collection &rest _) (car (all-completions "" collection)))))
      (setf (hermes-dashboard-transport-client-ready-p client) t)
      (setq hermes-chat--dashboard-client client)
      (call-interactively #'hermes-chat-switch-model)
@@ -1021,7 +1212,7 @@
                                               (authenticated . ,(> reads 1))
                                               (models . (,(if (= reads 1) "old" "new"))))))))))
                  (completing-read-function
-                  (lambda (_prompt collection &rest _) (car collection)))
+                  (lambda (_prompt collection &rest _) (car (all-completions "" collection))))
                  ((symbol-function 'read-passwd)
                   (lambda (&rest _)
                     (when (eq stage 'input)
@@ -1063,7 +1254,7 @@
                              '((providers . (((slug . "local") (authenticated . t)
                                                (models . ("model")))))))))
                  (completing-read-function
-                  (lambda (_prompt collection &rest _) (car collection)))
+                  (lambda (_prompt collection &rest _) (car (all-completions "" collection))))
                  ((symbol-function 'hermes-dashboard-transport-config-set)
                   (lambda (_client _key _value &rest args) (push args requests)))
                  ((symbol-function 'yes-or-no-p)
@@ -1106,7 +1297,7 @@
               (completing-read-function
                (lambda (_prompt collection &rest _)
                  (cl-incf reads)
-                 (car collection))))
+                 (car (all-completions "" collection)))))
          (should hermes-instance)
          (should (eq hermes-chat--resolved-start-mode 'remote))
          (cl-letf (((symbol-function 'auth-source-search)

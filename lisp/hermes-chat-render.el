@@ -60,6 +60,40 @@ Distinguishes a `/btw' result that arrives out of band from ordinary turns."
       (plist-put metadata :expanded (cadr tail))
     metadata))
 
+;;;; Global detail levels
+;;
+;; Expanded tool-output and reasoning bodies carry an `invisible' property
+;; naming their kind.  Hiding a kind adds it to `buffer-invisibility-spec',
+;; so it applies at once to every body, new and old, without re-rendering or
+;; moving point.  A global hide wins over a per-entry expansion; expanding an
+;; entry by hand lifts the hide for that kind so the request is honoured.
+
+(defun hermes-chat--entry-detail-kind (entry)
+  "Return the invisibility symbol for ENTRY's expandable body."
+  (if (eq (plist-get entry :role) 'commentary)
+      'hermes-reasoning
+    'hermes-tools))
+
+(defun hermes-chat--details-hidden-p (kind)
+  "Return non-nil when bodies of KIND are hidden in the current buffer."
+  (and (listp buffer-invisibility-spec)
+       (or (memq kind buffer-invisibility-spec)
+           (assq kind buffer-invisibility-spec))
+       t))
+
+(defun hermes-chat--set-details-hidden (kind hidden)
+  "Hide bodies of KIND when HIDDEN is non-nil, otherwise show them."
+  (if hidden
+      (add-to-invisibility-spec kind)
+    (remove-from-invisibility-spec kind)))
+
+(defun hermes-chat--insert-detail-body (entry function &rest args)
+  "Insert ENTRY's expanded body with FUNCTION and ARGS, marked by kind."
+  (let ((start (point)))
+    (apply function args)
+    (put-text-property start (point) 'invisible
+                       (hermes-chat--entry-detail-kind entry))))
+
 (defun hermes-chat--copy-table-button (button)
   "Copy the exact original Markdown table stored on BUTTON."
   (kill-new (button-get button 'hermes-chat-table))

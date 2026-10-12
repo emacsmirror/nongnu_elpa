@@ -34,7 +34,11 @@
                ((symbol-function 'get-buffer-window)
                 (lambda (&rest _args) (selected-window)))
                ((symbol-function 'completing-read)
-                (lambda (&rest _args) (cl-incf ,prompted) "Deny")))
+                (lambda (&rest _args) (cl-incf ,prompted) "Deny"))
+               ((symbol-function 'read-multiple-choice)
+                (lambda (_prompt choices &rest _args)
+                  (cl-incf ,prompted)
+                  (assq ?d choices))))
        (let ((noninteractive nil)
              (hermes-chat-auto-prompt-requests t))
          (hermes-test-with-dashboard-prompt-session (,client)
@@ -124,16 +128,27 @@
                              hermes-chat--pending-prompts))))))
 
 (ert-deftest hermes-chat-auto-prompts-visible-approval-request ()
-  (let (timer-calls respond-choice seen-default)
+  "An automatic approval reader shows the command and drops type-ahead.
+It requires an explicit RET submission over the exact former candidates,
+defaulting to the non-deciding cancel choice."
+  (let (timer-calls respond-choice seen-prompt seen-candidates seen-args
+                    discarded)
     (cl-letf (((symbol-function 'run-at-time)
                (lambda (_secs _repeat function &rest args)
                  (push (cons function args) timer-calls)
                  'fake-timer))
               ((symbol-function 'get-buffer-window)
                (lambda (_buffer &optional _all-frames) (selected-window)))
+              ((symbol-function 'discard-input)
+               (lambda () (setq discarded t)))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (&rest _args)
+                 (error "Automatic approval must not take one key")))
               ((symbol-function 'completing-read)
-               (lambda (_prompt _candidates &rest args)
-                 (setq seen-default (nth 4 args))
+               (lambda (prompt candidates &rest args)
+                 (setq seen-prompt prompt
+                       seen-candidates candidates
+                       seen-args args)
                  "Approve once"))
               ((symbol-function 'hermes-dashboard-transport-approval-respond)
                (lambda (_client &rest args)
@@ -154,10 +169,161 @@
                                :key #'car :test #'eq)))
             (should call)
             (apply (car call) (cdr call)))
-          (should (equal seen-default "Cancel / ignore"))
+          (should discarded)
+          (should (string-match-p "dangerous delete" seen-prompt))
+          (should (string-match-p "^  rm -rf /tmp/demo$" seen-prompt))
+          (should (string-suffix-p "Decision: " seen-prompt))
+          (should (equal seen-candidates
+                         '("Approve once" "Approve for session"
+                           "Always approve" "Deny" "Cancel / ignore")))
+          ;; PREDICATE nil, REQUIRE-MATCH t, ..., DEF is the cancel choice.
+          (should (eq (nth 1 seen-args) t))
+          (should (equal (nth 4 seen-args) "Cancel / ignore"))
           (should (equal respond-choice "once"))
           (should-not (gethash "approval:sid-prompt"
                                hermes-chat--pending-prompts)))))))
+
+;; A one-key reader would treat the next keystroke as a decision.  A user
+;; still typing in the composer when an approval auto-opens must not be
+;; able to authorise anything (let alone "always") with a fresh key.
+(ert-deftest hermes-chat-auto-approval-ignores-fresh-keystroke ()
+  "A fresh `a' keystroke after an automatic approval opens authorises nothing."
+  (let (timer-calls responded one-key-calls)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_secs _repeat function &rest args)
+                 (push (cons function args) timer-calls)
+                 'fake-timer))
+              ((symbol-function 'get-buffer-window)
+               (lambda (_buffer &optional _all-frames) (selected-window)))
+              ((symbol-function 'discard-input) #'ignore)
+              ;; The fresh keystroke `a', as a one-key reader would see it.
+              ((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices &rest _)
+                 (push t one-key-calls)
+                 (assq ?a choices)))
+              ;; The minibuffer holds "a" but the user never pressed RET.
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (signal 'quit nil)))
+              ((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (&rest _) (setq responded t))))
+      (let ((noninteractive nil)
+            (hermes-chat-auto-prompt-requests t))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (setq timer-calls nil)
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request"
+           '((command . "rm -rf /important") (description . "terminal")))
+          (let ((call (cl-find #'hermes-chat--run-auto-prompt timer-calls
+                               :key #'car :test #'eq)))
+            (should call)
+            (apply (car call) (cdr call)))
+          (should-not one-key-calls)
+          (should-not responded)
+          (should (gethash "approval:sid-prompt"
+                           hermes-chat--pending-prompts)))))))
+
+(ert-deftest hermes-chat-explicit-approval-takes-one-key ()
+  "Explicitly invoking the reader keeps one-key answers."
+  (let (respond-choice)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _)
+                 (error "Explicit approval should take one key")))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices &rest _) (assq ?a choices)))
+              ((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq respond-choice (plist-get args :choice))
+                 (funcall (plist-get args :resolve) '((resolved . 1))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "make check") (description . "terminal")))
+        (call-interactively #'hermes-chat-respond-to-prompt)
+        (should (equal respond-choice "always"))
+        (should-not (gethash "approval:sid-prompt"
+                             hermes-chat--pending-prompts))))))
+
+;; Only a real user boundary opts into one-key answers.  A Lisp caller
+;; (extension, timer, hook) that merely names the prompt gets the
+;; submitted reader, so a stray `a' cannot authorise "always".
+(ert-deftest hermes-chat-programmatic-approval-requires-submission ()
+  "A programmatic respond call reads a submitted, require-match decision."
+  (let ((this-command 'self-insert-command)
+        responded one-key-calls seen-args)
+    (cl-letf (((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices &rest _)
+                 (push t one-key-calls)
+                 (assq ?a choices)))
+              ;; The user typed nothing deliberate and pressed RET: the
+              ;; default is taken.
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _candidates &rest args)
+                 (setq seen-args args)
+                 (nth 4 args)))
+              ((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (&rest _) (setq responded t))))
+      (let ((hermes-chat-auto-prompt-requests nil))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request"
+           '((command . "rm -rf /important") (description . "terminal")))
+          (should (eq 'quit
+                      (condition-case nil
+                          (hermes-chat-respond-to-prompt "approval:sid-prompt")
+                        (quit 'quit))))
+          (should-not one-key-calls)
+          (should (eq (nth 1 seen-args) t))
+          (should (equal (nth 4 seen-args) "Cancel / ignore"))
+          (should-not responded)
+          (should (gethash "approval:sid-prompt"
+                           hermes-chat--pending-prompts)))))))
+
+(ert-deftest hermes-chat-answer-button-approval-takes-one-key ()
+  "The transcript [Answer] button is a user boundary and takes one key."
+  (let (respond-choice)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _)
+                 (error "The Answer button should take one key")))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices &rest _) (assq ?o choices)))
+              ((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq respond-choice (plist-get args :choice))
+                 (funcall (plist-get args :resolve) '((resolved . 1))))))
+      (let ((hermes-chat-auto-prompt-requests nil))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request"
+           '((command . "make check") (description . "terminal")))
+          (hermes-test--push-button-labeled "[Answer]")
+          (should (equal respond-choice "once")))))))
+
+(ert-deftest hermes-chat-nested-approval-reader-requires-submission ()
+  "A reader opened inside a user-opened reader does not inherit one key.
+A timer, hook or Lisp respond call running while the user answers one
+prompt is not the user, so its approval reader needs a RET submission."
+  (let ((hermes-chat--prompt-user-invoked-p t)
+        readers nested-result)
+    (cl-letf (((symbol-function 'read-multiple-choice)
+               (lambda (_text choices &rest _)
+                 (push 'one-key readers)
+                 (should-not hermes-chat--prompt-user-invoked-p)
+                 (unless nested-result
+                   (setq nested-result
+                         (hermes-chat--read-approval-response
+                          '(:kind approval :command "nested"))))
+                 (assq ?o choices)))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _candidates _predicate require-match &rest _)
+                 (push 'submitted readers)
+                 (should (eq require-match t))
+                 "Deny")))
+      (should (equal (hermes-chat--read-approval-response
+                      '(:kind approval :command "outer"))
+                     "once"))
+      (should (equal nested-result "deny"))
+      (should (equal (reverse readers) '(one-key submitted)))
+      (should (eq hermes-chat--prompt-user-invoked-p t)))))
 
 (ert-deftest hermes-chat-auto-prompt-does-not-open-for-hidden-buffer ()
   (let (timer-calls)
@@ -168,6 +334,9 @@
               ((symbol-function 'get-buffer-window)
                (lambda (_buffer &optional _all-frames) nil))
               ((symbol-function 'completing-read)
+               (lambda (&rest _args)
+                 (error "hidden buffer should not prompt")))
+              ((symbol-function 'read-multiple-choice)
                (lambda (&rest _args)
                  (error "hidden buffer should not prompt"))))
       (let ((noninteractive nil)
@@ -341,35 +510,186 @@
     (should (equal (mapcar #'car candidates)
                    '("Approve once" "Deny" "Cancel / ignore")))))
 
+(defmacro hermes-test--with-approval-reader (spec &rest body)
+  "Run BODY answering user-opened approval readers with key CHAR from SPEC.
+SPEC is (CHAR PROMPT CHOICES); PROMPT and CHOICES are bound to what the
+reader was shown.  BODY runs as if the user explicitly opened the reader,
+which is what makes approval readers take one key."
+  (declare (indent 1))
+  (pcase-let ((`(,char ,prompt ,choices) spec))
+    `(let (,prompt ,choices (hermes-chat--prompt-user-invoked-p t))
+       (cl-letf (((symbol-function 'read-multiple-choice)
+                  (lambda (text offered &rest _)
+                    (setq ,prompt text ,choices offered)
+                    (assq ,char offered))))
+         ,@body))))
+
 (ert-deftest hermes-chat-read-approval-response-offers-full-default-vocabulary ()
   "Without explicit choices the full once/session/always/deny set is offered.
-The backend never gates \"always\", so it must not be filtered locally."
-  (let (seen-candidates)
-    (cl-letf (((symbol-function 'completing-read)
-               (lambda (_prompt candidates &rest _args)
-                 (setq seen-candidates candidates)
-                 "Deny")))
+The backend never gates \"always\", so it must not be filtered locally.
+Each decision has a fixed one-key answer mapped to its exact wire value."
+  (dolist (case '((?o . "once") (?s . "session")
+                  (?a . "always") (?d . "deny")))
+    (hermes-test--with-approval-reader ((car case) prompt choices)
       (should (equal (hermes-chat--read-prompt-response
                       '(:prompt-type "approval"))
-                     "deny"))
-      (should (member "Approve once" seen-candidates))
-      (should (member "Approve for session" seen-candidates))
-      (should (member "Always approve" seen-candidates))
-      (should (member "Deny" seen-candidates))
-      (should (member "Cancel / ignore" seen-candidates)))))
+                     (cdr case)))
+      (should (string-prefix-p "⚠ Approval" prompt))
+      (should (equal (mapcar #'car choices) '(?o ?s ?a ?d ?q)))
+      (should (equal (mapcar #'cadr choices)
+                     '("once" "session" "always" "deny" "quit"))))))
 
 (ert-deftest hermes-chat-read-approval-response-can-cancel ()
-  (let (seen-candidates cancelled)
-    (cl-letf (((symbol-function 'completing-read)
-               (lambda (_prompt candidates &rest _args)
-                 (setq seen-candidates candidates)
-                 "Cancel / ignore")))
+  "`q' leaves the request pending exactly as the former ignore choice did."
+  (let (cancelled)
+    (hermes-test--with-approval-reader (?q _prompt choices)
       (condition-case nil
           (hermes-chat--read-prompt-response '(:prompt-type "approval"))
         (quit (setq cancelled t)))
       (should cancelled)
-      (should (member "Always approve" seen-candidates))
-      (should (member "Cancel / ignore" seen-candidates)))))
+      (should (assq ?a choices)))))
+
+(ert-deftest hermes-chat-read-approval-response-shows-what-it-approves ()
+  "The reader names the tool description and every command line in full."
+  (let ((command (concat "cd /repo && " (make-string 150 ?x) "\ngit status")))
+    (hermes-test--with-approval-reader (?d prompt _choices)
+      (should (equal (hermes-chat--read-prompt-response
+                      (list :prompt-type "approval" :description "terminal"
+                            :command command :prompt-count 2
+                            :choices ["once" "deny"]))
+                     "deny"))
+      (should (equal (split-string prompt "\n")
+                     (list "⚠ Approval · terminal (1 of 2)"
+                           (concat "  cd /repo && " (make-string 150 ?x))
+                           "  git status"
+                           "Decision")))
+      (should (eq (get-text-property 0 'face prompt) 'warning)))))
+
+(ert-deftest hermes-chat-read-approval-response-long-command-detail ()
+  "A very long command is shown in full outside the echo area."
+  (let* ((lines (mapcar (lambda (n) (format "echo line-%d" n))
+                        (number-sequence 1 20)))
+         detail)
+    (hermes-test--with-approval-reader (?o prompt _choices)
+      (cl-letf (((symbol-function 'display-buffer)
+                 (lambda (buffer &rest _)
+                   (setq detail (with-current-buffer buffer (buffer-string)))
+                   nil)))
+        (let ((noninteractive nil))
+          (should (equal (hermes-chat--read-prompt-response
+                          (list :prompt-type "approval"
+                                :command (string-join lines "\n")))
+                         "once"))))
+      (should (string-match-p "^  echo line-1$" prompt))
+      (should-not (string-match-p "line-20" prompt))
+      (should (string-match-p "19 more lines" prompt))
+      (should (string-match-p "echo line-20" detail))
+      (should-not (get-buffer " *Hermes approval command*")))))
+
+(defun hermes-test--approval-detail-buffers ()
+  "Return live buffers named like the approval command detail buffer."
+  (seq-filter (lambda (buffer)
+                (string-prefix-p " *Hermes approval command*"
+                                 (buffer-name buffer)))
+              (buffer-list)))
+
+(ert-deftest hermes-chat-approval-detail-spares-foreign-buffer ()
+  "The long-command view owns only its own buffer, through every exit.
+A foreign buffer with the same name survives answer, quit, reader error and
+a failing `display-buffer', and no detail buffer is left behind."
+  (let ((foreign (get-buffer-create " *Hermes approval command*"))
+        (prompt (list :prompt-type "approval"
+                      :command (mapconcat (lambda (n) (format "echo %d" n))
+                                          (number-sequence 1 20) "\n"))))
+    (unwind-protect
+        (progn
+          (with-current-buffer foreign (insert "foreign text"))
+          (dolist (case `((answer . ,(lambda (_p choices &rest _)
+                                       (assq ?o choices)))
+                          (quit . ,(lambda (_p choices &rest _)
+                                     (assq ?q choices)))
+                          (error . ,(lambda (&rest _)
+                                      (error "Reader failed")))
+                          (display . ,(lambda (_p choices &rest _)
+                                        (assq ?o choices)))))
+            (let (detail result)
+              (cl-letf (((symbol-function 'read-multiple-choice) (cdr case))
+                        ((symbol-function 'display-buffer)
+                         (lambda (buffer &rest _)
+                           (setq detail buffer)
+                           (when (eq (car case) 'display)
+                             (error "Display refused"))
+                           nil)))
+                (let ((noninteractive nil)
+                      (hermes-chat--prompt-user-invoked-p t))
+                  (setq result
+                        (condition-case err
+                            (hermes-chat--read-prompt-response prompt)
+                          (quit 'quit)
+                          (error (car err))))))
+              (should (equal result (pcase (car case)
+                                      ('answer "once")
+                                      ('quit 'quit)
+                                      (_ 'error))))
+              (should (bufferp detail))
+              (should-not (eq detail foreign))
+              (should-not (buffer-live-p detail))
+              (should (buffer-live-p foreign))
+              (should (equal (with-current-buffer foreign (buffer-string))
+                             "foreign text"))
+              (should (equal (hermes-test--approval-detail-buffers)
+                             (list foreign))))))
+      (kill-buffer foreign))))
+
+(ert-deftest hermes-chat-read-clarify-prompt-asks-the-question ()
+  "Single and multiple choice clarification readers ask the actual question."
+  (let (seen)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (prompt &rest _) (setq seen prompt) "a"))
+              ((symbol-function 'completing-read-multiple)
+               (lambda (prompt &rest _) (setq seen prompt) '("a" "b"))))
+      (hermes-chat--read-prompt-response
+       '(:prompt-type "clarify" :question "Which branch should I use?"
+         :choices ["a" "b"]))
+      (should (equal seen "Which branch should I use? "))
+      (should (equal (hermes-chat--read-prompt-response
+                      '(:prompt-type "clarify" :question "Pick targets"
+                        :choices ["a" "b"] :multi-select t
+                        :server-request fake))
+                     "[\"a\",\"b\"]"))
+      (should (equal seen "Pick targets (comma-separated): "))
+      (hermes-chat--read-batch-question-response
+       '((qid . "q0") (question . "Pick several")
+         (choices . ["a" "b"]) (multi_select . t)))
+      (should (equal seen "Pick several (comma-separated): ")))))
+
+(ert-deftest hermes-chat-pending-prompt-entry-reopens-reader ()
+  "A pending prompt keeps an Answer button in the transcript until settled."
+  (let (respond-choice)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq respond-choice (plist-get args :choice))
+                 (funcall (plist-get args :resolve) '((resolved . 1))))))
+      (let ((hermes-chat-auto-prompt-requests nil))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request"
+           '((command . "rm -rf build/") (description . "terminal")))
+          (should (string-match-p "\\[Answer\\] C-c C-a" (buffer-string)))
+          (hermes-test--with-approval-reader (?q _prompt _choices)
+            (should (eq 'quit
+                        (condition-case nil
+                            (hermes-test--push-button-labeled "[Answer]")
+                          (quit 'quit)))))
+          (should (gethash "approval:sid-prompt" hermes-chat--pending-prompts))
+          (should (string-match-p "\\[Answer\\]" (buffer-string)))
+          (hermes-test--with-approval-reader (?s prompt _choices)
+            (hermes-test--push-button-labeled "[Answer]")
+            (should (string-match-p "rm -rf build/" prompt)))
+          (should (equal respond-choice "session"))
+          (should-not (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts))
+          (should-not (string-match-p "\\[Answer\\]" (buffer-string))))))))
 
 (ert-deftest hermes-chat-read-clarify-allows-free-text-answer ()
   "Clarify choices are suggestions; return custom text unchanged."

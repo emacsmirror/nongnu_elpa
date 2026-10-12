@@ -59,27 +59,6 @@
   (and-let* ((name (hermes-chat--scalar-string value)))
     (string-remove-prefix "/" name)))
 
-(defun hermes-chat--format-subcommand-entry (entry)
-  "Return readable catalog line for subcommand ENTRY."
-  (let* ((command (hermes-chat--subcommand-name (car-safe entry)))
-         (items (hermes-chat--listify (cdr-safe entry)))
-         (subs (delq nil
-                     (mapcar (lambda (item)
-                               (when-let* ((sub (hermes-chat--scalar-string item)))
-                                 (format "/%s %s" command sub)))
-                             items))))
-    (and (hermes-transport--non-empty-string command) subs
-         (concat "  " (string-join subs ", ")))))
-
-(defun hermes-chat--commands-subcommands-content (result)
-  "Return readable subcommand catalog section from RESULT."
-  (let* ((sub (hermes-transport--get result 'sub))
-         (entries (hermes-chat--maplike-entries sub))
-         (lines (delq nil
-                      (mapcar #'hermes-chat--format-subcommand-entry entries))))
-    (and lines
-         (string-join (cons "Subcommands" lines) "\n"))))
-
 (defun hermes-chat--command-name (value)
   "Return VALUE as a bare slash command name, or nil."
   (and-let* ((name (hermes-chat--scalar-string value)))
@@ -113,17 +92,6 @@
           (hermes-chat--catalog-pairs-candidates
            (hermes-transport--get result 'pairs)))))
     (cl-delete-duplicates candidates :key #'car :test #'equal :from-end t)))
-
-(defun hermes-chat--commands-catalog-content (result)
-  "Return readable command catalog RESULT content."
-  (let ((warning (hermes-chat--result-string result 'warning)))
-    (string-join
-     (delq nil
-           (list (and (hermes-transport--non-empty-string warning)
-                      (format "Warning: %s" warning))
-                 (hermes-chat--commands-categories-content result)
-                 (hermes-chat--commands-subcommands-content result)))
-     "\n\n")))
 
 (defun hermes-chat--parse-slash (content)
   "Return (NAME . ARG) when CONTENT is a slash command."
@@ -704,6 +672,22 @@ and other completion tables must not renew it."
             (setf (plist-get snapshot :tick) (buffer-chars-modified-tick)
                   (plist-get snapshot :point) (point))))))))
 
+(defvar hermes-chat--explicit-completion nil
+  "Non-nil while the user's explicit completion command runs.
+`hermes-chat-tab' binds this around `completion-at-point'.")
+
+(defconst hermes-chat--explicit-completion-commands
+  '(completion-at-point complete-symbol)
+  "Native commands whose invocation is an explicit completion request.")
+
+(defun hermes-chat--explicit-completion-p ()
+  "Return non-nil when completion was explicitly requested by the user.
+Passive completion UIs (idle timers, preview or auto popups) query
+completion functions during other commands such as `self-insert-command';
+they carry no such authority."
+  (or hermes-chat--explicit-completion
+      (memq this-command hermes-chat--explicit-completion-commands)))
+
 (defun hermes-chat--request-path-completion (bounds)
   "Request backend candidates for BOUNDS without editing the composer."
   (let* ((buffer (current-buffer))
@@ -713,7 +697,7 @@ and other completion tables must not renew it."
                          :connection (hermes-dashboard-transport-client-generation client)
                          :cwd (hermes-chat--current-working-directory)
                          :tick (buffer-chars-modified-tick) :point (point)
-                         :items nil)))
+                         :items nil :retrigger nil)))
     (setq hermes-chat--path-completion snapshot)
     (condition-case nil
         (hermes-dashboard-transport-complete-path
@@ -726,10 +710,38 @@ and other completion tables must not renew it."
                         (setf (plist-get snapshot :items)
                               (delq nil (mapcar #'hermes-chat--path-reference
                                                (hermes-chat--listify
-                                                (hermes-transport--get result 'items))))))))
+                                                (hermes-transport--get result 'items)))))
+                        (when (and (plist-get snapshot :items)
+                                   (plist-get snapshot :retrigger))
+                          (setf (plist-get snapshot :retrigger) nil)
+                          (run-at-time 0 nil #'hermes-chat--path-completion-retrigger
+                                       buffer snapshot)))))
          :reject #'ignore)
       (error nil))
-    snapshot))
+    (hermes-chat--arm-path-completion-reopen snapshot)))
+
+(defun hermes-chat--arm-path-completion-reopen (snapshot)
+  "Arm SNAPSHOT's pending read to reopen completion once, and return it.
+A read settling later than this command re-offers completion once, but
+only for explicit completion, never a passive or idle UI query.  An
+explicit request reusing a read a passive query started arms it too."
+  (when (and (hermes-chat--explicit-completion-p)
+             (not (plist-get snapshot :items)))
+    (setf (plist-get snapshot :retrigger) t))
+  snapshot)
+
+(defun hermes-chat--path-completion-retrigger (buffer snapshot)
+  "Re-run completion in BUFFER when SNAPSHOT's read settles unchanged.
+Fire only while BUFFER is selected, its composer text and point are as
+the request left them, the backend context is the same and no input is
+pending; otherwise the user has moved on and a late popup would intrude."
+  (when (and (buffer-live-p buffer)
+             (eq (window-buffer (selected-window)) buffer)
+             (not (input-pending-p)))
+    (with-current-buffer buffer
+      (when (and (hermes-chat--path-completion-current-p snapshot)
+                 (plist-get snapshot :items))
+        (completion-at-point)))))
 
 (defun hermes-chat--guard-path-choice (choice _buffer _base &rest _ignored)
   "Refuse stale native completion CHOICE before it can replace input."
@@ -741,7 +753,8 @@ and other completion tables must not renew it."
 
 (defun hermes-chat--file-ref-capf ()
   "Complete @ paths using the attached backend session, never local files.
-The first invocation starts a read; invoke completion again when it finishes.
+The first invocation starts a read; completion reopens once when it
+finishes, provided the composer is unchanged.
 Unavailable or stale reads offer no candidates and never edit the input."
   (when-let* ((bounds (hermes-chat--file-ref-completion-bounds))
               (client hermes-chat--dashboard-client)
@@ -752,7 +765,8 @@ Unavailable or stale reads offer no candidates and never edit the input."
            (snapshot (if (and hermes-chat--path-completion
                               (hermes-chat--path-completion-current-p
                                hermes-chat--path-completion))
-                         hermes-chat--path-completion
+                         (hermes-chat--arm-path-completion-reopen
+                          hermes-chat--path-completion)
                        (hermes-chat--request-path-completion bounds))))
       (when (plist-get snapshot :items)
         (advice-add 'completion--replace :around #'hermes-chat--path-completion-replace)
@@ -769,7 +783,10 @@ Unavailable or stale reads offer no candidates and never edit the input."
               :hermes-path-owner snapshot :exclusive 'no)))))
 
 (defun hermes-chat-show-commands ()
-  "Fetch and display the dashboard slash command catalog."
+  "Fetch the dashboard slash command catalog and show it in a help buffer.
+The catalog never enters the transcript.  In that buffer,
+\\<hermes-chat-commands-mode-map>\\[hermes-chat-commands-insert] \
+inserts the command at point into this chat's composer."
   (interactive nil hermes-chat-mode)
   (let ((buffer (current-buffer))
         (lifetime hermes-chat--lifecycle-generation)
@@ -778,11 +795,157 @@ Unavailable or stale reads offer no candidates and never edit the input."
      client
      :resolve (lambda (result)
                 (hermes-chat--in-lifetime buffer lifetime
-                  (hermes-chat--insert-local-status
-                   (hermes-chat--commands-catalog-content result) 'done)))
+                  (display-buffer
+                   (hermes-chat--commands-view result buffer lifetime))))
      :reject (lambda (message)
                (hermes-chat--in-lifetime buffer lifetime
                  (hermes-chat--command-error message))))))
+
+;;; Commands help buffer
+
+(defvar-local hermes-chat-commands--owner nil
+  "Chat (BUFFER LIFETIME) whose composer receives inserted commands.")
+
+(defvar-keymap hermes-chat-commands-mode-map
+  :doc "Keymap for `hermes-chat-commands-mode'."
+  "RET" #'hermes-chat-commands-insert
+  "n" #'forward-button
+  "p" #'backward-button)
+
+(define-derived-mode hermes-chat-commands-mode special-mode "Hermes Commands"
+  "Browse a chat's slash command catalog.
+\\<hermes-chat-commands-mode-map>\\[hermes-chat-commands-insert] inserts the \
+command on the current line into the owning chat's composer."
+  :interactive nil
+  (setq-local truncate-lines nil))
+
+(defun hermes-chat--commands-insert-button (button)
+  "Insert the command on BUTTON into the owning chat composer."
+  (hermes-chat-commands-insert (button-start button)))
+
+(defun hermes-chat--commands-insert-name (command &optional label)
+  "Insert a button labelled LABEL (default COMMAND) for inserting COMMAND."
+  (insert-text-button (or label command)
+                      'face 'font-lock-function-name-face
+                      'mouse-face 'highlight 'follow-link t
+                      'help-echo (format "Insert %s into the chat composer" command)
+                      'hermes-chat-command command
+                      'action #'hermes-chat--commands-insert-button))
+
+(defun hermes-chat--commands-category-rows (category)
+  "Return (NAME . DESCRIPTION) rows for catalog CATEGORY."
+  (delq nil
+        (mapcar (lambda (pair)
+                  (when-let* ((name (hermes-chat--command-name
+                                     (hermes-chat--pair-command pair))))
+                    (cons (concat "/" name)
+                          (hermes-chat--command-pair-description pair))))
+                (hermes-chat--listify (hermes-transport--get category 'pairs)))))
+
+(defun hermes-chat--commands-insert-category (title rows width)
+  "Insert catalog section TITLE with ROWS padded to name WIDTH."
+  (insert (propertize title 'face 'bold) "\n")
+  (pcase-dolist (`(,name . ,description) rows)
+    (let ((start (point)))
+      (insert "  ")
+      (hermes-chat--commands-insert-name name)
+      (when (hermes-transport--non-empty-string description)
+        (insert (make-string (max 1 (- (+ width 2) (string-width name))) ?\s)
+                description))
+      (insert "\n")
+      (put-text-property start (point) 'hermes-chat-command name)))
+  (insert "\n"))
+
+(defun hermes-chat--commands-insert-subcommands (result)
+  "Insert RESULT's subcommand section with each subcommand actionable."
+  (let ((entries (delq nil
+                       (mapcar
+                        (lambda (entry)
+                          (let ((command (hermes-chat--subcommand-name (car-safe entry)))
+                                (subs (delq nil (mapcar #'hermes-chat--scalar-string
+                                                        (hermes-chat--listify
+                                                         (cdr-safe entry))))))
+                            (and (hermes-transport--non-empty-string command) subs
+                                 (cons command subs))))
+                        (hermes-chat--maplike-entries
+                         (hermes-transport--get result 'sub))))))
+    (when entries
+      (insert (propertize "Subcommands" 'face 'bold) "\n")
+      (pcase-dolist (`(,command . ,subs) entries)
+        (insert "  " (propertize (concat "/" command) 'face 'shadow) " ")
+        (let ((first t))
+          (dolist (sub subs)
+            (unless first (insert (propertize ", " 'face 'shadow)))
+            (setq first nil)
+            (hermes-chat--commands-insert-name (format "/%s %s" command sub) sub)))
+        (insert "\n")))))
+
+(defun hermes-chat--commands-view (result owner lifetime)
+  "Render catalog RESULT for chat OWNER at LIFETIME and return its buffer."
+  (let* ((categories (or (hermes-chat--listify
+                          (hermes-transport--get result 'categories))
+                         `(((name . "Commands")
+                            (pairs . ,(hermes-transport--get result 'pairs))))))
+         (sections (mapcar (lambda (category)
+                             (cons (or (hermes-chat--result-string category 'name)
+                                       "Commands")
+                                   (hermes-chat--commands-category-rows category)))
+                           categories))
+         (width (apply #'max 0 (mapcar (lambda (row) (string-width (car row)))
+                                       (apply #'append (mapcar #'cdr sections)))))
+         (warning (hermes-chat--result-string result 'warning))
+         (buffer (hermes-buffer--get "*Hermes Commands*"
+                                     #'hermes-chat-commands-mode t)))
+    (with-current-buffer buffer
+      (setq hermes-chat-commands--owner (list owner lifetime))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert "Slash commands for "
+                (propertize (buffer-name owner) 'face 'font-lock-constant-face)
+                (propertize "  ·  " 'face 'shadow)
+                (propertize (substitute-command-keys
+                             "\\<hermes-chat-commands-mode-map>\\[hermes-chat-commands-insert]")
+                            'face 'help-key-binding)
+                " inserts into the composer\n\n")
+        (when (hermes-transport--non-empty-string warning)
+          (insert (propertize (format "Warning: %s" warning) 'face 'warning) "\n\n"))
+        (pcase-dolist (`(,title . ,rows) sections)
+          (when rows (hermes-chat--commands-insert-category title rows width)))
+        (hermes-chat--commands-insert-subcommands result))
+      (goto-char (point-min))
+      (when-let* ((button (next-button (point))))
+        (goto-char (button-start button))))
+    buffer))
+
+(defun hermes-chat-commands-insert (&optional pos)
+  "Insert the command at POS (default point) into the owning chat composer.
+The owning chat must still be the same live chat lifetime.  An existing
+draft is never edited: the command goes to the kill ring instead."
+  (interactive nil hermes-chat-commands-mode)
+  (let ((command (get-text-property (or pos (point)) 'hermes-chat-command))
+        (owner hermes-chat-commands--owner))
+    (unless command (user-error "No command on this line"))
+    (pcase-let ((`(,buffer ,lifetime) owner))
+      (unless (and (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (hermes-chat--current-lifetime-p lifetime)))
+        (user-error "The chat that listed these commands has changed; run /commands again"))
+      (if (with-current-buffer buffer
+            (save-restriction
+              (widen)
+              (not (string-empty-p (hermes-chat-input-string)))))
+          (progn
+            (kill-new command)
+            (message "Composer has a draft; copied %s to the kill ring" command))
+        (with-current-buffer buffer
+          (save-restriction
+            (widen)
+            (goto-char (point-max))
+            (insert command " ")))
+        (let ((window (or (get-buffer-window buffer) (display-buffer buffer))))
+          (when window
+            (select-window window)
+            (goto-char (point-max))))))))
 
 (defvar hermes-chat--native-slash-commands nil
   "Native in-client slash commands as (NAMES . HANDLER) entries.
@@ -983,24 +1146,6 @@ When INPUT-EDITED is non-nil, retain MESSAGE for explicit manual recovery."
   (let ((name (hermes-chat--scalar-string (hermes-chat--pair-command pair)))
         (desc (hermes-chat--command-pair-description pair)))
     (string-join (delq nil (list name desc)) " — ")))
-
-(defun hermes-chat--format-command-category (category)
-  "Return readable command catalog text for CATEGORY."
-  (let* ((name (or (hermes-chat--result-string category 'name) "Commands"))
-         (pairs (hermes-chat--listify (hermes-transport--get category 'pairs)))
-         (lines (mapcar #'hermes-chat--format-command-pair pairs)))
-    (string-join (cons name (mapcar (lambda (line) (concat "  " line)) lines))
-                 "\n")))
-
-(defun hermes-chat--commands-categories-content (result)
-  "Return readable command categories from catalog RESULT."
-  (let ((categories (hermes-chat--listify
-                     (hermes-transport--get result 'categories))))
-    (if categories
-        (string-join (mapcar #'hermes-chat--format-command-category categories)
-                     "\n\n")
-      (hermes-chat--format-command-category
-       `((name . "Commands") (pairs . ,(hermes-transport--get result 'pairs)))))))
 
 (hermes-chat-register-submit-inhibit-function
  #'hermes-chat--command-submit-inhibit-reason)

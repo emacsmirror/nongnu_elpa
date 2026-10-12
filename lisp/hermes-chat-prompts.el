@@ -60,6 +60,13 @@ Invisible buffers and batch sessions record every prompt and show a message."
 (defvar hermes-chat--auto-prompting-p nil
   "Non-nil while an automatic minibuffer prompt is reading a response.")
 
+(defvar hermes-chat--prompt-user-invoked-p nil
+  "Non-nil while the user explicitly opened the current prompt reader.
+Only real user boundaries bind this: interactive invocation of
+`hermes-chat-respond-to-prompt' and the transcript Answer button.  It
+opts approval readers into one-key answers; every other caller gets a
+reader that requires an explicit RET submission.")
+
 (defvar hermes-chat--prompt-indicator-buffers nil
   "Chat buffers with pending prompt requests, oldest first.
 The global prompt indicator reads this registry rather than scanning every
@@ -465,6 +472,63 @@ A nil SESSION-ID matches every prompt in the current buffer."
      (hermes-chat--make-entry 'status content status)
      next-node)))
 
+;;;; Transcript prompt actions
+
+(defvar-local hermes-chat--prompt-action-entries nil
+  "Alist of (ENTRY-ID . PROMPT-KEY) rendered with a live Answer button.")
+
+(defun hermes-chat--prompt-entry-key (entry)
+  "Return the pending prompt key ENTRY's request still owns, or nil."
+  (when-let* ((event (plist-get (plist-get entry :metadata) :event))
+              ((plist-get event :prompt-request-p))
+              (key (plist-get event :prompt-key))
+              ((hash-table-p hermes-chat--pending-prompts))
+              ((gethash key hermes-chat--pending-prompts)))
+    key))
+
+(defun hermes-chat--prompt-entry-button (button)
+  "Reopen the reader for the pending prompt attached to BUTTON."
+  (let ((hermes-chat--prompt-user-invoked-p t))
+    (hermes-chat-respond-to-prompt
+     (button-get button 'hermes-chat-prompt-key))))
+
+(defun hermes-chat--insert-prompt-entry-actions (entry)
+  "Insert an Answer button after ENTRY while its prompt is pending.
+The button reopens the same native reader as \\[hermes-chat-respond-to-prompt],
+so dismissing the minibuffer never loses the request."
+  (when-let* ((key (hermes-chat--prompt-entry-key entry)))
+    (insert "    ")
+    (insert-text-button
+     "[Answer]" 'face 'button 'follow-link t
+     'help-echo "Reopen this prompt's reader"
+     'hermes-chat-prompt-key key
+     'action #'hermes-chat--prompt-entry-button)
+    (insert " "
+            (propertize
+             (substitute-command-keys
+              "\\<hermes-chat-mode-map>\\[hermes-chat-respond-to-prompt]")
+             'face 'help-key-binding)
+            "\n")
+    (setf (alist-get (plist-get entry :id) hermes-chat--prompt-action-entries
+                     nil nil #'equal)
+          key)))
+
+(defun hermes-chat--refresh-prompt-entry-actions ()
+  "Repaint transcript entries whose Answer button no longer has a prompt."
+  (let (stale)
+    (pcase-dolist (`(,id . ,key) hermes-chat--prompt-action-entries)
+      (unless (and (hash-table-p hermes-chat--pending-prompts)
+                   (gethash key hermes-chat--pending-prompts))
+        (push id stale)))
+    (dolist (id stale)
+      (setq hermes-chat--prompt-action-entries
+            (assoc-delete-all id hermes-chat--prompt-action-entries))
+      (when (and (hash-table-p hermes-chat--nodes) hermes-chat--ewoc)
+        (hermes-chat--update-entry id #'identity t)))))
+
+(add-hook 'hermes-chat--entry-suffix-functions
+          #'hermes-chat--insert-prompt-entry-actions)
+
 (defun hermes-chat--first-pending-prompt ()
   "Return the first pending prompt in deterministic key order."
   (and-let* ((key (car (hermes-chat--pending-prompt-keys))))
@@ -533,6 +597,7 @@ the value it holds; if nothing else remains, restore nil."
 Membership does not depend on `hermes-chat-prompt-indicator', so enabling
 the option later shows prompts that arrived while it was off.  Killing the
 chat or changing its major mode retires it."
+  (hermes-chat--refresh-prompt-entry-actions)
   (let ((pending (hermes-chat--pending-prompt-p))
         (known (memq (current-buffer) hermes-chat--prompt-indicator-buffers)))
     (cond
@@ -890,17 +955,26 @@ it waits must not hide the header's only in-chat signal that input is due."
     (delq nil
           (mapcar #'hermes-chat--scalar-string (append choices nil)))))
 
+(defun hermes-chat--clarify-reader-prompt (question &optional multiple)
+  "Return a minibuffer prompt asking QUESTION.
+MULTIPLE notes that several comma-separated answers are accepted."
+  (let ((text (string-trim (or question ""))))
+    (concat (if (string-empty-p text) "Clarify" text)
+            (and multiple " (comma-separated)")
+            (if (string-match-p "[?:]\\'" text) " " ": "))))
+
 (defun hermes-chat--read-batch-question-response (question)
   "Read and return one batched clarification QUESTION response."
-  (let ((text (or (hermes-transport--scalar-string
-                   (hermes-transport--get question 'question))
-                  "Clarify"))
-        (choices (hermes-chat--batch-question-choices question)))
+  (let* ((text (hermes-transport--scalar-string
+                (hermes-transport--get question 'question)))
+         (choices (hermes-chat--batch-question-choices question))
+         (multiple (and choices
+                        (eq (hermes-transport--get question 'multi_select) t)))
+         (prompt (hermes-chat--clarify-reader-prompt text multiple)))
     (cond
-     ((and choices (eq (hermes-transport--get question 'multi_select) t))
-      (completing-read-multiple (format "%s: " text) choices))
-     (choices (completing-read (format "%s: " text) choices))
-     (t (read-string (format "%s: " text))))))
+     (multiple (completing-read-multiple prompt choices))
+     (choices (completing-read prompt choices))
+     (t (read-string prompt)))))
 
 (defun hermes-chat--unanswered-batch-questions (prompt)
   "Return PROMPT's unanswered batch questions in their original order."
@@ -965,19 +1039,148 @@ backend never gates \"always\", so no choice is filtered locally."
                     choices)
             '(("Cancel / ignore" . nil)))))
 
-(defun hermes-chat--read-approval-response (prompt)
-  "Read an approval response for PROMPT."
-  (let* ((candidates (hermes-chat--approval-response-candidates prompt))
-         (default (if hermes-chat--auto-prompting-p
-                      (or (car (rassoc nil candidates)) (caar candidates))
-                    (caar candidates)))
-         (choice (completing-read "Approval decision: "
-                                  (mapcar #'car candidates) nil t nil nil
-                                  default))
-         (candidate (assoc choice candidates)))
+(defconst hermes-chat--approval-inline-lines 6
+  "Most command lines an approval reader shows in the echo area itself.
+Longer commands are shown in full in a separate window while reading.")
+
+(defconst hermes-chat--approval-choice-keys
+  '(("once" . ?o) ("session" . ?s) ("always" . ?a) ("deny" . ?d))
+  "One-key answers for the server's approval vocabulary.")
+
+(defun hermes-chat--approval-choice-key (choice used)
+  "Return an unused answer key for approval CHOICE, avoiding USED keys."
+  (or (alist-get choice hermes-chat--approval-choice-keys nil nil #'equal)
+      (seq-find (lambda (char) (not (memq char used)))
+                (append (downcase choice) "123456789"))))
+
+(defun hermes-chat--approval-read-choices (prompt)
+  "Return `read-multiple-choice' choices for approval PROMPT.
+Each element is (KEY NAME DESCRIPTION VALUE); VALUE nil, under `q', leaves
+the request pending exactly like the former \"Cancel / ignore\" choice."
+  (let ((used (list ?q ??)) choices)
+    (pcase-dolist (`(,label . ,value)
+                   (hermes-chat--approval-response-candidates prompt))
+      (let ((key (if value (hermes-chat--approval-choice-key value used) ?q)))
+        (push key used)
+        (push (list key (or value "quit")
+                    (if value label "Leave the request pending")
+                    value)
+              choices)))
+    (nreverse choices)))
+
+(defun hermes-chat--approval-command-lines (prompt)
+  "Return the command lines approval PROMPT asks about."
+  (when-let* ((command (hermes-chat--event-string prompt '(:command))))
+    (split-string (string-trim-right command) "\n")))
+
+(defun hermes-chat--approval-heading (prompt)
+  "Return the first line of approval PROMPT's reader."
+  (let ((description (hermes-chat--event-string prompt '(:description)))
+        (count (or (plist-get prompt :prompt-count) 1)))
+    (concat (propertize "⚠ Approval" 'face 'warning)
+            (and description (concat " · " description))
+            (and (> count 1)
+                 (concat " "
+                         (propertize (format "(1 of %d)" count)
+                                     'face 'font-lock-type-face))))))
+
+(defun hermes-chat--approval-reader-prompt (prompt &optional detail-buffer)
+  "Return the reader text for approval PROMPT.
+Show every command line, or only the first and a pointer to DETAIL-BUFFER
+when the command is too long for the echo area."
+  (let* ((lines (hermes-chat--approval-command-lines prompt))
+         (shown (if detail-buffer (list (car lines)) lines)))
+    (concat (hermes-chat--approval-heading prompt) "\n"
+            (mapconcat (lambda (line) (concat "  " line "\n")) shown "")
+            (when detail-buffer
+              (propertize (format "  … %d more lines in %s\n"
+                                  (1- (length lines))
+                                  (buffer-name detail-buffer))
+                          'face 'shadow))
+            (unless (or lines (hermes-chat--event-string prompt '(:description)))
+              (concat "  " (or (plist-get prompt :content) "") "\n"))
+            "Decision")))
+
+(defun hermes-chat--approval-detail-buffer (prompt)
+  "Return a new buffer showing approval PROMPT's long command, or nil.
+The buffer is always freshly generated, so a foreign buffer that happens
+to carry the same name is never adopted, erased or killed; the caller owns
+the returned object and must kill exactly it."
+  (let ((lines (hermes-chat--approval-command-lines prompt)))
+    (when (> (length lines) hermes-chat--approval-inline-lines)
+      (let ((buffer (generate-new-buffer " *Hermes approval command*" t))
+            done)
+        (unwind-protect
+            (with-current-buffer buffer
+              (insert (hermes-chat--approval-heading prompt) "\n\n"
+                      (string-join lines "\n") "\n")
+              (setq buffer-read-only t)
+              (goto-char (point-min))
+              (setq done t))
+          (unless done
+            (kill-buffer buffer)))
+        buffer))))
+
+(defun hermes-chat--read-approval-submitted (text candidates)
+  "Read one of approval CANDIDATES after TEXT, requiring explicit submission.
+CANDIDATES are (LABEL . VALUE) pairs.  Unlike a one-key reader, nothing
+is decided until the user submits a candidate with RET, so a stray
+keystroke meant for the composer cannot authorise anything; an empty
+submission picks the non-deciding \"Cancel / ignore\" candidate."
+  (let* ((default (or (car (rassoc nil candidates)) (caar candidates)))
+         (label (completing-read (concat text ": ")
+                                 (mapcar #'car candidates) nil t nil nil
+                                 default))
+         (candidate (assoc label candidates)))
     (unless candidate
-      (user-error "Unknown approval decision: %s" choice))
-    (or (cdr candidate) (keyboard-quit))))
+      (user-error "Unknown approval decision: %s" label))
+    (cdr candidate)))
+
+(defun hermes-chat--read-approval-one-key (text choices)
+  "Read one of approval CHOICES after TEXT with a single key."
+  (let* ((answer (read-multiple-choice
+                  text (mapcar (lambda (choice) (seq-take choice 3)) choices)))
+         (choice (assq (car answer) choices)))
+    (unless choice
+      (user-error "Unknown approval decision: %s" (cadr answer)))
+    (nth 3 choice)))
+
+(defun hermes-chat--read-approval-response (prompt)
+  "Read an approval response for PROMPT, showing what it approves.
+The reader names the tool description and the full command; a very long
+command is shown in full in a separate window while reading.  The
+reader requires an explicit RET submission, so a stray keystroke cannot
+authorise a command; an automatically opened reader also discards
+type-ahead.  Only a reader the user explicitly opened (see
+`hermes-chat--prompt-user-invoked-p') takes one-key answers.  `q',
+\"Cancel / ignore\" or \\[keyboard-quit] leave the request pending."
+  (let* ((auto hermes-chat--auto-prompting-p)
+         (one-key (and hermes-chat--prompt-user-invoked-p (not auto)))
+         ;; Timers and hooks running inside the reader are not the user.
+         (hermes-chat--prompt-user-invoked-p nil)
+         detail window value)
+    (when auto
+      (discard-input))
+    (unwind-protect
+        (progn
+          (setq detail (hermes-chat--approval-detail-buffer prompt))
+          (when (and detail (not noninteractive))
+            (setq window (display-buffer
+                          detail '(display-buffer-below-selected
+                                   (window-height . fit-window-to-buffer)
+                                   (inhibit-same-window . t)))))
+          (let ((text (hermes-chat--approval-reader-prompt prompt detail)))
+            (setq value
+                  (if one-key
+                      (hermes-chat--read-approval-one-key
+                       text (hermes-chat--approval-read-choices prompt))
+                    (hermes-chat--read-approval-submitted
+                     text (hermes-chat--approval-response-candidates prompt))))))
+      (when (and (window-live-p window) (eq (window-buffer window) detail))
+        (quit-restore-window window))
+      (when (buffer-live-p detail)
+        (kill-buffer detail)))
+    (or value (keyboard-quit))))
 
 (defun hermes-chat--terminal-read-text (entries &optional start count)
   "Return a JSON terminal-read snapshot for chat transcript ENTRIES.
@@ -1107,16 +1310,20 @@ does not provide memory zeroization or isolation from trusted Emacs Lisp."
     ("approval"
      (hermes-chat--read-approval-response prompt))
     ("clarify"
-     (if-let* ((choices (hermes-chat--prompt-choices prompt)))
-         ;; Choices are suggestions, not a closed set: the agent's clarify tool
-         ;; always lets the user type their own answer, so do not require a match.
-         (if (and (plist-get prompt :server-request)
-                  (eq (plist-get prompt :multi-select) t))
-             (json-encode
-              (vconcat (completing-read-multiple "Clarify: " choices)))
-           (completing-read "Clarify: " choices))
-       (read-string (or (hermes-chat--event-string prompt '(:question :content))
-                        "Clarify: "))))
+     (let ((question (hermes-chat--event-string prompt '(:question :content))))
+       (if-let* ((choices (hermes-chat--prompt-choices prompt)))
+           ;; Choices are suggestions, not a closed set: the agent's clarify
+           ;; tool always lets the user type their own answer, so do not
+           ;; require a match.
+           (if (and (plist-get prompt :server-request)
+                    (eq (plist-get prompt :multi-select) t))
+               (json-encode
+                (vconcat (completing-read-multiple
+                          (hermes-chat--clarify-reader-prompt question t)
+                          choices)))
+             (completing-read (hermes-chat--clarify-reader-prompt question)
+                              choices))
+         (read-string (hermes-chat--clarify-reader-prompt question)))))
     ("sudo" (read-passwd "Sudo password: "))
     ("secret"
      (read-passwd (or (hermes-chat--event-string prompt '(:prompt :content))
@@ -1567,13 +1774,18 @@ ALL applies to approval prompts only."
 (defun hermes-chat-respond-to-prompt (&optional key response all preserve-response)
   "Respond to pending prompt KEY with RESPONSE.
 When called interactively, select the prompt and read RESPONSE in the
-minibuffer.  With prefix argument ALL, approval responses apply to all pending
+minibuffer; an interactive approval reader takes one-key answers, while
+Lisp callers get a reader that requires an explicit RET submission.  With
+prefix argument ALL, approval responses apply to all pending
 approvals in the dashboard session.  Unaccepted clarification answers remain
 recoverable if the request expires.  PRESERVE-RESPONSE also keeps programmatic
 clarification input recoverable when the request fails.  Browser-vault
 requests always use native readers, ignoring RESPONSE and PRESERVE-RESPONSE."
   (interactive (list nil nil current-prefix-arg) hermes-chat-mode)
-  (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
+  (let* ((hermes-chat--prompt-user-invoked-p
+          (or hermes-chat--prompt-user-invoked-p
+              (called-interactively-p 'any)))
+         (prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
          (context (hermes-chat--prompt-owner-context prompt-key prompt)))
     (when (and (plist-get prompt :server-request)

@@ -35,6 +35,7 @@
 (require 'cl-lib)
 (require 'ewoc)
 (require 'seq)
+(require 'project)
 (require 'subr-x)
 (require 'text-property-search)
 (require 'hermes-chat-format)
@@ -380,46 +381,103 @@ one line instead of appending."
    (string-trim (car (split-string text "\n")))
    hermes-chat--transient-summary-width nil nil "…"))
 
-(defun hermes-chat--multiline-content-p (text)
-  "Return non-nil when TEXT spans more than one line."
-  (string-match-p "\n" (string-trim-right text)))
-
-(defun hermes-chat--insert-transient-toggle (entry summary expanded)
-  "Insert a toggle labeled SUMMARY for transient ENTRY in EXPANDED state."
+(defun hermes-chat--insert-transient-toggle (entry summary expanded &optional face help)
+  "Insert a toggle labeled SUMMARY for transient ENTRY in EXPANDED state.
+FACE is the head-line face, nil for the default face; HELP extends the
+collapsed `help-echo'."
   (let ((start (point)))
     (insert (if expanded "▾ " "▸ ") summary)
     (make-text-button start (point)
-                      'face 'shadow
+                      'face (or face 'default)
                       'mouse-face 'highlight
                       'follow-link t
-                      'help-echo (if expanded "Collapse output" "Expand output")
+                      'help-echo (cond (expanded "Collapse output")
+                                       (help (concat "Expand output: " help))
+                                       (t "Expand output"))
                       'hermes-chat-entry-id (plist-get entry :id)
                       'action #'hermes-chat--toggle-entry-button)))
 
+(defconst hermes-chat--status-collapse-lines 3
+  "Status and system notices longer than this many lines start collapsed.")
+
+(defun hermes-chat--entry-unknown-event (entry)
+  "Return ENTRY's unknown transport event, or nil."
+  (let ((event (plist-get (plist-get entry :metadata) :event)))
+    (and (eq (plist-get event :type) 'unknown) event)))
+
+(defvar-local hermes-chat--unknown-event-detail-cache nil
+  "Weak table from unknown transport events to their expanded detail text.")
+
+(defun hermes-chat--unknown-event-body (event content)
+  "Return the expanded body for unknown EVENT shown with CONTENT.
+Formatting the raw payload is deferred until the disclosure is expanded and
+cached per event, so repaints do not pretty-print it again."
+  (unless hermes-chat--unknown-event-detail-cache
+    (setq hermes-chat--unknown-event-detail-cache
+          (make-hash-table :test #'eq :weakness 'key)))
+  (or (gethash event hermes-chat--unknown-event-detail-cache)
+      (puthash event
+               (hermes-chat--sanitize-content
+                (concat content "\n\n" (hermes-chat--unknown-event-detail event)))
+               hermes-chat--unknown-event-detail-cache)))
+
+(defun hermes-chat--transient-disclosure (entry content blocks)
+  "Return (SUMMARY BODY HELP) when transient ENTRY should collapse, or nil.
+CONTENT is ENTRY's text and BLOCKS its diff blocks.  BODY is a string or a
+function returning one, called only when the disclosure is expanded.
+Unknown events always collapse with their raw payload as BODY; tool output
+collapses when multiline; status notices collapse beyond
+`hermes-chat--status-collapse-lines'."
+  (let ((role (plist-get entry :role))
+        (lines (length (split-string (string-trim-right content) "\n"))))
+    (cond
+     ((when-let* ((event (hermes-chat--entry-unknown-event entry)))
+        (list (hermes-chat--unknown-event-summary event)
+              (lambda () (hermes-chat--unknown-event-body event content))
+              content)))
+     (blocks nil)
+     ((and (memq role '(tool progress)) (> lines 1))
+      (list (hermes-chat--first-line content) content nil))
+     ((and (eq role 'status) (> lines hermes-chat--status-collapse-lines))
+      (list (format "%s  (%d lines)" (hermes-chat--first-line content) lines)
+            content nil)))))
+
 (defun hermes-chat--insert-transient-content (entry)
   "Insert a compact transient transport ENTRY.
-Multiline content collapses to a one-line summary with a `▸'/`▾' toggle, like
-the thinking disclosure; diffs become View Diff links."
-  (let ((content (or (plist-get entry :content) "")))
+Running rows show `●' in `hermes-chat-tool-running'; failures carry `error'
+on the whole head line.  Multiline tool output, unknown events and long
+notices collapse to a one-line summary with a `▸'/`▾' toggle, like the
+thinking disclosure; diffs become View Diff links.  Offline notices carry
+owner-bound recovery buttons."
+  (let ((content (or (plist-get entry :content) ""))
+        (status (plist-get entry :status)))
     (unless (string-empty-p content)
-      (insert (propertize (format "  %s "
-                                  (hermes-chat--status-icon
-                                   (plist-get entry :status)))
-                          'face (hermes-chat--status-face
-                                 (plist-get entry :status))))
-      (let ((blocks (hermes-chat--diff-blocks content)))
-        (if (and (memq (plist-get entry :role) '(tool progress))
-                 (hermes-chat--multiline-content-p content)
-                 (null blocks))
-            (let ((expanded (hermes-chat--entry-expanded-p entry)))
-              (hermes-chat--insert-transient-toggle
-               entry (hermes-chat--first-line content) expanded)
-              (insert "\n")
-              (when expanded
-                (hermes-chat--insert-shadow content)
-                (insert "\n")))
-          (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow blocks)
-          (insert "\n"))))))
+      (pcase-let ((`(,marker . ,marker-face) (hermes-chat--entry-marker status))
+                  (face (hermes-chat--entry-head-face status)))
+        (insert (propertize (format "  %s " marker) 'face marker-face))
+        (let* ((blocks (hermes-chat--diff-blocks content))
+               (disclosure (hermes-chat--transient-disclosure entry content blocks)))
+          (if disclosure
+              (let ((expanded (hermes-chat--entry-expanded-p entry)))
+                (hermes-chat--insert-transient-toggle
+                 entry (nth 0 disclosure) expanded face (nth 2 disclosure))
+                (insert "\n")
+                (when expanded
+                  (let ((body (nth 1 disclosure)))
+                    (hermes-chat--insert-detail-body
+                     entry (lambda ()
+                             (hermes-chat--insert-shadow
+                              (if (functionp body) (funcall body) body))
+                             (insert "\n"))))))
+            (hermes-chat--insert-diffed
+             content
+             (lambda (text)
+               (unless (string-empty-p text)
+                 (insert (if face (propertize text 'face face) text))))
+             blocks)
+            (when (plist-get (plist-get entry :metadata) :recovery-owner)
+              (hermes-chat--insert-recovery-actions entry))
+            (insert "\n")))))))
 
 (defun hermes-chat--compact-commentary-paragraph (paragraph)
   "Return PARAGRAPH with token-stream line noise collapsed."
@@ -471,9 +529,8 @@ the thinking disclosure; diffs become View Diff links."
       (let ((content (hermes-chat--commentary-display-content
                       (or (plist-get entry :content) ""))))
         (unless (string-empty-p content)
-          (let ((start (point)))
-            (insert content "\n")
-            (add-text-properties start (point) '(face shadow))))))))
+          (hermes-chat--insert-detail-body
+           entry #'insert (propertize (concat content "\n") 'face 'shadow)))))))
 
 (defun hermes-chat--insert-user-content (content)
   "Insert user CONTENT with a compact prompt prefix."
@@ -493,11 +550,21 @@ lifted into inline images."
     (hermes-chat--insert-content-with-images content #'hermes-chat--insert-markdown)
     (insert "\n")))
 
+(defvar hermes-chat-entry-printers nil
+  "Alist of (ROLE . FUNCTION) printing feature-owned transcript entries.
+FUNCTION receives the entry plist and inserts its text at point.")
+
+(defvar hermes-chat--entry-suffix-functions nil
+  "Functions called with each printed chat ENTRY to append contextual actions.
+Each runs at the end of ENTRY's text and may insert whole lines there.")
+
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."
   (let ((role (plist-get entry :role))
         (content (or (plist-get entry :content) "")))
     (cond
+     ((alist-get role hermes-chat-entry-printers)
+      (funcall (alist-get role hermes-chat-entry-printers) entry))
      ((eq role 'user)
       (hermes-chat--insert-user-content content))
      ((eq role 'activity)
@@ -514,6 +581,7 @@ lifted into inline images."
      ((not (string-empty-p content))
       (hermes-chat--insert-entry-content
        content (eq (plist-get entry :status) 'streaming))))
+    (run-hook-with-args 'hermes-chat--entry-suffix-functions entry)
     (hermes-chat--insert-previews entry)))
 
 (defun hermes-chat--preview-owner ()
@@ -733,9 +801,17 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   ;; Selective undo owns a separate list.  Keep it local so an asynchronous
   ;; transcript update cannot rebase another buffer's pending undo sequence.
   (setq-local pending-undo-list nil)
+  ;; Detail bodies carry symbolic `invisible' values; with the default spec
+  ;; t they would all be hidden.  Keep any kinds the user already hid.
+  (when (eq buffer-invisibility-spec t)
+    (setq-local buffer-invisibility-spec (list t)))
   (hermes-chat--stream-format-retire)
+  (hermes-chat--status-rule-retire)
   (add-hook 'after-set-visited-file-name-hook #'hermes-chat--stream-format-retire nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-chat--status-rule-retire nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
+  (add-hook 'window-configuration-change-hook #'hermes-chat--status-rule-sync nil t)
+  (add-hook 'hermes-chat-state-change-hook #'hermes-chat--status-rule-sync nil t)
   (setq buffer-undo-list nil)
   (let ((inhibit-read-only t)
         (buffer-undo-list t))
@@ -776,6 +852,7 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
           hermes-chat--interrupted-events nil
           hermes-chat--interrupt-request-pending-p nil
           hermes-chat--ansi-fragments (make-hash-table :test #'equal)
+          hermes-chat--unknown-event-detail-cache nil
           hermes-chat--session-id nil
           hermes-chat--ewoc (ewoc-create #'hermes-chat--print-entry
                                          nil
@@ -905,6 +982,7 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   (cl-incf hermes-chat--transport-generation)
   (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
   (hermes-chat--stream-format-retire)
+  (hermes-chat--status-rule-retire)
   ;; Teardown must not publish through display hooks before resource release.
   (hermes-chat--reasoning-row hermes-chat--pending-assistant-id nil t)
   (hermes-chat--application-retire)
@@ -971,6 +1049,7 @@ agent's reply can stay last while tool/status/diff entries land above it."
                             (ewoc-enter-last hermes-chat--ewoc entry)))))
               (hermes-chat--register-node entry node))))))
     (hermes-chat--stream-format-schedule node)
+    (hermes-chat--retire-recovery-notices)
     (hermes-chat--notify-state-change)
     node))
 
@@ -1280,9 +1359,14 @@ With QUIET, leave state-change notification to the caller."
                    (not (hermes-chat--entry-expanded-p entry))))))))
 
 (defun hermes-chat--toggle-entry-button (button)
-  "Toggle the collapsible entry attached to BUTTON."
-  (when-let* ((id (button-get button 'hermes-chat-entry-id)))
-    (hermes-chat--toggle-entry-expanded id)))
+  "Toggle the collapsible entry attached to BUTTON.
+Expanding an entry whose kind is globally hidden shows that kind again."
+  (when-let* ((id (button-get button 'hermes-chat-entry-id))
+              (entry (hermes-chat--toggle-entry-expanded id)))
+    (when (hermes-chat--entry-expanded-p entry)
+      (let ((kind (hermes-chat--entry-detail-kind entry)))
+        (when (hermes-chat--details-hidden-p kind)
+          (hermes-chat--set-details-hidden kind nil))))))
 
 (defun hermes-chat--assistant-ansi-key (assistant-id)
   "Return ANSI-fragment key for ASSISTANT-ID stream chunks."
@@ -1759,6 +1843,121 @@ METADATA is stored as the entry's `:metadata' plist."
    (hermes-chat--make-entry 'status content (or status 'done))
    (hermes-chat--trailing-active-assistant-node)))
 
+;;; Offline recovery actions
+
+(defvar-local hermes-chat--recovery-notice-ids nil
+  "Entry ids of offline notices whose recovery buttons may still be live.")
+
+(defun hermes-chat--recovery-owner ()
+  "Capture the current chat attachment for offline recovery buttons."
+  (let ((client hermes-chat--dashboard-client))
+    (list :buffer (current-buffer)
+          :lifetime hermes-chat--lifecycle-generation
+          :client client
+          :connection (and (hermes-dashboard-transport-client-p client)
+                           (hermes-dashboard-transport-client-generation client))
+          :session hermes-chat--dashboard-active-session-id
+          :recovery (and (buffer-live-p hermes-chat--recovery-buffer)
+                         hermes-chat--recovery-buffer))))
+
+(defun hermes-chat--recovery-owner-current-p (owner)
+  "Return non-nil when OWNER still names this exact chat attachment.
+A new lifetime, client, socket generation or attached session retires it,
+so a recovery button never acts on a successor."
+  (let ((client (plist-get owner :client)))
+    (and (eq (current-buffer) (plist-get owner :buffer))
+         (hermes-chat--current-lifetime-p (plist-get owner :lifetime))
+         (eq hermes-chat--dashboard-client client)
+         (equal (and (hermes-dashboard-transport-client-p client)
+                     (hermes-dashboard-transport-client-generation client))
+                (plist-get owner :connection))
+         (equal hermes-chat--dashboard-active-session-id
+                (plist-get owner :session)))))
+
+(defun hermes-chat--recovery-actions (owner)
+  "Return (LABEL COMMAND HELP) recovery actions available for OWNER."
+  (delq nil
+        (list
+         (and (plist-get owner :client) (fboundp 'hermes-dashboard-reconnect)
+              (list "[Reconnect]" 'hermes-dashboard-reconnect
+                    "Reconnect this chat's dashboard socket; nothing is resent"))
+         (and (buffer-live-p (plist-get owner :recovery))
+              (fboundp 'hermes-chat-show-recovery)
+              (list "[Recovery draft]" 'hermes-chat-show-recovery
+                    "Show the input preserved for manual sending"))
+         (and (fboundp 'hermes-chat-session-details)
+              (list "[Session details]" 'hermes-chat-session-details
+                    "Show this chat's session details")))))
+
+(defun hermes-chat--recovery-live-p (entry)
+  "Return non-nil when offline ENTRY's recovery buttons may act."
+  (let ((metadata (plist-get entry :metadata)))
+    (and (not (plist-get metadata :recovery-retired))
+         (hermes-chat--recovery-owner-current-p
+          (plist-get metadata :recovery-owner)))))
+
+(defun hermes-chat--insert-recovery-actions (entry)
+  "Insert offline ENTRY's recovery buttons, inert once its owner retires."
+  (let* ((owner (plist-get (plist-get entry :metadata) :recovery-owner))
+         (live (hermes-chat--recovery-live-p entry))
+         (actions (hermes-chat--recovery-actions owner)))
+    (when actions
+      (insert (propertize " ·" 'face 'shadow))
+      (pcase-dolist (`(,label ,command ,help) actions)
+        (insert " ")
+        (if live
+            (insert-text-button
+             label 'face 'link 'mouse-face 'highlight 'follow-link t
+             'help-echo help
+             'hermes-chat-recovery-owner owner
+             'hermes-chat-recovery-command command
+             'action #'hermes-chat--recovery-button)
+          (insert (propertize label 'face 'shadow
+                              'help-echo "Retired: this belongs to an earlier connection")))))))
+
+(defun hermes-chat--recovery-button (button)
+  "Run BUTTON's recovery command in its exact owning chat attachment."
+  (let* ((owner (button-get button 'hermes-chat-recovery-owner))
+         (buffer (plist-get owner :buffer)))
+    (unless (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (or (hermes-chat--recovery-owner-current-p owner)
+                       (progn (hermes-chat--retire-recovery-notices) nil))))
+      (user-error "This recovery action belongs to an earlier connection"))
+    (with-current-buffer buffer
+      (call-interactively (button-get button 'hermes-chat-recovery-command)))))
+
+(defun hermes-chat--retire-recovery-notices ()
+  "Re-render offline notices whose owner retired, making their buttons inert."
+  (when hermes-chat--recovery-notice-ids
+    (setq hermes-chat--recovery-notice-ids
+          (seq-filter
+           (lambda (id)
+             (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+               (or (hermes-chat--recovery-live-p (ewoc-data node))
+                   (progn
+                     (hermes-chat--update-entry
+                      id (lambda (entry)
+                           (hermes-chat--entry-with
+                            entry :metadata
+                            (plist-put (copy-sequence (plist-get entry :metadata))
+                                       :recovery-retired t)))
+                      t)
+                     nil))))
+           hermes-chat--recovery-notice-ids))))
+
+(defun hermes-chat--insert-offline-notice (content)
+  "Insert offline CONTENT with recovery buttons bound to this attachment.
+The buttons only reach existing manual commands; nothing resends.  A notice
+for the same still-current attachment is not repeated."
+  (hermes-chat--retire-recovery-notices)
+  (unless hermes-chat--recovery-notice-ids
+    (let ((entry (hermes-chat--make-entry
+                  'status content 'disconnected nil
+                  (list :recovery-owner (hermes-chat--recovery-owner)))))
+      (hermes-chat--insert-entry entry (hermes-chat--trailing-active-assistant-node))
+      (push (plist-get entry :id) hermes-chat--recovery-notice-ids))))
+
 (defun hermes-chat--command-error (message)
   "Render dashboard command error MESSAGE."
   (hermes-chat--insert-local-status message 'error)
@@ -1910,7 +2109,9 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
    :status 'queued :activity "Queued next message"))
 
 (defun hermes-chat--queue-panel-refresh-if-live ()
-  "Refresh this chat's live queue side panel, when present."
+  "Refresh this chat's live queue side panel, when present.
+Also schedule the composer's queued-message lines, which mirror the FIFO."
+  (hermes-chat--status-rule-schedule)
   (when (buffer-live-p hermes-chat--queue-panel-buffer)
     (let ((owner (current-buffer)))
       (with-current-buffer hermes-chat--queue-panel-buffer
@@ -2033,6 +2234,7 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
                       hermes-chat--queued-messages))
         (when-let* ((record (plist-get entry :image-record)))
           (setf (plist-get record :content) content))
+        (hermes-chat--status-rule-schedule)
         (hermes-chat--insert-local-status "Queued message updated" 'done)))))
 
 (defun hermes-chat--queue-remove-entry (owner id)
@@ -2050,6 +2252,7 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
     (setq hermes-chat--queued-messages
           (seq-remove (lambda (entry) (equal (plist-get entry :id) id))
                       hermes-chat--queued-messages))
+    (hermes-chat--status-rule-schedule)
     (hermes-chat--insert-local-status "Queued message removed" 'done)))
 
 (defun hermes-chat-queue-panel-retry ()
@@ -2104,7 +2307,8 @@ Refuse stale panels and busy or disconnected owners without clearing the pause."
                        for position from 0
                        collect (cond ((= position index) neighbor)
                                      ((= position other) entry)
-                                     (t candidate))))))))
+                                     (t candidate))))
+        (hermes-chat--status-rule-schedule)))))
 
 (defun hermes-chat-queue-panel-move-up ()
   "Move the queued message at point one position earlier."
@@ -2199,8 +2403,10 @@ This feeds the dashboard's per-session tool list via
 ;;; Header line
 
 (defface hermes-chat-header-directory
-  '((t :inherit font-lock-keyword-face :weight bold))
-  "Face for the working directory leading a Hermes chat header."
+  '((t :inherit shadow))
+  "Face for the chat header's working directory.
+The header shows the gateway cwd only while it differs from the project
+naming the chat, so the segment stays quiet."
   :group 'hermes)
 
 (define-obsolete-face-alias 'hermes-chat-header-profile
@@ -2241,6 +2447,20 @@ This feeds the dashboard's per-session tool list via
   "Gateway-native working directory for this chat session.
 This path belongs to the Hermes instance and need not exist on Emacs's host.")
 
+(defvar-local hermes-chat--initial-working-directory nil
+  "First gateway working directory recorded for this chat, or nil.
+It names a chat without a launch project; later gateway directory changes
+leave it, and therefore the buffer name, unchanged.")
+
+(defvar-local hermes-chat--project-identity nil
+  "Cached (DIRECTORY ROOT . NAME) project identity for the naming directory.")
+
+(defvar-local hermes-chat--cwd-worktree nil
+  "Cached (CWD . WORKTREE) for the last recorded gateway cwd.
+WORKTREE is (ROOT . TOP) when CWD lies in a linked Git worktree, ROOT being
+its main project root and TOP the worktree's top, and nil otherwise.  It is
+resolved when the cwd is recorded so redisplay never probes the filesystem.")
+
 (defvar-local hermes-chat--resolved-start-mode nil
   "Concrete `spawn' or `remote' transport mode owned by this chat buffer.")
 
@@ -2248,6 +2468,34 @@ This path belongs to the Hermes instance and need not exist on Emacs's host.")
   "Return this chat's gateway cwd, falling back only for local gateways."
   (or hermes-chat--working-directory
       (and (eq hermes-chat--resolved-start-mode 'spawn) default-directory)))
+
+(defun hermes-chat--naming-directory ()
+  "Return the directory naming this chat's project.
+Prefer the launch-project root, then the first recorded gateway directory.
+Before any is recorded, use the current gateway or editor directory."
+  (or hermes-chat--launch-project-root
+      hermes-chat--initial-working-directory
+      hermes-chat--working-directory
+      default-directory))
+
+(defmacro hermes-chat--with-local-files (&rest body)
+  "Run BODY with file name handlers disabled and a local `default-directory'.
+A handler-managed `default-directory', such as a TRAMP chat buffer's, is
+otherwise consulted even when expanding absolute or `~' paths."
+  (declare (indent 0) (debug t))
+  `(let ((file-name-handler-alist nil)
+         (default-directory "/"))
+     ,@body))
+
+(defun hermes-chat--local-directory-p (directory)
+  "Return non-nil when gateway-native DIRECTORY is a plain local directory.
+Refuse relative, `~'-prefixed and file-name-handler paths without probing
+them.  Existence does not prove the gateway shares Emacs's filesystem."
+  (and (stringp directory)
+       (file-name-absolute-p directory)
+       (not (string-prefix-p "~" directory))
+       (not (find-file-name-handler directory nil))
+       (hermes-chat--with-local-files (file-directory-p directory))))
 
 (defun hermes-chat--directory-basename (&optional directory)
   "Return the final component of gateway-native DIRECTORY, or `detached'."
@@ -2259,10 +2507,217 @@ This path belongs to the Hermes instance and need not exist on Emacs's host.")
          (t trimmed)))
     "detached"))
 
+(defconst hermes-chat--git-pointer-limit 4096
+  "Maximum bytes of a Git `.git' or `commondir' pointer line.")
+
+(defun hermes-chat--plain-local-path (path)
+  "Return absolute PATH when no file name handler manages it, else nil.
+Only the name is inspected; nothing is probed."
+  (and (stringp path)
+       (file-name-absolute-p path)
+       (not (string-prefix-p "~" path))
+       (not (find-file-name-handler path nil))
+       path))
+
+(defun hermes-chat--read-git-pointer (file prefix)
+  "Return the path following PREFIX on plain local FILE's first line, or nil.
+Read at most `hermes-chat--git-pointer-limit' bytes literally.  Refuse a
+first line that the bound cuts off, an empty value and control characters."
+  (when-let* ((file (hermes-chat--plain-local-path file))
+              ((file-regular-p file))
+              (line (with-temp-buffer
+                      (set-buffer-multibyte nil)
+                      (insert-file-contents-literally
+                       file nil 0 (1+ hermes-chat--git-pointer-limit))
+                      (goto-char (point-min))
+                      ;; A line longer than the limit is either cut off
+                      ;; or unterminated within the bytes read.
+                      (let ((end (line-end-position)))
+                        (and (<= (1- end) hermes-chat--git-pointer-limit)
+                             (buffer-substring-no-properties
+                              (point-min) end)))))
+              (line (decode-coding-string
+                     line (or file-name-coding-system
+                              default-file-name-coding-system
+                              'utf-8)))
+              ((string-match (concat "\\`" (regexp-quote prefix)
+                                     "[ \t]*\\([^[:cntrl:]]*[^[:cntrl:] \t]\\)"
+                                     "[ \t\r]*\\'")
+                             line)))
+    (match-string 1 line)))
+
+(defun hermes-chat--git-pointer-path (value directory)
+  "Return Git pointer VALUE expanded against DIRECTORY, or nil.
+Refuse a `~'-prefixed VALUE.  Call within `hermes-chat--with-local-files'."
+  (and (stringp value)
+       (not (string-prefix-p "~" value))
+       (hermes-chat--plain-local-path (expand-file-name value directory))))
+
+(defun hermes-chat--read-linked-worktree (directory)
+  "Return (ROOT TOP . NAME) for DIRECTORY, read from Git metadata.
+See `hermes-chat--git-linked-worktree'.  Call within
+`hermes-chat--with-local-files'."
+  (when-let* ((top (locate-dominating-file directory ".git"))
+              ;; `locate-dominating-file' abbreviates, e.g. to `~/'.
+              (top (file-name-as-directory (expand-file-name top)))
+              (gitdir (hermes-chat--git-pointer-path
+                       (hermes-chat--read-git-pointer
+                        (expand-file-name ".git" top) "gitdir:")
+                       top))
+              (common (hermes-chat--git-pointer-path
+                       (hermes-chat--read-git-pointer
+                        (expand-file-name "commondir" gitdir) "")
+                       gitdir))
+              (common (directory-file-name common)))
+    (if (equal (file-name-nondirectory common) ".git")
+        (list (file-name-directory common) top)
+      (cons (file-name-as-directory common)
+            (cons top (hermes-chat--bare-repository-name common))))))
+
+(defun hermes-chat--git-linked-worktree (directory)
+  "Return (ROOT TOP . NAME) when local DIRECTORY is in a linked Git worktree.
+TOP is the worktree's top directory.  ROOT is its main working tree, with
+NAME nil, or for a bare repository the repository itself, with NAME its
+basename less \".git\".  Only the `.git' file and `commondir' are read;
+Git is never run.  Metadata is resolved within
+`hermes-chat--with-local-files', so no handler is ever invoked.  Return nil
+for main checkouts, submodules, unreadable metadata and a ROOT or TOP that
+a handler would manage."
+  (when-let* (((hermes-chat--plain-local-path directory))
+              (linked (hermes-chat--with-local-files
+                        (hermes-chat--read-linked-worktree directory)))
+              ((hermes-chat--plain-local-path (car linked)))
+              ((hermes-chat--plain-local-path (cadr linked))))
+    linked))
+
+(defun hermes-chat--bare-repository-name (common)
+  "Return the project name of bare repository directory COMMON.
+Strip a \".git\" suffix; name a hidden layout such as `PROJECT/.bare'
+after its parent directory."
+  (let ((name (string-remove-suffix ".git" (file-name-nondirectory common))))
+    (if (or (string-empty-p name) (string-prefix-p "." name))
+        (hermes-chat--directory-basename (file-name-directory common))
+      name)))
+
+(defun hermes-chat--local-project-identity (directory)
+  "Return (ROOT . NAME) for existing local DIRECTORY's project, or nil.
+A linked Git worktree resolves to its main repository's project.  Call
+within `hermes-chat--with-local-files'."
+  (let* ((linked (hermes-chat--read-linked-worktree directory))
+         (root (if linked (car linked) directory)))
+    (cond
+     ((cddr linked) (cons root (cddr linked)))
+     ((and linked (not (file-directory-p root)))
+      (cons root (hermes-chat--directory-basename root)))
+     (t
+      (when-let* ((project (project-current nil (file-name-as-directory root)))
+                  (root (expand-file-name (project-root project))))
+        (cons root (or (hermes-transport--non-empty-string
+                        (project-name project))
+                       (hermes-chat--directory-basename root))))))))
+
+(defun hermes-chat--resolve-project-identity (directory)
+  "Return (ROOT . NAME) for DIRECTORY's project.
+Consult Git worktree metadata, `project-current' and `project-name' only
+for an existing local DIRECTORY, within `hermes-chat--with-local-files'
+so no handler is ever invoked.  Otherwise, or when a handler would manage
+the resolved ROOT, ROOT is DIRECTORY and NAME its basename."
+  (or (when-let* (((hermes-chat--local-directory-p directory))
+                  ;; Naming is cosmetic: a failing project backend or a
+                  ;; malformed `.dir-locals.el' must not prevent opening or
+                  ;; renaming a chat.
+                  (identity (condition-case nil
+                                (hermes-chat--with-local-files
+                                  (hermes-chat--local-project-identity
+                                   directory))
+                              (error nil)))
+                  ((hermes-chat--plain-local-path (car identity))))
+        identity)
+      (cons directory (hermes-chat--directory-basename directory))))
+
+(defun hermes-chat--note-working-directory (directory)
+  "Resolve and cache the linked worktree, if any, holding gateway DIRECTORY."
+  (unless (equal directory (car hermes-chat--cwd-worktree))
+    (setq hermes-chat--cwd-worktree
+          (cons directory
+                (when-let* (((hermes-chat--local-directory-p directory))
+                            (linked (condition-case nil
+                                        (hermes-chat--git-linked-worktree
+                                         directory)
+                                      (error nil))))
+                  (cons (car linked) (cadr linked)))))))
+
+(defun hermes-chat--project-identity (directory)
+  "Return (ROOT . NAME) for DIRECTORY.
+Cache the result when DIRECTORY is this chat buffer's naming directory."
+  (let ((cached hermes-chat--project-identity))
+    (if (and cached (equal directory (car cached)))
+        (cdr cached)
+      (let ((identity (hermes-chat--resolve-project-identity directory)))
+        (when (and (derived-mode-p 'hermes-chat-mode)
+                   (equal directory (hermes-chat--naming-directory)))
+          (setq hermes-chat--project-identity (cons directory identity)))
+        identity))))
+
+(defun hermes-chat--project-root-for-display ()
+  "Return the cached project root naming this chat, without probing paths."
+  (let ((directory (hermes-chat--naming-directory))
+        (cached hermes-chat--project-identity))
+    (if (and cached (equal directory (car cached))) (cadr cached) directory)))
+
+(defun hermes-chat--directory-key (directory)
+  "Return gateway-native DIRECTORY without trailing separators."
+  (let ((trimmed (replace-regexp-in-string "[/\\\\]+\\'" "" directory)))
+    (if (string-empty-p trimmed) directory trimmed)))
+
+(defun hermes-chat--directory-label (directory root)
+  "Return gateway-native DIRECTORY abbreviated for display beside ROOT.
+Show a descendant of ROOT relative to it, and abbreviate a path under the
+user's home directory with `~'.  Never consult the filesystem or a file
+name handler."
+  (hermes-chat--with-local-files
+    (let ((key (hermes-chat--directory-key directory))
+          (prefix (concat (hermes-chat--directory-key root) "/"))
+          (home (directory-file-name (expand-file-name "~"))))
+      (cond
+       ((string-prefix-p prefix key) (substring key (length prefix)))
+       ((or (equal key home) (string-prefix-p (concat home "/") key))
+        (concat "~" (substring key (length home))))
+       (t key)))))
+
+(defun hermes-chat--divergent-directory-label ()
+  "Return \"→ CWD\" while the gateway cwd differs from the project root.
+Show a descendant of the root relative to it, a linked worktree of the same
+project as \"…/WORKTREE\", and other paths abbreviated.  Return nil when the
+cwd is unknown or is the root.  Never consult the filesystem or a file
+name handler."
+  (when-let* ((directory (hermes-chat--current-working-directory))
+              (root (hermes-chat--project-root-for-display))
+              (root-key (hermes-chat--directory-key root))
+              ((not (equal (hermes-chat--directory-key directory) root-key))))
+    (let ((linked (and (equal (car hermes-chat--cwd-worktree) directory)
+                       (cdr hermes-chat--cwd-worktree))))
+      (concat
+       "→ "
+       (if (and linked
+                (equal (hermes-chat--directory-key (car linked)) root-key)
+                (not (string-prefix-p (concat root-key "/")
+                                      (hermes-chat--directory-key directory))))
+           (concat "…/" (hermes-chat--directory-label
+                         directory (hermes-chat--with-local-files
+                                     (file-name-directory
+                                      (hermes-chat--directory-key
+                                       (cdr linked))))))
+         (hermes-chat--directory-label directory root))))))
+
 (defun hermes-chat--header-directory-segment ()
-  "Return the propertized working-directory basename for the header."
-  (propertize (hermes-chat--directory-basename)
-              'face 'hermes-chat-header-directory))
+  "Return the propertized gateway cwd when it differs from the project root.
+Return `detached' while the cwd is unknown, and nil when it is the chat's
+project root."
+  (when-let* ((label (if (hermes-chat--current-working-directory)
+                         (hermes-chat--divergent-directory-label)
+                       "detached")))
+    (propertize label 'face 'hermes-chat-header-directory)))
 
 (defun hermes-chat--header-detail (label)
   "Return the live detail to append after LABEL in the header, or nil.
@@ -2283,25 +2738,6 @@ transcript carries the full tool detail."
         (hermes-transport--non-empty-string
          (string-trim (substring activity (length label)) "[-: ]+")))
        (t activity)))))
-
-(defun hermes-chat--header-status-segment ()
-  "Return the propertized status segment: icon, label, and live detail.
-The label carries the high-level state (Ready/Running/...) and an active tool
-or distinct activity is appended so the live detail is not lost.  The `thinking'
-state is shown bare (kawaii face plus verb, no icon or label) since the face is
-self-explanatory."
-  (let ((status (plist-get hermes-chat--status-state :status)))
-    (if (eq status 'thinking)
-        (propertize (or (hermes-transport--non-empty-string
-                         (plist-get hermes-chat--status-state :activity))
-                        "Thinking")
-                    'face (hermes-chat--header-status-face 'running))
-      (let* ((label (hermes-chat--header-status-label status))
-             (detail (hermes-chat--header-detail label)))
-        (propertize
-         (format "%s %s" (hermes-chat--status-icon status)
-                 (if detail (format "%s: %s" label detail) label))
-         'face (hermes-chat--header-status-face status))))))
 
 (defun hermes-chat--setting-value (value &optional pending label)
   "Return bounded, faced setting VALUE, marking PENDING choices explicitly.
@@ -2387,6 +2823,36 @@ KIND defaults to delegates."
   (seq-count (lambda (row) (eq (plist-get row :state) 'running))
              (plist-get source :rows)))
 
+(declare-function hermes-chat-work "hermes-subagents" ())
+
+(defun hermes-chat-work-at-mouse (event)
+  "Show observed work for the chat whose header line received EVENT.
+Select EVENT's window first, so an unselected chat cannot borrow the
+selected chat's context."
+  (interactive "e")
+  (let ((window (posn-window (event-start event))))
+    (when (window-live-p window)
+      (select-window window))
+    (unless (derived-mode-p 'hermes-chat-mode)
+      (user-error "No Hermes chat under the mouse"))
+    (require 'hermes-subagents)
+    (call-interactively #'hermes-chat-work)))
+
+(defvar hermes-chat-work-label-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line mouse-1] #'hermes-chat-work-at-mouse)
+    (define-key map [mode-line mouse-1] #'hermes-chat-work-at-mouse)
+    map)
+  "Keymap active on the header line's observed work count.")
+
+(defun hermes-chat--work-label-help ()
+  "Return the work count's help text, derived from its keymap."
+  (let ((key (where-is-internal #'hermes-chat-work-at-mouse
+                                hermes-chat-work-label-map t)))
+    (format "%s: show observed workers and processes"
+            (if key (single-key-description (aref key (1- (length key))))
+              "mouse-1"))))
+
 (defun hermes-chat--work-label (compact)
   "Return kind-specific active counts, or nil for fully current empty work.
 Use COMPACT notation when non-nil; incomplete observations remain explicit."
@@ -2416,7 +2882,11 @@ Use COMPACT notation when non-nil; incomplete observations remain explicit."
          (if (string-empty-p active)
              (format "%s ?" (if (char-displayable-p ?🤖) "🤖" "Agents"))
            (concat active (and unknown " ?")))
-         'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running))))))
+         'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running)
+         'mouse-face 'highlight
+         'help-echo (hermes-chat--work-label-help)
+         'local-map hermes-chat-work-label-map)))))
+
 
 (defun hermes-chat--work-details ()
   "Return local source coverage without fetching or claiming total liveness."
@@ -2439,6 +2909,21 @@ Use COMPACT notation when non-nil; incomplete observations remain explicit."
       '(:delegates :processes) "\n")
      "\nRefresh: M-x hermes-chat-work-refresh. Disappearance does not prove completion.")))
 
+(defun hermes-chat--truncate-left (string width)
+  "Return STRING fitting WIDTH columns, keeping its end after an ellipsis.
+A path's final components are its most specific part."
+  (if (<= (string-width string) width)
+      string
+    (let ((start (length string))
+          (used 0))
+      (while (and (> start 0)
+                  (<= (+ used (char-width (aref string (1- start))))
+                      (- width (string-width "…"))))
+        (setq start (1- start)
+              used (+ used (char-width (aref string start)))))
+      (concat (propertize "…" 'face (get-text-property 0 'face string))
+              (substring string start)))))
+
 (defun hermes-chat--header-fit (width status yolo directory optional &optional work)
   "Fit STATUS, YOLO, DIRECTORY and OPTIONAL segments within WIDTH columns.
 Reserve state and risk, then WORK, before identity.
@@ -2457,8 +2942,9 @@ Drop optional segments whole."
                        (string-join (delq nil (list (unless (string-empty-p required) required) work)) separator) required))
          (room (- width (string-width required)
                   (if (string-empty-p required) 0 (string-width separator))))
-         (identity (and (or (>= width 30) (string-empty-p required)) (> room 0)
-                        (truncate-string-to-width directory room nil nil "…")))
+         (identity (and directory
+                        (or (>= width 30) (string-empty-p required)) (> room 0)
+                        (hermes-chat--truncate-left directory room)))
          (text (string-join (delq nil (list identity (unless (string-empty-p required) required))) separator)))
     (if (> (string-width text) width)
         (truncate-string-to-width (or risk status "") width nil nil "")
@@ -2538,11 +3024,356 @@ During redisplay Emacs selects the window whose header is being evaluated."
                 (hermes-chat--work-label (< width 50))))
          (text (if (and (char-displayable-p ?⚕)
                         (<= (+ (string-width text) (string-width "⚕ | ")) width))
-                   (concat "⚕" (propertize " | " 'face 'shadow) text)
+                   (if (string-empty-p text)
+                       "⚕"
+                     (concat "⚕" (propertize " | " 'face 'shadow) text))
                  text)))
-    (propertize (string-replace "%" "%%" text)
-                'help-echo (hermes-chat--session-details-text))))
+    (hermes-chat--fill-text-property
+     (copy-sequence (string-replace "%" "%%" text))
+     'help-echo (hermes-chat--session-details-text))))
 
+(defun hermes-chat--fill-text-property (string property value)
+  "Set PROPERTY to VALUE on STRING wherever it is unset; return STRING.
+Segments carrying their own PROPERTY, such as a clickable count's
+`help-echo', keep it."
+  (let ((pos 0) (end (length string)))
+    (while (< pos end)
+      (let ((next (next-single-property-change pos property string end)))
+        (unless (get-text-property pos property string)
+          (put-text-property pos next property value string))
+        (setq pos next)))
+    string))
+
+;;; Composer status rule and visible queue
+
+;; The rule between transcript and composer is the EWOC footer.  While a turn
+;; is active it carries the lifecycle word, elapsed time, current tool, feature
+;; segments and the queued count; queued FIFO messages are listed above it.
+;; Repaints replace only the footer and rebase the composer around it.
+
+(defface hermes-chat-turn-running
+  '((t :inherit font-lock-keyword-face))
+  "Face for the running-turn status word on the composer rule."
+  :group 'hermes)
+
+(defcustom hermes-chat-status-rule-linger 30
+  "Seconds the last turn's duration remains on the composer rule."
+  :type 'number
+  :group 'hermes)
+
+(defvar hermes-chat-status-rule-segment-functions nil
+  "Functions returning an optional propertized composer-rule segment.
+Each runs in the chat buffer while a turn is active.  Segments follow the
+current activity and precede the queued count.  When the rule is narrow the
+activity is truncated first, then whole segments are dropped.")
+
+(defvar-local hermes-chat--status-rule-start nil
+  "Float time at which the active turn was first observed, or nil.")
+(defvar-local hermes-chat--status-rule-last nil
+  "List (DURATION FINISHED LABEL) describing the last ended turn, or nil.")
+(defvar-local hermes-chat--status-rule-timer nil
+  "Cons (KIND . TIMER) owning the rule's tick or linger timer, or nil.")
+(defvar-local hermes-chat--status-rule-pending nil
+  "Zero-delay timer owning the next coalesced footer repaint, or nil.")
+
+(defun hermes-chat--status-rule-cancel ()
+  "Cancel this chat's rule timers without touching the displayed footer."
+  (when (timerp (cdr hermes-chat--status-rule-timer))
+    (cancel-timer (cdr hermes-chat--status-rule-timer)))
+  (when (timerp hermes-chat--status-rule-pending)
+    (cancel-timer hermes-chat--status-rule-pending))
+  (setq hermes-chat--status-rule-timer nil
+        hermes-chat--status-rule-pending nil))
+
+(defun hermes-chat--status-rule-retire ()
+  "Retire rule timers and forget turn timing at a lifecycle boundary."
+  (hermes-chat--status-rule-cancel)
+  (setq hermes-chat--status-rule-start nil
+        hermes-chat--status-rule-last nil))
+
+(defun hermes-chat--status-rule-live-p ()
+  "Return non-nil when this buffer is a live, initialized chat.
+A chat reassociated with a file stays retired after the name is detached."
+  (and (derived-mode-p 'hermes-chat-mode)
+       (not (hermes-buffer--retired-p))
+       (not hermes-chat--cleanup-done-p)
+       hermes-chat--ewoc
+       (hermes-chat--input-position)))
+
+(defun hermes-chat--status-rule-track ()
+  "Record active-turn start and end transitions from the lifecycle state."
+  (let ((active (hermes-chat--active-turn-p))
+        (now (float-time)))
+    (cond
+     ((and active (not hermes-chat--status-rule-start))
+      (setq hermes-chat--status-rule-start now
+            hermes-chat--status-rule-last nil))
+     ((and (not active) hermes-chat--status-rule-start)
+      (setq hermes-chat--status-rule-last
+            (list (- now hermes-chat--status-rule-start) now
+                  (hermes-chat--header-status-label
+                   (plist-get hermes-chat--status-state :status)))
+            hermes-chat--status-rule-start nil)))))
+
+(defun hermes-chat--status-rule-linger-left ()
+  "Return seconds the last turn's duration remains shown, or nil."
+  (when-let* ((last hermes-chat--status-rule-last))
+    (let ((left (- (+ (nth 1 last) hermes-chat-status-rule-linger) (float-time))))
+      (and (> left 0) left))))
+
+(defun hermes-chat--status-rule-fire (buffer lifetime box)
+  "Run timer BOX for BUFFER while it still owns chat LIFETIME."
+  (if (and (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (and (eq lifetime hermes-chat--lifecycle-generation)
+                  (eq (car box) (cdr hermes-chat--status-rule-timer))
+                  (hermes-chat--status-rule-live-p))))
+      (with-current-buffer buffer (hermes-chat--status-rule-update))
+    (cancel-timer (car box))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when (eq (car box) (cdr hermes-chat--status-rule-timer))
+          (hermes-chat--status-rule-cancel))))))
+
+(defun hermes-chat--status-rule-arm ()
+  "Own exactly the timer the current rule needs.
+Tick each second while a turn is active and the chat is visible; otherwise
+expire the last duration once, or own no timer at all."
+  (let* ((left (hermes-chat--status-rule-linger-left))
+         (kind (cond ((and hermes-chat--status-rule-start
+                           (get-buffer-window (current-buffer) 'visible))
+                      'tick)
+                     ((and (not hermes-chat--status-rule-start) left) 'linger))))
+    (unless (eq kind (car hermes-chat--status-rule-timer))
+      (when (timerp (cdr hermes-chat--status-rule-timer))
+        (cancel-timer (cdr hermes-chat--status-rule-timer)))
+      (setq hermes-chat--status-rule-timer nil)
+      (when kind
+        (let ((box (list nil)))
+          (setcar box (run-at-time (if (eq kind 'tick) 1 left)
+                                   (and (eq kind 'tick) 1)
+                                   #'hermes-chat--status-rule-fire
+                                   (current-buffer)
+                                   hermes-chat--lifecycle-generation box))
+          (setq hermes-chat--status-rule-timer (cons kind (car box))))))))
+
+(defun hermes-chat--status-rule-update ()
+  "Track the turn, own the right timer and repaint the footer now."
+  (when (hermes-chat--status-rule-live-p)
+    (hermes-chat--status-rule-track)
+    (hermes-chat--status-rule-arm)
+    (hermes-chat--status-rule-repaint)))
+
+(defun hermes-chat--status-rule-sync ()
+  "Record lifecycle transitions and coalesce a footer repaint.
+Runs from state-change and window-configuration hooks, so it never edits the
+buffer synchronously: callers may be inside another transcript mutation."
+  (when (hermes-chat--status-rule-live-p)
+    (hermes-chat--status-rule-track)
+    (hermes-chat--status-rule-arm)
+    (hermes-chat--status-rule-schedule)))
+
+(defun hermes-chat--status-rule-schedule ()
+  "Schedule one coalesced footer repaint owned by this chat lifetime."
+  (when (and (hermes-chat--status-rule-live-p)
+             (not (memq hermes-chat--status-rule-pending timer-list)))
+    (let ((buffer (current-buffer))
+          (lifetime hermes-chat--lifecycle-generation))
+      (setq hermes-chat--status-rule-pending
+            (run-at-time
+             0 nil
+             (lambda ()
+               (hermes-chat--in-buffer buffer
+                 (when (eq lifetime hermes-chat--lifecycle-generation)
+                   (setq hermes-chat--status-rule-pending nil)
+                   (if (hermes-chat--status-rule-live-p)
+                       (hermes-chat--status-rule-update)
+                     (hermes-chat--status-rule-cancel))))))))))
+
+(defun hermes-chat--status-rule-duration (seconds &optional compact)
+  "Return SECONDS as m:ss, or as 12s / 3m 05s when COMPACT."
+  (let ((s (max 0 (floor seconds))))
+    (cond (compact (if (< s 60) (format "%ds" s)
+                     (format "%dm %02ds" (/ s 60) (% s 60))))
+          ((< s 3600) (format "%d:%02d" (/ s 60) (% s 60)))
+          (t (format "%d:%02d:%02d" (/ s 3600) (/ (% s 3600) 60) (% s 60))))))
+
+(defun hermes-chat--status-rule-word ()
+  "Return (WORD . FACE) for the active turn from the authoritative state."
+  (let ((label (hermes-chat--header-status-label
+                (plist-get hermes-chat--status-state :status))))
+    (cond
+     ((or (member label '("Approval requested" "Input requested"))
+          (and (hash-table-p hermes-chat--pending-prompts)
+               (> (hash-table-count hermes-chat--pending-prompts) 0)))
+      '("Waiting for you" . warning))
+     (hermes-chat--interrupt-request-pending-p '("Interrupting" . warning))
+     ((equal label "Disconnected") '("Offline" . warning))
+     ((equal label "Error") '("Error" . error))
+     ((member label '("Connecting" "Loading" "Handing off")) (cons label 'shadow))
+     (t '("Running" . hermes-chat-turn-running)))))
+
+(defun hermes-chat--status-rule-activity ()
+  "Return the most recent active tool summary on one line, or nil."
+  (when-let* ((summary (car (last (hermes-chat--active-tool-summaries)))))
+    (hermes-transport--non-empty-string
+     (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " summary)))))
+
+(defun hermes-chat--status-rule-segments ()
+  "Return feature segments for the active rule, in registration order."
+  (let (segments)
+    (run-hook-wrapped 'hermes-chat-status-rule-segment-functions
+                      (lambda (function)
+                        (when-let* ((segment (funcall function)))
+                          (push segment segments))
+                        nil))
+    (nreverse segments)))
+
+(defun hermes-chat--status-rule-fit (head activity segments queued width)
+  "Join HEAD, ACTIVITY, SEGMENTS and QUEUED within WIDTH columns.
+Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
+  (let* ((separator (propertize " · " 'face 'shadow))
+         (measure (lambda (parts) (string-width (string-join parts separator))))
+         (tail (and queued (list queued)))
+         (kept nil))
+    (dolist (segment segments)
+      (when (<= (funcall measure (append (list head) kept (list segment) tail)) width)
+        (setq kept (append kept (list segment)))))
+    (let* ((room (- width (funcall measure (append (list head) kept tail))
+                    (string-width separator)))
+           (activity (and activity (>= room 6)
+                          (propertize (truncate-string-to-width activity room nil nil "…")
+                                      'face 'shadow)))
+           (text (string-join (delq nil (append (list head activity) kept tail))
+                              separator)))
+      (if (> (string-width text) width)
+          (truncate-string-to-width text width nil nil "…")
+        text))))
+
+(defun hermes-chat--status-rule-text (width)
+  "Return propertized rule text fitting WIDTH columns, or nil for a plain rule."
+  (cond
+   (hermes-chat--status-rule-start
+    (pcase-let* ((`(,word . ,face) (hermes-chat--status-rule-word))
+                 (count (length hermes-chat--queued-messages)))
+      (hermes-chat--status-rule-fit
+       (concat (propertize (concat "● " word) 'face face) " "
+               (propertize (hermes-chat--status-rule-duration
+                            (- (float-time) hermes-chat--status-rule-start))
+                           'face 'shadow))
+       (hermes-chat--status-rule-activity)
+       (hermes-chat--status-rule-segments)
+       (and (> count 0)
+            (propertize (format "%d queued" count) 'face 'font-lock-type-face))
+       width)))
+   ((hermes-chat--status-rule-linger-left)
+    (pcase-let ((`(,duration ,_finished ,label) hermes-chat--status-rule-last))
+      (truncate-string-to-width
+       (if (member label '("Ready" "Idle"))
+           (propertize (concat "✓ " (hermes-chat--status-rule-duration duration t))
+                       'face 'shadow)
+         (concat (propertize label 'face (hermes-chat--header-status-face
+                                          (plist-get hermes-chat--status-state :status)))
+                 (propertize (concat " after "
+                                     (hermes-chat--status-rule-duration duration t))
+                             'face 'shadow)))
+       width nil nil "…")))))
+
+(defun hermes-chat--status-rule-line (text)
+  "Return the composer rule carrying TEXT, or the plain rule when TEXT is nil."
+  (if (not text)
+      (hermes-chat--separator)
+    (concat (propertize " " 'display '(space :width 2) 'face 'hermes-chat-separator)
+            " " text " "
+            (propertize " " 'display '(space :align-to right)
+                        'face 'hermes-chat-separator))))
+
+(defun hermes-chat--queue-line-button (button)
+  "Open the queue panel with point on BUTTON's queued message."
+  (let* ((id (button-get button 'hermes-chat-queue-id))
+         (panel (hermes-chat-queue-panel)))
+    (with-current-buffer panel
+      (goto-char (point-min))
+      (when-let* ((match (text-property-search-forward
+                          'hermes-chat-queue-id id #'equal)))
+        (goto-char (prop-match-beginning match))))
+    (when-let* ((window (get-buffer-window panel)))
+      (set-window-point window (with-current-buffer panel (point)))
+      (select-window window))
+    panel))
+
+(defun hermes-chat--queue-lines (width)
+  "Return dim queued-message button lines fitting WIDTH columns."
+  (let ((icon (if (char-displayable-p ?⏳) "⏳" "Queued")))
+    (cl-loop
+     for entry in hermes-chat--queued-messages
+     for index from 1
+     concat
+     (let* ((source (or (plist-get entry :display) (plist-get entry :content) ""))
+            (first (or (seq-find (lambda (line) (not (string-blank-p line)))
+                                 (split-string source "\n"))
+                       ""))
+            (text (format "%s %d  %s%s" icon index
+                          (if (plist-get entry :rejected-p) "Not sent: " "")
+                          (string-trim first))))
+       (concat (make-text-button
+                (truncate-string-to-width text width nil nil "…") nil
+                'face (if (plist-get entry :rejected-p) 'warning 'shadow)
+                'mouse-face 'highlight 'follow-link t
+                'help-echo "Open the queue panel at this message"
+                'hermes-chat-queue-id (plist-get entry :id)
+                'action #'hermes-chat--queue-line-button)
+               "\n")))))
+
+(defun hermes-chat--footer-string ()
+  "Return the footer: queued-message lines above the status rule."
+  (let ((width (hermes-chat--table-window-width)))
+    (concat "\n" (hermes-chat--queue-lines width)
+            (hermes-chat--status-rule-line (hermes-chat--status-rule-text (- width 6)))
+            "\n")))
+
+(defun hermes-chat--status-rule-repaint ()
+  "Repaint the footer when its text changed, leaving the composer intact."
+  (when (hermes-chat--status-rule-live-p)
+    (save-restriction
+      (widen)
+      (let ((hf (ewoc-get-hf hermes-chat--ewoc))
+            (footer (hermes-chat--footer-string)))
+        (unless (equal-including-properties footer (cdr hf))
+          (hermes-chat--replace-footer (car hf) (cdr hf) footer))))))
+
+(defun hermes-chat--replace-footer (header old new)
+  "Replace footer OLD by NEW, keeping HEADER, and rebase composer state.
+`ewoc-set-hf' collapses markers at the old composer start before the new
+footer; restore the input marker, draft undo, point, mark, overlays and every
+window's start and point by the footer's length change."
+  (let* ((input (hermes-chat--input-position))
+         (start (- input (length old)))
+         (delta (- (length new) (length old)))
+         (remap (lambda (pos)
+                  (cond ((>= pos input) (+ pos delta))
+                        ((> pos start) (min pos (+ input delta)))
+                        (t pos))))
+         (point (point))
+         (mark (marker-position (mark-marker)))
+         (overlays (mapcar (lambda (o) (list o (overlay-start o) (overlay-end o)))
+                           (overlays-in start (point-max))))
+         (windows (mapcar (lambda (w) (list w (window-start w) (window-point w)))
+                          (get-buffer-window-list (current-buffer) nil t))))
+    (let ((inhibit-read-only t)
+          (buffer-undo-list t))
+      (ewoc-set-hf hermes-chat--ewoc header new))
+    (set-marker hermes-chat--input-marker (+ input delta))
+    (hermes-chat--adjust-draft-undo input)
+    (hermes-chat--protect-transcript)
+    (pcase-dolist (`(,overlay ,beg ,end) overlays)
+      (when (overlay-buffer overlay)
+        (move-overlay overlay (funcall remap beg) (funcall remap end))))
+    (when mark (set-marker (mark-marker) (funcall remap mark)))
+    (goto-char (funcall remap point))
+    (pcase-dolist (`(,window ,window-start ,window-point) windows)
+      (set-window-point window (funcall remap window-point))
+      (set-window-start window (funcall remap window-start) t))))
 
 (provide 'hermes-chat-buffer)
 ;;; hermes-chat-buffer.el ends here

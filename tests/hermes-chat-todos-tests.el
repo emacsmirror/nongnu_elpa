@@ -268,22 +268,31 @@
         (goto-char (point-max))
         (insert "Unsent α draft")
         (backward-char 3)
-        (let ((text (buffer-string)) (point (point)) (undo buffer-undo-list)
-              (window (selected-window)))
+        (let* ((transcript (lambda ()
+                             ;; The per-turn task node is the only transcript change.
+                             (let ((text (buffer-substring-no-properties
+                                          (point-min)
+                                          (ewoc-location (hermes-chat--pending-assistant-node))))
+                                   (node (hermes-chat-todos-test--node-text)))
+                               (if node (string-replace node "" text) text))))
+               (text (funcall transcript))
+               (offset (- (point) (hermes-chat--input-position)))
+               (window (selected-window)))
           (hermes-chat-todos-test--send hermes-chat-todos-test--list)
+          (should (hermes-chat-todos-test--node-start))
           (should (eq chat (current-buffer)))
           (should (eq window (selected-window)))
-          (should (= point (point)))
-          (should (eq undo buffer-undo-list))
-          (should (equal text (buffer-string)))
+          (should (= offset (- (point) (hermes-chat--input-position))))
+          (should (equal text (funcall transcript)))
           (should (equal "Unsent α draft" (hermes-chat-input-string)))
           ;; Repeat while another window is selected and the chat is visible.
           (select-window (get-buffer-window hermes-chat--todos-panel))
           (with-current-buffer chat
             (hermes-chat-todos-test--send '(:todos [] :revision 2))
-            (should (equal text (buffer-string)))
-            (should (eq undo buffer-undo-list))
-            (should (= point (point)))))))))
+            (should-not (hermes-chat-todos-test--node-start))
+            (should (equal text (funcall transcript)))
+            (should (equal "Unsent α draft" (hermes-chat-input-string)))
+            (should (= offset (- (point) (hermes-chat--input-position))))))))))
 
 (ert-deftest hermes-chat-todos-disconnect-and-same-runtime-reconnect ()
   (save-window-excursion
@@ -455,6 +464,123 @@
               (should (string-match-p "Wire task" (with-current-buffer hermes-chat--todos-panel (buffer-string)))))
             (with-current-buffer b (should-not (plist-get hermes-chat--todos :items))))
         (mapc (lambda (buffer) (when (buffer-live-p buffer) (kill-buffer buffer))) (list a b))))))
+
+;;; Transcript task node and composer-rule segment
+
+(defun hermes-chat-todos-test--node-start ()
+  "Return the start of the transcript task node, or nil."
+  (when-let* ((id (plist-get hermes-chat-todos--turn-entry :id))
+              (node (gethash id hermes-chat--nodes)))
+    (marker-position (ewoc-location node))))
+
+(defun hermes-chat-todos-test--node-text ()
+  "Return the transcript task node's text, or nil."
+  (when-let* ((id (plist-get hermes-chat-todos--turn-entry :id))
+              (node (gethash id hermes-chat--nodes))
+              (next (or (ewoc-next hermes-chat--ewoc node))))
+    (buffer-substring-no-properties (ewoc-location node) (ewoc-location next))))
+
+(defun hermes-chat-todos-test--task-nodes ()
+  "Return all transcript task entries."
+  (cl-loop for node = (ewoc-nth hermes-chat--ewoc 0) then (ewoc-next hermes-chat--ewoc node)
+           while node
+           when (eq 'tasks (plist-get (ewoc-data node) :role))
+           collect (ewoc-data node)))
+
+(ert-deftest hermes-chat-todos-transcript-node-updates-in-place ()
+  "One collapsed node per turn tracks snapshots, expands, and opens the panel."
+  (save-window-excursion
+    (hermes-chat-todos-test--chat
+      (switch-to-buffer (current-buffer))
+      (should-not (hermes-chat-todos-test--task-nodes))
+      (hermes-chat-todos-test--send hermes-chat-todos-test--list)
+      (should (= 1 (length (hermes-chat-todos-test--task-nodes))))
+      (should (equal "▸ Tasks 1/3 · now: Verify\n" (hermes-chat-todos-test--node-text)))
+      ;; Above the pending reply, quiet label and semantic value faces.
+      (should (< (hermes-chat-todos-test--node-start)
+                 (marker-position (ewoc-location (hermes-chat--pending-assistant-node)))))
+      (let ((start (hermes-chat-todos-test--node-start)))
+        (should (eq 'font-lock-type-face
+                    (get-text-property (+ start (length "▸ Tasks ")) 'face)))
+        (should (eq 'shadow (get-text-property start 'face))))
+      (let ((id (plist-get hermes-chat-todos--turn-entry :id)))
+        (hermes-chat-todos-test--send
+         '(:todos [(:id "a" :content "Inspect" :status "completed")
+                   (:id "b" :content "Verify" :status "completed")
+                   (:id "c" :content "Publish" :status "in_progress")]
+                  :revision 2))
+        (should (equal id (plist-get hermes-chat-todos--turn-entry :id)))
+        (should (= 1 (length (hermes-chat-todos-test--task-nodes))))
+        (should (equal "▸ Tasks 2/3 · now: Publish\n" (hermes-chat-todos-test--node-text)))
+        ;; Expanding lists every item with semantic markers.
+        (goto-char (hermes-chat-todos-test--node-start))
+        (push-button)
+        (should (equal (concat "▾ Tasks 2/3 · now: Publish\n"
+                               "  ☑ Inspect\n  ☑ Verify\n  ▶ Publish\n")
+                       (hermes-chat-todos-test--node-text)))
+        (let ((start (hermes-chat-todos-test--node-start)))
+          (goto-char start)
+          (forward-line 1)
+          (should (eq 'success (get-text-property (+ (point) 2) 'face)))
+          (forward-line 2)
+          (should (eq 'font-lock-type-face (get-text-property (+ (point) 2) 'face)))
+          ;; Expansion survives later snapshots.
+          (hermes-chat-todos-test--send
+           '(:todos [(:id "a" :content "Inspect" :status "completed")
+                     (:id "d" :content "Document" :status "pending")]
+                    :revision 3))
+          (should (equal "▾ Tasks 1/2\n  ☑ Inspect\n  ☐ Document\n"
+                         (hermes-chat-todos-test--node-text)))
+          ;; RET on the header opens the existing task panel.
+          (goto-char (+ start 3))
+          (should-not hermes-chat--todos-panel)
+          (push-button)
+          (should (buffer-live-p hermes-chat--todos-panel))
+          (should (get-buffer-window hermes-chat--todos-panel)))))))
+
+(ert-deftest hermes-chat-todos-transcript-node-settles-and-next-turn-starts-fresh ()
+  "Turn end settles the node in place; the next turn gets its own node."
+  (hermes-chat-todos-test--chat
+    (hermes-chat-todos-test--send hermes-chat-todos-test--list)
+    (hermes-chat-todos-test--send '(:status "complete") "message.complete")
+    (should (= 1 (length (hermes-chat-todos-test--task-nodes))))
+    (should (equal "▸ Tasks 1/3\n" (hermes-chat-todos-test--node-text)))
+    (hermes-chat-todos-test--start "next")
+    ;; Retained prior lists do not create a node for the new turn.
+    (hermes-chat-todos-test--send hermes-chat-todos-test--list)
+    (should (= 1 (length (hermes-chat-todos-test--task-nodes))))
+    (should-not (plist-get hermes-chat-todos--turn-entry :id))
+    (hermes-chat-todos-test--send
+     '(:todos [(:id "next" :content "Next task" :status "in_progress")] :revision 2))
+    (should (= 2 (length (hermes-chat-todos-test--task-nodes))))
+    (should (equal "▸ Tasks 0/1 · now: Next task\n" (hermes-chat-todos-test--node-text)))
+    (should (equal "Tasks 1/3"
+                   (let ((first (car (hermes-chat-todos-test--task-nodes))))
+                     (format "Tasks %d/%d"
+                             (car (hermes-chat-todos--counts
+                                   (plist-get (plist-get first :tasks) :items)))
+                             (cdr (hermes-chat-todos--counts
+                                   (plist-get (plist-get first :tasks) :items)))))))))
+
+(ert-deftest hermes-chat-todos-rule-segment-follows-active-turn ()
+  "The composer rule shows task progress while active, never when idle."
+  (save-window-excursion
+    (hermes-chat-todos-test--chat
+      (switch-to-buffer (current-buffer))
+      (hermes-test--event-loop-barrier)
+      (let ((footer (lambda () (cdr (ewoc-get-hf hermes-chat--ewoc)))))
+        (should (string-match-p "● Running" (funcall footer)))
+        (should-not (string-match-p "☐" (funcall footer)))
+        (hermes-chat--queue-content "later")
+        (hermes-chat-todos-test--send hermes-chat-todos-test--list)
+        (hermes-test--event-loop-barrier)
+        (should (string-match-p "● Running 0:0[0-9] · ☐ 1/3 · 1 queued" (funcall footer)))
+        (let ((rule (funcall footer)))
+          (should (eq 'font-lock-type-face
+                      (get-text-property (string-match "☐" rule) 'face rule))))
+        (hermes-chat-todos-test--send '(:status "complete") "message.complete")
+        (hermes-test--event-loop-barrier)
+        (should-not (string-match-p "☐\\|Running" (funcall footer)))))))
 
 (provide 'hermes-chat-todos-tests)
 ;;; hermes-chat-todos-tests.el ends here

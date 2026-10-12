@@ -28,6 +28,19 @@
   "Chat buffer owning this task panel.")
 (defvar-local hermes-chat-todos--ewoc nil
   "EWOC displaying the task projection.")
+(defvar-local hermes-chat-todos--turn-entry nil
+  "Plist (:id ID :items ITEMS) for this turn's transcript task node.
+ITEMS is the list object retained when the turn began; a node appears only
+once a newer snapshot replaces it, and later snapshots update that node.")
+
+(defun hermes-chat-todos--counts (items)
+  "Return (DONE . TOTAL) for ITEMS, excluding cancelled tasks."
+  (let ((counted (cl-remove "cancelled" items
+                            :key (lambda (item) (plist-get item :status))
+                            :test #'equal)))
+    (cons (cl-count "completed" counted :key (lambda (item) (plist-get item :status))
+                    :test #'equal)
+          (length counted))))
 
 (defun hermes-chat-todos--snapshot-state (snapshot runtime turn accepting live)
   "Return projection of SNAPSHOT for RUNTIME, TURN, ACCEPTING and LIVE state."
@@ -78,7 +91,9 @@ replace a versioned snapshot.  Terminal events retain unfinished items."
       (setq hermes-chat--todos
             (hermes-chat--entry-with
              state :runtime runtime :turn turn :accepting t
-             :status (if (plist-get state :items) 'settled 'empty)))
+             :status (if (plist-get state :items) 'settled 'empty))
+            hermes-chat-todos--turn-entry
+            (list :id nil :items (plist-get state :items)))
       (hermes-chat-todos--refresh))))
 
 (defun hermes-chat-todos--rotate (old new)
@@ -114,6 +129,11 @@ An idle restored list is settled even if its tasks remain unfinished."
             (hermes-chat--entry-with
              state :runtime runtime :turn (or (plist-get state :turn) turn)
              :accepting (or (plist-get state :accepting) turn))))
+    ;; A restored snapshot is history, not this turn's progress: it becomes
+    ;; the baseline, so only later snapshots create a transcript task node.
+    (unless (plist-get hermes-chat-todos--turn-entry :id)
+      (setq hermes-chat-todos--turn-entry
+            (list :id nil :items (plist-get hermes-chat--todos :items))))
     (hermes-chat-todos--refresh)))
 
 (defun hermes-chat-todos--reattach ()
@@ -140,7 +160,8 @@ An idle restored list is settled even if its tasks remain unfinished."
 (defun hermes-chat-todos--clear ()
   "Clear the projection and retire only this chat's still-owned panel."
   (let ((panel hermes-chat--todos-panel))
-    (setq hermes-chat--todos nil hermes-chat--todos-panel nil)
+    (setq hermes-chat--todos nil hermes-chat--todos-panel nil
+          hermes-chat-todos--turn-entry nil)
     (when (hermes-chat-todos--panel-p panel (current-buffer))
       (kill-buffer panel))))
 
@@ -172,8 +193,114 @@ An idle restored list is settled even if its tasks remain unfinished."
                         'face face 'help-echo status)
             "\n")))
 
+;;; Transcript task node and composer-rule segment
+
+(defun hermes-chat-todos--view (state)
+  "Return the transcript-visible part of task STATE."
+  (list :items (plist-get state :items) :status (plist-get state :status)))
+
+(defun hermes-chat-todos--sync-entry ()
+  "Create or update in place this turn's collapsed transcript task node.
+Create it only after a snapshot newer than the turn's start arrives, above the
+pending reply; never while an old stream is suppressed."
+  (let* ((state hermes-chat--todos)
+         (id (plist-get hermes-chat-todos--turn-entry :id))
+         (node (and id (hash-table-p hermes-chat--nodes) (gethash id hermes-chat--nodes)))
+         (view (hermes-chat-todos--view state)))
+    (cond
+     ((and node (not (plist-get state :items)))
+      (setq hermes-chat-todos--turn-entry
+            (plist-put (copy-sequence hermes-chat-todos--turn-entry) :id nil))
+      (hermes-chat--remove-entry id t))
+     (node
+      (unless (equal view (plist-get (ewoc-data node) :tasks))
+        (hermes-chat--update-entry
+         id (lambda (entry) (hermes-chat--entry-with entry :tasks view)) t)))
+     ((and hermes-chat-todos--turn-entry (not id) hermes-chat--ewoc
+           (plist-get state :accepting) (plist-get state :items)
+           (not (eq (plist-get state :items)
+                    (plist-get hermes-chat-todos--turn-entry :items)))
+           (not hermes-chat--dashboard-suppress-stream-p)
+           (hermes-chat--pending-assistant-node))
+      (let ((entry (hermes-chat--entry-with
+                    (hermes-chat--make-entry 'tasks "" 'done) :tasks view)))
+        (setq hermes-chat-todos--turn-entry
+              (list :id (plist-get entry :id)
+                    :items (plist-get hermes-chat-todos--turn-entry :items)))
+        (hermes-chat--insert-entry entry (hermes-chat--pending-assistant-node)))))))
+
+(defun hermes-chat-todos--open-button (_button)
+  "Open the live task panel from a transcript task node."
+  (hermes-chat-show-todos))
+
+(defun hermes-chat-todos--current-item (items)
+  "Return the content of the first in-progress task in ITEMS, or nil."
+  (when-let* ((item (cl-find "in_progress" items
+                             :key (lambda (item) (plist-get item :status))
+                             :test #'equal)))
+    (plist-get item :content)))
+
+(defun hermes-chat-todos--insert-header (entry)
+  "Insert the one-line header of transcript task ENTRY."
+  (pcase-let* ((tasks (plist-get entry :tasks))
+               (items (plist-get tasks :items))
+               (`(,done . ,total) (hermes-chat-todos--counts items))
+               (now (and (eq (plist-get tasks :status) 'active)
+                         (hermes-chat-todos--current-item items)))
+               (expanded (hermes-chat--entry-expanded-p entry)))
+    (insert-text-button (if expanded "▾" "▸")
+                        'face 'shadow 'follow-link t
+                        'help-echo (if expanded "Hide tasks" "Show tasks")
+                        'hermes-chat-entry-id (plist-get entry :id)
+                        'action #'hermes-chat--toggle-entry-button)
+    (insert " ")
+    (let ((start (point)))
+      ;; Explicit faces keep the label quiet over the button category face.
+      (insert (propertize "Tasks " 'face 'default)
+              (propertize (format "%d/%d" done total) 'face 'font-lock-type-face))
+      (when (eq (plist-get tasks :status) 'stale)
+        (insert (propertize " · disconnected" 'face 'warning)))
+      (when now
+        (insert (propertize " · now: " 'face 'shadow) (propertize now 'face 'default)))
+      (make-text-button start (point) 'follow-link t
+                        'help-echo "Open the live task panel"
+                        'action #'hermes-chat-todos--open-button))
+    (insert "\n")))
+
+(defun hermes-chat-todos--print-entry (entry)
+  "Insert transcript task ENTRY, listing its items when expanded."
+  (hermes-chat-todos--insert-header entry)
+  (when (hermes-chat--entry-expanded-p entry)
+    (dolist (item (plist-get (plist-get entry :tasks) :items))
+      (pcase-let ((`(,mark ,face) (pcase (plist-get item :status)
+                                    ("completed" '("☑" success))
+                                    ("in_progress" '("▶" font-lock-type-face))
+                                    ("cancelled" '("☒" shadow))
+                                    (_ '("☐" default)))))
+        (insert "  " (propertize mark 'face face) " "
+                (propertize (or (plist-get item :content) "")
+                            'face (if (eq face 'shadow) 'shadow 'default)
+                            'help-echo (plist-get item :status))
+                "\n")))))
+
+(setf (alist-get 'tasks hermes-chat-entry-printers) #'hermes-chat-todos--print-entry)
+
+(defun hermes-chat-todos--rule-segment ()
+  "Return the composer-rule task progress segment, or nil without tasks."
+  (let ((state hermes-chat--todos))
+    (when (and (plist-get state :accepting) (plist-get state :items))
+      (pcase-let ((`(,done . ,total) (hermes-chat-todos--counts (plist-get state :items))))
+        (when (> total 0)
+          (propertize (format "☐ %d/%d" done total) 'face 'font-lock-type-face))))))
+
+(add-hook 'hermes-chat-status-rule-segment-functions #'hermes-chat-todos--rule-segment)
+
 (defun hermes-chat-todos--refresh ()
-  "Refresh this chat's existing panel without displaying or selecting it."
+  "Refresh this chat's task node, composer rule and existing panel.
+Never display or select the panel."
+  (when (derived-mode-p 'hermes-chat-mode)
+    (hermes-chat-todos--sync-entry)
+    (hermes-chat--status-rule-schedule))
   (let ((panel hermes-chat--todos-panel)
         (owner (current-buffer))
         (state hermes-chat--todos))

@@ -64,7 +64,7 @@
 (defvar-local hermes-chat--title nil
   "Human title for this chat session.
 Set by `hermes-chat-rename' and reported to the dashboard.  Buffer identity is
-derived separately from the owning instance, profile, and working directory.")
+derived separately from the owning instance, profile, and project.")
 
 (defvar-local hermes-chat--title-manual-p nil
   "Non-nil when the user set this chat's title via `hermes-chat-rename'.
@@ -501,11 +501,41 @@ Report uncertainty for dispatched worker controls whose receipts are lost."
     ;; renderer checks the exact view cross-link, even after buffer reuse.
     (run-at-time 0 nil render owner)))
 
+(defconst hermes-chat--work-cadence 5
+  "Seconds between ordinary observation cycles; also the first retry delay.")
+
+(defconst hermes-chat--work-retry-cap 60
+  "Maximum seconds a failing observation source waits before retrying.")
+
+(defvar hermes-chat--work-clock #'float-time
+  "Function returning the current time in seconds for retry deadlines.")
+
 (defun hermes-chat--work-source-eligible-p (owner source)
   "Return non-nil when OWNER's SOURCE is bound and not paused."
   (let ((binding (plist-get owner :runtime)))
     (and (stringp binding) (not (string-empty-p binding))
          (not (plist-get (plist-get owner source) :paused)))))
+
+(defun hermes-chat--work-source-due-p (owner source)
+  "Return non-nil when OWNER's eligible SOURCE has no pending retry backoff."
+  (and (hermes-chat--work-source-eligible-p owner source)
+       (<= (or (plist-get (plist-get owner source) :retry-at) 0)
+           (funcall hermes-chat--work-clock))))
+
+(defun hermes-chat--work-retry-delay (failures)
+  "Return the backoff in seconds after FAILURES consecutive failures."
+  (min hermes-chat--work-retry-cap
+       (* hermes-chat--work-cadence (expt 2 (1- (min (max failures 1) 8))))))
+
+(defun hermes-chat--work-next-delay (owner)
+  "Return seconds until OWNER's next cycle: the cadence or the earliest retry."
+  (let* ((now (funcall hermes-chat--work-clock))
+         (due (delq nil (mapcar (lambda (source)
+                                  (and (hermes-chat--work-source-eligible-p owner source)
+                                       (or (plist-get (plist-get owner source) :retry-at)
+                                           now)))
+                                '(:delegates :processes)))))
+    (max hermes-chat--work-cadence (- (if due (apply #'min due) now) now))))
 
 (defun hermes-chat--work-eligible-p (owner)
   "Return non-nil when OWNER can request either observation source."
@@ -649,16 +679,31 @@ Never restart, resume, or change the chat's input."
              (and published (eq (plist-get context :source) :delegates)
                   :processes))))))))
 
-(defun hermes-chat--work-failed (owner context)
-  "Pause OWNER's source after failure of CONTEXT, retaining only stale rows."
+(defun hermes-chat--work-rejection-reason (message)
+  "Return a permanent pause reason for rejection MESSAGE, or nil if transient.
+Only JSON-RPC method-not-found proves the backend lacks the inventory."
+  (and (stringp message) (> (length message) 0)
+       (eql (get-text-property 0 'hermes-rpc-code message) -32601)
+       "Backend lacks this inventory; press g to retry"))
+
+(defun hermes-chat--work-failed (owner context &optional permanent)
+  "Settle OWNER's source after failure of CONTEXT, retaining only stale rows.
+With PERMANENT reason, pause automatic refresh until an explicit retry.
+Otherwise retry on the cadence after bounded per-source exponential backoff."
   (when (and (hermes-chat--work-current-p owner)
              (eq context (plist-get owner :request)))
     (hermes-dashboard-transport-cancel-owner-requests (plist-get owner :client) context)
-    (hermes-chat--work-settle
-     owner context
-     (list :rows (plist-get (plist-get owner (plist-get context :source)) :rows)
-           :coverage 'stale :paused t :reason "Refresh failed; press g to retry"
-           :observed (plist-get (plist-get owner (plist-get context :source)) :observed)))))
+    (let* ((previous (plist-get owner (plist-get context :source)))
+           (failures (1+ (or (plist-get previous :failures) 0)))
+           (delay (hermes-chat--work-retry-delay failures)))
+      (hermes-chat--work-settle
+       owner context
+       (list :rows (plist-get previous :rows)
+             :coverage 'stale :paused (and permanent t) :failures failures
+             :retry-at (and (not permanent) (+ (funcall hermes-chat--work-clock) delay))
+             :reason (or permanent
+                         (format "Refresh failed; retrying in %ds (g retries now)" delay))
+             :observed (plist-get previous :observed))))))
 
 (defun hermes-chat--work-received (owner context result)
   "Validate RESULT for OWNER and settle CONTEXT without affecting the turn."
@@ -671,7 +716,9 @@ Never restart, resume, or change the chat's input."
                  (hermes-transport-work-processes result))
              (error nil))))
       (if (not snapshot)
-          (hermes-chat--work-failed owner context)
+          ;; A malformed answer is a contract problem, not a transient one.
+          (hermes-chat--work-failed
+           owner context "Unexpected inventory response; press g to retry")
         (when (eq (plist-get context :source) :delegates)
           ;; Keep unchanged worker occurrences across cadence reads.  Changed or
           ;; disappeared rows retire pending input and tail authority.
@@ -696,8 +743,8 @@ Never restart, resume, or change the chat's input."
     (cond
      ((not (and source (hermes-chat--work-eligible-p owner)))
       (setf (plist-get owner :cycle) nil)
-      (hermes-chat--work-schedule owner 5))
-     ((not (hermes-chat--work-source-eligible-p owner source))
+      (hermes-chat--work-schedule owner (hermes-chat--work-next-delay owner)))
+     ((not (hermes-chat--work-source-due-p owner source))
       (hermes-chat--work-stage owner cycle (and (eq source :delegates) :processes)))
      (t (hermes-chat--work-request owner cycle source)))))
 
@@ -720,8 +767,10 @@ Never restart, resume, or change the chat's input."
                          (plist-get owner :client)
                          :resolve (lambda (result)
                                     (hermes-chat--work-received owner context result))
-                         :reject (lambda (_message)
-                                   (hermes-chat--work-failed owner context))
+                         :reject (lambda (message)
+                                   (hermes-chat--work-failed
+                                    owner context
+                                    (hermes-chat--work-rejection-reason message)))
                          (list :session-id (plist-get owner :runtime)))))
           (when (and (hermes-chat--work-current-p owner)
                      (eq context (plist-get owner :request)))
@@ -739,7 +788,8 @@ Never restart, resume, or change the chat's input."
 
 (defun hermes-chat-work-refresh ()
   "Refresh this chat's observed work; rearm a paused source when idle.
-Repeated refresh while busy coalesces; it does not authorize a later retry."
+Also retry a backing-off source now and reset its backoff.  Repeated refresh
+while busy coalesces; it does not authorize a later retry."
   (interactive nil hermes-chat-mode)
   (when-let* ((owner hermes-chat--work-owner))
     (when (and (hermes-chat--work-current-p owner)
@@ -747,6 +797,8 @@ Repeated refresh while busy coalesces; it does not authorize a later retry."
       (dolist (source '(:delegates :processes))
         (when (plist-get owner source)
           (setf (plist-get (plist-get owner source) :paused) nil
+                (plist-get (plist-get owner source) :failures) nil
+                (plist-get (plist-get owner source) :retry-at) nil
                 (plist-get (plist-get owner source) :coverage) 'stale)))
       (hermes-chat--work-cancel-timer owner)
       (let ((cycle (list nil)) published)
@@ -1045,7 +1097,8 @@ settlement order lives in one place."
                 hermes-chat--dashboard-suppress-stream-p nil))
       (funcall hermes-chat--turn-event-function assistant-id event))
     (when context
-      (hermes-chat--clear-submit-context context))))
+      (hermes-chat--clear-submit-context context))
+    (hermes-chat--insert-offline-notice "Offline — input kept")))
 
 (defun hermes-chat--handle-reconnecting-status (event)
   "Handle a manual dashboard socket reconnect status EVENT."
@@ -1236,12 +1289,19 @@ Use the global user option so another chat's legacy local pin cannot leak."
           (hermes-transport--get info 'cwd))))))
 
 (defun hermes-chat--record-working-directory (directory)
-  "Record gateway-native DIRECTORY without changing Emacs's local directory."
-  (when (and directory
-             (not (equal directory hermes-chat--working-directory)))
-    (setq hermes-chat--working-directory directory)
-    (hermes-chat--refresh-buffer-name)
-    (force-mode-line-update)))
+  "Record gateway-native DIRECTORY without changing Emacs's local directory.
+The first recorded directory names a chat without a launch project; later
+directories update only the header, never the buffer name."
+  (when directory
+    (let ((first (null hermes-chat--initial-working-directory)))
+      (when first
+        (setq hermes-chat--initial-working-directory directory))
+      (hermes-chat--note-working-directory directory)
+      (unless (equal directory hermes-chat--working-directory)
+        (setq hermes-chat--working-directory directory)
+        (force-mode-line-update))
+      (when first
+        (hermes-chat--refresh-buffer-name)))))
 
 (defun hermes-chat--dashboard-active-id-from-result (_client result)
   "Return the live dashboard session id from RPC RESULT.
@@ -2233,10 +2293,7 @@ a local FIFO submission."
 
 (defun hermes-chat--apply-directory (directory)
   "Apply gateway-native DIRECTORY, adopting it locally only when usable."
-  (when (and (not (find-file-name-handler directory nil))
-             (file-name-absolute-p directory)
-             (not (string-prefix-p "~" directory))
-             (file-directory-p directory))
+  (when (hermes-chat--local-directory-p directory)
     (setq-local default-directory (file-name-as-directory directory)))
   (setq hermes-chat--cwd-explicit-p t)
   (hermes-chat--record-working-directory directory)
@@ -2522,31 +2579,49 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
 ;; tasks live with the session lifecycle that drives them.
 
 (defun hermes-chat-default-buffer-name (profile instance directory)
-  "Return the default chat name for PROFILE, INSTANCE, and DIRECTORY."
+  "Return the default chat name for PROFILE, INSTANCE, and DIRECTORY.
+Name DIRECTORY's project with `project-name' when DIRECTORY exists locally,
+otherwise with its basename."
   (let ((owner (if (and hermes-instances
                         (hermes-instance--valid-p instance))
                    (hermes-instance-name instance)
                  "Hermes"))
-        (project (hermes-chat--directory-basename directory)))
+        (project (cdr (hermes-chat--project-identity directory))))
     (format "*%s@%s: [%s]*" owner profile project)))
 
 (defun hermes-chat--buffer-name (profile &optional instance directory)
-  "Return the customized chat name for PROFILE, INSTANCE, and DIRECTORY."
+  "Return the customized chat name for PROFILE, INSTANCE, and DIRECTORY.
+DIRECTORY defaults to the chat's naming directory, which does not follow
+later gateway working-directory changes."
   (let* ((profile (or profile "default"))
          (instance (or instance (hermes-instance-context)))
-         (directory (or directory hermes-chat--working-directory
-                        hermes-chat--launch-project-root default-directory))
+         (directory (or directory
+                        (let ((naming (hermes-chat--naming-directory)))
+                          ;; Resolve once here so the header can compare
+                          ;; the cwd with the root even under custom names.
+                          (hermes-chat--project-identity naming)
+                          (when-let* ((cwd (hermes-chat--current-working-directory)))
+                            (hermes-chat--note-working-directory cwd))
+                          naming)))
          (name (funcall hermes-chat-buffer-name-function
                         profile instance directory)))
     (unless (and (stringp name) (not (string-empty-p name)))
       (user-error "Chat buffer naming function returned an empty name"))
     name))
 
+(defun hermes-chat--name-collision-variant-p (name current)
+  "Return non-nil if CURRENT is NAME or NAME with a `<N>' collision suffix."
+  (or (equal name current)
+      (string-match-p (concat "\\`" (regexp-quote name) "<[0-9]+>\\'")
+                      current)))
+
 (defun hermes-chat--refresh-buffer-name ()
-  "Rename the current chat buffer from its live naming context."
+  "Rename the current chat buffer from its live naming context.
+Keep a collision suffix such as `<2>' while the computed name is unchanged,
+even after the unsuffixed sibling is gone."
   (let ((name (hermes-chat--buffer-name
                hermes-chat--profile hermes-instance)))
-    (unless (equal name (buffer-name))
+    (unless (hermes-chat--name-collision-variant-p name (buffer-name))
       (rename-buffer name t))))
 
 (defun hermes-chat--push-session-title (title)
