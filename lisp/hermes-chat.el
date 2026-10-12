@@ -2775,12 +2775,25 @@ Do not wrap into the composer or modify its draft."
       (not hermes-chat--pending-assistant-id)
       (not (hermes-chat--dashboard-session-attached-p))))
 
+(defun hermes-chat--queue-count-suffix ()
+  "Return \" N\" with the queued count as a value, or \"\" when empty."
+  (let ((count (length hermes-chat--queued-messages)))
+    (if (> count 0)
+        (concat " " (propertize (number-to-string count) 'face 'font-lock-type-face))
+      "")))
+
 (defun hermes-chat--queue-label ()
   "Describe whether the queue command sends now or waits for a turn."
-  (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages
-          (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
-      "Queue message"
-    "Queue / send now"))
+  (concat
+   (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages
+           (eq (plist-get hermes-chat--session-bootstrap :kind) 'history))
+       "Queue message"
+     "Queue / send now")
+   (hermes-chat--queue-count-suffix)))
+
+(defun hermes-chat--queue-panel-label ()
+  "Describe the queue panel action with the queued count, hidden when zero."
+  (concat "Queue side panel" (hermes-chat--queue-count-suffix)))
 
 (defun hermes-chat--steer-label ()
   "Describe the cached steering target, including the idle send fallback."
@@ -2900,7 +2913,7 @@ Do not wrap into the composer or modify its draft."
   :popup-key "?"
   :exit-key "q"
   :group "Work"
-  "P" ("Queue side panel" hermes-chat-queue-panel)
+  "P" (#'hermes-chat--queue-panel-label hermes-chat-queue-panel)
   "W" (#'hermes-chat-workers-label hermes-chat-work)
   "T" ("Live tasks" hermes-chat-show-todos)
   "o" ("Preview output" hermes-chat-preview-output))

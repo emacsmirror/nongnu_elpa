@@ -493,11 +493,17 @@ lifted into inline images."
     (hermes-chat--insert-content-with-images content #'hermes-chat--insert-markdown)
     (insert "\n")))
 
+(defvar hermes-chat-entry-printers nil
+  "Alist of (ROLE . FUNCTION) printing feature-owned transcript entries.
+FUNCTION receives the entry plist and inserts its text at point.")
+
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."
   (let ((role (plist-get entry :role))
         (content (or (plist-get entry :content) "")))
     (cond
+     ((alist-get role hermes-chat-entry-printers)
+      (funcall (alist-get role hermes-chat-entry-printers) entry))
      ((eq role 'user)
       (hermes-chat--insert-user-content content))
      ((eq role 'activity)
@@ -734,8 +740,11 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   ;; transcript update cannot rebase another buffer's pending undo sequence.
   (setq-local pending-undo-list nil)
   (hermes-chat--stream-format-retire)
+  (hermes-chat--status-rule-retire)
   (add-hook 'after-set-visited-file-name-hook #'hermes-chat--stream-format-retire nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
+  (add-hook 'window-configuration-change-hook #'hermes-chat--status-rule-sync nil t)
+  (add-hook 'hermes-chat-state-change-hook #'hermes-chat--status-rule-sync nil t)
   (setq buffer-undo-list nil)
   (let ((inhibit-read-only t)
         (buffer-undo-list t))
@@ -905,6 +914,7 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
   (cl-incf hermes-chat--transport-generation)
   (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token))
   (hermes-chat--stream-format-retire)
+  (hermes-chat--status-rule-retire)
   ;; Teardown must not publish through display hooks before resource release.
   (hermes-chat--reasoning-row hermes-chat--pending-assistant-id nil t)
   (hermes-chat--application-retire)
@@ -1910,7 +1920,9 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
    :status 'queued :activity "Queued next message"))
 
 (defun hermes-chat--queue-panel-refresh-if-live ()
-  "Refresh this chat's live queue side panel, when present."
+  "Refresh this chat's live queue side panel, when present.
+Also schedule the composer's queued-message lines, which mirror the FIFO."
+  (hermes-chat--status-rule-schedule)
   (when (buffer-live-p hermes-chat--queue-panel-buffer)
     (let ((owner (current-buffer)))
       (with-current-buffer hermes-chat--queue-panel-buffer
@@ -2033,6 +2045,7 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
                       hermes-chat--queued-messages))
         (when-let* ((record (plist-get entry :image-record)))
           (setf (plist-get record :content) content))
+        (hermes-chat--status-rule-schedule)
         (hermes-chat--insert-local-status "Queued message updated" 'done)))))
 
 (defun hermes-chat--queue-remove-entry (owner id)
@@ -2050,6 +2063,7 @@ IMAGE-RECORD retains local bytes for an explicitly image-bearing queue entry."
     (setq hermes-chat--queued-messages
           (seq-remove (lambda (entry) (equal (plist-get entry :id) id))
                       hermes-chat--queued-messages))
+    (hermes-chat--status-rule-schedule)
     (hermes-chat--insert-local-status "Queued message removed" 'done)))
 
 (defun hermes-chat-queue-panel-retry ()
@@ -2104,7 +2118,8 @@ Refuse stale panels and busy or disconnected owners without clearing the pause."
                        for position from 0
                        collect (cond ((= position index) neighbor)
                                      ((= position other) entry)
-                                     (t candidate))))))))
+                                     (t candidate))))
+        (hermes-chat--status-rule-schedule)))))
 
 (defun hermes-chat-queue-panel-move-up ()
   "Move the queued message at point one position earlier."
@@ -2283,25 +2298,6 @@ transcript carries the full tool detail."
         (hermes-transport--non-empty-string
          (string-trim (substring activity (length label)) "[-: ]+")))
        (t activity)))))
-
-(defun hermes-chat--header-status-segment ()
-  "Return the propertized status segment: icon, label, and live detail.
-The label carries the high-level state (Ready/Running/...) and an active tool
-or distinct activity is appended so the live detail is not lost.  The `thinking'
-state is shown bare (kawaii face plus verb, no icon or label) since the face is
-self-explanatory."
-  (let ((status (plist-get hermes-chat--status-state :status)))
-    (if (eq status 'thinking)
-        (propertize (or (hermes-transport--non-empty-string
-                         (plist-get hermes-chat--status-state :activity))
-                        "Thinking")
-                    'face (hermes-chat--header-status-face 'running))
-      (let* ((label (hermes-chat--header-status-label status))
-             (detail (hermes-chat--header-detail label)))
-        (propertize
-         (format "%s %s" (hermes-chat--status-icon status)
-                 (if detail (format "%s: %s" label detail) label))
-         'face (hermes-chat--header-status-face status))))))
 
 (defun hermes-chat--setting-value (value &optional pending label)
   "Return bounded, faced setting VALUE, marking PENDING choices explicitly.
@@ -2543,6 +2539,327 @@ During redisplay Emacs selects the window whose header is being evaluated."
     (propertize (string-replace "%" "%%" text)
                 'help-echo (hermes-chat--session-details-text))))
 
+;;; Composer status rule and visible queue
+
+;; The rule between transcript and composer is the EWOC footer.  While a turn
+;; is active it carries the lifecycle word, elapsed time, current tool, feature
+;; segments and the queued count; queued FIFO messages are listed above it.
+;; Repaints replace only the footer and rebase the composer around it.
+
+(defface hermes-chat-turn-running
+  '((t :inherit font-lock-keyword-face))
+  "Face for the running-turn status word on the composer rule."
+  :group 'hermes)
+
+(defcustom hermes-chat-status-rule-linger 30
+  "Seconds the last turn's duration remains on the composer rule."
+  :type 'number
+  :group 'hermes)
+
+(defvar hermes-chat-status-rule-segment-functions nil
+  "Functions returning an optional propertized composer-rule segment.
+Each runs in the chat buffer while a turn is active.  Segments follow the
+current activity and precede the queued count.  When the rule is narrow the
+activity is truncated first, then whole segments are dropped.")
+
+(defvar-local hermes-chat--status-rule-start nil
+  "Float time at which the active turn was first observed, or nil.")
+(defvar-local hermes-chat--status-rule-last nil
+  "List (DURATION FINISHED LABEL) describing the last ended turn, or nil.")
+(defvar-local hermes-chat--status-rule-timer nil
+  "Cons (KIND . TIMER) owning the rule's tick or linger timer, or nil.")
+(defvar-local hermes-chat--status-rule-pending nil
+  "Zero-delay timer owning the next coalesced footer repaint, or nil.")
+
+(defun hermes-chat--status-rule-cancel ()
+  "Cancel this chat's rule timers without touching the displayed footer."
+  (when (timerp (cdr hermes-chat--status-rule-timer))
+    (cancel-timer (cdr hermes-chat--status-rule-timer)))
+  (when (timerp hermes-chat--status-rule-pending)
+    (cancel-timer hermes-chat--status-rule-pending))
+  (setq hermes-chat--status-rule-timer nil
+        hermes-chat--status-rule-pending nil))
+
+(defun hermes-chat--status-rule-retire ()
+  "Retire rule timers and forget turn timing at a lifecycle boundary."
+  (hermes-chat--status-rule-cancel)
+  (setq hermes-chat--status-rule-start nil
+        hermes-chat--status-rule-last nil))
+
+(defun hermes-chat--status-rule-live-p ()
+  "Return non-nil when this buffer is a live, initialized chat."
+  (and (derived-mode-p 'hermes-chat-mode)
+       (not hermes-chat--cleanup-done-p)
+       hermes-chat--ewoc
+       (hermes-chat--input-position)))
+
+(defun hermes-chat--status-rule-track ()
+  "Record active-turn start and end transitions from the lifecycle state."
+  (let ((active (hermes-chat--active-turn-p))
+        (now (float-time)))
+    (cond
+     ((and active (not hermes-chat--status-rule-start))
+      (setq hermes-chat--status-rule-start now
+            hermes-chat--status-rule-last nil))
+     ((and (not active) hermes-chat--status-rule-start)
+      (setq hermes-chat--status-rule-last
+            (list (- now hermes-chat--status-rule-start) now
+                  (hermes-chat--header-status-label
+                   (plist-get hermes-chat--status-state :status)))
+            hermes-chat--status-rule-start nil)))))
+
+(defun hermes-chat--status-rule-linger-left ()
+  "Return seconds the last turn's duration remains shown, or nil."
+  (when-let* ((last hermes-chat--status-rule-last))
+    (let ((left (- (+ (nth 1 last) hermes-chat-status-rule-linger) (float-time))))
+      (and (> left 0) left))))
+
+(defun hermes-chat--status-rule-fire (buffer lifetime box)
+  "Run timer BOX for BUFFER while it still owns chat LIFETIME."
+  (if (and (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (and (eq lifetime hermes-chat--lifecycle-generation)
+                  (eq (car box) (cdr hermes-chat--status-rule-timer)))))
+      (with-current-buffer buffer (hermes-chat--status-rule-update))
+    (cancel-timer (car box))))
+
+(defun hermes-chat--status-rule-arm ()
+  "Own exactly the timer the current rule needs.
+Tick each second while a turn is active and the chat is visible; otherwise
+expire the last duration once, or own no timer at all."
+  (let* ((left (hermes-chat--status-rule-linger-left))
+         (kind (cond ((and hermes-chat--status-rule-start
+                           (get-buffer-window (current-buffer) 'visible))
+                      'tick)
+                     ((and (not hermes-chat--status-rule-start) left) 'linger))))
+    (unless (eq kind (car hermes-chat--status-rule-timer))
+      (when (timerp (cdr hermes-chat--status-rule-timer))
+        (cancel-timer (cdr hermes-chat--status-rule-timer)))
+      (setq hermes-chat--status-rule-timer nil)
+      (when kind
+        (let ((box (list nil)))
+          (setcar box (run-at-time (if (eq kind 'tick) 1 left)
+                                   (and (eq kind 'tick) 1)
+                                   #'hermes-chat--status-rule-fire
+                                   (current-buffer)
+                                   hermes-chat--lifecycle-generation box))
+          (setq hermes-chat--status-rule-timer (cons kind (car box))))))))
+
+(defun hermes-chat--status-rule-update ()
+  "Track the turn, own the right timer and repaint the footer now."
+  (when (hermes-chat--status-rule-live-p)
+    (hermes-chat--status-rule-track)
+    (hermes-chat--status-rule-arm)
+    (hermes-chat--status-rule-repaint)))
+
+(defun hermes-chat--status-rule-sync ()
+  "Record lifecycle transitions and coalesce a footer repaint.
+Runs from state-change and window-configuration hooks, so it never edits the
+buffer synchronously: callers may be inside another transcript mutation."
+  (when (hermes-chat--status-rule-live-p)
+    (hermes-chat--status-rule-track)
+    (hermes-chat--status-rule-arm)
+    (hermes-chat--status-rule-schedule)))
+
+(defun hermes-chat--status-rule-schedule ()
+  "Schedule one coalesced footer repaint owned by this chat lifetime."
+  (when (and (hermes-chat--status-rule-live-p)
+             (not (memq hermes-chat--status-rule-pending timer-list)))
+    (let ((buffer (current-buffer))
+          (lifetime hermes-chat--lifecycle-generation))
+      (setq hermes-chat--status-rule-pending
+            (run-at-time
+             0 nil
+             (lambda ()
+               (hermes-chat--in-buffer buffer
+                 (when (eq lifetime hermes-chat--lifecycle-generation)
+                   (setq hermes-chat--status-rule-pending nil)
+                   (hermes-chat--status-rule-update)))))))))
+
+(defun hermes-chat--status-rule-duration (seconds &optional compact)
+  "Return SECONDS as m:ss, or as 12s / 3m 05s when COMPACT."
+  (let ((s (max 0 (floor seconds))))
+    (cond (compact (if (< s 60) (format "%ds" s)
+                     (format "%dm %02ds" (/ s 60) (% s 60))))
+          ((< s 3600) (format "%d:%02d" (/ s 60) (% s 60)))
+          (t (format "%d:%02d:%02d" (/ s 3600) (/ (% s 3600) 60) (% s 60))))))
+
+(defun hermes-chat--status-rule-word ()
+  "Return (WORD . FACE) for the active turn from the authoritative state."
+  (let ((label (hermes-chat--header-status-label
+                (plist-get hermes-chat--status-state :status))))
+    (cond
+     ((or (member label '("Approval requested" "Input requested"))
+          (and (hash-table-p hermes-chat--pending-prompts)
+               (> (hash-table-count hermes-chat--pending-prompts) 0)))
+      '("Waiting for you" . warning))
+     (hermes-chat--interrupt-request-pending-p '("Interrupting" . warning))
+     ((equal label "Disconnected") '("Offline" . warning))
+     ((equal label "Error") '("Error" . error))
+     ((member label '("Connecting" "Loading" "Handing off")) (cons label 'shadow))
+     (t '("Running" . hermes-chat-turn-running)))))
+
+(defun hermes-chat--status-rule-activity ()
+  "Return the most recent active tool summary on one line, or nil."
+  (when-let* ((summary (car (last (hermes-chat--active-tool-summaries)))))
+    (hermes-transport--non-empty-string
+     (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " summary)))))
+
+(defun hermes-chat--status-rule-segments ()
+  "Return feature segments for the active rule, in registration order."
+  (let (segments)
+    (run-hook-wrapped 'hermes-chat-status-rule-segment-functions
+                      (lambda (function)
+                        (when-let* ((segment (funcall function)))
+                          (push segment segments))
+                        nil))
+    (nreverse segments)))
+
+(defun hermes-chat--status-rule-fit (head activity segments queued width)
+  "Join HEAD, ACTIVITY, SEGMENTS and QUEUED within WIDTH columns.
+Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
+  (let* ((separator (propertize " · " 'face 'shadow))
+         (measure (lambda (parts) (string-width (string-join parts separator))))
+         (tail (and queued (list queued)))
+         (kept nil))
+    (dolist (segment segments)
+      (when (<= (funcall measure (append (list head) kept (list segment) tail)) width)
+        (setq kept (append kept (list segment)))))
+    (let* ((room (- width (funcall measure (append (list head) kept tail))
+                    (string-width separator)))
+           (activity (and activity (>= room 6)
+                          (propertize (truncate-string-to-width activity room nil nil "…")
+                                      'face 'shadow)))
+           (text (string-join (delq nil (append (list head activity) kept tail))
+                              separator)))
+      (if (> (string-width text) width)
+          (truncate-string-to-width text width nil nil "…")
+        text))))
+
+(defun hermes-chat--status-rule-text (width)
+  "Return propertized rule text fitting WIDTH columns, or nil for a plain rule."
+  (cond
+   (hermes-chat--status-rule-start
+    (pcase-let* ((`(,word . ,face) (hermes-chat--status-rule-word))
+                 (count (length hermes-chat--queued-messages)))
+      (hermes-chat--status-rule-fit
+       (concat (propertize (concat "● " word) 'face face) " "
+               (propertize (hermes-chat--status-rule-duration
+                            (- (float-time) hermes-chat--status-rule-start))
+                           'face 'shadow))
+       (hermes-chat--status-rule-activity)
+       (hermes-chat--status-rule-segments)
+       (and (> count 0)
+            (propertize (format "%d queued" count) 'face 'font-lock-type-face))
+       width)))
+   ((hermes-chat--status-rule-linger-left)
+    (pcase-let ((`(,duration ,_finished ,label) hermes-chat--status-rule-last))
+      (truncate-string-to-width
+       (if (member label '("Ready" "Idle"))
+           (propertize (concat "✓ " (hermes-chat--status-rule-duration duration t))
+                       'face 'shadow)
+         (concat (propertize label 'face (hermes-chat--header-status-face
+                                          (plist-get hermes-chat--status-state :status)))
+                 (propertize (concat " after "
+                                     (hermes-chat--status-rule-duration duration t))
+                             'face 'shadow)))
+       width nil nil "…")))))
+
+(defun hermes-chat--status-rule-line (text)
+  "Return the composer rule carrying TEXT, or the plain rule when TEXT is nil."
+  (if (not text)
+      (hermes-chat--separator)
+    (concat (propertize " " 'display '(space :width 2) 'face 'hermes-chat-separator)
+            " " text " "
+            (propertize " " 'display '(space :align-to right)
+                        'face 'hermes-chat-separator))))
+
+(defun hermes-chat--queue-line-button (button)
+  "Open the queue panel with point on BUTTON's queued message."
+  (let* ((id (button-get button 'hermes-chat-queue-id))
+         (panel (hermes-chat-queue-panel)))
+    (with-current-buffer panel
+      (goto-char (point-min))
+      (when-let* ((match (text-property-search-forward
+                          'hermes-chat-queue-id id #'equal)))
+        (goto-char (prop-match-beginning match))))
+    (when-let* ((window (get-buffer-window panel)))
+      (set-window-point window (with-current-buffer panel (point)))
+      (select-window window))
+    panel))
+
+(defun hermes-chat--queue-lines (width)
+  "Return dim queued-message button lines fitting WIDTH columns."
+  (let ((icon (if (char-displayable-p ?⏳) "⏳" "Queued")))
+    (cl-loop
+     for entry in hermes-chat--queued-messages
+     for index from 1
+     concat
+     (let* ((source (or (plist-get entry :display) (plist-get entry :content) ""))
+            (first (or (seq-find (lambda (line) (not (string-blank-p line)))
+                                 (split-string source "\n"))
+                       ""))
+            (text (format "%s %d  %s%s" icon index
+                          (if (plist-get entry :rejected-p) "Not sent: " "")
+                          (string-trim first))))
+       (concat (make-text-button
+                (truncate-string-to-width text width nil nil "…") nil
+                'face (if (plist-get entry :rejected-p) 'warning 'shadow)
+                'mouse-face 'highlight 'follow-link t
+                'help-echo "Open the queue panel at this message"
+                'hermes-chat-queue-id (plist-get entry :id)
+                'action #'hermes-chat--queue-line-button)
+               "\n")))))
+
+(defun hermes-chat--footer-string ()
+  "Return the footer: queued-message lines above the status rule."
+  (let ((width (hermes-chat--table-window-width)))
+    (concat "\n" (hermes-chat--queue-lines width)
+            (hermes-chat--status-rule-line (hermes-chat--status-rule-text (- width 6)))
+            "\n")))
+
+(defun hermes-chat--status-rule-repaint ()
+  "Repaint the footer when its text changed, leaving the composer intact."
+  (when (hermes-chat--status-rule-live-p)
+    (save-restriction
+      (widen)
+      (let ((hf (ewoc-get-hf hermes-chat--ewoc))
+            (footer (hermes-chat--footer-string)))
+        (unless (equal-including-properties footer (cdr hf))
+          (hermes-chat--replace-footer (car hf) (cdr hf) footer))))))
+
+(defun hermes-chat--replace-footer (header old new)
+  "Replace footer OLD by NEW, keeping HEADER, and rebase composer state.
+`ewoc-set-hf' collapses markers at the old composer start before the new
+footer; restore the input marker, draft undo, point, mark, overlays and every
+window's start and point by the footer's length change."
+  (let* ((input (hermes-chat--input-position))
+         (start (- input (length old)))
+         (delta (- (length new) (length old)))
+         (remap (lambda (pos)
+                  (cond ((>= pos input) (+ pos delta))
+                        ((> pos start) (min pos (+ input delta)))
+                        (t pos))))
+         (point (point))
+         (mark (marker-position (mark-marker)))
+         (overlays (mapcar (lambda (o) (list o (overlay-start o) (overlay-end o)))
+                           (overlays-in start (point-max))))
+         (windows (mapcar (lambda (w) (list w (window-start w) (window-point w)))
+                          (get-buffer-window-list (current-buffer) nil t))))
+    (let ((inhibit-read-only t)
+          (buffer-undo-list t))
+      (ewoc-set-hf hermes-chat--ewoc header new))
+    (set-marker hermes-chat--input-marker (+ input delta))
+    (hermes-chat--adjust-draft-undo input)
+    (hermes-chat--protect-transcript)
+    (pcase-dolist (`(,overlay ,beg ,end) overlays)
+      (when (overlay-buffer overlay)
+        (move-overlay overlay (funcall remap beg) (funcall remap end))))
+    (when mark (set-marker (mark-marker) (funcall remap mark)))
+    (goto-char (funcall remap point))
+    (pcase-dolist (`(,window ,window-start ,window-point) windows)
+      (set-window-point window (funcall remap window-point))
+      (set-window-start window (funcall remap window-start) t))))
 
 (provide 'hermes-chat-buffer)
 ;;; hermes-chat-buffer.el ends here

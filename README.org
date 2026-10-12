@@ -446,6 +446,23 @@ The panel is read-only: pending tasks stay pending when a turn ends, with
 settled or stale labels rather than invented completion.  Backends without
 a restored task snapshot can still populate the panel from live tool results.
 
+When a turn produces a task list, the transcript gains one collapsed
+=▸ Tasks 3/5 · now: ITEM= line for that turn, updated in place as the list
+changes.  The arrow expands it to the items (=☑= done, =▶= in progress,
+=☐= pending); activating the label opens the live task panel.
+
+** Turn status and queued messages
+
+While a turn runs, the rule above the composer shows its state, elapsed time,
+current tool, task progress and queued count, for example
+=● Running 0:42 · terminal: make check · ☐ 3/5 · 2 queued=.  Narrow windows
+drop the tool first, then the task progress.  After a turn ends the rule shows
+its duration (=✓ 12s=) for =hermes-chat-status-rule-linger= seconds.  The
+clock ticks only while the chat is visible.
+
+Queued messages are listed as dim lines just above the rule, one per message;
+activate a line to open the queue panel on that message.
+
 ** Conversation commands and file references
 
 =/btw QUESTION= asks a side question over the current conversation without

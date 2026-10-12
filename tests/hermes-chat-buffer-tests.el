@@ -1750,5 +1750,258 @@
            (choose-completion-string "@file:`src/module-two.py`" (current-buffer) base)
            (should (equal (hermes-chat-input-string) "See @file:`src/module-two.py`"))))))))
 
+;;; Composer status rule
+
+(defun hermes-test--footer ()
+  "Return the current chat's EWOC footer string."
+  (cdr (ewoc-get-hf hermes-chat--ewoc)))
+
+(defun hermes-test--plain-footer ()
+  "Return the idle footer: a plain rule between blank structure."
+  (concat "\n" (hermes-chat--separator) "\n"))
+
+(defun hermes-test--footer-face (needle)
+  "Return the face at the start of NEEDLE in the footer."
+  (let ((footer (hermes-test--footer)))
+    (get-text-property (string-match (regexp-quote needle) footer) 'face footer)))
+
+(ert-deftest hermes-chat-status-rule-shows-running-turn-and-ticks ()
+  "Active turns show the lifecycle word, elapsed time, tool and queue count."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (should (equal-including-properties (hermes-test--footer) (hermes-test--plain-footer)))
+     (setq hermes-chat--dashboard-running-p t)
+     (puthash "t1" "terminal: make check" (hermes-chat--active-tools-table))
+     (hermes-chat--set-header-state :status 'running :activity "Running")
+     (hermes-test--event-loop-barrier)
+     (should (string-match-p "● Running 0:0[0-9] · terminal: make check\\'"
+                             (string-trim (hermes-test--footer))))
+     (should (eq 'tick (car hermes-chat--status-rule-timer)))
+     (should (eq 'hermes-chat-turn-running (hermes-test--footer-face "● Running")))
+     (should (eq 'shadow (hermes-test--footer-face "terminal")))
+     (setq hermes-chat--status-rule-start (- (float-time) 42.2))
+     (hermes-chat--queue-content "fix the header test\nsecond line")
+     (hermes-chat--queue-content "then commit")
+     (hermes-test--event-loop-barrier)
+     (should (string-match-p "● Running 0:42 · terminal: make check · 2 queued"
+                             (hermes-test--footer)))
+     (should (eq 'font-lock-type-face (hermes-test--footer-face "2 queued")))
+     ;; The owned one-second timer advances the clock without other events.
+     (hermes-test--wait-until
+      (lambda () (string-match-p "Running 0:43" (hermes-test--footer)))
+      3 "status rule tick")
+     ;; Pending prompts and interrupts are named from the authoritative state.
+     (puthash "prompt" '(:type "clarify") hermes-chat--pending-prompts)
+     (hermes-chat--notify-state-change)
+     (hermes-test--event-loop-barrier)
+     (should (string-match-p "● Waiting for you" (hermes-test--footer)))
+     (should (eq 'warning (hermes-test--footer-face "● Waiting")))
+     (clrhash hermes-chat--pending-prompts)
+     (setq hermes-chat--interrupt-request-pending-p t)
+     (hermes-chat--notify-state-change)
+     (hermes-test--event-loop-barrier)
+     (should (string-match-p "● Interrupting" (hermes-test--footer)))
+     ;; The header line stays quiet: no busy word or clock.
+     (should-not (string-match-p "0:4" (hermes-chat--header-line 200))))))
+
+(ert-deftest hermes-chat-status-rule-idle-shows-duration-then-plain-rule ()
+  "A completed turn shows its duration briefly, then the plain rule returns."
+  (save-window-excursion
+    (let ((hermes-chat-status-rule-linger 0.4))
+      (hermes-test-with-chat-buffer
+       (switch-to-buffer (current-buffer))
+       (setq hermes-chat--dashboard-running-p t)
+       (hermes-chat--notify-state-change)
+       (let ((tick (cdr hermes-chat--status-rule-timer)))
+         (should (memq tick timer-list))
+         (setq hermes-chat--status-rule-start (- (float-time) 12.3)
+               hermes-chat--dashboard-running-p nil)
+         (hermes-chat--set-header-state :status 'ready :activity "Ready")
+         ;; Terminal retires the tick before any repaint runs.
+         (should-not (memq tick timer-list)))
+       (should (eq 'linger (car hermes-chat--status-rule-timer)))
+       (hermes-test--event-loop-barrier)
+       (should (string-match-p "✓ 12s" (hermes-test--footer)))
+       (should (eq 'shadow (hermes-test--footer-face "✓ 12s")))
+       (hermes-test--wait-until
+        (lambda () (equal-including-properties (hermes-test--footer)
+                                               (hermes-test--plain-footer)))
+        2 "plain rule after linger")
+       (should-not hermes-chat--status-rule-timer)
+       ;; An interrupted turn is not reported as a success.
+       (setq hermes-chat--dashboard-running-p t)
+       (hermes-chat--notify-state-change)
+       (setq hermes-chat--status-rule-start (- (float-time) 5)
+             hermes-chat--dashboard-running-p nil)
+       (hermes-chat--set-header-state :status 'interrupted :activity "Interrupted")
+       (hermes-test--event-loop-barrier)
+       (should (string-match-p "Interrupted after 5s" (hermes-test--footer)))
+       (should-not (string-match-p "✓" (hermes-test--footer)))))))
+
+(ert-deftest hermes-chat-status-rule-timer-retires-when-hidden-killed-or-changed ()
+  "The tick exists only while active and visible, and never outlives its chat."
+  (save-window-excursion
+    (let ((other (get-buffer-create " *status-rule-other*")))
+      (unwind-protect
+          (progn
+            (hermes-test-with-chat-buffer
+             (let ((chat (current-buffer)))
+               (switch-to-buffer chat)
+               (setq hermes-chat--dashboard-running-p t)
+               (hermes-chat--notify-state-change)
+               (let ((tick (cdr hermes-chat--status-rule-timer)))
+                 (should (memq tick timer-list))
+                 (switch-to-buffer other)
+                 (hermes-test--wait-until (lambda () (not (memq tick timer-list)))
+                                          3 "hidden tick retirement")
+                 (should-not (buffer-local-value 'hermes-chat--status-rule-timer chat)))
+               ;; Showing the chat again re-arms through the window hook.
+               (switch-to-buffer chat)
+               (run-window-configuration-change-hook)
+               (should (eq 'tick (car hermes-chat--status-rule-timer)))
+               (let ((tick (cdr hermes-chat--status-rule-timer)))
+                 (fundamental-mode)
+                 (should-not (memq tick timer-list)))))
+            (hermes-test-with-chat-buffer
+             (switch-to-buffer (current-buffer))
+             (setq hermes-chat--dashboard-running-p t)
+             (hermes-chat--notify-state-change)
+             (let ((tick (cdr hermes-chat--status-rule-timer))
+                   (pending (progn (hermes-chat--status-rule-schedule)
+                                   hermes-chat--status-rule-pending)))
+               (should (memq tick timer-list))
+               (kill-buffer (current-buffer))
+               (should-not (memq tick timer-list))
+               (should-not (memq pending timer-list)))))
+        (kill-buffer other)))))
+
+(ert-deftest hermes-chat-status-rule-repaint-preserves-draft-undo-and-windows ()
+  "Footer repaints rebase the composer, its undo and every reader window."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (dotimes (i 30)
+       (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant (format "line %d" i))))
+     (goto-char (point-max))
+     (insert "hello")
+     (undo-boundary)
+     (insert " world")
+     (undo-boundary)
+     (backward-char 2)
+     (let* ((reader (selected-window))
+            (composer (split-window))
+            (offset (- (point) (hermes-chat--input-position))))
+       (set-window-start reader (point-min))
+       (set-window-start composer (hermes-chat--input-position))
+       (set-window-point composer (point-max))
+       (setq hermes-chat--dashboard-running-p t)
+       (hermes-chat--queue-content "first queued")
+       (hermes-chat--queue-content "second queued")
+       (hermes-test--event-loop-barrier)
+       (should (string-match-p "second queued" (hermes-test--footer)))
+       (should (equal "hello world" (hermes-chat-input-string)))
+       (should (= offset (- (point) (hermes-chat--input-position))))
+       (should (= (point-min) (window-start reader)))
+       (should (= (hermes-chat--input-position) (window-start composer)))
+       (should (= (point-max) (window-point composer)))
+       ;; The new footer is protected; the composer start stays editable.
+       (should (get-text-property (1- (hermes-chat--input-position)) 'read-only))
+       (should-error (save-excursion
+                       (goto-char (1- (hermes-chat--input-position)))
+                       (insert "x"))
+                     :type 'text-read-only)
+       (hermes-test--draft-undo-command #'undo)
+       (should (equal "hello" (hermes-chat-input-string)))
+       ;; Shrinking the footer keeps the same draft and continuing undo.
+       (setq hermes-chat--queued-messages nil)
+       (hermes-chat--queue-panel-refresh-if-live)
+       (hermes-test--event-loop-barrier)
+       (should-not (string-match-p "queued" (hermes-test--footer)))
+       (should (equal "hello" (hermes-chat-input-string)))
+       (should (= (hermes-chat--input-position) (window-start composer)))
+       (hermes-test--draft-undo-command #'undo)
+       (should (equal "" (hermes-chat-input-string)))))))
+
+(ert-deftest hermes-chat-status-rule-fits-narrow-windows ()
+  "Activity truncates first; the status word, clock and count stay visible."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (split-window nil 40 t)
+     (setq hermes-chat--dashboard-running-p t)
+     (puthash "t1" "terminal: make check && run an extraordinarily long command line"
+              (hermes-chat--active-tools-table))
+     (hermes-chat--queue-content
+      "a very long queued message that cannot possibly fit the narrow window")
+     (hermes-chat--queue-content "second")
+     (hermes-test--event-loop-barrier)
+     (let* ((width (hermes-chat--table-window-width))
+            (lines (split-string (hermes-test--footer) "\n" t))
+            (rule (car (last lines))))
+       (should (< width 40))
+       (dolist (line lines)
+         (should (<= (string-width line) width)))
+       (should (string-match-p "● Running 0:0[0-9] · \\(?:terminal:.*… · \\)?2 queued" rule))
+       (should (string-match-p "…\\'" (car lines)))
+       ;; Very narrow rules drop the activity entirely before the count.
+       (should (equal "● Running 0:00 · 2 queued"
+                      (substring-no-properties
+                       (hermes-chat--status-rule-fit
+                        "● Running 0:00" "terminal: make check" nil "2 queued" 28))))
+       (should (equal "● Running 0:00 · ☐ 1/3 · 2 queued"
+                      (substring-no-properties
+                       (hermes-chat--status-rule-fit
+                        "● Running 0:00" "terminal: make check" '("☐ 1/3") "2 queued" 40))))
+       (should (equal "● Running 0:00 · terminal:… · ☐ 1/3 · 2 queued"
+                      (substring-no-properties
+                       (hermes-chat--status-rule-fit
+                        "● Running 0:00" "terminal: make check" '("☐ 1/3") "2 queued" 46))))))))
+
+(ert-deftest hermes-chat-queue-lines-render-update-and-open-panel ()
+  "Queued messages are dim buttons above the rule that open the queue panel."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (setq hermes-chat--dashboard-running-p t)
+     (hermes-chat--queue-content "fix the header test\nwith details")
+     (hermes-chat--queue-content "then commit")
+     (hermes-test--event-loop-barrier)
+     (let ((lines (split-string (hermes-test--footer) "\n" t)))
+       (should (string-match-p "\\`⏳ 1  fix the header test\\'" (nth 0 lines)))
+       (should (string-match-p "\\`⏳ 2  then commit\\'" (nth 1 lines)))
+       (should (string-match-p "● Running" (nth 2 lines))))
+     (should (eq 'shadow (hermes-test--footer-face "⏳ 1")))
+     (should (string-match-p "Queue side panel 2" (hermes-chat--queue-panel-label)))
+     ;; Edits through the queue API update the lines.
+     (let ((second (plist-get (nth 1 hermes-chat--queued-messages) :id)))
+       (hermes-chat--queue-content "and push")
+       (hermes-test--event-loop-barrier)
+       (should (string-match-p "⏳ 3  and push" (hermes-test--footer)))
+       ;; RET on a line opens the panel at that message.
+       (goto-char (point-min))
+       (let ((match (text-property-search-forward 'hermes-chat-queue-id second #'equal)))
+         (goto-char (prop-match-beginning match)))
+       (should (string-match-p "then commit" (buffer-substring (point) (line-end-position))))
+       (should (get-text-property (point) 'read-only))
+       (let ((chat (current-buffer)))
+         (push-button)
+         (should (eq (window-buffer (selected-window))
+                     (buffer-local-value 'hermes-chat--queue-panel-buffer chat))))
+       (with-current-buffer (window-buffer (selected-window))
+         (should (derived-mode-p 'hermes-chat-queue-panel-mode))
+         (should (equal second (hermes-chat--queue-panel-entry-id)))))
+     (let ((chat (buffer-local-value 'hermes-chat-queue-panel--owner
+                                     (window-buffer (selected-window)))))
+       (with-current-buffer chat
+         (setq hermes-chat--queued-messages nil)
+         (hermes-chat--queue-panel-refresh-if-live)
+         (hermes-test--event-loop-barrier)
+         (should-not (string-match-p "⏳" (hermes-test--footer)))
+         (should (equal "Queue side panel" (hermes-chat--queue-panel-label))))))))
+
 (provide 'hermes-chat-buffer-tests)
 ;;; hermes-chat-buffer-tests.el ends here

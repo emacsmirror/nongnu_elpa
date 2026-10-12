@@ -2,6 +2,13 @@
 
 * Unreleased
 
+- The rule above the chat composer now shows the active turn's state,
+  elapsed time, current tool, task progress and queued count, then the last
+  turn's duration briefly.  Queued messages are listed above the rule and
+  open the queue panel on activation; the queue menu entries show the count.
+- Each turn with a task list gets one collapsible transcript line,
+  =▸ Tasks 3/5 · now: ITEM=, updated in place as the list changes.
+
 - Pending chat prompts appear in the global mode line, for example
   =[Hermes: Clarify]=, until they are answered, expire or are cleared.
   Clicking the segment answers from the owning chat; set
