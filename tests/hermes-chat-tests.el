@@ -1839,7 +1839,8 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
     (should (equal (mapcar (lambda (row)
                             (mapcar (lambda (group) (plist-get group :name)) row))
                           rows)
-                   '(("Turn" "Compose") ("Configure" "Browse") ("Show" "Prompt"))))))
+                   '(("Turn" "Compose") ("Configure" "Browse")
+                     ("Show" "Aside" "Prompt"))))))
 
 (ert-deftest hermes-chat-actions-popup-groups-stay-small ()
   "Every chat popup group, root and child, offers at most four actions."
@@ -1860,7 +1861,8 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
                                     :entries)))))
     (should (equal (funcall keys "Compose") '("RET" "Q" "I" "F")))
     (should (equal (funcall keys "Browse") '("B" "X" "c" "W")))
-    (should (equal (funcall keys "Show") '("O" "E" "+" "-"))))
+    (should (equal (funcall keys "Show") '("O" "E" "+" "-")))
+    (should (equal (funcall keys "Aside") '("y" "G" "!"))))
   ;; Moved actions stay reachable: Inspect owns Refresh commands, and both
   ;; former root keys remain quiet aliases.
   (should (eq (keymap-lookup hermes-chat-info-map "r")
@@ -1871,6 +1873,109 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
               #'hermes-chat-go-to-composer))
   (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-j")
               #'hermes-chat-go-to-composer)))
+
+;; Shared inventory: every popup map offered under the chat actions root.
+(defun hermes-test--chat-popup-maps ()
+  "Return the chat actions root and each of its submenu maps."
+  (list hermes-chat-actions-map hermes-chat-info-map hermes-chat-jobs-map
+        hermes-chat-work-map hermes-chat-sess-map hermes-chat-model-map
+        hermes-chat-images-map hermes-chat-files-map hermes-chat-audio-map))
+
+(ert-deftest hermes-chat-actions-popup-entries-small-and-defined ()
+  "Every popup group has 1-4 entries, unique keys and defined commands."
+  (dolist (map (hermes-test--chat-popup-maps))
+    (let ((groups (apply #'append (keymap-popup--meta map 'descriptions)))
+          keys)
+      (should (consp groups))
+      (dolist (group groups)
+        (let ((entries (plist-get group :entries)))
+          (should (<= 1 (length entries) 4))
+          (dolist (entry entries)
+            (push (plist-get entry :key) keys)
+            (pcase (plist-get entry :type)
+              ('keymap (should (keymapp
+                                (let ((target (plist-get entry :target)))
+                                  (if (symbolp target)
+                                      (symbol-value target)
+                                    target)))))
+              (_ (let ((command (plist-get entry :command)))
+                   (should (symbolp command))
+                   (should (fboundp command))
+                   (should (commandp command))))))))
+      (should (equal keys (delete-dups (copy-sequence keys)))))))
+
+(ert-deftest hermes-chat-actions-popup-clear-names ()
+  "Root submenus read Activity/Directory; Session splits into Session/Fork."
+  (let* ((groups (apply #'append
+                        (keymap-popup--meta hermes-chat-actions-map 'descriptions)))
+         (entries (apply #'append
+                         (mapcar (lambda (group) (plist-get group :entries))
+                                 groups)))
+         (label (lambda (key)
+                  (plist-get (seq-find (lambda (e) (equal (plist-get e :key) key))
+                                       entries)
+                             :description))))
+    (should (equal (funcall label "B") "Activity"))
+    (should (equal (funcall label "w") "Directory")))
+  (let ((sess (apply #'append (keymap-popup--meta hermes-chat-sess-map
+                                                  'descriptions))))
+    (should (equal (mapcar (lambda (group) (plist-get group :name)) sess)
+                   '("Session" "Fork")))
+    (should (equal (mapcar (lambda (e) (plist-get e :key))
+                           (plist-get (cadr sess) :entries))
+                   '("b" "H" "z"))))
+  (dolist (binding '(("S b" . hermes-chat-branch)
+                     ("S H" . hermes-chat-handoff)
+                     ("S z" . hermes-chat-compress)
+                     ("S n" . hermes-chat)
+                     ("S R" . hermes-chat-rename)))
+    (should (eq (keymap-lookup hermes-chat-sess-map
+                               (substring (car binding) 2))
+                (cdr binding))))
+  (dolist (binding '(("y" . hermes-chat-btw)
+                     ("G" . hermes-chat-background)
+                     ("!" . hermes-chat-stop-processes)
+                     ("b" . hermes-switch-to-chat)
+                     ("z" . hermes-chat-compress)
+                     ("H" . hermes-chat-handoff)))
+    (should (eq (keymap-lookup hermes-chat-actions-map (car binding))
+                (cdr binding)))))
+
+(ert-deftest hermes-chat-compress-command-reuses-slash-path ()
+  "Fork's Compress runs the existing /compress implementation."
+  (let (args)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-compress)
+               (lambda (&rest a) (setq args a))))
+      (hermes-chat-compress)
+      (should (equal args '("compress" "")))
+      (hermes-chat-compress "tests")
+      (should (equal args '("compress" "tests"))))))
+
+(ert-deftest hermes-chat-c-c-c-c-interrupts-only-when-running ()
+  "C-c C-c interrupts a running turn and only reports when idle."
+  (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-c")
+              #'hermes-chat-interrupt-turn))
+  (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-k")
+              #'hermes-chat-interrupt-and-send))
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (should (eq (key-binding (kbd "C-c C-c")) #'hermes-chat-interrupt-turn))
+      (let ((interrupts 0) (busy nil) (before (buffer-string)) messages)
+        (cl-letf (((symbol-function 'hermes-chat-interrupt)
+                   (lambda () (interactive) (cl-incf interrupts)))
+                  ((symbol-function 'hermes-chat--interrupt-unavailable-p)
+                   (lambda () (not busy)))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest a)
+                     (push (apply #'format-message fmt a) messages))))
+          (execute-kbd-macro (kbd "C-c C-c"))
+          (should (= interrupts 0))
+          (should (equal (car messages) "No running Hermes turn to interrupt"))
+          (should (equal (buffer-string) before))
+          (setq busy t)
+          (execute-kbd-macro (kbd "C-c C-c"))
+          (should (= interrupts 1)))))))
 
 (defun hermes-test--insert-user-turns (&rest turns)
   "Insert submitted user TURNS, each followed by an assistant reply."
@@ -1910,6 +2015,129 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
           (should (= (length popups) 2))
           (should (equal (hermes-chat-input-string) "x?np"))
           (should (equal (car (hermes-chat--user-turn-positions)) first)))))))
+
+(ert-deftest hermes-chat-transcript-copy-key ()
+  "`w' copies code blocks, message source or the region; composer types it."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let* ((reply "Run **this**:\n\n```sh\necho one\necho two\n```\n\nDone.")
+             (kill-ring nil)
+             (interprogram-cut-function nil)
+             (interprogram-paste-function nil)
+             (transient-mark-mode t)
+             (inhibit-message t))
+        (hermes-chat--insert-entry (hermes-chat--make-entry 'user "show *code*"))
+        (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant reply))
+        ;; Inside the fenced block: only its code, without fences.
+        (goto-char (point-min))
+        (search-forward "echo two")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "echo one\necho two\n"))
+        ;; Elsewhere in the reply: its exact Markdown source.
+        (goto-char (point-min))
+        (search-forward "Done")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) reply))
+        ;; On the user turn: the submitted source, not the "> " prompt.
+        (goto-char (car (hermes-chat--user-turn-positions)))
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "show *code*"))
+        ;; An active region behaves like `kill-ring-save'.
+        (goto-char (point-min))
+        (search-forward "echo one")
+        (push-mark (match-beginning 0) t t)
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "echo one"))
+        (should-not (region-active-p))
+        ;; In the composer `w' is ordinary text.
+        (goto-char (point-max))
+        (execute-kbd-macro "wow")
+        (should (equal (hermes-chat-input-string) "wow"))
+        (should (equal (current-kill 0) "echo one"))))))
+
+(ert-deftest hermes-chat-copy-target-labels ()
+  "Copy targets report what they copied, falling back to visible text."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'assistant "```\na\nb\n```\nafter"))
+    (hermes-chat--insert-entry (hermes-chat--make-entry 'activity ""))
+    (goto-char (point-min))
+    (search-forward "b")
+    (should (equal (hermes-chat--copy-target (point))
+                   '("a\nb\n" . "Copied code block (2 lines)")))
+    (search-forward "after")
+    (should (equal (cdr (hermes-chat--copy-target (point))) "Copied reply"))
+    (search-forward "Working")
+    (should (equal (hermes-chat--copy-target (point))
+                   '("Working…" . "Copied entry text")))))
+
+(ert-deftest hermes-chat-transcript-scroll-keys ()
+  "SPC and DEL scroll the transcript; in the composer they edit text."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (delete-other-windows)
+      (apply #'hermes-test--insert-user-turns
+             (mapcar (lambda (n) (format "question %d" n)) (number-sequence 1 60)))
+      (goto-char (point-min))
+      (set-window-start nil (point-min))
+      (execute-kbd-macro (kbd "SPC"))
+      (let ((after-spc (window-start)))
+        (should (> after-spc (point-min)))
+        (should (< (point) (hermes-chat--input-position)))
+        (execute-kbd-macro (kbd "DEL"))
+        (should (< (window-start) after-spc))
+        (execute-kbd-macro (kbd "SPC"))
+        (execute-kbd-macro (kbd "S-SPC"))
+        (should (< (window-start) after-spc)))
+      (goto-char (point-max))
+      (execute-kbd-macro (kbd "a SPC b DEL c"))
+      (should (equal (hermes-chat-input-string) "a c")))))
+
+(ert-deftest hermes-chat-transcript-keys-insert-despite-global-bindings ()
+  "Printable transcript keys insert in the composer even when rebound globally.
+DEL still keeps its global deleting meaning there."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let ((global (current-global-map)))
+        (unwind-protect
+            (progn
+              (use-global-map (copy-keymap global))
+              (dolist (key '("n" "p" "?" "w" "SPC"))
+                (keymap-set (current-global-map) key #'ignore))
+              (insert "draft")
+              (dolist (key '("n" "p" "?" "w" "SPC"))
+                (should (eq (key-binding (kbd key)) #'self-insert-command)))
+              (should (eq (key-binding (kbd "DEL"))
+                          (lookup-key global (kbd "DEL"))))
+              (execute-kbd-macro (kbd "n p ? w SPC x DEL"))
+              (should (equal (hermes-chat-input-string) "draftnp?w ")))
+          (use-global-map global))))))
+
+(ert-deftest hermes-chat-copy-fenced-code-in-submitted-user-turn ()
+  "`w' in a submitted user turn's fenced block copies only its code."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let ((hermes-transport-send-function
+             (lambda (_prompt _callback) 'fake-process))
+            (source "User code:\n```sh\necho hi\n```\nend")
+            (kill-ring nil)
+            (interprogram-cut-function nil)
+            (interprogram-paste-function nil)
+            (inhibit-message t))
+        (insert source)
+        (hermes-chat-send)
+        (should (equal (plist-get (car (hermes-chat--entries)) :content) source))
+        (goto-char (car (hermes-chat--user-turn-positions)))
+        (search-forward "echo hi")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "echo hi\n"))
+        (search-forward "end")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) source))))))
 
 (ert-deftest hermes-chat-imenu-lists-user-turns ()
   "The imenu index names each user turn by its first line."
@@ -2087,6 +2315,8 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
                   (not (eq binding #'hermes-chat--submenu-root-key))
                   ;; Context budget is new, not an original root shortcut.
                   (not (eq binding #'hermes-chat-context))
+                  ;; Fork's Branch is new; root `b' keeps Switch chat buffer.
+                  (not (eq binding #'hermes-chat-branch))
                   (not (memq event '(?? ?S ?w ?B))))
          (should (eq (lookup-key hermes-chat-actions-map (vector event))
                      binding))))

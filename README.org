@@ -67,11 +67,28 @@ used first, annotated with session title, state and any divergent cwd.
   =?= opens it too.  An empty composer shows these key hints until you type
   (=hermes-chat-composer-placeholder=); the hint is never buffer text.
 - In the transcript, =n= and =p= move between your turns, and =M-x imenu=
-  lists them by first line.  In the composer these keys insert themselves.
+  lists them by first line.  =SPC= and =DEL= (or =S-SPC=) scroll like
+  =view-mode=.  =w= copies: with an active region it is =kill-ring-save=;
+  inside a fenced code block it copies just the code, without fences;
+  elsewhere it copies the Markdown source of the reply or message at point.
+  In the composer these keys keep their ordinary editing meaning.
 - The menu's Show group hides or shows expanded tool output (=O=) and
   reasoning (=E=) in the whole chat at once, without moving point, and
   expands (=+=) or collapses (=-=) every disclosure.  Hiding wins over an
   entry's own expansion until you expand an entry of that kind by hand.
+- =C-c C-c= interrupts the running turn, as in =shell-mode=; when nothing
+  is running it only says so.  =C-c C-k= still interrupts and sends the
+  draft.
+- The menu's Aside group offers the side question (=y=, =/btw=), a
+  background task (=G=, =/bg=) and Stop processes (=!=, =/stop=).  Session
+  (=S=) holds New, Rename and List sessions plus a Fork group: Branch
+  (=b=), Hand off (=H=) and Compress (=z=, =/compress=; =C-u= asks for a
+  focus topic).  Activity (=B=) lists queue, workers, tasks and output;
+  Directory (=w=) sets the chat's working directory.
+- Stop processes asks the connected Hermes instance to stop every
+  terminal process registered with it, across all of its chats, not only
+  this one.  It does not cancel the running model turn or delegated
+  workers; use =C-c C-c= or the Workers view for those.
 - Approval prompts name the tool and show the full command.  Opened with
   =C-c C-a= or the =[Answer]= button they take one key: =o=nce, =s=ession,
   =a=lways or =d=eny; =q= or =C-g= leaves the request pending.  An approval
@@ -419,7 +436,7 @@ remain after failure or cancellation; cleanup is a separate explicit action.
 
 Completed tool outputs with published file paths, and closed HTML/SVG code
 blocks in assistant replies, offer =[Preview]= buttons.  The chat actions menu
-also provides /Workspace → Preview output/.  Previewing never reads a backend
+also provides /Activity → Preview output/.  Previewing never reads a backend
 path from the local filesystem: it requests current bytes from the owning
 chat's managed-files API, with a 4 MiB limit.  The server's file policy may
 refuse paths outside its managed root.  Failed reads offer retry and copy-target
@@ -467,7 +484,7 @@ support and have no local command fallback.
 
 ** Live tasks
 
-Use /Workspace → Live tasks/ in the chat actions menu, or
+Use /Activity → Live tasks/ in the chat actions menu, or
 =M-x hermes-chat-show-todos=, to open the session-owned checklist.  It follows
 backend task snapshots without changing the chat draft or moving focus.
 The panel is read-only: pending tasks stay pending when a turn ends, with

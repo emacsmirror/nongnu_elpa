@@ -68,6 +68,8 @@ without each one repeating the liveness guard."
 
 
 
+(defvar-local hermes-chat--new-output nil
+  "Non-nil when output arrived that no window showing this chat displays.")
 (defvar-local hermes-chat--auto-prompt-keys nil
   "Scheduled auto-prompt keys for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-active-session-id nil
@@ -535,7 +537,8 @@ owner-bound recovery buttons."
 (defun hermes-chat--insert-user-content (content)
   "Insert user CONTENT with a compact prompt prefix."
   (insert (propertize "> " 'face 'font-lock-keyword-face)
-          (propertize content 'face 'hermes-chat-user-input)
+          (propertize (hermes-chat--code-marked-string content)
+                      'face 'hermes-chat-user-input)
           "\n"))
 
 (defun hermes-chat--insert-entry-content (content &optional streaming)
@@ -640,24 +643,89 @@ Each runs at the end of ENTRY's text and may insert whole lines there.")
   (let ((pos (hermes-chat--input-position)))
     (and pos (>= (point) pos))))
 
+(defvar-local hermes-chat--protected-frontier nil
+  "Cons (MARKER . POSITION): text before MARKER is known read-only.
+POSITION is where MARKER stood when last validated.  A silent insertion or
+deletion below the frontier moves MARKER away from POSITION, which resets
+protection to `point-min'.  Changes seen by `before-change-functions' and
+explicit `hermes-chat--protect-retreat' calls pull the frontier back first.")
+
+(defun hermes-chat--protect-retreat (position)
+  "Forget that text from POSITION onwards is protected.
+Changes reported to `before-change-functions' retreat automatically.  Code
+that edits the transcript with modification hooks inhibited must call this
+before the edit, with POSITION at or before its start: retreating first
+keeps the frontier marker at its validated position, whereas an unannounced
+edit below the frontier moves it and forces a full rescan.
+
+Silent edits that leave the frontier marker where it stood are not
+detected at all: changing `read-only' or other text properties, or
+replacing text with text of equal length, while modification hooks are
+inhibited.  Such code must call this function first, or protection
+skips the edited text."
+  (let ((frontier hermes-chat--protected-frontier))
+    (when (and (consp frontier) (markerp (car frontier))
+               (eq (marker-buffer (car frontier)) (current-buffer))
+               (= (marker-position (car frontier)) (cdr frontier)))
+      (when (< position (cdr frontier))
+        (set-marker (car frontier) position)
+        (setcdr frontier (marker-position (car frontier)))))))
+
+(defun hermes-chat--protect-before-change (beg _end)
+  "Retreat the protected frontier to text about to change from BEG.
+Before the change no marker has moved yet, so the frontier stays valid."
+  (hermes-chat--protect-retreat beg))
+
+(defun hermes-chat--protect-start ()
+  "Return the first position that may lack transcript protection.
+Install the frontier and its change hook on first use.  Whenever the
+frontier is missing, foreign or moved since validation, return
+`point-min' so protection never relies on an unproven prefix."
+  (let ((frontier hermes-chat--protected-frontier))
+    (unless (memq #'hermes-chat--protect-before-change before-change-functions)
+      (add-hook 'before-change-functions #'hermes-chat--protect-before-change nil t)
+      (setq frontier nil))
+    (if (and (consp frontier) (markerp (car frontier))
+             (eq (marker-buffer (car frontier)) (current-buffer))
+             (= (marker-position (car frontier)) (cdr frontier)))
+        (cdr frontier)
+      (point-min))))
+
+(defun hermes-chat--protect-reset ()
+  "Forget all transcript protection knowledge in this buffer."
+  (when (consp hermes-chat--protected-frontier)
+    (set-marker (car hermes-chat--protected-frontier) nil))
+  (setq hermes-chat--protected-frontier nil))
+
 (defun hermes-chat--protect-transcript ()
   "Make transcript and prompt read-only while keeping input tail writable.
-Only touch subranges that actually need the change: this runs after every
-streamed delta, so rewriting properties across the whole transcript would
-cost O(buffer) interval churn per chunk.  Do not record these internal
-text-property changes in the undo list."
+Scan only from the protected frontier: this runs after every streamed delta,
+footer tick and entry insert, so scanning from `point-min' would make each
+chunk cost O(transcript).  Do not record these internal text-property
+changes in the undo list."
   (when-let* ((pos (hermes-chat--input-position)))
-    (let ((inhibit-read-only t)
-          (buffer-undo-list t)
-          (start (point-min)))
-      (while (and (< start pos)
-                  (setq start (text-property-not-all start pos 'read-only t)))
-        (let ((end (or (text-property-any start pos 'read-only t) pos)))
-          (add-text-properties start end
-                               '(read-only t front-sticky t rear-nonsticky t))
-          (setq start end)))
-      (remove-text-properties pos (point-max)
-                              '(read-only nil front-sticky nil rear-nonsticky nil)))))
+    (save-restriction
+      (widen)
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t)
+            (start (min (hermes-chat--protect-start) pos))
+            (frontier hermes-chat--protected-frontier))
+        (while (and (< start pos)
+                    (setq start (text-property-not-all start pos 'read-only t)))
+          (let ((end (or (text-property-any start pos 'read-only t) pos)))
+            (add-text-properties start end
+                                 '(read-only t front-sticky t rear-nonsticky t))
+            (setq start end)))
+        (remove-text-properties pos (point-max)
+                                '(read-only nil front-sticky nil rear-nonsticky nil))
+        ;; Validate after our own property changes.  A cloned buffer
+        ;; shares the original's marker and cons; never adopt them.
+        (if (and (consp frontier) (markerp (car frontier))
+                 (eq (marker-buffer (car frontier)) (current-buffer)))
+            (progn (set-marker (car frontier) pos)
+                   (setcdr frontier pos))
+          (setq hermes-chat--protected-frontier
+                (cons (copy-marker pos) pos)))))))
 
 (defun hermes-chat--adjust-undo-element (element deltas)
   "Adjust draft undo ELEMENT by DELTAS, including native change groups."
@@ -812,12 +880,15 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--status-rule-sync nil t)
   (add-hook 'hermes-chat-state-change-hook #'hermes-chat--status-rule-sync nil t)
+  (add-hook 'window-scroll-functions #'hermes-chat--new-output-scrolled nil t)
+  (setq hermes-chat--new-output nil)
   (setq buffer-undo-list nil)
   (let ((inhibit-read-only t)
         (buffer-undo-list t))
     (cl-incf hermes-chat--transport-generation)
     (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token)
           hermes-chat--cleanup-done-p nil)
+    (hermes-chat--protect-reset)
     (erase-buffer)
     (setq-local header-line-format '(:eval (hermes-chat--header-line)))
     (hermes-chat--reset-header-state)
@@ -1031,6 +1102,81 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
        hermes-chat--nodes
        (gethash hermes-chat--pending-assistant-id hermes-chat--nodes)))
 
+(defun hermes-chat--entry-insert-position (before-node)
+  "Return where a new entry lands: BEFORE-NODE's start, else the footer's."
+  (if before-node
+      (ewoc-location before-node)
+    (- (or (hermes-chat--input-position) (point-max))
+       (length (cdr (ewoc-get-hf hermes-chat--ewoc))))))
+;;; Unseen output indicator
+
+(defun hermes-chat--transcript-end ()
+  "Return the position just after the transcript, before the composer rule."
+  (- (hermes-chat--input-position)
+     (length (cdr (ewoc-get-hf hermes-chat--ewoc)))))
+
+(defun hermes-chat--window-shows-latest-p (window)
+  "Return non-nil when WINDOW displays the latest output.
+That holds when its point is in the composer, which redisplay keeps in view,
+or when the transcript end is visible."
+  (or (>= (window-point window) (hermes-chat--input-position))
+      (pos-visible-in-window-p (hermes-chat--transcript-end) window)))
+
+(defun hermes-chat--new-output-set (value)
+  "Set the unseen-output flag to VALUE, refreshing mode lines on change."
+  (unless (eq (not value) (not hermes-chat--new-output))
+    (setq hermes-chat--new-output value)
+    (force-mode-line-update)))
+
+(defun hermes-chat--new-output-note ()
+  "Flag new transcript output that no window showing this chat displays.
+Cheap once flagged: windows are inspected only while the flag is clear."
+  (when (and (not hermes-chat--new-output)
+             (hermes-chat--status-rule-live-p)
+             (not (seq-some #'hermes-chat--window-shows-latest-p
+                            (get-buffer-window-list nil nil t))))
+    (hermes-chat--new-output-set t)))
+
+(defun hermes-chat--new-output-scrolled (window _start)
+  "Clear the unseen-output flag once WINDOW displays the transcript end.
+Runs from the buffer-local `window-scroll-functions'."
+  (when (and hermes-chat--new-output
+             (hermes-chat--status-rule-live-p)
+             (hermes-chat--window-shows-latest-p window))
+    (hermes-chat--new-output-set nil)))
+
+(defun hermes-chat--jump-to-latest ()
+  "Move to the composer end, below the latest output, and clear the flag."
+  (widen)
+  (goto-char (point-max))
+  (hermes-chat--new-output-set nil))
+
+(defun hermes-chat-jump-to-latest-at-mouse (event)
+  "Show the latest output of the chat whose mode line received EVENT."
+  (interactive "e")
+  (let ((window (posn-window (event-start event))))
+    (when (window-live-p window)
+      (select-window window))
+    (unless (derived-mode-p 'hermes-chat-mode)
+      (user-error "No Hermes chat under the mouse"))
+    (hermes-chat--jump-to-latest)))
+
+(defvar hermes-chat-new-output-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mode-line mouse-1] #'hermes-chat-jump-to-latest-at-mouse)
+    map)
+  "Keymap active on the mode line's unseen-output indicator.")
+
+(defun hermes-chat--new-output-mode-line ()
+  "Return the compact unseen-output mode-line segment, or nil."
+  (when hermes-chat--new-output
+    (propertize " ↓ new" 'face 'mode-line-emphasis
+                'mouse-face 'mode-line-highlight
+                'local-map hermes-chat-new-output-map
+                'help-echo (substitute-command-keys
+                            "mouse-1 or \\[hermes-chat-go-to-composer]: \
+jump to the latest output"))))
+
 (defun hermes-chat--insert-entry (entry &optional before-node)
   "Insert ENTRY into the current chat EWOC and return its node.
 With BEFORE-NODE, insert ENTRY before that node instead of at the end, so the
@@ -1043,6 +1189,9 @@ agent's reply can stay last while tool/status/diff entries land above it."
            (hermes-chat--preserve-input-point
             (let ((node (let ((inhibit-read-only t)
                               (buffer-undo-list t))
+                          ;; Activity insertion inhibits change hooks.
+                          (hermes-chat--protect-retreat
+                           (hermes-chat--entry-insert-position before-node))
                           (if before-node
                               (ewoc-enter-before hermes-chat--ewoc
                                                  before-node entry)
@@ -1050,6 +1199,7 @@ agent's reply can stay last while tool/status/diff entries land above it."
               (hermes-chat--register-node entry node))))))
     (hermes-chat--stream-format-schedule node)
     (hermes-chat--retire-recovery-notices)
+    (hermes-chat--new-output-note)
     (hermes-chat--notify-state-change)
     node))
 
@@ -1234,6 +1384,7 @@ Native diff markers retain unchanged reader prefixes and literal suffixes."
                        (not (hermes-buffer--retired-p)))
             (throw 'superseded nil))
           (let ((inhibit-modification-hooks t))
+            (hermes-chat--protect-retreat position)
             (save-excursion
               (replace-region-contents position limit (lambda () text))
               ;; Native diff replacement does not refresh matched properties.
@@ -1273,6 +1424,7 @@ Native diff markers retain unchanged reader prefixes and literal suffixes."
                        (= tick (buffer-chars-modified-tick)))
             (throw 'hermes-chat--superseded-append nil))
           (let ((inhibit-modification-hooks t))
+            (hermes-chat--protect-retreat position)
             (goto-char position)
             (insert (substring (plist-get entry :content) (length prefix)))
             (when-let* ((state (and hermes-chat--stream-formats
@@ -1327,6 +1479,7 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
                         (ewoc-invalidate hermes-chat--ewoc node)))
                     entry))))
       (hermes-chat--stream-format-schedule node)
+      (hermes-chat--new-output-note)
       (unless quiet (hermes-chat--notify-state-change))
       entry)))
 
@@ -1344,6 +1497,7 @@ With QUIET, leave state-change notification to the caller."
              (buffer-undo-list t))
          (hermes-chat--preserve-readers
            (remhash id hermes-chat--nodes)
+           (hermes-chat--protect-retreat (ewoc-location node))
            (ewoc-delete hermes-chat--ewoc node)))))
     (unless quiet (hermes-chat--notify-state-change))))
 
@@ -2782,10 +2936,57 @@ With LABEL, budget the complete action label, not only its value."
          (and (plist-get hermes-chat--runtime-flags :yolo)
               (propertize "YOLO" 'face 'hermes-chat-header-warning)))))
 
+(declare-function hermes-chat-context "hermes-context" ())
+
+(defun hermes-chat-context-at-mouse (event)
+  "Open the context budget of the chat whose header line received EVENT.
+Select EVENT's window first, so an unselected chat cannot borrow the
+selected chat's context."
+  (interactive "e")
+  (let ((window (posn-window (event-start event))))
+    (when (window-live-p window)
+      (select-window window))
+    (unless (derived-mode-p 'hermes-chat-mode)
+      (user-error "No Hermes chat under the mouse"))
+    (require 'hermes-context)
+    (call-interactively #'hermes-chat-context)))
+
+(defvar hermes-chat-context-label-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line mouse-1] #'hermes-chat-context-at-mouse)
+    map)
+  "Keymap active on the header line's context-window usage.")
+
+(defun hermes-chat--context-percent (context)
+  "Return CONTEXT's used share of its window as a float percentage, or nil."
+  (let ((used (plist-get context :used))
+        (max (plist-get context :max)))
+    (and (numberp used) (numberp max) (> max 0)
+         (/ (* 100.0 used) max))))
+
+(defun hermes-chat--context-face (percent)
+  "Return the header face for context usage PERCENT.
+Thresholds follow the TUI: warning from 80%, error from 95%."
+  (cond ((null percent) 'hermes-chat-header-context)
+        ((>= percent 95) 'error)
+        ((>= percent 80) 'warning)
+        (t 'hermes-chat-header-context)))
+
 (defun hermes-chat--header-context-segment ()
-  "Return the propertized context-window segment, or nil."
+  "Return the propertized context-window segment, or nil.
+Usage near the limit takes warning or error faces; `help-echo' gives exact
+tokens and `hermes-chat-context-label-map' opens the context budget view."
   (when-let* ((context (hermes-chat--format-context hermes-chat--context)))
-    (propertize context 'face 'hermes-chat-header-context)))
+    (let* ((percent (hermes-chat--context-percent hermes-chat--context))
+           (used (plist-get hermes-chat--context :used)))
+      (propertize
+       context 'face (hermes-chat--context-face percent)
+       'mouse-face 'highlight
+       'keymap hermes-chat-context-label-map
+       'help-echo (format "Context %s / %d tokens%s\nmouse-1: context budget"
+                          (if (numberp used) (format "%d" used) "?")
+                          (plist-get hermes-chat--context :max)
+                          (if percent (format " (%.1f%%)" percent) ""))))))
 
 (defconst hermes-chat--header-state-codes
   '(("Ready" . "RDY") ("Running" . "RUN") ("Error" . "ERR")
@@ -3075,6 +3276,31 @@ activity is truncated first, then whole segments are dropped.")
   "Cons (KIND . TIMER) owning the rule's tick or linger timer, or nil.")
 (defvar-local hermes-chat--status-rule-pending nil
   "Zero-delay timer owning the next coalesced footer repaint, or nil.")
+(defvar-local hermes-chat--status-rule-last-event nil
+  "Float time at which this chat last admitted a backend event, or nil.")
+
+(defcustom hermes-chat-status-rule-quiet-after 30
+  "Seconds without a backend event before a running turn shows its silence.
+The composer rule then appends \"quiet M:SS\" until the next event arrives."
+  :type 'number
+  :group 'hermes)
+
+(defun hermes-chat--status-rule-quiet (now)
+  "Return seconds the active turn has heard nothing as of NOW, or nil.
+Silence shorter than `hermes-chat-status-rule-quiet-after' returns nil."
+  (when hermes-chat--status-rule-start
+    (let ((quiet (- now (max hermes-chat--status-rule-start
+                             (or hermes-chat--status-rule-last-event 0)))))
+      (and (>= quiet hermes-chat-status-rule-quiet-after) quiet))))
+
+(defun hermes-chat--status-rule-note-event ()
+  "Record that a backend event reached this chat now.
+Only admitted transport events count, never the rule's own timer ticks.  A
+visible quiet hint is cleared by one coalesced repaint."
+  (let* ((now (float-time))
+         (quiet (hermes-chat--status-rule-quiet now)))
+    (setq hermes-chat--status-rule-last-event now)
+    (when quiet (hermes-chat--status-rule-schedule))))
 
 (defun hermes-chat--status-rule-cancel ()
   "Cancel this chat's rule timers without touching the displayed footer."
@@ -3089,7 +3315,8 @@ activity is truncated first, then whole segments are dropped.")
   "Retire rule timers and forget turn timing at a lifecycle boundary."
   (hermes-chat--status-rule-cancel)
   (setq hermes-chat--status-rule-start nil
-        hermes-chat--status-rule-last nil))
+        hermes-chat--status-rule-last nil
+        hermes-chat--status-rule-last-event nil))
 
 (defun hermes-chat--status-rule-live-p ()
   "Return non-nil when this buffer is a live, initialized chat.
@@ -3255,12 +3482,20 @@ Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
   (cond
    (hermes-chat--status-rule-start
     (pcase-let* ((`(,word . ,face) (hermes-chat--status-rule-word))
+                 (now (float-time))
+                 (quiet (and (eq face 'hermes-chat-turn-running)
+                             (hermes-chat--status-rule-quiet now)))
                  (count (length hermes-chat--queued-messages)))
       (hermes-chat--status-rule-fit
        (concat (propertize (concat "● " word) 'face face) " "
                (propertize (hermes-chat--status-rule-duration
-                            (- (float-time) hermes-chat--status-rule-start))
-                           'face 'shadow))
+                            (- now hermes-chat--status-rule-start))
+                           'face 'shadow)
+               (and quiet
+                    (concat (propertize " · " 'face 'shadow)
+                            (propertize (concat "quiet "
+                                                (hermes-chat--status-rule-duration quiet))
+                                        'face 'warning))))
        (hermes-chat--status-rule-activity)
        (hermes-chat--status-rule-segments)
        (and (> count 0)

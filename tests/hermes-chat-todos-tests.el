@@ -588,17 +588,32 @@
       (hermes-test--event-loop-barrier)
       (let ((footer (lambda () (cdr (ewoc-get-hf hermes-chat--ewoc)))))
         (should (string-match-p "● Running" (funcall footer)))
-        (should-not (string-match-p "☐" (funcall footer)))
+        (should-not (string-match-p "📋" (funcall footer)))
         (hermes-chat--queue-content "later")
         (hermes-chat-todos-test--send hermes-chat-todos-test--list)
         (hermes-test--event-loop-barrier)
-        (should (string-match-p "● Running 0:0[0-9] · ☐ 1/3 · 1 queued" (funcall footer)))
+        (should (string-match-p "● Running 0:0[0-9] · 📋 1/3 · 1 queued" (funcall footer)))
         (let ((rule (funcall footer)))
           (should (eq 'font-lock-type-face
-                      (get-text-property (string-match "☐" rule) 'face rule))))
+                      (get-text-property (string-match "📋" rule) 'face rule))))
         (hermes-chat-todos-test--send '(:status "complete") "message.complete")
         (hermes-test--event-loop-barrier)
-        (should-not (string-match-p "☐\\|Running" (funcall footer)))))))
+        (should-not (string-match-p "📋\\|Running" (funcall footer)))))))
+
+(ert-deftest hermes-chat-todos-rule-segment-exact-rendering ()
+  "The rule summary uses a task-list icon, never a per-item checkbox."
+  (with-temp-buffer
+    (setq-local hermes-chat--todos
+                (list :accepting t
+                      :items '((:id "a" :content "One" :status "completed")
+                               (:id "b" :content "Two" :status "in_progress")
+                               (:id "c" :content "Three" :status "pending"))))
+    (let ((segment (hermes-chat-todos--rule-segment)))
+      (should (equal segment "📋 1/3"))
+      (should (eq (get-text-property 0 'face segment) 'font-lock-type-face))
+      (should-not (string-match-p "[☐☑▶]" segment)))
+    (setq-local hermes-chat--todos (plist-put hermes-chat--todos :accepting nil))
+    (should-not (hermes-chat-todos--rule-segment))))
 
 (provide 'hermes-chat-todos-tests)
 ;;; hermes-chat-todos-tests.el ends here

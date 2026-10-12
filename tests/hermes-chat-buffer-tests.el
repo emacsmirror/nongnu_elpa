@@ -648,6 +648,137 @@
      (should-not (text-property-not-all (point-min) pos 'read-only t))
      (should-not (text-property-not-all pos (point-max) 'read-only nil)))))
 
+(defun hermes-chat-test--assert-protected ()
+  "Assert the transcript is read-only and the composer writable."
+  (let ((pos (hermes-chat--input-position)))
+    (should-not (text-property-not-all (point-min) pos 'read-only t))
+    (should-not (text-property-not-all pos (point-max) 'read-only nil))))
+
+(defun hermes-chat-test--fill-exchanges (n)
+  "Insert N settled user/assistant exchanges."
+  (dotimes (i n)
+    (hermes-chat--insert-entry
+     (list :id (format "u%d" i) :role 'user :status 'done
+           :content (format "question %d" i)))
+    (hermes-chat--insert-entry
+     (list :id (format "a%d" i) :role 'assistant :status 'done
+           :content (format "Reply %d with **bold** and `code`.\n\n- item\n" i)))))
+
+(ert-deftest hermes-chat-protect-transcript-survives-every-transcript-mutation ()
+  "Incremental protection never leaves writable transcript text behind."
+  (hermes-test-with-chat-buffer
+   (insert "draft")
+   (hermes-chat-test--fill-exchanges 5)
+   (hermes-chat-test--assert-protected)
+   ;; Streaming, through both the in-place suffix and the full printer.
+   (hermes-chat--insert-entry
+    '(:id "s" :role assistant :status streaming :content ""))
+   (dotimes (k 20)
+     (hermes-chat--append-assistant-content
+      "s" (format (if (cl-oddp k) "w%d\n\n" "w%d ") k) 'streaming)
+     (hermes-chat-test--assert-protected))
+   ;; Re-render and collapse/expand of an old entry above the frontier.
+   (hermes-chat--update-entry
+    "a1" (lambda (entry) (plist-put (copy-sequence entry) :content "rewritten\n")))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--toggle-entry-expanded "a2")
+   (hermes-chat-test--assert-protected)
+   ;; Insertion above old entries, including the hook-inhibited activity path.
+   (hermes-chat--insert-entry '(:id "st" :role status :content "tool")
+                              (gethash "u1" hermes-chat--nodes))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--insert-entry '(:id "act" :role activity :content "activity")
+                              (gethash "u0" hermes-chat--nodes))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--remove-entry "act")
+   (hermes-chat--remove-entry "a0")
+   (hermes-chat-test--assert-protected)
+   ;; Text inserted silently at the very top of the transcript.
+   (let ((inhibit-read-only t) (inhibit-modification-hooks t))
+     (save-excursion (goto-char (point-min)) (insert "silent\n")))
+   (hermes-chat--append-assistant-content "s" "more " 'streaming)
+   (hermes-chat-test--assert-protected)
+   ;; A footer repaint and the composer receive their own properties.
+   (hermes-chat--replace-footer (car (ewoc-get-hf hermes-chat--ewoc))
+                                (cdr (ewoc-get-hf hermes-chat--ewoc))
+                                "\nfooter changed\n")
+   (hermes-chat-test--assert-protected)
+   (should (equal (hermes-chat-input-string) "draft"))
+   ;; Clear, then reload history into the fresh transcript.
+   (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+     (hermes-chat-clear))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--render-history
+    '(((role . "user") (content . "old question"))
+      ((role . "assistant") (content . "old answer"))))
+   (hermes-chat-test--fill-exchanges 2)
+   (hermes-chat-test--assert-protected)
+   ;; A mode change drops the frontier; the next setup starts again from top.
+   (hermes-chat-mode)
+   (hermes-chat-test--fill-exchanges 2)
+   (hermes-chat-test--assert-protected)))
+
+(defun hermes-chat-test--protect-scan-per-chunk (exchanges)
+  "Return the largest span scanned by protection per streamed chunk.
+Fill EXCHANGES settled exchanges first, then stream into a fresh reply."
+  (hermes-test-with-chat-buffer
+   (hermes-chat-test--fill-exchanges exchanges)
+   (hermes-chat--insert-entry
+    '(:id "s" :role assistant :status streaming :content ""))
+   (let ((largest 0) (scanned 0))
+     (cl-letf* ((orig (symbol-function 'text-property-not-all))
+                ((symbol-function 'text-property-not-all)
+                 (lambda (start end prop value &optional object)
+                   (unless object (cl-incf scanned (max 0 (- end start))))
+                   (funcall orig start end prop value object))))
+       (dotimes (k 30)
+         (setq scanned 0)
+         (hermes-chat--append-assistant-content
+          "s" (format (if (zerop (% k 3)) "w%d\n\n" "w%d ") k) 'streaming)
+         (setq largest (max largest scanned))))
+     (hermes-chat-test--assert-protected)
+     largest)))
+
+(ert-deftest hermes-chat-protect-transcript-chunk-cost-is-independent-of-history ()
+  "Per-chunk protection scans only the changed tail, not the whole transcript."
+  (let ((small (hermes-chat-test--protect-scan-per-chunk 2))
+        (large (hermes-chat-test--protect-scan-per-chunk 200)))
+    (should (> small 0))
+    (should (<= large (+ small 64)))))
+
+(ert-deftest hermes-chat-protect-transcript-composes-with-code-marks-and-hints ()
+  "Code-marked user turns and unseen-output updates keep incremental protection."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (insert "draft")
+     (hermes-chat-test--fill-exchanges 50)
+     (goto-char (point-min))
+     (cl-letf (((symbol-function 'pos-visible-in-window-p) #'ignore))
+       (let ((scanned 0)
+             (orig (symbol-function 'text-property-not-all)))
+         (cl-letf (((symbol-function 'text-property-not-all)
+                    (lambda (start end prop value &optional object)
+                      (unless object (cl-incf scanned (max 0 (- end start))))
+                      (funcall orig start end prop value object))))
+           (hermes-chat--insert-entry
+            (list :id "uc" :role 'user :status 'done
+                  :content "See:\n```sh\necho hi\n```\nend"))
+           (hermes-chat--insert-entry
+            '(:id "s" :role assistant :status streaming :content ""))
+           (hermes-chat--append-assistant-content "s" "w1 " 'streaming)
+           (hermes-chat--append-assistant-content "s" "w2\n\n" 'streaming))
+         ;; Neither the user turn nor streaming rescanned the history.
+         (should (< scanned (/ (buffer-size) 4))))
+       (should hermes-chat--new-output))
+     (hermes-chat-test--assert-protected)
+     (goto-char (point-min))
+     (search-forward "echo hi")
+     (should (equal (get-text-property (point) 'hermes-chat-code) "echo hi\n"))
+     (should (get-text-property (point) 'read-only))
+     (should (equal (hermes-chat-input-string) "draft")))))
+
 (ert-deftest hermes-chat-in-buffer-runs-only-when-live ()
   (let ((buffer (generate-new-buffer " *hermes-in-buffer-test*"))
         ran)
@@ -1805,7 +1936,9 @@
      (should (eq 'tick (car hermes-chat--status-rule-timer)))
      (should (eq 'hermes-chat-turn-running (hermes-test--footer-face "● Running")))
      (should (eq 'shadow (hermes-test--footer-face "terminal")))
-     (setq hermes-chat--status-rule-start (- (float-time) 42.2))
+     ;; Events keep arriving, so the long turn is not quiet.
+     (setq hermes-chat--status-rule-start (- (float-time) 42.2)
+           hermes-chat--status-rule-last-event (float-time))
      (hermes-chat--queue-content "fix the header test\nsecond line")
      (hermes-chat--queue-content "then commit")
      (hermes-test--event-loop-barrier)
@@ -2282,6 +2415,179 @@ A passive-only sequence over the same pending read still schedules none."
             (should (equal (hermes-chat-input-string)
                            (if explicit "See @file:`src/module.py`"
                              "See @src/mo")))))))))
+
+;;; Status hints: quiet turn, unseen output, context pressure
+
+(ert-deftest hermes-chat-status-rule-quiet-hint-shows-and-clears-on-event ()
+  "Silence past the threshold appends a quiet clock that the next event clears.
+Only admitted transport events count; the rule's own ticks do not."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (setq hermes-chat--dashboard-running-p t)
+     (hermes-chat--set-header-state :status 'running :activity "Running")
+     (hermes-test--event-loop-barrier)
+     (should-not (string-match-p "quiet" (hermes-test--footer)))
+     (setq hermes-chat--status-rule-start (- (float-time) 45.2))
+     (hermes-chat--status-rule-repaint)
+     (should (string-match-p "● Running 0:45 · quiet 0:45" (hermes-test--footer)))
+     (should (eq 'warning (hermes-test--footer-face "quiet")))
+     ;; An event 20 s ago restarts the silence: below the threshold.
+     (setq hermes-chat--status-rule-last-event (- (float-time) 20))
+     (hermes-chat--status-rule-repaint)
+     (should-not (string-match-p "quiet" (hermes-test--footer)))
+     (setq hermes-chat--status-rule-last-event (- (float-time) 40.2))
+     (hermes-chat--status-rule-repaint)
+     (should (string-match-p "quiet 0:40" (hermes-test--footer)))
+     ;; The owned tick advances the quiet clock without counting as an event.
+     (hermes-test--wait-until
+      (lambda () (string-match-p "quiet 0:41" (hermes-test--footer)))
+      3 "quiet clock tick")
+     ;; An admitted event at the dispatch point clears it on the next repaint.
+     (cl-letf (((symbol-function 'hermes-chat--handle-transport-event) #'ignore))
+       (hermes-chat--dispatch-accepted-transport-event
+        "assistant" nil '(:type delta :content "x")))
+     (should (< (- (float-time) hermes-chat--status-rule-last-event) 1))
+     (hermes-test--event-loop-barrier)
+     (should-not (string-match-p "quiet" (hermes-test--footer)))
+     (should (string-match-p "● Running 0:4[0-9]" (hermes-test--footer)))
+     ;; Waiting on the user is not backend silence.
+     (setq hermes-chat--status-rule-last-event (- (float-time) 60))
+     (puthash "prompt" '(:type "clarify") hermes-chat--pending-prompts)
+     (hermes-chat--status-rule-repaint)
+     (should (string-match-p "● Waiting for you" (hermes-test--footer)))
+     (should-not (string-match-p "quiet" (hermes-test--footer)))
+     ;; Lifecycle retirement forgets the event clock.
+     (hermes-chat--status-rule-retire)
+     (should-not hermes-chat--status-rule-last-event))))
+
+(defun hermes-test--mode-line-process ()
+  "Return the chat's evaluated `mode-line-process' text."
+  (eval (cadr mode-line-process) t))
+
+(ert-deftest hermes-chat-new-output-indicator-flags-and-clears-on-jump ()
+  "Output beyond every window's view flags ↓ new; C-c C-j and mouse-1 clear it."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-j")
+                 #'hermes-chat-go-to-composer))
+     ;; Point in the composer follows output: nothing is unseen.
+     (goto-char (point-max))
+     (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant "one" 'done))
+     (should-not hermes-chat--new-output)
+     (should-not (hermes-test--mode-line-process))
+     ;; Reading older text while the transcript end is out of view.
+     (goto-char (point-min))
+     (cl-letf (((symbol-function 'pos-visible-in-window-p) #'ignore))
+       (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant "two" 'done))
+       (should hermes-chat--new-output)
+       (let ((label (hermes-test--mode-line-process)))
+         (should (equal label " ↓ new"))
+         (should (eq (get-text-property 1 'face label) 'mode-line-emphasis))
+         (should (eq (keymap-lookup (get-text-property 1 'local-map label)
+                                    "<mode-line> <mouse-1>")
+                     #'hermes-chat-jump-to-latest-at-mouse))
+         (should (string-match-p "C-c C-j" (get-text-property 1 'help-echo label))))
+       ;; Streamed updates keep the flag without re-inspecting windows.
+       (hermes-chat--update-entry
+        (plist-get (ewoc-data (ewoc-nth hermes-chat--ewoc -1)) :id)
+        (lambda (entry) (plist-put (copy-sequence entry) :content "two more")))
+       (should hermes-chat--new-output)
+       ;; A scroll that still misses the end keeps it.
+       (hermes-chat--new-output-scrolled (selected-window) (point-min))
+       (should hermes-chat--new-output))
+     ;; Jumping clears it and lands below the latest output.
+     (let ((draft-before (hermes-chat-input-string)))
+       (call-interactively #'hermes-chat-go-to-composer)
+       (should (= (point) (point-max)))
+       (should (equal draft-before (hermes-chat-input-string))))
+     (should-not hermes-chat--new-output)
+     (should-not (hermes-test--mode-line-process))
+     ;; Mouse-1 on the indicator jumps in the clicked window.
+     (goto-char (point-min))
+     (hermes-chat--new-output-set t)
+     (let ((window (selected-window)))
+       (with-temp-buffer
+         (hermes-chat-jump-to-latest-at-mouse
+          (list 'mouse-1 (list window 1 '(0 . 0) 0)))))
+     (should-not hermes-chat--new-output)
+     (should (= (point) (point-max))))))
+
+(ert-deftest hermes-chat-new-output-clears-when-scrolled-into-view ()
+  "A window scrolling to show the transcript end clears the indicator."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (should (memq #'hermes-chat--new-output-scrolled window-scroll-functions))
+     (goto-char (point-min))
+     (hermes-chat--new-output-set t)
+     (cl-letf (((symbol-function 'pos-visible-in-window-p)
+                (lambda (pos &optional _window &rest _)
+                  (= pos (hermes-chat--transcript-end)))))
+       (hermes-chat--new-output-scrolled (selected-window) (point-min)))
+     (should-not hermes-chat--new-output)
+     ;; With no window showing the chat, output stays unseen until shown.
+     (let ((chat (current-buffer)))
+       (switch-to-buffer (get-buffer-create " *hermes-new-output-other*"))
+       (with-current-buffer chat
+         (should-not (get-buffer-window-list chat nil t))
+         (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant "hidden" 'done))
+         (should hermes-chat--new-output)
+         ;; Resetting the transcript forgets it.
+         (hermes-chat--setup-buffer)
+         (should-not hermes-chat--new-output)))
+     (kill-buffer " *hermes-new-output-other*"))))
+
+(ert-deftest hermes-chat-header-context-pressure-faces-and-actions ()
+  "Context usage takes warning at 80% and error at 95%, with exact help."
+  (require 'hermes-context)
+  (hermes-test-with-chat-buffer
+   (dolist (case '((100000 . hermes-chat-header-context)
+                   (159999 . hermes-chat-header-context)
+                   (160000 . warning)
+                   (189999 . warning)
+                   (190000 . error)
+                   (200000 . error)))
+     (setq hermes-chat--context (list :used (car case) :max 200000))
+     (let ((segment (hermes-chat--header-context-segment)))
+       (should (eq (get-text-property 0 'face segment) (cdr case)))))
+   (setq hermes-chat--context '(:used 171234 :max 200000 :percent 85))
+   (let* ((segment (hermes-chat--header-context-segment))
+          (help (get-text-property 0 'help-echo segment)))
+     (should (equal segment "171k/200k"))
+     (should (string-match-p "171234 / 200000 tokens (85\\.6%)" help))
+     (should (string-match-p "mouse-1: context budget" help))
+     (should (eq (keymap-lookup (get-text-property 0 'keymap segment)
+                                "<header-line> <mouse-1>")
+                 #'hermes-chat-context-at-mouse)))
+   ;; The rendered header keeps the segment's face, help and action.
+   (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
+     (let* ((header (hermes-chat--header-line))
+            (pos (string-match-p "171k/200k" header)))
+       (should pos)
+       (should (eq (get-text-property pos 'face header) 'warning))
+       (should (string-match-p "85\\.6%" (get-text-property pos 'help-echo header)))
+       (should (get-text-property pos 'keymap header))))
+   ;; Unknown usage stays quiet and still names the window size.
+   (setq hermes-chat--context '(:max 200000))
+   (let ((segment (hermes-chat--header-context-segment)))
+     (should (eq (get-text-property 0 'face segment) 'hermes-chat-header-context))
+     (should (string-match-p "Context \\? / 200000 tokens\n"
+                             (get-text-property 0 'help-echo segment))))
+   ;; Mouse-1 opens the existing budget view for the clicked chat.
+   (let ((chat (current-buffer)) opened)
+     (save-window-excursion
+       (switch-to-buffer chat)
+       (let ((window (selected-window)))
+         (cl-letf (((symbol-function 'hermes-chat-context)
+                    (lambda () (interactive) (setq opened (current-buffer)))))
+           (with-temp-buffer
+             (hermes-chat-context-at-mouse
+              (list 'mouse-1 (list window 1 '(0 . 0) 0)))))))
+     (should (eq opened chat)))))
 
 (provide 'hermes-chat-buffer-tests)
 ;;; hermes-chat-buffer-tests.el ends here

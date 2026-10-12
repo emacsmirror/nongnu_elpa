@@ -296,7 +296,7 @@ pending reply; never while an old stream is suppressed."
     (when (and (plist-get state :accepting) (plist-get state :items))
       (pcase-let ((`(,done . ,total) (hermes-chat-todos--counts (plist-get state :items))))
         (when (> total 0)
-          (propertize (format "☐ %d/%d" done total) 'face 'font-lock-type-face))))))
+          (propertize (format "📋 %d/%d" done total) 'face 'font-lock-type-face))))))
 
 (add-hook 'hermes-chat-status-rule-segment-functions #'hermes-chat-todos--rule-segment)
 

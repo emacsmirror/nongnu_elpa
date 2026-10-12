@@ -2,8 +2,31 @@
 
 * Unreleased
 
+- Streaming into a long chat no longer slows down with transcript size:
+  keeping the transcript read-only now rescans only text changed since the
+  last update instead of the whole buffer on every chunk.
+- =C-c C-c= in a chat interrupts the running turn (=hermes-chat-interrupt-turn=);
+  when idle it only reports that nothing is running.  =C-c C-k= is unchanged.
+- Chat actions menu (=C-c C-o=): Work is now Activity (=B=) and Workspace is
+  now Directory (=w=), so neither reads like Workers (=W=).  The Session menu
+  splits into Session (New, Rename, List sessions) and Fork (Branch =b=,
+  Hand off =H=, Compress =z=, the new =hermes-chat-compress=).  A new Aside
+  group exposes the formerly slash-only side question (=y=), background task
+  (=G=) and Stop processes (=!=).  Root =b= remains Switch chat buffer.
+  Stop processes stops the terminal processes registered with the whole
+  instance, across all chats; it does not cancel the model turn or
+  delegated workers.
+- While a turn runs with no backend event for 30 seconds
+  (=hermes-chat-status-rule-quiet-after=), the composer rule appends
+  =quiet 0:45= in the warning face; it clears as soon as an event arrives.
+- When output arrives while no window shows the end of the transcript, the
+  mode line shows =↓ new=.  =mouse-1= on it or =C-c C-j= jumps to the latest
+  output; scrolling the end into view also clears it.
+- The header's context usage turns warning-coloured from 80% and
+  error-coloured from 95%.  Its tooltip gives exact tokens and percentage,
+  and =mouse-1= opens the Context budget view.
 - The rule above the chat composer now shows the active turn's state,
-  elapsed time, current tool, task progress and queued count, then the last
+  elapsed time, current tool, task progress (=📋 1/3=) and queued count, then the last
   turn's duration briefly.  Queued messages are listed above the rule and
   open the queue panel on activation; the queue menu entries show the count.
 - Each turn with a task list gets one collapsible transcript line,
@@ -18,6 +41,12 @@
   empty composer, and an empty composer shows key hints
   (=hermes-chat-composer-placeholder=).  =n= / =p= move between user turns
   in the transcript, and =imenu= lists them.
+- Transcript reading keys: =SPC= and =DEL= / =S-SPC= scroll the chat like
+  =view-mode= instead of hitting =Text is read-only=.  =w= copies the code of
+  the fenced block at point without its fences, or else the Markdown source
+  of the reply or message at point (=Copied code block (12 lines)=,
+  =Copied reply=); with an active region it is plain =kill-ring-save=.  In
+  the composer all these keys keep their ordinary editing meaning.
 - A new Show group in =C-c C-o= hides or shows tool output and reasoning
   everywhere at once and expands or collapses every disclosure.  Every chat
   menu group now has at most four entries: Refresh commands moved to
