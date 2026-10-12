@@ -60,6 +60,13 @@ Invisible buffers and batch sessions record every prompt and show a message."
 (defvar hermes-chat--auto-prompting-p nil
   "Non-nil while an automatic minibuffer prompt is reading a response.")
 
+(defvar hermes-chat--prompt-user-invoked-p nil
+  "Non-nil while the user explicitly opened the current prompt reader.
+Only real user boundaries bind this: interactive invocation of
+`hermes-chat-respond-to-prompt' and the transcript Answer button.  It
+opts approval readers into one-key answers; every other caller gets a
+reader that requires an explicit RET submission.")
+
 (defvar hermes-chat--prompt-indicator-buffers nil
   "Chat buffers with pending prompt requests, oldest first.
 The global prompt indicator reads this registry rather than scanning every
@@ -481,7 +488,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
 
 (defun hermes-chat--prompt-entry-button (button)
   "Reopen the reader for the pending prompt attached to BUTTON."
-  (hermes-chat-respond-to-prompt (button-get button 'hermes-chat-prompt-key)))
+  (let ((hermes-chat--prompt-user-invoked-p t))
+    (hermes-chat-respond-to-prompt
+     (button-get button 'hermes-chat-prompt-key))))
 
 (defun hermes-chat--insert-prompt-entry-actions (entry)
   "Insert an Answer button after ENTRY while its prompt is pending.
@@ -1139,13 +1148,17 @@ submission picks the non-deciding \"Cancel / ignore\" candidate."
 (defun hermes-chat--read-approval-response (prompt)
   "Read an approval response for PROMPT, showing what it approves.
 The reader names the tool description and the full command; a very long
-command is shown in full in a separate window while reading.  An
-automatically opened reader discards type-ahead and requires an explicit
-RET submission, so typing meant for the composer cannot authorise a
-command.  An explicitly invoked reader takes one-key answers.  `q',
+command is shown in full in a separate window while reading.  The
+reader requires an explicit RET submission, so a stray keystroke cannot
+authorise a command; an automatically opened reader also discards
+type-ahead.  Only a reader the user explicitly opened (see
+`hermes-chat--prompt-user-invoked-p') takes one-key answers.  `q',
 \"Cancel / ignore\" or \\[keyboard-quit] leave the request pending."
-  (let ((auto hermes-chat--auto-prompting-p)
-        detail window value)
+  (let* ((auto hermes-chat--auto-prompting-p)
+         (one-key (and hermes-chat--prompt-user-invoked-p (not auto)))
+         ;; Timers and hooks running inside the reader are not the user.
+         (hermes-chat--prompt-user-invoked-p nil)
+         detail window value)
     (when auto
       (discard-input))
     (unwind-protect
@@ -1158,11 +1171,11 @@ command.  An explicitly invoked reader takes one-key answers.  `q',
                                    (inhibit-same-window . t)))))
           (let ((text (hermes-chat--approval-reader-prompt prompt detail)))
             (setq value
-                  (if auto
-                      (hermes-chat--read-approval-submitted
-                       text (hermes-chat--approval-response-candidates prompt))
-                    (hermes-chat--read-approval-one-key
-                     text (hermes-chat--approval-read-choices prompt))))))
+                  (if one-key
+                      (hermes-chat--read-approval-one-key
+                       text (hermes-chat--approval-read-choices prompt))
+                    (hermes-chat--read-approval-submitted
+                     text (hermes-chat--approval-response-candidates prompt))))))
       (when (and (window-live-p window) (eq (window-buffer window) detail))
         (quit-restore-window window))
       (when (buffer-live-p detail)
@@ -1761,13 +1774,18 @@ ALL applies to approval prompts only."
 (defun hermes-chat-respond-to-prompt (&optional key response all preserve-response)
   "Respond to pending prompt KEY with RESPONSE.
 When called interactively, select the prompt and read RESPONSE in the
-minibuffer.  With prefix argument ALL, approval responses apply to all pending
+minibuffer; an interactive approval reader takes one-key answers, while
+Lisp callers get a reader that requires an explicit RET submission.  With
+prefix argument ALL, approval responses apply to all pending
 approvals in the dashboard session.  Unaccepted clarification answers remain
 recoverable if the request expires.  PRESERVE-RESPONSE also keeps programmatic
 clarification input recoverable when the request fails.  Browser-vault
 requests always use native readers, ignoring RESPONSE and PRESERVE-RESPONSE."
   (interactive (list nil nil current-prefix-arg) hermes-chat-mode)
-  (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
+  (let* ((hermes-chat--prompt-user-invoked-p
+          (or hermes-chat--prompt-user-invoked-p
+              (called-interactively-p 'any)))
+         (prompt-key (hermes-chat--select-pending-prompt-key key))
          (prompt (hermes-chat--pending-prompt prompt-key))
          (context (hermes-chat--prompt-owner-context prompt-key prompt)))
     (when (and (plist-get prompt :server-request)

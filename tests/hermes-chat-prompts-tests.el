@@ -243,6 +243,61 @@ defaulting to the non-deciding cancel choice."
         (should-not (gethash "approval:sid-prompt"
                              hermes-chat--pending-prompts))))))
 
+;; Only a real user boundary opts into one-key answers.  A Lisp caller
+;; (extension, timer, hook) that merely names the prompt gets the
+;; submitted reader, so a stray `a' cannot authorise "always".
+(ert-deftest hermes-chat-programmatic-approval-requires-submission ()
+  "A programmatic respond call reads a submitted, require-match decision."
+  (let ((this-command 'self-insert-command)
+        responded one-key-calls seen-args)
+    (cl-letf (((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices &rest _)
+                 (push t one-key-calls)
+                 (assq ?a choices)))
+              ;; The user typed nothing deliberate and pressed RET: the
+              ;; default is taken.
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _candidates &rest args)
+                 (setq seen-args args)
+                 (nth 4 args)))
+              ((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (&rest _) (setq responded t))))
+      (let ((hermes-chat-auto-prompt-requests nil))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request"
+           '((command . "rm -rf /important") (description . "terminal")))
+          (should (eq 'quit
+                      (condition-case nil
+                          (hermes-chat-respond-to-prompt "approval:sid-prompt")
+                        (quit 'quit))))
+          (should-not one-key-calls)
+          (should (eq (nth 1 seen-args) t))
+          (should (equal (nth 4 seen-args) "Cancel / ignore"))
+          (should-not responded)
+          (should (gethash "approval:sid-prompt"
+                           hermes-chat--pending-prompts)))))))
+
+(ert-deftest hermes-chat-answer-button-approval-takes-one-key ()
+  "The transcript [Answer] button is a user boundary and takes one key."
+  (let (respond-choice)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _)
+                 (error "The Answer button should take one key")))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (_prompt choices &rest _) (assq ?o choices)))
+              ((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq respond-choice (plist-get args :choice))
+                 (funcall (plist-get args :resolve) '((resolved . 1))))))
+      (let ((hermes-chat-auto-prompt-requests nil))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "approval.request"
+           '((command . "make check") (description . "terminal")))
+          (hermes-test--push-button-labeled "[Answer]")
+          (should (equal respond-choice "once")))))))
+
 (ert-deftest hermes-chat-auto-prompt-does-not-open-for-hidden-buffer ()
   (let (timer-calls)
     (cl-letf (((symbol-function 'run-at-time)
@@ -429,12 +484,13 @@ defaulting to the non-deciding cancel choice."
                    '("Approve once" "Deny" "Cancel / ignore")))))
 
 (defmacro hermes-test--with-approval-reader (spec &rest body)
-  "Run BODY answering approval readers with key CHAR from SPEC.
+  "Run BODY answering user-opened approval readers with key CHAR from SPEC.
 SPEC is (CHAR PROMPT CHOICES); PROMPT and CHOICES are bound to what the
-reader was shown."
+reader was shown.  BODY runs as if the user explicitly opened the reader,
+which is what makes approval readers take one key."
   (declare (indent 1))
   (pcase-let ((`(,char ,prompt ,choices) spec))
-    `(let (,prompt ,choices)
+    `(let (,prompt ,choices (hermes-chat--prompt-user-invoked-p t))
        (cl-letf (((symbol-function 'read-multiple-choice)
                   (lambda (text offered &rest _)
                     (setq ,prompt text ,choices offered)
@@ -537,7 +593,8 @@ a failing `display-buffer', and no detail buffer is left behind."
                            (when (eq (car case) 'display)
                              (error "Display refused"))
                            nil)))
-                (let ((noninteractive nil))
+                (let ((noninteractive nil)
+                      (hermes-chat--prompt-user-invoked-p t))
                   (setq result
                         (condition-case err
                             (hermes-chat--read-prompt-response prompt)
