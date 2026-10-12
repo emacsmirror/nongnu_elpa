@@ -517,18 +517,19 @@ WIDTH columns.  The view only inserts these lines."
        (concat "  " (propertize "last known · chat detached · reopen from the chat"
                                 'face 'warning))
      (let* ((counts (hermes-chat--work-counts roster))
+            (label (hermes-chat--work-label-text (car counts) (cdr counts) nil))
             (failed (seq-count (lambda (row) (eq (hermes-work-display-state row) 'failed))
                                (append (plist-get roster :agents)
-                                       (plist-get roster :processes))))
-            (item (lambda (glyph count label)
-                    (concat "  " glyph " "
-                            (propertize (number-to-string count) 'face 'font-lock-type-face)
-                            (if label (propertize label 'face 'shadow) "")))))
+                                       (plist-get roster :processes)))))
+       (when label
+         ;; The chat's own count, without its link back to this view.
+         (remove-text-properties 0 (length label)
+                                 '(mouse-face nil help-echo nil local-map nil) label))
        (concat
-        (funcall item (hermes-work-state-glyph 'running) (car counts) " running")
-        (if (> failed 0) (funcall item (hermes-work-state-glyph 'failed) failed nil) "")
-        (if (> (cdr counts) 0)
-            (funcall item (hermes-work-state-glyph 'running t) (cdr counts) nil) "")
+        (and label (concat "  " label))
+        (and (> failed 0)
+             (concat "  " (hermes-work-state-glyph 'failed) " "
+                     (propertize (number-to-string failed) 'face 'hermes-work-failed)))
         "   " (hermes-work--hint 'hermes-work-mode-map 'hermes-work-mode-map-popup
                                  "actions"))))))
 
@@ -622,16 +623,11 @@ Details repaint even without the list, so a detached one says so."
         ;; This read-only projection must not call modification hooks mid-print:
         ;; they can replace the view or unwind an unfinished chat settlement.
         (hermes-work--repaint
-         (append
-          (unless (hermes-work--current-p owner)
-            (list (hermes-work--line nil 'blank 0
-                                     (propertize "Detached: last known workers; reopen from the chat."
-                                                 'face 'warning))))
-          (hermes-work--outline
-           roster
-           (list :cards hermes-work--cards :folded hermes-work--folded
-                 :observed (or (plist-get owner :delegates) (plist-get owner :processes)))
-           now hermes-work--width)))))
+         (hermes-work--outline
+          roster
+          (list :cards hermes-work--cards :folded hermes-work--folded
+                :observed (or (plist-get owner :delegates) (plist-get owner :processes)))
+          now hermes-work--width))))
     (dolist (buffer (buffer-list))
       (when (and (eq owner (buffer-local-value 'hermes-work--owner buffer))
                  (hermes-browser--buffer-mode-p buffer 'hermes-work-detail-mode))

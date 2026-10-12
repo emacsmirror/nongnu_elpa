@@ -908,8 +908,9 @@ session is not restarted, and the new owner polls with the new signature."
                     (should-not caught)
                     (should-not fired)
                     (should (hermes-work--view-p owner))
-                    (should (string-match-p "Detached"
-                                            (with-current-buffer view (buffer-string))))
+                    (should (string-match-p "chat detached"
+                                            (with-current-buffer view
+                                              (format "%s" header-line-format))))
                     ;; Prove the hook is live outside package-owned rendering.
                     (with-current-buffer view
                       (condition-case err
@@ -1002,7 +1003,8 @@ session is not restarted, and the new owner polls with the new signature."
                   (with-current-buffer view
                     (setq after-change-functions nil)
                     (unless condition
-                      (should (string-match-p "Detached" (buffer-string)))))
+                      (should (string-match-p "chat detached"
+                                              (format "%s" header-line-format)))))
                   (hermes-chat--cleanup-buffer)
                   (hermes-chat--cleanup-buffer)
                   (should (= (hermes-dashboard-transport-client-refcount client) 1))
@@ -3440,7 +3442,6 @@ indicator is on, and not at all when it is off."
                   (should publication)
                   (apply (cadr publication) (nth 2 publication)))
                 (with-current-buffer view
-                  (should (string-match-p "Detached" (buffer-string)))
                   (should (string-match-p "chat detached" (format "%s" header-line-format)))
                   (should-error (hermes-work-refresh) :type 'user-error)
                   (should (eq (keymap-lookup hermes-work-mode-map "k") #'hermes-work-interrupt))))
@@ -4749,7 +4750,7 @@ indicator is on, and not at all when it is off."
     (should (string-match-p "\\`Goal +Audit" (hermes-test--line-text narrow '(delegate . "w") 'card 1)))))
 
 (ert-deftest hermes-work-header-names-project-and-counts ()
-  "The header names the project and counts active agents and all failures."
+  "The header names the project, mirrors the chat's count and adds failures."
   (let* ((owner (list :current-p #'always))
          (roster (list :agents (list '(:id "a" :kind delegate :state running)
                                      '(:id "b" :kind delegate :state queued)
@@ -4759,12 +4760,24 @@ indicator is on, and not at all when it is off."
                                         '(:id "q" :kind process :state failed)
                                         '(:id "r" :kind process :state lost))))
          (header (hermes-work--header owner roster "emacs-hermes")))
+    ;; Running and queued agents count alike, as in the chat header.
     (should (equal (substring-no-properties header)
-                   " emacs-hermes  ● 2 running  ✗ 3  ⚙ 1   ? actions"))
+                   (concat " emacs-hermes  "
+                           (substring-no-properties (hermes-chat--work-label-text 2 1 nil))
+                           "  ✗ 3   ? actions")))
+    (should (string-match-p "  🤖 2 / ⚙ 1  \\|Agents 2" header))
     (should (eq (hermes-test--face-of header "emacs-hermes") 'font-lock-constant-face))
-    (should (eq (hermes-test--face-of header "2") 'font-lock-type-face))
-    (should (eq (hermes-test--face-of header "3") 'font-lock-type-face))
+    (should (eq (hermes-test--face-of header "2") 'hermes-work-running))
+    (should (eq (hermes-test--face-of header "3") 'hermes-work-failed))
     (should (eq (hermes-test--face-of header "?") 'help-key-binding))
+    ;; The chat's link back to this view does not follow it here.
+    (should-not (text-property-not-all 0 (length header) 'local-map nil header))
+    (should-not (text-property-not-all 0 (length header) 'mouse-face nil header))
+    (should (equal (substring-no-properties
+                    (hermes-work--header owner (list :agents (list '(:id "c" :kind delegate
+                                                                       :state failed)))
+                                         "p"))
+                   " p  ✗ 1   ? actions"))
     (should (string-match-p "\\` emacs-hermes  last known"
                             (hermes-work--header (list :current-p #'ignore) roster "emacs-hermes")))))
 
@@ -4974,5 +4987,15 @@ a command the heading shows whole."
     (should (string-match-p "^running · opus · 3 tools · 1:12$" text))
     (should-not (string-match-p "^Now$" text))
     (should (string-match-p "^Tools (3)\n· grep needle\n· read_file a.el" text))))
+
+(ert-deftest hermes-work-detached-outline-says-so-once ()
+  "A detached outline says so in its header only."
+  (hermes-test--with-outline
+    (with-current-buffer chat (hermes-chat--work-bind client "runtime"))
+    (hermes-work--render owner)
+    (with-current-buffer view
+      (should (string-match-p "last known" (format "%s" header-line-format)))
+      (should-not (string-match-p "Detached\\|last known" (buffer-string)))
+      (should (string-match-p "Parent goal" (buffer-string))))))
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
