@@ -750,12 +750,17 @@ they carry no such authority."
                                        buffer snapshot)))))
          :reject #'ignore)
       (error nil))
-    ;; A read settling later than this command re-offers completion once,
-    ;; but only for explicit completion, never a passive or idle UI query.
-    (when (and (hermes-chat--explicit-completion-p)
-               (not (plist-get snapshot :items)))
-      (setf (plist-get snapshot :retrigger) t))
-    snapshot))
+    (hermes-chat--arm-path-completion-reopen snapshot)))
+
+(defun hermes-chat--arm-path-completion-reopen (snapshot)
+  "Arm SNAPSHOT's pending read to reopen completion once, and return it.
+A read settling later than this command re-offers completion once, but
+only for explicit completion, never a passive or idle UI query.  An
+explicit request reusing a read a passive query started arms it too."
+  (when (and (hermes-chat--explicit-completion-p)
+             (not (plist-get snapshot :items)))
+    (setf (plist-get snapshot :retrigger) t))
+  snapshot)
 
 (defun hermes-chat--path-completion-retrigger (buffer snapshot)
   "Re-run completion in BUFFER when SNAPSHOT's read settles unchanged.
@@ -792,7 +797,8 @@ Unavailable or stale reads offer no candidates and never edit the input."
            (snapshot (if (and hermes-chat--path-completion
                               (hermes-chat--path-completion-current-p
                                hermes-chat--path-completion))
-                         hermes-chat--path-completion
+                         (hermes-chat--arm-path-completion-reopen
+                          hermes-chat--path-completion)
                        (hermes-chat--request-path-completion bounds))))
       (when (plist-get snapshot :items)
         (advice-add 'completion--replace :around #'hermes-chat--path-completion-replace)

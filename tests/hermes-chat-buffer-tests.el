@@ -1824,5 +1824,45 @@ the last command; only the explicit completion path carries authority."
             (funcall resolve '((items . (((text . "@file:src/module.py"))))))
             (should-not timers)))))))
 
+(ert-deftest hermes-chat-file-ref-explicit-tab-arms-pending-passive-read ()
+  "Explicit completion reusing a passive query's pending read arms one reopen.
+A passive-only sequence over the same pending read still schedules none."
+  (dolist (explicit '(t nil))
+    (save-window-excursion
+      (hermes-test-with-chat-buffer
+        (switch-to-buffer (current-buffer))
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "remote"
+              hermes-chat--working-directory "/remote")
+        (insert "See @src/mo")
+        (let ((items '((items . (((text . "@file:src/module.py"))))))
+              resolve timers (requests 0))
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                     (lambda (_client _word &rest args)
+                       (cl-incf requests)
+                       (setq resolve (plist-get args :resolve))))
+                    ((symbol-function 'run-at-time)
+                     (lambda (_delay _repeat fn &rest args)
+                       (push (cons fn args) timers))))
+            (let ((this-command 'self-insert-command))
+              (hermes-chat--file-ref-capf))
+            (should-not (plist-get hermes-chat--path-completion :retrigger))
+            (if explicit
+                (dotimes (_ 2)
+                  (let ((this-command 'hermes-chat-tab)) (hermes-chat-tab)))
+              (let ((this-command 'self-insert-command))
+                (hermes-chat--file-ref-capf)))
+            (should (= requests 1))
+            (should (eq explicit (and (plist-get hermes-chat--path-completion
+                                                 :retrigger)
+                                      t)))
+            (funcall resolve items)
+            (funcall resolve items)
+            (should (= (length timers) (if explicit 1 0)))
+            (dolist (timer timers) (apply (car timer) (cdr timer)))
+            (should (equal (hermes-chat-input-string)
+                           (if explicit "See @file:`src/module.py`"
+                             "See @src/mo")))))))))
+
 (provide 'hermes-chat-buffer-tests)
 ;;; hermes-chat-buffer-tests.el ends here
