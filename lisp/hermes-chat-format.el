@@ -854,47 +854,95 @@ FIXED-WIDTHS retains a streaming table's established column allocation."
 (defconst hermes-chat--unknown-event-preview-string-limit 200
   "Maximum characters kept from each string in an unknown event preview.")
 
-(defun hermes-chat--unknown-event-bounded-copy (object depth length string-limit)
+(defconst hermes-chat--unknown-event-preview-budget '(200 . 180)
+  "Shared (NODES . CHARACTERS) budget for an unknown event raw preview.")
+
+(defun hermes-chat--unknown-event-bounded-copy
+    (object depth length string-limit budget)
   "Return a copy of OBJECT that is cheap to print.
-Containers nested deeper than DEPTH become the symbol `…'.  Lists,
+BUDGET is a cons (NODES . CHARACTERS) shared by the whole walk: every
+visited object costs one node and about its printed size in characters.
+Once either runs out, remaining elements are not visited and become the
+symbol `…'; this bounds wide trees, shared structure, cycles and the
+printed size alike.  Containers nested deeper than DEPTH become `…'.  Lists,
 vectors and hash tables keep at most LENGTH elements, with `…' marking
-the rest of a list or vector.  Strings longer than STRING-LIMIT characters
-are cut and end in \"…\".  Other objects are returned unchanged.  The walk
-never visits elements beyond these limits."
-  (let ((walk (lambda (child)
-                (hermes-chat--unknown-event-bounded-copy
-                 child (1- depth) length string-limit))))
-    (cond
-     ((stringp object)
-      (if (> (length object) string-limit)
-          (concat (substring object 0 string-limit) "…")
-        object))
-     ((not (or (consp object) (vectorp object) (hash-table-p object)))
-      object)
-     ((<= depth 0) '…)
-     ((consp object)
-      (let ((tail object) (count 0) items)
-        (while (and (consp tail) (< count length))
-          (push (funcall walk (car tail)) items)
-          (setq tail (cdr tail) count (1+ count)))
-        (nconc (nreverse items)
-               (cond ((null tail) nil)
-                     ((consp tail) (list '…))
-                     (t (funcall walk tail))))))
-     ((vectorp object)
-      (vconcat (mapcar (lambda (i) (funcall walk (aref object i)))
-                       (number-sequence 0 (1- (min length (length object)))))
-               (and (> (length object) length) (list '…))))
-     (t
-      (let ((copy (make-hash-table :test (hash-table-test object)))
-            (count 0))
-        (catch 'full
-          (maphash (lambda (key value)
-                     (when (>= count length) (throw 'full nil))
-                     (puthash (funcall walk key) (funcall walk value) copy)
-                     (setq count (1+ count)))
-                   object))
-        copy)))))
+the rest of a list or vector.  Strings are cut to STRING-LIMIT
+characters and the remaining character budget, end in \"…\" when cut,
+and lose their text properties.  Only strings, numbers, symbols, conses,
+plain vectors and hash tables are walked; any other object becomes an
+opaque symbol such as `#<record>' or `#<buffer>' and is never printed."
+  (hermes-chat--unknown-event-bounded-walk
+   object depth length string-limit (cons (car budget) (cdr budget))))
+
+(defun hermes-chat--unknown-event-opaque (object)
+  "Return a short placeholder symbol naming the type of OBJECT."
+  ;; `type-of' of a record is its arbitrary first slot, so never use it.
+  (intern (format "#<%s>" (if (recordp object) 'record (type-of object)))))
+
+(defun hermes-chat--unknown-event-bounded-walk
+    (object depth length string-limit budget)
+  "Return the bounded copy of OBJECT, spending the mutable BUDGET cell.
+DEPTH, LENGTH and STRING-LIMIT are as in
+`hermes-chat--unknown-event-bounded-copy'.  Each visit costs one node and
+roughly its printed size in characters; a hash table costs its header."
+  (if (not (and (> (car budget) 0) (> (cdr budget) 0)))
+      '…
+    (setcar budget (1- (car budget)))
+    (let ((walk (lambda (child)
+                  (hermes-chat--unknown-event-bounded-walk
+                   child (1- depth) length string-limit budget)))
+          (more (lambda () (and (> (car budget) 0) (> (cdr budget) 0))))
+          (spend (lambda (chars) (setcdr budget (- (cdr budget) chars)))))
+      (cond
+       ((stringp object)
+        (let ((keep (min (length object) string-limit (cdr budget))))
+          (funcall spend (+ keep 2))
+          (if (< keep (length object))
+              (concat (substring-no-properties object 0 keep) "…")
+            (substring-no-properties object))))
+       ((or (numberp object) (symbolp object))
+        (let ((size (1+ (length (if (symbolp object) (symbol-name object)
+                                  (number-to-string object))))))
+          (if (> size (cdr budget))
+              (progn (funcall spend size) '…)
+            (funcall spend size)
+            object)))
+       ((recordp object) (funcall spend 10)
+        (hermes-chat--unknown-event-opaque object))
+       ((not (or (consp object) (vectorp object) (hash-table-p object)))
+        (funcall spend 10)
+        (hermes-chat--unknown-event-opaque object))
+       ((<= depth 0) (funcall spend 2) '…)
+       ((consp object)
+        (funcall spend 2)
+        (let ((tail object) (count 0) items)
+          (while (and (consp tail) (< count length) (funcall more))
+            (push (funcall walk (car tail)) items)
+            (setq tail (cdr tail) count (1+ count)))
+          (nconc (nreverse items)
+                 (cond ((null tail) nil)
+                       ((or (consp tail) (not (funcall more))) (list '…))
+                       (t (funcall walk tail))))))
+       ((vectorp object)
+        (funcall spend 2)
+        (let ((count 0) items)
+          (while (and (< count (min length (length object))) (funcall more))
+            (push (funcall walk (aref object count)) items)
+            (setq count (1+ count)))
+          (vconcat (nreverse items)
+                   (and (< count (length object)) (list '…)))))
+       (t
+        (funcall spend 60)
+        (let ((copy (make-hash-table :test (hash-table-test object)))
+              (count 0))
+          (catch 'full
+            (maphash (lambda (key value)
+                       (unless (and (< count length) (funcall more))
+                         (throw 'full nil))
+                       (puthash (funcall walk key) (funcall walk value) copy)
+                       (setq count (1+ count)))
+                     object))
+          copy))))))
 
 (defun hermes-chat--unknown-event-raw-preview (raw)
   "Return a one-line preview of unknown event payload RAW.
@@ -906,7 +954,8 @@ the preview never traverses or prints all of a huge payload or string."
          (print-escape-newlines t)
          (object (hermes-chat--unknown-event-bounded-copy
                   raw print-level print-length
-                  (min width hermes-chat--unknown-event-preview-string-limit))))
+                  (min width hermes-chat--unknown-event-preview-string-limit)
+                  hermes-chat--unknown-event-preview-budget)))
     (truncate-string-to-width (prin1-to-string object) width nil nil "…")))
 
 (defun hermes-chat--unknown-event-content (event)
@@ -936,6 +985,9 @@ the preview never traverses or prints all of a huge payload or string."
 (defconst hermes-chat--unknown-event-string-limit 1000
   "Maximum characters kept from each string in expanded unknown event detail.")
 
+(defconst hermes-chat--unknown-event-detail-budget '(1000 . 4000)
+  "Shared (NODES . CHARACTERS) budget for expanded unknown event detail.")
+
 (defun hermes-chat--unknown-event-detail (event)
   "Return expanded raw detail for unknown transport EVENT.
 The raw payload is pretty-printed and bounded rather than truncated to one
@@ -951,7 +1003,8 @@ are truncated without pretty-printing."
              (limit hermes-chat--unknown-event-raw-detail-limit)
              (raw (hermes-chat--unknown-event-bounded-copy
                    raw print-level print-length
-                   hermes-chat--unknown-event-string-limit))
+                   hermes-chat--unknown-event-string-limit
+                   hermes-chat--unknown-event-detail-budget))
              (flat (prin1-to-string raw)))
         (if (> (length flat) limit)
             (concat (substring flat 0 limit) "\n… (raw payload truncated)")
