@@ -265,20 +265,11 @@ in the time column, as a queued worker has no time yet."
                             (unless (memq state '(running done failed))
                               (hermes-work-state-label state)))))))
 
-(defun hermes-work--plain-line (line)
-  "Return LINE without inline Markdown markup.
-Drop leading heading, list and quote markers, then emphasis and code
-delimiters around text."
-  (let ((line (replace-regexp-in-string
-               "\\`\\(?:\\(?:#+\\|[-*+>]\\)[ \t]+\\)+" "" line)))
-    (dolist (pattern '("\\*\\*\\([^*\n]+\\)\\*\\*" "__\\([^_\n]+\\)__" "`\\([^`\n]+\\)`")
-                     line)
-      (setq line (replace-regexp-in-string pattern "\\1" line t)))))
-
 (defun hermes-work--first-line (text)
   "Return the first nonblank line of TEXT as plain text, or nil."
-  (when-let* ((line (car (split-string (or text "") "\n" t "[ \t\r]+"))))
-    (hermes-work--plain-line line)))
+  (when-let* ((line (car (split-string (or text "") "\n" t "[ \t\r]+")))
+              (plain (hermes-work-plain-line line)))
+    (unless (string-empty-p plain) plain)))
 
 (defun hermes-work--agent-lines (row depth view now width hidden)
   "Return the lines for worker ROW at DEPTH under VIEW at NOW within WIDTH.
