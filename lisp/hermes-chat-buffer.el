@@ -535,7 +535,8 @@ owner-bound recovery buttons."
 (defun hermes-chat--insert-user-content (content)
   "Insert user CONTENT with a compact prompt prefix."
   (insert (propertize "> " 'face 'font-lock-keyword-face)
-          (propertize content 'face 'hermes-chat-user-input)
+          (propertize (hermes-chat--code-marked-string content)
+                      'face 'hermes-chat-user-input)
           "\n"))
 
 (defun hermes-chat--insert-entry-content (content &optional streaming)

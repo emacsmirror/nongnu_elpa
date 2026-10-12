@@ -1990,6 +1990,50 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
       (execute-kbd-macro (kbd "a SPC b DEL c"))
       (should (equal (hermes-chat-input-string) "a c")))))
 
+(ert-deftest hermes-chat-transcript-keys-insert-despite-global-bindings ()
+  "Printable transcript keys insert in the composer even when rebound globally.
+DEL still keeps its global deleting meaning there."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let ((global (current-global-map)))
+        (unwind-protect
+            (progn
+              (use-global-map (copy-keymap global))
+              (dolist (key '("n" "p" "?" "w" "SPC"))
+                (keymap-set (current-global-map) key #'ignore))
+              (insert "draft")
+              (dolist (key '("n" "p" "?" "w" "SPC"))
+                (should (eq (key-binding (kbd key)) #'self-insert-command)))
+              (should (eq (key-binding (kbd "DEL"))
+                          (lookup-key global (kbd "DEL"))))
+              (execute-kbd-macro (kbd "n p ? w SPC x DEL"))
+              (should (equal (hermes-chat-input-string) "draftnp?w ")))
+          (use-global-map global))))))
+
+(ert-deftest hermes-chat-copy-fenced-code-in-submitted-user-turn ()
+  "`w' in a submitted user turn's fenced block copies only its code."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let ((hermes-transport-send-function
+             (lambda (_prompt _callback) 'fake-process))
+            (source "User code:\n```sh\necho hi\n```\nend")
+            (kill-ring nil)
+            (interprogram-cut-function nil)
+            (interprogram-paste-function nil)
+            (inhibit-message t))
+        (insert source)
+        (hermes-chat-send)
+        (should (equal (plist-get (car (hermes-chat--entries)) :content) source))
+        (goto-char (car (hermes-chat--user-turn-positions)))
+        (search-forward "echo hi")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "echo hi\n"))
+        (search-forward "end")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) source))))))
+
 (ert-deftest hermes-chat-imenu-lists-user-turns ()
   "The imenu index names each user turn by its first line."
   (hermes-test-with-chat-buffer

@@ -2876,17 +2876,20 @@ Do not wrap into the composer or modify its draft."
       (widen)
       (= pos (point-max)))))
 
-(defun hermes-chat--transcript-key (command &optional empty-composer)
+(defun hermes-chat--transcript-key (command &optional empty-composer native)
   "Return a filtered key binding running COMMAND outside the composer.
-In the composer the binding steps aside so the key keeps its ordinary
-global meaning (inserting itself, or deleting for DEL), unless
-EMPTY-COMPOSER is non-nil and the composer is empty."
+In the composer the key inserts itself, unless EMPTY-COMPOSER is non-nil
+and the composer is empty.  With NATIVE non-nil the binding instead steps
+aside in the composer, so the key keeps its ordinary global meaning, such
+as deletion for DEL."
   `(menu-item "" ,command
               :filter ,(lambda (command)
-                         (and (or (not (hermes-chat--point-in-input-p))
-                                  (and empty-composer
-                                       (hermes-chat--composer-empty-p)))
-                              command))))
+                         (cond
+                          ((or (not (hermes-chat--point-in-input-p))
+                               (and empty-composer
+                                    (hermes-chat--composer-empty-p)))
+                           command)
+                          ((not native) #'self-insert-command)))))
 
 (defun hermes-chat--entry-node-at (position)
   "Return the transcript EWOC node containing POSITION, or nil."
@@ -3432,8 +3435,8 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "p" (hermes-chat--transcript-key #'hermes-chat-previous-turn)
   "w" (hermes-chat--transcript-key #'hermes-chat-copy)
   "SPC" (hermes-chat--transcript-key #'scroll-up-command)
-  "S-SPC" (hermes-chat--transcript-key #'scroll-down-command)
-  "DEL" (hermes-chat--transcript-key #'scroll-down-command)
+  "S-SPC" (hermes-chat--transcript-key #'scroll-down-command nil t)
+  "DEL" (hermes-chat--transcript-key #'scroll-down-command nil t)
   "<backtab>" #'hermes-chat-previous-button
   "<remap> <forward-button>" #'hermes-chat-next-button
   "<remap> <backward-button>" #'hermes-chat-previous-button

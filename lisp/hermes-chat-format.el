@@ -623,6 +623,14 @@ property across the whole block, delimiters included."
                              'hermes-chat-code (nth 2 block))
         (forward-line 1)))))
 
+(defun hermes-chat--code-marked-string (text)
+  "Return a copy of TEXT with fenced code blocks marked for copying.
+Unlike `hermes-chat--fontify-markdown-string', leave TEXT's faces alone."
+  (with-temp-buffer
+    (insert text)
+    (hermes-chat--mark-code-blocks)
+    (buffer-string)))
+
 (defun hermes-chat--fontify-markdown-string (text)
   "Return TEXT fontified with `markdown-mode', or TEXT on failure.
 Markup markers (* _ ` # ...) keep their faces but are never hidden, so the raw
