@@ -2258,6 +2258,75 @@ after the file name is detached again."
                        (hermes-chat--status-rule-fit
                         "● Running 0:00" "terminal: make check" '("☐ 1/3") "2 queued" 46))))))))
 
+(ert-deftest hermes-chat-status-rule-fits-every-window-metric ()
+  "A wider sibling with larger glyphs constrains the rule, not the narrowest."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (let* ((narrow (selected-window))
+            (large (split-window narrow 36 t)))
+       (set-window-parameter large 'hermes-test-large t)
+       ;; Model window-filtered remapping: the wider window's glyphs are
+       ;; three columns wide.
+       (cl-letf (((symbol-function 'hermes-chat--footer-window-budget)
+                  (lambda (window) (1- (window-body-width window))))
+                 ((symbol-function 'hermes-chat--footer-measure)
+                  (lambda (window)
+                    (lambda (string)
+                      (* (if (window-parameter window 'hermes-test-large) 3 1)
+                         (string-width string))))))
+         (should (< (window-body-width narrow) (window-body-width large)))
+         (let ((fits (hermes-chat--footer-fits #'identity))
+               (limit (/ (1- (window-body-width large)) 3)))
+           (should (funcall fits (make-string limit ?x)))
+           (should-not (funcall fits (make-string (1+ limit) ?x)))))))))
+
+(ert-deftest hermes-chat-status-rule-fits-window-filtered-face-remapping ()
+  "Every window keeps one-line footers when a sibling remaps to larger glyphs."
+  (skip-unless (display-graphic-p))
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (goto-char (point-max))
+     (insert "draft")
+     (undo-boundary)
+     (setq-local face-remapping-alist
+                 '((default (:filtered (:window hermes-test-large t) (:height 3.0))
+                            default)))
+     (let* ((narrow (selected-window))
+            (large (split-window narrow 36 t))
+            (offset (- (point) (hermes-chat--input-position))))
+       (set-window-parameter large 'hermes-test-large t)
+       (setq hermes-chat--dashboard-running-p t)
+       (puthash "t1" "terminal: make check && run an extraordinarily long command line"
+                (hermes-chat--active-tools-table))
+       (hermes-chat--queue-content
+        "a very long queued message that cannot possibly fit the large window")
+       (redraw-display)
+       (redisplay t)
+       (hermes-chat--status-rule-repaint)
+       (hermes-test--event-loop-barrier)
+       (redisplay t)
+       (should (< (window-body-width narrow) (window-body-width large)))
+       ;; The filter enlarges only the wider window's glyphs.
+       (should (> (cdr (window-text-pixel-size large (point-min) (1+ (point-min))))
+                  (cdr (window-text-pixel-size narrow (point-min) (1+ (point-min))))))
+       (let ((lines (split-string (hermes-test--footer) "\n" t)))
+         ;; The larger glyphs drop the activity and status word before the
+         ;; clock and queue count.
+         (should (string-match-p "● \\(?:Running \\)?0:0[0-9] · 1 queued" (car (last lines))))
+         (should-not (string-match-p "terminal:" (car (last lines))))
+         (dolist (window (list narrow large))
+           (should (equal (make-list (length lines) 1)
+                          (hermes-test--footer-screen-lines window)))))
+       (should (equal "draft" (hermes-chat-input-string)))
+       (should (= offset (- (point) (hermes-chat--input-position))))
+       (should (eq narrow (selected-window)))
+       (hermes-test--draft-undo-command #'undo)
+       (should (equal "" (hermes-chat-input-string)))))))
+
 (defun hermes-test--footer-screen-lines (window)
   "Return the screen lines each footer line occupies in WINDOW.
 The native display engine lays out the actual buffer text at WINDOW's width."

@@ -3609,22 +3609,20 @@ remapping and display table, with WINDOW's frame fonts."
 
 (defun hermes-chat--footer-fits (decorate)
   "Return a predicate accepting text whose DECORATE line fits on one line.
-The line must fit the narrowest window displaying this buffer on each
-frame, measured with that frame's fonts.  A hidden buffer uses 78 columns."
-  (let* ((windows (get-buffer-window-list (current-buffer) nil t))
-         (narrowest
-          (mapcar (lambda (group)
-                    (let ((window (car (seq-sort-by #'hermes-chat--footer-window-budget
-                                                    #'< (cdr group)))))
-                      (cons (hermes-chat--footer-measure window)
-                            (hermes-chat--footer-window-budget window))))
-                  (seq-group-by #'window-frame windows))))
-    (if (null narrowest)
+The line must fit every window displaying this buffer, measured as that
+window displays it: window-filtered face remapping can give sibling windows
+different fonts, so the narrowest window need not be the tightest.  A hidden
+buffer uses 78 columns."
+  (let ((limits (mapcar (lambda (window)
+                          (cons (hermes-chat--footer-measure window)
+                                (hermes-chat--footer-window-budget window)))
+                        (get-buffer-window-list (current-buffer) nil t))))
+    (if (null limits)
         (lambda (text) (<= (string-width (funcall decorate text)) 76))
       (lambda (text)
         (let ((line (funcall decorate text)))
           (seq-every-p (lambda (limit) (<= (funcall (car limit) line) (cdr limit)))
-                       narrowest))))))
+                       limits))))))
 
 (defun hermes-chat--queue-line-button (button)
   "Open the queue panel with point on BUTTON's queued message."
