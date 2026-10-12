@@ -3085,14 +3085,29 @@ displayable."
   (let ((s (max 0 (floor seconds))))
     (format "%s ago" (if (< s 60) (format "%ds" s) (hermes-work-duration s)))))
 
+(defun hermes-work--plain-inline (text)
+  "Return TEXT without paired bold and code delimiters, keeping code text."
+  (replace-regexp-in-string
+   (rx (or (seq "`" (group (+ (not "`"))) "`")
+           (seq "**" (group (not (any "*" blank)) (? (*? nonl) (not blank))) "**")
+           (seq "__" (group (not (any "_" blank)) (? (*? nonl) (not blank))) "__")))
+   (lambda (match)
+     (or (match-string 1 match)
+         (hermes-work--plain-inline (or (match-string 2 match) (match-string 3 match)))))
+   text t t))
+
 (defun hermes-work-plain-line (line)
   "Return LINE without inline Markdown, trimmed.
-Drop leading heading, list and quote marks, then bold and code marks."
-  (string-trim
-   (replace-regexp-in-string
-    "\\*\\*\\|__\\|`" ""
-    (replace-regexp-in-string
-     "\\`\\(?:[ \t]*\\(?:\\(?:#+\\|[-*+]\\)[ \t]+\\|>[ \t]*\\)\\)+" "" line))))
+Drop leading heading, list and quote marks, then paired bold and code
+marks.  Lone marks, such as make's `***', stay inside text; a line of
+marks alone reads as empty."
+  (let ((text (string-trim
+               (hermes-work--plain-inline
+                (replace-regexp-in-string
+                 (rx bos (+ (* blank) (or (seq (or (+ "#") (any "*+-")) (+ blank))
+                                          (seq ">" (* blank)))))
+                 "" line)))))
+    (if (string-match-p (rx bos (* (any "*_`")) eos) text) "" text)))
 
 (defconst hermes-chat--work-retain 60
   "Seconds finished workers and exited processes stay listed.")

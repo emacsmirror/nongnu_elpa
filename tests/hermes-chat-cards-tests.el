@@ -138,6 +138,10 @@ later event of the worker carries; sa-2 stays queued."
   (should (equal (hermes-work-plain-line "## **Verdict:** use `foo-bar`") "Verdict: use foo-bar"))
   (should (equal (hermes-work-plain-line "> - __Done__: all green ") "Done: all green"))
   (should (equal (hermes-work-plain-line "-1 offset, a-b * c") "-1 offset, a-b * c"))
+  ;; Unpaired marks are text, not emphasis.
+  (should (equal (hermes-work-plain-line "make: *** [Makefile:88: test] Error 1")
+                 "make: *** [Makefile:88: test] Error 1"))
+  (should (equal (hermes-work-plain-line "**`a * b`** and __c__") "a * b and c"))
   (should (equal (hermes-chat--card-first-line "\n**\n# `Findings`\nmore") "Findings"))
   (let ((text (hermes-chat--card-text
                (list :id "e" :role 'tool :status 'running
