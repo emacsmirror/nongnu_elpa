@@ -124,7 +124,12 @@ later event of the worker carries; sa-2 stays queued."
     (should (eq (get-text-property (string-search "✓" text) 'face text)
                 'hermes-work-done))
     (should (eq (get-text-property (string-search "◌" text) 'face text)
-                'hermes-work-queued))))
+                'hermes-work-queued))
+    ;; A result's arrow stays quiet; only a failure's text is red.
+    (let ((failed (hermes-chat--card-text (hermes-test--card-sample 90 nil))))
+      (should (eq (get-text-property (string-search "↳ Error:" failed) 'face failed) 'shadow))
+      (should (eq (get-text-property (string-search "Error:" failed) 'face failed)
+                  'hermes-work-failed)))))
 
 ;;;; Live tree in place
 
@@ -222,6 +227,9 @@ later event of the worker carries; sa-2 stays queued."
                                 (search-forward "delegate_task")
                                 (1- (point)))))
       (should (eq (get-text-property head 'action) #'hermes-chat--toggle-entry-button))
+      ;; The fold glyph is quiet like other toggles, not a link.
+      (let ((fold (save-excursion (goto-char (point-min)) (search-forward "▸") (1- (point)))))
+        (should (eq (get-text-property fold 'face) 'shadow)))
       (push-button head)
       (should (hermes-test--card-line "  ✗ ▾ 🧠 delegate_task"))
       (should (hermes-test--card-line "├ ✓ Map the agents panel"))
@@ -462,8 +470,16 @@ their nested workers, then follows the named batch."
        `((:id "proc_1" :kind process :state failed :exit-code 2 :command "make check"
               :last-line "make: *** [check] Error 2" :exited-at ,hermes-test--card-now)))
       (should (equal (hermes-test--card-line "↳") "    ↳ make: *** [check] Error 2"))
-      (let ((pos (save-excursion (goto-char (point-min)) (search-forward "↳"))))
-        (should (eq (get-text-property pos 'face) 'hermes-work-failed))))))
+      (let ((face-at (lambda (needle)
+                       (get-text-property
+                        (save-excursion (goto-char (point-min))
+                                        (- (search-forward needle) (length needle)))
+                        'face))))
+        ;; Only the reason and verdict are red; the command stays readable.
+        (should (eq (funcall face-at "↳") 'shadow))
+        (should (eq (funcall face-at "make: ***") 'hermes-work-failed))
+        (should (eq (funcall face-at "exit 2") 'hermes-work-failed))
+        (should-not (funcall face-at "terminal: make check"))))))
 
 ;;;; Width
 

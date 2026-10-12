@@ -99,6 +99,10 @@ LEFT is truncated to leave room for RIGHT.  Below
   (concat (hermes-chat--tool-emoji tool) " " tool
           (if target (concat " " target) "")))
 
+(defun hermes-chat--card-arrow (text face)
+  "Return result line TEXT in FACE behind a quiet `↳'."
+  (concat (hermes-chat--card-dim "↳ ") (propertize text 'face face)))
+
 (defun hermes-chat--card-first-line (text)
   "Return the first nonblank line of TEXT as plain text, or nil."
   (seq-find (lambda (line) (not (string-empty-p line)))
@@ -204,12 +208,9 @@ line of its error, else its summary; another ended one its summary."
                          "\n"))
             (when activity
               (concat lead
-                      (propertize (concat "↳ " (hermes-chat--card-fit
-                                                activity
-                                                (- width (string-width lead) 2)))
-                                  'face (if (eq state 'failed)
-                                            'hermes-work-failed
-                                          'shadow))
+                      (hermes-chat--card-arrow
+                       (hermes-chat--card-fit activity (- width (string-width lead) 2))
+                       (if (eq state 'failed) 'hermes-work-failed 'shadow))
                       "\n"))
             (walk (plist-get row :id) (concat inner "  ")))))
        kids ""))))
@@ -225,7 +226,7 @@ line of its error, else its summary; another ended one its summary."
   "Return a `▸'/`▾' fold toggle labeled TEXT for ENTRY's settled card.
 Every character of TEXT keeps its own face."
   (let ((expanded (hermes-chat--entry-expanded-p entry)))
-    (make-text-button (concat (if expanded "▾ " "▸ ") text) nil
+    (make-text-button (concat (hermes-chat--card-dim (if expanded "▾ " "▸ ")) text) nil
                       'follow-link t 'mouse-face 'highlight
                       'action #'hermes-chat--toggle-entry-button
                       'hermes-chat-entry-id (plist-get entry :id)
@@ -322,7 +323,7 @@ A running or failed process keeps its last output line below the head."
      (propertize
       (hermes-chat--card-line
        (concat "  " (hermes-work-state-glyph state t) " "
-               (if running label (propertize label 'face 'shadow))
+               (if (memq state '(running failed)) label (propertize label 'face 'shadow))
                (hermes-chat--card-dim suffix))
        right width (if running 'shadow (hermes-work-state-face state)))
       'help-echo (string-join (delq nil (list (plist-get row :command)
@@ -331,8 +332,8 @@ A running or failed process keeps its last output line below the head."
                               "\n"))
      (when (and line (memq state '(running failed)))
        (concat "    "
-               (propertize (concat "↳ " (hermes-chat--card-fit line (- width 6)))
-                           'face (if running 'shadow 'hermes-work-failed))
+               (hermes-chat--card-arrow (hermes-chat--card-fit line (- width 6))
+                                        (if running 'shadow 'hermes-work-failed))
                "\n")))))
 
 (defun hermes-chat--card-text (entry)
