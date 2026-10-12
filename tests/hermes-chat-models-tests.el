@@ -299,7 +299,7 @@
 
 (ert-deftest hermes-chat-model-picker-defaults-to-current-and-returns-exact-provider ()
   "The current model is the default; duplicate ids keep their provider."
-  (dolist (pick '(default "claude · Anthropic (anthropic)"))
+  (dolist (pick '("claude · Anthropic (anthropic)"))
     (hermes-test-with-chat-buffer
      (setq hermes-chat--model "claude"
            hermes-chat--dashboard-active-session-id "sid"
@@ -318,9 +318,81 @@
           (hermes-chat--model-switch-context)))
        ;; The catalogue reports OpenRouter as the session's provider.
        (should (equal seen-default "claude · OpenRouter (openrouter)"))
-       (should (equal applied (if (eq pick 'default)
-                                  "claude --provider openrouter"
-                                "claude --provider anthropic")))))))
+       (should (equal applied "claude --provider anthropic"))))))
+
+(ert-deftest hermes-chat-model-picker-current-requires-exact-provider ()
+  "A reported provider without a matching row marks and defaults nothing."
+  (let* ((catalog '((model . "claude") (provider . "missing")
+                    (providers . (((slug . "anthropic") (name . "Anthropic")
+                                   (authenticated . t) (models . ("claude")))))))
+         (cands (hermes-chat--model-candidates catalog)))
+    (should-not (hermes-chat--model-current-value cands "claude" "missing"))
+    (should (equal (hermes-chat--model-current-value cands "claude" "anthropic")
+                   "claude · Anthropic (anthropic)"))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--model "claude"
+           hermes-chat--dashboard-active-session-id "sid"
+           hermes-chat--dashboard-session-ready-p t)
+     (should-not (hermes-chat--model-picker-current cands catalog))
+     (let ((seen-default 'unset) annotation applied)
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (_prompt table _pred _require _initial _history default)
+                    (setq seen-default default
+                          annotation
+                          (funcall (completion-metadata-get
+                                    (completion-metadata "" table nil)
+                                    'annotation-function)
+                                   "claude · Anthropic (anthropic)"))
+                    ;; Accepting the (absent) default returns the empty string.
+                    (or default "")))
+                 ((symbol-function 'hermes-dashboard-transport-config-set)
+                  (lambda (_client _key value &rest _) (setq applied value))))
+         (hermes-chat--prompt-and-set-model
+          (current-buffer) 'client catalog (hermes-chat--model-switch-context)))
+       (should-not seen-default)
+       (should-not (and annotation
+                        (string-search "current" (substring-no-properties annotation))))
+       ;; No implicit provider change.
+       (should-not applied)))))
+
+(ert-deftest hermes-chat-model-picker-same-exact-model-is-noop ()
+  "Choosing the confirmed current model and provider dispatches no switch."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "claude"
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t)
+   (let (applied messages)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _table _pred _require _initial _history default)
+                  default))
+               ((symbol-function 'message)
+                (lambda (fmt &rest args) (push (apply #'format fmt args) messages)))
+               ((symbol-function 'hermes-dashboard-transport-config-set)
+                (lambda (_client _key value &rest _) (setq applied value))))
+       (hermes-chat--prompt-and-set-model
+        (current-buffer) 'client hermes-test--grouped-model-catalog
+        (hermes-chat--model-switch-context)))
+     (should-not applied)
+     (should (member "Already using claude (openrouter)" messages)))))
+
+(ert-deftest hermes-chat-model-picker-unconfirmed-provider-still-switches ()
+  "A model-only current match is not proof of provider; choosing it switches."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "haiku"
+         hermes-chat--dashboard-active-session-id "sid"
+         hermes-chat--dashboard-session-ready-p t)
+   (let (applied seen-default)
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _table _pred _require _initial _history default)
+                  (setq seen-default default)
+                  default))
+               ((symbol-function 'hermes-dashboard-transport-config-set)
+                (lambda (_client _key value &rest _) (setq applied value))))
+       (hermes-chat--prompt-and-set-model
+        (current-buffer) 'client hermes-test--grouped-model-catalog
+        (hermes-chat--model-switch-context)))
+     (should (equal seen-default "haiku · Anthropic (anthropic)"))
+     (should (equal applied "haiku --provider anthropic")))))
 
 (ert-deftest hermes-chat-model-picker-pending-choice-is-current ()
   "A pending create-time model and provider win over the catalogue's report."

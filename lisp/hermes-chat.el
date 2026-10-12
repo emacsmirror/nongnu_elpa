@@ -2747,7 +2747,8 @@ Do not wrap into the composer or modify its draft."
   "Complete in the composer, or visit the next transcript button."
   (interactive nil hermes-chat-mode)
   (if (>= (point) hermes-chat--input-marker)
-      (completion-at-point)
+      (let ((hermes-chat--explicit-completion t))
+        (completion-at-point))
     (hermes-chat-next-button)))
 
 (autoload 'hermes-chat-work "hermes-subagents" nil

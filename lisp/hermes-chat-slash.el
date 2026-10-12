@@ -704,6 +704,22 @@ and other completion tables must not renew it."
             (setf (plist-get snapshot :tick) (buffer-chars-modified-tick)
                   (plist-get snapshot :point) (point))))))))
 
+(defvar hermes-chat--explicit-completion nil
+  "Non-nil while the user's explicit completion command runs.
+`hermes-chat-tab' binds this around `completion-at-point'.")
+
+(defconst hermes-chat--explicit-completion-commands
+  '(completion-at-point complete-symbol)
+  "Native commands whose invocation is an explicit completion request.")
+
+(defun hermes-chat--explicit-completion-p ()
+  "Return non-nil when completion was explicitly requested by the user.
+Passive completion UIs (idle timers, preview or auto popups) query
+completion functions during other commands such as `self-insert-command';
+they carry no such authority."
+  (or hermes-chat--explicit-completion
+      (memq this-command hermes-chat--explicit-completion-commands)))
+
 (defun hermes-chat--request-path-completion (bounds)
   "Request backend candidates for BOUNDS without editing the composer."
   (let* ((buffer (current-buffer))
@@ -735,8 +751,9 @@ and other completion tables must not renew it."
          :reject #'ignore)
       (error nil))
     ;; A read settling later than this command re-offers completion once,
-    ;; but only for an interactive request (not an idle completion UI).
-    (when (and this-command (not (plist-get snapshot :items)))
+    ;; but only for explicit completion, never a passive or idle UI query.
+    (when (and (hermes-chat--explicit-completion-p)
+               (not (plist-get snapshot :items)))
       (setf (plist-get snapshot :retrigger) t))
     snapshot))
 

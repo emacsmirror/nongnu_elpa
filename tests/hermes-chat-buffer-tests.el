@@ -1751,8 +1751,10 @@
            (should (equal (hermes-chat-input-string) "See @file:`src/module-two.py`"))))))))
 
 (ert-deftest hermes-chat-file-ref-late-read-reopens-completion-once ()
-  "A late backend read reopens completion once, only for an unchanged composer."
-  (dolist (change '(nil typed-before typed-after moved unselected idle))
+  "A late backend read reopens completion once, only for an unchanged composer.
+Only explicit completion arms the reopen: an idle timer or a passive
+completion UI querying CAPFs during typing never does."
+  (dolist (change '(nil typed-before typed-after moved unselected idle passive))
     (save-window-excursion
       (hermes-test-with-chat-buffer
         (switch-to-buffer (current-buffer))
@@ -1769,14 +1771,17 @@
                     ((symbol-function 'run-at-time)
                      (lambda (_delay _repeat fn &rest args)
                        (push (cons fn args) timers))))
-            (let ((this-command (unless (eq change 'idle) 'hermes-chat-tab)))
-              (completion-at-point))
+            (pcase change
+              ('idle (let ((this-command nil)) (completion-at-point)))
+              ('passive (let ((this-command 'self-insert-command))
+                          (completion-at-point)))
+              (_ (let ((this-command 'hermes-chat-tab)) (hermes-chat-tab))))
             (should (equal (hermes-chat-input-string) "See @src/mo"))
             (when (eq change 'typed-before) (insert "d"))
             (funcall resolve items)
             ;; A second settlement of the same read cannot schedule again.
             (funcall resolve items)
-            (if (memq change '(typed-before idle))
+            (if (memq change '(typed-before idle passive))
                 (should-not timers)
               (should (= (length timers) 1)))
             (pcase change
@@ -1793,6 +1798,31 @@
                 (should (equal (with-current-buffer (window-buffer) (buffer-string))
                                before))
                 (should-not (string-search "module" (hermes-chat-input-string)))))))))))
+
+(ert-deftest hermes-chat-file-ref-passive-query-never-arms-reopen ()
+  "A passive CAPF query arms nothing even when this-command looks explicit.
+Completion UIs may query CAPFs from hooks while `this-command' still names
+the last command; only the explicit completion path carries authority."
+  (dolist (command '(self-insert-command hermes-chat-tab
+                     corfu-insert company-idle-begin))
+    (save-window-excursion
+      (hermes-test-with-chat-buffer
+        (switch-to-buffer (current-buffer))
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "remote"
+              hermes-chat--working-directory "/remote")
+        (insert "See @src/mo")
+        (let (resolve timers)
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                     (lambda (_client _word &rest args)
+                       (setq resolve (plist-get args :resolve))))
+                    ((symbol-function 'run-at-time)
+                     (lambda (_delay _repeat fn &rest args)
+                       (push (cons fn args) timers))))
+            (let ((this-command command))
+              (hermes-chat--file-ref-capf))
+            (funcall resolve '((items . (((text . "@file:src/module.py"))))))
+            (should-not timers)))))))
 
 (provide 'hermes-chat-buffer-tests)
 ;;; hermes-chat-buffer-tests.el ends here

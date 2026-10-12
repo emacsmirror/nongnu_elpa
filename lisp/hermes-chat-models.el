@@ -162,17 +162,18 @@ with authenticated providers first, is preserved."
         (complete-with-action action values string predicate)))))
 
 (defun hermes-chat--model-current-value (candidates model &optional provider)
-  "Return the value in CANDIDATES naming MODEL, preferring PROVIDER."
+  "Return the value in CANDIDATES naming MODEL under PROVIDER.
+When PROVIDER is non-nil only an exact model and provider match counts;
+the same model under another provider is a different choice, so return
+nil.  Without PROVIDER, return the first row naming MODEL."
   (when model
-    (car (or (and provider
-                  (cl-find-if (lambda (candidate)
-                                (and (equal (plist-get (cdr candidate) :model) model)
-                                     (equal (plist-get (cdr candidate) :provider)
-                                            provider)))
-                              candidates))
-             (cl-find model candidates
-                      :key (lambda (candidate) (plist-get (cdr candidate) :model))
-                      :test #'equal)))))
+    (car (cl-find-if
+          (lambda (candidate)
+            (let ((data (cdr candidate)))
+              (and (equal (plist-get data :model) model)
+                   (or (null provider)
+                       (equal (plist-get data :provider) provider)))))
+          candidates))))
 
 (defun hermes-chat--read-model-candidate (prompt candidates &optional current)
   "Read one of CANDIDATES with PROMPT; return its (VALUE . PLIST) or nil.
@@ -403,10 +404,11 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
        (hermes-chat--model-provider-label provider)
        (if (equal auth-type "oauth") "OAuth" (or auth-type "external")))))))
 
-(defun hermes-chat--model-picker-current (candidates result)
+(defun hermes-chat--model-picker-current (candidates result &optional exact)
   "Return the value in CANDIDATES naming this chat's current model.
 A pending create-time choice wins; otherwise the owner's model, qualified by
-the catalogue RESULT's reported provider when it names the same model."
+the catalogue RESULT's reported provider when it names the same model.
+With EXACT non-nil, return a value only when its provider is known."
   (let* ((pending (and (hermes-chat--pending-setting-p)
                        hermes-chat--dashboard-create-model))
          (model (or pending hermes-chat--model
@@ -418,7 +420,8 @@ the catalogue RESULT's reported provider when it names the same model."
                                         (hermes-transport--get result 'model)))
                           (hermes-transport--scalar-string
                            (hermes-transport--get result 'provider))))))
-    (hermes-chat--model-current-value candidates model provider)))
+    (and (or provider (not exact))
+         (hermes-chat--model-current-value candidates model provider))))
 
 (defun hermes-chat--prompt-and-set-model (buffer client result &optional context)
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
@@ -437,16 +440,24 @@ the catalogue RESULT's reported provider when it names the same model."
                                    (hermes-chat--model-setting-value))))
                  (current (with-current-buffer buffer
                             (hermes-chat--model-picker-current candidates result)))
-                 (candidate (cdr (hermes-chat--read-model-candidate
-                                  prompt candidates current)))
+                 (exact (with-current-buffer buffer
+                          (hermes-chat--model-picker-current candidates result t)))
+                 (choice (hermes-chat--read-model-candidate
+                          prompt candidates current))
+                 (candidate (cdr choice))
                  (provider (and candidate
                                 (hermes-chat--find-provider
                                  result (plist-get candidate :provider)))))
-            (when candidate
-              (if (not (hermes-chat--model-switch-current-p context))
-                  (message "Hermes: model switch is stale or the chat is busy")
-                (hermes-chat--apply-selected-model
-                 buffer client candidate provider context)))))))))
+            (cond
+             ((null candidate))
+             ((not (hermes-chat--model-switch-current-p context))
+              (message "Hermes: model switch is stale or the chat is busy"))
+             ((and exact (equal (car choice) exact))
+              (message "Already using %s (%s)" (plist-get candidate :model)
+                       (plist-get candidate :provider)))
+             (t
+              (hermes-chat--apply-selected-model
+               buffer client candidate provider context)))))))))
 
 (defun hermes-chat--request-model-switch (client invocation)
   "Fetch fresh model choices through CLIENT for picker INVOCATION."
