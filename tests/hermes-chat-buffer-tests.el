@@ -2237,13 +2237,12 @@ after the file name is detached again."
       "a very long queued message that cannot possibly fit the narrow window")
      (hermes-chat--queue-content "second")
      (hermes-test--event-loop-barrier)
-     (let* ((width (hermes-chat--table-window-width))
-            (lines (split-string (hermes-test--footer) "\n" t))
+     (let* ((lines (split-string (hermes-test--footer) "\n" t))
             (rule (car (last lines))))
-       (should (< width 40))
-       (dolist (line lines)
-         (should (<= (string-width line) width)))
-       (should (string-match-p "● Running 0:0[0-9] · \\(?:terminal:.*… · \\)?2 queued" rule))
+       (dolist (window (window-list))
+         (should (equal (make-list (length lines) 1)
+                        (hermes-test--footer-screen-lines window))))
+       (should (string-match-p "● Running 0:0[0-9] · \\(?:term[^ ]*… · \\)?2 queued" rule))
        (should (string-match-p "…\\'" (car lines)))
        ;; Very narrow rules drop the activity entirely before the count.
        (should (equal "● Running 0:00 · 2 queued"
@@ -2258,6 +2257,118 @@ after the file name is detached again."
                       (substring-no-properties
                        (hermes-chat--status-rule-fit
                         "● Running 0:00" "terminal: make check" '("☐ 1/3") "2 queued" 46))))))))
+
+(defun hermes-test--footer-screen-lines (window)
+  "Return the screen lines each footer line occupies in WINDOW.
+The native display engine lays out the actual buffer text at WINDOW's width."
+  (with-current-buffer (window-buffer window)
+    (let* ((input (hermes-chat--input-position))
+           (unit (cdr (window-text-pixel-size window (point-min) (1+ (point-min)))))
+           (start (1+ (- input (length (hermes-test--footer))))))
+      (save-excursion
+        (goto-char start)
+        (cl-loop while (< (point) (1- input))
+                 collect (let ((height (cdr (window-text-pixel-size
+                                             window (point) (line-end-position)))))
+                           (forward-line 1)
+                           (/ height unit)))))))
+
+(defun hermes-test--rule-priority-holds-p (rule)
+  "Return non-nil when RULE dropped its parts in priority order.
+The activity goes before the quiet hint, which goes before task segments."
+  (let ((activity (string-match-p "terminal:" rule))
+        (quiet (string-match-p "quiet " rule))
+        (tasks (string-match-p "📋" rule)))
+    (and (or (not activity) quiet) (or (not quiet) tasks)
+         (string-match-p "● Running [0-9:]+" rule)
+         (string-match-p "1 queued" rule))))
+
+(ert-deftest hermes-chat-status-rule-stays-one-line-with-long-multiline-tool ()
+  "Long multiline tool text, wide glyphs, quiet, tasks and queue share one line."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (delete-other-windows)
+     (dotimes (i 3)
+       (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant (format "line %d" i))))
+     (goto-char (point-max))
+     (insert "draft")
+     (undo-boundary)
+     (let* ((command (concat "terminal: cd /nix/store/" (make-string 160 ?x)
+                             "/bin && make\tcheck\r\n  --flag=1\n\u2028中文 tail"))
+            (hermes-chat-status-rule-segment-functions
+             (list (lambda () (propertize "📋 1/3" 'face 'font-lock-type-face))
+                   (lambda () "a\nb")))
+            (offset (- (point) (hermes-chat--input-position)))
+            (composer (selected-window)))
+       (setq hermes-chat--dashboard-running-p t)
+       (puthash "t1" command (hermes-chat--active-tools-table))
+       (hermes-chat--queue-content "queued\twith tab")
+       (hermes-test--event-loop-barrier)
+       (setq hermes-chat--status-rule-start (- (float-time) 100)
+             hermes-chat--status-rule-last-event (- (float-time) 90))
+       (hermes-chat--status-rule-update)
+       (let* ((footer (hermes-test--footer))
+              (rule (car (last (split-string footer "\n" t))))
+              (preview (string-match "terminal:" footer)))
+         (should (= 2 (length (split-string footer "\n" t))))
+         (should (string-match-p
+                  "● Running 1:40 · quiet 1:30 · terminal: cd /nix/[^ ]*… · 📋 1/3 · a b · 1 queued  \\'"
+                  rule))
+         (should (equal (string-trim command) (get-text-property preview 'help-echo footer)))
+         (should (eq 'shadow (get-text-property preview 'face footer)))
+         (should (equal '(1 1) (hermes-test--footer-screen-lines composer))))
+       ;; A narrow split reflows through the window hook, keeping one line in
+       ;; every window and dropping parts by priority.
+       (let ((narrow (split-window composer 34 t)))
+         (run-window-configuration-change-hook)
+         (hermes-test--event-loop-barrier)
+         (let ((rule (car (last (split-string (hermes-test--footer) "\n" t)))))
+           (should-not (string-match-p "terminal:" rule))
+           (should (hermes-test--rule-priority-holds-p rule)))
+         (dolist (window (list composer narrow))
+           (should (equal '(1 1) (hermes-test--footer-screen-lines window))))
+         (delete-window narrow))
+       (run-window-configuration-change-hook)
+       (hermes-test--event-loop-barrier)
+       (should (string-match-p "terminal: cd" (hermes-test--footer)))
+       (should (equal "draft" (hermes-chat-input-string)))
+       (should (= offset (- (point) (hermes-chat--input-position))))
+       (hermes-test--draft-undo-command #'undo)
+       (should (equal "" (hermes-chat-input-string)))))))
+
+(ert-deftest hermes-chat-status-rule-fit-drops-by-priority ()
+  "Activity goes first, then quiet, then segments; head and count stay."
+  (let ((fit (lambda (width)
+               (substring-no-properties
+                (or (hermes-chat--status-rule-fit
+                     "● Running 0:00" "terminal: make check" '("📋 1/3") "2 queued"
+                     width "quiet 0:45" "● 0:00")
+                    "")))))
+    (should (equal "● Running 0:00 · quiet 0:45 · terminal: make check · 📋 1/3 · 2 queued"
+                   (funcall fit 80)))
+    (should (equal "● Running 0:00 · termina… · 📋 1/3 · 2 queued" (funcall fit 45)))
+    (should (equal "● Running 0:00 · 2 queued" (funcall fit 30)))
+    ;; Narrower, the compact head keeps the clock and the count.
+    (should (equal "● 0:00 · 2 queued" (funcall fit 20)))
+    (should (equal "● 0:00" (funcall fit 10)))
+    (should (equal "● …" (funcall fit 3)))
+    (should (equal "" (funcall fit 1))))
+  ;; Pixel predicates decide fit, not string length.
+  (should (equal "● Running 0:00 · 2 queued"
+                 (substring-no-properties
+                  (hermes-chat--status-rule-fit
+                   "● Running 0:00" "terminal" '("📋 1/3") "2 queued"
+                   (lambda (text) (not (string-match-p "📋\\|te" text)))))))
+  (should (equal "a b c d e "
+                 (hermes-chat--status-rule-one-line "a\tb\r\nc\u2028d\u0085e\177")))
+  (should (eq 'bold (get-text-property 0 'face (hermes-chat--status-rule-one-line
+                                                (propertize "x\ny" 'face 'bold)))))
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--status-rule-start (float-time))
+   (should-not (hermes-chat--status-rule-text #'ignore))
+   (should (equal-including-properties (hermes-chat--separator)
+                                       (hermes-chat--status-rule-line nil)))))
 
 (ert-deftest hermes-chat-queue-lines-render-update-and-open-panel ()
   "Queued messages are dim buttons above the rule that open the queue panel."

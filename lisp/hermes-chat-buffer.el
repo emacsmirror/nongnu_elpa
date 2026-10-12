@@ -3265,8 +3265,9 @@ Segments carrying their own PROPERTY, such as a clickable count's
 (defvar hermes-chat-status-rule-segment-functions nil
   "Functions returning an optional propertized composer-rule segment.
 Each runs in the chat buffer while a turn is active.  Segments follow the
-current activity and precede the queued count.  When the rule is narrow the
-activity is truncated first, then whole segments are dropped.")
+current activity and precede the queued count.  The rule always stays one
+visual line: line breaks become spaces, the activity is truncated first,
+then the quiet hint and whole segments are dropped.")
 
 (defvar-local hermes-chat--status-rule-start nil
   "Float time at which the active turn was first observed, or nil.")
@@ -3440,88 +3441,190 @@ buffer synchronously: callers may be inside another transcript mutation."
      ((member label '("Connecting" "Loading" "Handing off")) (cons label 'shadow))
      (t '("Running" . hermes-chat-turn-running)))))
 
+(defconst hermes-chat--status-rule-preview-limit 512
+  "Characters of a tool summary considered for its one-line rule preview.")
+
+(defun hermes-chat--status-rule-one-line (string)
+  "Return STRING with line breaks and control characters as single spaces.
+Text properties of the remaining characters are kept."
+  (replace-regexp-in-string "[[:cntrl:]\u007f-\u009f\u2028\u2029]+" " " string t t))
+
 (defun hermes-chat--status-rule-activity ()
-  "Return the most recent active tool summary on one line, or nil."
-  (when-let* ((summary (car (last (hermes-chat--active-tool-summaries)))))
-    (hermes-transport--non-empty-string
-     (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " summary)))))
+  "Return the most recent active tool summary as one shadowed line, or nil.
+The complete summary stays in the preview's `help-echo'."
+  (when-let* ((summary (car (last (hermes-chat--active-tool-summaries))))
+              (line (hermes-transport--non-empty-string
+                     (string-trim
+                      (replace-regexp-in-string
+                       " \\{2,\\}" " "
+                       (hermes-chat--status-rule-one-line
+                        (substring-no-properties
+                         summary 0 (min (length summary)
+                                        hermes-chat--status-rule-preview-limit))))))))
+    (propertize line 'face 'shadow 'help-echo (string-trim summary))))
 
 (defun hermes-chat--status-rule-segments ()
-  "Return feature segments for the active rule, in registration order."
+  "Return one-line feature segments for the active rule, in registration order."
   (let (segments)
     (run-hook-wrapped 'hermes-chat-status-rule-segment-functions
                       (lambda (function)
                         (when-let* ((segment (funcall function)))
-                          (push segment segments))
+                          (push (hermes-chat--status-rule-one-line segment) segments))
                         nil))
     (nreverse segments)))
 
-(defun hermes-chat--status-rule-fit (head activity segments queued width)
-  "Join HEAD, ACTIVITY, SEGMENTS and QUEUED within WIDTH columns.
-Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
-  (let* ((separator (propertize " · " 'face 'shadow))
-         (measure (lambda (parts) (string-width (string-join parts separator))))
-         (tail (and queued (list queued)))
-         (kept nil))
-    (dolist (segment segments)
-      (when (<= (funcall measure (append (list head) kept (list segment) tail)) width)
-        (setq kept (append kept (list segment)))))
-    (let* ((room (- width (funcall measure (append (list head) kept tail))
-                    (string-width separator)))
-           (activity (and activity (>= room 6)
-                          (propertize (truncate-string-to-width activity room nil nil "…")
-                                      'face 'shadow)))
-           (text (string-join (delq nil (append (list head activity) kept tail))
-                              separator)))
-      (if (> (string-width text) width)
-          (truncate-string-to-width text width nil nil "…")
-        text))))
+(defun hermes-chat--status-rule-truncate (string fits &optional minimum)
+  "Return STRING, or its longest ellipsis truncation satisfying FITS, or nil.
+FITS is a predicate on the candidate.  Truncations to fewer than MINIMUM
+columns (default 2) count as not fitting.  Widths are monotonic in the
+truncation column, so a binary search over columns suffices."
+  (if (funcall fits string)
+      string
+    (let ((low (or minimum 2))
+          (high (1- (string-width string)))
+          best)
+      (while (<= low high)
+        (let* ((middle (/ (+ low high) 2))
+               (candidate (truncate-string-to-width string middle nil nil "…")))
+          (if (funcall fits candidate)
+              (setq best candidate low (1+ middle))
+            (setq high (1- middle)))))
+      best)))
 
-(defun hermes-chat--status-rule-text (width)
-  "Return propertized rule text fitting WIDTH columns, or nil for a plain rule."
-  (cond
-   (hermes-chat--status-rule-start
-    (pcase-let* ((`(,word . ,face) (hermes-chat--status-rule-word))
-                 (now (float-time))
-                 (quiet (and (eq face 'hermes-chat-turn-running)
-                             (hermes-chat--status-rule-quiet now)))
-                 (count (length hermes-chat--queued-messages)))
-      (hermes-chat--status-rule-fit
-       (concat (propertize (concat "● " word) 'face face) " "
-               (propertize (hermes-chat--status-rule-duration
-                            (- now hermes-chat--status-rule-start))
-                           'face 'shadow)
-               (and quiet
-                    (concat (propertize " · " 'face 'shadow)
-                            (propertize (concat "quiet "
-                                                (hermes-chat--status-rule-duration quiet))
-                                        'face 'warning))))
-       (hermes-chat--status-rule-activity)
-       (hermes-chat--status-rule-segments)
-       (and (> count 0)
-            (propertize (format "%d queued" count) 'face 'font-lock-type-face))
-       width)))
-   ((hermes-chat--status-rule-linger-left)
-    (pcase-let ((`(,duration ,_finished ,label) hermes-chat--status-rule-last))
-      (truncate-string-to-width
-       (if (member label '("Ready" "Idle"))
-           (propertize (concat "✓ " (hermes-chat--status-rule-duration duration t))
-                       'face 'shadow)
-         (concat (propertize label 'face (hermes-chat--header-status-face
-                                          (plist-get hermes-chat--status-state :status)))
-                 (propertize (concat " after "
-                                     (hermes-chat--status-rule-duration duration t))
-                             'face 'shadow)))
-       width nil nil "…")))))
+(defun hermes-chat--status-rule-fit (head activity segments queued fits
+                                          &optional quiet compact)
+  "Join HEAD, QUIET, ACTIVITY, SEGMENTS and QUEUED as one rule line.
+FITS is a predicate accepting a candidate line, or a column count.  HEAD
+and QUEUED are kept, HEAD replaced by COMPACT when only that keeps both;
+SEGMENTS are kept in order while they fit, then QUIET; ACTIVITY receives
+the remaining room with an ellipsis.  When even that does not fit, the
+line is truncated.  Return nil when not even a truncated head fits."
+  (let* ((fits (if (numberp fits)
+                   (lambda (text) (<= (string-width text) fits))
+                 fits))
+         (separator (propertize " · " 'face 'shadow))
+         (head (if (and compact
+                        (not (funcall fits (string-join (delq nil (list head queued))
+                                                        separator))))
+                   compact
+                 head))
+         (join (lambda (quiet activity kept)
+                 (string-join (delq nil (append (list head quiet activity) kept
+                                                (list queued)))
+                              separator)))
+         (kept (seq-reduce (lambda (kept segment)
+                             (let ((more (append kept (list segment))))
+                               (if (funcall fits (funcall join nil nil more)) more kept)))
+                           segments nil))
+         (quiet (and quiet (funcall fits (funcall join quiet nil kept)) quiet))
+         (activity
+          (when-let* ((preview (and activity
+                                    (hermes-chat--status-rule-truncate
+                                     activity
+                                     (lambda (candidate)
+                                       (funcall fits (funcall join quiet candidate kept)))
+                                     6))))
+            (propertize preview 'face (get-text-property 0 'face activity)
+                        'help-echo (get-text-property 0 'help-echo activity)))))
+    (let ((line (funcall join quiet activity kept)))
+      (if (funcall fits line) line (hermes-chat--status-rule-truncate head fits)))))
+
+(defun hermes-chat--status-rule-text (fits)
+  "Return propertized rule text accepted by FITS, or nil for a plain rule.
+FITS is a predicate on candidate text, or a column count."
+  (let ((fits (if (numberp fits) (lambda (text) (<= (string-width text) fits)) fits)))
+    (cond
+     (hermes-chat--status-rule-start
+      (pcase-let* ((`(,word . ,face) (hermes-chat--status-rule-word))
+                   (now (float-time))
+                   (quiet (and (eq face 'hermes-chat-turn-running)
+                               (hermes-chat--status-rule-quiet now)))
+                   (count (length hermes-chat--queued-messages))
+                   (clock (propertize (hermes-chat--status-rule-duration
+                                       (- now hermes-chat--status-rule-start))
+                                      'face 'shadow)))
+        (hermes-chat--status-rule-fit
+         (concat (propertize (concat "● " word) 'face face) " " clock)
+         (hermes-chat--status-rule-activity)
+         (hermes-chat--status-rule-segments)
+         (and (> count 0)
+              (propertize (format "%d queued" count) 'face 'font-lock-type-face))
+         fits
+         (and quiet
+              (propertize (concat "quiet " (hermes-chat--status-rule-duration quiet))
+                          'face 'warning))
+         (concat (propertize "●" 'face face 'help-echo word) " " clock))))
+     ((hermes-chat--status-rule-linger-left)
+      (pcase-let ((`(,duration ,_finished ,label) hermes-chat--status-rule-last))
+        (hermes-chat--status-rule-truncate
+         (if (member label '("Ready" "Idle"))
+             (propertize (concat "✓ " (hermes-chat--status-rule-duration duration t))
+                         'face 'shadow)
+           (concat (propertize label 'face (hermes-chat--header-status-face
+                                            (plist-get hermes-chat--status-state :status)))
+                   (propertize (concat " after "
+                                       (hermes-chat--status-rule-duration duration t))
+                               'face 'shadow)))
+         fits))))))
+
+(defun hermes-chat--status-rule-decorate (text)
+  "Return the rule's visible prefix around TEXT, without its trailing fill."
+  (concat (propertize " " 'display '(space :width 2) 'face 'hermes-chat-separator)
+          " " text " "))
 
 (defun hermes-chat--status-rule-line (text)
   "Return the composer rule carrying TEXT, or the plain rule when TEXT is nil."
   (if (not text)
       (hermes-chat--separator)
-    (concat (propertize " " 'display '(space :width 2) 'face 'hermes-chat-separator)
-            " " text " "
+    (concat (hermes-chat--status-rule-decorate text)
             (propertize " " 'display '(space :align-to right)
                         'face 'hermes-chat-separator))))
+
+(defun hermes-chat--footer-window-budget (window)
+  "Return the pixels one footer line may occupy in WINDOW.
+Exclude the line-number gutter and reserve one column for the continuation
+glyph, so a line of this width never wraps."
+  ;; Selecting an unselected chat window adopts its draft point.
+  (save-excursion
+    (with-selected-window window
+      (- (window-body-width window t)
+         (if display-line-numbers (line-number-display-width t) 0)
+         (window-font-width window)))))
+
+(defun hermes-chat--footer-measure (window)
+  "Return a function measuring a string's pixels as WINDOW would display it.
+The string is laid out in a work buffer carrying this buffer's face
+remapping and display table, with WINDOW's frame fonts."
+  (let ((remapping face-remapping-alist)
+        (table buffer-display-table))
+    (lambda (string)
+      (with-current-buffer (get-buffer-create " *hermes-chat-rule-measure*")
+        (setq-local face-remapping-alist remapping)
+        (setq buffer-display-table table)
+        (let ((inhibit-read-only t)
+              (inhibit-modification-hooks t))
+          (erase-buffer)
+          (insert string))
+        (car (buffer-text-pixel-size nil window t))))))
+
+(defun hermes-chat--footer-fits (decorate)
+  "Return a predicate accepting text whose DECORATE line fits on one line.
+The line must fit the narrowest window displaying this buffer on each
+frame, measured with that frame's fonts.  A hidden buffer uses 78 columns."
+  (let* ((windows (get-buffer-window-list (current-buffer) nil t))
+         (narrowest
+          (mapcar (lambda (group)
+                    (let ((window (car (seq-sort-by #'hermes-chat--footer-window-budget
+                                                    #'< (cdr group)))))
+                      (cons (hermes-chat--footer-measure window)
+                            (hermes-chat--footer-window-budget window))))
+                  (seq-group-by #'window-frame windows))))
+    (if (null narrowest)
+        (lambda (text) (<= (string-width (funcall decorate text)) 76))
+      (lambda (text)
+        (let ((line (funcall decorate text)))
+          (seq-every-p (lambda (limit) (<= (funcall (car limit) line) (cdr limit)))
+                       narrowest))))))
 
 (defun hermes-chat--queue-line-button (button)
   "Open the queue panel with point on BUTTON's queued message."
@@ -3537,9 +3640,11 @@ Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
       (select-window window))
     panel))
 
-(defun hermes-chat--queue-lines (width)
-  "Return dim queued-message button lines fitting WIDTH columns."
-  (let ((icon (if (char-displayable-p ?⏳) "⏳" "Queued")))
+(defun hermes-chat--queue-lines (fits)
+  "Return dim queued-message button lines, each accepted by FITS.
+FITS is a predicate on a line's text, or a column count."
+  (let ((icon (if (char-displayable-p ?⏳) "⏳" "Queued"))
+        (fits (if (numberp fits) (lambda (text) (<= (string-width text) fits)) fits)))
     (cl-loop
      for entry in hermes-chat--queued-messages
      for index from 1
@@ -3550,9 +3655,9 @@ Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
                        ""))
             (text (format "%s %d  %s%s" icon index
                           (if (plist-get entry :rejected-p) "Not sent: " "")
-                          (string-trim first))))
+                          (string-trim (hermes-chat--status-rule-one-line first)))))
        (concat (make-text-button
-                (truncate-string-to-width text width nil nil "…") nil
+                (or (hermes-chat--status-rule-truncate text fits) "…") nil
                 'face (if (plist-get entry :rejected-p) 'warning 'shadow)
                 'mouse-face 'highlight 'follow-link t
                 'help-echo "Open the queue panel at this message"
@@ -3561,11 +3666,13 @@ Truncate ACTIVITY first, then drop SEGMENTS whole; HEAD and QUEUED stay."
                "\n")))))
 
 (defun hermes-chat--footer-string ()
-  "Return the footer: queued-message lines above the status rule."
-  (let ((width (hermes-chat--table-window-width)))
-    (concat "\n" (hermes-chat--queue-lines width)
-            (hermes-chat--status-rule-line (hermes-chat--status-rule-text (- width 6)))
-            "\n")))
+  "Return the footer: queued-message lines above the one-line status rule.
+Every footer line is fitted to the windows displaying this buffer."
+  (concat "\n" (hermes-chat--queue-lines (hermes-chat--footer-fits #'identity))
+          (hermes-chat--status-rule-line
+           (hermes-chat--status-rule-text
+            (hermes-chat--footer-fits #'hermes-chat--status-rule-decorate)))
+          "\n"))
 
 (defun hermes-chat--status-rule-repaint ()
   "Repaint the footer when its text changed, leaving the composer intact."

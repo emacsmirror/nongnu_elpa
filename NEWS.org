@@ -29,6 +29,12 @@
   elapsed time, current tool, task progress (=📋 1/3=) and queued count, then the last
   turn's duration briefly.  Queued messages are listed above the rule and
   open the queue panel on activation; the queue menu entries show the count.
+- The composer rule now always stays on one visual line.  It is fitted to
+  the narrowest window showing the chat, measured with that window's fonts
+  (emoji included), and reflows when windows change.  A long or multiline
+  tool command is shortened with an ellipsis, its full text in the tooltip;
+  the quiet hint and task progress give way next, while the state, clock and
+  queued count stay.
 - Each turn with a task list gets one collapsible transcript line,
   =▸ Tasks 3/5 · now: ITEM=, updated in place as the list changes.
 - Approval readers show the tool description and the full command.  When
