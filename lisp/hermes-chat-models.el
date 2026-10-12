@@ -404,11 +404,10 @@ Retain CONTEXT through API-key completion so stale choices stay inert."
        (hermes-chat--model-provider-label provider)
        (if (equal auth-type "oauth") "OAuth" (or auth-type "external")))))))
 
-(defun hermes-chat--model-picker-current (candidates result &optional exact)
+(defun hermes-chat--model-picker-current (candidates result)
   "Return the value in CANDIDATES naming this chat's current model.
 A pending create-time choice wins; otherwise the owner's model, qualified by
-the catalogue RESULT's reported provider when it names the same model.
-With EXACT non-nil, return a value only when its provider is known."
+the catalogue RESULT's reported provider when it names the same model."
   (let* ((pending (and (hermes-chat--pending-setting-p)
                        hermes-chat--dashboard-create-model))
          (model (or pending hermes-chat--model
@@ -420,8 +419,7 @@ With EXACT non-nil, return a value only when its provider is known."
                                         (hermes-transport--get result 'model)))
                           (hermes-transport--scalar-string
                            (hermes-transport--get result 'provider))))))
-    (and (or provider (not exact))
-         (hermes-chat--model-current-value candidates model provider))))
+    (hermes-chat--model-current-value candidates model provider)))
 
 (defun hermes-chat--prompt-and-set-model (buffer client result &optional context)
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
@@ -440,24 +438,16 @@ With EXACT non-nil, return a value only when its provider is known."
                                    (hermes-chat--model-setting-value))))
                  (current (with-current-buffer buffer
                             (hermes-chat--model-picker-current candidates result)))
-                 (exact (with-current-buffer buffer
-                          (hermes-chat--model-picker-current candidates result t)))
-                 (choice (hermes-chat--read-model-candidate
-                          prompt candidates current))
-                 (candidate (cdr choice))
+                 (candidate (cdr (hermes-chat--read-model-candidate
+                                  prompt candidates current)))
                  (provider (and candidate
                                 (hermes-chat--find-provider
                                  result (plist-get candidate :provider)))))
-            (cond
-             ((null candidate))
-             ((not (hermes-chat--model-switch-current-p context))
-              (message "Hermes: model switch is stale or the chat is busy"))
-             ((and exact (equal (car choice) exact))
-              (message "Already using %s (%s)" (plist-get candidate :model)
-                       (plist-get candidate :provider)))
-             (t
-              (hermes-chat--apply-selected-model
-               buffer client candidate provider context)))))))))
+            (when candidate
+              (if (not (hermes-chat--model-switch-current-p context))
+                  (message "Hermes: model switch is stale or the chat is busy")
+                (hermes-chat--apply-selected-model
+                 buffer client candidate provider context)))))))))
 
 (defun hermes-chat--request-model-switch (client invocation)
   "Fetch fresh model choices through CLIENT for picker INVOCATION."
