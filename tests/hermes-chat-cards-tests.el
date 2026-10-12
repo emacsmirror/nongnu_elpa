@@ -120,9 +120,9 @@
       (should (eq (get-text-property pos 'face text) 'shadow))
       (should (eq (car (get-text-property (1- pos) 'display text)) 'space)))
     (should (eq (get-text-property (string-search "✓" text) 'face text)
-                'hermes-chat-card-done))
+                'hermes-work-done))
     (should (eq (get-text-property (string-search "◌" text) 'face text)
-                'hermes-chat-card-queued))))
+                'hermes-work-queued))))
 
 ;;;; Live tree in place
 
@@ -230,7 +230,7 @@
        '((:id "proc_9" :kind process :state running :command "make check" :uptime 1)
          (:id "proc_1" :kind process :state running :command "make check"
               :last-line "Ran 1412/2672 tests" :uptime 220)))
-      (should (string-match-p "^  ● 💻 terminal: make check (background) +3:40$"
+      (should (string-match-p "^  ⚙ 💻 terminal: make check (background) +3:40$"
                               (hermes-test--card-line "terminal")))
       (should (equal (hermes-test--card-line "↳") "    ↳ Ran 1412/2672 tests"))
       (setq hermes-test--card-now (+ hermes-test--card-now 30))
@@ -242,7 +242,7 @@
                                 line))
         (should-not (hermes-test--card-line "↳"))
         (let ((pos (save-excursion (goto-char (point-min)) (search-forward "exit 0"))))
-          (should (eq (get-text-property (1- pos) 'face) 'hermes-chat-card-done))))
+          (should (eq (get-text-property (1- pos) 'face) 'hermes-work-done))))
       ;; After the linger, the verdict stays as the durable record.
       (setq hermes-test--card-now (+ hermes-test--card-now 120))
       (hermes-chat--cards-refresh)

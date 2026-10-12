@@ -40,24 +40,6 @@
                   (&optional segment))
 (defvar hermes-chat-work-changed-hook)
 
-;;;; Faces
-
-(defface hermes-chat-card-queued '((t :inherit shadow))
-  "Face for a queued worker in a transcript card."
-  :group 'hermes)
-
-(defface hermes-chat-card-done '((t :inherit success))
-  "Face for a finished worker or a clean process exit."
-  :group 'hermes)
-
-(defface hermes-chat-card-failed '((t :inherit error))
-  "Face for a failed worker or process."
-  :group 'hermes)
-
-(defface hermes-chat-card-interrupted '((t :inherit warning))
-  "Face for an interrupted worker or a killed process."
-  :group 'hermes)
-
 ;;;; Pure presentation
 
 (defconst hermes-chat--card-goal-width 56
@@ -65,38 +47,6 @@
 
 (defconst hermes-chat--card-activity-width 72
   "Columns an activity or output line may take before it is truncated.")
-
-(defconst hermes-chat--card-states
-  '((running "●" hermes-work-running)
-    (queued "◌" hermes-chat-card-queued)
-    (done "✓" hermes-chat-card-done)
-    (failed "✗" hermes-chat-card-failed)
-    (interrupted "⊘" hermes-chat-card-interrupted)
-    (unknown "?" shadow))
-  "Display state to glyph and face, in summary count order.
-Glyphs carry the state without faces; faces only reinforce.")
-
-(defun hermes-chat--card-state (row)
-  "Return the display state of roster ROW."
-  (pcase (plist-get row :state)
-    ((and state (or 'running 'queued)) state)
-    ((or 'completed 'done 'complete 'success 'succeeded) 'done)
-    ((or 'interrupted 'cancelled 'canceled 'killed) 'interrupted)
-    ((or 'failed 'error 'failure 'timeout 'lost 'failed_start) 'failed)
-    (_ 'unknown)))
-
-(defun hermes-chat--card-active-state-p (state)
-  "Return non-nil when display STATE is still live."
-  (memq state '(running queued)))
-
-(defun hermes-chat--card-glyph (state)
-  "Return the propertized glyph for display STATE."
-  (pcase-let ((`(,glyph ,face) (alist-get state hermes-chat--card-states)))
-    (propertize glyph 'face face)))
-
-(defun hermes-chat--card-face (state)
-  "Return the face for display STATE."
-  (cadr (alist-get state hermes-chat--card-states)))
 
 (defun hermes-chat--card-dim (text)
   "Return TEXT in `shadow'."
@@ -116,13 +66,6 @@ Glyphs carry the state without faces; faces only reinforce.")
                         `(space :align-to (- right ,(1+ (string-width text)))))
             (propertize text 'face (or face 'shadow)))))
 
-(defun hermes-chat--card-clock (seconds)
-  "Return SECONDS as M:SS, or H:MM:SS from one hour."
-  (let ((s (max 0 (floor seconds))))
-    (if (>= s 3600)
-        (format "%d:%02d:%02d" (/ s 3600) (% (/ s 60) 60) (% s 60))
-      (format "%d:%02d" (/ s 60) (% s 60)))))
-
 (defun hermes-chat--card-plural (count noun)
   "Return COUNT followed by NOUN, pluralized."
   (format "%d %s%s" count noun (if (= count 1) "" "s")))
@@ -133,8 +76,8 @@ Glyphs carry the state without faces; faces only reinforce.")
         (finished (plist-get row :finished)))
     (cond ((eq state 'queued) "queued")
           ((not (numberp started)) "")
-          ((eq state 'running) (hermes-chat--card-clock (- now started)))
-          ((numberp finished) (hermes-chat--card-clock (- finished started)))
+          ((eq state 'running) (hermes-work-duration (- now started)))
+          ((numberp finished) (hermes-work-duration (- finished started)))
           (t ""))))
 
 (defun hermes-chat--card-tool-text (tool target)
@@ -167,18 +110,19 @@ line of its summary or error."
   "Return the summary count parts for display STATES, zeros omitted."
   (delq nil
         (mapcar (lambda (spec)
-                  (let ((count (seq-count (lambda (state) (eq state (car spec))) states)))
+                  (let* ((state (car spec))
+                         (count (seq-count (lambda (s) (eq s state)) states)))
                     (when (> count 0)
-                      (propertize (format "%d %s" count (car spec))
-                                  'face (if (memq (car spec) '(failed interrupted))
-                                            (nth 2 spec)
+                      (propertize (format "%d %s" count (hermes-work-state-label state))
+                                  'face (if (memq state '(failed interrupted))
+                                            (hermes-work-state-face state)
                                           'shadow)))))
-                hermes-chat--card-states)))
+                hermes-work-states)))
 
 (defun hermes-chat--card-settled-p (status states)
   "Return non-nil when a delegation row in STATUS with worker STATES settled."
   (and (not (hermes-chat--active-status-p status))
-       (not (seq-some #'hermes-chat--card-active-state-p states))))
+       (not (seq-some (lambda (state) (memq state '(running queued))) states))))
 
 (defun hermes-chat--card-verdict-state (states)
   "Return the settled glyph state for a batch whose workers ended in STATES."
@@ -194,7 +138,7 @@ A SETTLED batch ends at its last finish."
         (ends (seq-filter #'numberp (mapcar (lambda (row) (plist-get row :finished)) rows))))
     (if (null starts)
         ""
-      (hermes-chat--card-clock
+      (hermes-work-duration
        (- (if (and settled ends) (apply #'max ends) now) (apply #'min starts))))))
 
 (defun hermes-chat--card-tree-lines (rows now)
@@ -210,7 +154,7 @@ A SETTLED batch ends at its last finish."
              (last (car (last kids))))
         (mapconcat
          (lambda (row)
-           (let* ((state (hermes-chat--card-state row))
+           (let* ((state (hermes-work-display-state row))
                   (lastp (eq row last))
                   (rail (concat prefix (hermes-chat--card-dim (if lastp "  " "│ "))))
                   (goal (hermes-chat--card-fit (plist-get row :goal)
@@ -225,9 +169,9 @@ A SETTLED batch ends at its last finish."
              (concat
               (propertize
                (concat prefix (hermes-chat--card-dim (if lastp "└ " "├ "))
-                       (hermes-chat--card-glyph state) " "
+                       (hermes-work-state-glyph state) " "
                        (if (eq state 'queued)
-                           (propertize goal 'face 'hermes-chat-card-queued)
+                           (propertize goal 'face 'hermes-work-queued)
                          goal)
                        (hermes-chat--card-right
                         (hermes-chat--card-row-time row state now))
@@ -239,7 +183,7 @@ A SETTLED batch ends at its last finish."
                                                   activity
                                                   hermes-chat--card-activity-width))
                                     'face (if (eq state 'failed)
-                                              'hermes-chat-card-failed
+                                              'hermes-work-failed
                                             'shadow))
                         "\n"))
               (walk (plist-get row :id)
@@ -268,7 +212,7 @@ Every character of TEXT has its own face, so the button face never shows."
   "Return the lines of delegation ENTRY's worker CARD."
   (let* ((rows (plist-get card :rows))
          (now (plist-get card :now))
-         (states (mapcar #'hermes-chat--card-state rows))
+         (states (mapcar #'hermes-work-display-state rows))
          (settled (hermes-chat--card-settled-p (plist-get entry :status) states))
          (expanded (or (not settled) (hermes-chat--entry-expanded-p entry)))
          (tasks (max (or (plist-get card :tasks) 0)
@@ -280,7 +224,7 @@ Every character of TEXT has its own face, so the button face never shows."
                           (mapconcat (lambda (part) (concat (hermes-chat--card-dim " · ") part))
                                      (hermes-chat--card-counts states) "")))
          (head (concat "  "
-                       (hermes-chat--card-glyph
+                       (hermes-work-state-glyph
                         (if settled (hermes-chat--card-verdict-state states) 'running))
                        " "
                        (if settled
@@ -303,7 +247,7 @@ Every character of TEXT has its own face, so the button face never shows."
   "Return SECONDS as a short age."
   (let ((s (max 0 (floor seconds))))
     (if (< s 60) (format "%ds ago" s)
-      (format "%s ago" (hermes-chat--card-clock s)))))
+      (format "%s ago" (hermes-work-duration s)))))
 
 (defun hermes-chat--card-verdict (row now)
   "Return the exit verdict for ended process ROW at NOW."
@@ -320,22 +264,22 @@ Every character of TEXT has its own face, so the button face never shows."
   "Return the lines of background terminal ENTRY's process CARD."
   (let* ((row (plist-get card :row))
          (now (plist-get card :now))
-         (state (hermes-chat--card-state row))
+         (state (hermes-work-display-state row))
          (running (eq state 'running))
          (started (plist-get card :started))
          (line (plist-get row :last-line)))
     (concat
      (propertize
-      (concat "  " (hermes-chat--card-glyph state) " "
+      (concat "  " (hermes-work-state-glyph state t) " "
               (if running
                   (hermes-chat--card-tool-label entry)
                 (propertize (hermes-chat--card-tool-label entry) 'face 'shadow))
               (hermes-chat--card-dim " (background)")
               (if running
                   (hermes-chat--card-right
-                   (if (numberp started) (hermes-chat--card-clock (- now started)) ""))
+                   (if (numberp started) (hermes-work-duration (- now started)) ""))
                 (hermes-chat--card-right (hermes-chat--card-verdict row now)
-                                         (hermes-chat--card-face state)))
+                                         (hermes-work-state-face state)))
               "\n")
       'help-echo (string-join (delq nil (list (plist-get row :command)
                                               (plist-get row :cwd)
@@ -519,7 +463,7 @@ root workers."
       ('delegate
        (not (hermes-chat--card-settled-p
              (plist-get entry :status)
-             (mapcar #'hermes-chat--card-state (plist-get card :rows))))))))
+             (mapcar #'hermes-work-display-state (plist-get card :rows))))))))
 
 (defun hermes-chat--card-repaint (node entry)
   "Store ENTRY in NODE and reprint that node alone.
@@ -656,7 +600,7 @@ The segment is absent when there is nothing to show."
 (defun hermes-chat--card-failed-ids (roster)
   "Return the ids of failed workers and processes in ROSTER."
   (delq nil (mapcar (lambda (row)
-                      (and (eq (hermes-chat--card-state row) 'failed)
+                      (and (eq (hermes-work-display-state row) 'failed)
                            (plist-get row :id)))
                     (append (plist-get roster :agents) (plist-get roster :processes)))))
 
