@@ -756,8 +756,8 @@
               #'hermes-chat-input-history-next)))
 
 (ert-deftest hermes-chat-transient-status-marker-uses-status-icon-faces ()
-  "Transient markers show the status icon (dot while active, check when done)."
-  (dolist (case '(("running" "·" shadow)
+  "Transient markers show a live dot while active and a check when done."
+  (dolist (case '(("running" "●" hermes-chat-tool-running)
                   ("completed" "✓" success)))
     (pcase-let ((`(,status ,icon ,face) case))
       (with-temp-buffer

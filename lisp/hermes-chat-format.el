@@ -154,6 +154,33 @@ Active statuses show a neutral dot rather than the settled checkmark."
      ((or (member name hermes-chat--error-statuses) (member name '("closed" "disconnected"))) "!")
      (t "·"))))
 
+(defface hermes-chat-tool-running
+  '((t :inherit font-lock-keyword-face))
+  "Face for the marker of a running tool, delegate or status row."
+  :group 'hermes)
+
+(defconst hermes-chat--failed-statuses '("error" "failed" "failure")
+  "Status names that mark a transcript row as a genuine failure.
+Interrupted and cancelled rows keep a quiet head line.")
+
+(defun hermes-chat--entry-marker (status)
+  "Return (MARKER . FACE) for a transcript row in STATUS.
+Running rows show a filled dot so they stand apart from settled rows; the
+marker alone keeps the state legible without faces."
+  (if (hermes-chat--active-status-p status)
+      (cons "●" 'hermes-chat-tool-running)
+    (cons (hermes-chat--status-icon status) (hermes-chat--status-face status))))
+
+(defun hermes-chat--entry-head-face (status)
+  "Return the face for a transcript row's head text in STATUS, or nil.
+Failures colour the whole head line, connection loss warns, running rows
+stay in the default face and settled rows recede into `shadow'."
+  (let ((name (hermes-chat--status-name status)))
+    (cond ((member name hermes-chat--failed-statuses) 'error)
+          ((member name '("closed" "disconnected")) 'warning)
+          ((hermes-chat--active-status-p status) nil)
+          (t 'shadow))))
+
 (defun hermes-chat--header-status-label (status)
   "Return compact header label for STATUS."
   (pcase (hermes-chat--status-name status)
@@ -831,6 +858,27 @@ FIXED-WIDTHS retains a streaming table's established column allocation."
      (delq nil (list (format "Unknown Hermes transport event: %s" name)
                      (and preview (format "raw: %s" preview))))
      "\n")))
+
+(defconst hermes-chat--unknown-event-raw-detail-limit 4000
+  "Maximum characters of raw data shown in an expanded unknown event.")
+
+(defun hermes-chat--unknown-event-summary (event)
+  "Return the one-line collapsed summary for unknown transport EVENT."
+  (format "Unknown event %s"
+          (or (hermes-chat--event-string event '(:event)) "unnamed")))
+
+(defun hermes-chat--unknown-event-detail (event)
+  "Return expanded raw detail for unknown transport EVENT.
+The raw payload is pretty-printed and bounded rather than truncated to one
+line, so the expanded disclosure retains the data needed for a bug report."
+  (let ((raw (plist-get event :raw)))
+    (if (null raw)
+        "No raw payload"
+      (let ((text (string-trim-right (pp-to-string raw))))
+        (if (> (length text) hermes-chat--unknown-event-raw-detail-limit)
+            (concat (substring text 0 hermes-chat--unknown-event-raw-detail-limit)
+                    "\n… (raw payload truncated)")
+          text)))))
 
 
 (defun hermes-chat--model-config-value (candidate)

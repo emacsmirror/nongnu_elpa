@@ -1045,7 +1045,8 @@ settlement order lives in one place."
                 hermes-chat--dashboard-suppress-stream-p nil))
       (funcall hermes-chat--turn-event-function assistant-id event))
     (when context
-      (hermes-chat--clear-submit-context context))))
+      (hermes-chat--clear-submit-context context))
+    (hermes-chat--insert-offline-notice "Offline — input kept")))
 
 (defun hermes-chat--handle-reconnecting-status (event)
   "Handle a manual dashboard socket reconnect status EVENT."

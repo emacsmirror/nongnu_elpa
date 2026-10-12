@@ -1400,13 +1400,30 @@ the current draft stays here.  Uncertain deliveries require history inspection."
     (run-hooks 'hermes-chat-cleanup-functions)
     (hermes-chat--invalidate-transport-state t)
     (hermes-chat--stop-dashboard-client)
-    (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
+    (hermes-chat--insert-offline-notice "Session disconnected — input kept")
     (when (buffer-live-p hermes-chat--recovery-buffer)
       (hermes-chat--insert-local-status
        (format "Input preserved in %s; resume via Sessions and send manually"
                (buffer-name hermes-chat--recovery-buffer)))
       (display-buffer hermes-chat--recovery-buffer))
     (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected")))
+
+(defun hermes-chat-show-recovery ()
+  "Display the editable document holding this chat's preserved input.
+It is filled by disconnect and restart; nothing in it is sent automatically."
+  (interactive nil hermes-chat-mode)
+  (unless (buffer-live-p hermes-chat--recovery-buffer)
+    (user-error "This chat has no recovery draft"))
+  (display-buffer hermes-chat--recovery-buffer))
+
+(defun hermes-chat--dashboard-client-reconnectable-p (client)
+  "Return non-nil when CLIENT's lost socket can be restarted in place.
+The client must still be attached, own its registry entry and not be
+stopping; a stopped client is replaced by the next send instead."
+  (and (hermes-dashboard-transport-client-p client)
+       (> (or (hermes-dashboard-transport-client-refcount client) 0) 0)
+       (not (hermes-dashboard-transport-client-stopping-p client))
+       (hermes-dashboard-transport--current-registry-owner-p client)))
 
 (defun hermes-chat--dashboard-client-active-turn-p (client)
   "Return non-nil when a chat sharing CLIENT has an active turn."
@@ -1422,7 +1439,9 @@ the current draft stays here.  Uncertain deliveries require history inspection."
 (defun hermes-dashboard-reconnect ()
   "Reconnect this chat's shared dashboard socket when every owner is idle."
   (interactive nil hermes-chat-mode)
-  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+  (unless (or (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+              (hermes-chat--dashboard-client-reconnectable-p
+               hermes-chat--dashboard-client))
     (user-error "This chat has no live dashboard client to reconnect"))
   (when (hermes-chat--dashboard-client-active-turn-p
          hermes-chat--dashboard-client)

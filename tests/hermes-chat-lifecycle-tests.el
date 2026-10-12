@@ -1184,5 +1184,98 @@
         (when (buffer-live-p caller) (kill-buffer caller))
         (when (buffer-live-p peer) (kill-buffer peer))))))
 
+;;; Inline offline recovery actions
+
+(defun hermes-test--recovery-button (label)
+  "Return the live transcript button labelled LABEL, or nil."
+  (save-excursion
+    (goto-char (point-min))
+    (let (found)
+      (while (and (not found) (search-forward label hermes-chat--input-marker t))
+        (when-let* ((button (button-at (match-beginning 0))))
+          (setq found button)))
+      found)))
+
+(ert-deftest hermes-chat-disconnect-notice-offers-owner-recovery-actions ()
+  "Disconnect offers Recovery draft and Session details for its own chat only."
+  (let (shown details)
+    (cl-letf (((symbol-function 'display-buffer)
+               (lambda (buffer &rest _) (setq shown buffer) nil))
+              ((symbol-function 'hermes-chat-session-details)
+               (lambda () (interactive) (setq details (current-buffer))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) (ert-fail "Unexpected resend"))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-active-session-id "live"
+             hermes-chat--session-id "stored")
+       (insert "keep me")
+       (hermes-chat-disconnect)
+       (let ((owner (current-buffer))
+             (text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+         (should (string-match-p
+                  "! Session disconnected — input kept · \\[Recovery draft\\] \\[Session details\\]"
+                  text))
+         (should-not (string-match-p "\\[Reconnect\\]" text))
+         (should (equal (hermes-chat-input-string) "keep me"))
+         (setq shown nil)
+         (push-button (button-start (hermes-test--recovery-button "[Recovery draft]")))
+         (should (eq shown hermes-chat--recovery-buffer))
+         (push-button (button-start (hermes-test--recovery-button "[Session details]")))
+         (should (eq details owner))
+         ;; A successor attachment retires the buttons visibly and inertly.
+         (let ((stale (hermes-test--recovery-button "[Session details]"))
+               (owner-props nil))
+           (setq owner-props (button-get stale 'hermes-chat-recovery-owner))
+           (setq hermes-chat--dashboard-active-session-id "successor"
+                 details nil)
+           (hermes-chat--insert-local-status "Resumed" 'ready)
+           (should-not (hermes-test--recovery-button "[Session details]"))
+           (should-not (hermes-test--recovery-button "[Recovery draft]"))
+           (save-excursion
+             (goto-char (point-min))
+             (search-forward "[Session details]")
+             (should (eq (get-text-property (match-beginning 0) 'face) 'shadow)))
+           ;; Even a retained button object for the old owner refuses.
+           (with-temp-buffer
+             (insert-text-button "[Session details]"
+                                 'hermes-chat-recovery-owner owner-props
+                                 'hermes-chat-recovery-command 'hermes-chat-session-details
+                                 'action #'hermes-chat--recovery-button)
+             (should-error (push-button (point-min)) :type 'user-error))
+           (should-not details)))))))
+
+(ert-deftest hermes-chat-socket-close-notice-reconnects-owner-once ()
+  "Socket loss offers Reconnect on the owning client; a new generation retires it."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket nil :refcount 1 :generation 4))
+        reconnected)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
+               (lambda (seen &rest _)
+                 (setq reconnected (cons seen (current-buffer)))
+                 (cl-incf (hermes-dashboard-transport-client-generation seen)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-live")
+       (insert "draft")
+       (hermes-chat--handle-closed-status nil '(:type status :status "closed"))
+       (hermes-chat--handle-closed-status nil '(:type status :status "closed"))
+       (let ((text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+         (should (string-match-p
+                  "! Offline — input kept · \\[Reconnect\\] \\[Session details\\]" text))
+         (should (= 1 (how-many "Offline — input kept" (point-min) (point-max)))))
+       (save-excursion
+         (goto-char (point-min))
+         (search-forward "Offline")
+         (should (eq (get-text-property (match-beginning 0) 'face) 'warning)))
+       (push-button (button-start (hermes-test--recovery-button "[Reconnect]")))
+       (should (eq (car reconnected) client))
+       (should (eq (cdr reconnected) (current-buffer)))
+       (should (equal (hermes-chat-input-string) "draft"))
+       ;; The incremented socket generation retires the notice.
+       (hermes-chat--insert-local-status "Dashboard socket reconnected" 'ready)
+       (should-not (hermes-test--recovery-button "[Reconnect]"))
+       (setq reconnected nil)
+       (should-not reconnected)))))
+
 (provide 'hermes-chat-lifecycle-tests)
 ;;; hermes-chat-lifecycle-tests.el ends here

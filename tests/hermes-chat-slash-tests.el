@@ -235,18 +235,74 @@
                  (setq catalog-requested t)
                  (funcall (plist-get args :resolve) catalog))))
       (hermes-test-with-chat-buffer
-       (insert "/commands")
-       (hermes-chat-send)
-       (should catalog-requested)
-       (let ((text (buffer-string)))
-         (should (string-match-p "Session" text))
-         (should (string-match-p "/queue — Queue next message" text))
-         (should (string-match-p "/steer — Steer active run" text))
-         (should (string-match-p "skill discovery unavailable" text))
-         (should (string-match-p "Subcommands" text))
-         (should (string-match-p "/goal status" text))
-         (should (string-match-p "/goal pause" text))
-         (should (string-match-p "/config get" text)))))))
+       (let ((entries (length (hermes-chat--entries))))
+         (insert "/commands")
+         (hermes-chat-send)
+         (should catalog-requested)
+         (should-not (cl-some (lambda (entry)
+                                (string-match-p "Queue next message"
+                                                (or (plist-get entry :content) "")))
+                              (hermes-chat--entries)))
+         (should (<= (length (hermes-chat--entries)) (1+ entries))))
+       (let ((view (hermes-buffer--find "*Hermes Commands*" 'hermes-chat-commands-mode)))
+         (unwind-protect
+             (with-current-buffer view
+               (let ((text (buffer-string)))
+                 (should (derived-mode-p 'special-mode))
+                 (should (string-match-p "^Session$" text))
+                 (should (string-match-p "/queue +Queue next message" text))
+                 (should (string-match-p "/steer +Steer active run" text))
+                 (should (string-match-p "skill discovery unavailable" text))
+                 (should (string-match-p "Subcommands" text))
+                 (should (string-match-p "/goal status, pause, resume" text))
+                 (should (string-match-p "/config get, set" text)))
+               (goto-char (point-min))
+               (search-forward "/queue")
+               (should (eq (get-text-property (1- (point)) 'face)
+                           'font-lock-function-name-face))
+               (search-forward "Queue next")
+               (should-not (get-text-property (1- (point)) 'face)))
+           (kill-buffer view)))))))
+
+(ert-deftest hermes-chat-commands-view-inserts-into-owning-composer ()
+  "RET in the commands view inserts into its own chat, never another."
+  (let ((catalog '((categories
+                    . (((name . "Session")
+                        (pairs . (("/queue" "Queue next message"))))))
+                   (sub . (("goal" . ("status")))))))
+    (hermes-test-with-chat-buffer
+     (let* ((owner (current-buffer))
+            (other (generate-new-buffer "*other chat*"))
+            (view (hermes-chat--commands-view
+                   catalog owner hermes-chat--lifecycle-generation)))
+       (unwind-protect
+           (progn
+             (with-current-buffer other (insert "unrelated"))
+             (with-current-buffer view
+               (goto-char (point-min))
+               (search-forward "Queue next")
+               (hermes-chat-commands-insert))
+             (should (equal (hermes-chat-input-string) "/queue "))
+             (with-current-buffer other
+               (should (equal (buffer-string) "unrelated")))
+             ;; A draft is never edited; the command goes to the kill ring.
+             (with-current-buffer view
+               (goto-char (point-min))
+               (search-forward "status")
+               (hermes-chat-commands-insert (1- (point))))
+             (should (equal (hermes-chat-input-string) "/queue "))
+             (should (equal (current-kill 0) "/goal status"))
+             ;; A retired chat lifetime makes the view refuse.
+             (hermes-chat--delete-input-tail)
+             (setq hermes-chat--lifecycle-generation
+                   (hermes-chat--next-lifetime-token))
+             (with-current-buffer view
+               (goto-char (point-min))
+               (search-forward "Queue next")
+               (should-error (hermes-chat-commands-insert) :type 'user-error))
+             (should (equal (hermes-chat-input-string) "")))
+         (kill-buffer other)
+         (kill-buffer view))))))
 
 (ert-deftest hermes-chat-command-skill-sends-message ()
   (let ((client (hermes-test--dashboard-client))

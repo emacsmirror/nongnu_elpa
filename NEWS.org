@@ -8,6 +8,17 @@
   =hermes-chat-prompt-indicator= to =nil= to hide it.  Prompt, reply and
   error notifications are now suppressed only while the chat is in the
   selected window of the focused frame, not when it is merely visible.
+- Running tool, delegate and status rows show =●= in the new
+  =hermes-chat-tool-running= face; failed rows carry =error= on the whole
+  head line.  =/commands= opens a =*Hermes Commands*= help buffer instead of
+  writing the catalogue into the transcript; =RET= inserts a command into the
+  owning chat's empty composer.  Unknown events and notices longer than three
+  lines start collapsed, with the raw payload on expansion.  Disconnect and
+  socket-loss notices offer =[Reconnect]=, =[Recovery draft]= and
+  =[Session details]= buttons bound to that attachment; they turn inert once
+  it is replaced, and nothing is resent automatically.
+  =hermes-dashboard-reconnect= now also restarts a lost socket whose client
+  is still attached, not only a live one.
 
 * Version 0.8.0 (2026-10-01)
 

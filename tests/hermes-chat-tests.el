@@ -1950,7 +1950,9 @@
                     :session-id "sid-live-2"
                     :content "retry ok"))
          (funcall second-callback '(:type done :session-id "sid-live-2"))
-         (let ((assistant (nth 3 (hermes-chat--entries))))
+         (let ((assistant (nth 4 (hermes-chat--entries))))
+           (should (string-match-p "Offline — input kept"
+                                   (plist-get (nth 2 (hermes-chat--entries)) :content)))
            (should (equal (plist-get assistant :content) "retry ok"))
            (should (equal (plist-get assistant :status) 'done)))
          (should-not hermes-chat--pending-assistant-id))))))

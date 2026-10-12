@@ -1776,5 +1776,93 @@ PHASE defaults to `after-change-functions'."
                  (* 30 (length chunk))))
       (should (<= longest (length chunk))))))
 
+;;; Running, settled and failed rows
+
+(defun hermes-test--row-face-at (text)
+  "Return the face at the start of the first occurrence of TEXT."
+  (save-excursion
+    (goto-char (point-min))
+    (search-forward text)
+    (get-text-property (match-beginning 0) 'face)))
+
+(ert-deftest hermes-chat-transcript-rows-mark-running-done-and-failed ()
+  "Running rows show a live marker; failures colour the whole head line."
+  (dolist (case '(("running" "●" hermes-chat-tool-running nil)
+                  ("completed" "✓" success shadow)
+                  ("error" "!" error error)
+                  ("interrupted" "!" error shadow)))
+    (pcase-let ((`(,status ,marker ,marker-face ,head-face) case))
+      (with-temp-buffer
+        (hermes-chat--insert-transient-content
+         (list :id status :role 'tool :status status :content "💻 terminal: make"))
+        (should (string-prefix-p (format "  %s 💻 terminal: make" marker) (buffer-string)))
+        (should (eq (hermes-test--row-face-at marker) marker-face))
+        (should (eq (hermes-test--row-face-at "terminal: make") head-face))))))
+
+(ert-deftest hermes-chat-running-delegate-row-uses-running-face ()
+  "A running delegate row reads as alive, then settles without a re-render loop."
+  (let (callback timers)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest args) (push args timers) nil)))
+      (hermes-test-with-chat-buffer
+       (let ((hermes-transport-send-function
+              (lambda (_prompt cb) (setq callback cb) 'fake-process)))
+         (insert "delegate")
+         (hermes-chat-send)
+         (setq timers nil)
+         (funcall callback '(:type tool :event "tool.start" :tool-call-id "d1"
+                             :name "delegate_task" :status "running"
+                             :context "audit"))
+         (should (eq (hermes-test--row-face-at "●") 'hermes-chat-tool-running))
+         (should-not (hermes-test--row-face-at "delegate_task: audit"))
+         (should-not (cl-some (lambda (args) (and (numberp (cadr args)) (> (cadr args) 0)))
+                              timers))
+         (funcall callback '(:type tool :event "tool.complete" :tool-call-id "d1"
+                             :name "delegate_task" :status "failed"
+                             :context "audit" :error "boom"))
+         (should (eq (hermes-test--row-face-at "!") 'error))
+         (should (eq (hermes-test--row-face-at "delegate_task: audit") 'error))
+         (should (eq (hermes-test--row-face-at "boom") 'error)))))))
+
+;;; Unknown events and long notices
+
+(ert-deftest hermes-chat-unknown-event-collapses-with-raw-preserved ()
+  "Unknown events collapse to one line; expanding shows the full raw payload."
+  (let* ((long (make-string 400 ?x))
+         (event (list :type 'unknown :event "tool.foo"
+                      :raw `((payload . ,long) (kind . "alien")))))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--upsert-transport-entry nil event)
+     (let* ((entry (car (last (hermes-chat--entries))))
+            (text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+       (should (string-match-p "▸ Unknown event tool.foo" text))
+       (should-not (string-match-p "raw:" text))
+       (should-not (string-match-p long text))
+       (should (equal (plist-get (plist-get entry :metadata) :event) event))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.foo")
+       (should (string-match-p "raw: " (get-text-property (1- (point)) 'help-echo)))
+       (push-button (1- (point)))
+       (let ((expanded (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+         (should (string-match-p "▾ Unknown event tool.foo" expanded))
+         (should (string-match-p (regexp-quote long) expanded))
+         (should (string-match-p "alien" expanded)))))))
+
+(ert-deftest hermes-chat-long-status-notice-collapses ()
+  "Status notices beyond three lines collapse; short ones stay inline."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-local-status "one\ntwo\nthree" 'done)
+   (hermes-chat--insert-local-status "alpha\nbeta\ngamma\ndelta" 'done)
+   (let ((text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
+     (should (string-match-p "one\ntwo\nthree" text))
+     (should (string-match-p "▸ alpha  (4 lines)" text))
+     (should-not (string-match-p "delta" text)))
+   (goto-char (point-min))
+   (search-forward "▸ alpha")
+   (push-button (1- (point)))
+   (should (string-match-p "beta\ngamma\ndelta"
+                           (buffer-substring-no-properties
+                            (point-min) hermes-chat--input-marker)))))
+
 (provide 'hermes-chat-render-tests)
 ;;; hermes-chat-render-tests.el ends here

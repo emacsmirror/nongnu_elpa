@@ -444,7 +444,9 @@
          (should (equal hermes-chat--dashboard-active-session-id "sid-live-2"))
          (let* ((entries (hermes-chat--entries))
                 (first-assistant (nth 1 entries))
-                (second-assistant (nth 3 entries)))
+                (second-assistant (nth 4 entries)))
+           (should (string-match-p "Offline — input kept"
+                                   (plist-get (nth 2 entries) :content)))
            (should-not (string-match-p
                         "late old"
                         (plist-get first-assistant :content)))

@@ -380,46 +380,82 @@ one line instead of appending."
    (string-trim (car (split-string text "\n")))
    hermes-chat--transient-summary-width nil nil "…"))
 
-(defun hermes-chat--multiline-content-p (text)
-  "Return non-nil when TEXT spans more than one line."
-  (string-match-p "\n" (string-trim-right text)))
-
-(defun hermes-chat--insert-transient-toggle (entry summary expanded)
-  "Insert a toggle labeled SUMMARY for transient ENTRY in EXPANDED state."
+(defun hermes-chat--insert-transient-toggle (entry summary expanded &optional face help)
+  "Insert a toggle labeled SUMMARY for transient ENTRY in EXPANDED state.
+FACE is the head-line face, nil for the default face; HELP extends the
+collapsed `help-echo'."
   (let ((start (point)))
     (insert (if expanded "▾ " "▸ ") summary)
     (make-text-button start (point)
-                      'face 'shadow
+                      'face (or face 'default)
                       'mouse-face 'highlight
                       'follow-link t
-                      'help-echo (if expanded "Collapse output" "Expand output")
+                      'help-echo (cond (expanded "Collapse output")
+                                       (help (concat "Expand output: " help))
+                                       (t "Expand output"))
                       'hermes-chat-entry-id (plist-get entry :id)
                       'action #'hermes-chat--toggle-entry-button)))
 
+(defconst hermes-chat--status-collapse-lines 3
+  "Status and system notices longer than this many lines start collapsed.")
+
+(defun hermes-chat--entry-unknown-event (entry)
+  "Return ENTRY's unknown transport event, or nil."
+  (let ((event (plist-get (plist-get entry :metadata) :event)))
+    (and (eq (plist-get event :type) 'unknown) event)))
+
+(defun hermes-chat--transient-disclosure (entry content blocks)
+  "Return (SUMMARY BODY HELP) when transient ENTRY should collapse, or nil.
+CONTENT is ENTRY's text and BLOCKS its diff blocks.  Unknown events always
+collapse with their raw payload as BODY; tool output collapses when
+multiline; status notices collapse beyond `hermes-chat--status-collapse-lines'."
+  (let ((role (plist-get entry :role))
+        (lines (length (split-string (string-trim-right content) "\n"))))
+    (cond
+     ((when-let* ((event (hermes-chat--entry-unknown-event entry)))
+        (list (hermes-chat--unknown-event-summary event)
+              (hermes-chat--sanitize-content
+               (concat content "\n\n" (hermes-chat--unknown-event-detail event)))
+              content)))
+     (blocks nil)
+     ((and (memq role '(tool progress)) (> lines 1))
+      (list (hermes-chat--first-line content) content nil))
+     ((and (eq role 'status) (> lines hermes-chat--status-collapse-lines))
+      (list (format "%s  (%d lines)" (hermes-chat--first-line content) lines)
+            content nil)))))
+
 (defun hermes-chat--insert-transient-content (entry)
   "Insert a compact transient transport ENTRY.
-Multiline content collapses to a one-line summary with a `▸'/`▾' toggle, like
-the thinking disclosure; diffs become View Diff links."
-  (let ((content (or (plist-get entry :content) "")))
+Running rows show `●' in `hermes-chat-tool-running'; failures carry `error'
+on the whole head line.  Multiline tool output, unknown events and long
+notices collapse to a one-line summary with a `▸'/`▾' toggle, like the
+thinking disclosure; diffs become View Diff links.  Offline notices carry
+owner-bound recovery buttons."
+  (let ((content (or (plist-get entry :content) ""))
+        (status (plist-get entry :status)))
     (unless (string-empty-p content)
-      (insert (propertize (format "  %s "
-                                  (hermes-chat--status-icon
-                                   (plist-get entry :status)))
-                          'face (hermes-chat--status-face
-                                 (plist-get entry :status))))
-      (let ((blocks (hermes-chat--diff-blocks content)))
-        (if (and (memq (plist-get entry :role) '(tool progress))
-                 (hermes-chat--multiline-content-p content)
-                 (null blocks))
-            (let ((expanded (hermes-chat--entry-expanded-p entry)))
-              (hermes-chat--insert-transient-toggle
-               entry (hermes-chat--first-line content) expanded)
-              (insert "\n")
-              (when expanded
-                (hermes-chat--insert-shadow content)
-                (insert "\n")))
-          (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow blocks)
-          (insert "\n"))))))
+      (pcase-let ((`(,marker . ,marker-face) (hermes-chat--entry-marker status))
+                  (face (hermes-chat--entry-head-face status)))
+        (insert (propertize (format "  %s " marker) 'face marker-face))
+        (let* ((blocks (hermes-chat--diff-blocks content))
+               (disclosure (hermes-chat--transient-disclosure entry content blocks)))
+          (if disclosure
+              (let ((expanded (hermes-chat--entry-expanded-p entry)))
+                (hermes-chat--insert-transient-toggle
+                 entry (nth 0 disclosure) expanded face (nth 2 disclosure))
+                (insert "\n")
+                (when expanded
+                  (hermes-chat--insert-shadow (nth 1 disclosure))
+                  (insert "\n")))
+            (hermes-chat--insert-diffed
+             content
+             (lambda (text)
+               (unless (string-empty-p text)
+                 (insert (if face (propertize text 'face face) text))))
+             blocks)
+            (when (plist-get (plist-get entry :metadata) :recovery-owner)
+              (hermes-chat--insert-recovery-actions entry))
+            (insert "\n")))))))
 
 (defun hermes-chat--compact-commentary-paragraph (paragraph)
   "Return PARAGRAPH with token-stream line noise collapsed."
@@ -971,6 +1007,7 @@ agent's reply can stay last while tool/status/diff entries land above it."
                             (ewoc-enter-last hermes-chat--ewoc entry)))))
               (hermes-chat--register-node entry node))))))
     (hermes-chat--stream-format-schedule node)
+    (hermes-chat--retire-recovery-notices)
     (hermes-chat--notify-state-change)
     node))
 
@@ -1758,6 +1795,121 @@ METADATA is stored as the entry's `:metadata' plist."
   (hermes-chat--insert-entry
    (hermes-chat--make-entry 'status content (or status 'done))
    (hermes-chat--trailing-active-assistant-node)))
+
+;;; Offline recovery actions
+
+(defvar-local hermes-chat--recovery-notice-ids nil
+  "Entry ids of offline notices whose recovery buttons may still be live.")
+
+(defun hermes-chat--recovery-owner ()
+  "Capture the current chat attachment for offline recovery buttons."
+  (let ((client hermes-chat--dashboard-client))
+    (list :buffer (current-buffer)
+          :lifetime hermes-chat--lifecycle-generation
+          :client client
+          :connection (and (hermes-dashboard-transport-client-p client)
+                           (hermes-dashboard-transport-client-generation client))
+          :session hermes-chat--dashboard-active-session-id
+          :recovery (and (buffer-live-p hermes-chat--recovery-buffer)
+                         hermes-chat--recovery-buffer))))
+
+(defun hermes-chat--recovery-owner-current-p (owner)
+  "Return non-nil when OWNER still names this exact chat attachment.
+A new lifetime, client, socket generation or attached session retires it,
+so a recovery button never acts on a successor."
+  (let ((client (plist-get owner :client)))
+    (and (eq (current-buffer) (plist-get owner :buffer))
+         (hermes-chat--current-lifetime-p (plist-get owner :lifetime))
+         (eq hermes-chat--dashboard-client client)
+         (equal (and (hermes-dashboard-transport-client-p client)
+                     (hermes-dashboard-transport-client-generation client))
+                (plist-get owner :connection))
+         (equal hermes-chat--dashboard-active-session-id
+                (plist-get owner :session)))))
+
+(defun hermes-chat--recovery-actions (owner)
+  "Return (LABEL COMMAND HELP) recovery actions available for OWNER."
+  (delq nil
+        (list
+         (and (plist-get owner :client) (fboundp 'hermes-dashboard-reconnect)
+              (list "[Reconnect]" 'hermes-dashboard-reconnect
+                    "Reconnect this chat's dashboard socket; nothing is resent"))
+         (and (buffer-live-p (plist-get owner :recovery))
+              (fboundp 'hermes-chat-show-recovery)
+              (list "[Recovery draft]" 'hermes-chat-show-recovery
+                    "Show the input preserved for manual sending"))
+         (and (fboundp 'hermes-chat-session-details)
+              (list "[Session details]" 'hermes-chat-session-details
+                    "Show this chat's session details")))))
+
+(defun hermes-chat--recovery-live-p (entry)
+  "Return non-nil when offline ENTRY's recovery buttons may act."
+  (let ((metadata (plist-get entry :metadata)))
+    (and (not (plist-get metadata :recovery-retired))
+         (hermes-chat--recovery-owner-current-p
+          (plist-get metadata :recovery-owner)))))
+
+(defun hermes-chat--insert-recovery-actions (entry)
+  "Insert offline ENTRY's recovery buttons, inert once its owner retires."
+  (let* ((owner (plist-get (plist-get entry :metadata) :recovery-owner))
+         (live (hermes-chat--recovery-live-p entry))
+         (actions (hermes-chat--recovery-actions owner)))
+    (when actions
+      (insert (propertize " ·" 'face 'shadow))
+      (pcase-dolist (`(,label ,command ,help) actions)
+        (insert " ")
+        (if live
+            (insert-text-button
+             label 'face 'link 'mouse-face 'highlight 'follow-link t
+             'help-echo help
+             'hermes-chat-recovery-owner owner
+             'hermes-chat-recovery-command command
+             'action #'hermes-chat--recovery-button)
+          (insert (propertize label 'face 'shadow
+                              'help-echo "Retired: this belongs to an earlier connection")))))))
+
+(defun hermes-chat--recovery-button (button)
+  "Run BUTTON's recovery command in its exact owning chat attachment."
+  (let* ((owner (button-get button 'hermes-chat-recovery-owner))
+         (buffer (plist-get owner :buffer)))
+    (unless (and (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (or (hermes-chat--recovery-owner-current-p owner)
+                       (progn (hermes-chat--retire-recovery-notices) nil))))
+      (user-error "This recovery action belongs to an earlier connection"))
+    (with-current-buffer buffer
+      (call-interactively (button-get button 'hermes-chat-recovery-command)))))
+
+(defun hermes-chat--retire-recovery-notices ()
+  "Re-render offline notices whose owner retired, making their buttons inert."
+  (when hermes-chat--recovery-notice-ids
+    (setq hermes-chat--recovery-notice-ids
+          (seq-filter
+           (lambda (id)
+             (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+               (or (hermes-chat--recovery-live-p (ewoc-data node))
+                   (progn
+                     (hermes-chat--update-entry
+                      id (lambda (entry)
+                           (hermes-chat--entry-with
+                            entry :metadata
+                            (plist-put (copy-sequence (plist-get entry :metadata))
+                                       :recovery-retired t)))
+                      t)
+                     nil))))
+           hermes-chat--recovery-notice-ids))))
+
+(defun hermes-chat--insert-offline-notice (content)
+  "Insert offline CONTENT with recovery buttons bound to this attachment.
+The buttons only reach existing manual commands; nothing resends.  A notice
+for the same still-current attachment is not repeated."
+  (hermes-chat--retire-recovery-notices)
+  (unless hermes-chat--recovery-notice-ids
+    (let ((entry (hermes-chat--make-entry
+                  'status content 'disconnected nil
+                  (list :recovery-owner (hermes-chat--recovery-owner)))))
+      (hermes-chat--insert-entry entry (hermes-chat--trailing-active-assistant-node))
+      (push (plist-get entry :id) hermes-chat--recovery-notice-ids))))
 
 (defun hermes-chat--command-error (message)
   "Render dashboard command error MESSAGE."
