@@ -493,6 +493,19 @@ order.  Pure."
       (seq-remove (lambda (row) (hermes-chat--work-row-id (plist-get row :id) old))
                   fresh)))))
 
+(defun hermes-chat--card-confirmed-rows (rows delegation roots)
+  "Return the ROWS a delegation result naming DELEGATION and ROOTS confirms.
+A root worker stays when ROOTS lists it or it belongs to DELEGATION; a
+nested worker stays with its parent.  ROWS are in tree order.  Pure."
+  (let (kept)
+    (dolist (row rows)
+      (when (if (hermes-chat--card-root-p row rows)
+                (or (member (plist-get row :id) roots)
+                    (and delegation (equal (plist-get row :delegation-id) delegation)))
+              (hermes-chat--work-row-id (plist-get row :parent) kept))
+        (push row kept)))
+    (nreverse kept)))
+
 (defun hermes-chat--card-process-key (event)
   "Return (SESSION-ID . COMMAND) identifying background tool EVENT's process."
   (let* ((result (plist-get event :result))
@@ -541,13 +554,21 @@ id goals matched to ENTRY; :claimable, whether ENTRY may match new work;
          (active (hermes-chat--active-status-p (plist-get entry :status))))
     (pcase (hermes-chat--card-kind event)
       ('delegate
+       ;; A result naming the delegation or its workers is authoritative: it
+       ;; replaces a delegation the goals matched and drops what that brought.
        (pcase-let* ((`(,named . ,ids) (hermes-chat--card-delegation event))
-                    (delegation (or named (plist-get card :delegation)
-                                    (plist-get context :binding)))
+                    (result (or named ids))
+                    (delegation (if result named
+                                  (or (plist-get card :delegation)
+                                      (plist-get context :binding))))
                     (roots (seq-uniq (append (plist-get card :roots) ids)))
+                    (old (if result
+                             (hermes-chat--card-confirmed-rows
+                              (plist-get card :rows) delegation roots)
+                           (plist-get card :rows)))
                     (rows (hermes-chat--card-delegate-rows
-                           (plist-get roster :agents) delegation roots
-                           (plist-get card :rows) now (not active))))
+                           (plist-get roster :agents) delegation roots old now
+                           (not active))))
          (let ((tasks (hermes-chat--card-task-count event)))
            ;; Before any worker is attributed, a live call shows its task count.
            (when (or rows (and active (> tasks 0)))
@@ -659,7 +680,7 @@ Only rows still claimable at NOW take part."
                                         (event (hermes-chat--card-event node)))
                                    (and (eq (hermes-chat--card-kind event) 'delegate)
                                         (not (plist-get (plist-get entry :card) :delegation))
-                                        (not (car (hermes-chat--card-delegation event)))
+                                        (equal (hermes-chat--card-delegation event) '(nil))
                                         (hermes-chat--card-claimable-p entry now)
                                         (cons node (hermes-chat--card-goals event)))))
                                nodes)))

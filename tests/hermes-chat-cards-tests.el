@@ -373,6 +373,42 @@ later event of the worker carries; sa-2 stays queued."
     ;; The other batch is now the only match for the other row.
     (should (equal (hermes-test--card-ids "call-b") '("w-1")))))
 
+(ert-deftest hermes-chat-card-result-overrides-a-goal-match ()
+  "A result naming another delegation drops the goal-matched workers and
+their nested workers, then follows the named batch."
+  (hermes-test--with-card-chat
+    (let ((start (hermes-test--card-delegate "call-a" '("Goal"))))
+      (hermes-test--card-tool start)
+      (hermes-test--card-events (hermes-test--card-start "old" "d-old" "Goal")
+                                (hermes-test--card-start "old-kid" "d-x" "Stale nested" "old"))
+      (should (equal (hermes-test--card-ids "call-a") '("old" "old-kid")))
+      (should (equal (plist-get (hermes-test--card-of "call-a") :delegation) "d-old"))
+      (hermes-test--card-tool
+       (append '(:type tool :event "tool.complete" :status "completed"
+                       :result ((delegation_id . "d-new") (subagent_ids . ["new"])))
+               (cl-subseq start 4)))
+      (hermes-test--card-events (hermes-test--card-start "new" "d-new" "Goal")
+                                (hermes-test--card-start "new-kid" "d-y" "Fresh nested" "new"))
+      (should (equal (hermes-test--card-ids "call-a") '("new" "new-kid")))
+      (should (equal (plist-get (hermes-test--card-of "call-a") :delegation) "d-new"))
+      (should (equal (plist-get (hermes-test--card-of "call-a") :roots) '("new")))
+      (let ((transcript (hermes-test--transcript)))
+        (should (string-search "delegate_task · 1 task · 1 running · +1 nested" transcript))
+        (should-not (string-search "Stale nested" transcript)))
+      ;; A confirmed batch keeps its rows on later refreshes.
+      (hermes-chat--cards-refresh)
+      (should (equal (hermes-test--card-ids "call-a") '("new" "new-kid"))))))
+
+(ert-deftest hermes-chat-card-confirmed-rows-is-pure ()
+  "Only roots the result names or owns survive, each with its subtree."
+  (let ((rows '((:id "a" :delegation-id "d1") (:id "a1" :parent "a")
+                (:id "b" :delegation-id "d2") (:id "b1" :parent "b")
+                (:id "b2" :parent "b1") (:id "c"))))
+    (should (equal (mapcar (lambda (row) (plist-get row :id))
+                           (hermes-chat--card-confirmed-rows rows "d1" '("c")))
+                   '("a" "a1" "c")))
+    (should-not (hermes-chat--card-confirmed-rows rows nil nil))))
+
 (ert-deftest hermes-chat-card-dispatch-result-names-roots-once ()
   "A background dispatch's subagent ids attach workers; refreshes never grow them."
   (hermes-test--with-card-chat
