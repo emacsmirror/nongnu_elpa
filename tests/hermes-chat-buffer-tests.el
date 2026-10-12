@@ -648,6 +648,104 @@
      (should-not (text-property-not-all (point-min) pos 'read-only t))
      (should-not (text-property-not-all pos (point-max) 'read-only nil)))))
 
+(defun hermes-chat-test--assert-protected ()
+  "Assert the transcript is read-only and the composer writable."
+  (let ((pos (hermes-chat--input-position)))
+    (should-not (text-property-not-all (point-min) pos 'read-only t))
+    (should-not (text-property-not-all pos (point-max) 'read-only nil))))
+
+(defun hermes-chat-test--fill-exchanges (n)
+  "Insert N settled user/assistant exchanges."
+  (dotimes (i n)
+    (hermes-chat--insert-entry
+     (list :id (format "u%d" i) :role 'user :status 'done
+           :content (format "question %d" i)))
+    (hermes-chat--insert-entry
+     (list :id (format "a%d" i) :role 'assistant :status 'done
+           :content (format "Reply %d with **bold** and `code`.\n\n- item\n" i)))))
+
+(ert-deftest hermes-chat-protect-transcript-survives-every-transcript-mutation ()
+  "Incremental protection never leaves writable transcript text behind."
+  (hermes-test-with-chat-buffer
+   (insert "draft")
+   (hermes-chat-test--fill-exchanges 5)
+   (hermes-chat-test--assert-protected)
+   ;; Streaming, through both the in-place suffix and the full printer.
+   (hermes-chat--insert-entry
+    '(:id "s" :role assistant :status streaming :content ""))
+   (dotimes (k 20)
+     (hermes-chat--append-assistant-content
+      "s" (format (if (cl-oddp k) "w%d\n\n" "w%d ") k) 'streaming)
+     (hermes-chat-test--assert-protected))
+   ;; Re-render and collapse/expand of an old entry above the frontier.
+   (hermes-chat--update-entry
+    "a1" (lambda (entry) (plist-put (copy-sequence entry) :content "rewritten\n")))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--toggle-entry-expanded "a2")
+   (hermes-chat-test--assert-protected)
+   ;; Insertion above old entries, including the hook-inhibited activity path.
+   (hermes-chat--insert-entry '(:id "st" :role status :content "tool")
+                              (gethash "u1" hermes-chat--nodes))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--insert-entry '(:id "act" :role activity :content "activity")
+                              (gethash "u0" hermes-chat--nodes))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--remove-entry "act")
+   (hermes-chat--remove-entry "a0")
+   (hermes-chat-test--assert-protected)
+   ;; Text inserted silently at the very top of the transcript.
+   (let ((inhibit-read-only t) (inhibit-modification-hooks t))
+     (save-excursion (goto-char (point-min)) (insert "silent\n")))
+   (hermes-chat--append-assistant-content "s" "more " 'streaming)
+   (hermes-chat-test--assert-protected)
+   ;; A footer repaint and the composer receive their own properties.
+   (hermes-chat--replace-footer (car (ewoc-get-hf hermes-chat--ewoc))
+                                (cdr (ewoc-get-hf hermes-chat--ewoc))
+                                "\nfooter changed\n")
+   (hermes-chat-test--assert-protected)
+   (should (equal (hermes-chat-input-string) "draft"))
+   ;; Clear, then reload history into the fresh transcript.
+   (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+     (hermes-chat-clear))
+   (hermes-chat-test--assert-protected)
+   (hermes-chat--render-history
+    '(((role . "user") (content . "old question"))
+      ((role . "assistant") (content . "old answer"))))
+   (hermes-chat-test--fill-exchanges 2)
+   (hermes-chat-test--assert-protected)
+   ;; A mode change drops the frontier; the next setup starts again from top.
+   (hermes-chat-mode)
+   (hermes-chat-test--fill-exchanges 2)
+   (hermes-chat-test--assert-protected)))
+
+(defun hermes-chat-test--protect-scan-per-chunk (exchanges)
+  "Return the largest span scanned by protection per streamed chunk.
+Fill EXCHANGES settled exchanges first, then stream into a fresh reply."
+  (hermes-test-with-chat-buffer
+   (hermes-chat-test--fill-exchanges exchanges)
+   (hermes-chat--insert-entry
+    '(:id "s" :role assistant :status streaming :content ""))
+   (let ((largest 0) (scanned 0))
+     (cl-letf* ((orig (symbol-function 'text-property-not-all))
+                ((symbol-function 'text-property-not-all)
+                 (lambda (start end prop value &optional object)
+                   (unless object (cl-incf scanned (max 0 (- end start))))
+                   (funcall orig start end prop value object))))
+       (dotimes (k 30)
+         (setq scanned 0)
+         (hermes-chat--append-assistant-content
+          "s" (format (if (zerop (% k 3)) "w%d\n\n" "w%d ") k) 'streaming)
+         (setq largest (max largest scanned))))
+     (hermes-chat-test--assert-protected)
+     largest)))
+
+(ert-deftest hermes-chat-protect-transcript-chunk-cost-is-independent-of-history ()
+  "Per-chunk protection scans only the changed tail, not the whole transcript."
+  (let ((small (hermes-chat-test--protect-scan-per-chunk 2))
+        (large (hermes-chat-test--protect-scan-per-chunk 200)))
+    (should (> small 0))
+    (should (<= large (+ small 64)))))
+
 (ert-deftest hermes-chat-in-buffer-runs-only-when-live ()
   (let ((buffer (generate-new-buffer " *hermes-in-buffer-test*"))
         ran)

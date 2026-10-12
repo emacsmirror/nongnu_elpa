@@ -640,24 +640,83 @@ Each runs at the end of ENTRY's text and may insert whole lines there.")
   (let ((pos (hermes-chat--input-position)))
     (and pos (>= (point) pos))))
 
+(defvar-local hermes-chat--protected-frontier nil
+  "Cons (MARKER . POSITION): text before MARKER is known read-only.
+POSITION is where MARKER stood when last validated.  A silent insertion or
+deletion below the frontier moves MARKER away from POSITION, which resets
+protection to `point-min'.  Changes seen by `before-change-functions' and
+explicit `hermes-chat--protect-retreat' calls pull the frontier back first.")
+
+(defun hermes-chat--protect-retreat (position)
+  "Forget that text from POSITION onwards is protected.
+Changes reported to `before-change-functions' retreat automatically.  Code
+that edits the transcript with modification hooks inhibited must call this
+before the edit, with POSITION at or before its start: retreating first
+keeps the frontier marker at its validated position, whereas an unannounced
+edit below the frontier moves it and forces a full rescan."
+  (let ((frontier hermes-chat--protected-frontier))
+    (when (and (consp frontier) (markerp (car frontier))
+               (eq (marker-buffer (car frontier)) (current-buffer))
+               (= (marker-position (car frontier)) (cdr frontier)))
+      (when (< position (cdr frontier))
+        (set-marker (car frontier) position)
+        (setcdr frontier (marker-position (car frontier)))))))
+
+(defun hermes-chat--protect-before-change (beg _end)
+  "Retreat the protected frontier to text about to change from BEG.
+Before the change no marker has moved yet, so the frontier stays valid."
+  (hermes-chat--protect-retreat beg))
+
+(defun hermes-chat--protect-start ()
+  "Return the first position that may lack transcript protection.
+Install the frontier and its change hook on first use.  Whenever the
+frontier is missing, foreign or moved since validation, return
+`point-min' so protection never relies on an unproven prefix."
+  (let ((frontier hermes-chat--protected-frontier))
+    (unless (memq #'hermes-chat--protect-before-change before-change-functions)
+      (add-hook 'before-change-functions #'hermes-chat--protect-before-change nil t)
+      (setq frontier nil))
+    (if (and (consp frontier) (markerp (car frontier))
+             (eq (marker-buffer (car frontier)) (current-buffer))
+             (= (marker-position (car frontier)) (cdr frontier)))
+        (cdr frontier)
+      (point-min))))
+
+(defun hermes-chat--protect-reset ()
+  "Forget all transcript protection knowledge in this buffer."
+  (when (consp hermes-chat--protected-frontier)
+    (set-marker (car hermes-chat--protected-frontier) nil))
+  (setq hermes-chat--protected-frontier nil))
+
 (defun hermes-chat--protect-transcript ()
   "Make transcript and prompt read-only while keeping input tail writable.
-Only touch subranges that actually need the change: this runs after every
-streamed delta, so rewriting properties across the whole transcript would
-cost O(buffer) interval churn per chunk.  Do not record these internal
-text-property changes in the undo list."
+Scan only from the protected frontier: this runs after every streamed delta,
+footer tick and entry insert, so scanning from `point-min' would make each
+chunk cost O(transcript).  Do not record these internal text-property
+changes in the undo list."
   (when-let* ((pos (hermes-chat--input-position)))
-    (let ((inhibit-read-only t)
-          (buffer-undo-list t)
-          (start (point-min)))
-      (while (and (< start pos)
-                  (setq start (text-property-not-all start pos 'read-only t)))
-        (let ((end (or (text-property-any start pos 'read-only t) pos)))
-          (add-text-properties start end
-                               '(read-only t front-sticky t rear-nonsticky t))
-          (setq start end)))
-      (remove-text-properties pos (point-max)
-                              '(read-only nil front-sticky nil rear-nonsticky nil)))))
+    (save-restriction
+      (widen)
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t)
+            (start (min (hermes-chat--protect-start) pos))
+            (frontier hermes-chat--protected-frontier))
+        (while (and (< start pos)
+                    (setq start (text-property-not-all start pos 'read-only t)))
+          (let ((end (or (text-property-any start pos 'read-only t) pos)))
+            (add-text-properties start end
+                                 '(read-only t front-sticky t rear-nonsticky t))
+            (setq start end)))
+        (remove-text-properties pos (point-max)
+                                '(read-only nil front-sticky nil rear-nonsticky nil))
+        ;; Validate after our own property changes.  A cloned buffer
+        ;; shares the original's marker and cons; never adopt them.
+        (if (and (consp frontier) (markerp (car frontier))
+                 (eq (marker-buffer (car frontier)) (current-buffer)))
+            (progn (set-marker (car frontier) pos)
+                   (setcdr frontier pos))
+          (setq hermes-chat--protected-frontier
+                (cons (copy-marker pos) pos)))))))
 
 (defun hermes-chat--adjust-undo-element (element deltas)
   "Adjust draft undo ELEMENT by DELTAS, including native change groups."
@@ -818,6 +877,7 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
     (cl-incf hermes-chat--transport-generation)
     (setq hermes-chat--lifecycle-generation (hermes-chat--next-lifetime-token)
           hermes-chat--cleanup-done-p nil)
+    (hermes-chat--protect-reset)
     (erase-buffer)
     (setq-local header-line-format '(:eval (hermes-chat--header-line)))
     (hermes-chat--reset-header-state)
@@ -1031,6 +1091,13 @@ With RECOVER-INPUT, preserve hook-added input before clearing its owners."
        hermes-chat--nodes
        (gethash hermes-chat--pending-assistant-id hermes-chat--nodes)))
 
+(defun hermes-chat--entry-insert-position (before-node)
+  "Return where a new entry lands: BEFORE-NODE's start, else the footer's."
+  (if before-node
+      (ewoc-location before-node)
+    (- (or (hermes-chat--input-position) (point-max))
+       (length (cdr (ewoc-get-hf hermes-chat--ewoc))))))
+
 (defun hermes-chat--insert-entry (entry &optional before-node)
   "Insert ENTRY into the current chat EWOC and return its node.
 With BEFORE-NODE, insert ENTRY before that node instead of at the end, so the
@@ -1043,6 +1110,9 @@ agent's reply can stay last while tool/status/diff entries land above it."
            (hermes-chat--preserve-input-point
             (let ((node (let ((inhibit-read-only t)
                               (buffer-undo-list t))
+                          ;; Activity insertion inhibits change hooks.
+                          (hermes-chat--protect-retreat
+                           (hermes-chat--entry-insert-position before-node))
                           (if before-node
                               (ewoc-enter-before hermes-chat--ewoc
                                                  before-node entry)
@@ -1234,6 +1304,7 @@ Native diff markers retain unchanged reader prefixes and literal suffixes."
                        (not (hermes-buffer--retired-p)))
             (throw 'superseded nil))
           (let ((inhibit-modification-hooks t))
+            (hermes-chat--protect-retreat position)
             (save-excursion
               (replace-region-contents position limit (lambda () text))
               ;; Native diff replacement does not refresh matched properties.
@@ -1273,6 +1344,7 @@ Native diff markers retain unchanged reader prefixes and literal suffixes."
                        (= tick (buffer-chars-modified-tick)))
             (throw 'hermes-chat--superseded-append nil))
           (let ((inhibit-modification-hooks t))
+            (hermes-chat--protect-retreat position)
             (goto-char position)
             (insert (substring (plist-get entry :content) (length prefix)))
             (when-let* ((state (and hermes-chat--stream-formats
@@ -1344,6 +1416,7 @@ With QUIET, leave state-change notification to the caller."
              (buffer-undo-list t))
          (hermes-chat--preserve-readers
            (remhash id hermes-chat--nodes)
+           (hermes-chat--protect-retreat (ewoc-location node))
            (ewoc-delete hermes-chat--ewoc node)))))
     (unless quiet (hermes-chat--notify-state-change))))
 

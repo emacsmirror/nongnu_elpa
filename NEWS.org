@@ -2,6 +2,9 @@
 
 * Unreleased
 
+- Streaming into a long chat no longer slows down with transcript size:
+  keeping the transcript read-only now rescans only text changed since the
+  last update instead of the whole buffer on every chunk.
 - The rule above the chat composer now shows the active turn's state,
   elapsed time, current tool, task progress and queued count, then the last
   turn's duration briefly.  Queued messages are listed above the rule and
