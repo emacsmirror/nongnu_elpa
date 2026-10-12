@@ -2085,6 +2085,73 @@ Return a plist with the walker :visits per call, the largest flat
                (list "abcdef" "ghijkl" "mnopqr") 4 20 100 '(100 . 14))))
     (should (equal copy '("abcdef" "ghij…" …)))))
 
+(defun hermes-test--unknown-event-format-counting (raw)
+  "Format RAW as preview and detail, counting `maphash' calls.
+Return a plist with :maphash calls, the :preview and :detail strings."
+  (let ((calls 0) (real-maphash (symbol-function 'maphash)) preview detail)
+    (cl-letf (((symbol-function 'maphash)
+               (lambda (function table)
+                 (cl-incf calls)
+                 (funcall real-maphash function table))))
+      (setq preview (hermes-chat--unknown-event-raw-preview raw)
+            detail (hermes-chat--unknown-event-detail (list :raw raw))))
+    (list :maphash calls :preview preview :detail detail)))
+
+(ert-deftest hermes-chat-unknown-event-huge-empty-hash-is-not-scanned ()
+  "A huge empty hash table becomes a placeholder without being iterated."
+  (let* ((raw (make-hash-table :size 3000000))
+         (result (hermes-test--unknown-event-format-counting raw)))
+    (should (= (plist-get result :maphash) 0))
+    (should (equal (plist-get result :preview) "\\#<hash-table:count=0>"))
+    (should (string-match-p "hash-table:count=0" (plist-get result :detail)))))
+
+(ert-deftest hermes-chat-unknown-event-sparse-big-hash-is-not-scanned ()
+  "A sparse hash table with a large capacity is reported by its count."
+  (let ((raw (make-hash-table :test #'equal :size 100000)))
+    (puthash "a" 1 raw)
+    (puthash "b" (make-string 100 ?b) raw)
+    (let ((result (hermes-test--unknown-event-format-counting raw)))
+      (should (= (plist-get result :maphash) 0))
+      (should (string-match-p "hash-table:count=2" (plist-get result :preview)))
+      (should (string-match-p "hash-table:count=2" (plist-get result :detail)))
+      (should-not (string-match-p "bbb" (plist-get result :detail))))))
+
+(ert-deftest hermes-chat-unknown-event-hash-after-budget-is-not-visited ()
+  "A table nested after the budget runs out is elided without iteration."
+  (let* ((big (make-hash-table :size 3000000))
+         (small (make-hash-table)))
+    (puthash 'k 'v small)
+    (let ((calls 0) (real-maphash (symbol-function 'maphash)) copy)
+      (cl-letf (((symbol-function 'maphash)
+                 (lambda (function table)
+                   (cl-incf calls)
+                   (funcall real-maphash function table))))
+        (setq copy (hermes-chat--unknown-event-bounded-copy
+                    (list "abcdef" small big) 4 20 100 '(2 . 100))))
+      (should (= calls 0))
+      (should (equal copy '("abcdef" …))))))
+
+(ert-deftest hermes-chat-unknown-event-big-bignum-is-not-converted ()
+  "A huge bignum becomes a placeholder without decimal conversion."
+  (let ((converted 0) (real (symbol-function 'number-to-string))
+        (raw (list (expt 10 1000) (- (expt 10 1000)) (expt 2 200)))
+        preview detail)
+    (cl-letf (((symbol-function 'number-to-string)
+               (lambda (number)
+                 (let ((text (funcall real number)))
+                   (setq converted (max converted (length text)))
+                   text))))
+      (setq preview (hermes-chat--unknown-event-raw-preview raw)
+            detail (hermes-chat--unknown-event-detail (list :raw raw))))
+    (should (< converted 100))
+    (should (equal preview
+                   (format "(\\#<bignum> \\#<bignum> %d)" (expt 2 200))))
+    (should (< (length detail) 200))
+    (should (string-match-p (regexp-quote (number-to-string (expt 2 200)))
+                            detail))
+    (should-not (string-match-p "0000000000000000000000000000000000000000"
+                                detail))))
+
 (ert-deftest hermes-chat-clear-drops-unknown-event-detail-cache ()
   "Clearing the transcript discards cached unknown event details."
   (hermes-test-with-chat-buffer

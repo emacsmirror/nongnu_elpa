@@ -870,9 +870,20 @@ the rest of a list or vector.  Strings are cut to STRING-LIMIT
 characters and the remaining character budget, end in \"…\" when cut,
 and lose their text properties.  Only strings, numbers, symbols, conses,
 plain vectors and hash tables are walked; any other object becomes an
-opaque symbol such as `#<record>' or `#<buffer>' and is never printed."
+opaque symbol such as `#<record>' or `#<buffer>' and is never printed.
+Bignums wider than `hermes-chat--unknown-event-bignum-bits' become
+`#<bignum>' without decimal conversion, and hash tables whose capacity
+exceeds `hermes-chat--unknown-event-hash-size-limit' become a symbol such
+as `#<hash-table:count=2>' without being iterated."
   (hermes-chat--unknown-event-bounded-walk
    object depth length string-limit (cons (car budget) (cdr budget))))
+
+(defconst hermes-chat--unknown-event-bignum-bits 256
+  "Bit width above which an unknown event bignum is not converted.")
+
+(defconst hermes-chat--unknown-event-hash-size-limit 1024
+  "Hash table capacity above which an unknown event table is not iterated.
+`maphash' scans the whole capacity, even when the table is nearly empty.")
 
 (defun hermes-chat--unknown-event-opaque (object)
   "Return a short placeholder symbol naming the type of OBJECT."
@@ -900,6 +911,10 @@ roughly its printed size in characters; a hash table costs its header."
           (if (< keep (length object))
               (concat (substring-no-properties object 0 keep) "…")
             (substring-no-properties object))))
+       ((and (bignump object)
+             (> (logb (abs object)) hermes-chat--unknown-event-bignum-bits))
+        (funcall spend 10)
+        '\#<bignum>)
        ((or (numberp object) (symbolp object))
         (let ((size (1+ (length (if (symbolp object) (symbol-name object)
                                   (number-to-string object))))))
@@ -931,6 +946,9 @@ roughly its printed size in characters; a hash table costs its header."
             (setq count (1+ count)))
           (vconcat (nreverse items)
                    (and (< count (length object)) (list '…)))))
+       ((> (hash-table-size object) hermes-chat--unknown-event-hash-size-limit)
+        (funcall spend 30)
+        (intern (format "#<hash-table:count=%d>" (hash-table-count object))))
        (t
         (funcall spend 60)
         (let ((copy (make-hash-table :test (hash-table-test object)))
