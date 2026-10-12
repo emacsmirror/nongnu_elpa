@@ -1208,8 +1208,12 @@ The endpoint returns whole files, not a tail or a paginated transcript."
            (if (string-empty-p text) "No log content yet.\n" text))
           (setq hermes-work-log--request nil
                 header-line-format
-                (if (string-empty-p text) "Worker log · Empty snapshot · ? Help"
-                  "Worker log · Snapshot; entries may be truncated · ? Help")))))))
+                (concat (propertize "Worker log" 'face 'hermes-work-section)
+                        (propertize (if (string-empty-p text) " · empty snapshot"
+                                      " · snapshot; entries may be truncated")
+                                    'face 'hermes-work-meta)
+                        "  " (hermes-work--key 'help-key-binding "?")
+                        (propertize " help" 'face 'shadow))))))))
 
 (defun hermes-work-log-refresh ()
   "Fetch this worker's remote log or bounded tail, preserving point.

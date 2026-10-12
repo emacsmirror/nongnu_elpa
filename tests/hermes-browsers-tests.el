@@ -236,7 +236,10 @@
               (with-current-buffer log
                 (should visual-line-mode)
                 (should-not truncate-lines)
-                (should (string-match-p "Empty snapshot" header-line-format))
+                (should (string-match-p "empty snapshot" header-line-format))
+                (should (eq (get-text-property
+                             (string-search "?" header-line-format) 'face header-line-format)
+                            'help-key-binding))
                 (should (string-match-p "No log content yet" (buffer-string)))
                 (setq promise (hermes--promise-make))
                 (hermes-work-log-refresh)
