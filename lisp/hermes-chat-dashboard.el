@@ -469,6 +469,19 @@ stops its poll) instead of being called by name from this file.")
 (defconst hermes-chat--work-cadence 5
   "Seconds between roster reads while a chat or its work view is visible.")
 
+(defcustom hermes-chat-work-hidden-cadence 30
+  "Seconds between roster reads of chats no window displays.
+Hidden chats are read only while `hermes-chat-work-indicator' shows their
+work in the mode line; visible chats are read every few seconds."
+  :type 'natnum
+  :group 'hermes)
+
+(defvar hermes-chat-work-indicator)
+
+(defun hermes-chat--work-hidden-polling-p ()
+  "Return non-nil when hidden chats' rosters are read on a slow cadence."
+  (bound-and-true-p hermes-chat-work-indicator))
+
 (defvar hermes-chat--work-kinds '(:delegates :processes)
   "Roster kinds each chat reads: workers and background processes.")
 
@@ -578,9 +591,9 @@ The snapshot stays as it was.  Stop reading KIND when the backend lacks it."
                (hermes-chat--work-failed owner kind context nil))))))
 
 (defun hermes-chat--work-poll (owner)
-  "Read each supported roster kind of visible OWNER that has no read in flight."
+  "Read each supported roster kind of OWNER that has no read in flight.
+Callers choose the cadence; visibility does not gate a read."
   (when (and (hermes-chat--work-current-p owner)
-             (hermes-chat--work-visible-p owner)
              (stringp (plist-get owner :runtime))
              (not (string-empty-p (plist-get owner :runtime)))
              (hermes-dashboard-transport-client-ready-p (plist-get owner :client)))
@@ -589,9 +602,12 @@ The snapshot stays as it was.  Stop reading KIND when the backend lacks it."
                   (alist-get kind (plist-get owner :inflight)))
         (hermes-chat--work-request owner kind)))))
 
-(defun hermes-chat--work-arm (owner delay)
-  "Run OWNER's next roster read after DELAY seconds."
-  (setf (plist-get owner :timer)
+(defun hermes-chat--work-arm (owner delay &optional hidden)
+  "Run OWNER's next roster read after DELAY seconds.
+HIDDEN non-nil marks the timer as the slow cadence of a hidden chat;
+`initial' marks the one read a chat gets on bind whatever its visibility."
+  (setf (plist-get owner :hidden) hidden
+        (plist-get owner :timer)
         (run-at-time delay nil #'hermes-chat--work-tick owner)))
 
 (defun hermes-chat--work-expire (owner now)
@@ -609,29 +625,47 @@ it with the roster at the last publication."
       (hermes-chat--work-changed owner))))
 
 (defun hermes-chat--work-tick (owner)
-  "Read OWNER's rosters, then rearm while it stays attached and visible.
-Publish retention expiry even when reads fail or are unsupported.  A
-superseded timer that fires while a newer one is pending does nothing."
+  "Read OWNER's rosters, then rearm while it stays attached.
+A visible chat rearms at `hermes-chat--work-cadence'.  A hidden one reads
+and rearms at `hermes-chat-work-hidden-cadence' while the mode-line
+indicator wants its counts, and otherwise reads only on bind.  Publish
+retention expiry even when reads fail or are unsupported.  A superseded
+timer that fires while a newer one is pending does nothing."
   (unless (memq (plist-get owner :timer) timer-list)
     (setf (plist-get owner :timer) nil)
-    (when (and (hermes-chat--work-current-p owner)
-               (hermes-chat--work-visible-p owner))
-      (hermes-chat--work-expire owner (float-time))
-      (hermes-chat--work-poll owner)
-      (hermes-chat--work-arm owner hermes-chat--work-cadence))))
+    (let ((visible (hermes-chat--work-visible-p owner))
+          (polling (hermes-chat--work-hidden-polling-p)))
+      (when (and (hermes-chat--work-current-p owner)
+                 (or visible polling (eq (plist-get owner :hidden) 'initial)))
+        (hermes-chat--work-expire owner (float-time))
+        (hermes-chat--work-poll owner)
+        (cond (visible (hermes-chat--work-arm owner hermes-chat--work-cadence))
+              (polling (hermes-chat--work-arm owner hermes-chat-work-hidden-cadence t))
+              (t (setf (plist-get owner :hidden) nil)))))))
 
 (defun hermes-chat--work-visibility (&optional departing)
-  "Run each chat's poll timer exactly while it or its work view is visible.
-Ignore windows on DEPARTING frame.  Visibility never touches snapshots, and
-window hooks only arm timers; the first read runs from the timer."
+  "Run each chat's poll timer at the cadence its visibility calls for.
+A visible chat or work view reads fast; a hidden chat reads slowly while
+`hermes-chat-work-indicator' is on, and not at all otherwise.  Ignore
+windows on DEPARTING frame.  Visibility never touches snapshots, and window
+hooks only arm timers; reads run from the timer."
   (dolist (buffer (buffer-list))
     (when-let* ((owner (buffer-local-value 'hermes-chat--work-owner buffer)))
-      (cond
-       ((not (and (hermes-chat--work-current-p owner)
-                  (hermes-chat--work-visible-p owner departing)))
-        (hermes-chat--work-cancel-timer owner))
-       ((not (plist-get owner :timer))
-        (hermes-chat--work-arm owner 0))))))
+      (let ((timer (plist-get owner :timer)))
+        (cond
+         ((not (hermes-chat--work-current-p owner))
+          (hermes-chat--work-cancel-timer owner))
+         ((hermes-chat--work-visible-p owner departing)
+          (when (or (not timer) (plist-get owner :hidden))
+            (hermes-chat--work-cancel-timer owner)
+            (hermes-chat--work-arm owner 0)))
+         ;; Keep the read a hidden chat gets on bind.
+         ((and timer (eq (plist-get owner :hidden) 'initial)))
+         ((not (hermes-chat--work-hidden-polling-p))
+          (hermes-chat--work-cancel-timer owner))
+         ((not (and timer (plist-get owner :hidden)))
+          (hermes-chat--work-cancel-timer owner)
+          (hermes-chat--work-arm owner hermes-chat-work-hidden-cadence t)))))))
 
 (defun hermes-chat--work-window-change (_window)
   "Reconcile visibility before redisplaying _WINDOW."
@@ -646,13 +680,16 @@ window hooks only arm timers; the first read runs from the timer."
                 :instance (copy-tree hermes-instance) :profile hermes-chat--profile
                 :client client :connection (hermes-dashboard-transport-client-generation client)
                 :runtime runtime :delegates nil :processes nil :events nil :published nil
-                :inflight nil :unsupported nil :timer nil :controls nil
+                :inflight nil :unsupported nil :timer nil :hidden nil
+                :controls nil
                 :view nil :view-valid-p nil :render nil :refresh nil :settle nil
                 :current-p #'hermes-chat--work-current-p))
     (let ((owner hermes-chat--work-owner))
       (setf (plist-get owner :refresh)
             (lambda ()
-              (when (hermes-chat--work-current-p owner)
+              ;; Details alone never authorize a read of a hidden chat.
+              (when (and (hermes-chat--work-current-p owner)
+                         (hermes-chat--work-visible-p owner))
                 (with-current-buffer (plist-get owner :buffer)
                   (hermes-chat-work-refresh))))))
     ;; Iconification need not change window state.  Focus notifications cover
@@ -661,6 +698,10 @@ window hooks only arm timers; the first read runs from the timer."
     (add-hook 'pre-redisplay-functions #'hermes-chat--work-window-change)
     (add-hook 'delete-frame-functions #'hermes-chat--work-visibility)
     (hermes-chat--work-visibility)
+    ;; One read per kind soon, visible or not: hidden chats need counts too.
+    (unless (hermes-chat--work-visible-p hermes-chat--work-owner)
+      (hermes-chat--work-cancel-timer hermes-chat--work-owner)
+      (hermes-chat--work-arm hermes-chat--work-owner 0 'initial))
     (hermes-chat--work-publish-detached detached)))
 
 (defun hermes-chat--work-legacy-p (owner)

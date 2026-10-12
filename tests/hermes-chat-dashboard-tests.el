@@ -34,6 +34,8 @@
 
 ;;; Observed work
 
+(defvar hermes-chat-work-indicator)
+
 (defvar hermes-test--work-processes-p nil
   "Non-nil to read both roster kinds rather than workers alone.")
 
@@ -87,6 +89,7 @@
          (hermes-chat--work-kinds (if hermes-test--work-processes-p
                                       '(:delegates :processes)
                                     '(:delegates)))
+         (hermes-chat-work-indicator nil)
          calls timers)
      (setf (hermes-dashboard-transport-client-ready-p client) t)
      (cl-letf (((symbol-function 'hermes-dashboard-transport-subagent-list)
@@ -1246,6 +1249,59 @@ session is not restarted, and the new owner polls with the new signature."
                          (hermes-test--work-text (hermes-chat--work-label t)))
                        label)))
       (kill-buffer " *work hidden*"))))
+
+(ert-deftest hermes-chat-work-hidden-chats-get-observed ()
+  "Binding a hidden chat reads at once; it then polls slowly while the
+indicator is on, and not at all when it is off."
+  (dolist (indicator '(t nil))
+    (save-window-excursion
+      (hermes-test-with-chat-buffer
+       (let ((chat (current-buffer))
+             (client (hermes-test--dashboard-client))
+             (hermes-chat--work-kinds '(:delegates))
+             (hermes-chat-work-indicator indicator)
+             (hermes-chat-work-hidden-cadence 30)
+             calls)
+         (setf (hermes-dashboard-transport-client-ready-p client) t)
+         (cl-letf (((symbol-function 'hermes-dashboard-transport-subagent-list)
+                    (lambda (_client &rest args) (push args calls) (length calls)))
+                   ((symbol-function 'run-at-time)
+                    (lambda (delay _repeat fn &rest args) (list delay fn args)))
+                   ((symbol-function 'cancel-timer) #'ignore))
+           (set-window-buffer (selected-window) (get-buffer-create " *work hidden*"))
+           (with-current-buffer chat
+             (setq hermes-chat--dashboard-client client
+                   hermes-chat--dashboard-active-session-id "runtime"
+                   hermes-chat--dashboard-session-ready-p t)
+             (hermes-chat--work-bind client "runtime")
+             (let ((owner hermes-chat--work-owner))
+               (should-not (hermes-chat--work-visible-p owner))
+               ;; Redisplay keeps the bind read; it runs from its timer.
+               (run-hook-with-args 'pre-redisplay-functions (selected-window))
+               (let ((timer (plist-get owner :timer)))
+                 (should (= (car timer) 0))
+                 (apply (cadr timer) (nth 2 timer)))
+               (should (= (length calls) 1))
+               (funcall (plist-get (car calls) :resolve)
+                        (hermes-transport-json-parse-lossless
+                         "{\"subagents\":[{\"subagent_id\":\"a\",\"status\":\"running\"}]}"))
+               (should (equal (hermes-test--work-text (hermes-chat--work-label t)) "1a"))
+               (if (not indicator)
+                   (should-not (plist-get owner :timer))
+                 (let ((timer (plist-get owner :timer)))
+                   (should (= (car timer) 30))
+                   (should (plist-get owner :hidden))
+                   (run-hook-with-args 'pre-redisplay-functions (selected-window))
+                   (should (eq timer (plist-get owner :timer)))
+                   (apply (cadr timer) (nth 2 timer))
+                   (should (= (length calls) 2))
+                   (should (= (car (plist-get owner :timer)) 30))
+                   ;; Showing the chat switches to the fast cadence at once.
+                   (set-window-buffer (selected-window) chat)
+                   (run-hook-with-args 'pre-redisplay-functions (selected-window))
+                   (should (= (car (plist-get owner :timer)) 0))
+                   (should-not (plist-get owner :hidden))))))
+           (kill-buffer " *work hidden*")))))))
 
 (ert-deftest hermes-chat-work-frame-visibility-notifications ()
   "Focus and redisplay notifications reconcile timers without sending RPCs."
