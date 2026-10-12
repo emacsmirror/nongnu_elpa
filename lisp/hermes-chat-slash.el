@@ -1031,6 +1031,14 @@ via `hermes-chat--dashboard-slash-exec'."
                (lambda ()
                  (hermes-chat--compress-show message 'error)))))))))))
 
+(defun hermes-chat-compress (&optional focus)
+  "Compress the live session like /compress, optionally around FOCUS.
+Interactively, a prefix argument prompts for the focus topic."
+  (interactive (list (and current-prefix-arg
+                          (read-string "Compress focus topic: ")))
+               hermes-chat-mode)
+  (hermes-chat--dashboard-compress "compress" (or focus "")))
+
 ;;; Command results
 
 ;; Dispatch/alias/skill/prefill result handling lives with the slash

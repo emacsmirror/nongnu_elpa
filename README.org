@@ -72,6 +72,15 @@ used first, annotated with session title, state and any divergent cwd.
   reasoning (=E=) in the whole chat at once, without moving point, and
   expands (=+=) or collapses (=-=) every disclosure.  Hiding wins over an
   entry's own expansion until you expand an entry of that kind by hand.
+- =C-c C-c= interrupts the running turn, as in =shell-mode=; when nothing
+  is running it only says so.  =C-c C-k= still interrupts and sends the
+  draft.
+- The menu's Aside group offers the side question (=y=, =/btw=), a
+  background task (=G=, =/bg=) and Stop processes (=!=, =/stop=).  Session
+  (=S=) holds New, Rename and List sessions plus a Fork group: Branch
+  (=b=), Hand off (=H=) and Compress (=z=, =/compress=; =C-u= asks for a
+  focus topic).  Activity (=B=) lists queue, workers, tasks and output;
+  Directory (=w=) sets the chat's working directory.
 - Approval prompts name the tool and show the full command.  Opened with
   =C-c C-a= or the =[Answer]= button they take one key: =o=nce, =s=ession,
   =a=lways or =d=eny; =q= or =C-g= leaves the request pending.  An approval
@@ -419,7 +428,7 @@ remain after failure or cancellation; cleanup is a separate explicit action.
 
 Completed tool outputs with published file paths, and closed HTML/SVG code
 blocks in assistant replies, offer =[Preview]= buttons.  The chat actions menu
-also provides /Workspace → Preview output/.  Previewing never reads a backend
+also provides /Activity → Preview output/.  Previewing never reads a backend
 path from the local filesystem: it requests current bytes from the owning
 chat's managed-files API, with a 4 MiB limit.  The server's file policy may
 refuse paths outside its managed root.  Failed reads offer retry and copy-target
@@ -467,7 +476,7 @@ support and have no local command fallback.
 
 ** Live tasks
 
-Use /Workspace → Live tasks/ in the chat actions menu, or
+Use /Activity → Live tasks/ in the chat actions menu, or
 =M-x hermes-chat-show-todos=, to open the session-owned checklist.  It follows
 backend task snapshots without changing the chat draft or moving focus.
 The panel is read-only: pending tasks stay pending when a turn ends, with

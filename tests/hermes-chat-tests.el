@@ -1839,7 +1839,8 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
     (should (equal (mapcar (lambda (row)
                             (mapcar (lambda (group) (plist-get group :name)) row))
                           rows)
-                   '(("Turn" "Compose") ("Configure" "Browse") ("Show" "Prompt"))))))
+                   '(("Turn" "Compose") ("Configure" "Browse")
+                     ("Show" "Aside" "Prompt"))))))
 
 (ert-deftest hermes-chat-actions-popup-groups-stay-small ()
   "Every chat popup group, root and child, offers at most four actions."
@@ -1860,7 +1861,8 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
                                     :entries)))))
     (should (equal (funcall keys "Compose") '("RET" "Q" "I" "F")))
     (should (equal (funcall keys "Browse") '("B" "X" "c" "W")))
-    (should (equal (funcall keys "Show") '("O" "E" "+" "-"))))
+    (should (equal (funcall keys "Show") '("O" "E" "+" "-")))
+    (should (equal (funcall keys "Aside") '("y" "G" "!"))))
   ;; Moved actions stay reachable: Inspect owns Refresh commands, and both
   ;; former root keys remain quiet aliases.
   (should (eq (keymap-lookup hermes-chat-info-map "r")
@@ -1871,6 +1873,109 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
               #'hermes-chat-go-to-composer))
   (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-j")
               #'hermes-chat-go-to-composer)))
+
+;; Shared inventory: every popup map offered under the chat actions root.
+(defun hermes-test--chat-popup-maps ()
+  "Return the chat actions root and each of its submenu maps."
+  (list hermes-chat-actions-map hermes-chat-info-map hermes-chat-jobs-map
+        hermes-chat-work-map hermes-chat-sess-map hermes-chat-model-map
+        hermes-chat-images-map hermes-chat-files-map hermes-chat-audio-map))
+
+(ert-deftest hermes-chat-actions-popup-entries-small-and-defined ()
+  "Every popup group has 1-4 entries, unique keys and defined commands."
+  (dolist (map (hermes-test--chat-popup-maps))
+    (let ((groups (apply #'append (keymap-popup--meta map 'descriptions)))
+          keys)
+      (should (consp groups))
+      (dolist (group groups)
+        (let ((entries (plist-get group :entries)))
+          (should (<= 1 (length entries) 4))
+          (dolist (entry entries)
+            (push (plist-get entry :key) keys)
+            (pcase (plist-get entry :type)
+              ('keymap (should (keymapp
+                                (let ((target (plist-get entry :target)))
+                                  (if (symbolp target)
+                                      (symbol-value target)
+                                    target)))))
+              (_ (let ((command (plist-get entry :command)))
+                   (should (symbolp command))
+                   (should (fboundp command))
+                   (should (commandp command))))))))
+      (should (equal keys (delete-dups (copy-sequence keys)))))))
+
+(ert-deftest hermes-chat-actions-popup-clear-names ()
+  "Root submenus read Activity/Directory; Session splits into Session/Fork."
+  (let* ((groups (apply #'append
+                        (keymap-popup--meta hermes-chat-actions-map 'descriptions)))
+         (entries (apply #'append
+                         (mapcar (lambda (group) (plist-get group :entries))
+                                 groups)))
+         (label (lambda (key)
+                  (plist-get (seq-find (lambda (e) (equal (plist-get e :key) key))
+                                       entries)
+                             :description))))
+    (should (equal (funcall label "B") "Activity"))
+    (should (equal (funcall label "w") "Directory")))
+  (let ((sess (apply #'append (keymap-popup--meta hermes-chat-sess-map
+                                                  'descriptions))))
+    (should (equal (mapcar (lambda (group) (plist-get group :name)) sess)
+                   '("Session" "Fork")))
+    (should (equal (mapcar (lambda (e) (plist-get e :key))
+                           (plist-get (cadr sess) :entries))
+                   '("b" "H" "z"))))
+  (dolist (binding '(("S b" . hermes-chat-branch)
+                     ("S H" . hermes-chat-handoff)
+                     ("S z" . hermes-chat-compress)
+                     ("S n" . hermes-chat)
+                     ("S R" . hermes-chat-rename)))
+    (should (eq (keymap-lookup hermes-chat-sess-map
+                               (substring (car binding) 2))
+                (cdr binding))))
+  (dolist (binding '(("y" . hermes-chat-btw)
+                     ("G" . hermes-chat-background)
+                     ("!" . hermes-chat-stop-processes)
+                     ("b" . hermes-switch-to-chat)
+                     ("z" . hermes-chat-compress)
+                     ("H" . hermes-chat-handoff)))
+    (should (eq (keymap-lookup hermes-chat-actions-map (car binding))
+                (cdr binding)))))
+
+(ert-deftest hermes-chat-compress-command-reuses-slash-path ()
+  "Fork's Compress runs the existing /compress implementation."
+  (let (args)
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-compress)
+               (lambda (&rest a) (setq args a))))
+      (hermes-chat-compress)
+      (should (equal args '("compress" "")))
+      (hermes-chat-compress "tests")
+      (should (equal args '("compress" "tests"))))))
+
+(ert-deftest hermes-chat-c-c-c-c-interrupts-only-when-running ()
+  "C-c C-c interrupts a running turn and only reports when idle."
+  (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-c")
+              #'hermes-chat-interrupt-turn))
+  (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-k")
+              #'hermes-chat-interrupt-and-send))
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (should (eq (key-binding (kbd "C-c C-c")) #'hermes-chat-interrupt-turn))
+      (let ((interrupts 0) (busy nil) (before (buffer-string)) messages)
+        (cl-letf (((symbol-function 'hermes-chat-interrupt)
+                   (lambda () (interactive) (cl-incf interrupts)))
+                  ((symbol-function 'hermes-chat--interrupt-unavailable-p)
+                   (lambda () (not busy)))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest a)
+                     (push (apply #'format-message fmt a) messages))))
+          (execute-kbd-macro (kbd "C-c C-c"))
+          (should (= interrupts 0))
+          (should (equal (car messages) "No running Hermes turn to interrupt"))
+          (should (equal (buffer-string) before))
+          (setq busy t)
+          (execute-kbd-macro (kbd "C-c C-c"))
+          (should (= interrupts 1)))))))
 
 (defun hermes-test--insert-user-turns (&rest turns)
   "Insert submitted user TURNS, each followed by an assistant reply."
@@ -2087,6 +2192,8 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
                   (not (eq binding #'hermes-chat--submenu-root-key))
                   ;; Context budget is new, not an original root shortcut.
                   (not (eq binding #'hermes-chat-context))
+                  ;; Fork's Branch is new; root `b' keeps Switch chat buffer.
+                  (not (eq binding #'hermes-chat-branch))
                   (not (memq event '(?? ?S ?w ?B))))
          (should (eq (lookup-key hermes-chat-actions-map (vector event))
                      binding))))

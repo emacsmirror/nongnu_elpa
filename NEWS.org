@@ -2,6 +2,14 @@
 
 * Unreleased
 
+- =C-c C-c= in a chat interrupts the running turn (=hermes-chat-interrupt-turn=);
+  when idle it only reports that nothing is running.  =C-c C-k= is unchanged.
+- Chat actions menu (=C-c C-o=): Work is now Activity (=B=) and Workspace is
+  now Directory (=w=), so neither reads like Workers (=W=).  The Session menu
+  splits into Session (New, Rename, List sessions) and Fork (Branch =b=,
+  Hand off =H=, Compress =z=, the new =hermes-chat-compress=).  A new Aside
+  group exposes the formerly slash-only side question (=y=), background task
+  (=G=) and Stop processes (=!=).  Root =b= remains Switch chat buffer.
 - The rule above the chat composer now shows the active turn's state,
   elapsed time, current tool, task progress and queued count, then the last
   turn's duration briefly.  Queued messages are listed above the rule and

@@ -1333,6 +1333,15 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
                    "Image preparation interrupted; bytes retained"))
       (hermes-chat--interrupt-run))))
 
+(defun hermes-chat-interrupt-turn ()
+  "Interrupt the running turn, or only report that nothing is running.
+Unlike `hermes-chat-interrupt', an idle chat is not an error, so the
+shell-style \\[hermes-chat-interrupt-turn] is always safe to press."
+  (interactive nil hermes-chat-mode)
+  (if (hermes-chat--interrupt-unavailable-p)
+      (message "No running Hermes turn to interrupt")
+    (hermes-chat-interrupt)))
+
 (defun hermes-chat--interrupt-run ()
   "Request interruption of the active dashboard run."
   (interactive nil hermes-chat-mode)
@@ -3203,8 +3212,13 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   :group "Session"
   "n" ("New chat" hermes-chat)
   "R" ("Rename session" hermes-chat-rename)
-  "H" ("Hand off session" hermes-chat-handoff)
-  "S" ("List sessions" hermes-list-sessions))
+  "S" ("List / resume sessions" hermes-list-sessions)
+  :group "Fork"
+  "b" ("Branch" hermes-chat-branch
+       :inapt-if #'hermes-chat--active-turn-p)
+  "H" ("Hand off" hermes-chat-handoff)
+  "z" ("Compress" hermes-chat-compress
+       :inapt-if #'hermes-chat--active-turn-p))
 
 (put 'hermes-chat-sess-map-popup 'command-modes '(hermes-chat-mode))
 
@@ -3225,11 +3239,11 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
 (put 'hermes-chat-model-map-popup 'command-modes '(hermes-chat-mode))
 
 (keymap-popup-define hermes-chat-work-map
-  "Choose the chat workspace and related buffers."
+  "Choose the chat directory and related buffers."
   :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
-  :group "Workspace"
+  :group "Directory"
   "w" ((lambda () (hermes-chat--setting-value
                    (hermes-chat--current-working-directory) nil "Directory"))
        hermes-chat-set-directory
@@ -3243,7 +3257,7 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   :description #'hermes-chat--popup-title
   :popup-key "?"
   :exit-key "q"
-  :group "Work"
+  :group "Activity"
   "P" (#'hermes-chat--queue-panel-label hermes-chat-queue-panel)
   "W" (#'hermes-chat-workers-label hermes-chat-work)
   "T" ("Live tasks" hermes-chat-show-todos)
@@ -3302,10 +3316,10 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   :group "Configure"
   "S" ("Session" :keymap hermes-chat-sess-map)
   "M" ("Model" :keymap hermes-chat-model-map)
-  "w" ("Workspace" :keymap hermes-chat-work-map)
+  "w" ("Directory" :keymap hermes-chat-work-map)
   "A" ("Local audio" :keymap hermes-chat-audio-map)
   :group "Browse"
-  "B" ("Work" :keymap hermes-chat-jobs-map)
+  "B" ("Activity" :keymap hermes-chat-jobs-map)
   "X" ("Inspect" :keymap hermes-chat-info-map)
   "c" ("Show commands" hermes-chat-show-commands)
   "W" (#'hermes-chat-workers-label hermes-chat-work)
@@ -3317,6 +3331,10 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
        hermes-chat-toggle-reasoning :stay-open t)
   "+" ("Expand all" hermes-chat-expand-all-details)
   "-" ("Collapse all" hermes-chat-collapse-all-details)
+  :group "Aside"
+  "y" ("Side question (btw)" hermes-chat-btw)
+  "G" ("Background task" hermes-chat-background)
+  "!" ("Stop processes" hermes-chat-stop-processes)
   :group ("Prompt" :if #'hermes-chat--pending-prompt-p)
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt))
@@ -3343,8 +3361,10 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
 
 ;; Retain unclaimed suffix shortcuts without advertising a second menu or
 ;; maintaining another command table.  The submenu maps own these bindings.
-(dolist (map (list hermes-chat-images-map hermes-chat-sess-map
-                   hermes-chat-model-map hermes-chat-work-map
+;; The Directory map precedes Session so root `b' keeps Switch chat buffer
+;; rather than Fork's Branch.
+(dolist (map (list hermes-chat-images-map hermes-chat-work-map
+                   hermes-chat-sess-map hermes-chat-model-map
                    hermes-chat-info-map hermes-chat-jobs-map))
   (map-keymap
    (lambda (event binding)
@@ -3394,6 +3414,7 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "C-c C-j" #'hermes-chat-go-to-composer
   "M-p" #'hermes-chat-input-history-previous
   "M-n" #'hermes-chat-input-history-next
+  "C-c C-c" #'hermes-chat-interrupt-turn
   "C-c C-i" #'hermes-chat-interrupt
   "C-c C-k" #'hermes-chat-interrupt-and-send
   "C-c C-q" #'hermes-chat-queue-message
