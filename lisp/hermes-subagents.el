@@ -220,12 +220,13 @@ PREVIEW uses FACE, by default `hermes-work-activity'."
 
 (defun hermes-work--wrap (text width)
   "Return TEXT's lines filled to WIDTH, at most four.
-A single line that fits keeps its spacing."
-  (let* ((text (string-trim (or text "")))
-         (width (max 20 width))
-         (lines (if (and (<= (string-width text) width) (not (string-search "\n" text)))
-                    (list text)
-                  (split-string (string-fill text width) "\n")))
+Each nonblank line of TEXT is filled on its own; one that fits keeps
+its spacing."
+  (let* ((width (max 20 width))
+         (lines (mapcan (lambda (line)
+                          (if (<= (string-width line) width) (list line)
+                            (split-string (string-fill line width) "\n")))
+                        (split-string (or text "") "\n" t "[ \t\r]+")))
          (shown (seq-take lines 4)))
     (if (> (length lines) 4)
         (append (butlast shown) (list (concat (car (last shown)) " …")))

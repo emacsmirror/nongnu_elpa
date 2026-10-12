@@ -4955,5 +4955,14 @@ a command the heading shows whole."
     (should-not (hermes-test--line-text lines '(process . "d") 'activity))
     (should (string-match-p "^Command +nix build" (funcall cards '(process . "d"))))
     (should (string-match-p "^Output +built" (funcall cards '(process . "d"))))))
+
+(ert-deftest hermes-work-card-keeps-text-lines ()
+  "Card text keeps its own line breaks and fills each line separately."
+  (should (equal (hermes-work--wrap "First line.\n\n  Second line.\n" 40)
+                 '("First line." "Second line.")))
+  (should (equal (hermes-work--wrap (concat (make-string 30 ?a) " " (make-string 30 ?b) "\nend")
+                                    40)
+                 (list (make-string 30 ?a) (make-string 30 ?b) "end")))
+  (should (equal (length (hermes-work--wrap "a\nb\nc\nd\ne" 40)) 4)))
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
