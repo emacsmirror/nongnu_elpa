@@ -1122,6 +1122,52 @@ handler on the slash-terminated root of a bare repository."
             (should-not cached)
             (should (equal identity (cons bare "lone")))))))))
 
+(ert-deftest hermes-chat-handler-managed-editor-directory-invokes-no-handler ()
+  "A handler-managed chat `default-directory' never reaches its handler.
+With a local gateway cwd, the local-directory check, project naming, the
+header cwd segment and the switcher annotation all yield local results."
+  (ert-with-temp-directory base
+    :prefix "hermes-editor-handler-"
+    (let* ((calls nil)
+           (worktree (hermes-chat-test--linked-worktree base "main" "topic"))
+           (main (file-name-as-directory (expand-file-name "main" base)))
+           (plain (file-name-as-directory (expand-file-name "plain" base)))
+           (process-environment (cons (concat "HOME=" (directory-file-name base))
+                                      process-environment)))
+      (make-directory plain)
+      (hermes-test-with-chat-buffer
+        (setq default-directory "/review-handler:host:/editor/"
+              hermes-chat--launch-project-root main
+              hermes-chat--initial-working-directory nil
+              hermes-chat--project-identity nil
+              hermes-chat--cwd-worktree nil)
+        (let ((file-name-handler-alist
+               (cons (cons "\\`/review-handler:"
+                           (lambda (operation &rest args)
+                             (push (cons operation args) calls)
+                             (error "Unexpected handler %S" operation)))
+                     file-name-handler-alist)))
+          (cl-letf (((symbol-function 'project-current) #'ignore))
+            (should (hermes-chat--local-directory-p worktree))
+            (should (equal (hermes-chat--switch-project (current-buffer)) "main"))
+            (setq hermes-chat--working-directory worktree)
+            (hermes-chat--note-working-directory worktree)
+            (should (equal (cdr hermes-chat--cwd-worktree)
+                           (cons main worktree)))
+            (should (equal (substring-no-properties
+                            (hermes-chat--header-directory-segment))
+                           "→ …/topic"))
+            (setq hermes-chat--working-directory plain)
+            (hermes-chat--note-working-directory plain)
+            (should (equal (substring-no-properties
+                            (hermes-chat--header-directory-segment))
+                           "→ ~/plain"))
+            (should (string-search
+                     "→ ~/plain"
+                     (hermes-chat--switch-annotation (buffer-name)
+                                                     (current-buffer))))))
+        (should-not calls)))))
+
 (ert-deftest hermes-chat-worktree-pointer-reading-is-bounded-and-strict ()
   "Malformed, overlong and truncated pointers are refused; symlinks resolve."
   (ert-with-temp-directory base

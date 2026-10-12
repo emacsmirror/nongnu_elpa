@@ -2275,6 +2275,15 @@ Before any is recorded, use the current gateway or editor directory."
       hermes-chat--working-directory
       default-directory))
 
+(defmacro hermes-chat--with-local-files (&rest body)
+  "Run BODY with file name handlers disabled and a local `default-directory'.
+A handler-managed `default-directory', such as a TRAMP chat buffer's, is
+otherwise consulted even when expanding absolute or `~' paths."
+  (declare (indent 0) (debug t))
+  `(let ((file-name-handler-alist nil)
+         (default-directory "/"))
+     ,@body))
+
 (defun hermes-chat--local-directory-p (directory)
   "Return non-nil when gateway-native DIRECTORY is a plain local directory.
 Refuse relative, `~'-prefixed and file-name-handler paths without probing
@@ -2283,7 +2292,7 @@ them.  Existence does not prove the gateway shares Emacs's filesystem."
        (file-name-absolute-p directory)
        (not (string-prefix-p "~" directory))
        (not (find-file-name-handler directory nil))
-       (file-directory-p directory)))
+       (hermes-chat--with-local-files (file-directory-p directory))))
 
 (defun hermes-chat--directory-basename (&optional directory)
   "Return the final component of gateway-native DIRECTORY, or `detached'."
@@ -2336,15 +2345,15 @@ first line that the bound cuts off, an empty value and control characters."
 
 (defun hermes-chat--git-pointer-path (value directory)
   "Return Git pointer VALUE expanded against DIRECTORY, or nil.
-Refuse a `~'-prefixed VALUE.  Call with file name handlers disabled."
+Refuse a `~'-prefixed VALUE.  Call within `hermes-chat--with-local-files'."
   (and (stringp value)
        (not (string-prefix-p "~" value))
        (hermes-chat--plain-local-path (expand-file-name value directory))))
 
 (defun hermes-chat--read-linked-worktree (directory)
   "Return (ROOT TOP . NAME) for DIRECTORY, read from Git metadata.
-See `hermes-chat--git-linked-worktree'.  Call with file name handlers
-disabled."
+See `hermes-chat--git-linked-worktree'.  Call within
+`hermes-chat--with-local-files'."
   (when-let* ((top (locate-dominating-file directory ".git"))
               ;; `locate-dominating-file' abbreviates, e.g. to `~/'.
               (top (file-name-as-directory (expand-file-name top)))
@@ -2367,11 +2376,12 @@ disabled."
 TOP is the worktree's top directory.  ROOT is its main working tree, with
 NAME nil, or for a bare repository the repository itself, with NAME its
 basename less \".git\".  Only the `.git' file and `commondir' are read;
-Git is never run.  Metadata is resolved with file name handlers disabled,
-so none is ever invoked.  Return nil for main checkouts, submodules,
-unreadable metadata and a ROOT or TOP that a handler would manage."
+Git is never run.  Metadata is resolved within
+`hermes-chat--with-local-files', so no handler is ever invoked.  Return nil
+for main checkouts, submodules, unreadable metadata and a ROOT or TOP that
+a handler would manage."
   (when-let* (((hermes-chat--plain-local-path directory))
-              (linked (let ((file-name-handler-alist nil))
+              (linked (hermes-chat--with-local-files
                         (hermes-chat--read-linked-worktree directory)))
               ((hermes-chat--plain-local-path (car linked)))
               ((hermes-chat--plain-local-path (cadr linked))))
@@ -2389,7 +2399,7 @@ after its parent directory."
 (defun hermes-chat--local-project-identity (directory)
   "Return (ROOT . NAME) for existing local DIRECTORY's project, or nil.
 A linked Git worktree resolves to its main repository's project.  Call
-with file name handlers disabled."
+within `hermes-chat--with-local-files'."
   (let* ((linked (hermes-chat--read-linked-worktree directory))
          (root (if linked (car linked) directory)))
     (cond
@@ -2406,15 +2416,15 @@ with file name handlers disabled."
 (defun hermes-chat--resolve-project-identity (directory)
   "Return (ROOT . NAME) for DIRECTORY's project.
 Consult Git worktree metadata, `project-current' and `project-name' only
-for an existing local DIRECTORY, with file name handlers disabled so none
-is ever invoked.  Otherwise, or when a handler would manage the resolved
-ROOT, ROOT is DIRECTORY and NAME its basename."
+for an existing local DIRECTORY, within `hermes-chat--with-local-files'
+so no handler is ever invoked.  Otherwise, or when a handler would manage
+the resolved ROOT, ROOT is DIRECTORY and NAME its basename."
   (or (when-let* (((hermes-chat--local-directory-p directory))
                   ;; Naming is cosmetic: a failing project backend or a
                   ;; malformed `.dir-locals.el' must not prevent opening or
                   ;; renaming a chat.
                   (identity (condition-case nil
-                                (let ((file-name-handler-alist nil))
+                                (hermes-chat--with-local-files
                                   (hermes-chat--local-project-identity
                                    directory))
                               (error nil)))
@@ -2463,7 +2473,8 @@ Show a descendant of ROOT relative to it, and abbreviate a path under the
 user's home directory with `~'.  Never consult the filesystem."
   (let ((key (hermes-chat--directory-key directory))
         (prefix (concat (hermes-chat--directory-key root) "/"))
-        (home (directory-file-name (expand-file-name "~"))))
+        (home (hermes-chat--with-local-files
+                (directory-file-name (expand-file-name "~")))))
     (cond
      ((string-prefix-p prefix key) (substring key (length prefix)))
      ((or (equal key home) (string-prefix-p (concat home "/") key))
