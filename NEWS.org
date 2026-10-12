@@ -1,10 +1,31 @@
 #+title: emacs-hermes Changelog
 
-* Unreleased
+* Version 0.9.0 (unreleased)
 
-- Streaming into a long chat no longer slows down with transcript size:
-  keeping the transcript read-only now rescans only text changed since the
-  last update instead of the whole buffer on every chunk.
+Incompatible changes:
+
+- Chat buffer names follow the chat's project rather than the gateway's
+  live working directory (see below), and the DIRECTORY argument of
+  =hermes-chat-buffer-name-function= is now that stable naming directory.
+  Review custom naming functions that expected the live directory.
+- Chat, profile and cron model completion candidates now lead with the
+  model, for example =claude · Anthropic (anthropic)=.  Update any code or
+  completion configuration that matched the old candidate text.
+- List browsers keep their native column titles in the header line.  With
+  several instances configured, the instance name now follows the buffer
+  name in the mode line, and the scope or status text of the Pairing,
+  Webhooks, Tool Setup, Agent Plugins, Foreign histories and Skill Hub
+  views moved to the mode line.
+
+New features and fixes:
+
+- Completed paragraphs, closed code fences and complete table rows render
+  as Markdown while a reply is still streaming; unfinished text stays
+  literal until the turn ends.  =hermes-chat-stream-format-delay= (default
+  0.1 seconds) throttles the formatting.
+- Streaming no longer slows down as a reply or transcript grows: the
+  read-only protection rescans only changed text, and echo detection no
+  longer renormalizes the whole reply on every chunk.
 - =C-c C-c= in a chat interrupts the running turn (=hermes-chat-interrupt-turn=);
   when idle it only reports that nothing is running.  =C-c C-k= is unchanged.
 - Chat actions menu (=C-c C-o=): Work is now Activity (=B=) and Workspace is
@@ -57,6 +78,7 @@
   everywhere at once and expands or collapses every disclosure.  Every chat
   menu group now has at most four entries: Refresh commands moved to
   Inspect (=C-c C-o X r=), and Go to composer stays on =C-c C-j=.
+  Expanding or collapsing everything now includes task-list lines.
 - The chat model picker stays a single completion read but groups models by
   provider, shows only the model inside each group, and annotates context
   window, price and capabilities when the catalogue reports them.  The
@@ -97,6 +119,49 @@
   =hermes-chat-prompt-indicator= to =nil= to hide it.  Prompt, reply and
   error notifications are now suppressed only while the chat is in the
   selected window of the focused frame, not when it is merely visible.
+- Chat buffers save their session, routing, title and unsent draft with
+  =desktop.el= and resume the session after restoration; the transcript
+  is reloaded from the backend.  Under =warm-restart=, chats with unsettled
+  work, unsaved Hermes editor views and a busy spawned dashboard block the
+  restart; otherwise the successor restarts the dashboard on the same
+  endpoint before the restored chats reattach.
+- Refreshing, renaming or reopening a session detail view keeps point and
+  every window's scroll position.
+- Setting =hermes-dashboard-transport-start-mode= to =remote= attaches to an
+  externally managed dashboard even on loopback.  Closing Emacs or
+  reconnecting does not stop it, a missing service fails with a hint
+  instead of spawning a replacement, and =hermes-dashboard-restart= refuses
+  it.  Project chats on such loopback gateways now open in the project root
+  instead of the service's default directory.
+- A spawned dashboard that is still starting keeps receiving connection
+  attempts for up to =hermes-dashboard-transport-spawn-connect-timeout=
+  (default 120 seconds), so a slow cold start no longer fails the first
+  message.  Requests queued meanwhile still expire after
+  =hermes-dashboard-transport-request-timeout=.  The startup row settles
+  once the gateway is ready, and connection errors no longer print the
+  full connection argument list.
+- Failed worker and process observations retry with per-source backoff (5,
+  10, 20, 40, then 60 seconds) instead of pausing until a manual refresh;
+  unsupported or malformed inventories still pause.
+- Pending approval and clarification prompts stay in the chat header when
+  usage, title or control updates arrive, and those updates no longer add
+  transcript rows.  Text the model wrote before a tool call no longer leaves
+  a duplicate Reasoning row marked running.
+- Percent signs in remote names, paths, board names and task identifiers
+  display literally in headers and mode lines.
+- When =hermes-exec-require-approval= is =hermes-exec-confirm-by-risk=,
+  more process, file, network, load and
+  compile functions, run-time dispatch through =intern=, =read= or
+  =call-interactively=, and =eval-buffer= / =eval-region= now require
+  confirmation; reading a function cell alone no longer does.
+- The echo-area notification fallback no longer logs a D-Bus error first
+  or repeats the reply preview.
+- The CLI chat fallback keeps its own metadata on a separate stderr buffer,
+  so dashboard replies keep lines beginning with =session_id:=.  Its stderr
+  drain after exit is bounded to one second.
+- RPC error messages with an empty backend message no longer echo a string
+  error code verbatim, and method-not-found replies pause work observation
+  as intended.
 
 * Version 0.8.0 (2026-10-01)
 
