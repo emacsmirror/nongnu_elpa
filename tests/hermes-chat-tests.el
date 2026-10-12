@@ -1006,6 +1006,217 @@ on-disk metadata Git leaves behind is written; Git itself is never run."
                 (when (buffer-live-p buffer) (kill-buffer buffer)))
               buffers)))))
 
+(ert-deftest hermes-chat-worktree-pointers-never-reach-file-name-handlers ()
+  "Handler-managed `.git' or `commondir' pointers invoke no file handler."
+  (ert-with-temp-directory base
+    :prefix "hermes-worktree-handler-"
+    (let* ((calls nil)
+           (handler (lambda (operation &rest args)
+                      (push (cons operation args) calls)
+                      (let ((inhibit-file-name-handlers
+                             (cons 'hermes-chat-test--handler
+                                   inhibit-file-name-handlers))
+                            (inhibit-file-name-operation operation))
+                        (apply operation args))))
+           (file-name-handler-alist
+            (cons '("\\`/hermes-handler:" . hermes-chat-test--handler)
+                  file-name-handler-alist))
+           (gitdir-top (file-name-as-directory
+                        (expand-file-name "gitdir" base)))
+           (common-top (hermes-chat-test--linked-worktree
+                        base "main" "topic")))
+      (make-directory gitdir-top)
+      (with-temp-file (expand-file-name ".git" gitdir-top)
+        (insert "gitdir: /hermes-handler:host:/metadata\n"))
+      (with-temp-file (expand-file-name
+                       "main/.git/worktrees/topic/commondir" base)
+        (insert "/hermes-handler:host:/common\n"))
+      (cl-letf (((symbol-function 'hermes-chat-test--handler) handler)
+                ((symbol-function 'project-current) #'ignore))
+        (dolist (top (list gitdir-top common-top))
+          (should-not (hermes-chat--git-linked-worktree top))
+          (should (equal (cdr (hermes-chat--resolve-project-identity top))
+                         (hermes-chat--directory-basename top)))
+          (hermes-test-with-chat-buffer
+           (setq hermes-chat--launch-project-root nil
+                 hermes-chat--working-directory nil)
+           (setq-local hermes-chat--resolved-start-mode 'remote)
+           (hermes-chat--record-working-directory top)
+           (should-not (cdr hermes-chat--cwd-worktree)))))
+      (should-not calls))))
+
+(ert-deftest hermes-chat-worktree-pointer-reading-is-bounded-and-strict ()
+  "Malformed, overlong and truncated pointers are refused; symlinks resolve."
+  (ert-with-temp-directory base
+    :prefix "hermes-worktree-pointer-"
+    (let* ((top (hermes-chat-test--linked-worktree base "main" "topic"))
+           (git (expand-file-name ".git" top))
+           (admin (expand-file-name "main/.git/worktrees/topic" base))
+           (good (concat "gitdir: " admin "\n")))
+      (cl-flet ((linked (contents)
+                  (with-temp-file git
+                    (set-buffer-multibyte nil)
+                    (insert contents))
+                  (hermes-chat--git-linked-worktree top)))
+        (should (equal (car (linked good))
+                       (file-name-as-directory (expand-file-name "main" base))))
+        (should (linked (string-trim-right good)))
+        (dolist (bad (list ""
+                           "gitdir:\n"
+                           "gitdir:   \n"
+                           (concat "worktree: " admin "\n")
+                           (concat "gitdir: " admin "\0x\n")
+                           (concat "gitdir: ~/" "x\n")
+                           ;; Unterminated first line cut by the read bound.
+                           (concat "gitdir: " admin "/"
+                                   (make-string 5000 ?a))
+                           ;; Terminated, but beyond the read bound.
+                           (concat "gitdir: " admin "/"
+                                   (make-string 5000 ?a) "\n")))
+          (ert-info ((format "pointer %S" (truncate-string-to-width bad 40)))
+            (should-not (linked bad))))
+        ;; `locate-dominating-file' abbreviates a top under the home.
+        (let ((abbreviated-home-dir nil)
+              (process-environment (cons (concat "HOME=" base)
+                                         process-environment)))
+          (should (string-prefix-p "~" (locate-dominating-file top ".git")))
+          (should (equal (cadr (linked good)) top)))
+        ;; A commondir that is a symlink, through a symlinked directory.
+        (let ((alias (expand-file-name "alias" base))
+              (commondir (expand-file-name "commondir" admin))
+              (real (expand-file-name "real-commondir" base)))
+          (make-symbolic-link (expand-file-name "main" base) alias)
+          (with-temp-file real (insert (expand-file-name "main/.git" base) "\n"))
+          (delete-file commondir)
+          (make-symbolic-link real commondir)
+          (should (equal (car (linked (concat "gitdir: " alias
+                                              "/.git/worktrees/topic\n")))
+                         (file-name-as-directory
+                          (expand-file-name "main" base)))))))))
+
+(ert-deftest hermes-chat-switch-returns-captured-buffer-object ()
+  "A rename plus a foreign buffer taking the old name never redirects."
+  (let ((hermes-instances nil) foreign)
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--launch-project-root nil
+           hermes-chat--initial-working-directory nil)
+     (setq-local hermes-chat--resolved-start-mode 'remote)
+     (let ((target (current-buffer))
+           (old (buffer-name)))
+       (unwind-protect
+           (with-temp-buffer
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (&rest _)
+                          (with-current-buffer target
+                            (hermes-chat--record-working-directory
+                             "/srv/hermes-missing/renamed"))
+                          (should-not (equal (buffer-name target) old))
+                          (setq foreign (generate-new-buffer old))
+                          old)))
+               (call-interactively #'hermes-switch-to-chat))
+             (should (eq (window-buffer) target)))
+         (when (buffer-live-p foreign) (kill-buffer foreign)))))))
+
+(ert-deftest hermes-chat-switch-revalidates-chat-after-input ()
+  "A chat killed or repurposed while the reader is open is refused."
+  (dolist (change '(kill fundamental))
+    (ert-info ((symbol-name change))
+      (let ((hermes-instances nil) replacement)
+        (hermes-test-with-chat-buffer
+         (let ((target (current-buffer))
+               (old (buffer-name)))
+           (unwind-protect
+               (with-temp-buffer
+                 (let ((origin (current-buffer)))
+                   (cl-letf (((symbol-function 'completing-read)
+                              (lambda (&rest _)
+                                (pcase change
+                                  ('kill (kill-buffer target)
+                                         (setq replacement
+                                               (generate-new-buffer old))
+                                         (with-current-buffer replacement
+                                           (hermes-chat-mode)))
+                                  ('fundamental
+                                   (with-current-buffer target
+                                     (fundamental-mode))))
+                                old)))
+                     (should-error (call-interactively #'hermes-switch-to-chat)
+                                   :type 'user-error))
+                   (should (eq (current-buffer) origin))))
+             (when (buffer-live-p replacement)
+               (kill-buffer replacement)))))))))
+
+(ert-deftest hermes-chat-switch-real-reader-offers-mru-order ()
+  "The real minibuffer reader lists chats most recent first, current last."
+  (let ((hermes-chat-buffer-name (hermes-test--chat-buffer-name))
+        (map (make-sparse-keymap))
+        buffers offered)
+    (define-key map [f12] #'hermes-switch-to-chat)
+    (unwind-protect
+        (progn
+          (setq buffers (list (hermes-chat) (hermes-chat) (hermes-chat)))
+          (let ((others (seq-remove (lambda (buffer) (memq buffer buffers))
+                                    (hermes-chat--live-buffers))))
+            (switch-to-buffer (nth 2 buffers))
+            (switch-to-buffer (nth 0 buffers))
+            (switch-to-buffer (nth 1 buffers))
+            (let ((emulation-mode-map-alists (list (list (cons t map)))))
+              (minibuffer-with-setup-hook
+                  (lambda ()
+                    (setq offered (completion-all-sorted-completions))
+                    (when (consp offered)
+                      (setcdr (last offered) nil))
+                    (insert (buffer-name (nth 2 buffers))))
+                (execute-kbd-macro [f12 return])))
+            (should (equal (seq-remove
+                            (lambda (name)
+                              (memq (get-buffer name) others))
+                            offered)
+                           (mapcar #'buffer-name
+                                   (list (nth 0 buffers) (nth 2 buffers)
+                                         (nth 1 buffers)))))
+            (should (eq (window-buffer) (nth 2 buffers)))))
+      (mapc (lambda (buffer) (when (buffer-live-p buffer) (kill-buffer buffer)))
+            buffers))))
+
+(ert-deftest hermes-chat-first-cwd-keeps-collision-suffix ()
+  "A first cwd keeping the computed name keeps a surviving `<2>' suffix."
+  (ert-with-temp-directory base
+    :prefix "hermes-suffix-"
+    (let* ((hermes-instances nil)
+           (main (file-name-as-directory (expand-file-name "proj" base)))
+           (hermes-chat-buffer-name (hermes-test--chat-buffer-name))
+           buffers)
+      (make-directory main)
+      (unwind-protect
+          (cl-letf (((symbol-function 'project-current) #'ignore))
+            (dotimes (_ 2)
+              (let ((buffer (hermes-chat)))
+                (push buffer buffers)
+                (with-current-buffer buffer
+                  (setq default-directory main
+                        hermes-chat--launch-project-root main
+                        hermes-chat--working-directory nil
+                        hermes-chat--initial-working-directory nil)
+                  (setq-local hermes-chat--resolved-start-mode 'remote)
+                  (hermes-chat--refresh-buffer-name))))
+            (setq buffers (nreverse buffers))
+            (should (equal (buffer-name (nth 1 buffers))
+                           "*Hermes@default: [proj]*<2>"))
+            (kill-buffer (nth 0 buffers))
+            (with-current-buffer (nth 1 buffers)
+              (hermes-chat--record-working-directory main)
+              (should (equal (buffer-name) "*Hermes@default: [proj]*<2>"))
+              ;; A changed naming context still renames.
+              (setq hermes-chat--launch-project-root nil
+                    hermes-chat--initial-working-directory nil)
+              (hermes-chat--record-working-directory
+               "/srv/hermes-missing/other")
+              (should (equal (buffer-name) "*Hermes@default: [other]*"))))
+        (mapc (lambda (buffer)
+                (when (buffer-live-p buffer) (kill-buffer buffer)))
+              buffers)))))
+
 (ert-deftest hermes-chat-project-root-prefers-project-and-falls-back-to-directory ()
   "Project identity uses the project root or normalized directory fallback."
   (let* ((root (file-name-as-directory

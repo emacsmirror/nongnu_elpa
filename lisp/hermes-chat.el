@@ -2610,21 +2610,25 @@ With prefix argument NEW, always create another project chat."
       (pop-to-buffer-same-window
        (hermes-chat--read-project-buffer buffers))))))
 
-(defun hermes-chat--switch-project (name)
-  "Return the project naming chat buffer NAME, or nil."
-  (when-let* ((buffer (get-buffer name)))
+(defun hermes-chat--switch-project (buffer-or-name)
+  "Return the project naming chat buffer BUFFER-OR-NAME, or nil."
+  (when-let* ((buffer (get-buffer buffer-or-name)))
     (with-current-buffer buffer
       (cdr (hermes-chat--project-identity (hermes-chat--naming-directory))))))
 
-(defun hermes-chat--switch-group (name transform)
-  "Group chat buffer NAME by project; with TRANSFORM, return NAME unchanged."
-  (if transform name (or (hermes-chat--switch-project name) "Other")))
+(defun hermes-chat--switch-group (name transform &optional buffer)
+  "Group chat buffer NAME by project; with TRANSFORM, return NAME unchanged.
+Optional BUFFER is the chat captured for NAME; it wins over a name lookup."
+  (if transform
+      name
+    (or (hermes-chat--switch-project (or buffer name)) "Other")))
 
-(defun hermes-chat--switch-annotation (name)
+(defun hermes-chat--switch-annotation (name &optional buffer)
   "Return a switcher annotation for chat buffer NAME.
+Optional BUFFER is the chat captured for NAME; it wins over a name lookup.
 Show the session title, the attention state, connection and activity, and
 the gateway cwd while it differs from the chat's project root."
-  (when-let* ((buffer (get-buffer name)))
+  (when-let* ((buffer (if (buffer-live-p buffer) buffer (get-buffer name))))
     (with-current-buffer buffer
       (let* ((title (and hermes-chat--title
                          (hermes-transport--non-empty-string
@@ -2648,38 +2652,68 @@ the gateway cwd while it differs from the chat's project root."
              (concat "  " (string-join parts (propertize " · " 'face 'shadow))))))))
 
 (defun hermes-chat--switch-candidates (buffers current)
-  "Return names of chat BUFFERS for completion, CURRENT last.
+  "Return (NAME . BUFFER) for chat BUFFERS in completion order, CURRENT last.
 BUFFERS arrive in `buffer-list' order, most recently selected first."
-  (mapcar #'buffer-name
+  (mapcar (lambda (buffer) (cons (buffer-name buffer) buffer))
           (append (remq current buffers)
                   (and (memq current buffers) (list current)))))
 
-(defun hermes-chat--switch-table (names)
-  "Return a completion table of chat buffer NAMES grouped by project.
-Keep the given order instead of sorting alphabetically."
-  (lambda (string predicate action)
-    (if (eq action 'metadata)
-        '(metadata (category . hermes-chat)
-                   (group-function . hermes-chat--switch-group)
-                   (annotation-function . hermes-chat--switch-annotation)
-                   (display-sort-function . identity)
-                   (cycle-sort-function . identity))
-      (complete-with-action action names string predicate))))
+(defun hermes-chat--switch-table (candidates)
+  "Return a completion table of (NAME . BUFFER) CANDIDATES grouped by project.
+Keep the given order instead of sorting alphabetically.  Group and
+annotate through the captured buffers, not their current names."
+  (let* ((names (mapcar #'car candidates))
+         (metadata
+          `(metadata
+            (category . hermes-chat)
+            (group-function
+             . ,(lambda (name transform)
+                  (hermes-chat--switch-group
+                   name transform (cdr (assoc name candidates)))))
+            (annotation-function
+             . ,(lambda (name)
+                  (hermes-chat--switch-annotation
+                   name (cdr (assoc name candidates)))))
+            (display-sort-function . identity)
+            (cycle-sort-function . identity))))
+    (lambda (string predicate action)
+      (if (eq action 'metadata)
+          metadata
+        (complete-with-action action names string predicate)))))
+
+(defun hermes-chat--live-chat-p (buffer)
+  "Return non-nil if BUFFER is a live chat that retains its constructor claim."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and (derived-mode-p 'hermes-chat-mode)
+              (hermes-buffer--owned-p 'hermes-chat-mode)))))
+
+(defun hermes-chat--read-switch-buffer ()
+  "Read a chat buffer with completion and return the exact buffer object.
+Names are mapped back through the candidates captured before prompting, so
+a rename or a foreign buffer taking a name while the reader is open never
+redirects the choice.  Signal `user-error' if the chosen chat is no longer
+a live chat after input."
+  (let ((buffers (hermes-chat--live-buffers)))
+    (unless buffers
+      (user-error "No Hermes chat buffers"))
+    (let* ((candidates (hermes-chat--switch-candidates
+                        buffers (current-buffer)))
+           (name (completing-read "Hermes chat: "
+                                  (hermes-chat--switch-table candidates)
+                                  nil t))
+           (buffer (cdr (assoc name candidates))))
+      (unless (hermes-chat--live-chat-p buffer)
+        (user-error "Hermes chat %s is no longer available" name))
+      buffer)))
 
 (defun hermes-switch-to-chat (buffer)
   "Switch to a Hermes chat BUFFER chosen with completion.
 Candidates are exact buffer names grouped by project, most recently used
 first and the current chat last, annotated with each chat's title and state."
-  (interactive
-   (let ((buffers (hermes-chat--live-buffers)))
-     (unless buffers
-       (user-error "No Hermes chat buffers"))
-     (list (get-buffer
-            (completing-read
-             "Hermes chat: "
-             (hermes-chat--switch-table
-              (hermes-chat--switch-candidates buffers (current-buffer)))
-             nil t)))))
+  (interactive (list (hermes-chat--read-switch-buffer)))
+  (unless (hermes-chat--live-chat-p buffer)
+    (user-error "Not a live Hermes chat"))
   (pop-to-buffer-same-window buffer))
 
 ;; `hermes-sessions' is downstream of this file; its autoloaded browser

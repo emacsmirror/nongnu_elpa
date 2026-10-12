@@ -2295,33 +2295,87 @@ them.  Existence does not prove the gateway shares Emacs's filesystem."
          (t trimmed)))
     "detached"))
 
+(defconst hermes-chat--git-pointer-limit 4096
+  "Maximum bytes of a Git `.git' or `commondir' pointer line.")
+
+(defun hermes-chat--plain-local-path (path)
+  "Return absolute PATH when no file name handler manages it, else nil.
+Only the name is inspected; nothing is probed."
+  (and (stringp path)
+       (file-name-absolute-p path)
+       (not (string-prefix-p "~" path))
+       (not (find-file-name-handler path nil))
+       path))
+
 (defun hermes-chat--read-git-pointer (file prefix)
-  "Return the path following PREFIX on FILE's first line, or nil."
-  (when (file-regular-p file)
-    (with-temp-buffer
-      (insert-file-contents file nil 0 4096)
-      (goto-char (point-min))
-      (and (looking-at (concat (regexp-quote prefix)
-                               "[ \t]*\\([^\r\n]*[^ \t\r\n]\\)"))
-           (match-string 1)))))
+  "Return the path following PREFIX on plain local FILE's first line, or nil.
+Read at most `hermes-chat--git-pointer-limit' bytes literally.  Refuse a
+first line that the bound cuts off, an empty value and control characters."
+  (when-let* ((file (hermes-chat--plain-local-path file))
+              ((file-regular-p file))
+              (line (with-temp-buffer
+                      (set-buffer-multibyte nil)
+                      (insert-file-contents-literally
+                       file nil 0 (1+ hermes-chat--git-pointer-limit))
+                      (goto-char (point-min))
+                      ;; A line longer than the limit is either cut off
+                      ;; or unterminated within the bytes read.
+                      (let ((end (line-end-position)))
+                        (and (<= (1- end) hermes-chat--git-pointer-limit)
+                             (buffer-substring-no-properties
+                              (point-min) end)))))
+              (line (decode-coding-string
+                     line (or file-name-coding-system
+                              default-file-name-coding-system
+                              'utf-8)))
+              ((string-match (concat "\\`" (regexp-quote prefix)
+                                     "[ \t]*\\([^[:cntrl:]]*[^[:cntrl:] \t]\\)"
+                                     "[ \t\r]*\\'")
+                             line)))
+    (match-string 1 line)))
+
+(defun hermes-chat--git-pointer-path (value directory)
+  "Return Git pointer VALUE resolved against plain local DIRECTORY, or nil.
+Refuse a VALUE that a file name handler would manage before expanding it,
+expand with handlers disabled, and screen the result again, so metadata
+such as `gitdir: /method:host:/path' never reaches TRAMP or another
+handler."
+  (and (stringp value)
+       (not (string-prefix-p "~" value))
+       (not (find-file-name-handler value nil))
+       (hermes-chat--plain-local-path directory)
+       (hermes-chat--plain-local-path
+        (let ((file-name-handler-alist nil))
+          (expand-file-name value directory)))))
 
 (defun hermes-chat--git-linked-worktree (directory)
   "Return (ROOT TOP . NAME) when local DIRECTORY is in a linked Git worktree.
 TOP is the worktree's top directory.  ROOT is its main working tree, with
 NAME nil, or for a bare repository the repository itself, with NAME its
 basename less \".git\".  Only the `.git' file and `commondir' are read;
-Git is never run.  Return nil for main checkouts, submodules and unreadable
-metadata."
-  (when-let* ((top (locate-dominating-file directory ".git"))
-              (top (file-name-as-directory (expand-file-name top)))
-              (gitdir (hermes-chat--read-git-pointer
-                       (expand-file-name ".git" top) "gitdir:"))
-              (gitdir (expand-file-name gitdir top))
-              (common (hermes-chat--read-git-pointer
-                       (expand-file-name "commondir" gitdir) ""))
-              (common (directory-file-name (expand-file-name common gitdir))))
+Git is never run.  Pointer paths managed by a file name handler are
+refused before any filesystem access.  Return nil for main checkouts,
+submodules, refused pointers and unreadable metadata."
+  (when-let* ((directory (hermes-chat--plain-local-path directory))
+              (top (locate-dominating-file directory ".git"))
+              ;; `locate-dominating-file' abbreviates, e.g. to `~/'.
+              (top (hermes-chat--plain-local-path
+                    (let ((file-name-handler-alist nil))
+                      (file-name-as-directory (expand-file-name top)))))
+              (gitdir (hermes-chat--git-pointer-path
+                       (hermes-chat--read-git-pointer
+                        (hermes-chat--git-pointer-path ".git" top) "gitdir:")
+                       top))
+              (common (hermes-chat--git-pointer-path
+                       (hermes-chat--read-git-pointer
+                        (hermes-chat--git-pointer-path "commondir" gitdir) "")
+                       gitdir))
+              (common (hermes-chat--plain-local-path
+                       (directory-file-name common))))
     (if (equal (file-name-nondirectory common) ".git")
-        (list (file-name-directory common) top)
+        (when-let* ((root (hermes-chat--plain-local-path
+                           (file-name-directory common))))
+          (list root top))
       (cons (file-name-as-directory common)
             (cons top (hermes-chat--bare-repository-name common))))))
 

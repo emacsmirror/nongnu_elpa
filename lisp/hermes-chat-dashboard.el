@@ -2556,11 +2556,19 @@ later gateway working-directory changes."
       (user-error "Chat buffer naming function returned an empty name"))
     name))
 
+(defun hermes-chat--name-collision-variant-p (name current)
+  "Return non-nil if CURRENT is NAME or NAME with a `<N>' collision suffix."
+  (or (equal name current)
+      (string-match-p (concat "\\`" (regexp-quote name) "<[0-9]+>\\'")
+                      current)))
+
 (defun hermes-chat--refresh-buffer-name ()
-  "Rename the current chat buffer from its live naming context."
+  "Rename the current chat buffer from its live naming context.
+Keep a collision suffix such as `<2>' while the computed name is unchanged,
+even after the unsuffixed sibling is gone."
   (let ((name (hermes-chat--buffer-name
                hermes-chat--profile hermes-instance)))
-    (unless (equal name (buffer-name))
+    (unless (hermes-chat--name-collision-variant-p name (buffer-name))
       (rename-buffer name t))))
 
 (defun hermes-chat--push-session-title (title)
