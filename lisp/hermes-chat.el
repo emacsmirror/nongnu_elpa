@@ -2578,12 +2578,19 @@ When DIRECTORY is nil, use the current buffer's `default-directory'."
   buffer)
 
 (defun hermes-chat--read-project-buffer (buffers)
-  "Read one chat from project-local BUFFERS with completion."
-  (let ((completion-extra-properties
-         (list :annotation-function #'hermes-chat--switch-annotation)))
-    (get-buffer
-     (completing-read "Project chat: "
-                      (mapcar #'buffer-name buffers) nil t))))
+  "Read one chat from project-local BUFFERS and return the exact buffer.
+Names are mapped back through the buffers captured before prompting, and
+the choice is checked like `hermes-chat--read-captured-chat'."
+  (let* ((candidates (mapcar (lambda (buffer)
+                               (cons (buffer-name buffer) buffer))
+                             buffers))
+         (completion-extra-properties
+          (list :annotation-function
+                (lambda (name)
+                  (hermes-chat--switch-annotation
+                   name (cdr (assoc name candidates)))))))
+    (hermes-chat--read-captured-chat
+     "Project chat: " candidates (mapcar #'car candidates))))
 
 ;;;###autoload
 (defun hermes-project-chat (&optional new)
@@ -2688,24 +2695,29 @@ annotate through the captured buffers, not their current names."
          (and (derived-mode-p 'hermes-chat-mode)
               (hermes-buffer--owned-p 'hermes-chat-mode)))))
 
+(defun hermes-chat--read-captured-chat (prompt candidates collection)
+  "Read a chat with PROMPT among (NAME . BUFFER) CANDIDATES and return BUFFER.
+COLLECTION is the completion table offering the candidate names.  Names
+are mapped back through CANDIDATES, captured before prompting, so a rename
+or a foreign buffer taking a name while the reader is open never redirects
+the choice.  Signal `user-error' if the chosen chat is no longer a live
+chat after input."
+  (let* ((name (completing-read prompt collection nil t))
+         (buffer (cdr (assoc name candidates))))
+    (unless (hermes-chat--live-chat-p buffer)
+      (user-error "Hermes chat %s is no longer available" name))
+    buffer))
+
 (defun hermes-chat--read-switch-buffer ()
   "Read a chat buffer with completion and return the exact buffer object.
-Names are mapped back through the candidates captured before prompting, so
-a rename or a foreign buffer taking a name while the reader is open never
-redirects the choice.  Signal `user-error' if the chosen chat is no longer
-a live chat after input."
+See `hermes-chat--read-captured-chat' for how the choice is checked."
   (let ((buffers (hermes-chat--live-buffers)))
     (unless buffers
       (user-error "No Hermes chat buffers"))
-    (let* ((candidates (hermes-chat--switch-candidates
-                        buffers (current-buffer)))
-           (name (completing-read "Hermes chat: "
-                                  (hermes-chat--switch-table candidates)
-                                  nil t))
-           (buffer (cdr (assoc name candidates))))
-      (unless (hermes-chat--live-chat-p buffer)
-        (user-error "Hermes chat %s is no longer available" name))
-      buffer)))
+    (let ((candidates (hermes-chat--switch-candidates
+                       buffers (current-buffer))))
+      (hermes-chat--read-captured-chat
+       "Hermes chat: " candidates (hermes-chat--switch-table candidates)))))
 
 (defun hermes-switch-to-chat (buffer)
   "Switch to a Hermes chat BUFFER chosen with completion.

@@ -1282,7 +1282,8 @@ on-disk metadata Git leaves behind is written; Git itself is never run."
                            (,other . ,other-root)))
             (with-current-buffer (car entry)
               (setq default-directory (cdr entry))
-              (hermes-chat-mode)))
+              (hermes-chat-mode)
+              (hermes-buffer--claim 'hermes-chat-mode)))
           (with-temp-buffer
             (setq default-directory root)
             (cl-letf (((symbol-function 'completing-read)
@@ -1301,6 +1302,82 @@ on-disk metadata Git leaves behind is written; Git itself is never run."
             (list first second other))
       (delete-directory root t)
       (delete-directory other-root t))))
+
+(defmacro hermes-test--with-project-chats (spec &rest body)
+  "Bind SPEC (ROOT FIRST SECOND) to a project root and two claimed chats in it.
+Run BODY from a buffer visiting ROOT, then kill the chats and the root."
+  (declare (indent 1) (debug (sexp body)))
+  (pcase-let ((`(,root ,first ,second) spec))
+    `(let* ((,root (file-name-as-directory
+                    (make-temp-file "hermes-project-capture-" t)))
+            (,first (generate-new-buffer " *hermes-project-first*"))
+            (,second (generate-new-buffer " *hermes-project-second*")))
+       (unwind-protect
+           (progn
+             (make-directory (expand-file-name ".git" ,root))
+             (dolist (buffer (list ,first ,second))
+               (with-current-buffer buffer
+                 (setq default-directory ,root)
+                 (hermes-chat-mode)
+                 (hermes-buffer--claim 'hermes-chat-mode)))
+             (with-temp-buffer
+               (setq default-directory ,root)
+               ,@body))
+         (mapc (lambda (buffer)
+                 (when (buffer-live-p buffer) (kill-buffer buffer)))
+               (list ,first ,second))
+         (delete-directory ,root t)))))
+
+(ert-deftest hermes-project-chat-returns-captured-buffer-object ()
+  "A rename plus a foreign buffer taking the old name never redirects."
+  (let (foreign shown)
+    (hermes-test--with-project-chats (_root _first target)
+      ;; Adoption may rename the chats, so read the offered name at input.
+      (unwind-protect
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt names &rest _)
+                       (let ((old (buffer-name target)))
+                         (should (member old names))
+                         (with-current-buffer target
+                           (rename-buffer " *hermes-project-renamed*" t))
+                         (setq foreign (generate-new-buffer old))
+                         old)))
+                    ((symbol-function 'pop-to-buffer-same-window)
+                     (lambda (buffer &rest _) (setq shown buffer))))
+            (hermes-project-chat))
+        (when (buffer-live-p foreign) (kill-buffer foreign)))
+      (should (eq shown target)))))
+
+(ert-deftest hermes-project-chat-revalidates-chat-after-input ()
+  "A project chat killed or repurposed while the reader is open is refused."
+  (dolist (change '(kill fundamental))
+    (ert-info ((symbol-name change))
+      (let (replacement shown)
+        (hermes-test--with-project-chats (_root _first target)
+          (let (old)
+            (unwind-protect
+                (cl-letf (((symbol-function 'completing-read)
+                           (lambda (_prompt names &rest _)
+                             (setq old (buffer-name target))
+                             (should (member old names))
+                             (pcase change
+                               ('kill (kill-buffer target)
+                                      (setq replacement
+                                            (generate-new-buffer old))
+                                      (with-current-buffer replacement
+                                        (hermes-chat-mode)
+                                        (hermes-buffer--claim
+                                         'hermes-chat-mode)))
+                               ('fundamental
+                                (with-current-buffer target
+                                  (fundamental-mode))))
+                             old))
+                          ((symbol-function 'pop-to-buffer-same-window)
+                           (lambda (buffer &rest _) (setq shown buffer))))
+                  (should-error (hermes-project-chat) :type 'user-error))
+              (when (buffer-live-p replacement)
+                (kill-buffer replacement)))
+            (should-not shown)))))))
 
 (ert-deftest hermes-project-chat-adopts-legacy-buffer-with-cwd-name ()
   "Project switching names an adopted legacy chat by project, keeping its cwd."
