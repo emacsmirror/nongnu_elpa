@@ -582,12 +582,19 @@ An opening fence without its closing delimiter extends to the buffer end."
             (font-lock-append-text-property start end 'face 'markdown-code-face))
           (goto-char (min (point-max) (1+ end))))))))
 
+(defconst hermes-chat--markdown-regex-uri
+  (concat "\\<" markdown-regex-uri)
+  "Like `markdown-regex-uri', but only at the start of a word.
+Markdown's own regexp has no boundary before the scheme, so prose such as
+\"profile:\" or \"metadata:\" fontifies as a \"file:\" or \"data:\" link.")
+
 (defun hermes-chat--fontify-markdown-buffer (&optional native)
   "Fontify the owned temporary Markdown buffer, using NATIVE language faces.
 Fence labels select only programming major modes.  This is not a sandbox
 for installed mode code; suppress hooks throughout work in each owned buffer
 and bypass Markdown's shared-buffer native fontifier."
-  (let ((markdown-fontify-code-blocks-natively nil))
+  (let ((markdown-fontify-code-blocks-natively nil)
+        (markdown-regex-uri hermes-chat--markdown-regex-uri))
     (delay-mode-hooks
       (markdown-mode)
       (font-lock-ensure)

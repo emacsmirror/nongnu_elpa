@@ -37,6 +37,23 @@
     (dotimes (i (length s))
       (should-not (get-text-property i 'invisible s)))))
 
+(ert-deftest hermes-chat-markdown-uri-schemes-need-word-start ()
+  "URI schemes inside words are prose; real URLs stay links."
+  (let ((url-at (lambda (s sub)
+                  (let* ((i (string-search sub s))
+                         (face (get-text-property i 'face s)))
+                    (or (get-text-property i 'mouse-face s)
+                        (memq 'markdown-plain-url-face
+                              (ensure-list face)))))))
+    (let ((s (hermes-chat--fontify-markdown-string
+              "- **Your profile:** x\nthe metadata:x and hotel:y\n")))
+      (dolist (sub '("file:" "data:x" "tel:y"))
+        (should-not (funcall url-at s sub))))
+    (let ((s (hermes-chat--fontify-markdown-string
+              "Links.\nsee https://example.com and file:/tmp/x\n")))
+      (should (funcall url-at s "https://example.com"))
+      (should (funcall url-at s "file:/tmp/x")))))
+
 (ert-deftest hermes-chat-markdown-marks-original-tables ()
   "Recognizing tables does not align or otherwise change their source."
   (let* ((raw "| A | B |\n|---|---|\n| one | two |\n")
