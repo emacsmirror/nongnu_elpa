@@ -2,6 +2,15 @@
 
 * Unreleased
 
+- While a turn runs with no backend event for 30 seconds
+  (=hermes-chat-status-rule-quiet-after=), the composer rule appends
+  =quiet 0:45= in the warning face; it clears as soon as an event arrives.
+- When output arrives while no window shows the end of the transcript, the
+  mode line shows =↓ new=.  =mouse-1= on it or =C-c C-j= jumps to the latest
+  output; scrolling the end into view also clears it.
+- The header's context usage turns warning-coloured from 80% and
+  error-coloured from 95%.  Its tooltip gives exact tokens and percentage,
+  and =mouse-1= opens the Context budget view.
 - The rule above the chat composer now shows the active turn's state,
   elapsed time, current tool, task progress and queued count, then the last
   turn's duration briefly.  Queued messages are listed above the rule and

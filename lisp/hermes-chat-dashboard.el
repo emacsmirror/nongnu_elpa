@@ -1604,6 +1604,7 @@ profile's workspace.  Keep the reservation through create and overrides."
 (defun hermes-chat--dispatch-accepted-transport-event
     (assistant-id dashboard-p event)
   "Route admitted EVENT for ASSISTANT-ID, using dashboard policy if DASHBOARD-P."
+  (hermes-chat--status-rule-note-event)
   (unless (and dashboard-p
                (funcall hermes-chat--busy-submit-event-function event))
     (if (and dashboard-p (hermes-chat--assistant-independent-event-p event))

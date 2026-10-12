@@ -2840,10 +2840,11 @@ Reject an empty region or one extending into the composer."
     (deactivate-mark)))
 
 (defun hermes-chat-go-to-composer ()
-  "Move to the end of the writable composer without changing its text."
+  "Move to the end of the writable composer without changing its text.
+The latest output sits just above it, so this also clears the mode line's
+unseen-output indicator."
   (interactive nil hermes-chat-mode)
-  (widen)
-  (goto-char (point-max)))
+  (hermes-chat--jump-to-latest))
 
 (defun hermes-chat-next-button (&optional backward)
   "Move to the next transcript button, or previous when BACKWARD is non-nil.
@@ -3195,6 +3196,12 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
                   'local-map hermes-chat-images-mode-line-map
                   'help-echo "mouse-1 or C-c C-o I: Preview, remove or recover images"))))
 
+(defun hermes-chat--mode-line-process ()
+  "Return this chat's mode-line process segments, or nil when there are none."
+  (when-let* ((parts (delq nil (list (hermes-chat--images-mode-line)
+                                     (hermes-chat--new-output-mode-line)))))
+    (apply #'concat parts)))
+
 (keymap-popup-define hermes-chat-sess-map
   "Manage the current chat session."
   :description #'hermes-chat--popup-title
@@ -3425,7 +3432,7 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (setq-local word-wrap t)
   (setq-local scroll-conservatively 5)
   (setq-local display-line-numbers nil)
-  (setq-local mode-line-process '(:eval (hermes-chat--images-mode-line)))
+  (setq-local mode-line-process '(:eval (hermes-chat--mode-line-process)))
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'change-major-mode-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
