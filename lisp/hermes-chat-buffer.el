@@ -3021,6 +3021,65 @@ tokens and `hermes-chat-context-label-map' opens the context budget view."
   "Face for running work."
   :group 'hermes)
 
+(defface hermes-work-failed '((t :inherit error))
+  "Face for failed or lost work." :group 'hermes)
+(defface hermes-work-done '((t :inherit success))
+  "Face for completed work and clean process exits." :group 'hermes)
+(defface hermes-work-queued '((t :inherit shadow))
+  "Face for queued workers." :group 'hermes)
+(defface hermes-work-interrupted '((t :inherit warning))
+  "Face for interrupted workers and killed processes." :group 'hermes)
+(defface hermes-work-unknown '((t :inherit shadow))
+  "Face for work in an unrecognized state." :group 'hermes)
+
+;; One state vocabulary for every worker surface: transcript cards, the
+;; Workers outline, its detail buffers, the header and the mode line.
+
+(defconst hermes-work-states
+  '((running     "●" "*" hermes-work-running     "running")
+    (queued      "◌" "o" hermes-work-queued      "queued")
+    (done        "✓" "+" hermes-work-done        "done")
+    (failed      "✗" "x" hermes-work-failed      "failed")
+    (interrupted "⊘" "!" hermes-work-interrupted "interrupted")
+    (unknown     "?" "?" hermes-work-unknown     "unknown"))
+  "Display state to (GLYPH ASCII FACE LABEL), in summary count order.
+Glyphs carry the state on their own; faces only reinforce it.")
+
+(defun hermes-work-display-state (row)
+  "Return the display state of roster ROW, a key of `hermes-work-states'."
+  (pcase (plist-get row :state)
+    ((and state (or 'running 'queued)) state)
+    ((or 'completed 'done 'complete 'success 'succeeded) 'done)
+    ((or 'interrupted 'cancelled 'canceled 'killed) 'interrupted)
+    ((or 'failed 'error 'failure 'timeout 'lost 'failed_start) 'failed)
+    (_ 'unknown)))
+
+(defun hermes-work-state-face (state)
+  "Return the face for display STATE."
+  (nth 3 (assq state hermes-work-states)))
+
+(defun hermes-work-state-label (state)
+  "Return the word for display STATE."
+  (nth 4 (assq state hermes-work-states)))
+
+(defun hermes-work-state-glyph (state &optional process)
+  "Return the propertized glyph for display STATE.
+A running PROCESS uses ⚙.  Fall back to ASCII when the glyph is not
+displayable."
+  (let* ((entry (assq state hermes-work-states))
+         (pair (if (and process (eq state 'running))
+                   '("⚙" . "%")
+                 (cons (nth 1 entry) (nth 2 entry)))))
+    (propertize (if (char-displayable-p (aref (car pair) 0)) (car pair) (cdr pair))
+                'face (nth 3 entry))))
+
+(defun hermes-work-duration (seconds)
+  "Return SECONDS as the shared worker clock, m:ss or h:mm:ss."
+  (let ((s (max 0 (floor seconds))))
+    (if (< s 3600)
+        (format "%d:%02d" (/ s 60) (% s 60))
+      (format "%d:%02d:%02d" (/ s 3600) (/ (% s 3600) 60) (% s 60)))))
+
 (defconst hermes-chat--work-retain 60
   "Seconds finished workers and exited processes stay listed.")
 

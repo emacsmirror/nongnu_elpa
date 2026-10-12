@@ -88,16 +88,6 @@ Open Workers from the owning chat to request a session-qualified interrupt."
 
 (require 'hermes-chat-buffer)
 
-(defface hermes-work-failed '((t :inherit error))
-  "Face for failed, killed or lost work." :group 'hermes)
-(defface hermes-work-done '((t :inherit success))
-  "Face for completed work." :group 'hermes)
-(defface hermes-work-queued '((t :inherit shadow))
-  "Face for queued workers." :group 'hermes)
-(defface hermes-work-interrupted '((t :inherit warning))
-  "Face for interrupted, timed out or killed work." :group 'hermes)
-(defface hermes-work-unknown '((t :inherit shadow))
-  "Face for work in an unrecognized state." :group 'hermes)
 (defface hermes-work-section '((t :inherit bold))
   "Face for section titles in the work view." :group 'hermes)
 (defface hermes-work-meta '((t :inherit shadow))
