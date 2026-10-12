@@ -4712,6 +4712,7 @@ other's session."
                         (text . "(°ロ°) brainstorming...")))
                       ("subagent.tool"
                        ((subagent_id . "sa-1")
+                        (delegation_id . "deleg_1")
                         (tool_name . "terminal")
                         (tool_preview . "git status")
                         (text . "git status")))
@@ -4742,6 +4743,7 @@ other's session."
       (should (equal (plist-get tool :status) "running"))
       (should (equal (plist-get tool :preview) "git status"))
       (should (equal (plist-get tool :subagent-id) "sa-1"))
+      (should (equal (plist-get tool :delegation-id) "deleg_1"))
       (should (eq (plist-get progress :type) 'progress))
       (should (equal (plist-get progress :content)
                      "🔀 terminal, read_file"))

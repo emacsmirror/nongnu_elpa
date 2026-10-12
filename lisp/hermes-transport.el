@@ -235,6 +235,7 @@ False, null, strings and other numbers are not true flags."
                      (subagent_id . :subagent-id)
                      (parent_id . :parent-id)
                      (child_session_id . :child-session-id)
+                     (delegation_id . :delegation-id)
                      (seq . :seq)
                      (index . :index)
                      (task_index . :task-index)

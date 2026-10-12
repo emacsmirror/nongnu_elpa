@@ -3125,7 +3125,7 @@ progress events never create a worker, and late queueing never demotes one."
 ;; snapshot's.
 
 (defconst hermes-chat--work-activity-keys
-  '(:parent :started :tool-count :tools :summary :error)
+  '(:parent :delegation-id :started :tool-count :tools :summary :error)
   "Worker fields learned from subagent events besides state and goal.")
 
 (defconst hermes-chat--work-recent-tools 8
@@ -3139,7 +3139,8 @@ progress events never create a worker, and late queueing never demotes one."
 (defun hermes-chat--work-event-activity (event entry state now)
   "Return the activity that subagent EVENT contributes to ENTRY at NOW.  Pure.
 STATE is the worker state after EVENT.  Only fields EVENT carries appear:
-the parent, the first start time, the tool count, the recent tools as
+the parent, the delegation call that spawned the worker, the first start
+time, the tool count, the recent tools as
 \(NAME . TARGET) pairs, newest last, and a completion's summary, or its
 error when STATE is a failure."
   (let ((name (plist-get event :event))
@@ -3148,6 +3149,9 @@ error when STATE is a failure."
      (when-let* ((parent (hermes-transport--non-empty-string
                           (plist-get event :parent-id))))
        (list :parent parent))
+     (when-let* ((delegation (hermes-transport--non-empty-string
+                              (plist-get event :delegation-id))))
+       (list :delegation-id delegation))
      (when (and (equal name "subagent.start") (not (plist-get entry :started)))
        (list :started now))
      (when (natnump count) (list :tool-count count))
