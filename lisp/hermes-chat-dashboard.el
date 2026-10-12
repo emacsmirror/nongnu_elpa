@@ -501,12 +501,16 @@ Report uncertainty for dispatched worker controls whose receipts are lost."
     ;; renderer checks the exact view cross-link, even after buffer reuse.
     (run-at-time 0 nil render owner)))
 
+(defvar hermes-chat-work-changed-hook nil
+  "Normal hook run in a chat buffer after its observed work changed.")
+
 (defun hermes-chat--work-changed (owner)
   "Announce a roster change to OWNER's chat header and work view."
   (setf (plist-get owner :published) (float-time))
   (with-current-buffer (plist-get owner :buffer)
     (when-let* ((settle (plist-get owner :settle)))
       (funcall settle owner))
+    (run-hooks 'hermes-chat-work-changed-hook)
     (force-mode-line-update)
     (hermes-chat--notify-state-change)))
 
@@ -637,7 +641,7 @@ window hooks only arm timers; the first read runs from the timer."
                 :lifetime hermes-chat--lifecycle-generation
                 :instance (copy-tree hermes-instance) :profile hermes-chat--profile
                 :client client :connection (hermes-dashboard-transport-client-generation client)
-                :runtime runtime :delegates nil :processes nil :events nil :published nil
+                :runtime runtime :delegates nil :processes nil :events nil :activity nil :published nil
                 :inflight nil :unsupported nil :timer nil :controls nil
                 :view nil :view-valid-p nil :render nil :refresh nil :settle nil
                 :current-p #'hermes-chat--work-current-p))
@@ -700,6 +704,11 @@ chat's input."
   (and (equal (plist-get event :event) "status.update")
        (equal (plist-get event :status) "process")))
 
+(defun hermes-chat--work-event-p (event)
+  "Return non-nil when EVENT reports a worker's lifecycle or activity."
+  (and (stringp (plist-get event :subagent-id))
+       (string-prefix-p "subagent." (or (plist-get event :event) ""))))
+
 (defun hermes-chat--work-note-event (event)
   "Merge subagent EVENT into this chat's roster.
 A background process notice reads the rosters at once."
@@ -707,10 +716,14 @@ A background process notice reads the rosters at once."
               ((hermes-chat--work-current-p owner)))
     (if (hermes-chat--work-process-notice-p event)
         (hermes-chat--work-poll owner)
-      (let* ((events (plist-get owner :events))
-             (next (hermes-chat--work-apply-event events event (float-time))))
-        (unless (eq next events)
-          (setf (plist-get owner :events) next)
+      (let* ((now (float-time))
+             (events (plist-get owner :events))
+             (next (hermes-chat--work-apply-event events event now))
+             (activity (plist-get owner :activity))
+             (recent (hermes-chat--work-apply-activity activity event now)))
+        (unless (and (eq next events) (eq recent activity))
+          (setf (plist-get owner :events) next
+                (plist-get owner :activity) recent)
           (hermes-chat--work-changed owner))))))
 
 (defun hermes-chat-work-refresh ()
@@ -1514,8 +1527,12 @@ profile's workspace.  Keep the reservation through create and overrides."
   (hermes-chat--status-rule-note-event)
   (when dashboard-p
     (hermes-chat--work-note-event event))
-  (unless (and dashboard-p
-               (funcall hermes-chat--busy-submit-event-function event))
+  ;; Worker lifecycle feeds the roster and the spawning row's live card, not
+  ;; per-child transcript rows.
+  (unless (or (and dashboard-p hermes-chat--work-owner
+                   (hermes-chat--work-event-p event))
+              (and dashboard-p
+                   (funcall hermes-chat--busy-submit-event-function event)))
     (if (and dashboard-p (hermes-chat--assistant-independent-event-p event))
         (hermes-chat--handle-transport-event nil event)
       (when dashboard-p

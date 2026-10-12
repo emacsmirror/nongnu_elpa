@@ -16,6 +16,8 @@ Incompatible changes:
   name in the mode line, and the scope or status text of the Pairing,
   Webhooks, Tool Setup, Agent Plugins, Foreign histories and Skill Hub
   views moved to the mode line.
+- In the Workers view =RET= now opens the row's details; the published
+  worker log moved to =L=.
 
 New features and fixes:
 
@@ -29,6 +31,14 @@ New features and fixes:
   spawn-tree order and shows depth, delegation, tool count, last tool and a
   process's last output line; process elapsed time now comes from the
   backend's uptime.
+- The Workers view is now an outline with Agents and Processes sections.
+  Each running worker shows its latest tool on a second line and each
+  process its last output line or exit verdict.  =TAB= folds a section or
+  opens a row's card with the full goal, recent tools and the error or
+  summary; =n=/=p=, =f=/=b= and =^= move by row, sibling and parent.  =RET=
+  reuses one detail buffer per row, and =k= on a process kills it after
+  confirmation.  Live updates keep point, folds, cards and each window's
+  start.
 - Completed paragraphs, closed code fences and complete table rows render
   as Markdown while a reply is still streaming; unfinished text stays
   literal until the turn ends.  =hermes-chat-stream-format-delay= (default

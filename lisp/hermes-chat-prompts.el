@@ -543,14 +543,15 @@ headed by a symbol or an integer."
   (and (proper-list-p value)
        (or (stringp (car value)) (consp (car value)))))
 
-(defun hermes-chat--prompt-indicator-install ()
-  "Add the pending-prompt segment to the default `global-mode-string'.
-Append it to a list of segments, as other global segments do.  Wrap any
-other value, such as a string or a special construct, in a fresh symbol
-so it renders as before: a string held by a symbol is shown literally,
-but a string inside a list is %-processed."
+(defun hermes-chat--prompt-indicator-install (&optional segment)
+  "Add the pending-prompt SEGMENT to the default `global-mode-string'.
+SEGMENT defaults to `hermes-chat-prompt-indicator-mode-line'; other global
+Hermes segments install the same way.  Append it to a list of segments, as
+other global segments do.  Wrap any other value, such as a string or a
+special construct, in a fresh symbol so it renders as before: a string held
+by a symbol is shown literally, but a string inside a list is %-processed."
   (let ((value (default-value 'global-mode-string))
-        (segment 'hermes-chat-prompt-indicator-mode-line))
+        (segment (or segment 'hermes-chat-prompt-indicator-mode-line)))
     (cond
      ((null value)
       (set-default 'global-mode-string (list "" segment)))
@@ -563,12 +564,13 @@ but a string inside a list is %-processed."
      ((not (memq segment value))
       (set-default 'global-mode-string (append value (list segment)))))))
 
-(defun hermes-chat--prompt-indicator-uninstall ()
-  "Remove the pending-prompt segment from the default `global-mode-string'.
-Keep other elements.  If only the wrapper made on install remains, restore
-the value it holds; if nothing else remains, restore nil."
+(defun hermes-chat--prompt-indicator-uninstall (&optional segment)
+  "Remove the pending-prompt SEGMENT from the default `global-mode-string'.
+SEGMENT defaults to `hermes-chat-prompt-indicator-mode-line'.  Keep other
+elements.  If only the wrapper made on install remains, restore the value
+it holds; if nothing else remains, restore nil."
   (let ((value (default-value 'global-mode-string))
-        (segment 'hermes-chat-prompt-indicator-mode-line))
+        (segment (or segment 'hermes-chat-prompt-indicator-mode-line)))
     (when (and (hermes-chat--mode-line-segments-p value)
                (memq segment value))
       (let ((rest (remq segment value)))

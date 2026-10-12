@@ -3271,7 +3271,7 @@ session is not restarted, and the new owner polls with the new signature."
         (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 
 (ert-deftest hermes-work-browser-exact-owner-keys-and-snapshots ()
-  "The native list consumes real owner snapshots and never acquires a client."
+  "The outline consumes real owner snapshots and never acquires a client."
   (save-window-excursion
     (hermes-test--with-process-wire
       (hermes-chat-work-refresh)
@@ -3289,12 +3289,12 @@ session is not restarted, and the new owner polls with the new signature."
                 (setq view (current-buffer))
                 (should (derived-mode-p 'hermes-work-mode))
                 (should (eq owner hermes-work--owner))
-                (should (= 2 (length tabulated-list-entries)))
-                (should (equal (mapcar #'car tabulated-list-entries)
-                               '((delegate . "same") (process . "same"))))
+                (should (equal hermes-work--order
+                               '((section . agents) (delegate . "same")
+                                 (section . processes) (process . "same"))))
                 (should (string-match-p "Roster visibility" (hermes-work--scope-text owner)))
-                (should (eq (get-text-property 0 'face (aref (cadar tabulated-list-entries) 0))
-                            'hermes-work-running))
+                (goto-char (hermes-work--find-line '(delegate . "same")))
+                (should (eq (get-text-property (point) 'face) 'hermes-work-running))
                 (rename-buffer "*renamed work view*" t)
                 (with-current-buffer chat (hermes-chat-work))
                 (should (eq view (current-buffer)))
@@ -3302,10 +3302,10 @@ session is not restarted, and the new owner polls with the new signature."
                 (search-forward "printf done")
                 (call-interactively (keymap-lookup hermes-work-mode-map "RET"))
                 (setq details (current-buffer))
-                (should (derived-mode-p 'special-mode))
+                (should (derived-mode-p 'hermes-work-detail-mode))
                 (should buffer-read-only)
-                (should (string-match-p "Backend output tail: last output" (buffer-string)))
-                (should (string-match-p "Remote cwd (inert): /remote/inert" (buffer-string)))
+                (should (string-match-p "Output tail\nlast output" (buffer-string)))
+                (should (string-match-p "Remote cwd (inert) /remote/inert" (buffer-string)))
                 (should-not (next-button (point-min)))
                 (should (= sent (length frames)))
                 (call-interactively (keymap-lookup (current-local-map) "q"))
@@ -3322,10 +3322,13 @@ session is not restarted, and the new owner polls with the new signature."
                   (hermes-test--work-answer client "{\"subagents\":[]}")
                   (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"same\",\"status\":\"running\"}]}"))
                 (with-current-buffer view
-                  (should (equal (tabulated-list-get-id) '(process . "same")))
+                  (should (equal (hermes-work--key-at-point) '(process . "same")))
                   ;; The worker that left the roster stays listed as done.
-                  (should (equal (aref (cadar tabulated-list-entries) 0) "Done"))
-                  (should (= 2 (length tabulated-list-entries))))
+                  (should (eq 'completed
+                              (plist-get (hermes-work--find '(delegate . "same")
+                                                            (hermes-work--observations owner))
+                                         :state)))
+                  (should (hermes-work--find-line '(delegate . "same"))))
                 ;; Replacement must detach, not retarget, even after renaming.
                 (with-current-buffer chat (hermes-chat--work-bind client "runtime"))
                 (let ((publication
@@ -3336,6 +3339,7 @@ session is not restarted, and the new owner polls with the new signature."
                   (apply (cadr publication) (nth 2 publication)))
                 (with-current-buffer view
                   (should (string-match-p "Detached" (buffer-string)))
+                  (should (string-match-p "chat detached" (format "%s" header-line-format)))
                   (should-error (hermes-work-refresh) :type 'user-error)
                   (should (eq (keymap-lookup hermes-work-mode-map "k") #'hermes-work-interrupt))))
             (dolist (buffer (list view details))
@@ -3372,12 +3376,12 @@ session is not restarted, and the new owner polls with the new signature."
             (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
 (ert-deftest hermes-work-details-link-and-widths ()
-  "Details open the same owner list; columns fit real windows and preserve rows."
+  "Details open the same owner view; rows fit real window widths."
   (save-window-excursion
     (hermes-test--with-process-wire
       (hermes-chat-work-refresh)
-      (hermes-test--work-answer client "{\"subagents\":[]}")
-      (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\",\"command\":\"界% very long command with long description\",\"started_at\":0}]}")
+      (hermes-test--work-answer client "{\"subagents\":[{\"subagent_id\":\"w\",\"status\":\"running\",\"model\":\"claude-opus-5-5\",\"tool_count\":12,\"started_at\":1,\"goal\":\"界% a very long worker goal that must truncate before its metadata\"}]}")
+      (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"p\",\"status\":\"running\",\"command\":\"界% very long command with long description\",\"uptime_seconds\":100}]}")
       (let ((owner hermes-chat--work-owner) view details)
         (unwind-protect
             (progn
@@ -3393,29 +3397,24 @@ session is not restarted, and the new owner polls with the new signature."
               (should (buffer-live-p view))
               (should (eq (window-buffer (selected-window)) view))
               (with-current-buffer view
-                (dolist (width '(12 20 30 40 50 80 120))
+                (goto-char (hermes-work--find-line '(process . "p")))
+                (dolist (width '(30 40 50 80 120))
                   (cl-letf (((symbol-function 'window-body-width)
                              (lambda (&rest _) width)))
                     (hermes-work--resize (selected-window)))
-                  (hermes-work--render owner)
-                  (goto-char (point-min))
-                  (while (and (not (eobp)) (not (tabulated-list-get-id))) (forward-line))
-                  (should (equal (tabulated-list-get-id) '(process . "p")))
-                  ;; Native tabulated-list truncates with display properties,
-                  ;; leaving full cell text available to copying and help.
-                  (let ((end (line-end-position)) (columns 0))
-                    (while (< (point) end)
-                      (let* ((next (next-single-property-change (point) 'display nil end))
-                             (display (get-text-property (point) 'display)))
-                        (setq columns
-                              (pcase display
-                                (`(space :align-to ,column) column)
-                                ((pred stringp) (+ columns (string-width display)))
-                                ('nil (+ columns (string-width
-                                                  (buffer-substring-no-properties (point) next))))
-                                (_ (ert-fail (format "Unexpected display spec: %S" display)))))
-                        (goto-char next)))
-                    (should (<= columns width)))))
+                  (should (equal (hermes-work--key-at-point) '(process . "p")))
+                  ;; Each heading is goal, an aligning space, then metadata.
+                  (dolist (key '((delegate . "w") (process . "p")))
+                    (save-excursion
+                      (goto-char (hermes-work--find-line key))
+                      (let* ((end (line-end-position))
+                             (space (text-property-search-forward 'display nil
+                                                                  (lambda (_ v) (consp v)) t))
+                             (before (buffer-substring-no-properties
+                                      (line-beginning-position) (prop-match-beginning space)))
+                             (after (buffer-substring-no-properties (prop-match-end space) end)))
+                        (should (<= (+ (string-width before) 1 (string-width after)) width))
+                        (should (get-text-property (line-beginning-position 1) 'hermes-work-key)))))))
               ;; Old list render must not write into a successor that steals its slot.
               (with-current-buffer view
                 (setq hermes-work--owner nil)
@@ -4269,6 +4268,272 @@ session is not restarted, and the new owner polls with the new signature."
        client '(:type error :status "interrupted" :content "Interrupted"))
       (should-not hermes-chat--pending-assistant-id)
       (should (equal (funcall row-status) "ready")))))
+
+;;;; Outline roster
+
+(defun hermes-test--outline-keys (lines)
+  "Return (KEY KIND DEPTH) for each outline line in LINES."
+  (mapcar (lambda (line) (list (plist-get line :key) (plist-get line :kind) (plist-get line :depth)))
+          lines))
+
+(ert-deftest hermes-work-outline-tree-order-and-folds ()
+  "Workers render depth first under their parents; folds hide subtrees."
+  (let* ((rows (list (list :key '(delegate . "c") :id "c" :kind 'delegate :state 'running :parent "b" :goal "C")
+                     (list :key '(delegate . "a") :id "a" :kind 'delegate :state 'running :goal "A")
+                     (list :key '(delegate . "d") :id "d" :kind 'delegate :state 'queued :parent "a" :goal "D")
+                     (list :key '(delegate . "b") :id "b" :kind 'delegate :state 'running :parent "a" :goal "B")
+                     (list :key '(delegate . "e") :id "e" :kind 'delegate :state 'completed :parent "gone" :goal "E")))
+         (roster (list :agents (hermes-chat--work-tree rows)
+                       :processes (list (list :key '(process . "p") :id "p" :kind 'process
+                                              :state 'running :command "make" :last-line "ok"))))
+         (activity '(("c" :tools (("read_file" . "x.el")) :tool-count 3))))
+    (should (equal (hermes-test--outline-keys
+                    (hermes-work--outline roster activity '(:observed t) 100 80))
+                   '(((section . agents) section 0)
+                     ((delegate . "a") heading 0)
+                     ((delegate . "d") heading 1) ((delegate . "d") activity 2)
+                     ((delegate . "b") heading 1)
+                     ((delegate . "c") heading 2) ((delegate . "c") activity 3)
+                     ((delegate . "e") heading 0)
+                     (nil blank 0)
+                     ((section . processes) section 0)
+                     ((process . "p") heading 0) ((process . "p") activity 1))))
+    (let ((lines (hermes-work--outline roster activity '(:folded ((delegate . "b"))) 100 80)))
+      (should-not (assoc '(delegate . "c") (hermes-test--outline-keys lines)))
+      (should (string-match-p "B \\+1" (substring-no-properties
+                                       (plist-get (seq-find (lambda (l) (equal (plist-get l :key) '(delegate . "b"))) lines)
+                                                  :text)))))
+    (let ((lines (hermes-work--outline roster activity '(:folded ((section . agents))) 100 80)))
+      (should (equal (mapcar #'car (hermes-test--outline-keys lines))
+                     '((section . agents) nil (section . processes) (process . "p") (process . "p")))))
+    (should (equal (substring-no-properties
+                    (plist-get (car (hermes-work--outline nil nil '(:observed t) 0 80)) :text))
+                   "No workers in this chat yet."))))
+
+(ert-deftest hermes-work-outline-activity-folds-tool-events ()
+  "Tool and completion events of snapshot-only workers feed cards; others are ignored."
+  (let* ((a nil)
+         (a (hermes-chat--work-apply-activity
+             a '(:event "subagent.tool" :subagent-id "w" :name "read_file" :preview "x.el" :tool-count 2) 10))
+         (a (hermes-chat--work-apply-activity
+             a '(:event "subagent.complete" :subagent-id "w" :status "failed" :content "Boom") 20)))
+    (should (equal (cdr (assoc "w" a))
+                   '(:tools (("read_file" . "x.el")) :tool-count 2 :seen 10 :finished 20 :error "Boom")))
+    (should (eq a (hermes-chat--work-apply-activity a '(:event "message.delta" :content "x") 30)))
+    (dotimes (i 10)
+      (setq a (hermes-chat--work-apply-activity
+               a (list :event "subagent.tool" :subagent-id "w" :name (format "t%d" i)) 30)))
+    (should (= 8 (length (plist-get (cdr (assoc "w" a)) :tools))))
+    (should (equal "t9" (car (car (last (plist-get (cdr (assoc "w" a)) :tools))))))))
+
+(defconst hermes-test--two-workers
+  "{\"subagents\":[{\"subagent_id\":\"parent\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":1,\"goal\":\"Parent goal\"},{\"subagent_id\":\"child\",\"parent_id\":\"parent\",\"status\":\"running\",\"accepting_steer\":true,\"started_at\":2,\"goal\":\"Child goal\"},{\"subagent_id\":\"other\",\"status\":\"running\",\"started_at\":3,\"goal\":\"Other goal\"}]}"
+  "A parent with one child, then a second root.")
+
+(defmacro hermes-test--with-outline (&rest body)
+  "Run BODY in the work view showing `hermes-test--two-workers' and one process."
+  (declare (indent 0) (debug t))
+  `(save-window-excursion
+     (hermes-test--with-process-wire
+       (hermes-chat-work-refresh)
+       (hermes-test--work-answer client hermes-test--two-workers)
+       (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"proc\",\"status\":\"running\",\"command\":\"make test\",\"uptime_seconds\":5,\"output_preview\":\"line one\\nline two\"}]}")
+       (let ((chat (current-buffer)) (owner hermes-chat--work-owner) view)
+         (unwind-protect
+             (progn
+               (hermes-chat-work)
+               (setq view (current-buffer)
+                     frames nil)
+               (delete-other-windows)
+               ,@body)
+           (dolist (buffer (buffer-list))
+             (when (eq owner (buffer-local-value 'hermes-work--owner buffer))
+               (kill-buffer buffer)))
+           (set-buffer chat))))))
+
+(defun hermes-test--outline-repoll (chat client)
+  "Answer a fresh roster read in CHAT through CLIENT, unchanged."
+  (with-current-buffer chat
+    (hermes-chat-work-refresh)
+    (hermes-test--work-answer client hermes-test--two-workers)
+    (hermes-test--work-answer client "{\"processes\":[{\"session_id\":\"proc\",\"status\":\"running\",\"command\":\"make test\",\"uptime_seconds\":9,\"output_preview\":\"line three\"}]}")))
+
+(ert-deftest hermes-work-outline-navigation-keys ()
+  "n/p walk headings, f/b siblings and ^ the parent."
+  (hermes-test--with-outline
+    (goto-char (point-min))
+    (execute-kbd-macro "n")
+    (should (equal (hermes-work--key-at-point) '(delegate . "parent")))
+    (execute-kbd-macro "f")
+    (should (equal (hermes-work--key-at-point) '(delegate . "other")))
+    (execute-kbd-macro "b")
+    (should (equal (hermes-work--key-at-point) '(delegate . "parent")))
+    (execute-kbd-macro "n")
+    (should (equal (hermes-work--key-at-point) '(delegate . "child")))
+    (execute-kbd-macro "^")
+    (should (equal (hermes-work--key-at-point) '(delegate . "parent")))
+    (execute-kbd-macro "nnn")
+    (should (equal (hermes-work--key-at-point) '(section . processes)))
+    (should (string-match-p "↳ line two\\|line two" (buffer-string)))))
+
+(ert-deftest hermes-work-outline-card-and-fold-survive-refresh ()
+  "TAB cycles a parent through card and folded subtree across live repaints."
+  (hermes-test--with-outline
+    (goto-char (hermes-work--find-line '(delegate . "parent")))
+    (execute-kbd-macro (kbd "TAB"))
+    (should (hermes-work--find-line '(delegate . "parent") 'card 1))
+    (hermes-test--outline-repoll chat client)
+    (with-current-buffer view
+      (should (hermes-work--find-line '(delegate . "parent") 'card 1))
+      (should (string-match-p "Goal +Parent goal" (buffer-string)))
+      (execute-kbd-macro (kbd "TAB")))
+    (should-not (hermes-work--find-line '(delegate . "parent") 'card 1))
+    (should-not (hermes-work--find-line '(delegate . "child")))
+    (should (string-match-p "Parent goal \\+1" (buffer-string)))
+    (hermes-test--outline-repoll chat client)
+    (with-current-buffer view
+      (should-not (hermes-work--find-line '(delegate . "child")))
+      (should (equal (hermes-work--key-at-point) '(delegate . "parent")))
+      (execute-kbd-macro (kbd "TAB"))
+      (should (hermes-work--find-line '(delegate . "child")))
+      ;; A process card shows its full command; a section folds.
+      (goto-char (hermes-work--find-line '(process . "proc")))
+      (execute-kbd-macro (kbd "TAB"))
+      (should (string-match-p "Command +make test" (buffer-string)))
+      (goto-char (hermes-work--find-line '(section . agents)))
+      (execute-kbd-macro (kbd "TAB"))
+      (should-not (hermes-work--find-line '(delegate . "parent")))
+      (hermes-test--outline-repoll chat client)
+      (with-current-buffer view
+        (should-not (hermes-work--find-line '(delegate . "parent")))
+        (should (hermes-work--find-line '(process . "proc") 'card 1))))))
+
+(ert-deftest hermes-work-outline-preserves-point-and-window-start ()
+  "A repaint that inserts rows above keeps point and each window's first row."
+  (hermes-test--with-outline
+    (let ((window (selected-window)))
+      (goto-char (hermes-work--find-line '(delegate . "other")))
+      (execute-kbd-macro (kbd "TAB"))
+      (goto-char (hermes-work--find-line '(delegate . "other") 'card 1))
+      (forward-char 4)
+      (set-window-start window (hermes-work--find-line '(delegate . "child")))
+      (set-window-point window (point))
+      (with-current-buffer chat
+        (hermes-chat-work-refresh)
+        (hermes-test--work-answer
+         client (concat "{\"subagents\":["
+                        (mapconcat (lambda (i)
+                                     (format "{\"subagent_id\":\"new%d\",\"status\":\"running\",\"goal\":\"New %d\"}" i i))
+                                   '(1 2 3) ",")
+                        "," (substring hermes-test--two-workers (length "{\"subagents\":[")))))
+      (with-current-buffer view
+        (should (equal (car hermes-work--order) '(section . agents)))
+        (should (equal (nth 1 hermes-work--order) '(delegate . "new1")))
+        (should (equal (hermes-work--line-position (point))
+                       (list '(delegate . "other") 'card 1 4
+                             (line-number-at-pos (point) t))))
+        (should (= (window-point window) (point)))
+        (should (equal (get-text-property (window-start window) 'hermes-work-key)
+                       '(delegate . "child")))
+        (should (= (window-start window)
+                   (hermes-work--find-line '(delegate . "child"))))))))
+
+(ert-deftest hermes-work-outline-open-reuses-one-detail-buffer ()
+  "RET opens one buffer per row, reused on every press and refreshed live."
+  (hermes-test--with-outline
+    (let (first second)
+      (goto-char (hermes-work--find-line '(delegate . "child")))
+      (execute-kbd-macro (kbd "RET"))
+      (setq first (current-buffer))
+      (should (derived-mode-p 'hermes-work-detail-mode))
+      (should (string-match-p "\\`. Child goal" (buffer-string)))
+      (should (string-match-p "Parent +Parent goal" (buffer-string)))
+      (set-buffer view)
+      (dotimes (_ 3)
+        (goto-char (hermes-work--find-line '(delegate . "child")))
+        (call-interactively #'hermes-work-open)
+        (should (eq first (current-buffer)))
+        (set-buffer view))
+      (should (= 1 (seq-count (lambda (buffer)
+                                (hermes-browser--buffer-mode-p buffer 'hermes-work-detail-mode))
+                              (buffer-list))))
+      (goto-char (hermes-work--find-line '(delegate . "parent")))
+      (call-interactively #'hermes-work-open)
+      (setq second (current-buffer))
+      (should-not (eq first second))
+      (should (string-match-p "Children (1)" (buffer-string)))
+      ;; Live activity reaches the open detail without another RET.
+      (with-current-buffer chat
+        (hermes-chat--work-note-event
+         '(:type tool :event "subagent.tool" :subagent-id "child" :name "grep" :preview "needle")))
+      (with-current-buffer first
+        (should (string-match-p "grep needle" (buffer-string)))))))
+
+(ert-deftest hermes-work-outline-detail-controls-dispatch ()
+  "Steer, interrupt and tail from a detail buffer name that exact worker."
+  (dolist (key '("s" "k" "t"))
+    (hermes-test--with-outline
+      (goto-char (hermes-work--find-line '(delegate . "child")))
+      (execute-kbd-macro (kbd "RET"))
+      ;; Moving the roster's point must not retarget the detail's controls.
+      (with-current-buffer view (goto-char (hermes-work--find-line '(delegate . "other"))))
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                ((symbol-function 'read-string) (lambda (&rest _) "Exact")))
+        (execute-kbd-macro key))
+      (should (= (length frames) 1))
+      (let ((frame (hermes-dashboard-transport--decode-frame (car frames))))
+        (should (equal (hermes-transport--get frame 'method)
+                       (pcase key ("s" "subagent.steer") ("k" "subagent.interrupt")
+                              ("t" "subagent.tail"))))
+        (should (equal (hermes-transport--get (hermes-transport--get frame 'params) 'subagent_id)
+                       "child"))))))
+
+(ert-deftest hermes-work-outline-process-kill-confirms ()
+  "k on a process asks first, then sends process.kill and reports the receipt."
+  (dolist (case '((nil nil nil)
+                  (t "{\"status\":\"killed\"}" "process killed")
+                  (t "{\"status\":\"already_exited\"}" "already exited")
+                  (t 4044 "not owned by this chat")))
+    (hermes-test--with-outline
+      (let (prompt messages)
+        (goto-char (hermes-work--find-line '(process . "proc")))
+        (cl-letf (((symbol-function 'yes-or-no-p)
+                   (lambda (text) (setq prompt text) (car case)))
+                  ((symbol-function 'message)
+                   (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+          (execute-kbd-macro "k")
+          (should (string-match-p "Kill process `make test'" prompt))
+          (if (not (car case))
+              (should-not frames)
+            (should (= (length frames) 1))
+            (let* ((frame (hermes-dashboard-transport--decode-frame (car frames)))
+                   (id (hermes-transport--get frame 'id)))
+              (should (equal (hermes-transport--get frame 'method) "process.kill"))
+              (should (equal (hermes-transport--get frame 'params)
+                             '((session_id . "runtime") (process_id . "proc"))))
+              (if (numberp (nth 1 case))
+                  (hermes-test--work-error client id (nth 1 case))
+                (hermes-test--work-reply client id (nth 1 case))))
+            (should (seq-some (lambda (text) (string-match-p (nth 2 case) text)) messages))))))))
+
+(ert-deftest hermes-work-outline-empty-state-is-one-quiet-line ()
+  "Before and after an empty read the view shows a single shadowed line."
+  (save-window-excursion
+    (hermes-test--with-process-wire
+      (let ((owner hermes-chat--work-owner))
+        (unwind-protect
+            (progn
+              (hermes-chat-work)
+              (should (equal (buffer-string) "Loading workers…\n"))
+              (with-current-buffer (plist-get owner :buffer)
+                (hermes-chat-work-refresh)
+                (hermes-test--work-answer client "{\"subagents\":[]}")
+                (hermes-test--work-answer client "{\"processes\":[]}"))
+              (with-current-buffer (plist-get owner :view)
+                (should (equal (buffer-string) "No workers in this chat yet.\n"))
+                (should (eq (get-text-property (point-min) 'face) 'shadow))))
+          (when (buffer-live-p (plist-get owner :view))
+            (kill-buffer (plist-get owner :view))))))))
 
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
