@@ -887,6 +887,11 @@ their card."
       (hermes-work-toggle))
      (t (user-error "No observed work on this line")))))
 
+(defun hermes-work--detail-detach ()
+  "Retire this detail and settle controls it started, on kill or mode change."
+  (hermes-buffer--retire)
+  (when hermes-work--owner (hermes-work--settle-owner hermes-work--owner)))
+
 ;;; Session-qualified worker actions
 
 (defun hermes-work--target (owner key)
@@ -894,23 +899,51 @@ their card."
 Live events may have finished a listed row; then there is no target."
   (let* ((source (if (eq (car-safe key) 'process) :processes :delegates))
          (row (hermes-work--find key (plist-get (plist-get owner source) :rows))))
-    (and row (hermes-work--view-p owner) (hermes-work--current-p owner)
+    (and row (hermes-work--current-p owner)
          (stringp (plist-get owner :runtime))
          (not (string-empty-p (plist-get owner :runtime)))
          (eq (plist-get (hermes-work--find key (hermes-work--observations owner)) :state)
              'running)
          row)))
 
+(defun hermes-work--presentation ()
+  "Return the exact list or detail presentation behind a control.
+It is the buffer, its claim, mode and owner, and a detail's fixed row key."
+  (list :buffer (current-buffer) :claim hermes-buffer--owner :mode major-mode
+        :owner hermes-work--owner
+        :key (and (derived-mode-p 'hermes-work-detail-mode) hermes-work--detail-key)))
+
+(defun hermes-work--presentation-current-p (presentation)
+  "Return non-nil while PRESENTATION still presents its owner's work.
+A mode change, file association or kill retires it, and so does replacing
+the list behind its owner."
+  (let ((buffer (plist-get presentation :buffer))
+        (mode (plist-get presentation :mode))
+        (owner (plist-get presentation :owner)))
+    (and (buffer-live-p buffer)
+         (memq mode '(hermes-work-mode hermes-work-detail-mode))
+         (with-current-buffer buffer
+           (and (eq hermes-buffer--owner (plist-get presentation :claim))
+                (hermes-buffer--owned-p mode)
+                (eq hermes-work--owner owner)
+                (if (eq mode 'hermes-work-mode)
+                    (eq (plist-get owner :view) buffer)
+                  (equal hermes-work--detail-key (plist-get presentation :key))))))))
+
 (defun hermes-work--selected-worker ()
   "Return the exact running worker row at point, or refuse the action.
 The row must be in the backend roster; live events may have finished it."
   (let ((key (hermes-work--key-at-point)))
-    (or (and (eq (car-safe key) 'delegate) (hermes-work--target hermes-work--owner key))
+    (or (and (eq (car-safe key) 'delegate)
+             (hermes-work--presentation-current-p (hermes-work--presentation))
+             (hermes-work--target hermes-work--owner key))
         (user-error "No current running worker; refresh or reopen from its chat"))))
 
-(defun hermes-work--action-current-p (owner row)
-  "Return non-nil if OWNER and exact ROW remain actionable after input."
-  (eq row (hermes-work--target owner (plist-get row :key))))
+(defun hermes-work--action-current-p (owner row &optional presentation)
+  "Return non-nil if OWNER and exact ROW remain actionable after input.
+With PRESENTATION, it must still show OWNER's work too."
+  (and (or (null presentation) (hermes-work--presentation-current-p presentation))
+       (eq row (hermes-work--target owner (plist-get row :key)))))
 
 (defun hermes-work--row-current-p (owner row)
   "Return non-nil if exact ROW is in attached OWNER's roster."
@@ -921,10 +954,8 @@ The row must be in the backend roster; live events may have finished it."
 
 (defun hermes-work--control-current-p (operation)
   "Return non-nil if OPERATION retains its original presentation authority."
-  (let ((owner (plist-get operation :owner)))
-    (and (eq (plist-get operation :view) (plist-get owner :view))
-         (hermes-work--view-p owner)
-         (hermes-work--row-current-p owner (plist-get operation :row)))))
+  (and (hermes-work--presentation-current-p (plist-get operation :presentation))
+       (hermes-work--row-current-p (plist-get operation :owner) (plist-get operation :row))))
 
 (defun hermes-work--control-finish (operation text)
   "Settle exact OPERATION once and report TEXT without touching any view."
@@ -971,17 +1002,18 @@ The row must be in the backend roster; live events may have finished it."
              (_ (format "Hermes: process kill failed: %s"
                         (or (hermes-transport--get result 'error) "unknown error")))))))
 
-(defun hermes-work--control (owner row action &optional text)
+(defun hermes-work--control (presentation owner row action &optional text)
   "Request ACTION, `interrupt', `steer' or `kill', for OWNER's exact ROW.
-Steering sends TEXT.  The backend checks control generation and process
-ownership; roster visibility never grants them."
-  (let* ((operation (list :owner owner :row row :view (plist-get owner :view)
+PRESENTATION is the list or detail the command started from; retiring it
+retires the request.  Steering sends TEXT.  The backend checks control
+generation and process ownership; roster visibility never grants them."
+  (let* ((operation (list :owner owner :row row :presentation presentation
                           :id (copy-sequence (plist-get row :id))
                           :session (copy-sequence (plist-get owner :runtime))
                           :action (symbol-name action) :sent nil :settled nil))
          (current (lambda ()
                     (and (not (plist-get operation :settled))
-                         (hermes-work--action-current-p owner row)
+                         (hermes-work--action-current-p owner row presentation)
                          (or (not (eq action 'steer)) (plist-get row :accepting-steer)))))
          ;; This predicate runs only at the transport's final send boundary,
          ;; after authentication.  A send attempt can have an uncertain outcome.
@@ -1022,27 +1054,30 @@ ownership; roster visibility never grants them."
 (defun hermes-work-interrupt ()
   "Interrupt the worker at point, or kill the process at point, after confirming."
   (interactive nil hermes-work-mode hermes-work-detail-mode)
-  (let ((owner hermes-work--owner) (key (hermes-work--key-at-point)))
+  (let ((owner hermes-work--owner) (key (hermes-work--key-at-point))
+        (presentation (hermes-work--presentation)))
     (if (eq (car-safe key) 'process)
-        (let ((row (or (hermes-work--target owner key)
+        (let ((row (or (and (hermes-work--presentation-current-p presentation)
+                            (hermes-work--target owner key))
                        (user-error "No current running process; refresh or reopen from its chat"))))
           (when (yes-or-no-p (format "Kill process `%s'? "
                                      (hermes-work--short (plist-get row :command))))
-            (hermes-work--control owner row 'kill)))
+            (hermes-work--control presentation owner row 'kill)))
       (let ((row (hermes-work--selected-worker)))
         (when (yes-or-no-p (format "Interrupt worker %s in this session? "
                                    (plist-get row :id)))
-          (hermes-work--control owner row 'interrupt))))))
+          (hermes-work--control presentation owner row 'interrupt))))))
 
 (defun hermes-work-steer ()
   "Queue steering text for the selected worker, without claiming delivery."
   (interactive nil hermes-work-mode hermes-work-detail-mode)
-  (let ((owner hermes-work--owner) (row (hermes-work--selected-worker)))
+  (let ((owner hermes-work--owner) (presentation (hermes-work--presentation))
+        (row (hermes-work--selected-worker)))
     (unless (plist-get row :accepting-steer)
       (user-error "Worker is not accepting steering"))
     (let ((text (read-string (format "Steer “%s”: " (hermes-work--short (plist-get row :goal))))))
       (unless (string-empty-p (string-trim text))
-        (hermes-work--control owner row 'steer text)))))
+        (hermes-work--control presentation owner row 'steer text)))))
 
 (defun hermes-work-tail ()
   "Display the selected worker's bounded live tail, without inferring a path.
@@ -1433,7 +1468,10 @@ details, and \\[hermes-work-interrupt] interrupts a worker or kills a process."
   "Read one observed worker or process; the roster refreshes it live."
   (setq-local truncate-lines nil)
   (visual-line-mode 1)
-  (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-refresh))))
+  (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-refresh)))
+  (add-hook 'after-set-visited-file-name-hook #'hermes-work--detail-detach t t)
+  (add-hook 'kill-buffer-hook #'hermes-work--detail-detach nil t)
+  (add-hook 'change-major-mode-hook #'hermes-work--detail-detach nil t))
 
 ;;;###autoload
 (defun hermes-chat-work ()

@@ -4551,5 +4551,70 @@ session is not restarted, and the new owner polls with the new signature."
           (when (buffer-live-p (plist-get owner :view))
             (kill-buffer (plist-get owner :view))))))))
 
+(defun hermes-test--retire-detail (change)
+  "Apply native CHANGE to the current detail buffer."
+  (pcase change
+    ('mode (fundamental-mode))
+    ('kill (kill-buffer (current-buffer)))
+    ('association
+     (set-visited-file-name (expand-file-name "detail-notes" temporary-file-directory) t)
+     (set-buffer-modified-p nil)
+     (set-visited-file-name nil t))))
+
+(ert-deftest hermes-work-detail-controls-retire-with-presentation ()
+  "Detail steer, interrupt and kill never dispatch after their detail retires.
+Retirement during input refuses; during an authentication wait it settles
+the operation unsent."
+  (dolist (action '(steer interrupt kill))
+    (dolist (change '(mode kill association))
+      (dolist (phase '(input auth))
+        (hermes-test--with-outline
+          (goto-char (hermes-work--find-line (if (eq action 'kill) '(process . "proc")
+                                               '(delegate . "child"))))
+          (execute-kbd-macro (kbd "RET"))
+          (let* ((detail (current-buffer)) (ready (hermes--promise-make)) entered messages
+                 (method (pcase action ('steer "subagent.steer") ('interrupt "subagent.interrupt")
+                                ('kill "process.kill")))
+                 (read (lambda (&rest _)
+                         (setq entered t)
+                         (when (eq phase 'input) (hermes-test--retire-detail change))
+                         (if (eq action 'steer) "Exact" t))))
+            (when (eq phase 'auth)
+              (setf (hermes-dashboard-transport-client-ready-p client) nil
+                    (hermes-dashboard-transport-client-ready-promise client) ready))
+            (cl-letf (((symbol-function 'yes-or-no-p) read)
+                      ((symbol-function 'read-string) read)
+                      ((symbol-function 'message)
+                       (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+              (execute-kbd-macro (if (eq action 'steer) "s" "k"))
+              (should entered)
+              (when (eq phase 'auth)
+                (should-not frames)
+                (with-current-buffer detail (hermes-test--retire-detail change))
+                (should (seq-some (lambda (text) (string-match-p "not sent" text)) messages))
+                (setf (hermes-dashboard-transport-client-ready-p client) t)
+                (hermes--promise-resolve ready t)))
+            (should-not (seq-some (lambda (wire)
+                                    (equal method (hermes-transport--get
+                                                   (hermes-dashboard-transport--decode-frame wire)
+                                                   'method)))
+                                  frames))
+            (should-not (plist-get owner :controls))
+            (when (buffer-live-p detail)
+              (with-current-buffer detail (set-buffer-modified-p nil)))))))))
+
+(ert-deftest hermes-work-detail-controls-survive-list-retirement ()
+  "A detail's own control does not depend on the list it was opened from."
+  (hermes-test--with-outline
+    (goto-char (hermes-work--find-line '(delegate . "child")))
+    (execute-kbd-macro (kbd "RET"))
+    (kill-buffer view)
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "Exact")))
+      (execute-kbd-macro "s"))
+    (should (= (length frames) 1))
+    (should (equal (hermes-transport--get (hermes-dashboard-transport--decode-frame (car frames))
+                                          'method)
+                   "subagent.steer"))))
+
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
