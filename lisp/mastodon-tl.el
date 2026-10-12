@@ -1794,19 +1794,21 @@ LENGTH is of the longest option, for formatting."
                          "\n")
               "\n"
               (propertize
-               (cond (.voters_count ; sometimes it is nil
-                      (format "%s %s | " .voters_count
-                              (if (= .voters_count 1) "person" "people")))
-                     (.vote_count
-                      (format "%s votes | " .vote_count))
-                     (t ""))
+               (concat
+                (cond (.voters_count ; sometimes it is nil
+                       (format "%s %s | " .voters_count
+                               (if (= .voters_count 1) "person" "people")))
+                      (.vote_count
+                       (format "%s votes | " .vote_count))
+                      (t ""))
+                (format "%s choice | "
+                        (if .multiple "multi" "single"))
+                (if (eq .expired :json-false)
+                    (if (eq .expires_at nil)
+                        ""
+                      (mastodon-tl--format-poll-expiry .expires_at))
+                  "Poll expired."))
                'face 'mastodon-toot-docs-face)
-              (let ((str (if (eq .expired :json-false)
-                             (if (eq .expires_at nil)
-                                 ""
-                               (mastodon-tl--format-poll-expiry .expires_at))
-                           "Poll expired.")))
-                (propertize str 'face 'mastodon-toot-docs-face))
               "\n"))))
 
 (defconst mastodon-tl--time-units
