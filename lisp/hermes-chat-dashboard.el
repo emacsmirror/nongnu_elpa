@@ -501,11 +501,41 @@ Report uncertainty for dispatched worker controls whose receipts are lost."
     ;; renderer checks the exact view cross-link, even after buffer reuse.
     (run-at-time 0 nil render owner)))
 
+(defconst hermes-chat--work-cadence 5
+  "Seconds between ordinary observation cycles; also the first retry delay.")
+
+(defconst hermes-chat--work-retry-cap 60
+  "Maximum seconds a failing observation source waits before retrying.")
+
+(defvar hermes-chat--work-clock #'float-time
+  "Function returning the current time in seconds for retry deadlines.")
+
 (defun hermes-chat--work-source-eligible-p (owner source)
   "Return non-nil when OWNER's SOURCE is bound and not paused."
   (let ((binding (plist-get owner :runtime)))
     (and (stringp binding) (not (string-empty-p binding))
          (not (plist-get (plist-get owner source) :paused)))))
+
+(defun hermes-chat--work-source-due-p (owner source)
+  "Return non-nil when OWNER's eligible SOURCE has no pending retry backoff."
+  (and (hermes-chat--work-source-eligible-p owner source)
+       (<= (or (plist-get (plist-get owner source) :retry-at) 0)
+           (funcall hermes-chat--work-clock))))
+
+(defun hermes-chat--work-retry-delay (failures)
+  "Return the backoff in seconds after FAILURES consecutive failures."
+  (min hermes-chat--work-retry-cap
+       (* hermes-chat--work-cadence (expt 2 (1- (min (max failures 1) 8))))))
+
+(defun hermes-chat--work-next-delay (owner)
+  "Return seconds until OWNER's next cycle: the cadence or the earliest retry."
+  (let* ((now (funcall hermes-chat--work-clock))
+         (due (delq nil (mapcar (lambda (source)
+                                  (and (hermes-chat--work-source-eligible-p owner source)
+                                       (or (plist-get (plist-get owner source) :retry-at)
+                                           now)))
+                                '(:delegates :processes)))))
+    (max hermes-chat--work-cadence (- (if due (apply #'min due) now) now))))
 
 (defun hermes-chat--work-eligible-p (owner)
   "Return non-nil when OWNER can request either observation source."
@@ -649,16 +679,31 @@ Never restart, resume, or change the chat's input."
              (and published (eq (plist-get context :source) :delegates)
                   :processes))))))))
 
-(defun hermes-chat--work-failed (owner context)
-  "Pause OWNER's source after failure of CONTEXT, retaining only stale rows."
+(defun hermes-chat--work-rejection-reason (message)
+  "Return a permanent pause reason for rejection MESSAGE, or nil if transient.
+Only JSON-RPC method-not-found proves the backend lacks the inventory."
+  (and (stringp message) (> (length message) 0)
+       (eql (get-text-property 0 'hermes-rpc-code message) -32601)
+       "Backend lacks this inventory; press g to retry"))
+
+(defun hermes-chat--work-failed (owner context &optional permanent)
+  "Settle OWNER's source after failure of CONTEXT, retaining only stale rows.
+With PERMANENT reason, pause automatic refresh until an explicit retry.
+Otherwise retry on the cadence after bounded per-source exponential backoff."
   (when (and (hermes-chat--work-current-p owner)
              (eq context (plist-get owner :request)))
     (hermes-dashboard-transport-cancel-owner-requests (plist-get owner :client) context)
-    (hermes-chat--work-settle
-     owner context
-     (list :rows (plist-get (plist-get owner (plist-get context :source)) :rows)
-           :coverage 'stale :paused t :reason "Refresh failed; press g to retry"
-           :observed (plist-get (plist-get owner (plist-get context :source)) :observed)))))
+    (let* ((previous (plist-get owner (plist-get context :source)))
+           (failures (1+ (or (plist-get previous :failures) 0)))
+           (delay (hermes-chat--work-retry-delay failures)))
+      (hermes-chat--work-settle
+       owner context
+       (list :rows (plist-get previous :rows)
+             :coverage 'stale :paused (and permanent t) :failures failures
+             :retry-at (and (not permanent) (+ (funcall hermes-chat--work-clock) delay))
+             :reason (or permanent
+                         (format "Refresh failed; retrying in %ds (g retries now)" delay))
+             :observed (plist-get previous :observed))))))
 
 (defun hermes-chat--work-received (owner context result)
   "Validate RESULT for OWNER and settle CONTEXT without affecting the turn."
@@ -671,7 +716,9 @@ Never restart, resume, or change the chat's input."
                  (hermes-transport-work-processes result))
              (error nil))))
       (if (not snapshot)
-          (hermes-chat--work-failed owner context)
+          ;; A malformed answer is a contract problem, not a transient one.
+          (hermes-chat--work-failed
+           owner context "Unexpected inventory response; press g to retry")
         (when (eq (plist-get context :source) :delegates)
           ;; Keep unchanged worker occurrences across cadence reads.  Changed or
           ;; disappeared rows retire pending input and tail authority.
@@ -696,8 +743,8 @@ Never restart, resume, or change the chat's input."
     (cond
      ((not (and source (hermes-chat--work-eligible-p owner)))
       (setf (plist-get owner :cycle) nil)
-      (hermes-chat--work-schedule owner 5))
-     ((not (hermes-chat--work-source-eligible-p owner source))
+      (hermes-chat--work-schedule owner (hermes-chat--work-next-delay owner)))
+     ((not (hermes-chat--work-source-due-p owner source))
       (hermes-chat--work-stage owner cycle (and (eq source :delegates) :processes)))
      (t (hermes-chat--work-request owner cycle source)))))
 
@@ -720,8 +767,10 @@ Never restart, resume, or change the chat's input."
                          (plist-get owner :client)
                          :resolve (lambda (result)
                                     (hermes-chat--work-received owner context result))
-                         :reject (lambda (_message)
-                                   (hermes-chat--work-failed owner context))
+                         :reject (lambda (message)
+                                   (hermes-chat--work-failed
+                                    owner context
+                                    (hermes-chat--work-rejection-reason message)))
                          (list :session-id (plist-get owner :runtime)))))
           (when (and (hermes-chat--work-current-p owner)
                      (eq context (plist-get owner :request)))
@@ -739,7 +788,8 @@ Never restart, resume, or change the chat's input."
 
 (defun hermes-chat-work-refresh ()
   "Refresh this chat's observed work; rearm a paused source when idle.
-Repeated refresh while busy coalesces; it does not authorize a later retry."
+Also retry a backing-off source now and reset its backoff.  Repeated refresh
+while busy coalesces; it does not authorize a later retry."
   (interactive nil hermes-chat-mode)
   (when-let* ((owner hermes-chat--work-owner))
     (when (and (hermes-chat--work-current-p owner)
@@ -747,6 +797,8 @@ Repeated refresh while busy coalesces; it does not authorize a later retry."
       (dolist (source '(:delegates :processes))
         (when (plist-get owner source)
           (setf (plist-get (plist-get owner source) :paused) nil
+                (plist-get (plist-get owner source) :failures) nil
+                (plist-get (plist-get owner source) :retry-at) nil
                 (plist-get (plist-get owner source) :coverage) 'stale)))
       (hermes-chat--work-cancel-timer owner)
       (let ((cycle (list nil)) published)
