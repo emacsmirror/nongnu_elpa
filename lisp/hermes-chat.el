@@ -2943,11 +2943,21 @@ Prefer a binding that also works mid-draft over a self-inserting key."
                          (hermes-chat--placeholder-string))))
       (overlay-put overlay 'after-string nil))))
 
+(defun hermes-chat--placeholder-retire ()
+  "Delete the composer hint overlay this chat lifetime owns."
+  (when (overlayp hermes-chat--placeholder-overlay)
+    (delete-overlay hermes-chat--placeholder-overlay))
+  (setq hermes-chat--placeholder-overlay nil)
+  (remove-hook 'after-change-functions #'hermes-chat--placeholder-update t))
+
 (defun hermes-chat--placeholder-activate ()
-  "Install the empty-composer hint in the current chat."
-  (unless (overlayp hermes-chat--placeholder-overlay)
-    (setq hermes-chat--placeholder-overlay (make-overlay (point-max) (point-max)))
-    (overlay-put hermes-chat--placeholder-overlay 'hermes-chat-placeholder t))
+  "Install the empty-composer hint in the current chat.
+The overlay is retired when the major mode changes, including re-entry
+into `hermes-chat-mode', so each activation owns exactly one hint."
+  (hermes-chat--placeholder-retire)
+  (setq hermes-chat--placeholder-overlay (make-overlay (point-max) (point-max)))
+  (overlay-put hermes-chat--placeholder-overlay 'hermes-chat-placeholder t)
+  (add-hook 'change-major-mode-hook #'hermes-chat--placeholder-retire nil t)
   (add-hook 'after-change-functions #'hermes-chat--placeholder-update t t)
   (hermes-chat--placeholder-update))
 

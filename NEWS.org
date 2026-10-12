@@ -2,9 +2,10 @@
 
 * Unreleased
 
-- Approval readers show the tool description and the full command, and take
-  one-key answers (=o=nce, =s=ession, =a=lways, =d=eny; =q= or =C-g= leaves
-  the request pending).  Very long commands open in a separate window while
+- Approval readers show the tool description and the full command.  When
+  opened explicitly they take one-key answers (=o=nce, =s=ession, =a=lways,
+  =d=eny; =q= or =C-g= leaves the request pending); a reader that opens
+  automatically still requires submitting a choice with =RET=.  Very long commands open in a separate window while
   reading.  Clarification readers use the question as their prompt.  A
   pending prompt's transcript line has an =[Answer]= button to reopen it.
 - Chat discoverability: =?= opens the actions menu from the transcript or an

@@ -1093,48 +1093,81 @@ when the command is too long for the echo area."
             "Decision")))
 
 (defun hermes-chat--approval-detail-buffer (prompt)
-  "Return a buffer showing approval PROMPT's long command in full, or nil."
+  "Return a new buffer showing approval PROMPT's long command, or nil.
+The buffer is always freshly generated, so a foreign buffer that happens
+to carry the same name is never adopted, erased or killed; the caller owns
+the returned object and must kill exactly it."
   (let ((lines (hermes-chat--approval-command-lines prompt)))
     (when (> (length lines) hermes-chat--approval-inline-lines)
-      (let ((buffer (get-buffer-create " *Hermes approval command*")))
-        (with-current-buffer buffer
-          (let ((inhibit-read-only t))
-            (erase-buffer)
-            (insert (hermes-chat--approval-heading prompt) "\n\n"
-                    (string-join lines "\n") "\n"))
-          (setq buffer-read-only t)
-          (goto-char (point-min)))
+      (let ((buffer (generate-new-buffer " *Hermes approval command*" t))
+            done)
+        (unwind-protect
+            (with-current-buffer buffer
+              (insert (hermes-chat--approval-heading prompt) "\n\n"
+                      (string-join lines "\n") "\n")
+              (setq buffer-read-only t)
+              (goto-char (point-min))
+              (setq done t))
+          (unless done
+            (kill-buffer buffer)))
         buffer))))
 
-(defun hermes-chat--read-approval-choice (prompt choices)
-  "Read one of CHOICES for approval PROMPT, showing its command."
-  (let* ((detail (hermes-chat--approval-detail-buffer prompt))
-         (window (and detail (not noninteractive)
-                      (display-buffer
-                       detail '(display-buffer-below-selected
-                                (window-height . fit-window-to-buffer)
-                                (inhibit-same-window . t))))))
-    (unwind-protect
-        (read-multiple-choice
-         (hermes-chat--approval-reader-prompt prompt detail)
-         (mapcar (lambda (choice) (seq-take choice 3)) choices))
-      (when (window-live-p window)
-        (quit-restore-window window 'kill))
-      (when (buffer-live-p detail)
-        (kill-buffer detail)))))
+(defun hermes-chat--read-approval-submitted (text candidates)
+  "Read one of approval CANDIDATES after TEXT, requiring explicit submission.
+CANDIDATES are (LABEL . VALUE) pairs.  Unlike a one-key reader, nothing
+is decided until the user submits a candidate with RET, so a stray
+keystroke meant for the composer cannot authorise anything; an empty
+submission picks the non-deciding \"Cancel / ignore\" candidate."
+  (let* ((default (or (car (rassoc nil candidates)) (caar candidates)))
+         (label (completing-read (concat text ": ")
+                                 (mapcar #'car candidates) nil t nil nil
+                                 default))
+         (candidate (assoc label candidates)))
+    (unless candidate
+      (user-error "Unknown approval decision: %s" label))
+    (cdr candidate)))
 
-(defun hermes-chat--read-approval-response (prompt)
-  "Read an approval response for PROMPT with one-key answers.
-The reader names the tool description and the full command.  `q' or
-\\[keyboard-quit] leaves the request pending without a decision.  An
-automatic prompt first discards type-ahead meant for the composer."
-  (let* ((choices (hermes-chat--approval-read-choices prompt))
-         (_ (when hermes-chat--auto-prompting-p (discard-input)))
-         (answer (hermes-chat--read-approval-choice prompt choices))
+(defun hermes-chat--read-approval-one-key (text choices)
+  "Read one of approval CHOICES after TEXT with a single key."
+  (let* ((answer (read-multiple-choice
+                  text (mapcar (lambda (choice) (seq-take choice 3)) choices)))
          (choice (assq (car answer) choices)))
     (unless choice
       (user-error "Unknown approval decision: %s" (cadr answer)))
-    (or (nth 3 choice) (keyboard-quit))))
+    (nth 3 choice)))
+
+(defun hermes-chat--read-approval-response (prompt)
+  "Read an approval response for PROMPT, showing what it approves.
+The reader names the tool description and the full command; a very long
+command is shown in full in a separate window while reading.  An
+automatically opened reader discards type-ahead and requires an explicit
+RET submission, so typing meant for the composer cannot authorise a
+command.  An explicitly invoked reader takes one-key answers.  `q',
+\"Cancel / ignore\" or \\[keyboard-quit] leave the request pending."
+  (let ((auto hermes-chat--auto-prompting-p)
+        detail window value)
+    (when auto
+      (discard-input))
+    (unwind-protect
+        (progn
+          (setq detail (hermes-chat--approval-detail-buffer prompt))
+          (when (and detail (not noninteractive))
+            (setq window (display-buffer
+                          detail '(display-buffer-below-selected
+                                   (window-height . fit-window-to-buffer)
+                                   (inhibit-same-window . t)))))
+          (let ((text (hermes-chat--approval-reader-prompt prompt detail)))
+            (setq value
+                  (if auto
+                      (hermes-chat--read-approval-submitted
+                       text (hermes-chat--approval-response-candidates prompt))
+                    (hermes-chat--read-approval-one-key
+                     text (hermes-chat--approval-read-choices prompt))))))
+      (when (and (window-live-p window) (eq (window-buffer window) detail))
+        (quit-restore-window window))
+      (when (buffer-live-p detail)
+        (kill-buffer detail)))
+    (or value (keyboard-quit))))
 
 (defun hermes-chat--terminal-read-text (entries &optional start count)
   "Return a JSON terminal-read snapshot for chat transcript ENTRIES.

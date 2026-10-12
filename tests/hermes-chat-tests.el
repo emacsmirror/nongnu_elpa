@@ -1218,6 +1218,29 @@
           (hermes-chat--placeholder-update)
           (should-not (funcall hint)))))))
 
+(defun hermes-test--placeholder-overlays ()
+  "Return the composer hint overlays in the current buffer."
+  (seq-filter (lambda (overlay) (overlay-get overlay 'hermes-chat-placeholder))
+              (overlays-in (point-min) (point-max))))
+
+(ert-deftest hermes-chat-composer-placeholder-retires-with-mode ()
+  "Each chat mode activation owns one hint; leaving the mode removes it."
+  (hermes-test-with-chat-buffer
+    (let ((old hermes-chat--placeholder-overlay))
+      (should (equal (hermes-test--placeholder-overlays) (list old)))
+      (hermes-chat-mode)
+      (should-not (overlay-buffer old))
+      (should (equal (hermes-test--placeholder-overlays)
+                     (list hermes-chat--placeholder-overlay)))
+      (hermes-chat-mode)
+      (should (= (length (hermes-test--placeholder-overlays)) 1))
+      (let ((current hermes-chat--placeholder-overlay))
+        (text-mode)
+        (should-not (overlay-buffer current))
+        (should-not (hermes-test--placeholder-overlays))
+        (should-not (memq #'hermes-chat--placeholder-update
+                          after-change-functions))))))
+
 (ert-deftest hermes-chat-detail-toggles-hide-bodies-in-place ()
   "Global toggles hide expanded tool and reasoning bodies without moving point."
   (hermes-test-with-chat-buffer

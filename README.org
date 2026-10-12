@@ -65,9 +65,12 @@ always opens a new chat buffer:
   reasoning (=E=) in the whole chat at once, without moving point, and
   expands (=+=) or collapses (=-=) every disclosure.  Hiding wins over an
   entry's own expansion until you expand an entry of that kind by hand.
-- Approval prompts name the tool and show the full command, then take one
-  key: =o=nce, =s=ession, =a=lways or =d=eny.  =q= or =C-g= leaves the
-  request pending.  Clarification readers ask the actual question.  While a
+- Approval prompts name the tool and show the full command.  Opened with
+  =C-c C-a= or the =[Answer]= button they take one key: =o=nce, =s=ession,
+  =a=lways or =d=eny; =q= or =C-g= leaves the request pending.  An approval
+  that opens by itself instead needs a choice submitted with =RET= (empty
+  input leaves it pending), so typing meant for the composer cannot
+  approve anything.  Clarification readers ask the actual question.  While a
   prompt is pending, its transcript line keeps an =[Answer]= button that
   reopens the reader.
 - Each chat pins its resolved spawned or remote transport mode.  A spawned
