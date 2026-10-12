@@ -4278,17 +4278,17 @@ session is not restarted, and the new owner polls with the new signature."
 
 (ert-deftest hermes-work-outline-tree-order-and-folds ()
   "Workers render depth first under their parents; folds hide subtrees."
-  (let* ((rows (list (list :key '(delegate . "c") :id "c" :kind 'delegate :state 'running :parent "b" :goal "C")
+  (let* ((rows (list (list :key '(delegate . "c") :id "c" :kind 'delegate :state 'running :parent "b" :goal "C"
+                           :tools '(("read_file" . "x.el")) :tool-count 3)
                      (list :key '(delegate . "a") :id "a" :kind 'delegate :state 'running :goal "A")
                      (list :key '(delegate . "d") :id "d" :kind 'delegate :state 'queued :parent "a" :goal "D")
                      (list :key '(delegate . "b") :id "b" :kind 'delegate :state 'running :parent "a" :goal "B")
                      (list :key '(delegate . "e") :id "e" :kind 'delegate :state 'completed :parent "gone" :goal "E")))
          (roster (list :agents (hermes-chat--work-tree rows)
                        :processes (list (list :key '(process . "p") :id "p" :kind 'process
-                                              :state 'running :command "make" :last-line "ok"))))
-         (activity '(("c" :tools (("read_file" . "x.el")) :tool-count 3))))
+                                              :state 'running :command "make" :last-line "ok")))))
     (should (equal (hermes-test--outline-keys
-                    (hermes-work--outline roster activity '(:observed t) 100 80))
+                    (hermes-work--outline roster '(:observed t) 100 80))
                    '(((section . agents) section 0)
                      ((delegate . "a") heading 0)
                      ((delegate . "d") heading 1) ((delegate . "d") activity 2)
@@ -4298,30 +4298,46 @@ session is not restarted, and the new owner polls with the new signature."
                      (nil blank 0)
                      ((section . processes) section 0)
                      ((process . "p") heading 0) ((process . "p") activity 1))))
-    (let ((lines (hermes-work--outline roster activity '(:folded ((delegate . "b"))) 100 80)))
+    (let ((lines (hermes-work--outline roster '(:folded ((delegate . "b"))) 100 80)))
       (should-not (assoc '(delegate . "c") (hermes-test--outline-keys lines)))
       (should (string-match-p "B \\+1" (substring-no-properties
                                        (plist-get (seq-find (lambda (l) (equal (plist-get l :key) '(delegate . "b"))) lines)
                                                   :text)))))
-    (let ((lines (hermes-work--outline roster activity '(:folded ((section . agents))) 100 80)))
+    (let ((lines (hermes-work--outline roster '(:folded ((section . agents))) 100 80)))
       (should (equal (mapcar #'car (hermes-test--outline-keys lines))
                      '((section . agents) nil (section . processes) (process . "p") (process . "p")))))
     (should (equal (substring-no-properties
-                    (plist-get (car (hermes-work--outline nil nil '(:observed t) 0 80)) :text))
+                    (plist-get (car (hermes-work--outline nil '(:observed t) 0 80)) :text))
                    "No workers in this chat yet."))))
 
 (ert-deftest hermes-work-outline-activity-folds-tool-events ()
-  "Tool and completion events of snapshot-only workers feed cards; others are ignored."
-  (let* ((a nil)
-         (a (hermes-chat--work-apply-activity
-             a '(:event "subagent.tool" :subagent-id "w" :name "read_file" :preview "x.el" :tool-count 2) 10))
-         (a (hermes-chat--work-apply-activity
-             a '(:event "subagent.complete" :subagent-id "w" :status "failed" :content "Boom") 20)))
+  "One fold records tools and outcomes, also of snapshot-only workers."
+  (let* ((a (hermes-chat--work-apply-event
+             nil '(:event "subagent.tool" :subagent-id "w" :name "read_file"
+                          :preview "x.el" :tool-count 2)
+             10))
+         (a (hermes-chat--work-apply-event
+             a '(:event "subagent.complete" :subagent-id "w" :status "failed" :content "Boom")
+             20)))
     (should (equal (cdr (assoc "w" a))
-                   '(:tools (("read_file" . "x.el")) :tool-count 2 :seen 10 :finished 20 :error "Boom")))
-    (should (eq a (hermes-chat--work-apply-activity a '(:event "message.delta" :content "x") 30)))
+                   '(:seen 20 :state failed :finished 20 :row nil :goal nil
+                           :tool-count 2 :tools (("read_file" . "x.el")) :error "Boom")))
+    (should (eq a (hermes-chat--work-apply-event a '(:event "message.delta" :content "x") 30)))
+    ;; A stateless entry keeps the snapshot's state and adds its tools.
+    (let* ((b (hermes-chat--work-apply-event
+               nil '(:event "subagent.tool" :subagent-id "s" :name "grep") 10))
+           (row (car (hermes-chat--work-merge-agents
+                      b '((:id "s" :state running :last-tool "old")) 10))))
+      (should-not (plist-get (cdr (assoc "s" b)) :state))
+      (should (eq (plist-get row :state) 'running))
+      (should (equal (hermes-chat--work-last-tool row) '("grep")))
+      ;; It is not an event-only worker, and it lives while listed.
+      (should-not (hermes-chat--work-merge-agents b nil 10))
+      (should (hermes-chat--work-prune b '((:id "s")) 500))
+      (should-not (hermes-chat--work-prune b nil 500)))
+    (should (equal (hermes-chat--work-last-tool '(:last-tool "terminal")) '("terminal")))
     (dotimes (i 10)
-      (setq a (hermes-chat--work-apply-activity
+      (setq a (hermes-chat--work-apply-event
                a (list :event "subagent.tool" :subagent-id "w" :name (format "t%d" i)) 30)))
     (should (= 8 (length (plist-get (cdr (assoc "w" a)) :tools))))
     (should (equal "t9" (car (car (last (plist-get (cdr (assoc "w" a)) :tools))))))))

@@ -168,24 +168,6 @@ Open Workers from the owning chat to request a session-qualified interrupt."
   (and (stringp model) (not (member model '("" "—")))
        (replace-regexp-in-string "\\`claude-\\|\\(-[0-9][0-9.-]*\\)+\\'" "" model)))
 
-(defun hermes-work--agent (row activity)
-  "Return worker ROW with its ACTIVITY entry merged in.
-Event tool counts and tools are newer than the snapshot's."
-  (let* ((act (cdr (assoc (plist-get row :id) activity)))
-         (tools (plist-get act :tools)))
-    (append (list :tools tools
-                  :tool-count (if (and (plist-get act :tool-count) (plist-get row :tool-count))
-                                  (max (plist-get act :tool-count) (plist-get row :tool-count))
-                                (or (plist-get act :tool-count) (plist-get row :tool-count)
-                                    (and tools (length tools))))
-                  :last-tool (or (car (last tools))
-                                 (and (plist-get row :last-tool)
-                                      (list (plist-get row :last-tool))))
-                  :started (or (plist-get row :started) (plist-get act :seen))
-                  :finished (plist-get act :finished)
-                  :summary (plist-get act :summary) :error (plist-get act :error))
-            row)))
-
 (defun hermes-work--elapsed (row now)
   "Return ROW's elapsed seconds at NOW, or nil when unknown."
   (or (plist-get row :uptime)
@@ -297,7 +279,7 @@ HIDDEN counts descendants folded under it."
   (let* ((key (plist-get row :key))
          (state (hermes-work--state row))
          (meta (hermes-work--agent-meta row now))
-         (tool (plist-get row :last-tool))
+         (tool (hermes-chat--work-last-tool row))
          (card (member key (plist-get view :cards))))
     (append
      (list (hermes-work--heading
@@ -390,13 +372,12 @@ HIDDEN counts descendants folded under it."
            (propertize title 'face 'hermes-work-section) "  "
            (propertize (hermes-work--counts-text rows) 'face 'hermes-work-meta))))
 
-(defun hermes-work--outline (roster activity view now width)
-  "Return the outline lines for ROSTER with ACTIVITY under VIEW at NOW.
+(defun hermes-work--outline (roster view now width)
+  "Return the outline lines for ROSTER under VIEW at NOW.
 VIEW is a plist of :cards, open card keys, :folded, folded section and
 subtree keys, and :observed, non-nil once any roster was read.  Lines fit
 WIDTH columns.  The view only inserts these lines."
-  (let* ((agents (mapcar (lambda (row) (hermes-work--agent row activity))
-                         (plist-get roster :agents)))
+  (let* ((agents (plist-get roster :agents))
          (processes (plist-get roster :processes))
          (depths (hermes-work--depths agents))
          (folded (plist-get view :folded))
@@ -609,7 +590,7 @@ the previous one, then the same line number."
                                      (propertize "Detached: last known workers; reopen from the chat."
                                                  'face 'warning))))
           (hermes-work--outline
-           roster (plist-get owner :activity)
+           roster
            (list :cards hermes-work--cards :folded hermes-work--folded
                  :observed (or (plist-get owner :delegates) (plist-get owner :processes)))
            now hermes-work--width))))
@@ -618,7 +599,7 @@ the previous one, then the same line number."
                    (hermes-browser--buffer-mode-p buffer 'hermes-work-detail-mode))
           (with-current-buffer buffer
             (when (hermes-buffer--owned-p 'hermes-work-detail-mode)
-              (hermes-work--detail-render owner roster now))))))))
+              (hermes-work--detail-render roster now))))))))
 
 (defun hermes-work--changed ()
   "Repaint the current chat's observation list after a local state change."
@@ -818,7 +799,8 @@ their card."
        (concat
         (hermes-work--detail-field "Parent" (if parent (plist-get parent :goal) "the chat"))
         (if (plist-get row :accepting-steer) "" (hermes-work--detail-field "Steering" "closed"))
-        (when-let* ((tool (and (eq (plist-get row :state) 'running) (plist-get row :last-tool))))
+        (when-let* ((tool (and (eq (plist-get row :state) 'running)
+                               (hermes-chat--work-last-tool row))))
           (concat (funcall title "Now")
                   (propertize (car tool) 'face 'hermes-work-tool) " "
                   (propertize (or (cdr tool) "") 'face 'hermes-work-activity) "\n"))
@@ -864,12 +846,11 @@ their card."
                          '(("s" . "steer") ("k" . "interrupt") ("t" . "tail") ("?" . "more")))
                        "  "))))
 
-(defun hermes-work--detail-render (owner roster now)
-  "Repaint this detail buffer from OWNER's ROSTER at NOW, keeping place."
-  (let* ((agents (mapcar (lambda (row) (hermes-work--agent row (plist-get owner :activity)))
-                         (plist-get roster :agents)))
-         (row (hermes-work--find hermes-work--detail-key
-                                 (append agents (plist-get roster :processes)))))
+(defun hermes-work--detail-render (roster now)
+  "Repaint this detail buffer from ROSTER at NOW, keeping place."
+  (let ((row (hermes-work--find hermes-work--detail-key
+                                (append (plist-get roster :agents)
+                                        (plist-get roster :processes)))))
     (if (not row)
         (setq header-line-format
               (concat (car (split-string (or (format "%s" header-line-format) "") " · "))
@@ -879,7 +860,7 @@ their card."
        (lambda ()
          (let ((inhibit-read-only t) (inhibit-modification-hooks t))
            (erase-buffer)
-           (insert (hermes-work--detail-text row agents now))))))))
+           (insert (hermes-work--detail-text row (plist-get roster :agents) now))))))))
 
 (defun hermes-work--detail-buffer (owner key)
   "Return OWNER's one detail buffer for KEY, creating it once."
@@ -910,7 +891,7 @@ their card."
       (let ((buffer (hermes-work--detail-buffer owner key))
             (now (float-time)))
         (with-current-buffer buffer
-          (hermes-work--detail-render owner (hermes-chat--work-roster owner now) now))
+          (hermes-work--detail-render (hermes-chat--work-roster owner now) now))
         (pop-to-buffer buffer)))
      ((eq (get-text-property (line-beginning-position) 'hermes-work-line) 'section)
       (hermes-work-toggle))

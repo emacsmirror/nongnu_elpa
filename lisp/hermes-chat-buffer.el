@@ -3059,31 +3059,48 @@ progress events never create a worker, and late queueing never demotes one."
   "Return EVENTS with ID's entry replaced by ENTRY, newest first."
   (cons (cons id entry) (assoc-delete-all id (copy-sequence events))))
 
+;; An events entry is (:seen TIME :state STATE :finished TIME :row ROW :goal
+;; GOAL . ACTIVITY), where ACTIVITY holds what events taught about the worker
+;; beyond its state.  A worker the snapshots list but no lifecycle event
+;; announced has a nil STATE: its tools still show, its state stays the
+;; snapshot's.
+
 (defconst hermes-chat--work-activity-keys
-  '(:parent :started :tool-count :last-tool :last-target :summary)
+  '(:parent :started :tool-count :tools :summary :error)
   "Worker fields learned from subagent events besides state and goal.")
 
-(defun hermes-chat--work-event-activity (event now)
-  "Return the worker activity plist subagent EVENT reports at NOW.  Pure.
-Only fields EVENT carries appear: the parent, the start time, the tool count,
-the last tool and its target, and a completion's summary."
+(defconst hermes-chat--work-recent-tools 8
+  "Most recent tool calls kept per worker.")
+
+(defconst hermes-chat--work-subagent-events
+  '("subagent.spawn_requested" "subagent.start" "subagent.thinking"
+    "subagent.tool" "subagent.progress" "subagent.complete")
+  "Subagent event names folded into a chat's events.")
+
+(defun hermes-chat--work-event-activity (event entry state now)
+  "Return the activity that subagent EVENT contributes to ENTRY at NOW.  Pure.
+STATE is the worker state after EVENT.  Only fields EVENT carries appear:
+the parent, the first start time, the tool count, the recent tools as
+\(NAME . TARGET) pairs, newest last, and a completion's summary, or its
+error when STATE is a failure."
   (let ((name (plist-get event :event))
         (count (plist-get event :tool-count)))
     (append
      (when-let* ((parent (hermes-transport--non-empty-string
                           (plist-get event :parent-id))))
        (list :parent parent))
-     (when (equal name "subagent.start") (list :started now))
+     (when (and (equal name "subagent.start") (not (plist-get entry :started)))
+       (list :started now))
      (when (natnump count) (list :tool-count count))
      (when-let* (((equal name "subagent.tool"))
                  (tool (hermes-transport--non-empty-string (plist-get event :name))))
-       (list :last-tool tool
-             :last-target (hermes-transport--non-empty-string
-                           (plist-get event :preview))))
+       (list :tools (last (append (plist-get entry :tools)
+                                  (list (cons tool (hermes-transport--non-empty-string
+                                                    (plist-get event :preview)))))
+                          hermes-chat--work-recent-tools)))
      (when-let* (((equal name "subagent.complete"))
-                 (summary (hermes-transport--non-empty-string
-                           (plist-get event :content))))
-       (list :summary summary)))))
+                 (text (hermes-transport--non-empty-string (plist-get event :content))))
+       (list (if (memq state '(failed error timeout)) :error :summary) text)))))
 
 (defun hermes-chat--work-activity (data keys)
   "Return the non-nil values of KEYS in event DATA as a plist.  Pure."
@@ -3095,84 +3112,53 @@ the last tool and its target, and a completion's summary."
   "Return EVENTS updated by normalized subagent EVENT received at NOW.
 Return EVENTS itself when EVENT is not a subagent event or changes nothing.
 A state change moves the worker's entry first; an activity-only change, such
-as a child's tool call, updates it in place so listed order stays stable."
+as a child's tool call, updates it in place so listed order stays stable.
+Progress of a worker no lifecycle event announced records its activity
+without a state.  Entries lead with :seen, the time of their last change."
   (let* ((id (plist-get event :subagent-id))
          (name (plist-get event :event))
          (entry (cdr (assoc id events)))
-         (old (plist-get entry :state))
-         (state (and (stringp id)
-                     (hermes-chat--work-event-state
-                      name old (plist-get event :status)))))
-    (if (not state)
+         (old (plist-get entry :state)))
+    (if (not (and (stringp id) (member name hermes-chat--work-subagent-events)))
         events
-      (let* ((activity (hermes-chat--work-event-activity event now))
+      (let* ((state (or (hermes-chat--work-event-state
+                         name old (plist-get event :status))
+                        old))
              (next (append
                     (list :state state
-                          :finished (unless (memq state '(queued running))
-                                      (if (eq state old) (plist-get entry :finished) now))
+                          :finished (and state (not (memq state '(queued running)))
+                                         (if (eq state old) (plist-get entry :finished) now))
                           :row (plist-get entry :row)
                           :goal (or (plist-get entry :goal)
                                     (and (member name '("subagent.spawn_requested"
                                                         "subagent.start"))
                                          (plist-get event :content))))
-                    ;; New activity wins, except that the first start sticks.
                     (hermes-chat--work-activity
-                     (append (hermes-chat--work-activity entry '(:started))
-                             activity entry)
+                     (append (hermes-chat--work-event-activity event entry state now)
+                             entry)
                      hermes-chat--work-activity-keys))))
-        ;; Entries lead with the time of their last change.
         (cond ((equal next (cddr entry)) events)
-              ((eq state old)
+              ((and entry (eq state old))
                (mapcar (lambda (cell)
                          (if (equal (car cell) id) (cons id (cl-list* :seen now next)) cell))
                        events))
               (t (hermes-chat--work-put events id (cl-list* :seen now next))))))))
 
-(defconst hermes-chat--work-activity-limit 32
-  "Workers whose recent activity is kept, newest first.")
+(defun hermes-chat--work-last-tool (row)
+  "Return worker ROW's latest tool as (NAME . TARGET), or nil.
+Events give the target; a snapshot only names the tool."
+  (or (car (last (plist-get row :tools)))
+      (when-let* ((tool (plist-get row :last-tool))) (list tool))))
 
-(defun hermes-chat--work-apply-activity (activity event now)
-  "Return ACTIVITY with subagent EVENT's tool or outcome folded in at NOW.
-ACTIVITY maps worker IDs to (:seen TIME :tools TOOLS :tool-count N :finished
-TIME :summary TEXT :error TEXT), newest first.  TOOLS holds up to 8 (NAME .
-PREVIEW) pairs, newest last.  Unlike the state in EVENTS this records workers
-known only from snapshots.  Return ACTIVITY itself for any other event."
-  (let* ((id (plist-get event :subagent-id))
-         (old (cdr (assoc id activity)))
-         (put (lambda (&rest pairs)
-                (let ((entry (copy-sequence old)))
-                  (while pairs
-                    (setq entry (plist-put entry (pop pairs) (pop pairs))))
-                  (seq-take (hermes-chat--work-put
-                             activity id (plist-put entry :seen (or (plist-get old :seen) now)))
-                            hermes-chat--work-activity-limit))))
-         (name (plist-get event :name))
-         (text (plist-get event :content)))
-    (cond
-     ((not (stringp id)) activity)
-     ((and (equal (plist-get event :event) "subagent.tool") (stringp name))
-      (funcall put
-               :tools (last (append (plist-get old :tools)
-                                    (list (cons name (plist-get event :preview))))
-                            8)
-               :tool-count (or (plist-get event :tool-count) (plist-get old :tool-count))))
-     ((equal (plist-get event :event) "subagent.complete")
-      (funcall put :finished now
-               (if (member (downcase (or (plist-get event :status) ""))
-                           '("failed" "error" "timeout"))
-                   :error :summary)
-               (and (stringp text) (not (string-empty-p text)) text)))
-     ((and (member (plist-get event :event) '("subagent.spawn_requested" "subagent.start"))
-           (not old))
-      (funcall put))
-     (t activity))))
-
-(defun hermes-chat--work-prune (events now)
-  "Return EVENTS without entries that finished before the window ending NOW."
+(defun hermes-chat--work-prune (events rows now)
+  "Return EVENTS without entries that expired by NOW.
+Keep active workers, workers listed in snapshot ROWS, and entries changed
+within `hermes-chat--work-retain' seconds."
   (seq-filter
    (lambda (entry)
      (or (hermes-chat--work-active-p (cdr entry))
-         (hermes-chat--work-recent-p (plist-get (cdr entry) :finished) now)))
+         (hermes-chat--work-row-id (car entry) rows)
+         (hermes-chat--work-recent-p (plist-get (cdr entry) :seen) now)))
    events))
 
 (defun hermes-chat--work-reconcile (events previous rows sent now)
@@ -3189,7 +3175,7 @@ finish, so events newer than the read are kept."
                (>= (or (plist-get data :seen) 0) sent))
            events
          (hermes-chat--work-put
-          events id (append (list :state 'completed :finished now) data)))))
+          events id (append (list :seen now :state 'completed :finished now) data)))))
    events events))
 
 (defun hermes-chat--work-retire (events previous rows sent now)
@@ -3208,19 +3194,20 @@ expire after `hermes-chat--work-retain'."
           (hermes-chat--work-put
            events id
            (if (hermes-chat--work-active-p entry)
-               (list :state 'completed :finished now :row row)
-             (append (list :row row
+               (list :seen now :state 'completed :finished now :row row)
+             (append (list :seen now :row row
                            :state (or (plist-get entry :state) 'completed)
                            :finished (or (plist-get entry :finished) now))
                      entry))))))
     previous (hermes-chat--work-reconcile events previous rows sent now))
-   now))
+   rows now))
 
 (defun hermes-chat--work-merge-agents (events rows now)
   "Return snapshot ROWS overlaid with EVENTS at NOW, then event-only workers.
 Event state wins because a snapshot can predate the events, except that an
 event's `queued' never overrides the snapshot.  Event activity, such as the
-last tool, its count and a completion summary, also overlays the snapshot.
+recent tools, their count and a completion summary, also overlays the
+snapshot; the snapshot's parent and start time stay authoritative.
 Finished event-only workers are listed for `hermes-chat--work-retain'
 seconds.  Rows without event data keep identity."
   (append
@@ -3228,8 +3215,7 @@ seconds.  Rows without event data keep identity."
              (let* ((data (cdr (assoc (plist-get row :id) events)))
                     (state (plist-get data :state))
                     (activity (hermes-chat--work-activity
-                               data '(:finished :tool-count :last-tool
-                                                :last-target :summary))))
+                               data '(:finished :tool-count :tools :summary :error))))
                (cond (activity
                       (append (unless (memq state (list nil 'queued))
                                 (list :state state))

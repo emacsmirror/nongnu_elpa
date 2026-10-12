@@ -145,20 +145,21 @@ Glyphs carry the state without faces; faces only reinforce.")
 (defun hermes-chat--card-activity (row state)
   "Return worker ROW's activity line text in display STATE, or nil.
 A running worker shows its last tool and tool count; an ended one the first
-line of its summary."
+line of its summary or error."
   (let ((text
          (pcase state
            ('running
-            (let ((tool (plist-get row :last-tool))
+            (let ((tool (hermes-chat--work-last-tool row))
                   (count (plist-get row :tool-count)))
               (string-join
                (delq nil (list (and tool (hermes-chat--card-tool-text
-                                          tool (plist-get row :last-target)))
+                                          (car tool) (cdr tool)))
                                (and (natnump count) (> count 0)
                                     (hermes-chat--card-plural count "tool"))))
                " · ")))
            ((or 'done 'failed 'interrupted)
-            (or (car (split-string (or (plist-get row :summary) "") "\n" t "[ \t]+"))
+            (or (car (split-string (or (plist-get row :summary) (plist-get row :error) "")
+                                   "\n" t "[ \t]+"))
                 (and (eq state 'interrupted) "interrupted"))))))
     (and text (not (string-empty-p text)) text)))
 

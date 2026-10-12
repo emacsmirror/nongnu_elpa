@@ -600,7 +600,11 @@ Retention is time-based, so the roster can change without any read: compare
 it with the roster at the last publication."
   (let ((before (hermes-chat--work-roster owner (or (plist-get owner :published) now))))
     (setf (plist-get owner :events)
-          (hermes-chat--work-prune (plist-get owner :events) now))
+          (hermes-chat--work-prune
+           (plist-get owner :events)
+           (hermes-chat--work-snapshot-rows (plist-get owner :delegates)
+                                            (plist-get owner :runtime))
+           now))
     (unless (equal before (hermes-chat--work-roster owner now))
       (hermes-chat--work-changed owner))))
 
@@ -641,7 +645,7 @@ window hooks only arm timers; the first read runs from the timer."
                 :lifetime hermes-chat--lifecycle-generation
                 :instance (copy-tree hermes-instance) :profile hermes-chat--profile
                 :client client :connection (hermes-dashboard-transport-client-generation client)
-                :runtime runtime :delegates nil :processes nil :events nil :activity nil :published nil
+                :runtime runtime :delegates nil :processes nil :events nil :published nil
                 :inflight nil :unsupported nil :timer nil :controls nil
                 :view nil :view-valid-p nil :render nil :refresh nil :settle nil
                 :current-p #'hermes-chat--work-current-p))
@@ -716,14 +720,10 @@ A background process notice reads the rosters at once."
               ((hermes-chat--work-current-p owner)))
     (if (hermes-chat--work-process-notice-p event)
         (hermes-chat--work-poll owner)
-      (let* ((now (float-time))
-             (events (plist-get owner :events))
-             (next (hermes-chat--work-apply-event events event now))
-             (activity (plist-get owner :activity))
-             (recent (hermes-chat--work-apply-activity activity event now)))
-        (unless (and (eq next events) (eq recent activity))
-          (setf (plist-get owner :events) next
-                (plist-get owner :activity) recent)
+      (let* ((events (plist-get owner :events))
+             (next (hermes-chat--work-apply-event events event (float-time))))
+        (unless (eq next events)
+          (setf (plist-get owner :events) next)
           (hermes-chat--work-changed owner))))))
 
 (defun hermes-chat-work-refresh ()

@@ -101,7 +101,7 @@
                       :metadata '(:event (:name "delegate_task"))
                       :card (list :kind 'delegate :tasks 2 :now 100.0
                                   :rows '((:id "a" :state running :goal "Root A" :started 40.0
-                                                :last-tool "read_file" :last-target "x.el"
+                                                :tools (("read_file" . "x.el"))
                                                 :tool-count 3)
                                           (:id "c" :parent "a" :state queued :goal "Child C")
                                           (:id "b" :state completed :goal "Root B"
