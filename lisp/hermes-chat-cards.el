@@ -521,7 +521,7 @@ order.  Pure."
                  processes)))
 
 (defun hermes-chat--card-process (event card processes taken recent)
-  "Return the process row background tool EVENT owns, or nil.
+  "Return the row in PROCESSES that background tool EVENT owns, or nil.
 The result's session id is authoritative and rebinds a provisional match.
 Before the result, CARD's earlier row is kept unless another card's result
 claims it, and a RECENT row may match by command.  TAKEN lists ids other
@@ -653,7 +653,8 @@ A nil CARD returns the row to a plain tool row."
 
 (defun hermes-chat--card-goal-bindings (nodes roster now)
   "Return (NODE . DELEGATION-ID) for unbound spawning NODES matched by goals.
-ROSTER supplies the batches; a batch any card already owns is excluded."
+ROSTER supplies the batches; a batch any card already owns is excluded.
+Only rows still claimable at NOW take part."
   (let* ((owned (mapcan #'hermes-chat--card-owned nodes))
          (claims (delq nil
                        (mapcar (lambda (node)
@@ -722,7 +723,7 @@ ROSTER supplies the batches; a batch any card already owns is excluded."
   (setq hermes-chat--card-timer nil))
 
 (defun hermes-chat--cards-retire ()
-  "Release this chat's cards when its major mode changes."
+  "Release this chat's cards before its major mode changes."
   (hermes-chat--cards-cancel)
   (setq hermes-chat--card-nodes nil))
 
