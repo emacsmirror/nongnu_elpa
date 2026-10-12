@@ -4698,7 +4698,7 @@ indicator is on, and not at all when it is off."
     ;; D8: a failed command stays readable; only its verdict is red.
     (should (eq (hermes-test--face-of failed "make check") 'default))
     (should (eq (hermes-test--face-of failed "exit 7") 'hermes-work-failed))
-    (should (eq (hermes-test--face-of failed "0:10 ago") 'hermes-work-meta))
+    (should (eq (hermes-test--face-of failed "10s ago") 'hermes-work-meta))
     (should (eq (hermes-test--face-of done "make lint") 'hermes-work-fading))
     (should (eq (hermes-test--face-of done "exit 0") 'hermes-work-meta))))
 

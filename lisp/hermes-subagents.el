@@ -310,8 +310,7 @@ A failure's verdict carries the failed face."
   (let* ((meta (lambda (text) (propertize text 'face 'hermes-work-meta)))
          (failed (lambda (text) (propertize text 'face 'hermes-work-failed)))
          (ago (and (plist-get row :exited-at)
-                   (funcall meta (format "%s ago" (hermes-work-duration
-                                                   (- now (plist-get row :exited-at)))))))
+                   (funcall meta (hermes-work-ago (- now (plist-get row :exited-at))))))
          (elapsed (hermes-work--elapsed row now)))
     (delq nil
           (pcase (plist-get row :state)

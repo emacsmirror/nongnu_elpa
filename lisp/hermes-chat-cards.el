@@ -288,12 +288,6 @@ batch's elapsed time and folds like other tool rows."
                 (propertize tree 'invisible (hermes-chat--entry-detail-kind entry))
               tree))))
 
-(defun hermes-chat--card-ago (seconds)
-  "Return SECONDS as a short age."
-  (let ((s (max 0 (floor seconds))))
-    (if (< s 60) (format "%ds ago" s)
-      (format "%s ago" (hermes-work-duration s)))))
-
 (defun hermes-chat--card-verdict (row now)
   "Return the exit verdict for ended process ROW at NOW."
   (let ((code (plist-get row :exit-code))
@@ -302,7 +296,7 @@ batch's elapsed time and folds like other tool rows."
               ((or 'killed 'lost) (symbol-name (plist-get row :state)))
               (_ (if (integerp code) (format "exit %d" code) "exited")))
             (if (hermes-chat--work-recent-p exited now)
-                (concat " · " (hermes-chat--card-ago (- now exited)))
+                (concat " · " (hermes-work-ago (- now exited)))
               ""))))
 
 (defun hermes-chat--card-process-text (entry card)

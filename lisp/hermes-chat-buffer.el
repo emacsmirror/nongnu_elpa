@@ -3080,6 +3080,11 @@ displayable."
         (format "%d:%02d" (/ s 60) (% s 60))
       (format "%d:%02d:%02d" (/ s 3600) (/ (% s 3600) 60) (% s 60)))))
 
+(defun hermes-work-ago (seconds)
+  "Return SECONDS as the shared worker age, such as \"22s ago\" or \"1:05 ago\"."
+  (let ((s (max 0 (floor seconds))))
+    (format "%s ago" (if (< s 60) (format "%ds" s) (hermes-work-duration s)))))
+
 (defconst hermes-chat--work-retain 60
   "Seconds finished workers and exited processes stay listed.")
 

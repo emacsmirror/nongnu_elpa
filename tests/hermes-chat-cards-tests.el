@@ -220,6 +220,12 @@ later event of the worker carries; sa-2 stays queued."
 
 ;;;; Background process
 
+(ert-deftest hermes-work-ago-reads-the-same-everywhere ()
+  "Ages under a minute count seconds; longer ones use the worker clock."
+  (should (equal (hermes-work-ago 12.7) "12s ago"))
+  (should (equal (hermes-work-ago -3) "0s ago"))
+  (should (equal (hermes-work-ago 65) "1:05 ago")))
+
 (ert-deftest hermes-chat-card-process-shows-last-line-then-exit ()
   "A background terminal row shows the live last line, then the verdict."
   (hermes-test--with-card-chat
