@@ -298,6 +298,33 @@ defaulting to the non-deciding cancel choice."
           (hermes-test--push-button-labeled "[Answer]")
           (should (equal respond-choice "once")))))))
 
+(ert-deftest hermes-chat-nested-approval-reader-requires-submission ()
+  "A reader opened inside a user-opened reader does not inherit one key.
+A timer, hook or Lisp respond call running while the user answers one
+prompt is not the user, so its approval reader needs a RET submission."
+  (let ((hermes-chat--prompt-user-invoked-p t)
+        readers nested-result)
+    (cl-letf (((symbol-function 'read-multiple-choice)
+               (lambda (_text choices &rest _)
+                 (push 'one-key readers)
+                 (should-not hermes-chat--prompt-user-invoked-p)
+                 (unless nested-result
+                   (setq nested-result
+                         (hermes-chat--read-approval-response
+                          '(:kind approval :command "nested"))))
+                 (assq ?o choices)))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _candidates _predicate require-match &rest _)
+                 (push 'submitted readers)
+                 (should (eq require-match t))
+                 "Deny")))
+      (should (equal (hermes-chat--read-approval-response
+                      '(:kind approval :command "outer"))
+                     "once"))
+      (should (equal nested-result "deny"))
+      (should (equal (reverse readers) '(one-key submitted)))
+      (should (eq hermes-chat--prompt-user-invoked-p t)))))
+
 (ert-deftest hermes-chat-auto-prompt-does-not-open-for-hidden-buffer ()
   (let (timer-calls)
     (cl-letf (((symbol-function 'run-at-time)
