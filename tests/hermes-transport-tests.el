@@ -6049,5 +6049,16 @@ first; an unrelated process with that PID is left alone."
                                 (heartbeat . :null) (revision . "")
                                 (updated_at . 0))))))))
 
+(ert-deftest hermes-transport-work-last-line-skips-shell-logout ()
+  "A login shell's closing `logout' does not hide the process's last line."
+  (should (equal (hermes-transport-work-last-line
+                  "step 1\nerror: probe failing on purpose\nlogout\n")
+                 "error: probe failing on purpose"))
+  (should (equal (hermes-transport-work-last-line "ok\n  logout  \n\n") "ok"))
+  ;; Only a bare final line: other mentions stay.
+  (should (equal (hermes-transport-work-last-line "logout\ndone") "done"))
+  (should (equal (hermes-transport-work-last-line "x\nlogout now") "logout now"))
+  (should-not (hermes-transport-work-last-line "logout")))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

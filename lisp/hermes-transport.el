@@ -1237,9 +1237,11 @@ Anything not reported as exited is running, as in the Hermes TUI."
         (t 'done)))
 
 (defun hermes-transport-work-last-line (text)
-  "Return the last nonblank line of TEXT, or nil."
+  "Return the last nonblank line of TEXT, or nil.
+Skip a final bare `logout', which a login shell prints as it exits."
   (and (stringp text)
-       (car (last (split-string text "\n" t "[ \t\r]+")))))
+       (let ((lines (split-string text "\n" t "[ \t\r]+")))
+         (car (last (if (equal (car (last lines)) "logout") (butlast lines) lines))))))
 
 (defun hermes-transport-work-process-row (row)
   "Return display metadata for `process.list' ROW.
