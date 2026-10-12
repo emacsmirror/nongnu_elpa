@@ -2470,22 +2470,24 @@ Cache the result when DIRECTORY is this chat buffer's naming directory."
 (defun hermes-chat--directory-label (directory root)
   "Return gateway-native DIRECTORY abbreviated for display beside ROOT.
 Show a descendant of ROOT relative to it, and abbreviate a path under the
-user's home directory with `~'.  Never consult the filesystem."
-  (let ((key (hermes-chat--directory-key directory))
-        (prefix (concat (hermes-chat--directory-key root) "/"))
-        (home (hermes-chat--with-local-files
-                (directory-file-name (expand-file-name "~")))))
-    (cond
-     ((string-prefix-p prefix key) (substring key (length prefix)))
-     ((or (equal key home) (string-prefix-p (concat home "/") key))
-      (concat "~" (substring key (length home))))
-     (t key))))
+user's home directory with `~'.  Never consult the filesystem or a file
+name handler."
+  (hermes-chat--with-local-files
+    (let ((key (hermes-chat--directory-key directory))
+          (prefix (concat (hermes-chat--directory-key root) "/"))
+          (home (directory-file-name (expand-file-name "~"))))
+      (cond
+       ((string-prefix-p prefix key) (substring key (length prefix)))
+       ((or (equal key home) (string-prefix-p (concat home "/") key))
+        (concat "~" (substring key (length home))))
+       (t key)))))
 
 (defun hermes-chat--divergent-directory-label ()
   "Return \"→ CWD\" while the gateway cwd differs from the project root.
 Show a descendant of the root relative to it, a linked worktree of the same
 project as \"…/WORKTREE\", and other paths abbreviated.  Return nil when the
-cwd is unknown or is the root.  Never consult the filesystem."
+cwd is unknown or is the root.  Never consult the filesystem or a file
+name handler."
   (when-let* ((directory (hermes-chat--current-working-directory))
               (root (hermes-chat--project-root-for-display))
               (root-key (hermes-chat--directory-key root))
@@ -2499,8 +2501,10 @@ cwd is unknown or is the root.  Never consult the filesystem."
                 (not (string-prefix-p (concat root-key "/")
                                       (hermes-chat--directory-key directory))))
            (concat "…/" (hermes-chat--directory-label
-                         directory (file-name-directory
-                                    (hermes-chat--directory-key (cdr linked)))))
+                         directory (hermes-chat--with-local-files
+                                     (file-name-directory
+                                      (hermes-chat--directory-key
+                                       (cdr linked))))))
          (hermes-chat--directory-label directory root))))))
 
 (defun hermes-chat--header-directory-segment ()

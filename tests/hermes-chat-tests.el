@@ -1168,6 +1168,45 @@ header cwd segment and the switcher annotation all yield local results."
                                                      (current-buffer))))))
         (should-not calls)))))
 
+(ert-deftest hermes-chat-trimmed-worktree-top-invokes-no-handler ()
+  "A handler on a linked worktree's slash-trimmed top is never invoked.
+The header cwd segment and the switcher annotation derive the worktree
+label from the cached top without consulting file name handlers."
+  (ert-with-temp-directory base
+    :prefix "hermes-trimmed-top-"
+    (let* ((calls nil)
+           (top (hermes-chat-test--linked-worktree base "main" "topic"))
+           (main (file-name-as-directory (expand-file-name "main" base))))
+      (hermes-test-with-chat-buffer
+        (setq default-directory "/review-handler:host:/editor/"
+              hermes-chat--launch-project-root main
+              hermes-chat--initial-working-directory nil
+              hermes-chat--project-identity nil
+              hermes-chat--working-directory top
+              hermes-chat--cwd-worktree nil)
+        (let ((file-name-handler-alist
+               (list (cons (concat "\\`" (regexp-quote (directory-file-name top))
+                                   "\\'")
+                           (lambda (operation &rest args)
+                             (push (cons operation args) calls)
+                             (error "Unexpected trimmed-top handler %S"
+                                    operation)))
+                     (cons "\\`/review-handler:"
+                           (lambda (operation &rest args)
+                             (push (cons operation args) calls)
+                             (error "Unexpected editor handler %S"
+                                    operation))))))
+          (hermes-chat--note-working-directory top)
+          (should (equal (cdr hermes-chat--cwd-worktree) (cons main top)))
+          (should (equal (substring-no-properties
+                          (hermes-chat--header-directory-segment))
+                         "→ …/topic"))
+          (should (string-search
+                   "→ …/topic"
+                   (hermes-chat--switch-annotation (buffer-name)
+                                                   (current-buffer)))))
+        (should-not calls)))))
+
 (ert-deftest hermes-chat-worktree-pointer-reading-is-bounded-and-strict ()
   "Malformed, overlong and truncated pointers are refused; symlinks resolve."
   (ert-with-temp-directory base
