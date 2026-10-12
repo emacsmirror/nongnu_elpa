@@ -644,7 +644,7 @@ timer that fires while a newer one is pending does nothing."
               (t (setf (plist-get owner :hidden) nil)))))))
 
 (defun hermes-chat--work-visibility (&optional departing)
-  "Run each chat's poll timer at the cadence its visibility calls for.
+  "Run each chat's poll timer at the cadence its visibility needs.
 A visible chat or work view reads fast; a hidden chat reads slowly while
 `hermes-chat-work-indicator' is on, and not at all otherwise.  Ignore
 windows on DEPARTING frame.  Visibility never touches snapshots, and window
