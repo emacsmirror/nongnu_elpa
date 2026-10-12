@@ -3085,6 +3085,15 @@ displayable."
   (let ((s (max 0 (floor seconds))))
     (format "%s ago" (if (< s 60) (format "%ds" s) (hermes-work-duration s)))))
 
+(defun hermes-work-plain-line (line)
+  "Return LINE without inline Markdown, trimmed.
+Drop leading heading, list and quote marks, then bold and code marks."
+  (string-trim
+   (replace-regexp-in-string
+    "\\*\\*\\|__\\|`" ""
+    (replace-regexp-in-string
+     "\\`\\(?:[ \t]*\\(?:\\(?:#+\\|[-*+]\\)[ \t]+\\|>[ \t]*\\)\\)+" "" line))))
+
 (defconst hermes-chat--work-retain 60
   "Seconds finished workers and exited processes stay listed.")
 

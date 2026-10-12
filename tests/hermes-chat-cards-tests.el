@@ -128,6 +128,21 @@ later event of the worker carries; sa-2 stays queued."
 
 ;;;; Live tree in place
 
+(ert-deftest hermes-work-plain-line-strips-inline-markdown ()
+  "Result lines drop Markdown marks, and the card shows the first real line."
+  (should (equal (hermes-work-plain-line "## **Verdict:** use `foo-bar`") "Verdict: use foo-bar"))
+  (should (equal (hermes-work-plain-line "> - __Done__: all green ") "Done: all green"))
+  (should (equal (hermes-work-plain-line "-1 offset, a-b * c") "-1 offset, a-b * c"))
+  (should (equal (hermes-chat--card-first-line "\n**\n# `Findings`\nmore") "Findings"))
+  (let ((text (hermes-chat--card-text
+               (list :id "e" :role 'tool :status 'running
+                     :metadata '(:event (:name "delegate_task"))
+                     :card (list :kind 'delegate :tasks 1 :now 100.0
+                                 :rows '((:id "a" :state completed :goal "Review"
+                                               :started 40.0 :finished 90.0
+                                               :summary "**Accept.** No `MUST` findings")))))))
+    (should (string-search "↳ Accept. No MUST findings" text))))
+
 (ert-deftest hermes-chat-card-updates-in-place-preserving-readers ()
   "The card repaints in place; draft, undo, point and reader windows hold."
   (hermes-test--with-card-chat

@@ -100,8 +100,9 @@ LEFT is truncated to leave room for RIGHT.  Below
           (if target (concat " " target) "")))
 
 (defun hermes-chat--card-first-line (text)
-  "Return the first nonblank line of TEXT, or nil."
-  (car (split-string (or text "") "\n" t "[ \t]+")))
+  "Return the first nonblank line of TEXT as plain text, or nil."
+  (seq-find (lambda (line) (not (string-empty-p line)))
+            (mapcar #'hermes-work-plain-line (split-string (or text "") "\n" t))))
 
 (defun hermes-chat--card-activity (row state)
   "Return worker ROW's activity line text in display STATE, or nil.
