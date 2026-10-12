@@ -416,8 +416,10 @@ the thinking disclosure; diffs become View Diff links."
                entry (hermes-chat--first-line content) expanded)
               (insert "\n")
               (when expanded
-                (hermes-chat--insert-shadow content)
-                (insert "\n")))
+                (hermes-chat--insert-detail-body
+                 entry (lambda ()
+                         (hermes-chat--insert-shadow content)
+                         (insert "\n")))))
           (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow blocks)
           (insert "\n"))))))
 
@@ -471,9 +473,8 @@ the thinking disclosure; diffs become View Diff links."
       (let ((content (hermes-chat--commentary-display-content
                       (or (plist-get entry :content) ""))))
         (unless (string-empty-p content)
-          (let ((start (point)))
-            (insert content "\n")
-            (add-text-properties start (point) '(face shadow))))))))
+          (hermes-chat--insert-detail-body
+           entry #'insert (propertize (concat content "\n") 'face 'shadow)))))))
 
 (defun hermes-chat--insert-user-content (content)
   "Insert user CONTENT with a compact prompt prefix."
@@ -492,6 +493,10 @@ lifted into inline images."
       (insert content "\n")
     (hermes-chat--insert-content-with-images content #'hermes-chat--insert-markdown)
     (insert "\n")))
+
+(defvar hermes-chat--entry-suffix-functions nil
+  "Functions called with each printed chat ENTRY to append contextual actions.
+Each runs at the end of ENTRY's text and may insert whole lines there.")
 
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."
@@ -514,6 +519,7 @@ lifted into inline images."
      ((not (string-empty-p content))
       (hermes-chat--insert-entry-content
        content (eq (plist-get entry :status) 'streaming))))
+    (run-hook-with-args 'hermes-chat--entry-suffix-functions entry)
     (hermes-chat--insert-previews entry)))
 
 (defun hermes-chat--preview-owner ()
@@ -733,6 +739,10 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   ;; Selective undo owns a separate list.  Keep it local so an asynchronous
   ;; transcript update cannot rebase another buffer's pending undo sequence.
   (setq-local pending-undo-list nil)
+  ;; Detail bodies carry symbolic `invisible' values; with the default spec
+  ;; t they would all be hidden.  Keep any kinds the user already hid.
+  (when (eq buffer-invisibility-spec t)
+    (setq-local buffer-invisibility-spec (list t)))
   (hermes-chat--stream-format-retire)
   (add-hook 'after-set-visited-file-name-hook #'hermes-chat--stream-format-retire nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
@@ -1280,9 +1290,14 @@ With QUIET, leave state-change notification to the caller."
                    (not (hermes-chat--entry-expanded-p entry))))))))
 
 (defun hermes-chat--toggle-entry-button (button)
-  "Toggle the collapsible entry attached to BUTTON."
-  (when-let* ((id (button-get button 'hermes-chat-entry-id)))
-    (hermes-chat--toggle-entry-expanded id)))
+  "Toggle the collapsible entry attached to BUTTON.
+Expanding an entry whose kind is globally hidden shows that kind again."
+  (when-let* ((id (button-get button 'hermes-chat-entry-id))
+              (entry (hermes-chat--toggle-entry-expanded id)))
+    (when (hermes-chat--entry-expanded-p entry)
+      (let ((kind (hermes-chat--entry-detail-kind entry)))
+        (when (hermes-chat--details-hidden-p kind)
+          (hermes-chat--set-details-hidden kind nil))))))
 
 (defun hermes-chat--assistant-ansi-key (assistant-id)
   "Return ANSI-fragment key for ASSISTANT-ID stream chunks."

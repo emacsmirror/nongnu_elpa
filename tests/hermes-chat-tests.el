@@ -1113,7 +1113,165 @@
     (should (equal (mapcar (lambda (row)
                             (mapcar (lambda (group) (plist-get group :name)) row))
                           rows)
-                   '(("Turn" "Compose") ("Configure" "Browse") ("Prompt"))))))
+                   '(("Turn" "Compose") ("Configure" "Browse") ("Show" "Prompt"))))))
+
+(ert-deftest hermes-chat-actions-popup-groups-stay-small ()
+  "Every chat popup group, root and child, offers at most four actions."
+  (dolist (map (list hermes-chat-actions-map hermes-chat-info-map
+                     hermes-chat-jobs-map hermes-chat-work-map
+                     hermes-chat-sess-map hermes-chat-model-map
+                     hermes-chat-images-map))
+    (dolist (row (keymap-popup--meta map 'descriptions))
+      (dolist (group row)
+        (should (<= (length (plist-get group :entries)) 4)))))
+  (let* ((groups (apply #'append
+                        (keymap-popup--meta hermes-chat-actions-map 'descriptions)))
+         (keys (lambda (name)
+                 (mapcar (lambda (entry) (plist-get entry :key))
+                         (plist-get (seq-find (lambda (group)
+                                                (equal (plist-get group :name) name))
+                                              groups)
+                                    :entries)))))
+    (should (equal (funcall keys "Compose") '("RET" "Q" "I" "F")))
+    (should (equal (funcall keys "Browse") '("B" "X" "c" "W")))
+    (should (equal (funcall keys "Show") '("O" "E" "+" "-"))))
+  ;; Moved actions stay reachable: Inspect owns Refresh commands, and both
+  ;; former root keys remain quiet aliases.
+  (should (eq (keymap-lookup hermes-chat-info-map "r")
+              #'hermes-chat-refresh-commands))
+  (should (eq (keymap-lookup hermes-chat-actions-map "r")
+              #'hermes-chat-refresh-commands))
+  (should (eq (keymap-lookup hermes-chat-actions-map "j")
+              #'hermes-chat-go-to-composer))
+  (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-j")
+              #'hermes-chat-go-to-composer)))
+
+(defun hermes-test--insert-user-turns (&rest turns)
+  "Insert submitted user TURNS, each followed by an assistant reply."
+  (dolist (turn turns)
+    (hermes-chat--insert-entry (hermes-chat--make-entry 'user turn))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'assistant (concat "Reply to " turn)))))
+
+(ert-deftest hermes-chat-transcript-keys-dispatch-by-region ()
+  "`?', `n' and `p' act in the transcript and insert themselves in drafts."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (hermes-test--insert-user-turns "first question\nmore" "second question")
+      (let ((first (car (hermes-chat--user-turn-positions)))
+            (second (cadr (hermes-chat--user-turn-positions)))
+            popups)
+        (cl-letf (((symbol-function 'hermes-chat-actions-map-popup)
+                   (lambda () (interactive) (push (point) popups))))
+          (goto-char (point-max))
+          (forward-line -1)
+          (execute-kbd-macro "p")
+          (should (= (point) second))
+          (execute-kbd-macro "p")
+          (should (= (point) first))
+          (execute-kbd-macro "n")
+          (should (= (point) second))
+          (execute-kbd-macro "?")
+          (should (equal popups (list second)))
+          ;; An empty composer also opens the menu ...
+          (goto-char (point-max))
+          (execute-kbd-macro "?")
+          (should (= (length popups) 2))
+          (should (equal (hermes-chat-input-string) ""))
+          ;; ... but once there is a draft every key inserts itself.
+          (execute-kbd-macro "x?np")
+          (should (= (length popups) 2))
+          (should (equal (hermes-chat-input-string) "x?np"))
+          (should (equal (car (hermes-chat--user-turn-positions)) first)))))))
+
+(ert-deftest hermes-chat-imenu-lists-user-turns ()
+  "The imenu index names each user turn by its first line."
+  (hermes-test-with-chat-buffer
+    (hermes-test--insert-user-turns "first question\nmore" "second question")
+    (let ((index (funcall imenu-create-index-function)))
+      (should (equal (mapcar #'car index)
+                     '("1. first question" "2. second question")))
+      (should (equal (mapcar #'cdr index) (hermes-chat--user-turn-positions))))))
+
+(ert-deftest hermes-chat-composer-placeholder-is-display-only ()
+  "The empty-composer hint is never buffer text and follows emptiness."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let* ((overlay hermes-chat--placeholder-overlay)
+             (hint (lambda () (overlay-get overlay 'after-string)))
+             (before (buffer-string)))
+        (should (string-match-p "C-c C-o actions" (funcall hint)))
+        (should (string-match-p "M-p history" (funcall hint)))
+        (should (= (overlay-start overlay) (hermes-chat--input-position)))
+        (should-not (string-match-p "actions" before))
+        (should (equal (hermes-chat-input-string) ""))
+        (goto-char (point-max))
+        (execute-kbd-macro "a")
+        (should-not (funcall hint))
+        (should (equal (hermes-chat-input-string) "a"))
+        (execute-kbd-macro (kbd "DEL"))
+        (should (string-match-p "actions" (funcall hint)))
+        (should (equal (buffer-string) before))
+        (let ((hermes-chat-composer-placeholder nil))
+          (hermes-chat--placeholder-update)
+          (should-not (funcall hint)))))))
+
+(ert-deftest hermes-chat-detail-toggles-hide-bodies-in-place ()
+  "Global toggles hide expanded tool and reasoning bodies without moving point."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'tool "terminal: set -e\ncd /repo\ngit status"
+                              'done "tool-1" '(:expanded t)))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'commentary "I need to look" 'done "think-1"
+                              '(:expanded t)))
+    (insert "draft")
+    (let ((point (point))
+          (tool (save-excursion (goto-char (point-min))
+                                (search-forward "git status")
+                                (match-beginning 0)))
+          (thought (save-excursion (goto-char (point-min))
+                                   (search-forward "I need to look")
+                                   (match-beginning 0)))
+          (render (lambda ()
+                    (keymap-popup--render
+                     (keymap-popup--meta hermes-chat-actions-map 'descriptions)))))
+      (should-not (invisible-p tool))
+      (should (string-match-p "Tool output: shown" (funcall render)))
+      (hermes-chat-toggle-tool-output)
+      (should (invisible-p tool))
+      (should-not (invisible-p thought))
+      (should (string-match-p "Tool output: hidden" (funcall render)))
+      (hermes-chat-toggle-reasoning)
+      (should (invisible-p thought))
+      (should (= point (point)))
+      (should (equal (hermes-chat-input-string) "draft"))
+      ;; The summary rows stay visible.
+      (should-not (invisible-p (save-excursion (goto-char (point-min))
+                                               (search-forward "▾ Reasoning")
+                                               (match-beginning 0))))
+      (hermes-chat-collapse-all-details)
+      (should-not (string-match-p "git status" (buffer-string)))
+      (hermes-chat-expand-all-details)
+      (should (string-match-p "git status" (buffer-string)))
+      (let ((tool (save-excursion (goto-char (point-min))
+                                  (search-forward "git status")
+                                  (match-beginning 0))))
+        (should-not (invisible-p tool)))
+      (should (equal (hermes-chat-input-string) "draft")))))
+
+(ert-deftest hermes-chat-expanding-hidden-kind-shows-it-again ()
+  "Expanding an entry by hand lifts that kind's global hide."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'tool "terminal: set -e\ngit status" 'done "tool-1"))
+    (hermes-chat-toggle-tool-output)
+    (should (hermes-chat--details-hidden-p 'hermes-tools))
+    (hermes-test--push-button-labeled "terminal: set -e")
+    (should-not (hermes-chat--details-hidden-p 'hermes-tools))
+    (should (string-match-p "git status" (buffer-string)))))
 
 (ert-deftest hermes-chat-actions-popup-paths ()
   "Actual popup wrappers dispatch every advertised path in the owner buffer."

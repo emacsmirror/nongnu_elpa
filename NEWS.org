@@ -2,6 +2,19 @@
 
 * Unreleased
 
+- Approval readers show the tool description and the full command, and take
+  one-key answers (=o=nce, =s=ession, =a=lways, =d=eny; =q= or =C-g= leaves
+  the request pending).  Very long commands open in a separate window while
+  reading.  Clarification readers use the question as their prompt.  A
+  pending prompt's transcript line has an =[Answer]= button to reopen it.
+- Chat discoverability: =?= opens the actions menu from the transcript or an
+  empty composer, and an empty composer shows key hints
+  (=hermes-chat-composer-placeholder=).  =n= / =p= move between user turns
+  in the transcript, and =imenu= lists them.
+- A new Show group in =C-c C-o= hides or shows tool output and reasoning
+  everywhere at once and expands or collapses every disclosure.  Every chat
+  menu group now has at most four entries: Refresh commands moved to
+  Inspect (=C-c C-o X r=), and Go to composer stays on =C-c C-j=.
 - Pending chat prompts appear in the global mode line, for example
   =[Hermes: Clarify]=, until they are answered, expire or are cleared.
   Clicking the segment answers from the owning chat; set
