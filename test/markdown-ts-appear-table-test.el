@@ -95,6 +95,64 @@
          (offset (text-property-any 0 (length display) 'cursor t display)))
     (substring display offset (1+ offset))))
 
+(ert-deftest markdown-ts-appear-table-test-live-stripes-reuse-layout ()
+  (let ((markdown-ts-appear-table-zebra-stripe nil)
+        (source "| A | B |\n|---|---|\n| x | plain |\n| y | **bold** long text that wraps |\n"))
+    (markdown-ts-appear-table-test--with-buffer source 22
+      (save-window-excursion
+        (switch-to-buffer (current-buffer))
+        (markdown-ts-appear-stop)
+        (goto-char (point-min))
+        (search-forward "bold")
+        (run-hooks 'post-command-hook)
+        (let* ((rows (markdown-ts-appear-table-test--overlays))
+               (row (car (last rows)))
+               (layout (markdown-ts-appear-table--layout row))
+               (map (markdown-ts-appear-table--layout-map layout))
+               (display (markdown-ts-appear-table--layout-display layout)))
+          (cl-letf (((symbol-function 'markdown-ts-appear-table--render)
+                     (lambda (&rest _) (ert-fail "Stripe change rebuilt tables")))
+                    ((symbol-function 'markdown-ts-appear-table--build-layout)
+                     (lambda (&rest _) (ert-fail "Stripe change rebuilt geometry"))))
+            (dolist (enabled '(nil t nil t))
+              (setopt markdown-ts-appear-table-zebra-stripe enabled)
+              (should (equal rows (markdown-ts-appear-table-test--overlays)))
+              (should (eq map (markdown-ts-appear-table--layout-map layout)))
+              (should (eq enabled
+                          (not (null (member '(:inherit markdown-ts-appear-table-zebra)
+                                             (get-text-property 0 'face display))))))
+              (should (memq 'bold (get-text-property
+                                  (string-match "bold" display) 'face display)))
+              (should-not (member '(:inherit markdown-ts-appear-table-zebra)
+                                  (get-text-property (string-match "\n" display)
+                                                     'face display)))
+              (let ((anchor (cadr markdown-ts-appear-table--cursor-overlays)))
+                (should (eq enabled
+                            (not (null
+                                  (member '(:inherit markdown-ts-appear-table-zebra)
+                                          (get-text-property
+                                           0 'face (overlay-get anchor 'display))))))))
+              (should-not (memq #'markdown-ts-appear--update post-command-hook))
+              (should (equal source (buffer-string))))))))))
+
+(ert-deftest markdown-ts-appear-table-test-live-style-preserves-paused-tracking ()
+  (markdown-ts-appear-table-test--with-buffer "| A | B |\n|---|---|\n| x | y |\n" 22
+    (markdown-ts-appear-stop)
+    (dolist (style '(raw unicode wrapped raw wrapped))
+      (setopt markdown-ts-appear-table-style style)
+      (font-lock-ensure)
+      (should (markdown-ts-appear--active-p))
+      (should-not (memq #'markdown-ts-appear--update post-command-hook))
+      (pcase style
+        ('raw
+         (should-not markdown-ts-appear-table--overlays)
+         (should-not (get-text-property 1 'display)))
+        ('unicode
+         (should-not markdown-ts-appear-table--overlays)
+         (should (equal (get-text-property 1 'display) "│")))
+        ('wrapped
+         (should (= 3 (length markdown-ts-appear-table--overlays))))))))
+
 (ert-deftest markdown-ts-appear-table-test-motion-shares-one-glyph-pass ()
   (markdown-ts-appear-table-test--with-buffer
       "| A | B |\n|---|---|\n| x | abcd efgh ijkl mnop qrst uvwx |\n"

@@ -156,6 +156,97 @@
                           1 'face (get-text-property beg 'display))
                          (list 'markdown-ts-appear-label (cdr case)))))))))
 
+(defun markdown-ts-appear-test--background-at (position)
+  "Return an explicit background applied to source at POSITION."
+  (seq-some (lambda (face)
+              (and (consp face) (plist-get face :background)))
+            (ensure-list (get-text-property position 'face))))
+
+(ert-deftest markdown-ts-appear-test-callout-background-survives-editing ()
+  (deftheme markdown-ts-appear-test-callout)
+  (custom-theme-set-faces
+   'markdown-ts-appear-test-callout
+   '(default ((t (:background "#202020" :foreground "#eeeeee"))))
+   '(link ((t (:foreground "#80c0ff")))))
+  (unwind-protect
+      (progn
+        (enable-theme 'markdown-ts-appear-test-callout)
+        (let ((markdown-ts-appear-render-callouts t)
+              (markdown-ts-appear--callout-backgrounds nil)
+              (blend (symbol-function 'color-rgb-to-hex))
+              (blends 0)
+              (source "> [!NOTE]\n> Body text\n\n> Ordinary quote\n"))
+          (cl-letf (((symbol-function 'color-rgb-to-hex)
+                     (lambda (&rest args)
+                       (cl-incf blends)
+                       (apply blend args))))
+            (markdown-ts-appear-test--with-buffer source
+              (goto-char (point-min))
+              (search-forward "Body")
+              (let* ((body (1- (point)))
+                     (background (markdown-ts-appear-test--background-at body)))
+                (should background)
+                (should-not (equal background "#202020"))
+                (should-not (equal background "#80c0ff"))
+                (goto-char (point-min))
+                (search-forward "Ordinary")
+                (should-not (markdown-ts-appear-test--background-at (1- (point))))
+                (dotimes (_ 3)
+                  (goto-char 4)
+                  (markdown-ts-appear--update)
+                  (should-not (get-text-property 3 'display))
+                  (should (equal background
+                                 (markdown-ts-appear-test--background-at body)))
+                  (goto-char (point-max))
+                  (markdown-ts-appear--update)
+                  (should (equal (get-text-property 3 'display) " NOTE "))
+                  (should (equal background
+                                 (markdown-ts-appear-test--background-at body))))
+                (goto-char body)
+                (insert " edited")
+                (markdown-ts-appear--update)
+                (font-lock-ensure)
+                (should (equal background
+                               (markdown-ts-appear-test--background-at body)))
+                (delete-region body (+ body (length " edited")))
+                (font-lock-ensure)
+                (should (= blends 1))
+                (setopt markdown-ts-appear-render-callouts nil)
+                (font-lock-ensure)
+                (should-not (markdown-ts-appear-test--background-at body))
+                (setopt markdown-ts-appear-render-callouts t)
+                (font-lock-ensure)
+                (should (equal background
+                               (markdown-ts-appear-test--background-at body)))
+                (should (= blends 1))
+                (custom-theme-set-faces
+                 'markdown-ts-appear-test-callout
+                 '(default ((t (:background "#eeeeee" :foreground "#202020")))))
+                (enable-theme 'markdown-ts-appear-test-callout)
+                (font-lock-ensure)
+                (should-not (equal background
+                                   (markdown-ts-appear-test--background-at body)))
+                (should (= blends 2))
+                (should (equal source (buffer-string))))))))
+    (disable-theme 'markdown-ts-appear-test-callout)))
+
+(ert-deftest markdown-ts-appear-test-live-fence-style-cleans-old-properties ()
+  (markdown-ts-appear-test--with-buffer "```c\nint x;\n```\n"
+    (markdown-ts-appear-stop)
+    (set-buffer-modified-p nil)
+    (should (get-text-property 6 'line-prefix))
+    (setopt markdown-ts-appear-code-fence-style 'raw)
+    (font-lock-ensure)
+    (should-not (get-text-property 1 'display))
+    (should-not (get-text-property 6 'line-prefix))
+    (should-not (get-text-property 6 'wrap-prefix))
+    (setopt markdown-ts-appear-code-fence-style 'connected)
+    (font-lock-ensure)
+    (should (equal (get-text-property 1 'display) "╭─ c "))
+    (should (get-text-property 6 'line-prefix))
+    (should-not (buffer-modified-p))
+    (should-not (memq #'markdown-ts-appear--update post-command-hook))))
+
 (ert-deftest markdown-ts-appear-test-reveal-and-restore ()
   (markdown-ts-appear-test--with-buffer "**bold** plain\n"
     (goto-char 3)

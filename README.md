@@ -80,14 +80,14 @@ only for eligible formulas.
 | `markdown-ts-appear-wikilink-icon` | `"◆"` | String before Wiki links; empty disables it. |
 | `markdown-ts-appear-code-fence-style` | `connected` | `raw` or `connected` fences with a language label. |
 | `markdown-ts-appear-block-quote-marker` | `"▎"` | Replacement string; `nil` keeps the original marker. |
-| `markdown-ts-appear-render-callouts` | `t` | `t` renders callout labels; does not implement folding. |
+| `markdown-ts-appear-render-callouts` | `t` | Callout labels and faint backgrounds, kept while editing. |
 | `markdown-ts-appear-table-style` | `wrapped` | `raw`, `unicode`, or width-aware `wrapped` tables. |
 | `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second data row. |
 | `markdown-ts-appear-table-zebra` | `:inherit hl-line` | Stripe face. |
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 
-Disable and re-enable `markdown-ts-appear-mode` after changing structural or
-math options in an active buffer.
+Use `setopt` or Customize to apply visual options to active buffers immediately.
+Re-enable `markdown-ts-appear-mode` after changing the math preview option.
 
 Callout types are case-insensitive.  Label colors use the current theme:
 

@@ -46,6 +46,7 @@
                   "markdown-ts-appear")
 (declare-function markdown-ts-appear--node-visible-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--region-visible-p "markdown-ts-appear")
+(declare-function markdown-ts-appear--set-render-option "markdown-ts-appear")
 
 (defvar markdown-ts-appear-table-style)
 (defvar markdown-ts-appear--region)
@@ -58,6 +59,8 @@
 (defcustom markdown-ts-appear-table-zebra-stripe t
   "Whether to shade every second wrapped table data row."
   :type 'boolean
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option
   :group 'markdown-ts-appear)
 
 (defface markdown-ts-appear-table-zebra
@@ -272,8 +275,12 @@ Return a single nil entry when the buffer is not currently displayed."
                    '(:family :foundry :width :height :weight :slant :fontset))))
    (if width (list nil) (markdown-ts-appear-table--display-windows))))
 
-(defun markdown-ts-appear-table--display-string (lines newline-p)
-  "Join display LINES and preserve the source newline when NEWLINE-P."
+(defun markdown-ts-appear-table--display-string (lines newline-p &optional face)
+  "Join display LINES and preserve the source newline when NEWLINE-P.
+Apply FACE to line contents before adding the fallback faces."
+  (when face
+    (dolist (line lines)
+      (add-face-text-property 0 (length line) face t line)))
   (let ((display (concat (mapconcat #'identity lines "\n")
                          (and newline-p "\n"))))
     ;; A replacement string otherwise inherits unspecified attributes from
@@ -318,14 +325,21 @@ Return a single nil entry when the buffer is not currently displayed."
                                'markdown-ts-appear-table--source source display)))))))
 
 (defun markdown-ts-appear-table--make-overlay
-    (row lines window)
-  "Display LINES over source ROW, restricted to WINDOW when non-nil."
+    (row lines window &optional stripe-p)
+  "Display LINES over source ROW, restricted to WINDOW when non-nil.
+STRIPE-P marks alternate data rows for optional background shading."
   (pcase-let* ((`(,beg . ,end) (markdown-ts-appear-table--row-bounds row))
                (newline-p (eq (char-before end) ?\n))
+               ;; Keep a replaceable layer even when stripes are disabled.
+               (stripe-face (and stripe-p
+                                 (list :inherit
+                                       (and markdown-ts-appear-table-zebra-stripe
+                                            'markdown-ts-appear-table-zebra))))
                (display
-                (markdown-ts-appear-table--display-string lines newline-p))
+                (markdown-ts-appear-table--display-string lines newline-p stripe-face))
                (overlay (make-overlay beg end nil nil nil)))
     (markdown-ts-appear-table--map-pipes row display)
+    (overlay-put overlay 'markdown-ts-appear-table--stripe-face stripe-face)
     (overlay-put overlay 'display display)
     (overlay-put overlay 'markdown-ts-appear-table--layout
                  (markdown-ts-appear-table--make-layout :display display))
@@ -370,18 +384,32 @@ Return a single nil entry when the buffer is not currently displayed."
                     (if (equal type "pipe_table_delimiter_row")
                         (list (markdown-table-wrap-pretty--render-separator-line widths aligns))
                       (markdown-table-wrap-pretty--render-row-lines contents widths aligns))))
-                  (zebra-p
-                   (and markdown-ts-appear-table-zebra-stripe
-                        (equal type "pipe_table_row")
+                  (stripe-p
+                   (and (equal type "pipe_table_row")
                         (cl-evenp (cl-incf data-row-index)))))
-             (when (equal type "pipe_table_header")
-               (setq data-row-index 0))
-             (when zebra-p
-               (dolist (line lines)
-                 (add-face-text-property 0 (length line)
-                                         'markdown-ts-appear-table-zebra t line)))
-             (markdown-ts-appear-table--make-overlay row lines window)))
+             (markdown-ts-appear-table--make-overlay row lines window stripe-p)))
          rows cells prefixes)))))
+
+(defun markdown-ts-appear-table--refresh-stripes ()
+  "Update existing stripes and cursor displays without rebuilding layouts."
+  (dolist (overlay markdown-ts-appear-table--overlays)
+    (when-let* ((old-face (overlay-get overlay 'markdown-ts-appear-table--stripe-face)))
+      (let ((display (markdown-ts-appear-table--layout-display
+                      (overlay-get overlay 'markdown-ts-appear-table--layout)))
+            (face (list :inherit (and markdown-ts-appear-table-zebra-stripe
+                                     'markdown-ts-appear-table-zebra)))
+            (pos 0))
+        (while (< pos (length display))
+          (let ((end (next-single-property-change pos 'face display (length display))))
+            (put-text-property
+             pos end 'face
+             (cl-substitute face old-face (get-text-property pos 'face display) :test #'eq)
+             display)
+            (setq pos end)))
+        (overlay-put overlay 'markdown-ts-appear-table--stripe-face face))))
+  (markdown-ts-appear-table--delete-cursor-overlays)
+  (markdown-ts-appear-table--update-cursor-row)
+  (force-window-update (current-buffer)))
 
 (defun markdown-ts-appear-table--tables ()
   "Return current buffer's pipe-table syntax nodes."

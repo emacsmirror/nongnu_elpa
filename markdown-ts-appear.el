@@ -37,6 +37,7 @@
 ;;; Code:
 
 (require 'markdown-ts-mode)
+(require 'color)
 (require 'seq)
 (require 'subr-x)
 (require 'markdown-ts-appear-math)
@@ -57,39 +58,53 @@ Re-enable `markdown-ts-appear-mode' after changing this option."
 (defcustom markdown-ts-appear-link-icon ""
   "Icon displayed before rendered Markdown links.
 An empty string disables the icon."
-  :type 'string)
+  :type 'string
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-image-icon ""
   "Icon displayed before rendered Markdown images.
 An empty string disables the icon."
-  :type 'string)
+  :type 'string
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-wikilink-icon "◆"
   "Icon displayed before rendered Markdown Wiki links.
 An empty string disables the icon."
-  :type 'string)
+  :type 'string
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-code-fence-style 'connected
   "How rendered fenced code blocks should display their delimiters."
   :type '(choice (const :tag "Raw Markdown" raw)
-                 (const :tag "Connected Unicode lines" connected)))
+                 (const :tag "Connected Unicode lines" connected))
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-render-callouts t
-  "Whether to render callout labels at the start of block quotes."
-  :type 'boolean)
+  "Whether to render callout labels and softly tinted backgrounds."
+  :type 'boolean
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-block-quote-marker "▎"
   "Marker replacing each marker of a rendered block quote.
 When nil, preserve the original Markdown marker."
   :type '(choice (const :tag "Display raw marker" nil)
-                 (string :tag "Marker")))
+                 (string :tag "Marker"))
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-table-style 'wrapped
   "How rendered Markdown pipe tables should display.
 The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   :type '(choice (const :tag "Raw Markdown" raw)
-                  (const :tag "Unicode delimiters" unicode)
-                  (const :tag "Wrapped Unicode table" wrapped)))
+                 (const :tag "Unicode delimiters" unicode)
+                 (const :tag "Wrapped Unicode table" wrapped))
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (require 'markdown-ts-appear-table)
 
@@ -135,6 +150,9 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
 (defvar markdown-ts-appear--quote-font-lock-settings)
 (defvar markdown-ts-appear--code-font-lock-settings)
 (defvar markdown-ts-appear--table-font-lock-settings)
+
+(defvar markdown-ts-appear--callout-backgrounds nil
+  "Cached callout backgrounds, keyed by accent face and its current colors.")
 
 (defun markdown-ts-appear--active-p ()
   "Return non-nil when reveal rendering owns this buffer's text."
@@ -721,29 +739,52 @@ at most one following space or tab and are not clipped to START or LIMIT."
                  marker-beg (min end marker-end)
                  (markdown-ts-appear--code-quote-prefix "> ") nil)))))))))
 
+(defun markdown-ts-appear--callout-background (accent)
+  "Return a faint background face derived from ACCENT and the default face."
+  (let* ((foreground (face-foreground accent nil t))
+         (background (face-background 'default nil t))
+         (colors (cons foreground background))
+         (cached (alist-get accent markdown-ts-appear--callout-backgrounds)))
+    (unless (equal colors (car cached))
+      (setq cached
+            (cons colors
+                  (when (and (stringp foreground) (stringp background)
+                             (color-defined-p foreground)
+                             (color-defined-p background))
+                    ;; Use only 15% of the accent so the panel stays subdued.
+                    (list :background
+                          (apply #'color-rgb-to-hex
+                                 (append
+                                  (seq-mapn (lambda (fg bg)
+                                              (+ (* 0.15 fg) (* 0.85 bg)))
+                                            (color-name-to-rgb foreground)
+                                            (color-name-to-rgb background))
+                                  '(2)))
+                          :extend t))))
+      (setf (alist-get accent markdown-ts-appear--callout-backgrounds) cached))
+    (cdr cached)))
+
 (defun markdown-ts-appear--fontify-callout (node start limit)
-  "Render a callout label at the start of block quote NODE in START to LIMIT."
+  "Render callout NODE's background and label within START through LIMIT."
   (when-let* ((markdown-ts-appear-render-callouts)
               (data (markdown-ts-appear--callout-data node))
               (beg (nth 0 data))
               (end (nth 1 data))
               (label-end
-               (if (memq (char-before end) '(?+ ?-)) (1- end) end))
-              ((<= start beg))
-              ((<= label-end limit))
-              ((not (markdown-ts-appear--region-visible-p beg end))))
-    (markdown-ts-appear--decorate
-     beg label-end
-     (markdown-ts-appear--label
-      (nth 2 data)
-      (pcase (upcase (nth 2 data))
-        ("NOTE" 'link)
-        ("TIP" 'success)
-        ("IMPORTANT" 'font-lock-keyword-face)
-        ("WARNING" 'warning)
-        ("CAUTION" 'error)
-        (_ 'markdown-ts-appear-block-quote-marker)))
-     nil)))
+               (if (memq (char-before end) '(?+ ?-)) (1- end) end)))
+    (let ((accent (pcase (upcase (nth 2 data))
+                    ("NOTE" 'link)
+                    ("TIP" 'success)
+                    ("IMPORTANT" 'font-lock-keyword-face)
+                    ("WARNING" 'warning)
+                    ("CAUTION" 'error)
+                    (_ 'markdown-ts-appear-block-quote-marker))))
+      (when-let* ((face (markdown-ts-appear--callout-background accent)))
+        (add-face-text-property start limit face))
+      (when (and (<= start beg) (<= label-end limit)
+                 (not (markdown-ts-appear--region-visible-p beg end)))
+        (markdown-ts-appear--decorate
+         beg label-end (markdown-ts-appear--label (nth 2 data) accent) nil)))))
 
 (defun markdown-ts-appear--fontify-quote-marker (node visible-p start limit)
   "Render NODE's quote markers between START and LIMIT unless VISIBLE-P."
@@ -987,6 +1028,41 @@ at most one following space or tab and are not clipped to START or LIMIT."
 
 ;;; Buffer lifecycle
 
+(defun markdown-ts-appear--set-render-option (option value)
+  "Set OPTION to VALUE and update rendering in active buffers."
+  (set-default option value)
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (and (markdown-ts-appear--active-p)
+                 (not (local-variable-p option)))
+        (if (eq option 'markdown-ts-appear-table-zebra-stripe)
+            (markdown-ts-appear-table--refresh-stripes)
+          (when (eq option 'markdown-ts-appear-table-style)
+            (markdown-ts-appear-table--teardown))
+          (without-restriction
+            ;; Clear old managed properties before changing the rules.
+            (font-lock-unfontify-region (point-min) (point-max))
+            (markdown-ts-appear--remove-block-font-lock)
+            (markdown-ts-appear--release-managed-properties)
+            (markdown-ts-appear--install-block-font-lock)
+            (markdown-ts-appear--delete-rendering-overlays)
+            (setq markdown-ts-appear--last-point nil)
+            (font-lock-flush)
+            (when (memq #'markdown-ts-appear--update post-command-hook)
+              (markdown-ts-appear--update)))
+          (when (eq option 'markdown-ts-appear-table-style)
+            (markdown-ts-appear-table--setup)))))))
+
+(defun markdown-ts-appear--theme-change (_theme)
+  "Refresh callout backgrounds after a theme change."
+  (setq markdown-ts-appear--callout-backgrounds nil)
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (and (markdown-ts-appear--active-p)
+                 markdown-ts-appear-render-callouts)
+        (without-restriction
+          (font-lock-flush))))))
+
 ;; Folding changes overlays, not text, so renderers need this notification.
 ;; Obsoleted in 29.1 as a presumed lazy-lock-only hook; no replacement yet.
 ;; A replacement API is discussed in Emacs bug#81632:
@@ -1078,6 +1154,8 @@ Indirect buffers are otherwise unsupported and are not synchronized."
 
 (defun markdown-ts-appear--enable-buffer ()
   "Install Markdown TS Appear integration in the current buffer."
+  (add-hook 'enable-theme-functions #'markdown-ts-appear--theme-change)
+  (add-hook 'disable-theme-functions #'markdown-ts-appear--theme-change)
   (markdown-ts-appear--install-buffer-hooks)
   (markdown-ts-appear--install-block-font-lock)
   (unless markdown-ts-hide-markup
@@ -1195,6 +1273,8 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
 
 (defun markdown-ts-appear-unload-function ()
   "Remove global integration before unloading Markdown TS Appear."
+  (remove-hook 'enable-theme-functions #'markdown-ts-appear--theme-change)
+  (remove-hook 'disable-theme-functions #'markdown-ts-appear--theme-change)
   (dolist (buffer (buffer-list))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
