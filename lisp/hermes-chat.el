@@ -2965,6 +2965,7 @@ reasoning entry by hand shows reasoning again."
   (let ((role (plist-get entry :role)))
     (cond
      ((eq role 'commentary) t)
+     ((eq role 'tasks) (hermes-chat-todos--entry-collapsible-p entry))
      ((memq role hermes-chat--transient-entry-roles)
       (let ((content (or (plist-get entry :content) "")))
         (and (not (string-empty-p content))
@@ -2995,14 +2996,14 @@ reasoning entry by hand shows reasoning again."
     count))
 
 (defun hermes-chat-expand-all-details ()
-  "Expand every tool-output and reasoning entry and show both kinds."
+  "Expand every collapsible entry, tasks included, and show tools and reasoning."
   (interactive nil hermes-chat-mode)
   (hermes-chat--set-details-hidden 'hermes-tools nil)
   (hermes-chat--set-details-hidden 'hermes-reasoning nil)
   (message "Expanded %d entries" (hermes-chat--set-all-expanded t)))
 
 (defun hermes-chat-collapse-all-details ()
-  "Collapse every tool-output and reasoning entry to its summary line."
+  "Collapse every collapsible entry, tasks included, to its summary line."
   (interactive nil hermes-chat-mode)
   (message "Collapsed %d entries" (hermes-chat--set-all-expanded nil)))
 

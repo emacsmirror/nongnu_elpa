@@ -538,6 +538,24 @@
           (should (buffer-live-p hermes-chat--todos-panel))
           (should (get-buffer-window hermes-chat--todos-panel)))))))
 
+(ert-deftest hermes-chat-todos-transcript-node-follows-global-expand-collapse ()
+  "Global expand-all and collapse-all reach the real task disclosure."
+  (hermes-chat-todos-test--chat
+    (hermes-chat-todos-test--send hermes-chat-todos-test--list)
+    (let* ((id (plist-get hermes-chat-todos--turn-entry :id))
+           (entry (lambda () (ewoc-data (gethash id hermes-chat--nodes)))))
+      (should (eq 'tasks (plist-get (funcall entry) :role)))
+      (should-not (hermes-chat--entry-expanded-p (funcall entry)))
+      (should (equal "Expanded 1 entries"
+                     (hermes-chat-expand-all-details)))
+      (should (hermes-chat--entry-expanded-p (funcall entry)))
+      (should (string-match-p "  ▶ Verify\n" (hermes-chat-todos-test--node-text)))
+      (should (equal "Collapsed 1 entries"
+                     (hermes-chat-collapse-all-details)))
+      (should-not (hermes-chat--entry-expanded-p (funcall entry)))
+      (should (equal "▸ Tasks 1/3 · now: Verify\n"
+                     (hermes-chat-todos-test--node-text))))))
+
 (ert-deftest hermes-chat-todos-transcript-node-settles-and-next-turn-starts-fresh ()
   "Turn end settles the node in place; the next turn gets its own node."
   (hermes-chat-todos-test--chat

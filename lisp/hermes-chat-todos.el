@@ -267,10 +267,15 @@ pending reply; never while an old stream is suppressed."
                         'action #'hermes-chat-todos--open-button))
     (insert "\n")))
 
+(defun hermes-chat-todos--entry-collapsible-p (entry)
+  "Return non-nil when transcript task ENTRY has items to disclose."
+  (and (plist-get (plist-get entry :tasks) :items) t))
+
 (defun hermes-chat-todos--print-entry (entry)
   "Insert transcript task ENTRY, listing its items when expanded."
   (hermes-chat-todos--insert-header entry)
-  (when (hermes-chat--entry-expanded-p entry)
+  (when (and (hermes-chat--entry-expanded-p entry)
+             (hermes-chat-todos--entry-collapsible-p entry))
     (dolist (item (plist-get (plist-get entry :tasks) :items))
       (pcase-let ((`(,mark ,face) (pcase (plist-get item :status)
                                     ("completed" '("☑" success))
