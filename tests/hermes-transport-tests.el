@@ -710,10 +710,14 @@
   (should (eq (hermes-transport-work-process-state "future" nil nil) 'running)))
 
 (ert-deftest hermes-transport-work-process-metadata ()
-  "Malformed rows are skipped; elapsed comes from uptime, not local ISO time."
+  "Malformed rows fail the read; elapsed comes from uptime, not local ISO time."
+  (dolist (bad '("null" "false" "7" "{}" "{\"session_id\":\"\"}" "{\"session_id\":3}"))
+    (should-error (hermes-transport-work-processes
+                   (hermes-transport-json-parse-lossless
+                    (format "{\"processes\":[{\"session_id\":\"ok\"},%s]}" bad)))))
   (let* ((rows (hermes-transport-work-processes
                 (hermes-transport-json-parse-lossless
-                 "{\"processes\":[null,false,7,{},{\"session_id\":\"dup\",\"status\":\"running\"},{\"session_id\":\"dup\"},{\"session_id\":\"live\",\"status\":\"running\",\"command\":{},\"cwd\":false,\"started_at\":\"2026-10-12T10:00:00\",\"uptime_seconds\":42,\"output_preview\":\"first\\nlast line\\n\\n\"},{\"session_id\":\"gone\",\"status\":\"exited\",\"exit_code\":3,\"exited_at\":1700000000.5,\"completion_reason\":\"exited\"}]}")))
+                 "{\"processes\":[{\"session_id\":\"dup\",\"status\":\"running\"},{\"session_id\":\"dup\"},{\"session_id\":\"live\",\"status\":\"running\",\"command\":{},\"cwd\":false,\"started_at\":\"2026-10-12T10:00:00\",\"uptime_seconds\":42,\"output_preview\":\"first\\nlast line\\n\\n\"},{\"session_id\":\"gone\",\"status\":\"exited\",\"exit_code\":3,\"exited_at\":1700000000.5,\"completion_reason\":\"exited\"}]}")))
          (live (seq-find (lambda (row) (equal (plist-get row :id) "live")) rows))
          (gone (seq-find (lambda (row) (equal (plist-get row :id) "gone")) rows)))
     (should (equal (mapcar (lambda (row) (plist-get row :id)) rows) '("dup" "live" "gone")))
@@ -733,7 +737,12 @@
     (should-error (hermes-transport-work-subagents
                    (hermes-transport-json-parse-lossless wire))))
   (should-not (hermes-transport-work-subagents
-               (hermes-transport-json-parse-lossless "{\"subagents\":[null,false,{},7]}")))
+               (hermes-transport-json-parse-lossless "{\"subagents\":[]}")))
+  ;; One malformed entry fails the whole read rather than shrinking it.
+  (dolist (bad '("null" "false" "{}" "7" "{\"subagent_id\":\"\"}"))
+    (should-error (hermes-transport-work-subagents
+                   (hermes-transport-json-parse-lossless
+                    (format "{\"subagents\":[{\"subagent_id\":\"a\"},%s]}" bad)))))
   (let ((row (car (hermes-transport-work-subagents
                    (hermes-transport-json-parse-lossless
                     "{\"subagents\":[{\"subagent_id\":\"c\",\"parent_id\":\"p\",\"depth\":1,\"delegation_id\":\"d\",\"goal\":\"G\",\"model\":\"m\",\"started_at\":12.5,\"status\":\"queued\",\"tool_count\":3,\"last_tool\":\"terminal\",\"accepting_steer\":true},{\"subagent_id\":\"c\",\"status\":\"running\"}]}")))))

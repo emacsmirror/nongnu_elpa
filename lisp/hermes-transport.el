@@ -1180,8 +1180,9 @@ notices instead of flattening them to plain status text."
   (let ((value (hermes-transport--get object field)))
     (and (stringp value) (not (string-empty-p value)) value)))
 
-;; Roster rows are plain plists keyed by (KIND . ID); a malformed row is
-;; skipped and a repeated ID keeps its first row.
+;; Roster rows are plain plists keyed by (KIND . ID); a repeated ID keeps
+;; its first row.  A malformed row fails the whole read: dropping it would
+;; make its worker look finished.
 
 (defun hermes-transport--work-number (object field)
   "Return a nonnegative number from OBJECT's FIELD, or nil."
@@ -1189,17 +1190,18 @@ notices instead of flattening them to plain status text."
     (and (numberp value) (>= value 0) value)))
 
 (defun hermes-transport--work-rows (result field id-field project)
-  "Return PROJECT applied to RESULT's FIELD rows that carry ID-FIELD.
-Signal unless FIELD is an array."
-  (unless (and (hash-table-p result) (vectorp (gethash field result)))
-    (error "Invalid %s roster" field))
-  (seq-uniq
-   (delq nil (mapcar (lambda (row)
-                       (and (hash-table-p row)
-                            (hermes-transport-work-string row id-field)
-                            (funcall project row)))
-                     (gethash field result)))
-   (lambda (a b) (equal (plist-get a :key) (plist-get b :key)))))
+  "Return PROJECT applied to each of RESULT's FIELD rows.
+Signal unless FIELD is an array whose every row is an object carrying a
+nonempty ID-FIELD string."
+  (let ((rows (and (hash-table-p result) (gethash field result))))
+    (unless (and (vectorp rows)
+                 (seq-every-p (lambda (row)
+                                (and (hash-table-p row)
+                                     (hermes-transport-work-string row id-field)))
+                              rows))
+      (error "Invalid %s roster" field))
+    (seq-uniq (mapcar project rows)
+              (lambda (a b) (equal (plist-get a :key) (plist-get b :key))))))
 
 (defun hermes-transport-work-delegate-row (row)
   "Return display metadata for `subagent.list' ROW.

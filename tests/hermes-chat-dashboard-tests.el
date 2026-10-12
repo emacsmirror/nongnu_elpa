@@ -313,12 +313,15 @@
   (hermes-test--with-work-wire
     (hermes-chat-work-refresh)
     (hermes-test--work-answer
-     client "{\"subagents\":[{\"subagent_id\":\"a\",\"status\":\"running\"},{\"subagent_id\":\"b\",\"status\":\"queued\"},null]}")
+     client "{\"subagents\":[{\"subagent_id\":\"a\",\"status\":\"running\"},{\"subagent_id\":\"b\",\"status\":\"queued\"}]}")
     (let* ((owner hermes-chat--work-owner)
            (snapshot (plist-get owner :delegates))
            (label (if (char-displayable-p ?🤖) "🤖 2" "Agents 2")))
       (should (equal (hermes-test--work-text (hermes-chat--work-label nil)) label))
-      (dolist (failure '("{}" "{\"subagents\":null}" "{\"subagents\":7}" error timeout))
+      (dolist (failure '("{}" "{\"subagents\":null}" "{\"subagents\":7}"
+                         "{\"subagents\":[{\"subagent_id\":\"a\"},null]}"
+                         "{\"subagents\":[{\"subagent_id\":\"a\"},{\"status\":\"running\"}]}"
+                         error timeout))
         (hermes-chat-work-refresh)
         (let ((id (hermes-test--work-request-id owner)))
           (pcase failure
@@ -334,6 +337,25 @@
         (should-not (string-match-p "private error" (hermes-chat--work-details))))
       (should (= 0 (hash-table-count (hermes-dashboard-transport-client-pending client))))
       (should-not events))))
+
+(ert-deftest hermes-chat-work-malformed-roster-never-completes-workers ()
+  "A partly malformed roster is a failed read: no worker leaves or finishes."
+  (hermes-test--with-work-wire
+    (hermes-chat-work-refresh)
+    (hermes-test--work-answer
+     client "{\"subagents\":[{\"subagent_id\":\"a\",\"status\":\"running\"},{\"subagent_id\":\"b\",\"status\":\"running\"}]}")
+    (let* ((owner hermes-chat--work-owner)
+           (snapshot (plist-get owner :delegates))
+           (states (lambda ()
+                     (mapcar (lambda (row) (list (plist-get row :id) (plist-get row :state)))
+                             (plist-get (hermes-chat--work-roster owner (float-time)) :agents)))))
+      (hermes-chat-work-refresh)
+      (hermes-test--work-answer
+       client "{\"subagents\":[{\"subagent_id\":\"a\",\"status\":\"running\"},{\"status\":\"running\"}]}")
+      (should (eq snapshot (plist-get owner :delegates)))
+      (should-not (plist-get owner :events))
+      (should (equal (funcall states) '(("a" running) ("b" running))))
+      (should-not (plist-get owner :inflight)))))
 
 (ert-deftest hermes-chat-work-method-not-found-stops-that-kind ()
   "Only method-not-found stops polling a kind; explicit refresh retries it."
