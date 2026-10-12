@@ -240,6 +240,36 @@ Workers whose events are newer than the read keep running."
                              (lambda (a b) (string< (car a) (car b))))
                        '(("fresh" running) ("missed" completed))))))))
 
+(ert-deftest hermes-chat-work-tick-publishes-expiry-without-reads ()
+  "The poll tick republishes and prunes expired work when reads cannot run."
+  (let ((clock 1000.0))
+    (cl-letf (((symbol-function 'float-time) (lambda (&optional _) clock)))
+      (hermes-test--with-work
+        (let ((owner hermes-chat--work-owner)
+              (changes 0))
+          (cl-letf (((symbol-function 'hermes-chat--notify-state-change)
+                     (lambda () (cl-incf changes))))
+            (push :delegates (plist-get owner :unsupported))
+            (hermes-test--work-set
+             nil '((:key (process . "p") :id "p" :kind process :state done :exited-at 990.0)))
+            (hermes-chat--work-note-event '(:event "subagent.start" :subagent-id "a"))
+            (hermes-chat--work-note-event '(:event "subagent.complete" :subagent-id "a"))
+            (should (= changes 2))
+            (should (assoc "a" (plist-get owner :events)))
+            ;; Nothing expired yet: no read, no publication.
+            (setq clock 1030.0)
+            (hermes-chat--work-tick owner)
+            (should (= changes 2))
+            (setq clock 1061.0)
+            (hermes-chat--work-tick owner)
+            (should (= changes 3))
+            (should-not (plist-get owner :events))
+            (should-not (plist-get (hermes-chat--work-roster owner clock) :agents))
+            (should-not (plist-get (hermes-chat--work-roster owner clock) :processes))
+            (should-not calls)
+            (hermes-chat--work-tick owner)
+            (should (= changes 3))))))))
+
 (ert-deftest hermes-chat-work-tree-order ()
   "Parents precede their children depth first; orphans are roots."
   (let ((rows '((:id "c1" :parent "p") (:id "o" :parent "missing") (:id "p")

@@ -503,6 +503,7 @@ Report uncertainty for dispatched worker controls whose receipts are lost."
 
 (defun hermes-chat--work-changed (owner)
   "Announce a roster change to OWNER's chat header and work view."
+  (setf (plist-get owner :published) (float-time))
   (with-current-buffer (plist-get owner :buffer)
     (when-let* ((settle (plist-get owner :settle)))
       (funcall settle owner))
@@ -589,13 +590,25 @@ The snapshot stays as it was.  Stop reading KIND when the backend lacks it."
   (setf (plist-get owner :timer)
         (run-at-time delay nil #'hermes-chat--work-tick owner)))
 
+(defun hermes-chat--work-expire (owner now)
+  "Drop OWNER's expired events and republish if its roster changed by NOW.
+Retention is time-based, so the roster can change without any read: compare
+it with the roster at the last publication."
+  (let ((before (hermes-chat--work-roster owner (or (plist-get owner :published) now))))
+    (setf (plist-get owner :events)
+          (hermes-chat--work-prune (plist-get owner :events) now))
+    (unless (equal before (hermes-chat--work-roster owner now))
+      (hermes-chat--work-changed owner))))
+
 (defun hermes-chat--work-tick (owner)
   "Read OWNER's rosters, then rearm while it stays attached and visible.
-A superseded timer that fires while a newer one is pending does nothing."
+Publish retention expiry even when reads fail or are unsupported.  A
+superseded timer that fires while a newer one is pending does nothing."
   (unless (memq (plist-get owner :timer) timer-list)
     (setf (plist-get owner :timer) nil)
     (when (and (hermes-chat--work-current-p owner)
                (hermes-chat--work-visible-p owner))
+      (hermes-chat--work-expire owner (float-time))
       (hermes-chat--work-poll owner)
       (hermes-chat--work-arm owner hermes-chat--work-cadence))))
 
@@ -624,7 +637,7 @@ window hooks only arm timers; the first read runs from the timer."
                 :lifetime hermes-chat--lifecycle-generation
                 :instance (copy-tree hermes-instance) :profile hermes-chat--profile
                 :client client :connection (hermes-dashboard-transport-client-generation client)
-                :runtime runtime :delegates nil :processes nil :events nil
+                :runtime runtime :delegates nil :processes nil :events nil :published nil
                 :inflight nil :unsupported nil :timer nil :controls nil
                 :view nil :view-valid-p nil :render nil :refresh nil :settle nil
                 :current-p #'hermes-chat--work-current-p))
