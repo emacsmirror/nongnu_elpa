@@ -34,6 +34,8 @@
 
 (declare-function hermes-chat--switch-project "hermes-chat" (buffer-or-name))
 (declare-function hermes-switch-to-chat "hermes-chat" (buffer))
+(declare-function hermes-chat--work-visibility "hermes-chat-dashboard"
+                  (&optional departing))
 (declare-function hermes-chat--prompt-indicator-install "hermes-chat-prompts"
                   (&optional segment))
 (declare-function hermes-chat--prompt-indicator-uninstall "hermes-chat-prompts"
@@ -579,13 +581,16 @@ Only the newest spawning row may claim new workers."
   (if value
       (hermes-chat--prompt-indicator-install 'hermes-chat-work-indicator-mode-line)
     (hermes-chat--prompt-indicator-uninstall 'hermes-chat-work-indicator-mode-line))
+  ;; Hidden chats poll only while the segment wants their counts.
+  (when (fboundp 'hermes-chat--work-visibility)
+    (hermes-chat--work-visibility))
   (force-mode-line-update t))
 
 (defcustom hermes-chat-work-indicator t
   "Whether other chats' live work is shown in the global mode line.
 When non-nil, `global-mode-string' lists each chat that no window displays
 and that has running work or failures you have not seen, such as
-\"[Hermes 🤖 claude-code 2 · gnosis ✗1]\".  Clicking a chat switches to it.
+\"[Hermes 🤖 claude-code 2 · gnosis ✗ 1]\".  Clicking a chat switches to it.
 The segment is absent when there is nothing to show."
   :type 'boolean
   :initialize #'custom-initialize-default
@@ -690,7 +695,7 @@ Failures count until a window has displayed the chat."
     (propertize
      (concat (plist-get state :label)
              (if (> live 0) (propertize (format " %d" live) 'face 'hermes-work-running) "")
-             (if (> failed 0) (propertize (format " ✗%d" failed) 'face 'error) ""))
+             (if (> failed 0) (propertize (format " ✗ %d" failed) 'face 'hermes-work-failed) ""))
      'mouse-face 'mode-line-highlight
      'local-map map
      'help-echo (format "mouse-1: switch to %s" (buffer-name buffer)))))
@@ -713,7 +718,7 @@ Failures count until a window has displayed the chat."
            (define-key map [mode-line mouse-1] #'hermes-chat-work-indicator-switch)
            (propertize (concat (format "%d chats" (length chats))
                                (if (> failed 0)
-                                   (propertize (format " · ✗%d" failed) 'face 'error)
+                                   (propertize (format " · ✗ %d" failed) 'face 'hermes-work-failed)
                                  ""))
                        'mouse-face 'mode-line-highlight 'local-map map
                        'help-echo "mouse-1: switch to a chat with work"))

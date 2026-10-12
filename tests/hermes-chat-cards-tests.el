@@ -304,7 +304,7 @@
                               (default-value 'global-mode-string)))
                 (let ((segment (hermes-chat--work-indicator-string)))
                   (should (equal (substring-no-properties segment)
-                                 (format " [Hermes 🤖 %s 2 ✗1]" (buffer-name hidden))))
+                                 (format " [Hermes 🤖 %s 2 ✗ 1]" (buffer-name hidden))))
                   (should-not (string-search (concat (buffer-name shown) " ") segment))
                   (should (functionp (lookup-key (get-text-property
                                                   (string-search (buffer-name hidden) segment)
