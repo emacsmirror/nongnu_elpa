@@ -67,7 +67,11 @@ used first, annotated with session title, state and any divergent cwd.
   =?= opens it too.  An empty composer shows these key hints until you type
   (=hermes-chat-composer-placeholder=); the hint is never buffer text.
 - In the transcript, =n= and =p= move between your turns, and =M-x imenu=
-  lists them by first line.  In the composer these keys insert themselves.
+  lists them by first line.  =SPC= and =DEL= (or =S-SPC=) scroll like
+  =view-mode=.  =w= copies: with an active region it is =kill-ring-save=;
+  inside a fenced code block it copies just the code, without fences;
+  elsewhere it copies the Markdown source of the reply or message at point.
+  In the composer these keys keep their ordinary editing meaning.
 - The menu's Show group hides or shows expanded tool output (=O=) and
   reasoning (=E=) in the whole chat at once, without moving point, and
   expands (=+=) or collapses (=-=) every disclosure.  Hiding wins over an

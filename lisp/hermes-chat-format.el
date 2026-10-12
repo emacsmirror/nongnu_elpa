@@ -611,6 +611,18 @@ unfinished fenced code blocks stay unchanged."
             (goto-char (markdown-table-end)))
         (forward-line 1)))))
 
+(defun hermes-chat--mark-code-blocks ()
+  "Mark each fenced code block with its exact body source.
+Store the body, without fence lines, in the `hermes-chat-code' text
+property across the whole block, delimiters included."
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (if-let* ((block (hermes-chat--fenced-block-at-point)))
+          (put-text-property (1+ (nth 0 block)) (min (point-max) (1+ (nth 1 block)))
+                             'hermes-chat-code (nth 2 block))
+        (forward-line 1)))))
+
 (defun hermes-chat--fontify-markdown-string (text)
   "Return TEXT fontified with `markdown-mode', or TEXT on failure.
 Markup markers (* _ ` # ...) keep their faces but are never hidden, so the raw
@@ -624,6 +636,7 @@ languages in owned buffers with mode hooks suppressed."
         (hermes-chat--fontify-markdown-buffer
          markdown-fontify-code-blocks-natively)
         (hermes-chat--mark-markdown-tables)
+        (hermes-chat--mark-code-blocks)
         (remove-text-properties (point-min) (point-max) '(invisible nil))
         (buffer-string))
     (error text)))

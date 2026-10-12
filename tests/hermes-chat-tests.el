@@ -1911,6 +1911,85 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
           (should (equal (hermes-chat-input-string) "x?np"))
           (should (equal (car (hermes-chat--user-turn-positions)) first)))))))
 
+(ert-deftest hermes-chat-transcript-copy-key ()
+  "`w' copies code blocks, message source or the region; composer types it."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (let* ((reply "Run **this**:\n\n```sh\necho one\necho two\n```\n\nDone.")
+             (kill-ring nil)
+             (interprogram-cut-function nil)
+             (interprogram-paste-function nil)
+             (transient-mark-mode t)
+             (inhibit-message t))
+        (hermes-chat--insert-entry (hermes-chat--make-entry 'user "show *code*"))
+        (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant reply))
+        ;; Inside the fenced block: only its code, without fences.
+        (goto-char (point-min))
+        (search-forward "echo two")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "echo one\necho two\n"))
+        ;; Elsewhere in the reply: its exact Markdown source.
+        (goto-char (point-min))
+        (search-forward "Done")
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) reply))
+        ;; On the user turn: the submitted source, not the "> " prompt.
+        (goto-char (car (hermes-chat--user-turn-positions)))
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "show *code*"))
+        ;; An active region behaves like `kill-ring-save'.
+        (goto-char (point-min))
+        (search-forward "echo one")
+        (push-mark (match-beginning 0) t t)
+        (execute-kbd-macro "w")
+        (should (equal (current-kill 0) "echo one"))
+        (should-not (region-active-p))
+        ;; In the composer `w' is ordinary text.
+        (goto-char (point-max))
+        (execute-kbd-macro "wow")
+        (should (equal (hermes-chat-input-string) "wow"))
+        (should (equal (current-kill 0) "echo one"))))))
+
+(ert-deftest hermes-chat-copy-target-labels ()
+  "Copy targets report what they copied, falling back to visible text."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'assistant "```\na\nb\n```\nafter"))
+    (hermes-chat--insert-entry (hermes-chat--make-entry 'activity ""))
+    (goto-char (point-min))
+    (search-forward "b")
+    (should (equal (hermes-chat--copy-target (point))
+                   '("a\nb\n" . "Copied code block (2 lines)")))
+    (search-forward "after")
+    (should (equal (cdr (hermes-chat--copy-target (point))) "Copied reply"))
+    (search-forward "Working")
+    (should (equal (hermes-chat--copy-target (point))
+                   '("Working…" . "Copied entry text")))))
+
+(ert-deftest hermes-chat-transcript-scroll-keys ()
+  "SPC and DEL scroll the transcript; in the composer they edit text."
+  (hermes-test-with-chat-buffer
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (delete-other-windows)
+      (apply #'hermes-test--insert-user-turns
+             (mapcar (lambda (n) (format "question %d" n)) (number-sequence 1 60)))
+      (goto-char (point-min))
+      (set-window-start nil (point-min))
+      (execute-kbd-macro (kbd "SPC"))
+      (let ((after-spc (window-start)))
+        (should (> after-spc (point-min)))
+        (should (< (point) (hermes-chat--input-position)))
+        (execute-kbd-macro (kbd "DEL"))
+        (should (< (window-start) after-spc))
+        (execute-kbd-macro (kbd "SPC"))
+        (execute-kbd-macro (kbd "S-SPC"))
+        (should (< (window-start) after-spc)))
+      (goto-char (point-max))
+      (execute-kbd-macro (kbd "a SPC b DEL c"))
+      (should (equal (hermes-chat-input-string) "a c")))))
+
 (ert-deftest hermes-chat-imenu-lists-user-turns ()
   "The imenu index names each user turn by its first line."
   (hermes-test-with-chat-buffer

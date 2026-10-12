@@ -18,6 +18,12 @@
   empty composer, and an empty composer shows key hints
   (=hermes-chat-composer-placeholder=).  =n= / =p= move between user turns
   in the transcript, and =imenu= lists them.
+- Transcript reading keys: =SPC= and =DEL= / =S-SPC= scroll the chat like
+  =view-mode= instead of hitting =Text is read-only=.  =w= copies the code of
+  the fenced block at point without its fences, or else the Markdown source
+  of the reply or message at point (=Copied code block (12 lines)=,
+  =Copied reply=); with an active region it is plain =kill-ring-save=.  In
+  the composer all these keys keep their ordinary editing meaning.
 - A new Show group in =C-c C-o= hides or shows tool output and reasoning
   everywhere at once and expands or collapses every disclosure.  Every chat
   menu group now has at most four entries: Refresh commands moved to

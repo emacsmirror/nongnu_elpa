@@ -2878,15 +2878,58 @@ Do not wrap into the composer or modify its draft."
 
 (defun hermes-chat--transcript-key (command &optional empty-composer)
   "Return a filtered key binding running COMMAND outside the composer.
-In the composer the key inserts itself, unless EMPTY-COMPOSER is non-nil
-and the composer is empty."
+In the composer the binding steps aside so the key keeps its ordinary
+global meaning (inserting itself, or deleting for DEL), unless
+EMPTY-COMPOSER is non-nil and the composer is empty."
   `(menu-item "" ,command
               :filter ,(lambda (command)
-                         (if (or (not (hermes-chat--point-in-input-p))
-                                 (and empty-composer
-                                      (hermes-chat--composer-empty-p)))
-                             command
-                           #'self-insert-command))))
+                         (and (or (not (hermes-chat--point-in-input-p))
+                                  (and empty-composer
+                                       (hermes-chat--composer-empty-p)))
+                              command))))
+
+(defun hermes-chat--entry-node-at (position)
+  "Return the transcript EWOC node containing POSITION, or nil."
+  (when-let* ((ewoc hermes-chat--ewoc)
+              (node (ewoc-locate ewoc position)))
+    (and (<= (ewoc-location node) position) node)))
+
+(defun hermes-chat--entry-visible-text (node)
+  "Return NODE's rendered transcript text without properties."
+  (let* ((next (ewoc-next hermes-chat--ewoc node))
+         (end (if next (ewoc-location next) (hermes-chat--input-position))))
+    (string-trim (buffer-substring-no-properties (ewoc-location node) end))))
+
+(defun hermes-chat--copy-target (position)
+  "Return (TEXT . MESSAGE) for the transcript content at POSITION, or nil.
+Prefer the exact body of a fenced code block, then the Markdown source
+of a user or assistant entry, then the entry's visible text."
+  (if-let* ((code (get-text-property position 'hermes-chat-code)))
+      (cons code (format "Copied code block (%d lines)"
+                         (length (split-string (string-remove-suffix "\n" code)
+                                               "\n"))))
+    (when-let* ((node (hermes-chat--entry-node-at position)))
+      (let* ((entry (ewoc-data node))
+             (role (plist-get entry :role))
+             (source (plist-get entry :content)))
+        (if (and (memq role '(user assistant))
+                 (stringp source) (not (string-empty-p source)))
+            (cons source (if (eq role 'user) "Copied message" "Copied reply"))
+          (cons (hermes-chat--entry-visible-text node) "Copied entry text"))))))
+
+(defun hermes-chat-copy ()
+  "Copy the transcript content at point to the kill ring.
+With an active region, behave exactly like `kill-ring-save'.  Otherwise
+copy the code of the fenced block at point without its fences, or else
+the Markdown source of the message at point."
+  (interactive nil hermes-chat-mode)
+  (if (region-active-p)
+      (call-interactively #'kill-ring-save)
+    (pcase-let ((`(,text . ,label)
+                 (or (hermes-chat--copy-target (point))
+                     (user-error "Nothing to copy here"))))
+      (kill-new text)
+      (message "%s" label))))
 
 (defun hermes-chat--user-turn-positions ()
   "Return the transcript start of each submitted user turn, in order."
@@ -3387,6 +3430,10 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "?" (hermes-chat--transcript-key #'hermes-chat-actions-map-popup t)
   "n" (hermes-chat--transcript-key #'hermes-chat-next-turn)
   "p" (hermes-chat--transcript-key #'hermes-chat-previous-turn)
+  "w" (hermes-chat--transcript-key #'hermes-chat-copy)
+  "SPC" (hermes-chat--transcript-key #'scroll-up-command)
+  "S-SPC" (hermes-chat--transcript-key #'scroll-down-command)
+  "DEL" (hermes-chat--transcript-key #'scroll-down-command)
   "<backtab>" #'hermes-chat-previous-button
   "<remap> <forward-button>" #'hermes-chat-next-button
   "<remap> <backward-button>" #'hermes-chat-previous-button
