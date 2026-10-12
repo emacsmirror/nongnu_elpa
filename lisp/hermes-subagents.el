@@ -796,31 +796,95 @@ their card."
 
 ;;;; Worker details
 
-(defun hermes-work--fill-lines (text width)
-  "Return TEXT's lines, filling each wider than WIDTH under its own indent."
-  (mapcan (lambda (line)
-            (let ((line (string-trim-right line)))
-              (if (<= (string-width line) width)
-                  (list line)
-                (let ((indent (progn (string-match "\\`[ \t]*" line) (match-string 0 line))))
-                  (mapcar (lambda (part) (concat indent part))
-                          (split-string (string-fill (substring line (length indent))
-                                                     (max 20 (- width (string-width indent))))
-                                        "\n"))))))
-          (split-string (or text "") "\n")))
+(defun hermes-work--fill-line (line width)
+  "Return LINE's parts, filled to WIDTH under its own indent when wider."
+  (let ((line (string-trim-right line)))
+    (if (<= (string-width line) width)
+        (list line)
+      (let ((indent (progn (string-match "\\`[ \t]*" line) (match-string 0 line))))
+        (mapcar (lambda (part) (concat indent part))
+                (split-string (string-fill (substring line (length indent))
+                                           (max 20 (- width (string-width indent))))
+                              "\n"))))))
 
 (defun hermes-work--hang (prefix text width &optional face)
   "Return PREFIX and TEXT in FACE, filled to WIDTH with a hanging indent.
 Continuation lines start under TEXT's first column, so the text reads
-as one block beside PREFIX."
+as one block beside PREFIX.  Line breaks that filling adds carry
+`hermes-work-fill', so a reader's place survives a refill."
   (let ((indent (make-string (string-width prefix) ?\s))
-        (lines (hermes-work--fill-lines text (- width (string-width prefix)))))
-    (mapconcat #'identity
-               (cons (concat prefix (propertize (car lines) 'face (or face 'default)))
-                     (mapcar (lambda (line)
-                               (concat indent (propertize line 'face (or face 'default))))
-                             (cdr lines)))
+        (break (propertize "\n" 'hermes-work-fill t))
+        (lead prefix))
+    (mapconcat (lambda (line)
+                 (mapconcat (lambda (part)
+                              (prog1 (concat lead (propertize part 'face (or face 'default)))
+                                (setq lead indent)))
+                            (hermes-work--fill-line line (- width (string-width prefix)))
+                            break))
+               (split-string (or text "") "\n")
                "\n")))
+
+(defun hermes-work--detail-char (position)
+  "Return the kind of character at POSITION in a filled detail.
+It is `break' for a source line break, `blank' for filling whitespace,
+`text' otherwise, or nil at the end."
+  (pcase (char-after position)
+    ('nil nil)
+    (?\n (if (get-text-property position 'hermes-work-fill) 'blank 'break))
+    ((or ?\s ?\t) 'blank)
+    (_ 'text)))
+
+(defun hermes-work--detail-anchor (position)
+  "Return POSITION in this detail's unfilled text as (LINE COUNT ON-TEXT).
+LINE counts source line breaks before POSITION; COUNT is the text
+characters between that line's start and POSITION; ON-TEXT is non-nil
+when POSITION is on text.  Filling only rewrites blanks, so the anchor
+survives refilling the same text to any width."
+  (let ((line 0) (count 0))
+    (dotimes (offset (- position (point-min)))
+      (pcase (hermes-work--detail-char (+ (point-min) offset))
+        ('break (setq line (1+ line) count 0))
+        ('text (setq count (1+ count)))))
+    (list line count (eq (hermes-work--detail-char position) 'text))))
+
+(defun hermes-work--detail-place (anchor &optional on-text)
+  "Return the position of ANCHOR from `hermes-work--detail-anchor'.
+With ON-TEXT, or when ANCHOR was on text, skip blanks to the next text."
+  (pcase-let ((`(,line ,count ,was-on-text) anchor)
+              (position (point-min)))
+    (while (and (> line 0) (hermes-work--detail-char position))
+      (when (eq (hermes-work--detail-char position) 'break)
+        (setq line (1- line)))
+      (setq position (1+ position)))
+    (while (and (> count 0) (memq (hermes-work--detail-char position) '(text blank)))
+      (when (eq (hermes-work--detail-char position) 'text)
+        (setq count (1- count)))
+      (setq position (1+ position)))
+    (when (or on-text was-on-text)
+      (while (eq (hermes-work--detail-char position) 'blank)
+        (setq position (1+ position))))
+    position))
+
+(defun hermes-work--detail-repaint (text)
+  "Replace this detail with TEXT, keeping point and each window on its text.
+A refill moves text across lines, so places are kept in unfilled text,
+not line and column."
+  (let ((point (hermes-work--detail-anchor (point)))
+        (windows (mapcar (lambda (window)
+                           (list window (hermes-work--detail-anchor (window-start window))
+                                 (hermes-work--detail-anchor (window-point window))))
+                         (get-buffer-window-list nil nil t))))
+    (let ((inhibit-read-only t) (inhibit-modification-hooks t))
+      (erase-buffer)
+      (insert text))
+    (goto-char (hermes-work--detail-place point))
+    (pcase-dolist (`(,window ,start ,place) windows)
+      (set-window-start window
+                        (save-excursion
+                          (goto-char (hermes-work--detail-place start t))
+                          (line-beginning-position))
+                        t)
+      (set-window-point window (hermes-work--detail-place place)))))
 
 (defun hermes-work--detail-field (label text width &optional face)
   "Return a detail line labelled LABEL showing TEXT in FACE within WIDTH.
@@ -971,12 +1035,8 @@ A row that left the roster keeps its last-known text."
           (hermes-work--detail-header
            key row current (and current (hermes-work--row-log owner row))))
     (when row
-      (hermes-browser--preserve-reading-position
-       (lambda ()
-         (let ((inhibit-read-only t) (inhibit-modification-hooks t))
-           (erase-buffer)
-           (insert (hermes-work--detail-text row (plist-get roster :agents) now
-                                             hermes-work--width))))))))
+      (hermes-work--detail-repaint
+       (hermes-work--detail-text row (plist-get roster :agents) now hermes-work--width)))))
 
 (defun hermes-work--detail-buffer (owner key)
   "Return OWNER's one detail buffer for KEY, creating it once."

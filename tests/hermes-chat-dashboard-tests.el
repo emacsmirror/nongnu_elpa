@@ -5070,6 +5070,38 @@ Each source line keeps its own indentation, and nothing exceeds the width."
       (kill-buffer buffer)
       (delete-file file))))
 
+(ert-deftest hermes-work-detail-reflow-keeps-each-reader-on-its-text ()
+  "Narrowing and widening refill a long goal, yet each window stays on its text."
+  (let* ((row (list :key '(delegate . "w") :id "w" :kind 'delegate :state 'failed
+                    :goal (mapconcat #'identity (make-list 24 "lengthy") " ")
+                    :error "First failure line\nERROR-ANCHOR details follow"
+                    :summary "SUMMARY-ANCHOR closing words"))
+         (roster (list :agents (list row)))
+         (buffer (hermes-work--detail-buffer (list :runtime "r") '(delegate . "w")))
+         (width 80))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer buffer)
+          (let ((other (split-window)))
+            (set-window-buffer other buffer)
+            (cl-letf (((symbol-function 'hermes-chat--work-roster) (lambda (&rest _) roster))
+                      ((symbol-function 'window-body-width) (lambda (&rest _) width)))
+              (hermes-work--detail-render roster 0)
+              (goto-char (+ (string-search "ERROR-ANCHOR" (buffer-string)) 7))
+              (set-window-point other (+ (string-search "SUMMARY-ANCHOR" (buffer-string)) 4))
+              (set-window-start other (+ (string-search "Summary\n" (buffer-string)) 1))
+              (dolist (next '(40 100 30 80))
+                (setq width next)
+                (hermes-work--resize other)
+                (should (eql hermes-work--width next))
+                (should (looking-at-p "ANCHOR details"))
+                (should (save-excursion (goto-char (window-point other))
+                                        (looking-at-p "MARY-ANCHOR closing")))
+                (should (save-excursion (goto-char (window-start other))
+                                        (looking-at-p "Summary$")))))))
+      (kill-buffer buffer))))
+
 (defun hermes-test--offered (rows key &optional detail log current)
   "Return the actions the popup offers for KEY among ROWS.
 DETAIL asks from a detail buffer; LOG names a published log; CURRENT
