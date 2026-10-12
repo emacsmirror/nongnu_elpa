@@ -595,6 +595,19 @@ the state counts stay to the last."
       (run-hooks 'window-configuration-change-hook)
       (should (< (plist-get (hermes-test--card-of "call-1") :width) wide)))))
 
+(ert-deftest hermes-chat-card-width-caps-and-times-follow-the-card ()
+  "Wide windows cap cards, and right-hand times align to the card's edge."
+  (let ((hermes-chat-card-max-width 100))
+    (with-temp-buffer
+      (set-window-buffer (selected-window) (current-buffer))
+      (cl-letf (((symbol-function 'hermes-chat--table-window-width) (lambda () 170)))
+        (should (= (hermes-chat--card-width) 100)))
+      (cl-letf (((symbol-function 'hermes-chat--table-window-width) (lambda () 60)))
+        (should (= (hermes-chat--card-width) 60)))))
+  (let* ((line (hermes-chat--card-line "  ✓ Root" "1:13" 100))
+         (pos (string-search "1:13" line)))
+    (should (equal (get-text-property (1- pos) 'display line) '(space :align-to 97)))))
+
 ;;;; Timers
 
 (ert-deftest hermes-chat-card-timer-stops-when-hidden-or-retired ()

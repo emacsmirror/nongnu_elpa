@@ -44,6 +44,13 @@
 
 ;;;; Pure presentation
 
+(defcustom hermes-chat-card-max-width 100
+  "Most columns an inline worker or process card spans.
+On wider windows a card keeps this width, so its right-aligned times
+stay near the text they describe."
+  :type 'natnum
+  :group 'hermes)
+
 (defconst hermes-chat--card-default-width 78
   "Columns a card uses before any window has displayed it.")
 
@@ -60,12 +67,14 @@
    (string-trim (replace-regexp-in-string "[\t\n\r]+" " " (or text "")))
    (max 1 width) nil nil "…"))
 
-(defun hermes-chat--card-right (text &optional face)
-  "Return TEXT in FACE, right-aligned to the window edge."
+(defun hermes-chat--card-right (text width &optional face)
+  "Return TEXT in FACE, right-aligned to the edge of a card WIDTH columns wide.
+Uncapped cards are two columns narrower than their window, so TEXT ends
+one column short of the window edge, as before the cap existed."
   (if (string-empty-p text)
       ""
     (concat (propertize " " 'display
-                        `(space :align-to (- right ,(1+ (string-width text)))))
+                        `(space :align-to ,(- (1+ width) (string-width text))))
             (propertize text 'face (or face 'shadow)))))
 
 (defun hermes-chat--card-line (left right width &optional face)
@@ -77,7 +86,7 @@ LEFT is truncated to leave room for RIGHT.  Below
              left (max 1 (- width (if (string-empty-p right) 0
                                     (+ (string-width right) 2))))
              nil nil "…")
-            (hermes-chat--card-right right face)
+            (hermes-chat--card-right right width face)
             "\n")))
 
 (defun hermes-chat--card-plural (count noun)
@@ -667,10 +676,12 @@ A nil CARD returns the row to a plain tool row."
     (hermes-chat--work-roster owner now)))
 
 (defun hermes-chat--card-width ()
-  "Return the columns cards use: the narrowest displaying window's."
-  (if (get-buffer-window (current-buffer) t)
-      (hermes-chat--table-window-width)
-    hermes-chat--card-default-width))
+  "Return the columns cards use: the narrowest displaying window's.
+Never exceed `hermes-chat-card-max-width'."
+  (min hermes-chat-card-max-width
+       (if (get-buffer-window (current-buffer) t)
+           (hermes-chat--table-window-width)
+         hermes-chat--card-default-width)))
 
 (defun hermes-chat--card-goal-bindings (nodes roster now)
   "Return (NODE . DELEGATION-ID) for unbound spawning NODES matched by goals.
