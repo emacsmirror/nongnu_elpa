@@ -553,9 +553,11 @@ id goals matched to ENTRY; :claimable, whether ENTRY may match new work;
                     (rows (hermes-chat--card-delegate-rows
                            (plist-get roster :agents) delegation roots
                            (plist-get card :rows) now (not active))))
-         (when (or rows active)
-           (list :kind 'delegate :delegation delegation :roots roots :rows rows
-                 :tasks (hermes-chat--card-task-count event) :now now :width width))))
+         (let ((tasks (hermes-chat--card-task-count event)))
+           ;; Before any worker is attributed, a live call shows its task count.
+           (when (or rows (and active (> tasks 0)))
+             (list :kind 'delegate :delegation delegation :roots roots :rows rows
+                   :tasks tasks :now now :width width)))))
       ('process
        (let* ((row (hermes-chat--card-process
                     event card (plist-get roster :processes) (plist-get context :taken)
