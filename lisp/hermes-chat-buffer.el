@@ -831,6 +831,7 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
           hermes-chat--interrupted-events nil
           hermes-chat--interrupt-request-pending-p nil
           hermes-chat--ansi-fragments (make-hash-table :test #'equal)
+          hermes-chat--unknown-event-detail-cache nil
           hermes-chat--session-id nil
           hermes-chat--ewoc (ewoc-create #'hermes-chat--print-entry
                                          nil

@@ -1885,6 +1885,49 @@ PHASE defaults to `after-change-functions'."
          (push-button (1- (point)))
          (should (= pp-calls calls)))))))
 
+(ert-deftest hermes-chat-unknown-event-collapsed-preview-printing-is-bounded ()
+  "Collapsed insertion prints only a bounded prefix of a huge raw payload."
+  (let* ((raw (number-sequence 1 100000))
+         (event (list :type 'unknown :event "tool.huge" :raw raw))
+         (printed 0)
+         (real-format (symbol-function 'format))
+         (real-prin1 (symbol-function 'prin1-to-string)))
+    (cl-letf (((symbol-function 'format)
+               (lambda (fmt &rest args)
+                 (let ((text (apply real-format fmt args)))
+                   (when (memq raw args)
+                     (setq printed (max printed (length text))))
+                   text)))
+              ((symbol-function 'prin1-to-string)
+               (lambda (object &rest args)
+                 (let ((text (apply real-prin1 object args)))
+                   (when (eq object raw)
+                     (setq printed (max printed (length text))))
+                   text))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry nil event)
+       (should-not hermes-chat--unknown-event-detail-cache)
+       (should (< printed 1000))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.huge")
+       (let ((help (get-text-property (1- (point)) 'help-echo)))
+         (should (string-match-p "raw: (1 2 3" help))
+         (should-not (string-match-p "99999" help))
+         (should (< (length help) 400)))))))
+
+(ert-deftest hermes-chat-clear-drops-unknown-event-detail-cache ()
+  "Clearing the transcript discards cached unknown event details."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--upsert-transport-entry
+    nil (list :type 'unknown :event "x" :raw '(1 2 3)))
+   (goto-char (point-min))
+   (search-forward "Unknown event x")
+   (push-button (1- (point)))
+   (should (= (hash-table-count hermes-chat--unknown-event-detail-cache) 1))
+   (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+     (call-interactively #'hermes-chat-clear))
+   (should-not hermes-chat--unknown-event-detail-cache)))
+
 (ert-deftest hermes-chat-unknown-event-detail-pretty-prints-small-payloads ()
   "Small raw payloads are pretty-printed across lines when expanded."
   (let ((detail (hermes-chat--unknown-event-detail

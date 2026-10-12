@@ -845,15 +845,30 @@ FIXED-WIDTHS retains a streaming table's established column allocation."
        (hermes-chat--message-start-noise-content-p
         (hermes-chat--event-string event '(:content :text :preview)))))
 
+(defconst hermes-chat--unknown-event-preview-print-length 20
+  "`print-length' bound while printing unknown event raw previews.")
+
+(defconst hermes-chat--unknown-event-preview-print-level 4
+  "`print-level' bound while printing unknown event raw previews.")
+
+(defun hermes-chat--unknown-event-raw-preview (raw)
+  "Return a one-line preview of unknown event payload RAW.
+Printing is bounded by `print-length' and `print-level', and string payloads
+are cut before printing, so the preview never traverses all of RAW."
+  (let* ((width hermes-chat--unknown-event-raw-preview-width)
+         (print-length hermes-chat--unknown-event-preview-print-length)
+         (print-level hermes-chat--unknown-event-preview-print-level)
+         (print-escape-newlines t)
+         (object (if (and (stringp raw) (> (length raw) width))
+                     (substring raw 0 width)
+                   raw)))
+    (truncate-string-to-width (prin1-to-string object) width nil nil "…")))
+
 (defun hermes-chat--unknown-event-content (event)
   "Return visible diagnostic text for unknown transport EVENT."
   (let* ((name (or (hermes-chat--event-string event '(:event)) "unnamed"))
          (raw (plist-get event :raw))
-         (preview (and raw
-                       (truncate-string-to-width
-                        (format "%S" raw)
-                        hermes-chat--unknown-event-raw-preview-width
-                        nil nil "…"))))
+         (preview (and raw (hermes-chat--unknown-event-raw-preview raw))))
     (string-join
      (delq nil (list (format "Unknown Hermes transport event: %s" name)
                      (and preview (format "raw: %s" preview))))
