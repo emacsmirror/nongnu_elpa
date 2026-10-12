@@ -2164,10 +2164,14 @@ An opted-in REQUEST requires original serialized TEXT, not a decoded frame."
          (pending (and id (hermes-dashboard-transport--take-pending client id)))
          (method (plist-get pending :method))
          (code (hermes-dashboard-transport--response-error-code frame))
+         (text (hermes-dashboard-transport--normalized-error-message
+                client (hermes-dashboard-transport--response-error-message frame)))
+         ;; An empty string cannot carry the routing properties below.
          (message
           (propertize
-           (hermes-dashboard-transport--normalized-error-message
-            client (hermes-dashboard-transport--response-error-message frame))
+           (cond ((not (string-empty-p text)) text)
+                 (code (format "JSON-RPC error %s" code))
+                 (t "Hermes dashboard request failed"))
            'hermes-rpc-code code 'hermes-rpc-method method))
          handled)
     (when pending

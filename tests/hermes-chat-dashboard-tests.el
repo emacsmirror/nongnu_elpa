@@ -1236,6 +1236,81 @@
         (should-not (string-match-p "foreign secret" (hermes-chat--work-details))))
       (should-not events))))
 
+(ert-deftest hermes-chat-work-method-not-found-empty-message-stays-paused ()
+  "Raw -32601 with an empty message pauses; an empty transient error retries."
+  (dolist (code '(-32601 -32603))
+    (hermes-test--with-work-clock
+      (hermes-test--with-work-wire
+        (hermes-chat-work-refresh)
+        (let ((id (plist-get (plist-get hermes-chat--work-owner :request) :id)))
+          (hermes-dashboard-transport--handle-frame
+           client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":%s,\"message\":\"\"}}"
+                          id code)))
+        (let ((source (plist-get hermes-chat--work-owner :delegates)))
+          (should (eq (plist-get source :coverage) 'stale))
+          (should (eq (and (plist-get source :paused) t) (eql code -32601)))
+          (should (eq (and (plist-get source :retry-at) t) (not (eql code -32601))))
+          (should (eq (and (plist-get hermes-chat--work-owner :timer) t)
+                      (not (eql code -32601)))))
+        (should-not events)))))
+
+(ert-deftest hermes-chat-work-asymmetric-failure-keeps-sibling-current ()
+  "One source backs off to the cap while its healthy sibling reads every cadence.
+Replayed consumed timers never replace the request or grow pending requests."
+  (dolist (failed '(:delegates :processes))
+    (hermes-test--with-work-clock
+      (hermes-test--with-process-wire
+        (let ((owner hermes-chat--work-owner)
+              (healthy 0) (failing 0) delays
+              (cycles 30))
+          (hermes-chat-work-refresh)
+          (dotimes (_ cycles)
+            (while (plist-get owner :request)
+              (should (= 1 (hash-table-count
+                            (hermes-dashboard-transport-client-pending client))))
+              (let* ((context (plist-get owner :request))
+                     (id (plist-get context :id)))
+                (if (eq failed (plist-get context :source))
+                    (progn
+                      (cl-incf failing)
+                      (hermes-dashboard-transport--handle-frame
+                       client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":-32603,\"message\":\"temporary\"}}" id))
+                      (push (- (plist-get (plist-get owner failed) :retry-at) now) delays))
+                  (cl-incf healthy)
+                  (hermes-test--work-answer
+                   client (if (eq (plist-get context :source) :delegates)
+                              "{\"subagents\":[]}" "{\"processes\":[]}")))))
+            (should (= 0 (hash-table-count (hermes-dashboard-transport-client-pending client))))
+            (should-not (plist-get owner :cycle))
+            ;; The healthy sibling keeps the ordinary cadence despite backoff.
+            (should (= 5 (car (cdr (plist-get owner :timer)))))
+            (let ((source (plist-get owner failed))
+                  (sibling (plist-get owner (if (eq failed :delegates) :processes :delegates))))
+              (should (eq (plist-get sibling :coverage) 'current))
+              (should-not (plist-get sibling :failures))
+              (should (eq (plist-get source :coverage) 'stale))
+              (should-not (plist-get source :paused))
+              (should (<= (- (plist-get source :retry-at) now) 60)))
+            (let ((consumed (cdr (plist-get owner :timer))))
+              (setq now (+ now 5))
+              (hermes-test--work-fire owner)
+              (let ((request (plist-get owner :request))
+                    (sent (length frames)))
+                (apply (cadr consumed) (nth 2 consumed))
+                (should (eq request (plist-get owner :request)))
+                (should (= sent (length frames)))
+                (should (<= (hash-table-count
+                             (hermes-dashboard-transport-client-pending client))
+                            1)))))
+          (should (= healthy cycles))
+          ;; 5+10+20+40+60... over 150 s: capped backoff, never every cadence.
+          (should (< failing (/ cycles 2)))
+          (should (>= failing 5))
+          (setq delays (nreverse delays))
+          (should (equal (seq-take delays 5) '(5.0 10.0 20.0 40.0 60.0)))
+          (should (seq-every-p (lambda (delay) (= delay 60)) (nthcdr 4 delays)))
+          (should-not events))))))
+
 (ert-deftest hermes-chat-work-manual-refresh-overrides-backoff ()
   "g retries immediately inside a long backoff and resets its growth."
   (hermes-test--with-work-clock

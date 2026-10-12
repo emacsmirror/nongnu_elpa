@@ -5801,6 +5801,24 @@ url.el flags every 4xx/5xx via the callback status; the useless
     (should (eql (get-text-property 0 'hermes-rpc-code reason) 4018))
     (should (equal (get-text-property 0 'hermes-rpc-method reason) "slash.exec"))))
 
+(ert-deftest hermes-transport-rpc-failure-empty-message-keeps-code ()
+  "An empty JSON-RPC error message still carries its code to string consumers."
+  (dolist (message '("" nil))
+    (let* ((client (hermes-test--dashboard-client))
+           (hermes-dashboard-transport-request-timeout nil)
+           (hermes-dashboard-transport-websocket-send-function #'ignore)
+           reason
+           (id (hermes-dashboard-transport-request client "process.list" nil nil
+                                                    (lambda (text) (setq reason text)))))
+      (hermes-dashboard-transport--handle-frame
+       client (if message
+                  (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":-32601,\"message\":\"\"}}" id)
+                (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":-32601}}" id)))
+      (should (stringp reason))
+      (should (> (length reason) 0))
+      (should (eql (get-text-property 0 'hermes-rpc-code reason) -32601))
+      (should (equal (get-text-property 0 'hermes-rpc-method reason) "process.list")))))
+
 (ert-deftest hermes-transport-server-request-replay-rebind-and-cancel ()
   "Replay grants an unanswered request only to its current session subscriber."
   (let* ((client (hermes-test--dashboard-client))
