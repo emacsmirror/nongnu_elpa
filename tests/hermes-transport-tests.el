@@ -5819,6 +5819,35 @@ url.el flags every 4xx/5xx via the callback status; the useless
       (should (eql (get-text-property 0 'hermes-rpc-code reason) -32601))
       (should (equal (get-text-property 0 'hermes-rpc-method reason) "process.list")))))
 
+(ert-deftest hermes-transport-rpc-failure-empty-message-redacts-code ()
+  "An empty-message fallback never echoes a non-integer or secret code."
+  (dolist (code '("\"private-token\"" "{\"x\":\"private-token\"}" "1.5"))
+    (let* ((client (hermes-test--dashboard-client))
+           (hermes-dashboard-transport-request-timeout nil)
+           (hermes-dashboard-transport-websocket-send-function #'ignore)
+           reason
+           (id (hermes-dashboard-transport-request client "process.list" nil nil
+                                                    (lambda (text) (setq reason text)))))
+      (setf (hermes-dashboard-transport-client-token client) "private-token")
+      (hermes-dashboard-transport--handle-frame
+       client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":%s,\"message\":\"\"}}"
+                      id code))
+      (should (equal reason "Hermes dashboard request failed"))
+      (should (equal (get-text-property 0 'hermes-rpc-method reason) "process.list"))))
+  ;; An integer code equal to the secret text is still redacted.
+  (let* ((client (hermes-test--dashboard-client))
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function #'ignore)
+         reason
+         (id (hermes-dashboard-transport-request client "process.list" nil nil
+                                                  (lambda (text) (setq reason text)))))
+    (setf (hermes-dashboard-transport-client-token client) "4242")
+    (hermes-dashboard-transport--handle-frame
+     client (format "{\"jsonrpc\":\"2.0\",\"id\":%S,\"error\":{\"code\":4242,\"message\":\"\"}}" id))
+    (should (stringp reason))
+    (should-not (string-match-p "4242" reason))
+    (should (equal (get-text-property 0 'hermes-rpc-method reason) "process.list"))))
+
 (ert-deftest hermes-transport-server-request-replay-rebind-and-cancel ()
   "Replay grants an unanswered request only to its current session subscriber."
   (let* ((client (hermes-test--dashboard-client))
