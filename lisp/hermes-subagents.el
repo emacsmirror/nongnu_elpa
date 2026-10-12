@@ -252,7 +252,8 @@ Fields with no text are omitted; text is wrapped to WIDTH."
 
 (defun hermes-work--agent-meta (row now)
   "Return worker ROW's quiet meta parts at NOW: model, tools, elapsed, verdict.
-Glyphs carry running, queued, done and failed; other states add their word."
+Glyphs carry running, done and failed; other states add their word last,
+in the time column, as a queued worker has no time yet."
   (let ((count (plist-get row :tool-count))
         (elapsed (hermes-work--elapsed row now))
         (state (hermes-work-display-state row)))
@@ -260,12 +261,23 @@ Glyphs carry running, queued, done and failed; other states add their word."
             (delq nil (list (hermes-work--model (plist-get row :model))
                             (and count (hermes-work--tools-text count))
                             (and elapsed (hermes-work-duration elapsed))
-                            (unless (memq state '(running queued done failed))
+                            (unless (memq state '(running done failed))
                               (hermes-work-state-label state)))))))
 
+(defun hermes-work--plain-line (line)
+  "Return LINE without inline Markdown markup.
+Drop leading heading, list and quote markers, then emphasis and code
+delimiters around text."
+  (let ((line (replace-regexp-in-string
+               "\\`\\(?:\\(?:#+\\|[-*+>]\\)[ \t]+\\)+" "" line)))
+    (dolist (pattern '("\\*\\*\\([^*\n]+\\)\\*\\*" "__\\([^_\n]+\\)__" "`\\([^`\n]+\\)`")
+                     line)
+      (setq line (replace-regexp-in-string pattern "\\1" line t)))))
+
 (defun hermes-work--first-line (text)
-  "Return the first nonblank line of TEXT, or nil."
-  (car (split-string (or text "") "\n" t "[ \t\r]+")))
+  "Return the first nonblank line of TEXT as plain text, or nil."
+  (when-let* ((line (car (split-string (or text "") "\n" t "[ \t\r]+"))))
+    (hermes-work--plain-line line)))
 
 (defun hermes-work--agent-lines (row depth view now width hidden)
   "Return the lines for worker ROW at DEPTH under VIEW at NOW within WIDTH.
@@ -284,7 +296,6 @@ HIDDEN counts descendants folded under it."
      (list heading)
      (pcase state
        ('running (and tool (list (hermes-work--activity key (1+ depth) (car tool) (cdr tool) width))))
-       ('queued (list (hermes-work--activity key (1+ depth) nil "waiting for a slot" width)))
        ('failed (when-let* ((text (hermes-work--first-line (plist-get row :error))))
                   (list (hermes-work--activity key (1+ depth) nil text width
                                                'hermes-work-failed)))))
@@ -331,22 +342,25 @@ A failure's verdict carries the failed face."
 
 (defun hermes-work--process-lines (row view now width)
   "Return the lines for process ROW under VIEW at NOW within WIDTH.
-Clean and killed exits fade; a failure keeps its command readable."
+Clean and killed exits fade; a failure keeps its command readable and,
+like a running process, shows its last output line."
   (pcase-let* ((key (plist-get row :key))
                (`(,state ,glyph ,_) (hermes-work--display row))
-               (running (eq state 'running)))
+               (heading (hermes-work--heading
+                         key 0 glyph (plist-get row :command) (hermes-work--process-meta row now)
+                         width nil (unless (memq state '(running failed)) 'hermes-work-fading)))
+               (line (and (memq state '(running failed)) (plist-get row :last-line))))
     (append
-     (list (hermes-work--heading
-            key 0 glyph (plist-get row :command) (hermes-work--process-meta row now) width
-            nil (unless (memq state '(running failed)) 'hermes-work-fading)))
-     (and running (plist-get row :last-line)
-          (list (hermes-work--activity key 1 nil (plist-get row :last-line) width)))
+     (list heading)
+     (and line (list (hermes-work--activity key 1 nil line width
+                                            (and (eq state 'failed) 'hermes-work-failed))))
      (and (member key (plist-get view :cards))
           (hermes-work--card
            key 2
-           (list (list "Command" (plist-get row :command) 'default)
+           (list (list "Command" (and (plist-get heading :truncated) (plist-get row :command))
+                       'default)
                  (list "Cwd" (plist-get row :cwd) 'hermes-work-activity)
-                 (list "Output" (unless running (plist-get row :last-line)) 'hermes-work-activity)
+                 (list "Output" (unless line (plist-get row :last-line)) 'hermes-work-activity)
                  (list "Id" (plist-get row :id) 'hermes-work-meta))
            width)))))
 

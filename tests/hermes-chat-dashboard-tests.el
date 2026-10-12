@@ -4393,7 +4393,7 @@ indicator is on, and not at all when it is off."
                     (hermes-work--outline roster '(:observed t) 100 80))
                    '(((section . agents) section 0)
                      ((delegate . "a") heading 0)
-                     ((delegate . "d") heading 1) ((delegate . "d") activity 2)
+                     ((delegate . "d") heading 1)
                      ((delegate . "b") heading 1)
                      ((delegate . "c") heading 2) ((delegate . "c") activity 3)
                      ((delegate . "e") heading 0)
@@ -4516,10 +4516,11 @@ indicator is on, and not at all when it is off."
       (should (equal (hermes-work--key-at-point) '(delegate . "parent")))
       (execute-kbd-macro (kbd "TAB"))
       (should (hermes-work--find-line '(delegate . "child")))
-      ;; A process card shows its full command; a section folds.
+      ;; A process card skips the command its heading shows whole; a section folds.
       (goto-char (hermes-work--find-line '(process . "proc")))
       (execute-kbd-macro (kbd "TAB"))
-      (should (string-match-p "Command +make test" (buffer-string)))
+      (should (string-match-p "Id +proc" (buffer-string)))
+      (should-not (string-match-p "Command" (buffer-string)))
       (goto-char (hermes-work--find-line '(section . agents)))
       (execute-kbd-macro (kbd "TAB"))
       (should-not (hermes-work--find-line '(delegate . "parent")))
@@ -4903,5 +4904,56 @@ the operation unsent."
                                           'method)
                    "subagent.steer"))))
 
+(ert-deftest hermes-work-first-line-is-plain-text ()
+  "Failure lines drop inline Markdown markup but keep the words."
+  (should (equal (hermes-work--first-line "\n## **Build failed:** `make test` exited 2\nmore")
+                 "Build failed: make test exited 2"))
+  (should (equal (hermes-work--first-line "> - __Boom__ in `parse`") "Boom in parse"))
+  (should (equal (hermes-work--first-line "a*b and 2 - 1") "a*b and 2 - 1"))
+  (should-not (hermes-work--first-line " \n "))
+  (let ((activity (hermes-test--line-text
+                   (hermes-work--outline
+                    (list :agents (list (list :key '(delegate . "w") :id "w" :kind 'delegate
+                                              :state 'failed :goal "G" :error "**Boom**")))
+                    '(:observed t) 0 80)
+                   '(delegate . "w") 'activity)))
+    (should (equal (substring-no-properties activity) "↳ Boom"))))
+
+(ert-deftest hermes-work-queued-row-is-one-line ()
+  "A queued worker says queued in its time column and adds no line."
+  (let* ((lines (hermes-work--outline
+                 (list :agents (list (list :key '(delegate . "q") :id "q" :kind 'delegate
+                                           :state 'queued :goal "Wait" :model "claude-haiku-4-5")))
+                 '(:observed t) 0 80))
+         (heading (hermes-test--line-text lines '(delegate . "q") 'heading)))
+    (should (string-match-p "haiku · queued\\'" heading))
+    (should (eq (hermes-test--face-of heading "queued") 'hermes-work-meta))
+    (should-not (hermes-test--line-text lines '(delegate . "q") 'activity))))
+
+(ert-deftest hermes-work-failed-process-shows-its-last-line ()
+  "A failed process shows its last output line in red, once; cards skip
+a command the heading shows whole."
+  (let* ((long "nix build .#hermes --no-link --print-build-logs --keep-going -L")
+         (rows (list (list :key '(process . "f") :id "f" :kind 'process :state 'failed
+                           :command "make" :exit-code 2 :last-line "error: boom")
+                     (list :key '(process . "d") :id "d" :kind 'process :state 'done
+                           :command long :exit-code 0 :last-line "built")))
+         (lines (hermes-work--outline (list :processes rows)
+                                      '(:observed t :cards ((process . "f") (process . "d")))
+                                      0 40))
+         (activity (hermes-test--line-text lines '(process . "f") 'activity))
+         (cards (lambda (key)
+                  (mapconcat (lambda (line) (substring-no-properties (plist-get line :text)))
+                             (seq-filter (lambda (line) (and (equal (plist-get line :key) key)
+                                                             (eq (plist-get line :kind) 'card)))
+                                         lines)
+                             "\n"))))
+    (should (equal (substring-no-properties activity) "↳ error: boom"))
+    (should (eq (hermes-test--face-of activity "error") 'hermes-work-failed))
+    (should-not (string-match-p "Output\\|Command" (funcall cards '(process . "f"))))
+    ;; A clean exit keeps its output in the card and repeats a truncated command.
+    (should-not (hermes-test--line-text lines '(process . "d") 'activity))
+    (should (string-match-p "^Command +nix build" (funcall cards '(process . "d"))))
+    (should (string-match-p "^Output +built" (funcall cards '(process . "d"))))))
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
