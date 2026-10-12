@@ -723,7 +723,7 @@ Only rows still claimable at NOW take part."
   (setq hermes-chat--card-timer nil))
 
 (defun hermes-chat--cards-retire ()
-  "Release this chat's cards before its major mode changes."
+  "Cancel this chat's card clock and forget its cards on a mode change."
   (hermes-chat--cards-cancel)
   (setq hermes-chat--card-nodes nil))
 
