@@ -575,6 +575,53 @@ the state counts stay to the last."
 
 ;;;; Cross-chat segment
 
+(ert-deftest hermes-chat-work-indicator-toggle-drives-hidden-polling ()
+  "Turning the segment on polls hidden chats slowly; turning it off stops."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+      (let ((chat (current-buffer))
+            (client (hermes-test--dashboard-client))
+            (hermes-chat--work-kinds '(:delegates))
+            (hermes-chat-work-indicator nil)
+            (hermes-chat-work-hidden-cadence 30)
+            (global-mode-string nil)
+            (setter (get 'hermes-chat-work-indicator 'custom-set))
+            calls)
+        (setf (hermes-dashboard-transport-client-ready-p client) t)
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-subagent-list)
+                   (lambda (_client &rest args) (push args calls) (length calls)))
+                  ((symbol-function 'run-at-time)
+                   (lambda (delay _repeat fn &rest args) (list delay fn args)))
+                  ((symbol-function 'cancel-timer) #'ignore))
+          (set-window-buffer (selected-window) (get-buffer-create " *work hidden*"))
+          (unwind-protect
+              (with-current-buffer chat
+                (setq hermes-chat--dashboard-client client
+                      hermes-chat--dashboard-active-session-id "runtime"
+                      hermes-chat--dashboard-session-ready-p t)
+                (hermes-chat--work-bind client "runtime")
+                (let* ((owner hermes-chat--work-owner)
+                       (bind-read (plist-get owner :timer)))
+                  ;; Off: the hidden chat gets its one bind read, then rests.
+                  (apply (cadr bind-read) (nth 2 bind-read))
+                  (should (= (length calls) 1))
+                  (funcall (plist-get (car calls) :resolve)
+                           (hermes-transport-json-parse-lossless "{\"subagents\":[]}"))
+                  (should-not (plist-get owner :timer))
+                  (funcall setter 'hermes-chat-work-indicator t)
+                  (should (memq 'hermes-chat-work-indicator-mode-line
+                                (default-value 'global-mode-string)))
+                  (let ((timer (plist-get owner :timer)))
+                    (should (= (car timer) 30))
+                    (should (plist-get owner :hidden))
+                    (apply (cadr timer) (nth 2 timer))
+                    (should (= (length calls) 2)))
+                  (funcall setter 'hermes-chat-work-indicator nil)
+                  (should-not (plist-get owner :timer))
+                  (should-not (memq 'hermes-chat-work-indicator-mode-line
+                                    (default-value 'global-mode-string)))))
+            (kill-buffer " *work hidden*")))))))
+
 (ert-deftest hermes-chat-work-indicator-lists-only-hidden-chats ()
   "The segment names hidden chats with live or unseen failed work only."
   (cl-letf (((symbol-function 'hermes-chat--switch-project)
