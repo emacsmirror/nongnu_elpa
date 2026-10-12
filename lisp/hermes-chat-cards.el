@@ -235,15 +235,16 @@ Every character of TEXT keeps its own face."
 
 (defun hermes-chat--card-summary (tasks counts nested width)
   "Return the \" · \"-joined head summary of TASKS, COUNTS and NESTED.
-Fit WIDTH columns by dropping NESTED, then TASKS, before truncating, so
-the state counts are the last to go."
+Fit WIDTH columns by dropping TASKS, which the counts already add up to,
+then NESTED, before truncating, so the state counts are the last to go."
   (let ((join (lambda (parts)
                 (mapconcat (lambda (part) (concat (hermes-chat--card-dim " · ") part))
-                           (delq nil parts) ""))))
+                           (delq nil parts) "")))
+        (nested (and nested (hermes-chat--card-dim nested))))
     (seq-find (lambda (text) (<= (string-width text) width))
               (list (funcall join (append (list (hermes-chat--card-dim tasks)) counts
-                                          (list (and nested (hermes-chat--card-dim nested)))))
-                    (funcall join (cons (hermes-chat--card-dim tasks) counts))
+                                          (list nested)))
+                    (funcall join (append counts (list nested)))
                     (funcall join counts))
               (funcall join counts))))
 

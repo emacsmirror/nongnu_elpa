@@ -520,6 +520,24 @@ A right-aligned part needs its own width plus two columns of gap."
                                     :width width))))
       (should-not (hermes-test--card-overflows (hermes-chat--card-text entry) width)))))
 
+(ert-deftest hermes-chat-card-head-drops-tasks-then-nested ()
+  "A narrowing head drops the task total first, then the nested total;
+the state counts stay to the last."
+  (let ((ranks
+         (mapcar
+          (lambda (width)
+            (let* ((text (hermes-chat--card-text (hermes-test--card-sample width nil)))
+                   (head (car (split-string (substring-no-properties text) "\n")))
+                   (tasks (string-search "3 tasks" head))
+                   (nested (string-search "+1 nested" head)))
+              (should (string-search "1 running" head))
+              (should-not (and tasks (not nested)))
+              (cond (tasks 2) (nested 1) (t 0))))
+          (number-sequence 40 100))))
+    ;; Wider never shows less, and every stage occurs.
+    (should (equal ranks (sort (copy-sequence ranks) #'<)))
+    (should (equal (seq-uniq ranks) '(0 1 2)))))
+
 (ert-deftest hermes-chat-card-width-follows-the-window ()
   "Resizing the chat window refits the card."
   (hermes-test--with-card-chat
