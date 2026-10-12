@@ -934,8 +934,12 @@ to `emojify-user-emojis', and the emoji data is updated."
       "poll[options][]"
       (plist-get mastodon-toot-poll :options))
      `(("poll[expires_in]" .  ,(plist-get mastodon-toot-poll :expiry)))
-     `(("poll[multiple]" . ,(symbol-name (plist-get mastodon-toot-poll :multi))))
-     `(("poll[hide_totals]" . ,(symbol-name (plist-get mastodon-toot-poll :hide)))))))
+     `(("poll[multiple]" . ,(if (plist-get mastodon-toot-poll :multi)
+                                "true"
+                              "false")))
+     `(("poll[hide_totals]" . ,(if (plist-get mastodon-toot-poll :hide)
+                                   "true"
+                                 "false"))))))
 
 
 ;;; SEND TOOT FUNCTION
