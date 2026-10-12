@@ -653,10 +653,13 @@ Details repaint even without the list, so a detached one says so."
     (hermes-work--settle-owner hermes-work--owner)))
 
 (defun hermes-work--resize (_window)
-  "Refit the outline after a width change of _WINDOW or its siblings."
-  (when (and (derived-mode-p 'hermes-work-mode)
-             (not (eql hermes-work--width (hermes-work--fit-width))))
-    (hermes-work--render hermes-work--owner)))
+  "Refit the outline or detail after a width change of _WINDOW or its siblings."
+  (unless (eql hermes-work--width (hermes-work--fit-width))
+    (cond ((derived-mode-p 'hermes-work-mode) (hermes-work--render hermes-work--owner))
+          ((derived-mode-p 'hermes-work-detail-mode)
+           (let ((now (float-time)))
+             (hermes-work--detail-render (hermes-chat--work-roster hermes-work--owner now)
+                                         now))))))
 
 (defun hermes-work-refresh ()
   "Request a refresh from this view's exact owner, if still attached."
@@ -793,11 +796,39 @@ their card."
 
 ;;;; Worker details
 
-(defun hermes-work--detail-field (label text &optional face)
-  "Return a detail line labelled LABEL showing TEXT in FACE, or empty."
+(defun hermes-work--fill-lines (text width)
+  "Return TEXT's lines, filling each wider than WIDTH under its own indent."
+  (mapcan (lambda (line)
+            (let ((line (string-trim-right line)))
+              (if (<= (string-width line) width)
+                  (list line)
+                (let ((indent (progn (string-match "\\`[ \t]*" line) (match-string 0 line))))
+                  (mapcar (lambda (part) (concat indent part))
+                          (split-string (string-fill (substring line (length indent))
+                                                     (max 20 (- width (string-width indent))))
+                                        "\n"))))))
+          (split-string (or text "") "\n")))
+
+(defun hermes-work--hang (prefix text width &optional face)
+  "Return PREFIX and TEXT in FACE, filled to WIDTH with a hanging indent.
+Continuation lines start under TEXT's first column, so the text reads
+as one block beside PREFIX."
+  (let ((indent (make-string (string-width prefix) ?\s))
+        (lines (hermes-work--fill-lines text (- width (string-width prefix)))))
+    (mapconcat #'identity
+               (cons (concat prefix (propertize (car lines) 'face (or face 'default)))
+                     (mapcar (lambda (line)
+                               (concat indent (propertize line 'face (or face 'default))))
+                             (cdr lines)))
+               "\n")))
+
+(defun hermes-work--detail-field (label text width &optional face)
+  "Return a detail line labelled LABEL showing TEXT in FACE within WIDTH.
+Return the empty string without TEXT."
   (if (and text (not (equal text "")))
-      (concat (propertize (format "%-9s " label) 'face 'hermes-work-label)
-              (propertize (format "%s" text) 'face (or face 'default)) "\n")
+      (concat (hermes-work--hang (propertize (format "%-9s " label) 'face 'hermes-work-label)
+                                 (format "%s" text) width face)
+              "\n")
     ""))
 
 (defun hermes-work--detail-meta (row agents now)
@@ -823,8 +854,9 @@ their card."
                                         (format "%d child%s" children
                                                 (if (= children 1) "" "ren"))))))))))))
 
-(defun hermes-work--detail-agent (row agents)
-  "Return worker ROW's detail sections, with AGENTS for parent and children."
+(defun hermes-work--detail-agent (row agents width)
+  "Return worker ROW's detail sections within WIDTH.
+AGENTS supply the parent and children."
   (let* ((id (plist-get row :id))
          (running (eq (plist-get row :state) 'running))
          (children (seq-filter (lambda (other) (equal (plist-get other :parent) id)) agents))
@@ -832,20 +864,21 @@ their card."
          (tools (plist-get row :tools))
          (title (lambda (text) (concat "\n" (propertize text 'face 'hermes-work-section) "\n"))))
     (concat
-     (and parent (hermes-work--detail-field "Parent" (plist-get parent :goal)))
+     (and parent (hermes-work--detail-field "Parent" (plist-get parent :goal) width))
      (and running (not (plist-get row :accepting-steer))
-          (hermes-work--detail-field "Steering" "closed"))
+          (hermes-work--detail-field "Steering" "closed" width))
      (when-let* ((text (plist-get row :error)))
-       (concat (funcall title "Error") (propertize text 'face 'hermes-work-failed) "\n"))
+       (concat (funcall title "Error") (hermes-work--hang "" text width 'hermes-work-failed) "\n"))
      (when-let* ((text (plist-get row :summary)))
-       (concat (funcall title "Summary") text "\n"))
+       (concat (funcall title "Summary") (hermes-work--hang "" text width) "\n"))
      (when tools
        (concat (funcall title (format "Tools (%s)" (or (plist-get row :tool-count)
                                                        (length tools))))
                (mapconcat (lambda (tool)
-                            (concat (propertize "· " 'face 'shadow)
-                                    (propertize (car tool) 'face 'hermes-work-tool) " "
-                                    (propertize (or (cdr tool) "") 'face 'hermes-work-activity)))
+                            (hermes-work--hang
+                             (concat (propertize "· " 'face 'shadow)
+                                     (propertize (car tool) 'face 'hermes-work-tool) " ")
+                             (or (cdr tool) "") width 'hermes-work-activity))
                           (reverse tools) "\n")
                "\n"
                (let ((earlier (- (or (plist-get row :tool-count) 0) (length tools))))
@@ -854,26 +887,30 @@ their card."
      (when children
        (concat (funcall title (format "Children (%d)" (length children)))
                (mapconcat (lambda (child)
-                            (concat (cadr (hermes-work--display child)) " "
-                                    (plist-get child :goal)))
+                            (hermes-work--hang (concat (cadr (hermes-work--display child)) " ")
+                                               (or (plist-get child :goal) "") width))
                           children "\n")
                "\n")))))
 
-(defun hermes-work--detail-text (row agents now)
-  "Return the detail text for ROW at NOW, with AGENTS for parent and children."
-  (let ((process (eq (plist-get row :kind) 'process)))
+(defun hermes-work--detail-text (row agents now &optional width)
+  "Return the detail text for ROW at NOW, filled to WIDTH, by default 80.
+AGENTS supply the parent and children.  A process's output tail stays
+verbatim."
+  (let ((process (eq (plist-get row :kind) 'process))
+        (width (or width 80)))
     (concat
-     (cadr (hermes-work--display row)) " "
-     (propertize (or (if process (plist-get row :command) (plist-get row :goal)) "—")
-                 'face 'bold)
+     (hermes-work--hang (concat (cadr (hermes-work--display row)) " ")
+                        (or (if process (plist-get row :command) (plist-get row :goal)) "—")
+                        width 'bold)
      "\n" (hermes-work--detail-meta row agents now) "\n\n"
-     (hermes-work--detail-field "Id" (plist-get row :id) 'hermes-work-meta)
+     (hermes-work--detail-field "Id" (plist-get row :id) width 'hermes-work-meta)
      (if process
-         (concat (hermes-work--detail-field "Cwd" (plist-get row :cwd) 'hermes-work-activity)
-                 (hermes-work--detail-field "Reason" (plist-get row :reason))
+         (concat (hermes-work--detail-field "Cwd" (plist-get row :cwd) width
+                                            'hermes-work-activity)
+                 (hermes-work--detail-field "Reason" (plist-get row :reason) width)
                  "\n" (propertize "Output tail" 'face 'hermes-work-section) "\n"
                  (or (plist-get row :output-tail) "—") "\n")
-       (hermes-work--detail-agent row agents)))))
+       (hermes-work--detail-agent row agents width)))))
 
 (defun hermes-work--detail-actions (row log)
   "Return the commands that apply to ROW as (COMMAND . LABEL).
@@ -929,7 +966,8 @@ A row that left the roster keeps its last-known text."
          (current (hermes-work--current-p owner))
          (row (hermes-work--find key (append (plist-get roster :agents)
                                               (plist-get roster :processes)))))
-    (setq header-line-format
+    (setq hermes-work--width (hermes-work--fit-width)
+          header-line-format
           (hermes-work--detail-header
            key row current (and current (hermes-work--row-log owner row))))
     (when row
@@ -937,7 +975,8 @@ A row that left the roster keeps its last-known text."
        (lambda ()
          (let ((inhibit-read-only t) (inhibit-modification-hooks t))
            (erase-buffer)
-           (insert (hermes-work--detail-text row (plist-get roster :agents) now))))))))
+           (insert (hermes-work--detail-text row (plist-get roster :agents) now
+                                             hermes-work--width))))))))
 
 (defun hermes-work--detail-buffer (owner key)
   "Return OWNER's one detail buffer for KEY, creating it once."
@@ -967,9 +1006,10 @@ A row that left the roster keeps its last-known text."
      ((memq (car-safe key) '(delegate process))
       (let ((buffer (hermes-work--detail-buffer owner key))
             (now (float-time)))
+        ;; Display first, so the text fills the window that shows it.
+        (pop-to-buffer buffer)
         (with-current-buffer buffer
-          (hermes-work--detail-render (hermes-chat--work-roster owner now) now))
-        (pop-to-buffer buffer)))
+          (hermes-work--detail-render (hermes-chat--work-roster owner now) now))))
      ((eq (get-text-property (line-beginning-position) 'hermes-work-line) 'section)
       (hermes-work-toggle))
      (t (user-error "No observed work on this line")))))
@@ -1554,6 +1594,7 @@ details, and \\[hermes-work-interrupt] interrupts a worker or kills a process."
   (setq-local truncate-lines nil)
   (visual-line-mode 1)
   (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-refresh)))
+  (add-hook 'window-size-change-functions #'hermes-work--resize nil t)
   (add-hook 'after-set-visited-file-name-hook #'hermes-work--detail-detach t t)
   (add-hook 'kill-buffer-hook #'hermes-work--detail-detach nil t)
   (add-hook 'change-major-mode-hook #'hermes-work--detail-detach nil t))

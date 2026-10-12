@@ -5020,6 +5020,30 @@ a command the heading shows whole."
       (should-not (string-match-p "Detached\\|last known" (buffer-string)))
       (should (string-match-p "Parent goal" (buffer-string))))))
 
+(ert-deftest hermes-work-detail-fills-to-the-window-with-hanging-indent ()
+  "Long goals, fields and errors fill to the width, hanging under their text.
+Each source line keeps its own indentation, and nothing exceeds the width."
+  (let* ((goal "Audit hermes-subagents.el for stale-owner races in the control path and report")
+         (parent (list :id "p" :kind 'delegate :state 'running :goal goal))
+         (row (list :key '(delegate . "w") :id "w" :kind 'delegate :state 'failed
+                    :parent "p" :goal goal
+                    :error "make: *** [Makefile:88: test] Error 1 — 2 unexpected results in the suite\n  at x.el:3"))
+         (lines (split-string (substring-no-properties
+                               (hermes-work--detail-text row (list parent row) 100 50))
+                              "\n")))
+    (should (seq-every-p (lambda (line) (<= (string-width line) 50)) lines))
+    (should (equal (seq-take lines 2)
+                   '("✗ Audit hermes-subagents.el for stale-owner races"
+                     "  in the control path and report")))
+    (should (member "Parent    Audit hermes-subagents.el for" lines))
+    (should (member "          stale-owner races in the control path" lines))
+    (should (member "make: *** [Makefile:88: test] Error 1 — 2" lines))
+    (should (member "  at x.el:3" lines))
+    ;; The goal's continuation keeps the bold face of its first line.
+    (let ((text (hermes-work--detail-text row (list parent row) 100 50)))
+      (should (eq (get-text-property (string-search "in the control" text) 'face text)
+                  'bold)))))
+
 (defun hermes-test--offered (rows key &optional detail log current)
   "Return the actions the popup offers for KEY among ROWS.
 DETAIL asks from a detail buffer; LOG names a published log; CURRENT
