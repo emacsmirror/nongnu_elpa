@@ -79,7 +79,9 @@
   "A two-task `delegate_task' start.")
 
 (defun hermes-test--card-spawn ()
-  "Start the delegation and its workers: two roots and one nested child."
+  "Start the delegation and its workers: two roots and one nested child.
+As in the gateway, a spawn request precedes the delegation id, which every
+later event of the worker carries; sa-2 stays queued."
   (hermes-test--card-tool hermes-test--card-delegate-start)
   (hermes-test--card-events
    '(:event "subagent.spawn_requested" :subagent-id "sa-1" :task-index 0
@@ -87,11 +89,11 @@
    '(:event "subagent.spawn_requested" :subagent-id "sa-2" :task-index 1
             :content "Inventory process fields")
    '(:event "subagent.start" :subagent-id "sa-1" :task-index 0
-            :content "Map the agents panel")
+            :delegation-id "d1" :content "Map the agents panel")
    '(:event "subagent.spawn_requested" :subagent-id "sa-3" :parent-id "sa-1"
             :task-index 0 :content "Extract depth caps")
    '(:event "subagent.start" :subagent-id "sa-3" :parent-id "sa-1"
-            :task-index 0 :content "Extract depth caps")))
+            :delegation-id "d2" :task-index 0 :content "Extract depth caps")))
 
 ;;;; Pure presentation
 
@@ -110,7 +112,7 @@
          (text (hermes-chat--card-text entry)))
     (should (equal-including-properties text (hermes-chat--card-text entry)))
     (should (equal (split-string (substring-no-properties text) "\n" t)
-                   '("  ● 🧠 delegate_task · 2 tasks · 1 running · 1 queued · 1 done 1:00"
+                   '("  ● 🧠 delegate_task · 2 tasks · 1 running · 1 done · +1 nested"
                      "  ├ ● Root A 1:00"
                      "  │   ↳ 📖 read_file x.el · 3 tools"
                      "  │   └ ◌ Child C queued"
@@ -135,10 +137,12 @@
                                          (number-sequence 1 40) "\n")
                               'done "older"))
     (hermes-test--card-spawn)
-    (should (hermes-test--card-line "● 🧠 delegate_task · 2 tasks · 2 running · 1 queued"))
-    (should (hermes-test--card-line "├ ● Map the agents panel"))
-    (should (hermes-test--card-line "│   └ ● Extract depth caps"))
-    (should (hermes-test--card-line "└ ◌ Inventory process fields"))
+    (should (equal (hermes-test--card-line "delegate_task")
+                   "  ● 🧠 delegate_task · 2 tasks · 1 running · 1 queued · +1 nested"))
+    (should (hermes-test--card-line "└ ● Map the agents panel"))
+    (should (hermes-test--card-line "    └ ● Extract depth caps"))
+    ;; A task no worker has picked up yet is only counted.
+    (should-not (hermes-test--card-line "Inventory process fields"))
     ;; No per-child transcript rows: only the card owns the workers.
     (should (= 1 (cl-count-if (lambda (entry) (eq (plist-get entry :role) 'tool))
                               (hermes-chat--entries))))
@@ -160,7 +164,9 @@
         (hermes-test--card-events
          '(:event "subagent.tool" :subagent-id "sa-1" :name "read_file"
                   :preview "agentsPanel.tsx" :tool-count 14))
-        (should (hermes-test--card-line "↳ 📖 read_file agentsPanel.tsx · 14 tools"))
+        ;; The split halves the width; the card refits to the narrower window.
+        (should (string-search "↳ 📖 read_file agents"
+                               (hermes-test--card-line "read_file")))
         (should (hermes-test--card-line "Map the agents panel"))
         (should (equal (hermes-chat-input-string) "draft λ"))
         (should (= (- (point) (hermes-chat--input-position)) offset))
@@ -180,7 +186,7 @@
     (hermes-test--card-spawn)
     (setq hermes-test--card-now (+ hermes-test--card-now 62))
     (hermes-test--card-events
-     '(:event "subagent.start" :subagent-id "sa-2")
+     '(:event "subagent.start" :subagent-id "sa-2" :delegation-id "d1")
      '(:event "subagent.complete" :subagent-id "sa-3" :status "completed"
               :content "caps are 3 deep")
      '(:event "subagent.complete" :subagent-id "sa-1" :status "completed"
@@ -194,7 +200,7 @@
              (cl-subseq hermes-test--card-delegate-start 4)))
     (let ((transcript (hermes-test--transcript)))
       (should (string-match-p
-               "^  ✗ 🧠 delegate_task · 2 tasks · 2 done · 1 failed … +1:02$"
+               "^  ✗ ▸ 🧠 delegate_task · 2 tasks · 1 done · 1 failed · \\+1 nested +1:02$"
                transcript))
       (should-not (string-search "Map the agents panel" transcript)))
     (let ((head (save-excursion (goto-char (point-min))
@@ -202,11 +208,11 @@
                                 (1- (point)))))
       (should (eq (get-text-property head 'action) #'hermes-chat--toggle-entry-button))
       (push-button head)
+      (should (hermes-test--card-line "  ✗ ▾ 🧠 delegate_task"))
       (should (hermes-test--card-line "├ ✓ Map the agents panel"))
       (should (hermes-test--card-line "↳ panel budget is 6 rows"))
       (should (hermes-test--card-line "└ ✗ Inventory process fields"))
       (should (hermes-test--card-line "↳ process.list timed out"))
-      (should-not (string-search " …" (hermes-test--card-line "delegate_task")))
       (push-button head)
       (should-not (hermes-test--card-line "Map the agents panel")))
     ;; Settled cards stop ticking.
@@ -266,6 +272,231 @@
       (setq hermes-test--card-now (+ hermes-test--card-now 1))
       (hermes-chat--cards-refresh)
       (should (> edits 0)))))
+
+;;;; Attribution
+
+(defun hermes-test--card-delegate (id goals &optional args)
+  "Return a running `delegate_task' start with call ID for GOALS and ARGS."
+  (list :type 'tool :event "tool.start" :name "delegate_task" :tool-call-id id
+        :status "running"
+        :args (or args
+                  `((tasks . ,(vconcat (mapcar (lambda (goal) `((goal . ,goal)))
+                                               goals)))))))
+
+(defun hermes-test--card-of (id)
+  "Return the card of the tool row whose call id is ID."
+  (plist-get (seq-find (lambda (entry)
+                         (equal (plist-get (plist-get (plist-get entry :metadata) :event)
+                                           :tool-call-id)
+                                id))
+                       (hermes-chat--entries))
+             :card))
+
+(defun hermes-test--card-ids (id)
+  "Return the worker ids on the card of tool call ID."
+  (mapcar (lambda (row) (plist-get row :id))
+          (plist-get (hermes-test--card-of id) :rows)))
+
+(defun hermes-test--card-start (id delegation goal &optional parent)
+  "Return a start event of worker ID in DELEGATION for GOAL under PARENT."
+  (append (list :event "subagent.start" :subagent-id id :delegation-id delegation
+                :content goal)
+          (and parent (list :parent-id parent))))
+
+(ert-deftest hermes-chat-card-non-spawn-delegate-calls-stay-plain ()
+  "`delegate_task' list, steer and stop calls never become cards."
+  (hermes-test--with-card-chat
+    (hermes-test--card-events (hermes-test--card-start "sa-1" "d1" "Running goal"))
+    (dolist (action '("list" "steer" "stop"))
+      (hermes-test--card-tool
+       (hermes-test--card-delegate (concat "call-" action) nil
+                                   `((action . ,action) (subagent_id . "sa-1")))))
+    (should-not hermes-chat--card-nodes)
+    (should-not (seq-some (lambda (entry) (plist-get entry :card)) (hermes-chat--entries)))
+    (should-not (hermes-test--card-line "Running goal"))))
+
+(ert-deftest hermes-chat-card-overlapping-batches-stay-apart ()
+  "Two live batches each get their own workers, never the newest row all."
+  (hermes-test--with-card-chat
+    (hermes-test--card-tool (hermes-test--card-delegate "call-a" '("Audit A" "Audit B")))
+    (hermes-test--card-tool (hermes-test--card-delegate "call-b" '("Build C")))
+    (hermes-test--card-events
+     (hermes-test--card-start "w-c" "d2" "Build C")
+     (hermes-test--card-start "w-a" "d1" "Audit A")
+     (hermes-test--card-start "w-n" "d3" "Nested under C" "w-c")
+     (hermes-test--card-start "w-b" "d1" "Audit B"))
+    (should (equal (hermes-test--card-ids "call-a") '("w-a" "w-b")))
+    (should (equal (hermes-test--card-ids "call-b") '("w-c" "w-n")))
+    (should (equal (plist-get (hermes-test--card-of "call-a") :delegation) "d1"))
+    (should (equal (plist-get (hermes-test--card-of "call-b") :delegation) "d2"))))
+
+(ert-deftest hermes-chat-card-ambiguous-batches-wait-for-their-results ()
+  "Batches with the same goals stay unattributed until a result names one."
+  (hermes-test--with-card-chat
+    (hermes-test--card-tool (hermes-test--card-delegate "call-a" '("Same goal")))
+    (hermes-test--card-tool (hermes-test--card-delegate "call-b" '("Same goal")))
+    (hermes-test--card-events (hermes-test--card-start "w-1" "d1" "Same goal")
+                              (hermes-test--card-start "w-2" "d2" "Same goal"))
+    ;; Both rows show their head and count, but claim no worker.
+    (should-not (hermes-test--card-ids "call-a"))
+    (should-not (hermes-test--card-ids "call-b"))
+    (should (= 2 (cl-count-if (lambda (line)
+                                (string-search "delegate_task · 1 task · 1 queued" line))
+                              (split-string (hermes-test--transcript) "\n"))))
+    ;; A finished batch names its live transcripts' delegation directory.
+    (hermes-test--card-tool
+     (append '(:type tool :event "tool.complete" :status "completed"
+                     :result "{\"results\":[{\"task_index\":0,\"status\":\"completed\",\"live_transcript\":\"/h/cache/delegation/live/d2/task-0.log\"}]}")
+             (cl-subseq (hermes-test--card-delegate "call-a" '("Same goal")) 4)))
+    (should (equal (hermes-test--card-ids "call-a") '("w-2")))
+    ;; The other batch is now the only match for the other row.
+    (should (equal (hermes-test--card-ids "call-b") '("w-1")))))
+
+(ert-deftest hermes-chat-card-dispatch-result-names-roots-once ()
+  "A background dispatch's subagent ids attach workers; refreshes never grow them."
+  (hermes-test--with-card-chat
+    (let ((start (hermes-test--card-delegate "call-a" '("Goal one"))))
+      (hermes-test--card-tool start)
+      (hermes-test--card-tool
+       (append '(:type tool :event "tool.complete" :status "completed"
+                       :result ((status . "dispatched") (delegation_id . "d9")
+                                (subagent_ids . ["sa-9"])))
+               (cl-subseq start 4)))
+      (hermes-test--card-events
+       '(:event "subagent.spawn_requested" :subagent-id "sa-9" :content "Goal one"))
+      (should (equal (hermes-test--card-ids "call-a") '("sa-9")))
+      (dotimes (_ 3) (hermes-chat--cards-refresh))
+      (should (equal (plist-get (hermes-test--card-of "call-a") :roots) '("sa-9"))))))
+
+(ert-deftest hermes-chat-card-process-rebinds-to-the-result-session ()
+  "Identical commands match provisionally, then follow their own session ids."
+  (hermes-test--with-card-chat
+    (let ((starts (mapcar (lambda (id)
+                            (list :type 'tool :event "tool.start" :name "terminal"
+                                  :tool-call-id id :status "running"
+                                  :args '((command . "make check") (background . t))))
+                          '("call-1" "call-2"))))
+      (mapc #'hermes-test--card-tool starts)
+      (hermes-test--card-processes
+       '((:id "proc_a" :kind process :state running :command "make check" :uptime 9)
+         (:id "proc_b" :kind process :state running :command "make check" :uptime 8)))
+      (should (equal (plist-get (hermes-test--card-of "call-1") :id) "proc_a"))
+      (should (equal (plist-get (hermes-test--card-of "call-2") :id) "proc_b"))
+      ;; The results say the reverse; each card follows its own session.
+      (cl-mapc (lambda (start session)
+                 (hermes-test--card-tool
+                  (append `(:type tool :event "tool.complete" :status "completed"
+                                  :result ((session_id . ,session)))
+                          (cl-subseq start 4))))
+               starts '("proc_b" "proc_a"))
+      (should (equal (plist-get (hermes-test--card-of "call-1") :id) "proc_b"))
+      (should (equal (plist-get (hermes-test--card-of "call-2") :id) "proc_a"))
+      (should (= (plist-get (hermes-test--card-of "call-1") :started)
+                 (- hermes-test--card-now 8))))))
+
+(ert-deftest hermes-chat-card-failed-process-keeps-its-reason ()
+  "A failed process keeps its last line, in the failed face."
+  (hermes-test--with-card-chat
+    (let ((start '(:type tool :event "tool.start" :name "terminal" :tool-call-id "call-t"
+                         :status "running"
+                         :args ((command . "make check") (background . t)))))
+      (hermes-test--card-tool start)
+      (hermes-test--card-processes
+       `((:id "proc_1" :kind process :state failed :exit-code 2 :command "make check"
+              :last-line "make: *** [check] Error 2" :exited-at ,hermes-test--card-now)))
+      (should (equal (hermes-test--card-line "↳") "    ↳ make: *** [check] Error 2"))
+      (let ((pos (save-excursion (goto-char (point-min)) (search-forward "↳"))))
+        (should (eq (get-text-property pos 'face) 'hermes-work-failed))))))
+
+;;;; Width
+
+(defun hermes-test--card-overflows (text width)
+  "Return the lines of card TEXT that overflow WIDTH columns.
+A right-aligned part needs its own width plus two columns of gap."
+  (seq-remove
+   (lambda (line)
+     (let ((split (text-property-not-all 0 (length line) 'display nil line)))
+       (<= (if split
+               (+ (string-width (substring line 0 split))
+                  2 (string-width (substring line (1+ split))))
+             (string-width line))
+           width)))
+   (split-string text "\n" t)))
+
+(defun hermes-test--card-aligned-p (text)
+  "Return non-nil when card TEXT right-aligns anything."
+  (text-property-not-all 0 (length text) 'display nil text))
+
+(defun hermes-test--card-sample (width settled)
+  "Return a delegate card entry WIDTH columns wide, SETTLED or live."
+  (let ((long "Audit the subagent outline, header, mode line and inline cards for overflow"))
+    (list :id "e" :role 'tool :status (if settled 'completed 'running)
+          :metadata '(:event (:name "delegate_task"))
+          :expanded settled
+          :card (list :kind 'delegate :tasks 3 :now 400.0 :width width
+                      :rows `((:id "a" :state ,(if settled 'completed 'running) :goal ,long
+                                   :started 100.0 ,@(and settled '(:finished 380.0))
+                                   :tools (("read_file" . "lisp/hermes-chat-cards.el and much more text"))
+                                   :tool-count 12
+                                   :summary "Everything fits within the window at every width we tried")
+                              (:id "n" :parent "a" :state completed :goal ,long
+                                   :started 120.0 :finished 200.0 :summary ,long)
+                              (:id "b" :state failed :goal "Short goal" :started 110.0
+                                   :finished 300.0
+                                   :error ,(concat "Error: " long))
+                              (:id "c" :state queued :goal ,long))))))
+
+(ert-deftest hermes-chat-card-fits-the-window-width ()
+  "No card line overflows at 60, 90 or 140 columns; narrow cards drop times."
+  (dolist (width '(60 90 140 36))
+    (dolist (settled '(nil t))
+      (let ((text (hermes-chat--card-text (hermes-test--card-sample width settled))))
+        (should-not (hermes-test--card-overflows text width))
+        (should (eq (>= width 40) (and (hermes-test--card-aligned-p text) t)))))
+    (let* ((row '(:id "p" :state running :command "make check" :last-line
+                      "a very long output line that goes on and on and on and on and on and on and on and on"))
+           (entry (list :id "t" :role 'tool :status 'completed
+                        :metadata '(:event (:name "terminal"
+                                                  :args ((command . "make -j8 check TESTS='a very long list of test files that never ends'")
+                                                         (background . t))))
+                        :card (list :kind 'process :row row :now 500.0 :started 300.0
+                                    :width width))))
+      (should-not (hermes-test--card-overflows (hermes-chat--card-text entry) width)))))
+
+(ert-deftest hermes-chat-card-width-follows-the-window ()
+  "Resizing the chat window refits the card."
+  (hermes-test--with-card-chat
+    (hermes-test--card-spawn)
+    (let ((wide (plist-get (hermes-test--card-of "call-1") :width)))
+      (split-window-right)
+      (run-hooks 'window-configuration-change-hook)
+      (should (< (plist-get (hermes-test--card-of "call-1") :width) wide)))))
+
+;;;; Timers
+
+(ert-deftest hermes-chat-card-timer-stops-when-hidden-or-retired ()
+  "Hidden cards never tick; a mode change cancels the timer and the cards."
+  (hermes-test--with-card-chat
+    (hermes-test--card-spawn)
+    (should hermes-chat--card-timer)
+    (let ((chat (current-buffer)))
+      (set-window-buffer (selected-window) (get-buffer-create " *card hidden*"))
+      (with-current-buffer chat
+        (hermes-chat--cards-tick chat)
+        (should-not hermes-chat--card-timer)
+        ;; Work changes while hidden repaint but never rearm the clock.
+        (setq hermes-test--card-now (+ hermes-test--card-now 5))
+        (hermes-test--card-events
+         '(:event "subagent.tool" :subagent-id "sa-1" :name "read_file" :preview "x"))
+        (should-not hermes-chat--card-timer))
+      (set-window-buffer (selected-window) chat)
+      (with-current-buffer chat
+        (run-hooks 'window-configuration-change-hook)
+        (should hermes-chat--card-timer)
+        (run-hooks 'change-major-mode-hook)
+        (should-not hermes-chat--card-timer)
+        (should-not hermes-chat--card-nodes))
+      (kill-buffer " *card hidden*"))))
 
 ;;;; Cross-chat segment
 
