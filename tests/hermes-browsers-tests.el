@@ -130,6 +130,13 @@
               (with-current-buffer buffer (should (equal (buffer-string) "retained")))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
+(defun hermes-test--work-row (key)
+  "Show only an outline heading for KEY in this work view, point on it."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (hermes-work--insert (list (hermes-work--line key 'heading 0 (cdr key))))
+    (goto-char (point-min))))
+
 (ert-deftest hermes-work-log-native-file-association-retires-pending-read ()
   "Pending log success and errors preserve native local-file drafts."
   (dolist (detach '(nil t))
@@ -145,16 +152,13 @@
                          (lambda (&rest _) promise)))
                 (with-temp-buffer
                   (hermes-work-mode)
-                  (setq hermes-work--owner owner
-                        tabulated-list-format [("Worker" 20 t)]
-                        tabulated-list-entries '(((delegate . "one") ["one"])))
-                  (tabulated-list-print)
-                  (goto-char (point-min))
+                  (setq hermes-work--owner owner)
+                  (hermes-test--work-row '(delegate . "one"))
                   (cl-letf (((symbol-function 'hermes-work--observations)
                              (lambda (_) '((:key (delegate . "one") :kind delegate :id "one"))))
                             ((symbol-function 'hermes-work--log-path)
                              (lambda (&rest _) "/remote/log")))
-                    (call-interactively (key-binding (kbd "RET")))
+                    (call-interactively (key-binding (kbd "L")))
                     (setq viewer (window-buffer (selected-window)))))
                 (with-current-buffer viewer
                   (set-visited-file-name filename t)
@@ -176,30 +180,26 @@
             (delete-directory directory t)))))))
 
 (ert-deftest hermes-work-log-keys-and-absence ()
-  "RET opens logs, metadata remains separate, and absence never fetches."
-  (should (eq (lookup-key hermes-work-mode-map (kbd "RET")) 'hermes-work-log))
-  (should (eq (lookup-key hermes-work-mode-map (kbd "d")) 'hermes-work-details))
+  "L opens logs, RET and d open details, and absence never fetches."
+  (should (eq (lookup-key hermes-work-mode-map (kbd "L")) 'hermes-work-log))
+  (should (eq (lookup-key hermes-work-mode-map (kbd "RET")) 'hermes-work-open))
+  (should (eq (lookup-key hermes-work-mode-map (kbd "d")) 'hermes-work-open))
   (should (eq (lookup-key hermes-work-log-mode-map (kbd "g")) 'hermes-work-log-refresh))
   (with-temp-buffer
     (hermes-work-mode)
     (setq hermes-work--owner (list :current-p (lambda (_) t)))
     (let ((kind 'process) details)
-      (setq tabulated-list-format [("Worker" 20 t)]
-            tabulated-list-entries '(((process . "one") ["one"])))
-      (tabulated-list-print)
-      (goto-char (point-min))
+      (hermes-test--work-row '(process . "one"))
       (cl-letf (((symbol-function 'hermes-work--observations)
                  (lambda (_) (list (list :key (cons kind "one") :kind kind :id "one"))))
                 ((symbol-function 'hermes-work--log-path) (lambda (&rest _) nil))
-                ((symbol-function 'hermes-work-details) (lambda () (setq details t)))
+                ((symbol-function 'hermes-work-open) (lambda () (setq details t)))
                 ((symbol-function 'hermes-dashboard-transport-api-request-async)
                  (lambda (&rest _) (ert-fail "Unexpected network access"))))
         (hermes-work-log)
         (should details)
-        (setq kind 'delegate
-              tabulated-list-entries '(((delegate . "one") ["one"])))
-        (tabulated-list-print)
-        (goto-char (point-min))
+        (setq kind 'delegate)
+        (hermes-test--work-row '(delegate . "one"))
         (should-error (hermes-work-log) :type 'user-error)))))
 
 (ert-deftest hermes-work-log-ewoc-open-reuse-and-disappearance ()
@@ -221,11 +221,8 @@
             (should (equal (hermes-work--log-path owner "one") "/remote/log"))
             (with-current-buffer view
               (hermes-work-mode)
-              (setq hermes-work--owner owner
-                    tabulated-list-format [("Worker" 20 t)]
-                    tabulated-list-entries '(((delegate . "one") ["one"])))
-              (tabulated-list-print)
-              (goto-char (point-min)))
+              (setq hermes-work--owner owner)
+              (hermes-test--work-row '(delegate . "one")))
             (cl-letf (((symbol-function 'pop-to-buffer) (lambda (buffer &rest _) (setq log buffer)))
                       ((symbol-function 'hermes-dashboard-transport-api-request-async)
                        (lambda (&rest args) (push args calls) promise)))

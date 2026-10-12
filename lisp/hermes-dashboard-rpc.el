@@ -298,6 +298,13 @@ RESOLVE and REJECT receive the result or error."
   :args (subagent-id) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-process-kill "process.kill"
+  "Kill background PROCESS-ID on CLIENT's live SESSION-ID.
+The gateway refuses processes the session does not own.
+RESOLVE and REJECT receive the result or error."
+  :args (process-id) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-subagent-list "subagent.list"
   "List visible workers for CLIENT's live SESSION-ID.
 Visibility includes resumed lineage and is not control authority.

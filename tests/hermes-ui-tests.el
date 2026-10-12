@@ -961,7 +961,7 @@
            (hermes-sessions-open hermes-sessions-mode hermes-session-detail-mode)
            (hermes-subagents-interrupt hermes-subagents-mode)
            (hermes-chat-work hermes-chat-mode hermes-work-mode)
-           (hermes-work-refresh hermes-work-mode)
+           (hermes-work-refresh hermes-work-mode hermes-work-detail-mode)
            (hermes-work-log-refresh hermes-work-log-mode)
            (hermes-tool-setup-refresh hermes-tool-setup-mode)
            (hermes-admin-quit hermes-pairing-mode hermes-webhooks-mode)

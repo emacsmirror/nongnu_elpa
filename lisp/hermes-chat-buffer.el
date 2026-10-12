@@ -3072,6 +3072,45 @@ Return EVENTS itself when EVENT is not a subagent event or changes nothing."
                        (and (member name '("subagent.spawn_requested" "subagent.start"))
                             (plist-get event :content))))))))
 
+(defconst hermes-chat--work-activity-limit 32
+  "Workers whose recent activity is kept, newest first.")
+
+(defun hermes-chat--work-apply-activity (activity event now)
+  "Return ACTIVITY with subagent EVENT's tool or outcome folded in at NOW.
+ACTIVITY maps worker IDs to (:seen TIME :tools TOOLS :tool-count N :finished
+TIME :summary TEXT :error TEXT), newest first.  TOOLS holds up to 8 (NAME .
+PREVIEW) pairs, newest last.  Unlike the state in EVENTS this records workers
+known only from snapshots.  Return ACTIVITY itself for any other event."
+  (let* ((id (plist-get event :subagent-id))
+         (old (cdr (assoc id activity)))
+         (put (lambda (&rest pairs)
+                (let ((entry (copy-sequence old)))
+                  (while pairs
+                    (setq entry (plist-put entry (pop pairs) (pop pairs))))
+                  (seq-take (hermes-chat--work-put
+                             activity id (plist-put entry :seen (or (plist-get old :seen) now)))
+                            hermes-chat--work-activity-limit))))
+         (name (plist-get event :name))
+         (text (plist-get event :content)))
+    (cond
+     ((not (stringp id)) activity)
+     ((and (equal (plist-get event :event) "subagent.tool") (stringp name))
+      (funcall put
+               :tools (last (append (plist-get old :tools)
+                                    (list (cons name (plist-get event :preview))))
+                            8)
+               :tool-count (or (plist-get event :tool-count) (plist-get old :tool-count))))
+     ((equal (plist-get event :event) "subagent.complete")
+      (funcall put :finished now
+               (if (member (downcase (or (plist-get event :status) ""))
+                           '("failed" "error" "timeout"))
+                   :error :summary)
+               (and (stringp text) (not (string-empty-p text)) text)))
+     ((and (member (plist-get event :event) '("subagent.spawn_requested" "subagent.start"))
+           (not old))
+      (funcall put))
+     (t activity))))
+
 (defun hermes-chat--work-retire (events previous rows now)
   "Return EVENTS after a roster read at NOW replaced PREVIOUS with ROWS.
 A worker that left the roster is finished: `completed' unless an event already
