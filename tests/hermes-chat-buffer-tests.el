@@ -1266,7 +1266,7 @@
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (let ((header (hermes-test--header-line-string)))
        (should (string-prefix-p
-                (concat (and (char-displayable-p ?⚕) "⚕ | ") "emacs-hermes | ")
+                (concat (and (char-displayable-p ?⚕) "⚕ | ") "→ emacs-hermes | ")
                 header))
        (should-not (string-match-p "coder" header))
        (should-not (string-match-p "planner" header))
@@ -1287,7 +1287,7 @@
              hermes-chat--profile "coder")
        (let ((header (hermes-test--header-line-string)))
          (should (string-prefix-p
-                  (concat (and (char-displayable-p ?⚕) "⚕ | ") "project") header))
+                  (concat (and (char-displayable-p ?⚕) "⚕ | ") "→ project") header))
          (should-not (string-match-p "remote" header))
          (should-not (string-match-p "coder" header)))))))
 
@@ -1530,7 +1530,7 @@
    (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
      (should (equal (substring-no-properties (hermes-chat--header-line))
                     (concat (and (char-displayable-p ?⚕) "⚕ | ")
-                            "emacs-hermes | YOLO | grok-4.5 | 25k/500k"))))))
+                            "→ emacs-hermes | YOLO | grok-4.5 | 25k/500k"))))))
 
 (ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
   "Directory, model, runtime flags, and context values use distinct faces."
@@ -1586,6 +1586,10 @@
 (ert-deftest hermes-chat-header-shows-context-window ()
   "The header surfaces context-window usage from `session.info'."
   (hermes-test-with-chat-buffer
+   ;; Keep the cwd on its naming root wherever the suite runs, even in a
+   ;; linked worktree, whose header would otherwise show it.
+   (setq hermes-chat--launch-project-root "/tmp/"
+         hermes-chat--working-directory "/tmp/")
    (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :agent-name "planner"

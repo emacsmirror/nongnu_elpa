@@ -1243,6 +1243,7 @@ directories update only the header, never the buffer name."
     (let ((first (null hermes-chat--initial-working-directory)))
       (when first
         (setq hermes-chat--initial-working-directory directory))
+      (hermes-chat--note-working-directory directory)
       (unless (equal directory hermes-chat--working-directory)
         (setq hermes-chat--working-directory directory)
         (force-mode-line-update))
@@ -2546,6 +2547,8 @@ later gateway working-directory changes."
                           ;; Resolve once here so the header can compare
                           ;; the cwd with the root even under custom names.
                           (hermes-chat--project-identity naming)
+                          (when-let* ((cwd (hermes-chat--current-working-directory)))
+                            (hermes-chat--note-working-directory cwd))
                           naming)))
          (name (funcall hermes-chat-buffer-name-function
                         profile instance directory)))

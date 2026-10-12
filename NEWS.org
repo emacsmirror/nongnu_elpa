@@ -14,7 +14,12 @@
   locally.  When the agent later changes directory, the buffer keeps its name
   and the header shows the abbreviated cwd while it differs from the project
   root.  =hermes-chat-buffer-name-function= keeps its signature; its
-  DIRECTORY argument is now this stable naming directory.
+  DIRECTORY argument is now this stable naming directory.  A directory in a
+  linked Git worktree names the main repository's project, and the header
+  shows the worktree quietly, for example =→ …/feature=.
+- =hermes-switch-to-chat= groups chats by project, lists the most recently
+  used first and the current chat last, and annotates each with its session
+  title, attention state, connection, activity and divergent cwd.
 
 * Version 0.8.0 (2026-10-01)
 

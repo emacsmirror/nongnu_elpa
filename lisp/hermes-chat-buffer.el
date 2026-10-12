@@ -2200,8 +2200,10 @@ This feeds the dashboard's per-session tool list via
 ;;; Header line
 
 (defface hermes-chat-header-directory
-  '((t :inherit font-lock-keyword-face :weight bold))
-  "Face for the working directory leading a Hermes chat header."
+  '((t :inherit shadow))
+  "Face for the chat header's working directory.
+The header shows the gateway cwd only while it differs from the project
+naming the chat, so the segment stays quiet."
   :group 'hermes)
 
 (define-obsolete-face-alias 'hermes-chat-header-profile
@@ -2250,6 +2252,12 @@ leave it, and therefore the buffer name, unchanged.")
 (defvar-local hermes-chat--project-identity nil
   "Cached (DIRECTORY ROOT . NAME) project identity for the naming directory.")
 
+(defvar-local hermes-chat--cwd-worktree nil
+  "Cached (CWD . WORKTREE) for the last recorded gateway cwd.
+WORKTREE is (ROOT . TOP) when CWD lies in a linked Git worktree, ROOT being
+its main project root and TOP the worktree's top, and nil otherwise.  It is
+resolved when the cwd is recorded so redisplay never probes the filesystem.")
+
 (defvar-local hermes-chat--resolved-start-mode nil
   "Concrete `spawn' or `remote' transport mode owned by this chat buffer.")
 
@@ -2287,22 +2295,85 @@ them.  Existence does not prove the gateway shares Emacs's filesystem."
          (t trimmed)))
     "detached"))
 
+(defun hermes-chat--read-git-pointer (file prefix)
+  "Return the path following PREFIX on FILE's first line, or nil."
+  (when (file-regular-p file)
+    (with-temp-buffer
+      (insert-file-contents file nil 0 4096)
+      (goto-char (point-min))
+      (and (looking-at (concat (regexp-quote prefix)
+                               "[ \t]*\\([^\r\n]*[^ \t\r\n]\\)"))
+           (match-string 1)))))
+
+(defun hermes-chat--git-linked-worktree (directory)
+  "Return (ROOT TOP . NAME) when local DIRECTORY is in a linked Git worktree.
+TOP is the worktree's top directory.  ROOT is its main working tree, with
+NAME nil, or for a bare repository the repository itself, with NAME its
+basename less \".git\".  Only the `.git' file and `commondir' are read;
+Git is never run.  Return nil for main checkouts, submodules and unreadable
+metadata."
+  (when-let* ((top (locate-dominating-file directory ".git"))
+              (top (file-name-as-directory (expand-file-name top)))
+              (gitdir (hermes-chat--read-git-pointer
+                       (expand-file-name ".git" top) "gitdir:"))
+              (gitdir (expand-file-name gitdir top))
+              (common (hermes-chat--read-git-pointer
+                       (expand-file-name "commondir" gitdir) ""))
+              (common (directory-file-name (expand-file-name common gitdir))))
+    (if (equal (file-name-nondirectory common) ".git")
+        (list (file-name-directory common) top)
+      (cons (file-name-as-directory common)
+            (cons top (hermes-chat--bare-repository-name common))))))
+
+(defun hermes-chat--bare-repository-name (common)
+  "Return the project name of bare repository directory COMMON.
+Strip a \".git\" suffix; name a hidden layout such as `PROJECT/.bare'
+after its parent directory."
+  (let ((name (string-remove-suffix ".git" (file-name-nondirectory common))))
+    (if (or (string-empty-p name) (string-prefix-p "." name))
+        (hermes-chat--directory-basename (file-name-directory common))
+      name)))
+
+(defun hermes-chat--local-project-identity (directory)
+  "Return (ROOT . NAME) for existing local DIRECTORY's project, or nil.
+A linked Git worktree resolves to its main repository's project."
+  (let* ((linked (hermes-chat--git-linked-worktree directory))
+         (root (if linked (car linked) directory)))
+    (cond
+     ((cddr linked) (cons root (cddr linked)))
+     ((and linked (not (file-directory-p root)))
+      (cons root (hermes-chat--directory-basename root)))
+     (t
+      (when-let* ((project (project-current nil (file-name-as-directory root)))
+                  (root (expand-file-name (project-root project))))
+        (cons root (or (hermes-transport--non-empty-string
+                        (project-name project))
+                       (hermes-chat--directory-basename root))))))))
+
 (defun hermes-chat--resolve-project-identity (directory)
   "Return (ROOT . NAME) for DIRECTORY's project.
-Consult `project-current' and `project-name' only for an existing local
-DIRECTORY; otherwise ROOT is DIRECTORY and NAME its basename."
+Consult Git worktree metadata, `project-current' and `project-name' only
+for an existing local DIRECTORY; otherwise ROOT is DIRECTORY and NAME its
+basename."
   (or (and (hermes-chat--local-directory-p directory)
            ;; Naming is cosmetic: a failing project backend or a malformed
            ;; `.dir-locals.el' must not prevent opening or renaming a chat.
            (condition-case nil
-               (when-let* ((project (project-current
-                                     nil (file-name-as-directory directory)))
-                           (root (expand-file-name (project-root project))))
-                 (cons root (or (hermes-transport--non-empty-string
-                                 (project-name project))
-                                (hermes-chat--directory-basename root))))
+               (hermes-chat--local-project-identity directory)
              (error nil)))
       (cons directory (hermes-chat--directory-basename directory))))
+
+(defun hermes-chat--note-working-directory (directory)
+  "Resolve and cache the linked worktree, if any, holding gateway DIRECTORY."
+  (unless (equal directory (car hermes-chat--cwd-worktree))
+    (setq hermes-chat--cwd-worktree
+          (cons directory
+                (when-let* (((hermes-chat--local-directory-p directory))
+                            (linked (condition-case nil
+                                        (hermes-chat--git-linked-worktree
+                                         directory)
+                                      (error nil))))
+                  (cons (car linked) (cadr linked)))))))
 
 (defun hermes-chat--project-identity (directory)
   "Return (ROOT . NAME) for DIRECTORY.
@@ -2340,19 +2411,36 @@ user's home directory with `~'.  Never consult the filesystem."
       (concat "~" (substring key (length home))))
      (t key))))
 
+(defun hermes-chat--divergent-directory-label ()
+  "Return \"→ CWD\" while the gateway cwd differs from the project root.
+Show a descendant of the root relative to it, a linked worktree of the same
+project as \"…/WORKTREE\", and other paths abbreviated.  Return nil when the
+cwd is unknown or is the root.  Never consult the filesystem."
+  (when-let* ((directory (hermes-chat--current-working-directory))
+              (root (hermes-chat--project-root-for-display))
+              (root-key (hermes-chat--directory-key root))
+              ((not (equal (hermes-chat--directory-key directory) root-key))))
+    (let ((linked (and (equal (car hermes-chat--cwd-worktree) directory)
+                       (cdr hermes-chat--cwd-worktree))))
+      (concat
+       "→ "
+       (if (and linked
+                (equal (hermes-chat--directory-key (car linked)) root-key)
+                (not (string-prefix-p (concat root-key "/")
+                                      (hermes-chat--directory-key directory))))
+           (concat "…/" (hermes-chat--directory-label
+                         directory (file-name-directory
+                                    (hermes-chat--directory-key (cdr linked)))))
+         (hermes-chat--directory-label directory root))))))
+
 (defun hermes-chat--header-directory-segment ()
   "Return the propertized gateway cwd when it differs from the project root.
 Return `detached' while the cwd is unknown, and nil when it is the chat's
 project root."
-  (let ((directory (hermes-chat--current-working-directory))
-        (root (hermes-chat--project-root-for-display)))
-    (cond
-     ((null directory)
-      (propertize "detached" 'face 'hermes-chat-header-directory))
-     ((not (equal (hermes-chat--directory-key directory)
-                  (hermes-chat--directory-key root)))
-      (propertize (hermes-chat--directory-label directory root)
-                  'face 'hermes-chat-header-directory)))))
+  (when-let* ((label (if (hermes-chat--current-working-directory)
+                         (hermes-chat--divergent-directory-label)
+                       "detached")))
+    (propertize label 'face 'hermes-chat-header-directory)))
 
 (defun hermes-chat--header-detail (label)
   "Return the live detail to append after LABEL in the header, or nil.

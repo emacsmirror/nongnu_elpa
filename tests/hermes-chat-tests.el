@@ -840,6 +840,172 @@
          (call-interactively #'hermes-switch-to-chat))
        (should (eq (current-buffer) target))))))
 
+;;; Project naming through linked Git worktrees and the chat switcher
+
+(defun hermes-chat-test--linked-worktree (base main name &optional bare)
+  "Create MAIN and its linked worktree NAME under BASE; return the worktree.
+MAIN is a main checkout, or with BARE a bare repository directory.  Only the
+on-disk metadata Git leaves behind is written; Git itself is never run."
+  (let* ((common (if bare (expand-file-name main base)
+                   (expand-file-name ".git" (expand-file-name main base))))
+         (admin (expand-file-name (concat "worktrees/" name) common))
+         (worktree (file-name-as-directory
+                    (expand-file-name (concat "wt/" name) base))))
+    (make-directory admin t)
+    (make-directory worktree t)
+    (with-temp-file (expand-file-name "commondir" admin)
+      (insert "../..\n"))
+    (with-temp-file (expand-file-name ".git" worktree)
+      (insert "gitdir: " admin "\n"))
+    worktree))
+
+(ert-deftest hermes-chat-worktree-cwd-names-main-project ()
+  "A cwd inside a linked worktree names the chat after the main project."
+  (ert-with-temp-directory base
+    :prefix "hermes-worktree-name-"
+    (let* ((hermes-instances nil)
+           (worktree (hermes-chat-test--linked-worktree
+                      base "emacs-hermes" "status-queue"))
+           (nested (expand-file-name "lisp/" worktree)))
+      (make-directory nested)
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--launch-project-root nil
+             hermes-chat--working-directory nil)
+       (setq-local hermes-chat--resolved-start-mode 'remote)
+       (hermes-chat--record-working-directory nested)
+       (should (equal (buffer-name) "*Hermes@default: [emacs-hermes]*"))
+       (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
+         (should (string-match-p (regexp-quote "→ …/status-queue/lisp")
+                                 (hermes-test--header-line-string)))
+         (hermes-chat--record-working-directory
+          (expand-file-name "emacs-hermes/" base))
+         (should (equal (buffer-name) "*Hermes@default: [emacs-hermes]*"))
+         (should-not (string-search "→" (hermes-test--header-line-string))))))))
+
+(ert-deftest hermes-chat-worktree-header-is-quiet-and-name-stable ()
+  "Moving a project chat into its worktree keeps the name; header is quiet."
+  (ert-with-temp-directory base
+    :prefix "hermes-worktree-header-"
+    (let* ((hermes-instances nil)
+           (worktree (hermes-chat-test--linked-worktree
+                      base "emacs-hermes" "status-queue"))
+           (main (file-name-as-directory (expand-file-name "emacs-hermes" base))))
+      (hermes-test-with-chat-buffer
+       (setq default-directory main
+             hermes-chat--launch-project-root main
+             hermes-chat--working-directory nil)
+       (setq-local hermes-chat--resolved-start-mode 'remote)
+       (hermes-chat--refresh-buffer-name)
+       (hermes-chat--record-working-directory main)
+       (should (equal (buffer-name) "*Hermes@default: [emacs-hermes]*"))
+       (hermes-chat--record-working-directory worktree)
+       (should (equal (buffer-name) "*Hermes@default: [emacs-hermes]*"))
+       (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 200)))
+         (let* ((header (hermes-chat--header-line))
+                (position (string-search "→ …/status-queue" header)))
+           (should position)
+           (should (eq (get-text-property position 'face header)
+                       'hermes-chat-header-directory))
+           (should (eq (face-attribute 'hermes-chat-header-directory
+                                       :inherit nil t)
+                       'shadow))))))))
+
+(ert-deftest hermes-chat-worktree-naming-falls-back-gracefully ()
+  "Bare, broken, plain and nonlocal paths still produce a sensible name."
+  (ert-with-temp-directory base
+    :prefix "hermes-worktree-fallback-"
+    (let* ((bare (hermes-chat-test--linked-worktree base "tool.git" "feature" t))
+           (hidden (hermes-chat-test--linked-worktree
+                    base "kit/.bare" "topic" t))
+           (broken (file-name-as-directory (expand-file-name "broken" base)))
+           (plain (file-name-as-directory (expand-file-name "plain" base))))
+      (make-directory broken)
+      (make-directory plain)
+      (with-temp-file (expand-file-name ".git" broken)
+        (insert "gitdir: " (expand-file-name "missing" base) "\n"))
+      (cl-letf (((symbol-function 'project-current) #'ignore))
+        (should (equal (cdr (hermes-chat--project-identity bare)) "tool"))
+        (should (equal (cdr (hermes-chat--project-identity hidden)) "kit"))
+        (should (equal (cdr (hermes-chat--project-identity broken)) "broken"))
+        (should (equal (cdr (hermes-chat--project-identity plain)) "plain"))
+        (should (equal (cdr (hermes-chat--project-identity
+                             "/ssh:gateway:/srv/wt/status-queue/"))
+                       "status-queue"))
+        (should (equal (cdr (hermes-chat--project-identity
+                             (expand-file-name "gone/app/" base)))
+                       "app"))))))
+
+(ert-deftest hermes-chat-switch-groups-by-project-with-titles ()
+  "The switcher groups chats by project and tells same-project chats apart."
+  (ert-with-temp-directory base
+    :prefix "hermes-switch-groups-"
+    (let* ((hermes-instances nil)
+           (worktree (hermes-chat-test--linked-worktree
+                      base "emacs-hermes" "status-queue"))
+           (main (file-name-as-directory (expand-file-name "emacs-hermes" base)))
+           (other (file-name-as-directory (expand-file-name "notes" base)))
+           (hermes-chat-buffer-name (hermes-test--chat-buffer-name))
+           buffers captured)
+      (make-directory other)
+      (unwind-protect
+          (progn
+            (dolist (spec `((,main "Status queue" ,worktree)
+                            (,main "Header polish" nil)
+                            (,other "Reading list" nil)))
+              (let ((buffer (hermes-chat)))
+                (push buffer buffers)
+                (with-current-buffer buffer
+                  (setq default-directory (nth 0 spec)
+                        hermes-chat--launch-project-root (nth 0 spec)
+                        hermes-chat--title (nth 1 spec)
+                        hermes-chat--working-directory nil)
+                  (setq-local hermes-chat--resolved-start-mode 'remote)
+                  (hermes-chat--refresh-buffer-name)
+                  (hermes-chat--record-working-directory
+                   (or (nth 2 spec) (nth 0 spec))))))
+            (setq buffers (nreverse buffers))
+            (with-current-buffer (nth 1 buffers)
+              (setq hermes-chat--status-state '(:status approval-requested)))
+            (should (equal (mapcar #'buffer-name buffers)
+                           '("*Hermes@default: [emacs-hermes]*"
+                             "*Hermes@default: [emacs-hermes]*<2>"
+                             "*Hermes@default: [notes]*")))
+            (with-current-buffer (nth 2 buffers)
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (_prompt collection &rest _)
+                           (setq captured collection)
+                           "*Hermes@default: [emacs-hermes]*<2>")))
+                (call-interactively #'hermes-switch-to-chat))
+              (should (eq (current-buffer) (nth 1 buffers))))
+            (let* ((metadata (cdr (funcall captured "" nil 'metadata)))
+                   (group (alist-get 'group-function metadata))
+                   (annotate (alist-get 'annotation-function metadata))
+                   (names (all-completions "" captured))
+                   (ours (seq-filter (lambda (name)
+                                       (memq (get-buffer name) buffers))
+                                     names)))
+              (should (eq (alist-get 'category metadata) 'hermes-chat))
+              (should (equal (car (last ours)) "*Hermes@default: [notes]*"))
+              (should (equal (mapcar (lambda (name) (funcall group name nil))
+                                     ours)
+                             (mapcar (lambda (name)
+                                       (if (string-search "notes" name)
+                                           "notes" "emacs-hermes"))
+                                     ours)))
+              (should (equal (funcall group (car ours) t) (car ours)))
+              (let ((first (funcall annotate "*Hermes@default: [emacs-hermes]*"))
+                    (second (funcall annotate
+                                     "*Hermes@default: [emacs-hermes]*<2>")))
+                (should (string-search "Status queue" first))
+                (should (string-search "→ …/status-queue" first))
+                (should (string-search "Header polish" second))
+                (should (string-search "Approval requested" second))
+                (should-not (string-search "Approval" first))
+                (should-not (string-search "→" second)))))
+        (mapc (lambda (buffer)
+                (when (buffer-live-p buffer) (kill-buffer buffer)))
+              buffers)))))
+
 (ert-deftest hermes-chat-project-root-prefers-project-and-falls-back-to-directory ()
   "Project identity uses the project root or normalized directory fallback."
   (let* ((root (file-name-as-directory

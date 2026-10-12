@@ -48,7 +48,8 @@ Install it with =M-x package-install RET hermes=.
 =M-x hermes= opens the dashboard.  =M-x hermes-project-chat= switches to a
 live chat for the current project or creates one at its root; with =C-u= it
 always creates another.  Chat buffers are named after their project, using
-=project-name= when the directory exists locally and its basename otherwise.
+=project-name= when the directory exists locally and its basename otherwise;
+a linked Git worktree takes its main repository's name.
 A project chat is named after its launching project; any other chat after the
 project of the first gateway working directory it reports.  Later gateway
 directory changes, such as the agent moving into a worktree, never rename the
@@ -57,6 +58,8 @@ project root.  Customize =hermes-chat-buffer-name-function= to replace the
 default complete naming convention.  A direct or resumed remote chat uses the
 editor directory in its initial buffer name while its gateway cwd is unknown.
 Its header stays detached, and the editor path is not sent to the gateway.
+=M-x hermes-switch-to-chat= offers chats grouped by project, most recently
+used first, annotated with session title, state and any divergent cwd.
 =M-x hermes-chat= always opens a new chat buffer:
 - =RET= to send.
 - =/= for slash commands.

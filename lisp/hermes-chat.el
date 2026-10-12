@@ -2610,30 +2610,76 @@ With prefix argument NEW, always create another project chat."
       (pop-to-buffer-same-window
        (hermes-chat--read-project-buffer buffers))))))
 
-(defun hermes-chat--switch-annotation (name)
-  "Return a shadowed status annotation for chat buffer NAME in the switcher."
+(defun hermes-chat--switch-project (name)
+  "Return the project naming chat buffer NAME, or nil."
   (when-let* ((buffer (get-buffer name)))
     (with-current-buffer buffer
-      (let ((detail (string-join
-                     (delq nil
+      (cdr (hermes-chat--project-identity (hermes-chat--naming-directory))))))
+
+(defun hermes-chat--switch-group (name transform)
+  "Group chat buffer NAME by project; with TRANSFORM, return NAME unchanged."
+  (if transform name (or (hermes-chat--switch-project name) "Other")))
+
+(defun hermes-chat--switch-annotation (name)
+  "Return a switcher annotation for chat buffer NAME.
+Show the session title, the attention state, connection and activity, and
+the gateway cwd while it differs from the chat's project root."
+  (when-let* ((buffer (get-buffer name)))
+    (with-current-buffer buffer
+      (let* ((title (and hermes-chat--title
+                         (hermes-transport--non-empty-string
+                          (hermes-session-title-chat-display hermes-chat--title))))
+             (state (plist-get hermes-chat--status-state :status))
+             (label (hermes-chat--header-status-label state))
+             (attention (and (member label '("Approval requested"
+                                             "Input requested" "Error"))
+                             (propertize label 'face
+                                         (hermes-chat--header-status-face state))))
+             (detail (delq nil
                            (list (hermes-chat--dashboard-connection-label)
                                  (hermes-transport--non-empty-string
-                                  (plist-get hermes-chat--status-state :activity))))
-                     " · ")))
-        (and (not (string-empty-p detail))
-             (concat "  " (propertize detail 'face 'shadow)))))))
+                                  (plist-get hermes-chat--status-state :activity))
+                                 (hermes-chat--divergent-directory-label))))
+             (parts (delq nil (list title attention
+                                    (and detail
+                                         (propertize (string-join detail " · ")
+                                                     'face 'shadow))))))
+        (and parts
+             (concat "  " (string-join parts (propertize " · " 'face 'shadow))))))))
+
+(defun hermes-chat--switch-candidates (buffers current)
+  "Return names of chat BUFFERS for completion, CURRENT last.
+BUFFERS arrive in `buffer-list' order, most recently selected first."
+  (mapcar #'buffer-name
+          (append (remq current buffers)
+                  (and (memq current buffers) (list current)))))
+
+(defun hermes-chat--switch-table (names)
+  "Return a completion table of chat buffer NAMES grouped by project.
+Keep the given order instead of sorting alphabetically."
+  (lambda (string predicate action)
+    (if (eq action 'metadata)
+        '(metadata (category . hermes-chat)
+                   (group-function . hermes-chat--switch-group)
+                   (annotation-function . hermes-chat--switch-annotation)
+                   (display-sort-function . identity)
+                   (cycle-sort-function . identity))
+      (complete-with-action action names string predicate))))
 
 (defun hermes-switch-to-chat (buffer)
-  "Switch to a Hermes chat BUFFER chosen with completion."
+  "Switch to a Hermes chat BUFFER chosen with completion.
+Candidates are exact buffer names grouped by project, most recently used
+first and the current chat last, annotated with each chat's title and state."
   (interactive
    (let ((buffers (hermes-chat--live-buffers)))
      (unless buffers
        (user-error "No Hermes chat buffers"))
-     (let ((completion-extra-properties
-            (list :annotation-function #'hermes-chat--switch-annotation)))
-       (list (get-buffer
-              (completing-read "Hermes chat: "
-                               (mapcar #'buffer-name buffers) nil t))))))
+     (list (get-buffer
+            (completing-read
+             "Hermes chat: "
+             (hermes-chat--switch-table
+              (hermes-chat--switch-candidates buffers (current-buffer)))
+             nil t)))))
   (pop-to-buffer-same-window buffer))
 
 ;; `hermes-sessions' is downstream of this file; its autoloaded browser
