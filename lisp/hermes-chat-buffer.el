@@ -3169,11 +3169,13 @@ error when STATE is a failure."
 
 (defun hermes-chat--work-apply-event (events event now)
   "Return EVENTS updated by normalized subagent EVENT received at NOW.
-Return EVENTS itself when EVENT is not a subagent event or changes nothing.
-A state change moves the worker's entry first; an activity-only change, such
-as a child's tool call, updates it in place so listed order stays stable.
+Return EVENTS itself when EVENT is not a subagent event.  A state change
+moves the worker's entry first; any other event, such as a child's tool
+call or thinking, updates it in place so listed order stays stable.
 Progress of a worker no lifecycle event announced records its activity
-without a state.  Entries lead with :seen, the time of their last change."
+without a state.  Entries lead with :seen, the time of the worker's last
+event: every recognized event advances it, so a roster read sent before
+that event cannot end the worker, see `hermes-chat--work-retire'."
   (let* ((id (plist-get event :subagent-id))
          (name (plist-get event :event))
          (entry (cdr (assoc id events)))
@@ -3196,8 +3198,7 @@ without a state.  Entries lead with :seen, the time of their last change."
                      (append (hermes-chat--work-event-activity event entry state now)
                              entry)
                      hermes-chat--work-activity-keys))))
-        (cond ((equal next (cddr entry)) events)
-              ((and entry (eq state old))
+        (cond ((and entry (eq state old))
                (mapcar (lambda (cell)
                          (if (equal (car cell) id) (cons id (cl-list* :seen now next)) cell))
                        events))
@@ -3220,18 +3221,28 @@ within `hermes-chat--work-retain' seconds."
          (hermes-chat--work-recent-p (plist-get (cdr entry) :seen) now)))
    events))
 
+(defun hermes-chat--work-same-events-p (a b)
+  "Return non-nil when worker events A and B differ at most in :seen times."
+  (let ((shown (lambda (cell) (cons (car cell) (cddr (cdr cell))))))
+    (equal (mapcar shown a) (mapcar shown b))))
+
+(defun hermes-chat--work-fresh-p (entry sent)
+  "Return non-nil when events ENTRY saw activity at or after SENT."
+  (>= (or (plist-get entry :seen) 0) sent))
+
 (defun hermes-chat--work-reconcile (events previous rows sent now)
   "Return EVENTS with active event-only workers absent from ROWS finished.
 ROWS is a complete roster read sent at SENT and received at NOW; PREVIOUS
 was the roster before it.  Only workers whose last event precedes SENT
-finish, so events newer than the read are kept."
+finish, so events newer than the read are kept.  Finishing keeps what
+events taught about the worker and sets only its state and finish time."
   (seq-reduce
    (lambda (events entry)
      (let ((id (car entry)) (data (cdr entry)))
        (if (or (not (hermes-chat--work-active-p data))
                (hermes-chat--work-row-id id rows)
                (hermes-chat--work-row-id id previous)
-               (>= (or (plist-get data :seen) 0) sent))
+               (hermes-chat--work-fresh-p data sent))
            events
          (hermes-chat--work-put
           events id (append (list :seen now :state 'completed :finished now) data)))))
@@ -3240,24 +3251,35 @@ finish, so events newer than the read are kept."
 (defun hermes-chat--work-retire (events previous rows sent now)
   "Return EVENTS after a roster read sent at SENT replaced PREVIOUS with ROWS.
 The read arrived at NOW.  A worker that left the roster is finished:
-`completed' unless an event already reported its end.  So is an event-only
-worker the read omits, see `hermes-chat--work-reconcile'.  Finished entries
-expire after `hermes-chat--work-retain'."
+`completed' unless an event already reported its end, keeping its other
+event data.  A live worker with an event at or after SENT is not: the read
+predates that activity, so it keeps the state it had and a later read
+decides.  An event-only worker the read omits is finished likewise, see
+`hermes-chat--work-reconcile'.  Finished entries expire after
+`hermes-chat--work-retain'."
   (hermes-chat--work-prune
    (seq-reduce
     (lambda (events row)
       (let* ((id (plist-get row :id))
-             (entry (cdr (assoc id events))))
-        (if (hermes-chat--work-row-id id rows)
-            events
+             (entry (cdr (assoc id events)))
+             (state (plist-get entry :state)))
+        (cond
+         ((hermes-chat--work-row-id id rows) events)
+         ((and (memq state '(nil queued running))
+               (hermes-chat--work-fresh-p entry sent))
+          (hermes-chat--work-put
+           events id (plist-put (plist-put (copy-sequence entry)
+                                           :state (or state (plist-get row :state)))
+                                :row row)))
+         (t
           (hermes-chat--work-put
            events id
-           (if (hermes-chat--work-active-p entry)
-               (list :seen now :state 'completed :finished now :row row)
-             (append (list :seen now :row row
-                           :state (or (plist-get entry :state) 'completed)
-                           :finished (or (plist-get entry :finished) now))
-                     entry))))))
+           (append (list :seen now :row row)
+                   (if (hermes-chat--work-active-p entry)
+                       (list :state 'completed :finished now)
+                     (list :state (or state 'completed)
+                           :finished (or (plist-get entry :finished) now)))
+                   entry))))))
     previous (hermes-chat--work-reconcile events previous rows sent now))
    rows now))
 

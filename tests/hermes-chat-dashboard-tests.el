@@ -202,6 +202,46 @@
     (should (= 1 (car (hermes-chat--work-counts
                        (list :agents (hermes-chat--work-merge-agents retired (last previous) now))))))))
 
+(ert-deftest hermes-chat-work-read-older-than-activity-never-ends-a-worker ()
+  "Any event after a read was sent keeps its worker running, in both orders.
+Start at 100, read sent at 110, thinking at 120, empty reply at 130: the
+thinking proves the reply stale, whether or not an earlier read listed the
+worker.  Without newer activity the reply finishes it, keeping its tools."
+  (let* ((thinking '(:event "subagent.thinking" :subagent-id "w"))
+         (tool '(:event "subagent.tool" :subagent-id "w" :name "read_file"
+                        :preview "a.el" :tool-count 3))
+         (start (hermes-chat--work-apply-event
+                 nil '(:event "subagent.start" :subagent-id "w" :content "Goal") 100.0))
+         (listed '((:key (delegate . "w") :id "w" :kind delegate :state running
+                         :goal "Goal")))
+         (state (lambda (events)
+                  (plist-get (car (hermes-chat--work-merge-agents events nil 130.0))
+                             :state))))
+    (dolist (previous (list nil listed))
+      ;; Activity after the read was sent: the reply is stale.
+      (let* ((events (hermes-chat--work-apply-event
+                      (hermes-chat--work-apply-event start tool 105.0)
+                      thinking 120.0))
+             (retired (hermes-chat--work-retire events previous nil 110.0 130.0)))
+        (should (= (plist-get (cdr (assoc "w" events)) :seen) 120.0))
+        (should (eq (funcall state retired) 'running))
+        ;; A later read sent after that activity does finish it.
+        (should (eq (funcall state (hermes-chat--work-retire retired nil nil 125.0 140.0))
+                    'completed)))
+      ;; Activity before the read was sent: the reply ends the worker but
+      ;; keeps what events taught about it.
+      (let* ((events (hermes-chat--work-apply-event
+                      (hermes-chat--work-apply-event start tool 105.0)
+                      thinking 108.0))
+             (row (car (hermes-chat--work-merge-agents
+                        (hermes-chat--work-retire events previous nil 110.0 130.0)
+                        nil 130.0))))
+        (should (eq (plist-get row :state) 'completed))
+        (should (= (plist-get row :finished) 130.0))
+        (should (= (plist-get row :tool-count) 3))
+        (should (equal (plist-get row :tools) '(("read_file" . "a.el"))))
+        (should (= (plist-get row :started) 100.0))))))
+
 (ert-deftest hermes-chat-work-read-retires-silent-event-only-workers ()
   "A complete read sent after a worker's last event finishes it if absent.
 Workers whose events are newer than the read keep running."

@@ -722,8 +722,9 @@ A background process notice reads the rosters at once."
         (hermes-chat--work-poll owner)
       (let* ((events (plist-get owner :events))
              (next (hermes-chat--work-apply-event events event (float-time))))
-        (unless (eq next events)
-          (setf (plist-get owner :events) next)
+        (setf (plist-get owner :events) next)
+        ;; Every event advances its worker's :seen; only other changes show.
+        (unless (hermes-chat--work-same-events-p next events)
           (hermes-chat--work-changed owner))))))
 
 (defun hermes-chat-work-refresh ()
