@@ -5044,6 +5044,32 @@ Each source line keeps its own indentation, and nothing exceeds the width."
       (should (eq (get-text-property (string-search "in the control" text) 'face text)
                   'bold)))))
 
+(ert-deftest hermes-work-detail-resize-spares-a-file-associated-buffer ()
+  "A detail retired by a visited file keeps its text and header on resize."
+  (let* ((row (list :key '(delegate . "w") :id "w" :kind 'delegate :state 'running
+                    :goal "Original worker goal" :accepting-steer t))
+         (roster (list :agents (list row)))
+         (buffer (hermes-work--detail-buffer (list :runtime "r") '(delegate . "w")))
+         (file (make-temp-file "hermes-detail-")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-chat--work-roster) (lambda (&rest _) roster)))
+          (with-current-buffer buffer
+            (hermes-work--detail-render roster 0)
+            (set-visited-file-name file t)
+            (should-not (hermes-buffer--owned-p))
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (insert "UNSAVED FILE DRAFT\n"))
+            (setq header-line-format "Draft header"
+                  hermes-work--width 1)
+            (hermes-work--resize (selected-window))
+            (should (equal (buffer-string) "UNSAVED FILE DRAFT\n"))
+            (should (equal header-line-format "Draft header"))
+            (should-not (memq #'hermes-work--resize window-size-change-functions))))
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer)
+      (delete-file file))))
+
 (defun hermes-test--offered (rows key &optional detail log current)
   "Return the actions the popup offers for KEY among ROWS.
 DETAIL asks from a detail buffer; LOG names a published log; CURRENT

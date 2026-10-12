@@ -656,7 +656,7 @@ Details repaint even without the list, so a detached one says so."
   "Refit the outline or detail after a width change of _WINDOW or its siblings."
   (unless (eql hermes-work--width (hermes-work--fit-width))
     (cond ((derived-mode-p 'hermes-work-mode) (hermes-work--render hermes-work--owner))
-          ((derived-mode-p 'hermes-work-detail-mode)
+          ((hermes-buffer--owned-p 'hermes-work-detail-mode)
            (let ((now (float-time)))
              (hermes-work--detail-render (hermes-chat--work-roster hermes-work--owner now)
                                          now))))))
@@ -1015,8 +1015,10 @@ A row that left the roster keeps its last-known text."
      (t (user-error "No observed work on this line")))))
 
 (defun hermes-work--detail-detach ()
-  "Retire this detail and settle controls it started, on kill or mode change."
+  "Retire this detail and settle controls it started, on kill or mode change.
+A retired detail no longer refills on resize: its text may be the user's."
   (hermes-buffer--retire)
+  (remove-hook 'window-size-change-functions #'hermes-work--resize t)
   (when hermes-work--owner (hermes-work--settle-owner hermes-work--owner)))
 
 ;;; Session-qualified worker actions
