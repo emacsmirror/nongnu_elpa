@@ -851,17 +851,62 @@ FIXED-WIDTHS retains a streaming table's established column allocation."
 (defconst hermes-chat--unknown-event-preview-print-level 4
   "`print-level' bound while printing unknown event raw previews.")
 
+(defconst hermes-chat--unknown-event-preview-string-limit 200
+  "Maximum characters kept from each string in an unknown event preview.")
+
+(defun hermes-chat--unknown-event-bounded-copy (object depth length string-limit)
+  "Return a copy of OBJECT that is cheap to print.
+Containers nested deeper than DEPTH become the symbol `…'.  Lists,
+vectors and hash tables keep at most LENGTH elements, with `…' marking
+the rest of a list or vector.  Strings longer than STRING-LIMIT characters
+are cut and end in \"…\".  Other objects are returned unchanged.  The walk
+never visits elements beyond these limits."
+  (let ((walk (lambda (child)
+                (hermes-chat--unknown-event-bounded-copy
+                 child (1- depth) length string-limit))))
+    (cond
+     ((stringp object)
+      (if (> (length object) string-limit)
+          (concat (substring object 0 string-limit) "…")
+        object))
+     ((not (or (consp object) (vectorp object) (hash-table-p object)))
+      object)
+     ((<= depth 0) '…)
+     ((consp object)
+      (let ((tail object) (count 0) items)
+        (while (and (consp tail) (< count length))
+          (push (funcall walk (car tail)) items)
+          (setq tail (cdr tail) count (1+ count)))
+        (nconc (nreverse items)
+               (cond ((null tail) nil)
+                     ((consp tail) (list '…))
+                     (t (funcall walk tail))))))
+     ((vectorp object)
+      (vconcat (mapcar (lambda (i) (funcall walk (aref object i)))
+                       (number-sequence 0 (1- (min length (length object)))))
+               (and (> (length object) length) (list '…))))
+     (t
+      (let ((copy (make-hash-table :test (hash-table-test object)))
+            (count 0))
+        (catch 'full
+          (maphash (lambda (key value)
+                     (when (>= count length) (throw 'full nil))
+                     (puthash (funcall walk key) (funcall walk value) copy)
+                     (setq count (1+ count)))
+                   object))
+        copy)))))
+
 (defun hermes-chat--unknown-event-raw-preview (raw)
   "Return a one-line preview of unknown event payload RAW.
-Printing is bounded by `print-length' and `print-level', and string payloads
-are cut before printing, so the preview never traverses all of RAW."
+RAW is first reduced with `hermes-chat--unknown-event-bounded-copy', so
+the preview never traverses or prints all of a huge payload or string."
   (let* ((width hermes-chat--unknown-event-raw-preview-width)
          (print-length hermes-chat--unknown-event-preview-print-length)
          (print-level hermes-chat--unknown-event-preview-print-level)
          (print-escape-newlines t)
-         (object (if (and (stringp raw) (> (length raw) width))
-                     (substring raw 0 width)
-                   raw)))
+         (object (hermes-chat--unknown-event-bounded-copy
+                  raw print-level print-length
+                  (min width hermes-chat--unknown-event-preview-string-limit))))
     (truncate-string-to-width (prin1-to-string object) width nil nil "…")))
 
 (defun hermes-chat--unknown-event-content (event)
@@ -888,19 +933,25 @@ are cut before printing, so the preview never traverses all of RAW."
 (defconst hermes-chat--unknown-event-print-level 12
   "`print-level' bound while formatting unknown event raw payloads.")
 
+(defconst hermes-chat--unknown-event-string-limit 1000
+  "Maximum characters kept from each string in expanded unknown event detail.")
+
 (defun hermes-chat--unknown-event-detail (event)
   "Return expanded raw detail for unknown transport EVENT.
 The raw payload is pretty-printed and bounded rather than truncated to one
 line, so the expanded disclosure retains the data needed for a bug report.
-Printing is bounded by `print-length' and `print-level', and payloads whose
-flat form exceeds `hermes-chat--unknown-event-raw-detail-limit' are
-truncated without pretty-printing."
+RAW is first reduced with `hermes-chat--unknown-event-bounded-copy', and
+payloads whose flat form exceeds `hermes-chat--unknown-event-raw-detail-limit'
+are truncated without pretty-printing."
   (let ((raw (plist-get event :raw)))
     (if (null raw)
         "No raw payload"
       (let* ((print-length hermes-chat--unknown-event-print-length)
              (print-level hermes-chat--unknown-event-print-level)
              (limit hermes-chat--unknown-event-raw-detail-limit)
+             (raw (hermes-chat--unknown-event-bounded-copy
+                   raw print-level print-length
+                   hermes-chat--unknown-event-string-limit))
              (flat (prin1-to-string raw)))
         (if (> (length flat) limit)
             (concat (substring flat 0 limit) "\n… (raw payload truncated)")

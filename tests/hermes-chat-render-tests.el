@@ -1915,6 +1915,60 @@ PHASE defaults to `after-change-functions'."
          (should-not (string-match-p "99999" help))
          (should (< (length help) 400)))))))
 
+(ert-deftest hermes-chat-unknown-event-nested-huge-string-is-bounded ()
+  "A huge string nested in the raw payload is cut in preview and detail."
+  (let* ((huge (make-string 1000000 ?y))
+         (event (list :type 'unknown :event "tool.blob"
+                      :raw `((kind . "alien") (blob . ,huge))))
+         (printed 0)
+         (real-prin1 (symbol-function 'prin1-to-string))
+         (real-pp (symbol-function 'pp-to-string)))
+    (cl-letf (((symbol-function 'prin1-to-string)
+               (lambda (&rest args)
+                 (let ((text (apply real-prin1 args)))
+                   (setq printed (max printed (length text)))
+                   text)))
+              ((symbol-function 'pp-to-string)
+               (lambda (&rest args)
+                 (let ((text (apply real-pp args)))
+                   (setq printed (max printed (length text)))
+                   text))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry nil event)
+       (should (< printed 3000))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.blob")
+       (let ((help (get-text-property (1- (point)) 'help-echo)))
+         (should (string-match-p "alien" help))
+         (should (< (length help) 400)))
+       (push-button (1- (point)))
+       (let ((expanded (buffer-substring-no-properties
+                        (point-min) hermes-chat--input-marker)))
+         (should (string-match-p "▾ Unknown event tool.blob" expanded))
+         (should (string-match-p "alien" expanded))
+         (should (string-match-p "yyyy…" expanded))
+         (should (< (length expanded) 3000)))
+       (should (< printed 3000))
+       (should (equal (plist-get event :raw) `((kind . "alien") (blob . ,huge))))))))
+
+(ert-deftest hermes-chat-unknown-event-bounded-copy-shapes ()
+  "The bounded copy keeps shapes, cuts strings and elides past the limits."
+  (let ((table (make-hash-table :test #'equal)))
+    (dotimes (i 5) (puthash i (make-string 10 ?z) table))
+    (let ((copy (hermes-chat--unknown-event-bounded-copy
+                 (list "abcdef" [1 2 3 4 5] '(a . "bcdefg") '((((deep)))) table)
+                 3 4 3)))
+      (should (equal (nth 0 copy) "abc…"))
+      (should (equal (nth 1 copy) [1 2 3 4 …]))
+      (should (equal (nth 2 copy) '(a . "bcd…")))
+      (should (equal (nth 3 copy) '((…))))
+      (should (eq (car (last copy)) '…))
+      (should (= (length copy) 5)))
+    (let ((copy (hermes-chat--unknown-event-bounded-copy table 2 3 3)))
+      (should (hash-table-p copy))
+      (should (= (hash-table-count copy) 3))
+      (should (equal (gethash 0 copy) "zzz…")))))
+
 (ert-deftest hermes-chat-clear-drops-unknown-event-detail-cache ()
   "Clearing the transcript discards cached unknown event details."
   (hermes-test-with-chat-buffer
