@@ -713,7 +713,7 @@ and other completion tables must not renew it."
                          :connection (hermes-dashboard-transport-client-generation client)
                          :cwd (hermes-chat--current-working-directory)
                          :tick (buffer-chars-modified-tick) :point (point)
-                         :items nil)))
+                         :items nil :retrigger nil)))
     (setq hermes-chat--path-completion snapshot)
     (condition-case nil
         (hermes-dashboard-transport-complete-path
@@ -726,10 +726,32 @@ and other completion tables must not renew it."
                         (setf (plist-get snapshot :items)
                               (delq nil (mapcar #'hermes-chat--path-reference
                                                (hermes-chat--listify
-                                                (hermes-transport--get result 'items))))))))
+                                                (hermes-transport--get result 'items)))))
+                        (when (and (plist-get snapshot :items)
+                                   (plist-get snapshot :retrigger))
+                          (setf (plist-get snapshot :retrigger) nil)
+                          (run-at-time 0 nil #'hermes-chat--path-completion-retrigger
+                                       buffer snapshot)))))
          :reject #'ignore)
       (error nil))
+    ;; A read settling later than this command re-offers completion once,
+    ;; but only for an interactive request (not an idle completion UI).
+    (when (and this-command (not (plist-get snapshot :items)))
+      (setf (plist-get snapshot :retrigger) t))
     snapshot))
+
+(defun hermes-chat--path-completion-retrigger (buffer snapshot)
+  "Re-run completion in BUFFER when SNAPSHOT's read settles unchanged.
+Fire only while BUFFER is selected, its composer text and point are as
+the request left them, the backend context is the same and no input is
+pending; otherwise the user has moved on and a late popup would intrude."
+  (when (and (buffer-live-p buffer)
+             (eq (window-buffer (selected-window)) buffer)
+             (not (input-pending-p)))
+    (with-current-buffer buffer
+      (when (and (hermes-chat--path-completion-current-p snapshot)
+                 (plist-get snapshot :items))
+        (completion-at-point)))))
 
 (defun hermes-chat--guard-path-choice (choice _buffer _base &rest _ignored)
   "Refuse stale native completion CHOICE before it can replace input."
@@ -741,7 +763,8 @@ and other completion tables must not renew it."
 
 (defun hermes-chat--file-ref-capf ()
   "Complete @ paths using the attached backend session, never local files.
-The first invocation starts a read; invoke completion again when it finishes.
+The first invocation starts a read; completion reopens once when it
+finishes, provided the composer is unchanged.
 Unavailable or stale reads offer no candidates and never edit the input."
   (when-let* ((bounds (hermes-chat--file-ref-completion-bounds))
               (client hermes-chat--dashboard-client)

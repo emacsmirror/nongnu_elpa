@@ -1750,5 +1750,49 @@
            (choose-completion-string "@file:`src/module-two.py`" (current-buffer) base)
            (should (equal (hermes-chat-input-string) "See @file:`src/module-two.py`"))))))))
 
+(ert-deftest hermes-chat-file-ref-late-read-reopens-completion-once ()
+  "A late backend read reopens completion once, only for an unchanged composer."
+  (dolist (change '(nil typed-before typed-after moved unselected idle))
+    (save-window-excursion
+      (hermes-test-with-chat-buffer
+        (switch-to-buffer (current-buffer))
+        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+              hermes-chat--dashboard-active-session-id "remote"
+              hermes-chat--working-directory "/remote")
+        (insert "See @src/mo")
+        (let ((items '((items . (((text . "@file:src/module.py"))))))
+              resolve timers requests)
+          (cl-letf (((symbol-function 'hermes-dashboard-transport-complete-path)
+                     (lambda (_client _word &rest args)
+                       (push args requests)
+                       (setq resolve (plist-get args :resolve))))
+                    ((symbol-function 'run-at-time)
+                     (lambda (_delay _repeat fn &rest args)
+                       (push (cons fn args) timers))))
+            (let ((this-command (unless (eq change 'idle) 'hermes-chat-tab)))
+              (completion-at-point))
+            (should (equal (hermes-chat-input-string) "See @src/mo"))
+            (when (eq change 'typed-before) (insert "d"))
+            (funcall resolve items)
+            ;; A second settlement of the same read cannot schedule again.
+            (funcall resolve items)
+            (if (memq change '(typed-before idle))
+                (should-not timers)
+              (should (= (length timers) 1)))
+            (pcase change
+              ('typed-after (insert "d"))
+              ('moved (backward-char))
+              ('unselected (set-window-buffer (selected-window)
+                                              (get-buffer-create " *hermes-other*"))))
+            (let ((before (with-current-buffer (window-buffer) (buffer-string))))
+              (dolist (timer timers) (apply (car timer) (cdr timer)))
+              (should (= (length requests) 1))
+              (if (null change)
+                  (should (equal (hermes-chat-input-string)
+                                 "See @file:`src/module.py`"))
+                (should (equal (with-current-buffer (window-buffer) (buffer-string))
+                               before))
+                (should-not (string-search "module" (hermes-chat-input-string)))))))))))
+
 (provide 'hermes-chat-buffer-tests)
 ;;; hermes-chat-buffer-tests.el ends here

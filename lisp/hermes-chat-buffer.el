@@ -2387,6 +2387,36 @@ KIND defaults to delegates."
   (seq-count (lambda (row) (eq (plist-get row :state) 'running))
              (plist-get source :rows)))
 
+(declare-function hermes-chat-work "hermes-subagents" ())
+
+(defun hermes-chat-work-at-mouse (event)
+  "Show observed work for the chat whose header line received EVENT.
+Select EVENT's window first, so an unselected chat cannot borrow the
+selected chat's context."
+  (interactive "e")
+  (let ((window (posn-window (event-start event))))
+    (when (window-live-p window)
+      (select-window window))
+    (unless (derived-mode-p 'hermes-chat-mode)
+      (user-error "No Hermes chat under the mouse"))
+    (require 'hermes-subagents)
+    (call-interactively #'hermes-chat-work)))
+
+(defvar hermes-chat-work-label-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line mouse-1] #'hermes-chat-work-at-mouse)
+    (define-key map [mode-line mouse-1] #'hermes-chat-work-at-mouse)
+    map)
+  "Keymap active on the header line's observed work count.")
+
+(defun hermes-chat--work-label-help ()
+  "Return the work count's help text, derived from its keymap."
+  (let ((key (where-is-internal #'hermes-chat-work-at-mouse
+                                hermes-chat-work-label-map t)))
+    (format "%s: show observed workers and processes"
+            (if key (single-key-description (aref key (1- (length key))))
+              "mouse-1"))))
+
 (defun hermes-chat--work-label (compact)
   "Return kind-specific active counts, or nil for fully current empty work.
 Use COMPACT notation when non-nil; incomplete observations remain explicit."
@@ -2416,7 +2446,11 @@ Use COMPACT notation when non-nil; incomplete observations remain explicit."
          (if (string-empty-p active)
              (format "%s ?" (if (char-displayable-p ?🤖) "🤖" "Agents"))
            (concat active (and unknown " ?")))
-         'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running))))))
+         'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running)
+         'mouse-face 'highlight
+         'help-echo (hermes-chat--work-label-help)
+         'local-map hermes-chat-work-label-map)))))
+
 
 (defun hermes-chat--work-details ()
   "Return local source coverage without fetching or claiming total liveness."
@@ -2540,8 +2574,21 @@ During redisplay Emacs selects the window whose header is being evaluated."
                         (<= (+ (string-width text) (string-width "⚕ | ")) width))
                    (concat "⚕" (propertize " | " 'face 'shadow) text)
                  text)))
-    (propertize (string-replace "%" "%%" text)
-                'help-echo (hermes-chat--session-details-text))))
+    (hermes-chat--fill-text-property
+     (copy-sequence (string-replace "%" "%%" text))
+     'help-echo (hermes-chat--session-details-text))))
+
+(defun hermes-chat--fill-text-property (string property value)
+  "Set PROPERTY to VALUE on STRING wherever it is unset; return STRING.
+Segments carrying their own PROPERTY, such as a clickable count's
+`help-echo', keep it."
+  (let ((pos 0) (end (length string)))
+    (while (< pos end)
+      (let ((next (next-single-property-change pos property string end)))
+        (unless (get-text-property pos property string)
+          (put-text-property pos next property value string))
+        (setq pos next)))
+    string))
 
 
 (provide 'hermes-chat-buffer)

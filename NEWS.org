@@ -2,6 +2,18 @@
 
 * Unreleased
 
+- The chat model picker stays a single completion read but groups models by
+  provider, shows only the model inside each group, and annotates context
+  window, price and capabilities when the catalogue reports them.  The
+  current model is marked and offered as the default.  Profile and cron model
+  pickers share the same metadata.  Completion values now lead with the model,
+  for example =claude · Anthropic (anthropic)=.
+- Clicking the header's =🤖 N= / =⚙ N= work count opens that chat's observed
+  work view, even when its window is not selected.
+- Composer =@= path completion reopens automatically once the backend lookup
+  finishes, provided the composer is unchanged; a second =TAB= is no longer
+  needed.
+
 - Pending chat prompts appear in the global mode line, for example
   =[Hermes: Clarify]=, until they are answered, expire or are cleared.
   Clicking the segment answers from the owning chat; set

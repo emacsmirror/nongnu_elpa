@@ -1194,7 +1194,7 @@
                 ((symbol-function 'completing-read)
                  (lambda (prompt collection &rest _)
                    (if (string-prefix-p "Model choice" prompt)
-                       (car collection) choice)))
+                       (car (all-completions "" collection)) choice)))
                 ((symbol-function 'read-string) (lambda (&rest _) "/backend/new"))
                 ((symbol-function 'file-directory-p)
                  (lambda (&rest _) (setq local-probes t)))
@@ -1320,7 +1320,7 @@
                      (progn
                        (when (eq event 'model-retired)
                          (hermes-browser--next-request-generation))
-                       (car choices))
+                       (car (all-completions "" choices)))
                    "Set")))
               ((symbol-function 'read-string)
                (lambda (&rest _)

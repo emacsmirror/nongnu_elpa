@@ -386,6 +386,55 @@
       (setf (plist-get hermes-chat--work-owner :delegates) '(:coverage current :rows nil))
       (should (equal (funcall description) "Workers 0")))))
 
+;; A synthetic header-line click on WINDOW.
+(defun hermes-test--header-click (window)
+  "Return a mouse-1 event on WINDOW's header line."
+  (list 'mouse-1 (list window 'header-line '(0 . 0) 0)))
+
+(ert-deftest hermes-chat-work-header-count-is-clickable ()
+  "The header work count advertises and binds a click; other segments keep details."
+  (hermes-test--with-work
+    (setf (plist-get hermes-chat--work-owner :delegates)
+          '(:coverage current :rows ((:kind delegate :state running)))
+          (plist-get hermes-chat--work-owner :processes)
+          '(:coverage current :rows ((:kind process :state running))))
+    (let* ((label (hermes-chat--work-label nil))
+           (map (get-text-property 0 'local-map label)))
+      (should (eq (get-text-property 0 'mouse-face label) 'highlight))
+      (should (equal (get-text-property 0 'help-echo label)
+                     "mouse-1: show observed workers and processes"))
+      (should (eq (lookup-key map [header-line mouse-1])
+                  #'hermes-chat-work-at-mouse)))
+    (let* ((header (hermes-chat--header-line 120))
+           (start (string-search (substring-no-properties
+                                  (hermes-chat--work-label nil))
+                                 header)))
+      (should start)
+      (should (keymapp (get-text-property start 'local-map header)))
+      (should (string-prefix-p "mouse-1:" (get-text-property start 'help-echo header)))
+      ;; The rest of the header still explains the session.
+      (should (string-prefix-p "Directory:" (get-text-property 0 'help-echo header)))
+      (should-not (get-text-property 0 'local-map header)))))
+
+(ert-deftest hermes-chat-work-header-click-opens-the-clicked-chat ()
+  "A click on an unselected chat's count opens that chat's work, not the selected one's."
+  (let (opened)
+    (save-window-excursion
+      (hermes-test-with-chat-buffer
+        (let ((clicked (current-buffer)))
+          (hermes-test-with-chat-buffer
+            (let* ((selected (current-buffer))
+                   (_ (progn (delete-other-windows)
+                             (switch-to-buffer selected)))
+                   (other (split-window)))
+              (set-window-buffer other clicked)
+              (should (eq (window-buffer (selected-window)) selected))
+              (cl-letf (((symbol-function 'hermes-chat-work)
+                         (lambda () (interactive) (push (current-buffer) opened))))
+                (hermes-chat-work-at-mouse (hermes-test--header-click other)))
+              (should (equal opened (list clicked)))
+              (should (eq (selected-window) other)))))))))
+
 (ert-deftest hermes-chat-work-refinement-header ()
   "Current empty work is silent; running counts distinguish their kinds."
   (hermes-test--with-work
@@ -1920,7 +1969,7 @@
                     hermes-chat--dashboard-session-ready-p t))
             (with-current-buffer buf-a
               (cl-letf (((symbol-function 'completing-read)
-                         (lambda (_items &rest _) "p · m")))
+                         (lambda (_items &rest _) "m · p")))
                 (hermes-chat-switch-model)))
             ;; Buffer A's switch must carry A's session id.
             (should (equal config-session "sid-a")))

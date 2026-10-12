@@ -69,6 +69,11 @@ always opens a new chat buffer:
   nonblocking; opening the picker refreshes that cache after backend changes.
   The profile browser's model picker also fetches fresh choices each time.
   Failed fetches do not offer stale cached choices.
+  Choices are one completion list grouped by provider (with
+  =completions-group=, Vertico or similar), annotated with the context window,
+  price and capabilities the catalogue reports.  The current model is marked
+  =• current= and is the default; exact values such as =claude · OpenRouter
+  (openrouter)= keep same-named models from different providers distinct.
   The dashboard may maintain its own provider catalogue cache.
 - =M-x hermes-close= closes local connections and Hermes buffers for restart,
   discarding the frontend model catalogue cache.
@@ -462,8 +467,9 @@ draft remain available.  If a branch fails after backend creation, the child
 may still exist; inspect Sessions before retrying.
 
 Composer =@= completion reads the attached session's backend workspace, not
-Emacs's local project.  Try =@src/mo=, =@file:src/mo= or =@folder:src= and invoke
-completion again after the asynchronous lookup finishes.  Accepted candidates
+Emacs's local project.  Try =@src/mo=, =@file:src/mo= or =@folder:src= and press
+=TAB=; when the asynchronous lookup finishes, completion reopens once if the
+composer, point and session are unchanged.  Accepted candidates
 become explicit, quoted backend references.  Paths that cannot be represented
 by the backend parser are not offered.  This is reference completion, not a
 local-file upload; literal bare =@path= text does not attach file contents.
