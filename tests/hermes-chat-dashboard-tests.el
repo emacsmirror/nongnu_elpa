@@ -246,6 +246,59 @@
 
 ;;;; Owner lifecycle
 
+;; The owner shape built by release 0.9.0, which older live sessions keep
+;; across an ordered reload.
+(defun hermes-test--legacy-work-owner (client timer request)
+  "Return a 0.9.0-shaped work owner on CLIENT with TIMER and REQUEST."
+  (list :buffer (current-buffer) :generation hermes-chat--work-generation
+        :lifetime hermes-chat--lifecycle-generation
+        :instance (copy-tree hermes-instance) :profile hermes-chat--profile
+        :client client :connection (hermes-dashboard-transport-client-generation client)
+        :runtime "runtime" :key nil :request request :timer (cons nil timer)
+        :cycle nil :adoption nil
+        :delegates '(:coverage stale :rows nil) :processes nil :controls nil
+        :visible t :view nil :view-valid-p nil :render nil :refresh nil
+        :settle (lambda (_) (error "Legacy settle must not run"))
+        :current-p #'hermes-chat--work-current-p))
+
+(ert-deftest hermes-chat-work-reload-replaces-legacy-owner ()
+  "Ordered reload retires an older release's owner and binds a fresh one.
+The old timer and request are released without running old closures, the
+session is not restarted, and the new owner polls with the new signature."
+  (hermes-test--with-work
+    (let* ((legacy-timer (timer-create))
+           (request (list :id nil :cycle (list nil) :source :delegates))
+           (pending (hermes-dashboard-transport-client-pending client))
+           cancelled)
+      (timer-set-function legacy-timer (lambda () (error "Legacy timer must not run")))
+      (puthash 99 (list :owner request :method "subagent.list") pending)
+      (setq hermes-chat--work-owner
+            (hermes-test--legacy-work-owner client legacy-timer request))
+      (should (hermes-chat--work-legacy-p hermes-chat--work-owner))
+      (setq calls nil)
+      (cl-letf (((symbol-function 'cancel-timer)
+                 (lambda (timer) (push timer cancelled)))
+                ((symbol-function 'hermes-chat--dashboard-start)
+                 (lambda (&rest _) (error "Reload must not restart the session"))))
+        (hermes-chat--work-activate))
+      (let ((owner hermes-chat--work-owner))
+        (should owner)
+        (should-not (hermes-chat--work-legacy-p owner))
+        (should (memq legacy-timer cancelled))
+        (should-not (gethash 99 pending))
+        (should (eq (plist-get owner :client) client))
+        (should (equal (plist-get owner :runtime) "runtime"))
+        (should (hermes-chat--work-current-p owner))
+        (should (equal (hermes-chat--work-counts (hermes-chat--work-current-roster))
+                       '(0 . 0)))
+        ;; The fresh owner reads through the current two-argument request.
+        (hermes-chat-work-refresh)
+        (should (= (length calls) 1))
+        (should (equal (plist-get (car calls) :session-id) "runtime"))
+        ;; A compatible owner is kept on the next reload.
+        (hermes-chat--work-activate)
+        (should (eq owner hermes-chat--work-owner))))))
+
 (ert-deftest hermes-chat-work-repeated-bind-keeps-one-focus-advice ()
   "Native add-function deduplicates the named observer across attachments."
   (hermes-test-with-chat-buffer

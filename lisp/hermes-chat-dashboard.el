@@ -640,9 +640,36 @@ window hooks only arm timers; the first read runs from the timer."
     (hermes-chat--work-visibility)
     (hermes-chat--work-publish-detached detached)))
 
+(defun hermes-chat--work-legacy-p (owner)
+  "Return non-nil when OWNER was built by an older, incompatible release.
+Such owners keep sources without session snapshots and token-wrapped timers
+whose closures call functions with older signatures."
+  (not (and (plist-member owner :inflight) (plist-member owner :events))))
+
+(defun hermes-chat--work-retire-legacy ()
+  "Release this chat's legacy work owner without calling its old closures.
+Cancel its timer and every request it may own; never run its settle or render
+functions, which belong to the older release."
+  (let ((owner hermes-chat--work-owner)
+        (client (plist-get hermes-chat--work-owner :client)))
+    (cl-incf hermes-chat--work-generation)
+    (setq hermes-chat--work-owner nil)
+    (pcase (plist-get owner :timer)
+      ((and timer (pred timerp)) (cancel-timer timer))
+      (`(,_ . ,(and timer (pred timerp))) (cancel-timer timer)))
+    (dolist (token (list (plist-get owner :request) (plist-get owner :adoption) owner))
+      (when token
+        (hermes-dashboard-transport-cancel-owner-requests client token)))))
+
 (defun hermes-chat--work-activate ()
   "Activate observations for an already attached chat after ordered reload.
-Preserve an existing owner.  Never restart, resume, or change the chat's input."
+Preserve a compatible owner, and replace one left by an older release with
+a fresh owner for the same attachment.  Never restart, resume, or change the
+chat's input."
+  (when (and (derived-mode-p 'hermes-chat-mode)
+             hermes-chat--work-owner
+             (hermes-chat--work-legacy-p hermes-chat--work-owner))
+    (hermes-chat--work-retire-legacy))
   (when (and (derived-mode-p 'hermes-chat-mode)
              (not hermes-chat--work-owner)
              hermes-chat--dashboard-session-ready-p
