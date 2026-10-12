@@ -1101,8 +1101,12 @@ Delegate non-activity events to the notice and display fallback phase."
     ;; Voice and skin changes are client-UI concerns, not transcript content.
     ;; Usage ticks, title pushes and goal/loop control snapshots are session
     ;; bookkeeping the stock TUI routes to its status bar, never transcript.
+    ;; Agent terminal events feed the desktop's terminal tabs: output chunks
+    ;; carry no text field, so they rendered as a bare label.  Process cards
+    ;; already show the last line and the exit.
     ((or "voice.status" "voice.transcript" "skin.changed"
-         "session.usage" "session.title" "session.control.update")
+         "session.usage" "session.title" "session.control.update"
+         "agent.terminal.output" "terminal.close")
      nil)
     ("review.summary"
      (list (hermes-dashboard-transport--status-event

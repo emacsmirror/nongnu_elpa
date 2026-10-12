@@ -6060,5 +6060,11 @@ first; an unrelated process with that PID is left alone."
   (should (equal (hermes-transport-work-last-line "x\nlogout now") "logout now"))
   (should-not (hermes-transport-work-last-line "logout")))
 
+(ert-deftest hermes-transport-dashboard-drops-agent-terminal-events ()
+  "Desktop terminal-tab events never become bare transcript labels."
+  (should-not (hermes-test--dashboard-events
+               '("agent.terminal.output" . ((process_id . "proc_1") (chunk . "logout\n")))
+               '("terminal.close" . ((process_id . "proc_1"))))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here
