@@ -271,6 +271,21 @@ in the time column, as a queued worker has no time yet."
             (mapcar #'hermes-work-plain-line
                     (split-string (or text "") "\n" t "[ \t\r]+"))))
 
+(defun hermes-work--error-rest (error room)
+  "Return the part of ERROR for a failed worker's card, or nil.
+The arrow line shows ERROR's first nonblank line in ROOM columns.  When
+that fits, the card keeps only the lines after it; when the arrow cut it
+short, the card keeps all of ERROR."
+  (let ((first (hermes-work--first-line error)))
+    (if (or (null first) (> (string-width first) room))
+        error
+      (let ((rest (string-trim
+                   (mapconcat #'identity
+                              (cdr (seq-drop-while #'string-blank-p
+                                                   (split-string (or error "") "\n")))
+                              "\n"))))
+        (and (not (string-empty-p rest)) rest)))))
+
 (defun hermes-work--agent-lines (row depth view now width hidden)
   "Return the lines for worker ROW at DEPTH under VIEW at NOW within WIDTH.
 HIDDEN counts descendants folded under it."
@@ -295,7 +310,9 @@ HIDDEN counts descendants folded under it."
           (hermes-work--card
            key (+ 2 depth)
            (list (list "Goal" (and (plist-get heading :truncated) (plist-get row :goal)) 'default)
-                 (list "Error" (plist-get row :error) 'hermes-work-failed)
+                 (list "Error" (hermes-work--error-rest
+                                (plist-get row :error) (- width (* 2 (1+ depth)) 2))
+                       'hermes-work-failed)
                  (list "Summary" (plist-get row :summary) 'default)
                  (list "Recent"
                        (and tools

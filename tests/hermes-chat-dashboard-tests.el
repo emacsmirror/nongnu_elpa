@@ -4704,6 +4704,27 @@ indicator is on, and not at all when it is off."
     (should (eq (hermes-test--face-of done "make lint") 'hermes-work-fading))
     (should (eq (hermes-test--face-of done "exit 0") 'hermes-work-meta))))
 
+(ert-deftest hermes-work-outline-card-error-adds-to-the-arrow ()
+  "A failed worker's card shows only the error lines its arrow line lacks."
+  (let* ((card (lambda (error width)
+                 (let ((lines (hermes-work--outline
+                               (list :agents (list (list :key '(delegate . "w") :id "w"
+                                                         :kind 'delegate :state 'failed
+                                                         :goal "G" :error error)))
+                               '(:observed t :cards ((delegate . "w"))) 0 width)))
+                   (mapcar (lambda (line) (substring-no-properties (plist-get line :text)))
+                           (seq-filter (lambda (line) (eq (plist-get line :kind) 'card))
+                                       lines)))))
+         (long "make: *** [Makefile:88: test] Error 1 — 2 unexpected results in the suite"))
+    ;; One line shown whole on the arrow: no Error field.
+    (should (equal (funcall card "Boom: parse failed" 80) '("Id       w")))
+    ;; Multiline: the arrow's line is not repeated, the rest stays.
+    (should (equal (funcall card "\n**Boom**: parse failed\n  at x.el:3\nTraceback …" 80)
+                   '("Error    at x.el:3" "         Traceback …" "Id       w")))
+    ;; The arrow cut the line short: the card keeps the whole error.
+    (should (equal (car (funcall card long 60)) "Error    make: *** [Makefile:88: test] Error 1 — 2"))
+    (should (equal (hermes-work--error-rest long 200) nil))))
+
 (ert-deftest hermes-work-outline-shared-state-vocabulary ()
   "Rows use the shared glyphs, faces and m:ss clock."
   (dolist (case '((queued delegate "◌" hermes-work-queued)
