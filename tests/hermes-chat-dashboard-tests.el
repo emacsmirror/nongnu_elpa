@@ -188,7 +188,7 @@
          (events (hermes-chat--work-apply-event
                   nil '(:event "subagent.complete" :subagent-id "b" :status "error")
                   (- now 10)))
-         (retired (hermes-chat--work-retire events previous (last previous) now))
+         (retired (hermes-chat--work-retire events previous (last previous) now now))
          (state (lambda (at)
                   (mapcar (lambda (row) (list (plist-get row :id) (plist-get row :state)))
                           (hermes-chat--work-merge-agents retired (last previous) at)))))
@@ -197,9 +197,48 @@
                    "A goal"))
     (should (equal (funcall state (+ now 55)) '(("c" running) ("a" completed))))
     (should (equal (funcall state (+ now 61)) '(("c" running))))
-    (should-not (hermes-chat--work-retire retired (last previous) (last previous) (+ now 61)))
+    (should-not (hermes-chat--work-retire retired (last previous) (last previous)
+                                          (+ now 61) (+ now 61)))
     (should (= 1 (car (hermes-chat--work-counts
                        (list :agents (hermes-chat--work-merge-agents retired (last previous) now))))))))
+
+(ert-deftest hermes-chat-work-read-retires-silent-event-only-workers ()
+  "A complete read sent after a worker's last event finishes it if absent.
+Workers whose events are newer than the read keep running."
+  (let* ((events (seq-reduce (lambda (events event)
+                               (hermes-chat--work-apply-event
+                                events (cdr event) (car event)))
+                             '((100.0 :event "subagent.start" :subagent-id "old")
+                               (200.0 :event "subagent.start" :subagent-id "new"))
+                             nil))
+         (retired (hermes-chat--work-retire events nil nil 150.0 210.0))
+         (states (mapcar (lambda (row) (list (plist-get row :id) (plist-get row :state)))
+                         (hermes-chat--work-merge-agents retired nil 210.0))))
+    (should (equal (sort states (lambda (a b) (string< (car a) (car b))))
+                   '(("new" running) ("old" completed))))
+    (should (= (plist-get (cdr (assoc "old" retired)) :finished) 210.0))
+    ;; A worker the read lists is not touched.
+    (should (equal (hermes-chat--work-retire
+                    events nil '((:id "old") (:id "new")) 300.0 310.0)
+                   events))))
+
+(ert-deftest hermes-chat-work-wire-read-reconciles-event-only-workers ()
+  "The roster read's send time decides which event-only workers it can end."
+  (let ((clock 1000.0))
+    (cl-letf (((symbol-function 'float-time)
+               (lambda (&optional _) (setq clock (+ clock 1.0)))))
+      (hermes-test--with-work-wire
+        (hermes-chat--work-note-event '(:event "subagent.start" :subagent-id "missed"))
+        (hermes-chat-work-refresh)
+        (hermes-chat--work-note-event '(:event "subagent.start" :subagent-id "fresh"))
+        (hermes-test--work-answer client "{\"subagents\":[]}")
+        (should (equal (sort (mapcar (lambda (row)
+                                       (list (plist-get row :id) (plist-get row :state)))
+                                     (plist-get (hermes-chat--work-roster
+                                                 hermes-chat--work-owner clock)
+                                                :agents))
+                             (lambda (a b) (string< (car a) (car b))))
+                       '(("fresh" running) ("missed" completed))))))))
 
 (ert-deftest hermes-chat-work-tree-order ()
   "Parents precede their children depth first; orphans are roots."

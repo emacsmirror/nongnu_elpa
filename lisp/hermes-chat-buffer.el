@@ -3001,8 +3001,8 @@ tokens and `hermes-chat-context-label-map' opens the context budget view."
 
 ;; Each chat owner keeps the last successful answer per kind as
 ;; (:sid SID :rows ROWS :observed TIME), plus an alist of worker ID to
-;; (:state STATE :finished TIME :row ROW :goal GOAL) learned from live
-;; subagent events and from workers leaving the backend roster.  Everything
+;; (:state STATE :finished TIME :seen TIME :row ROW :goal GOAL) learned from
+;; live subagent events and from workers leaving the backend roster.  Everything
 ;; shown is derived from those values by the pure functions below, following
 ;; the Hermes TUI's agent and process rosters.
 
@@ -3067,15 +3067,35 @@ Return EVENTS itself when EVENT is not a subagent event or changes nothing."
        events id
        (list :state state
              :finished (unless (memq state '(queued running)) now)
+             :seen now
              :row (plist-get entry :row)
              :goal (or (plist-get entry :goal)
                        (and (member name '("subagent.spawn_requested" "subagent.start"))
                             (plist-get event :content))))))))
 
-(defun hermes-chat--work-retire (events previous rows now)
-  "Return EVENTS after a roster read at NOW replaced PREVIOUS with ROWS.
-A worker that left the roster is finished: `completed' unless an event already
-reported its end.  Finished entries expire after `hermes-chat--work-retain'."
+(defun hermes-chat--work-reconcile (events previous rows sent now)
+  "Return EVENTS with active event-only workers absent from ROWS finished.
+ROWS is a complete roster read sent at SENT and received at NOW; PREVIOUS
+was the roster before it.  Only workers whose last event precedes SENT
+finish, so events newer than the read are kept."
+  (seq-reduce
+   (lambda (events entry)
+     (let ((id (car entry)) (data (cdr entry)))
+       (if (or (not (hermes-chat--work-active-p data))
+               (hermes-chat--work-row-id id rows)
+               (hermes-chat--work-row-id id previous)
+               (>= (or (plist-get data :seen) 0) sent))
+           events
+         (hermes-chat--work-put
+          events id (append (list :state 'completed :finished now) data)))))
+   events events))
+
+(defun hermes-chat--work-retire (events previous rows sent now)
+  "Return EVENTS after a roster read sent at SENT replaced PREVIOUS with ROWS.
+The read arrived at NOW.  A worker that left the roster is finished:
+`completed' unless an event already reported its end.  So is an event-only
+worker the read omits, see `hermes-chat--work-reconcile'.  Finished entries
+expire after `hermes-chat--work-retain'."
   (seq-filter
    (lambda (entry)
      (or (hermes-chat--work-active-p (cdr entry))
@@ -3094,7 +3114,7 @@ reported its end.  Finished entries expire after `hermes-chat--work-retain'."
                            :state (or (plist-get entry :state) 'completed)
                            :finished (or (plist-get entry :finished) now))
                      entry))))))
-    previous events)))
+    previous (hermes-chat--work-reconcile events previous rows sent now))))
 
 (defun hermes-chat--work-merge-agents (events rows now)
   "Return snapshot ROWS overlaid with EVENTS at NOW, then event-only workers.

@@ -516,7 +516,8 @@ Report uncertainty for dispatched worker controls whose receipts are lost."
 
 (defun hermes-chat--work-received (owner kind context result)
   "Replace OWNER's KIND snapshot with RESULT of read CONTEXT.
-An invalid RESULT is a failed read and leaves the snapshot unchanged."
+An invalid RESULT is a failed read and leaves the snapshot unchanged.
+CONTEXT is (KIND SENT), SENT being when the read was sent."
   (hermes-chat--work-release owner kind context)
   (pcase (condition-case nil
              (list (if (eq kind :delegates)
@@ -533,7 +534,8 @@ An invalid RESULT is a failed read and leaves the snapshot unchanged."
                    :observed now))
        (when (eq kind :delegates)
          (setf (plist-get owner :events)
-               (hermes-chat--work-retire (plist-get owner :events) previous rows now))))
+               (hermes-chat--work-retire (plist-get owner :events) previous rows
+                                         (cadr context) now))))
      (hermes-chat--work-changed owner))))
 
 (defun hermes-chat--work-failed (owner kind context message)
@@ -546,7 +548,7 @@ The snapshot stays as it was.  Stop reading KIND when the backend lacks it."
 
 (defun hermes-chat--work-request (owner kind)
   "Send one bounded KIND roster read for OWNER."
-  (let* ((context (list kind))
+  (let* ((context (list kind (float-time)))
          (current (lambda ()
                     (and (hermes-chat--work-current-p owner)
                          (eq context (alist-get kind (plist-get owner :inflight))))))
