@@ -116,9 +116,9 @@ later event of the worker carries; sa-2 stays queued."
                      "  ├ ● Root A 1:00"
                      "  │   ↳ 📖 read_file x.el · 3 tools"
                      "  │   └ ◌ Child C queued"
-                     "  └ ✓ Root B 0:30"
+                     "  └ ✓ Root B 30s"
                      "      ↳ All fields listed")))
-    (let ((pos (string-search "0:30" text)))
+    (let ((pos (string-search "30s" text)))
       (should (eq (get-text-property pos 'face text) 'shadow))
       (should (eq (car (get-text-property (1- pos) 'display text)) 'space)))
     (should (eq (get-text-property (string-search "✓" text) 'face text)
@@ -252,6 +252,16 @@ later event of the worker carries; sa-2 stays queued."
   (should (equal (hermes-work-ago 12.7) "12s ago"))
   (should (equal (hermes-work-ago -3) "0s ago"))
   (should (equal (hermes-work-ago 65) "1:05 ago")))
+
+(ert-deftest hermes-chat-clock-is-one-vocabulary ()
+  "Tool rows, cards, the outline and the status rule share one clock.
+Seconds below a minute, then m:ss and h:mm:ss; only tool rows keep
+tenths, and only below ten seconds."
+  (should (equal (mapcar #'hermes-chat--clock '(0 12.7 59.9 73 3725))
+                 '("0s" "12s" "59s" "1:13" "1:02:05")))
+  (should (equal (mapcar #'hermes-work-duration '(12 266)) '("12s" "4:26")))
+  (should (equal (mapcar #'hermes-chat--format-duration '(1.83 9.96 73.4 "3 min"))
+                 '("1.8s" "9s" "1:13" "3 min"))))
 
 (ert-deftest hermes-chat-card-process-shows-last-line-then-exit ()
   "A background terminal row shows the live last line, then the verdict."

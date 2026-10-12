@@ -592,7 +592,7 @@
         (hermes-chat--queue-content "later")
         (hermes-chat-todos-test--send hermes-chat-todos-test--list)
         (hermes-test--event-loop-barrier)
-        (should (string-match-p "● Running 0:0[0-9] · 📋 1/3 · 1 queued" (funcall footer)))
+        (should (string-match-p "● Running [0-9]s · 📋 1/3 · 1 queued" (funcall footer)))
         (let ((rule (funcall footer)))
           (should (eq 'font-lock-type-face
                       (get-text-property (string-match "📋" rule) 'face rule))))

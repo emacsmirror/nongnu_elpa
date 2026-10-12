@@ -1931,7 +1931,7 @@ Fill EXCHANGES settled exchanges first, then stream into a fresh reply."
      (puthash "t1" "terminal: make check" (hermes-chat--active-tools-table))
      (hermes-chat--set-header-state :status 'running :activity "Running")
      (hermes-test--event-loop-barrier)
-     (should (string-match-p "● Running 0:0[0-9] · terminal: make check\\'"
+     (should (string-match-p "● Running [0-9]s · terminal: make check\\'"
                              (string-trim (hermes-test--footer))))
      (should (eq 'tick (car hermes-chat--status-rule-timer)))
      (should (eq 'hermes-chat-turn-running (hermes-test--footer-face "● Running")))
@@ -1942,12 +1942,12 @@ Fill EXCHANGES settled exchanges first, then stream into a fresh reply."
      (hermes-chat--queue-content "fix the header test\nsecond line")
      (hermes-chat--queue-content "then commit")
      (hermes-test--event-loop-barrier)
-     (should (string-match-p "● Running 0:42 · terminal: make check · 2 queued"
+     (should (string-match-p "● Running 42s · terminal: make check · 2 queued"
                              (hermes-test--footer)))
      (should (eq 'font-lock-type-face (hermes-test--footer-face "2 queued")))
      ;; The owned one-second timer advances the clock without other events.
      (hermes-test--wait-until
-      (lambda () (string-match-p "Running 0:43" (hermes-test--footer)))
+      (lambda () (string-match-p "Running 43s" (hermes-test--footer)))
       3 "status rule tick")
      ;; Pending prompts and interrupts are named from the authoritative state.
      (puthash "prompt" '(:type "clarify") hermes-chat--pending-prompts)
@@ -1961,7 +1961,7 @@ Fill EXCHANGES settled exchanges first, then stream into a fresh reply."
      (hermes-test--event-loop-barrier)
      (should (string-match-p "● Interrupting" (hermes-test--footer)))
      ;; The header line stays quiet: no busy word or clock.
-     (should-not (string-match-p "0:4" (hermes-chat--header-line 200))))))
+     (should-not (string-match-p "4[0-9]s" (hermes-chat--header-line 200))))))
 
 (ert-deftest hermes-chat-status-rule-idle-shows-duration-then-plain-rule ()
   "A completed turn shows its duration briefly, then the plain rule returns."
@@ -2150,7 +2150,7 @@ after the file name is detached again."
                  (hermes-test--wait-until
                   (lambda ()
                     (let ((footer (hermes-test--footer)))
-                      (when (string-match "Running \\([0-9]+:[0-9]+\\)" footer)
+                      (when (string-match "Running \\([0-9:]+s?\\)" footer)
                         (cl-pushnew (match-string 1 footer) clocks :test #'equal)))
                     (>= (length clocks) 3))
                   5 "repeated status ticks")
@@ -2242,7 +2242,7 @@ after the file name is detached again."
        (dolist (window (window-list))
          (should (equal (make-list (length lines) 1)
                         (hermes-test--footer-screen-lines window))))
-       (should (string-match-p "● Running 0:0[0-9] · \\(?:term[^ ]*… · \\)?2 queued" rule))
+       (should (string-match-p "● Running [0-9]s · \\(?:term[^ ]*… · \\)?2 queued" rule))
        (should (string-match-p "…\\'" (car lines)))
        ;; Very narrow rules drop the activity entirely before the count.
        (should (equal "● Running 0:00 · 2 queued"
@@ -2316,7 +2316,7 @@ after the file name is detached again."
        (let ((lines (split-string (hermes-test--footer) "\n" t)))
          ;; The larger glyphs drop the activity and status word before the
          ;; clock and queue count.
-         (should (string-match-p "● \\(?:Running \\)?0:0[0-9] · 1 queued" (car (last lines))))
+         (should (string-match-p "● \\(?:Running \\)?[0-9]s · 1 queued" (car (last lines))))
          (should-not (string-match-p "terminal:" (car (last lines))))
          (dolist (window (list narrow large))
            (should (equal (make-list (length lines) 1)
@@ -2610,7 +2610,7 @@ Only admitted transport events count; the rule's own ticks do not."
      (should-not (string-match-p "quiet" (hermes-test--footer)))
      (setq hermes-chat--status-rule-start (- (float-time) 45.2))
      (hermes-chat--status-rule-repaint)
-     (should (string-match-p "● Running 0:45 · quiet 0:45" (hermes-test--footer)))
+     (should (string-match-p "● Running 45s · quiet 45s" (hermes-test--footer)))
      (should (eq 'warning (hermes-test--footer-face "quiet")))
      ;; An event 20 s ago restarts the silence: below the threshold.
      (setq hermes-chat--status-rule-last-event (- (float-time) 20))
@@ -2618,10 +2618,10 @@ Only admitted transport events count; the rule's own ticks do not."
      (should-not (string-match-p "quiet" (hermes-test--footer)))
      (setq hermes-chat--status-rule-last-event (- (float-time) 40.2))
      (hermes-chat--status-rule-repaint)
-     (should (string-match-p "quiet 0:40" (hermes-test--footer)))
+     (should (string-match-p "quiet 40s" (hermes-test--footer)))
      ;; The owned tick advances the quiet clock without counting as an event.
      (hermes-test--wait-until
-      (lambda () (string-match-p "quiet 0:41" (hermes-test--footer)))
+      (lambda () (string-match-p "quiet 41s" (hermes-test--footer)))
       3 "quiet clock tick")
      ;; An admitted event at the dispatch point clears it on the next repaint.
      (cl-letf (((symbol-function 'hermes-chat--handle-transport-event) #'ignore))
@@ -2630,7 +2630,7 @@ Only admitted transport events count; the rule's own ticks do not."
      (should (< (- (float-time) hermes-chat--status-rule-last-event) 1))
      (hermes-test--event-loop-barrier)
      (should-not (string-match-p "quiet" (hermes-test--footer)))
-     (should (string-match-p "● Running 0:4[0-9]" (hermes-test--footer)))
+     (should (string-match-p "● Running 4[0-9]s" (hermes-test--footer)))
      ;; Waiting on the user is not backend silence.
      (setq hermes-chat--status-rule-last-event (- (float-time) 60))
      (puthash "prompt" '(:type "clarify") hermes-chat--pending-prompts)

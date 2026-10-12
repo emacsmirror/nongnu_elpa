@@ -3074,16 +3074,12 @@ displayable."
                 'face (nth 3 entry))))
 
 (defun hermes-work-duration (seconds)
-  "Return SECONDS as the shared worker clock, m:ss or h:mm:ss."
-  (let ((s (max 0 (floor seconds))))
-    (if (< s 3600)
-        (format "%d:%02d" (/ s 60) (% s 60))
-      (format "%d:%02d:%02d" (/ s 3600) (/ (% s 3600) 60) (% s 60)))))
+  "Return SECONDS in the shared clock of `hermes-chat--clock'."
+  (hermes-chat--clock seconds))
 
 (defun hermes-work-ago (seconds)
   "Return SECONDS as the shared worker age, such as \"22s ago\" or \"1:05 ago\"."
-  (let ((s (max 0 (floor seconds))))
-    (format "%s ago" (if (< s 60) (format "%ds" s) (hermes-work-duration s)))))
+  (format "%s ago" (hermes-chat--clock seconds)))
 
 (defun hermes-work--plain-inline (text)
   "Return TEXT without paired bold and code delimiters, keeping code text."
@@ -3788,13 +3784,6 @@ buffer synchronously: callers may be inside another transcript mutation."
                        (hermes-chat--status-rule-update)
                      (hermes-chat--status-rule-cancel))))))))))
 
-(defun hermes-chat--status-rule-duration (seconds &optional compact)
-  "Return SECONDS as m:ss, or as 12s / 3m 05s when COMPACT."
-  (let ((s (max 0 (floor seconds))))
-    (cond (compact (if (< s 60) (format "%ds" s)
-                     (format "%dm %02ds" (/ s 60) (% s 60))))
-          ((< s 3600) (format "%d:%02d" (/ s 60) (% s 60)))
-          (t (format "%d:%02d:%02d" (/ s 3600) (/ (% s 3600) 60) (% s 60))))))
 
 (defun hermes-chat--status-rule-word ()
   "Return (WORD . FACE) for the active turn from the authoritative state."
@@ -3910,7 +3899,7 @@ FITS is a predicate on candidate text, or a column count."
                    (quiet (and (eq face 'hermes-chat-turn-running)
                                (hermes-chat--status-rule-quiet now)))
                    (count (length hermes-chat--queued-messages))
-                   (clock (propertize (hermes-chat--status-rule-duration
+                   (clock (propertize (hermes-chat--clock
                                        (- now hermes-chat--status-rule-start))
                                       'face 'shadow)))
         (hermes-chat--status-rule-fit
@@ -3921,19 +3910,19 @@ FITS is a predicate on candidate text, or a column count."
               (propertize (format "%d queued" count) 'face 'font-lock-type-face))
          fits
          (and quiet
-              (propertize (concat "quiet " (hermes-chat--status-rule-duration quiet))
+              (propertize (concat "quiet " (hermes-chat--clock quiet))
                           'face 'warning))
          (concat (propertize "●" 'face face 'help-echo word) " " clock))))
      ((hermes-chat--status-rule-linger-left)
       (pcase-let ((`(,duration ,_finished ,label) hermes-chat--status-rule-last))
         (hermes-chat--status-rule-truncate
          (if (member label '("Ready" "Idle"))
-             (propertize (concat "✓ " (hermes-chat--status-rule-duration duration t))
+             (propertize (concat "✓ " (hermes-chat--clock duration))
                          'face 'shadow)
            (concat (propertize label 'face (hermes-chat--header-status-face
                                             (plist-get hermes-chat--status-state :status)))
                    (propertize (concat " after "
-                                       (hermes-chat--status-rule-duration duration t))
+                                       (hermes-chat--clock duration))
                                'face 'shadow)))
          fits))))))
 
