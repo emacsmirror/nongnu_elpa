@@ -1045,6 +1045,83 @@ on-disk metadata Git leaves behind is written; Git itself is never run."
            (should-not (cdr hermes-chat--cwd-worktree)))))
       (should-not calls))))
 
+(ert-deftest hermes-chat-project-resolution-invokes-no-file-name-handler ()
+  "Project resolution never invokes a handler and returns a local root.
+Cover a handler on `.git' probes, a handler-managed `project-root' and a
+handler on the slash-terminated root of a bare repository."
+  (ert-with-temp-directory base
+    :prefix "hermes-project-handler-"
+    (let* ((calls nil)
+           (main (hermes-chat-test--linked-worktree base "main" "topic"))
+           (bare (hermes-chat-test--linked-worktree base "bare.git" "lone" t))
+           (bare-root (file-name-as-directory
+                       (expand-file-name "bare.git" base)))
+           (plain (file-name-as-directory (expand-file-name "plain" base)))
+           (handler (lambda (operation &rest args)
+                      (push (cons operation args) calls)
+                      (let ((inhibit-file-name-handlers
+                             (cons 'hermes-chat-test--handler
+                                   inhibit-file-name-handlers))
+                            (inhibit-file-name-operation operation))
+                        (apply operation args)))))
+      (make-directory plain)
+      (cl-flet ((resolve (regexp directory &optional stub-root)
+                  (setq calls nil)
+                  (let ((file-name-handler-alist
+                         (cons (cons regexp 'hermes-chat-test--handler)
+                               file-name-handler-alist))
+                        identity linked cached)
+                    (cl-letf* (((symbol-function 'hermes-chat-test--handler)
+                                handler)
+                               (project-current
+                                (symbol-function 'project-current))
+                               ((symbol-function 'project-current)
+                                (lambda (&rest args)
+                                  (if stub-root '(hermes-test-project)
+                                    (apply project-current args))))
+                               (project-root (symbol-function 'project-root))
+                               ((symbol-function 'project-root)
+                                (lambda (project)
+                                  (if stub-root stub-root
+                                    (funcall project-root project)))))
+                      (setq identity (hermes-chat--resolve-project-identity
+                                      directory)
+                            linked (hermes-chat--git-linked-worktree
+                                    directory))
+                      (hermes-test-with-chat-buffer
+                       (setq hermes-chat--launch-project-root nil
+                             hermes-chat--working-directory nil)
+                       (setq-local hermes-chat--resolved-start-mode 'remote)
+                       (hermes-chat--record-working-directory directory)
+                       (setq cached (cdr hermes-chat--cwd-worktree)))
+                      (should-not calls)
+                      (should-not (find-file-name-handler (car identity) nil))
+                      (dolist (path (append (take 2 linked)
+                                            (and cached
+                                                 (list (car cached)
+                                                       (cdr cached)))))
+                        (should-not (find-file-name-handler path nil)))
+                      (list identity linked cached)))))
+        (ert-info ("handler on `.git' probes")
+          (pcase-let ((`(,identity ,linked ,cached)
+                       (resolve "/\\.git\\'" main)))
+            (should (equal (car linked)
+                           (file-name-as-directory
+                            (expand-file-name "main" base))))
+            (should (equal (cdr identity) "main"))
+            (should (equal (car cached) (car linked)))))
+        (ert-info ("handler-managed project root")
+          (should (equal (car (resolve "\\`/review-handler:" plain
+                                       "/review-handler:host:/project"))
+                         (cons plain "plain"))))
+        (ert-info ("handler on the slash-terminated bare root")
+          (pcase-let ((`(,identity ,linked ,cached)
+                       (resolve (concat "\\`" (regexp-quote bare-root) "\\'")
+                                bare)))
+            (should-not linked)
+            (should-not cached)
+            (should (equal identity (cons bare "lone")))))))))
+
 (ert-deftest hermes-chat-worktree-pointer-reading-is-bounded-and-strict ()
   "Malformed, overlong and truncated pointers are refused; symlinks resolve."
   (ert-with-temp-directory base

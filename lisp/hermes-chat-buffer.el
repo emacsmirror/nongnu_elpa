@@ -2335,49 +2335,47 @@ first line that the bound cuts off, an empty value and control characters."
     (match-string 1 line)))
 
 (defun hermes-chat--git-pointer-path (value directory)
-  "Return Git pointer VALUE resolved against plain local DIRECTORY, or nil.
-Refuse a VALUE that a file name handler would manage before expanding it,
-expand with handlers disabled, and screen the result again, so metadata
-such as `gitdir: /method:host:/path' never reaches TRAMP or another
-handler."
+  "Return Git pointer VALUE expanded against DIRECTORY, or nil.
+Refuse a `~'-prefixed VALUE.  Call with file name handlers disabled."
   (and (stringp value)
        (not (string-prefix-p "~" value))
-       (not (find-file-name-handler value nil))
-       (hermes-chat--plain-local-path directory)
-       (hermes-chat--plain-local-path
-        (let ((file-name-handler-alist nil))
-          (expand-file-name value directory)))))
+       (hermes-chat--plain-local-path (expand-file-name value directory))))
+
+(defun hermes-chat--read-linked-worktree (directory)
+  "Return (ROOT TOP . NAME) for DIRECTORY, read from Git metadata.
+See `hermes-chat--git-linked-worktree'.  Call with file name handlers
+disabled."
+  (when-let* ((top (locate-dominating-file directory ".git"))
+              ;; `locate-dominating-file' abbreviates, e.g. to `~/'.
+              (top (file-name-as-directory (expand-file-name top)))
+              (gitdir (hermes-chat--git-pointer-path
+                       (hermes-chat--read-git-pointer
+                        (expand-file-name ".git" top) "gitdir:")
+                       top))
+              (common (hermes-chat--git-pointer-path
+                       (hermes-chat--read-git-pointer
+                        (expand-file-name "commondir" gitdir) "")
+                       gitdir))
+              (common (directory-file-name common)))
+    (if (equal (file-name-nondirectory common) ".git")
+        (list (file-name-directory common) top)
+      (cons (file-name-as-directory common)
+            (cons top (hermes-chat--bare-repository-name common))))))
 
 (defun hermes-chat--git-linked-worktree (directory)
   "Return (ROOT TOP . NAME) when local DIRECTORY is in a linked Git worktree.
 TOP is the worktree's top directory.  ROOT is its main working tree, with
 NAME nil, or for a bare repository the repository itself, with NAME its
 basename less \".git\".  Only the `.git' file and `commondir' are read;
-Git is never run.  Pointer paths managed by a file name handler are
-refused before any filesystem access.  Return nil for main checkouts,
-submodules, refused pointers and unreadable metadata."
-  (when-let* ((directory (hermes-chat--plain-local-path directory))
-              (top (locate-dominating-file directory ".git"))
-              ;; `locate-dominating-file' abbreviates, e.g. to `~/'.
-              (top (hermes-chat--plain-local-path
-                    (let ((file-name-handler-alist nil))
-                      (file-name-as-directory (expand-file-name top)))))
-              (gitdir (hermes-chat--git-pointer-path
-                       (hermes-chat--read-git-pointer
-                        (hermes-chat--git-pointer-path ".git" top) "gitdir:")
-                       top))
-              (common (hermes-chat--git-pointer-path
-                       (hermes-chat--read-git-pointer
-                        (hermes-chat--git-pointer-path "commondir" gitdir) "")
-                       gitdir))
-              (common (hermes-chat--plain-local-path
-                       (directory-file-name common))))
-    (if (equal (file-name-nondirectory common) ".git")
-        (when-let* ((root (hermes-chat--plain-local-path
-                           (file-name-directory common))))
-          (list root top))
-      (cons (file-name-as-directory common)
-            (cons top (hermes-chat--bare-repository-name common))))))
+Git is never run.  Metadata is resolved with file name handlers disabled,
+so none is ever invoked.  Return nil for main checkouts, submodules,
+unreadable metadata and a ROOT or TOP that a handler would manage."
+  (when-let* (((hermes-chat--plain-local-path directory))
+              (linked (let ((file-name-handler-alist nil))
+                        (hermes-chat--read-linked-worktree directory)))
+              ((hermes-chat--plain-local-path (car linked)))
+              ((hermes-chat--plain-local-path (cadr linked))))
+    linked))
 
 (defun hermes-chat--bare-repository-name (common)
   "Return the project name of bare repository directory COMMON.
@@ -2390,8 +2388,9 @@ after its parent directory."
 
 (defun hermes-chat--local-project-identity (directory)
   "Return (ROOT . NAME) for existing local DIRECTORY's project, or nil.
-A linked Git worktree resolves to its main repository's project."
-  (let* ((linked (hermes-chat--git-linked-worktree directory))
+A linked Git worktree resolves to its main repository's project.  Call
+with file name handlers disabled."
+  (let* ((linked (hermes-chat--read-linked-worktree directory))
          (root (if linked (car linked) directory)))
     (cond
      ((cddr linked) (cons root (cddr linked)))
@@ -2407,14 +2406,20 @@ A linked Git worktree resolves to its main repository's project."
 (defun hermes-chat--resolve-project-identity (directory)
   "Return (ROOT . NAME) for DIRECTORY's project.
 Consult Git worktree metadata, `project-current' and `project-name' only
-for an existing local DIRECTORY; otherwise ROOT is DIRECTORY and NAME its
-basename."
-  (or (and (hermes-chat--local-directory-p directory)
-           ;; Naming is cosmetic: a failing project backend or a malformed
-           ;; `.dir-locals.el' must not prevent opening or renaming a chat.
-           (condition-case nil
-               (hermes-chat--local-project-identity directory)
-             (error nil)))
+for an existing local DIRECTORY, with file name handlers disabled so none
+is ever invoked.  Otherwise, or when a handler would manage the resolved
+ROOT, ROOT is DIRECTORY and NAME its basename."
+  (or (when-let* (((hermes-chat--local-directory-p directory))
+                  ;; Naming is cosmetic: a failing project backend or a
+                  ;; malformed `.dir-locals.el' must not prevent opening or
+                  ;; renaming a chat.
+                  (identity (condition-case nil
+                                (let ((file-name-handler-alist nil))
+                                  (hermes-chat--local-project-identity
+                                   directory))
+                              (error nil)))
+                  ((hermes-chat--plain-local-path (car identity))))
+        identity)
       (cons directory (hermes-chat--directory-basename directory))))
 
 (defun hermes-chat--note-working-directory (directory)
