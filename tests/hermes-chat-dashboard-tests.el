@@ -4924,6 +4924,7 @@ the operation unsent."
   (should (equal (hermes-work--first-line "> - __Boom__ in `parse`") "Boom in parse"))
   (should (equal (hermes-work--first-line "a*b and 2 - 1") "a*b and 2 - 1"))
   (should-not (hermes-work--first-line " \n "))
+  (should (equal (hermes-work--first-line "**\nBuild failed") "Build failed"))
   (let ((activity (hermes-test--line-text
                    (hermes-work--outline
                     (list :agents (list (list :key '(delegate . "w") :id "w" :kind 'delegate
