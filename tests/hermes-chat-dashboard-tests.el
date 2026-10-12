@@ -142,7 +142,12 @@
       (should (equal (hermes-test--work-text (hermes-chat--work-label-text 0 2 nil))
                      (if displayable "⚙ 2" "2 processes")))
       (should (equal (hermes-test--work-text (hermes-chat--work-label-text 2 1 t)) "2a / 1p"))
-      (should (equal (hermes-test--work-text (hermes-chat--work-label-text 3 0 t)) "3a")))))
+      (should (equal (hermes-test--work-text (hermes-chat--work-label-text 3 0 t)) "3a"))
+      ;; Only the numbers are faced; emoji and the separator stay plain.
+      (let ((label (hermes-chat--work-label-text 2 1 nil)))
+        (dotimes (i (length label))
+          (should (eq (get-text-property i 'face label)
+                      (and (<= ?0 (aref label i) ?9) 'hermes-work-running))))))))
 
 (ert-deftest hermes-chat-work-events-win-over-snapshots ()
   "Event status overrides an older snapshot; event-only workers are listed."
@@ -629,7 +634,8 @@ session is not restarted, and the new owner polls with the new signature."
                            '((:key (process . "p") :id "p" :kind process :state running)))
     (let* ((label (hermes-chat--work-label nil))
            (map (get-text-property 0 'local-map label)))
-      (should (eq (get-text-property 0 'face label) 'hermes-work-running))
+      (should (eq (get-text-property (string-match "[0-9]" label) 'face label)
+                  'hermes-work-running))
       (should (eq (get-text-property 0 'mouse-face label) 'highlight))
       (should (equal (get-text-property 0 'help-echo label)
                      "mouse-1: show observed workers and processes"))

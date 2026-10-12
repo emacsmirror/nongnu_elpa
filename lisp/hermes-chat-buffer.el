@@ -3411,21 +3411,22 @@ selected chat's context."
 
 (defun hermes-chat--work-label-text (agents processes compact)
   "Return the header count for AGENTS and PROCESSES, or nil when both are zero.
-Use COMPACT notation when non-nil."
-  (let ((parts
-         (delq nil
-               (list (when (> agents 0)
-                       (cond (compact (format "%da" agents))
-                             ((char-displayable-p ?🤖) (format "🤖 %d" agents))
-                             (t (format "Agents %d" agents))))
-                     (when (> processes 0)
-                       (cond (compact (format "%dp" processes))
-                             ((char-displayable-p ?⚙) (format "⚙ %d" processes))
-                             (t (format "%d %s" processes
-                                        (if (= processes 1) "process" "processes")))))))))
+Use COMPACT notation when non-nil.  Only the numbers carry
+`hermes-work-running'; emoji, words and the separator stay unfaced."
+  (let* ((num (lambda (n) (propertize (number-to-string n) 'face 'hermes-work-running)))
+         (parts
+          (delq nil
+                (list (when (> agents 0)
+                        (cond (compact (concat (funcall num agents) "a"))
+                              ((char-displayable-p ?🤖) (concat "🤖 " (funcall num agents)))
+                              (t (concat "Agents " (funcall num agents)))))
+                      (when (> processes 0)
+                        (cond (compact (concat (funcall num processes) "p"))
+                              ((char-displayable-p ?⚙) (concat "⚙ " (funcall num processes)))
+                              (t (concat (funcall num processes)
+                                         (if (= processes 1) " process" " processes")))))))))
     (when parts
       (propertize (string-join parts " / ")
-                  'face 'hermes-work-running
                   'mouse-face 'highlight
                   'help-echo (hermes-chat--work-label-help)
                   'local-map hermes-chat-work-label-map))))
