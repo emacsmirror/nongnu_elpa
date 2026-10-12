@@ -220,12 +220,13 @@ PREVIEW uses FACE, by default `hermes-work-activity'."
 
 (defun hermes-work--wrap (text width)
   "Return TEXT's lines filled to WIDTH, at most four.
-A single line that fits keeps its spacing."
-  (let* ((text (string-trim (or text "")))
-         (width (max 20 width))
-         (lines (if (and (<= (string-width text) width) (not (string-search "\n" text)))
-                    (list text)
-                  (split-string (string-fill text width) "\n")))
+Each nonblank line of TEXT is filled on its own; one that fits keeps
+its spacing."
+  (let* ((width (max 20 width))
+         (lines (mapcan (lambda (line)
+                          (if (<= (string-width line) width) (list line)
+                            (split-string (string-fill line width) "\n")))
+                        (split-string (or text "") "\n" t "[ \t\r]+")))
          (shown (seq-take lines 4)))
     (if (> (length lines) 4)
         (append (butlast shown) (list (concat (car (last shown)) " …")))
@@ -252,7 +253,8 @@ Fields with no text are omitted; text is wrapped to WIDTH."
 
 (defun hermes-work--agent-meta (row now)
   "Return worker ROW's quiet meta parts at NOW: model, tools, elapsed, verdict.
-Glyphs carry running, queued, done and failed; other states add their word."
+Glyphs carry running, done and failed; other states add their word last,
+in the time column, as a queued worker has no time yet."
   (let ((count (plist-get row :tool-count))
         (elapsed (hermes-work--elapsed row now))
         (state (hermes-work-display-state row)))
@@ -260,12 +262,23 @@ Glyphs carry running, queued, done and failed; other states add their word."
             (delq nil (list (hermes-work--model (plist-get row :model))
                             (and count (hermes-work--tools-text count))
                             (and elapsed (hermes-work-duration elapsed))
-                            (unless (memq state '(running queued done failed))
+                            (unless (memq state '(running done failed))
                               (hermes-work-state-label state)))))))
 
+(defun hermes-work--plain-line (line)
+  "Return LINE without inline Markdown markup.
+Drop leading heading, list and quote markers, then emphasis and code
+delimiters around text."
+  (let ((line (replace-regexp-in-string
+               "\\`\\(?:\\(?:#+\\|[-*+>]\\)[ \t]+\\)+" "" line)))
+    (dolist (pattern '("\\*\\*\\([^*\n]+\\)\\*\\*" "__\\([^_\n]+\\)__" "`\\([^`\n]+\\)`")
+                     line)
+      (setq line (replace-regexp-in-string pattern "\\1" line t)))))
+
 (defun hermes-work--first-line (text)
-  "Return the first nonblank line of TEXT, or nil."
-  (car (split-string (or text "") "\n" t "[ \t\r]+")))
+  "Return the first nonblank line of TEXT as plain text, or nil."
+  (when-let* ((line (car (split-string (or text "") "\n" t "[ \t\r]+"))))
+    (hermes-work--plain-line line)))
 
 (defun hermes-work--agent-lines (row depth view now width hidden)
   "Return the lines for worker ROW at DEPTH under VIEW at NOW within WIDTH.
@@ -284,7 +297,6 @@ HIDDEN counts descendants folded under it."
      (list heading)
      (pcase state
        ('running (and tool (list (hermes-work--activity key (1+ depth) (car tool) (cdr tool) width))))
-       ('queued (list (hermes-work--activity key (1+ depth) nil "waiting for a slot" width)))
        ('failed (when-let* ((text (hermes-work--first-line (plist-get row :error))))
                   (list (hermes-work--activity key (1+ depth) nil text width
                                                'hermes-work-failed)))))
@@ -330,22 +342,25 @@ A failure's verdict carries the failed face."
 
 (defun hermes-work--process-lines (row view now width)
   "Return the lines for process ROW under VIEW at NOW within WIDTH.
-Clean and killed exits fade; a failure keeps its command readable."
+Clean and killed exits fade; a failure keeps its command readable and,
+like a running process, shows its last output line."
   (pcase-let* ((key (plist-get row :key))
                (`(,state ,glyph ,_) (hermes-work--display row))
-               (running (eq state 'running)))
+               (heading (hermes-work--heading
+                         key 0 glyph (plist-get row :command) (hermes-work--process-meta row now)
+                         width nil (unless (memq state '(running failed)) 'hermes-work-fading)))
+               (line (and (memq state '(running failed)) (plist-get row :last-line))))
     (append
-     (list (hermes-work--heading
-            key 0 glyph (plist-get row :command) (hermes-work--process-meta row now) width
-            nil (unless (memq state '(running failed)) 'hermes-work-fading)))
-     (and running (plist-get row :last-line)
-          (list (hermes-work--activity key 1 nil (plist-get row :last-line) width)))
+     (list heading)
+     (and line (list (hermes-work--activity key 1 nil line width
+                                            (and (eq state 'failed) 'hermes-work-failed))))
      (and (member key (plist-get view :cards))
           (hermes-work--card
            key 2
-           (list (list "Command" (plist-get row :command) 'default)
+           (list (list "Command" (and (plist-get heading :truncated) (plist-get row :command))
+                       'default)
                  (list "Cwd" (plist-get row :cwd) 'hermes-work-activity)
-                 (list "Output" (unless running (plist-get row :last-line)) 'hermes-work-activity)
+                 (list "Output" (unless line (plist-get row :last-line)) 'hermes-work-activity)
                  (list "Id" (plist-get row :id) 'hermes-work-meta))
            width)))))
 
@@ -501,18 +516,19 @@ WIDTH columns.  The view only inserts these lines."
        (concat "  " (propertize "last known · chat detached · reopen from the chat"
                                 'face 'warning))
      (let* ((counts (hermes-chat--work-counts roster))
+            (label (hermes-chat--work-label-text (car counts) (cdr counts) nil))
             (failed (seq-count (lambda (row) (eq (hermes-work-display-state row) 'failed))
                                (append (plist-get roster :agents)
-                                       (plist-get roster :processes))))
-            (item (lambda (glyph count label)
-                    (concat "  " glyph " "
-                            (propertize (number-to-string count) 'face 'font-lock-type-face)
-                            (if label (propertize label 'face 'shadow) "")))))
+                                       (plist-get roster :processes)))))
+       (when label
+         ;; The chat's own count, without its link back to this view.
+         (remove-text-properties 0 (length label)
+                                 '(mouse-face nil help-echo nil local-map nil) label))
        (concat
-        (funcall item (hermes-work-state-glyph 'running) (car counts) " running")
-        (if (> failed 0) (funcall item (hermes-work-state-glyph 'failed) failed nil) "")
-        (if (> (cdr counts) 0)
-            (funcall item (hermes-work-state-glyph 'running t) (cdr counts) nil) "")
+        (and label (concat "  " label))
+        (and (> failed 0)
+             (concat "  " (hermes-work-state-glyph 'failed) " "
+                     (propertize (number-to-string failed) 'face 'hermes-work-failed)))
         "   " (hermes-work--hint 'hermes-work-mode-map 'hermes-work-mode-map-popup
                                  "actions"))))))
 
@@ -606,16 +622,11 @@ Details repaint even without the list, so a detached one says so."
         ;; This read-only projection must not call modification hooks mid-print:
         ;; they can replace the view or unwind an unfinished chat settlement.
         (hermes-work--repaint
-         (append
-          (unless (hermes-work--current-p owner)
-            (list (hermes-work--line nil 'blank 0
-                                     (propertize "Detached: last known workers; reopen from the chat."
-                                                 'face 'warning))))
-          (hermes-work--outline
-           roster
-           (list :cards hermes-work--cards :folded hermes-work--folded
-                 :observed (or (plist-get owner :delegates) (plist-get owner :processes)))
-           now hermes-work--width)))))
+         (hermes-work--outline
+          roster
+          (list :cards hermes-work--cards :folded hermes-work--folded
+                :observed (or (plist-get owner :delegates) (plist-get owner :processes)))
+          now hermes-work--width))))
     (dolist (buffer (buffer-list))
       (when (and (eq owner (buffer-local-value 'hermes-work--owner buffer))
                  (hermes-browser--buffer-mode-p buffer 'hermes-work-detail-mode))
@@ -797,9 +808,9 @@ their card."
                (mapcar (lambda (part) (propertize part 'face 'hermes-work-meta))
                        (delq nil
                              (list (hermes-work--model (plist-get row :model))
-                                   (and elapsed (hermes-work-duration elapsed))
                                    (and (plist-get row :tool-count)
                                         (hermes-work--tools-text (plist-get row :tool-count)))
+                                   (and elapsed (hermes-work-duration elapsed))
                                    (and (> children 0)
                                         (format "%d child%s" children
                                                 (if (= children 1) "" "ren"))))))))))))
@@ -816,10 +827,6 @@ their card."
      (and parent (hermes-work--detail-field "Parent" (plist-get parent :goal)))
      (and running (not (plist-get row :accepting-steer))
           (hermes-work--detail-field "Steering" "closed"))
-     (when-let* ((tool (and running (hermes-chat--work-last-tool row))))
-       (concat (funcall title "Now")
-               (propertize (car tool) 'face 'hermes-work-tool) " "
-               (propertize (or (cdr tool) "") 'face 'hermes-work-activity) "\n"))
      (when-let* ((text (plist-get row :error)))
        (concat (funcall title "Error") (propertize text 'face 'hermes-work-failed) "\n"))
      (when-let* ((text (plist-get row :summary)))
@@ -891,6 +898,21 @@ Only a listed row of a current chat offers actions."
                                                              (car action) (cdr action)))
                                         (hermes-work--detail-actions row log) "  ")))))))
 
+(defun hermes-work--row-log (owner row)
+  "Return the published log of finished worker ROW in OWNER's chat, or nil."
+  (and row (eq (plist-get row :kind) 'delegate) (not (eq (plist-get row :state) 'running))
+       (hermes-work--log-path owner (plist-get row :id))))
+
+(defun hermes-work--offers-p (command)
+  "Return non-nil when COMMAND is an action of the row at point.
+Mirror the detail header: only a listed row of a current chat offers
+the actions `hermes-work--detail-actions' derives from its state."
+  (when-let* ((owner hermes-work--owner)
+              ((hermes-work--current-p owner))
+              (row (hermes-work--find (hermes-work--key-at-point)
+                                      (hermes-work--observations owner))))
+    (assq command (hermes-work--detail-actions row (hermes-work--row-log owner row)))))
+
 (defun hermes-work--detail-render (roster now)
   "Repaint this detail buffer from ROSTER at NOW, keeping place.
 A row that left the roster keeps its last-known text."
@@ -901,9 +923,7 @@ A row that left the roster keeps its last-known text."
                                               (plist-get roster :processes)))))
     (setq header-line-format
           (hermes-work--detail-header
-           key row current
-           (and current row (eq (car key) 'delegate) (not (eq (plist-get row :state) 'running))
-                (hermes-work--log-path owner (cdr key)))))
+           key row current (and current (hermes-work--row-log owner row))))
     (when row
       (hermes-browser--preserve-reading-position
        (lambda ()
@@ -1437,10 +1457,6 @@ Live tails time out after 10 seconds and the backend bounds them to 16 KiB."
   "Return non-nil when the row at point is a process."
   (eq (car-safe (hermes-work--key-at-point)) 'process))
 
-(defun hermes-work--worker-at-point-p ()
-  "Return non-nil when the row at point is a worker."
-  (eq (car-safe (hermes-work--key-at-point)) 'delegate))
-
 (defun hermes-work--stop-label ()
   "Return the label of `k' for the row at point."
   (if (hermes-work--process-at-point-p) "Kill process" "Interrupt"))
@@ -1468,12 +1484,13 @@ Live tails time out after 10 seconds and the backend bounds them to 16 KiB."
 (keymap-popup-annotate hermes-work-mode-map
   :popup-key "?" :exit-key "C-g" :description #'hermes-work--popup-title
   :group "Act"
-  hermes-work-steer ("Steer" :if #'hermes-work--worker-at-point-p)
-  hermes-work-interrupt #'hermes-work--stop-label
-  hermes-work-tail ("Live tail" :if #'hermes-work--worker-at-point-p)
+  hermes-work-steer ("Steer" :if (lambda () (hermes-work--offers-p #'hermes-work-steer)))
+  hermes-work-interrupt (#'hermes-work--stop-label
+                         :if (lambda () (hermes-work--offers-p #'hermes-work-interrupt)))
+  hermes-work-tail ("Live tail" :if (lambda () (hermes-work--offers-p #'hermes-work-tail)))
   :group "Read"
   hermes-work-open "Open details"
-  hermes-work-log ("Published log" :if #'hermes-work--worker-at-point-p)
+  hermes-work-log ("Published log" :if (lambda () (hermes-work--offers-p #'hermes-work-log)))
   hermes-work-scope-details "Scope"
   hermes-work-instance-subagents "Instance workers"
   :row
@@ -1512,11 +1529,12 @@ details, and \\[hermes-work-interrupt] interrupts a worker or kills a process."
 (keymap-popup-annotate hermes-work-detail-mode-map
   :popup-key "?" :exit-key "C-g" :description #'hermes-work--popup-title
   :group "Act"
-  hermes-work-steer ("Steer" :if #'hermes-work--worker-at-point-p)
-  hermes-work-interrupt #'hermes-work--stop-label
-  hermes-work-tail ("Live tail" :if #'hermes-work--worker-at-point-p)
+  hermes-work-steer ("Steer" :if (lambda () (hermes-work--offers-p #'hermes-work-steer)))
+  hermes-work-interrupt (#'hermes-work--stop-label
+                         :if (lambda () (hermes-work--offers-p #'hermes-work-interrupt)))
+  hermes-work-tail ("Live tail" :if (lambda () (hermes-work--offers-p #'hermes-work-tail)))
   :group "Read"
-  hermes-work-log ("Published log" :if #'hermes-work--worker-at-point-p)
+  hermes-work-log ("Published log" :if (lambda () (hermes-work--offers-p #'hermes-work-log)))
   hermes-work-scope-details "Scope"
   hermes-work-refresh "Refresh"
   quit-window "Quit view")

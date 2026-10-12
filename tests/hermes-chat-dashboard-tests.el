@@ -908,8 +908,9 @@ session is not restarted, and the new owner polls with the new signature."
                     (should-not caught)
                     (should-not fired)
                     (should (hermes-work--view-p owner))
-                    (should (string-match-p "Detached"
-                                            (with-current-buffer view (buffer-string))))
+                    (should (string-match-p "chat detached"
+                                            (with-current-buffer view
+                                              (format "%s" header-line-format))))
                     ;; Prove the hook is live outside package-owned rendering.
                     (with-current-buffer view
                       (condition-case err
@@ -1002,7 +1003,8 @@ session is not restarted, and the new owner polls with the new signature."
                   (with-current-buffer view
                     (setq after-change-functions nil)
                     (unless condition
-                      (should (string-match-p "Detached" (buffer-string)))))
+                      (should (string-match-p "chat detached"
+                                              (format "%s" header-line-format)))))
                   (hermes-chat--cleanup-buffer)
                   (hermes-chat--cleanup-buffer)
                   (should (= (hermes-dashboard-transport-client-refcount client) 1))
@@ -3440,7 +3442,6 @@ indicator is on, and not at all when it is off."
                   (should publication)
                   (apply (cadr publication) (nth 2 publication)))
                 (with-current-buffer view
-                  (should (string-match-p "Detached" (buffer-string)))
                   (should (string-match-p "chat detached" (format "%s" header-line-format)))
                   (should-error (hermes-work-refresh) :type 'user-error)
                   (should (eq (keymap-lookup hermes-work-mode-map "k") #'hermes-work-interrupt))))
@@ -4393,7 +4394,7 @@ indicator is on, and not at all when it is off."
                     (hermes-work--outline roster '(:observed t) 100 80))
                    '(((section . agents) section 0)
                      ((delegate . "a") heading 0)
-                     ((delegate . "d") heading 1) ((delegate . "d") activity 2)
+                     ((delegate . "d") heading 1)
                      ((delegate . "b") heading 1)
                      ((delegate . "c") heading 2) ((delegate . "c") activity 3)
                      ((delegate . "e") heading 0)
@@ -4516,10 +4517,11 @@ indicator is on, and not at all when it is off."
       (should (equal (hermes-work--key-at-point) '(delegate . "parent")))
       (execute-kbd-macro (kbd "TAB"))
       (should (hermes-work--find-line '(delegate . "child")))
-      ;; A process card shows its full command; a section folds.
+      ;; A process card skips the command its heading shows whole; a section folds.
       (goto-char (hermes-work--find-line '(process . "proc")))
       (execute-kbd-macro (kbd "TAB"))
-      (should (string-match-p "Command +make test" (buffer-string)))
+      (should (string-match-p "Id +proc" (buffer-string)))
+      (should-not (string-match-p "Command" (buffer-string)))
       (goto-char (hermes-work--find-line '(section . agents)))
       (execute-kbd-macro (kbd "TAB"))
       (should-not (hermes-work--find-line '(delegate . "parent")))
@@ -4748,7 +4750,7 @@ indicator is on, and not at all when it is off."
     (should (string-match-p "\\`Goal +Audit" (hermes-test--line-text narrow '(delegate . "w") 'card 1)))))
 
 (ert-deftest hermes-work-header-names-project-and-counts ()
-  "The header names the project and counts active agents and all failures."
+  "The header names the project, mirrors the chat's count and adds failures."
   (let* ((owner (list :current-p #'always))
          (roster (list :agents (list '(:id "a" :kind delegate :state running)
                                      '(:id "b" :kind delegate :state queued)
@@ -4758,12 +4760,24 @@ indicator is on, and not at all when it is off."
                                         '(:id "q" :kind process :state failed)
                                         '(:id "r" :kind process :state lost))))
          (header (hermes-work--header owner roster "emacs-hermes")))
+    ;; Running and queued agents count alike, as in the chat header.
     (should (equal (substring-no-properties header)
-                   " emacs-hermes  ● 2 running  ✗ 3  ⚙ 1   ? actions"))
+                   (concat " emacs-hermes  "
+                           (substring-no-properties (hermes-chat--work-label-text 2 1 nil))
+                           "  ✗ 3   ? actions")))
+    (should (string-match-p "  🤖 2 / ⚙ 1  \\|Agents 2" header))
     (should (eq (hermes-test--face-of header "emacs-hermes") 'font-lock-constant-face))
-    (should (eq (hermes-test--face-of header "2") 'font-lock-type-face))
-    (should (eq (hermes-test--face-of header "3") 'font-lock-type-face))
+    (should (eq (hermes-test--face-of header "2") 'hermes-work-running))
+    (should (eq (hermes-test--face-of header "3") 'hermes-work-failed))
     (should (eq (hermes-test--face-of header "?") 'help-key-binding))
+    ;; The chat's link back to this view does not follow it here.
+    (should-not (text-property-not-all 0 (length header) 'local-map nil header))
+    (should-not (text-property-not-all 0 (length header) 'mouse-face nil header))
+    (should (equal (substring-no-properties
+                    (hermes-work--header owner (list :agents (list '(:id "c" :kind delegate
+                                                                       :state failed)))
+                                         "p"))
+                   " p  ✗ 1   ? actions"))
     (should (string-match-p "\\` emacs-hermes  last known"
                             (hermes-work--header (list :current-p #'ignore) roster "emacs-hermes")))))
 
@@ -4902,6 +4916,133 @@ the operation unsent."
     (should (equal (hermes-transport--get (hermes-dashboard-transport--decode-frame (car frames))
                                           'method)
                    "subagent.steer"))))
+
+(ert-deftest hermes-work-first-line-is-plain-text ()
+  "Failure lines drop inline Markdown markup but keep the words."
+  (should (equal (hermes-work--first-line "\n## **Build failed:** `make test` exited 2\nmore")
+                 "Build failed: make test exited 2"))
+  (should (equal (hermes-work--first-line "> - __Boom__ in `parse`") "Boom in parse"))
+  (should (equal (hermes-work--first-line "a*b and 2 - 1") "a*b and 2 - 1"))
+  (should-not (hermes-work--first-line " \n "))
+  (let ((activity (hermes-test--line-text
+                   (hermes-work--outline
+                    (list :agents (list (list :key '(delegate . "w") :id "w" :kind 'delegate
+                                              :state 'failed :goal "G" :error "**Boom**")))
+                    '(:observed t) 0 80)
+                   '(delegate . "w") 'activity)))
+    (should (equal (substring-no-properties activity) "↳ Boom"))))
+
+(ert-deftest hermes-work-queued-row-is-one-line ()
+  "A queued worker says queued in its time column and adds no line."
+  (let* ((lines (hermes-work--outline
+                 (list :agents (list (list :key '(delegate . "q") :id "q" :kind 'delegate
+                                           :state 'queued :goal "Wait" :model "claude-haiku-4-5")))
+                 '(:observed t) 0 80))
+         (heading (hermes-test--line-text lines '(delegate . "q") 'heading)))
+    (should (string-match-p "haiku · queued\\'" heading))
+    (should (eq (hermes-test--face-of heading "queued") 'hermes-work-meta))
+    (should-not (hermes-test--line-text lines '(delegate . "q") 'activity))))
+
+(ert-deftest hermes-work-failed-process-shows-its-last-line ()
+  "A failed process shows its last output line in red, once; cards skip
+a command the heading shows whole."
+  (let* ((long "nix build .#hermes --no-link --print-build-logs --keep-going -L")
+         (rows (list (list :key '(process . "f") :id "f" :kind 'process :state 'failed
+                           :command "make" :exit-code 2 :last-line "error: boom")
+                     (list :key '(process . "d") :id "d" :kind 'process :state 'done
+                           :command long :exit-code 0 :last-line "built")))
+         (lines (hermes-work--outline (list :processes rows)
+                                      '(:observed t :cards ((process . "f") (process . "d")))
+                                      0 40))
+         (activity (hermes-test--line-text lines '(process . "f") 'activity))
+         (cards (lambda (key)
+                  (mapconcat (lambda (line) (substring-no-properties (plist-get line :text)))
+                             (seq-filter (lambda (line) (and (equal (plist-get line :key) key)
+                                                             (eq (plist-get line :kind) 'card)))
+                                         lines)
+                             "\n"))))
+    (should (equal (substring-no-properties activity) "↳ error: boom"))
+    (should (eq (hermes-test--face-of activity "error") 'hermes-work-failed))
+    (should-not (string-match-p "Output\\|Command" (funcall cards '(process . "f"))))
+    ;; A clean exit keeps its output in the card and repeats a truncated command.
+    (should-not (hermes-test--line-text lines '(process . "d") 'activity))
+    (should (string-match-p "^Command +nix build" (funcall cards '(process . "d"))))
+    (should (string-match-p "^Output +built" (funcall cards '(process . "d"))))))
+
+(ert-deftest hermes-work-card-keeps-text-lines ()
+  "Card text keeps its own line breaks and fills each line separately."
+  (should (equal (hermes-work--wrap "First line.\n\n  Second line.\n" 40)
+                 '("First line." "Second line.")))
+  (should (equal (hermes-work--wrap (concat (make-string 30 ?a) " " (make-string 30 ?b) "\nend")
+                                    40)
+                 (list (make-string 30 ?a) (make-string 30 ?b) "end")))
+  (should (equal (length (hermes-work--wrap "a\nb\nc\nd\ne" 40)) 4)))
+
+(ert-deftest hermes-work-detail-meta-and-sections-are-lean ()
+  "Detail meta reads model, tools, time; no section repeats the latest tool."
+  (let* ((row '(:key (delegate . "w") :id "w" :kind delegate :state running :model "claude-opus-5-5"
+                     :tool-count 3 :started 0 :accepting-steer t
+                     :tools (("read_file" . "a.el") ("grep" . "needle"))))
+         (text (hermes-work--detail-text row (list row) 72)))
+    (should (string-match-p "^running · opus · 3 tools · 1:12$" text))
+    (should-not (string-match-p "^Now$" text))
+    (should (string-match-p "^Tools (3)\n· grep needle\n· read_file a.el" text))))
+
+(ert-deftest hermes-work-detached-outline-says-so-once ()
+  "A detached outline says so in its header only."
+  (hermes-test--with-outline
+    (with-current-buffer chat (hermes-chat--work-bind client "runtime"))
+    (hermes-work--render owner)
+    (with-current-buffer view
+      (should (string-match-p "last known" (format "%s" header-line-format)))
+      (should-not (string-match-p "Detached\\|last known" (buffer-string)))
+      (should (string-match-p "Parent goal" (buffer-string))))))
+
+(defun hermes-test--offered (rows key &optional detail log current)
+  "Return the actions the popup offers for KEY among ROWS.
+DETAIL asks from a detail buffer; LOG names a published log; CURRENT
+defaults to an attached chat."
+  (cl-letf (((symbol-function 'hermes-work--observations) (lambda (_) rows))
+            ((symbol-function 'hermes-work--log-path) (lambda (_ _) log)))
+    (with-temp-buffer
+      (if detail (hermes-work-detail-mode) (hermes-work-mode))
+      (setq hermes-work--owner (list :current-p (if (eq current 'detached) #'ignore #'always)))
+      (if detail (setq hermes-work--detail-key key)
+        (let ((inhibit-read-only t))
+          (hermes-work--insert (hermes-work--outline
+                                (list :agents (seq-filter (lambda (row) (eq (plist-get row :kind) 'delegate)) rows)
+                                      :processes (seq-filter (lambda (row) (eq (plist-get row :kind) 'process)) rows))
+                                '(:observed t) 0 80)))
+        (goto-char (hermes-work--find-line key)))
+      (seq-filter #'hermes-work--offers-p
+                  '(hermes-work-steer hermes-work-interrupt hermes-work-tail hermes-work-log)))))
+
+(ert-deftest hermes-work-popup-offers-only-applicable-actions ()
+  "Both popups offer exactly the actions the row's state allows."
+  (let ((rows (list '(:key (delegate . "r") :id "r" :kind delegate :state running :goal "R"
+                           :accepting-steer t)
+                    '(:key (delegate . "c") :id "c" :kind delegate :state running :goal "C")
+                    '(:key (delegate . "q") :id "q" :kind delegate :state queued :goal "Q")
+                    '(:key (delegate . "d") :id "d" :kind delegate :state completed :goal "D")
+                    '(:key (delegate . "f") :id "f" :kind delegate :state failed :goal "F")
+                    '(:key (process . "p") :id "p" :kind process :state running :command "make")
+                    '(:key (process . "x") :id "x" :kind process :state failed :command "make"
+                           :exit-code 2))))
+    (dolist (detail '(nil t))
+      (should (equal (hermes-test--offered rows '(delegate . "r") detail "/log")
+                     '(hermes-work-steer hermes-work-interrupt hermes-work-tail)))
+      (should (equal (hermes-test--offered rows '(delegate . "c") detail)
+                     '(hermes-work-interrupt hermes-work-tail)))
+      (should-not (hermes-test--offered rows '(delegate . "q") detail))
+      (should-not (hermes-test--offered rows '(delegate . "d") detail))
+      (should (equal (hermes-test--offered rows '(delegate . "f") detail "/log")
+                     '(hermes-work-log)))
+      (should (equal (hermes-test--offered rows '(process . "p") detail)
+                     '(hermes-work-interrupt)))
+      (should-not (hermes-test--offered rows '(process . "x") detail))
+      (should-not (hermes-test--offered rows '(delegate . "r") detail nil 'detached)))
+    (should-not (hermes-test--offered rows '(section . agents)))
+    (should-not (hermes-test--offered rows '(section . processes)))))
 
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here
