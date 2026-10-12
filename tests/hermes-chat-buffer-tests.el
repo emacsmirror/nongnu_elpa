@@ -1876,6 +1876,147 @@
                (should-not (memq pending timer-list)))))
         (kill-buffer other)))))
 
+(ert-deftest hermes-chat-status-rule-retires-with-file-association ()
+  "Visiting a file retires the rule even when the chat mode is retained.
+Late tick and repaint callbacks are inert, and no hook re-arms them, also
+after the file name is detached again."
+  (save-window-excursion
+    (hermes-test-with-chat-buffer
+     (switch-to-buffer (current-buffer))
+     (setq hermes-chat--dashboard-running-p t)
+     (hermes-chat--notify-state-change)
+     (hermes-test--event-loop-barrier)
+     (should (hermes-buffer--owned-p 'hermes-chat-mode))
+     (let* ((tick (cdr hermes-chat--status-rule-timer))
+            (pending (progn (hermes-chat--status-rule-schedule)
+                            hermes-chat--status-rule-pending))
+            (file (expand-file-name "status-rule-retired" temporary-file-directory)))
+       (should (memq tick timer-list))
+       (should (memq pending timer-list))
+       (let ((change-major-mode-with-file-name nil))
+         (set-visited-file-name file t))
+       (unwind-protect
+           (progn
+             (should (eq major-mode 'hermes-chat-mode))
+             (should (hermes-buffer--retired-p))
+             (should-not (memq tick timer-list))
+             (should-not (memq pending timer-list))
+             (should-not hermes-chat--status-rule-timer)
+             (should-not hermes-chat--status-rule-pending)
+             (goto-char (point-max))
+             (insert "draft")
+             (let ((footer (hermes-test--footer))
+                   (text (buffer-string))
+                   (undo buffer-undo-list)
+                   (check
+                    (lambda (footer text undo)
+                      (should (equal-including-properties footer (hermes-test--footer)))
+                      (should (equal-including-properties text (buffer-string)))
+                      (should (eq undo buffer-undo-list))
+                      (should-not hermes-chat--status-rule-timer)
+                      (should-not hermes-chat--status-rule-pending))))
+               ;; Late callbacks that already left the timer queue stay inert.
+               (apply (timer--function tick) (timer--args tick))
+               (funcall (timer--function pending))
+               (funcall check footer text undo)
+               ;; Window, visibility and state hooks cannot re-arm the rule.
+               (setq hermes-chat--status-rule-start (- (float-time) 30))
+               (run-window-configuration-change-hook)
+               (hermes-chat--notify-state-change)
+               (hermes-chat--queue-panel-refresh-if-live)
+               (hermes-test--event-loop-barrier)
+               (funcall check footer text undo)
+               ;; Detaching the file name keeps the claim retired.
+               (let ((change-major-mode-with-file-name nil))
+                 (set-visited-file-name nil t))
+               (should (eq major-mode 'hermes-chat-mode))
+               (should-not buffer-file-name)
+               (should (hermes-buffer--retired-p))
+               (let ((chat (current-buffer)))
+                 (switch-to-buffer (other-buffer chat))
+                 (switch-to-buffer chat))
+               (run-window-configuration-change-hook)
+               (hermes-chat--notify-state-change)
+               (hermes-test--event-loop-barrier)
+               (accept-process-output nil 1.2)
+               (funcall check footer text undo)))
+         (when buffer-file-name
+           (let ((change-major-mode-with-file-name nil))
+             (set-visited-file-name nil t)))
+         (set-buffer-modified-p nil))))))
+
+(ert-deftest hermes-chat-status-rule-real-timers-preserve-stream-reader-and-undo ()
+  "Real stream formatting and status ticks keep a reader, the draft and undo."
+  (save-window-excursion
+    (delete-other-windows)
+    (let ((hermes-chat-stream-format-delay 0.01)
+          (undo-in-region nil) (last-command nil)
+          (chunks 0) (clocks nil) producer)
+      (hermes-test-with-chat-buffer
+       (let* ((chat (current-buffer))
+              (writer (selected-window))
+              (reader (split-window-right)))
+         (set-window-buffer writer chat)
+         (set-window-buffer reader chat)
+         (hermes-chat--insert-entry
+          '(:id "history" :role assistant :status done :content "Older one\n\nOlder two\n\n"))
+         (goto-char (point-min))
+         (search-forward "Older two")
+         (beginning-of-line)
+         (set-window-start reader (point) t)
+         (set-window-point reader (+ (point) 2))
+         (goto-char (point-max))
+         (insert "hello")
+         (undo-boundary)
+         (insert " world")
+         (undo-boundary)
+         (backward-char 2)
+         (let ((start (window-start reader))
+               (position (window-point reader))
+               (offset (- (point) (hermes-chat--input-position))))
+           (setq hermes-chat--dashboard-running-p t)
+           (hermes-chat--insert-entry '(:id "p" :role assistant :status streaming :content ""))
+           (hermes-chat--queue-content "queued follow-up")
+           (unwind-protect
+               (progn
+                 (setq producer
+                       (run-at-time
+                        0 0.05
+                        (lambda ()
+                          (when (and (buffer-live-p chat) (< chunks 50))
+                            (with-current-buffer chat
+                              (hermes-chat--append-assistant-content
+                               "p" (format "**chunk %d**\n\n" chunks) 'streaming))
+                            (cl-incf chunks)))))
+                 ;; Three distinct clocks prove two real one-second ticks.
+                 (hermes-test--wait-until
+                  (lambda ()
+                    (let ((footer (hermes-test--footer)))
+                      (when (string-match "Running \\([0-9]+:[0-9]+\\)" footer)
+                        (cl-pushnew (match-string 1 footer) clocks :test #'equal)))
+                    (>= (length clocks) 3))
+                  5 "repeated status ticks")
+                 (hermes-test--wait-until (lambda () (= chunks 50)) 5 "stream chunks")
+                 (hermes-test--progressive-wait "p"))
+             (cancel-timer producer))
+           (should (string-match-p "1 queued" (hermes-test--footer)))
+           (save-excursion
+             (goto-char (point-min))
+             (search-forward "chunk 7")
+             (should (get-text-property (1- (point)) 'face)))
+           (should (eq chat (window-buffer reader)))
+           (should (= start (window-start reader)))
+           (should (= position (window-point reader)))
+           (should (equal "hello world" (hermes-chat-input-string)))
+           (should (= offset (- (point) (hermes-chat--input-position))))
+           (should-not (get-text-property (hermes-chat--input-position) 'read-only))
+           (hermes-test--draft-undo-command #'undo)
+           (should (equal "hello" (hermes-chat-input-string)))
+           (hermes-test--draft-undo-command #'undo-redo)
+           (should (equal "hello world" (hermes-chat-input-string)))
+           (should (= position (window-point reader)))
+           (should (string-match-p "chunk 49" (buffer-string)))))))))
+
 (ert-deftest hermes-chat-status-rule-repaint-preserves-draft-undo-and-windows ()
   "Footer repaints rebase the composer, its undo and every reader window."
   (save-window-excursion

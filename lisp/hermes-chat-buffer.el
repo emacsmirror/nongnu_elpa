@@ -742,6 +742,7 @@ chat.  Hidden buffers wait until displayed; changing mode removes the hook."
   (hermes-chat--stream-format-retire)
   (hermes-chat--status-rule-retire)
   (add-hook 'after-set-visited-file-name-hook #'hermes-chat--stream-format-retire nil t)
+  (add-hook 'after-set-visited-file-name-hook #'hermes-chat--status-rule-retire nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--reflow-table-windows nil t)
   (add-hook 'window-configuration-change-hook #'hermes-chat--status-rule-sync nil t)
   (add-hook 'hermes-chat-state-change-hook #'hermes-chat--status-rule-sync nil t)
@@ -2587,8 +2588,10 @@ activity is truncated first, then whole segments are dropped.")
         hermes-chat--status-rule-last nil))
 
 (defun hermes-chat--status-rule-live-p ()
-  "Return non-nil when this buffer is a live, initialized chat."
+  "Return non-nil when this buffer is a live, initialized chat.
+A chat reassociated with a file stays retired after the name is detached."
   (and (derived-mode-p 'hermes-chat-mode)
+       (not (hermes-buffer--retired-p))
        (not hermes-chat--cleanup-done-p)
        hermes-chat--ewoc
        (hermes-chat--input-position)))
@@ -2619,9 +2622,14 @@ activity is truncated first, then whole segments are dropped.")
   (if (and (buffer-live-p buffer)
            (with-current-buffer buffer
              (and (eq lifetime hermes-chat--lifecycle-generation)
-                  (eq (car box) (cdr hermes-chat--status-rule-timer)))))
+                  (eq (car box) (cdr hermes-chat--status-rule-timer))
+                  (hermes-chat--status-rule-live-p))))
       (with-current-buffer buffer (hermes-chat--status-rule-update))
-    (cancel-timer (car box))))
+    (cancel-timer (car box))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when (eq (car box) (cdr hermes-chat--status-rule-timer))
+          (hermes-chat--status-rule-cancel))))))
 
 (defun hermes-chat--status-rule-arm ()
   "Own exactly the timer the current rule needs.
@@ -2674,7 +2682,9 @@ buffer synchronously: callers may be inside another transcript mutation."
                (hermes-chat--in-buffer buffer
                  (when (eq lifetime hermes-chat--lifecycle-generation)
                    (setq hermes-chat--status-rule-pending nil)
-                   (hermes-chat--status-rule-update)))))))))
+                   (if (hermes-chat--status-rule-live-p)
+                       (hermes-chat--status-rule-update)
+                     (hermes-chat--status-rule-cancel))))))))))
 
 (defun hermes-chat--status-rule-duration (seconds &optional compact)
   "Return SECONDS as m:ss, or as 12s / 3m 05s when COMPACT."
