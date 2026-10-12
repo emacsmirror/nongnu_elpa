@@ -404,18 +404,35 @@ collapsed `help-echo'."
   (let ((event (plist-get (plist-get entry :metadata) :event)))
     (and (eq (plist-get event :type) 'unknown) event)))
 
+(defvar-local hermes-chat--unknown-event-detail-cache nil
+  "Weak table from unknown transport events to their expanded detail text.")
+
+(defun hermes-chat--unknown-event-body (event content)
+  "Return the expanded body for unknown EVENT shown with CONTENT.
+Formatting the raw payload is deferred until the disclosure is expanded and
+cached per event, so repaints do not pretty-print it again."
+  (unless hermes-chat--unknown-event-detail-cache
+    (setq hermes-chat--unknown-event-detail-cache
+          (make-hash-table :test #'eq :weakness 'key)))
+  (or (gethash event hermes-chat--unknown-event-detail-cache)
+      (puthash event
+               (hermes-chat--sanitize-content
+                (concat content "\n\n" (hermes-chat--unknown-event-detail event)))
+               hermes-chat--unknown-event-detail-cache)))
+
 (defun hermes-chat--transient-disclosure (entry content blocks)
   "Return (SUMMARY BODY HELP) when transient ENTRY should collapse, or nil.
-CONTENT is ENTRY's text and BLOCKS its diff blocks.  Unknown events always
-collapse with their raw payload as BODY; tool output collapses when
-multiline; status notices collapse beyond `hermes-chat--status-collapse-lines'."
+CONTENT is ENTRY's text and BLOCKS its diff blocks.  BODY is a string or a
+function returning one, called only when the disclosure is expanded.
+Unknown events always collapse with their raw payload as BODY; tool output
+collapses when multiline; status notices collapse beyond
+`hermes-chat--status-collapse-lines'."
   (let ((role (plist-get entry :role))
         (lines (length (split-string (string-trim-right content) "\n"))))
     (cond
      ((when-let* ((event (hermes-chat--entry-unknown-event entry)))
         (list (hermes-chat--unknown-event-summary event)
-              (hermes-chat--sanitize-content
-               (concat content "\n\n" (hermes-chat--unknown-event-detail event)))
+              (lambda () (hermes-chat--unknown-event-body event content))
               content)))
      (blocks nil)
      ((and (memq role '(tool progress)) (> lines 1))
@@ -445,7 +462,9 @@ owner-bound recovery buttons."
                  entry (nth 0 disclosure) expanded face (nth 2 disclosure))
                 (insert "\n")
                 (when expanded
-                  (hermes-chat--insert-shadow (nth 1 disclosure))
+                  (let ((body (nth 1 disclosure)))
+                    (hermes-chat--insert-shadow
+                     (if (functionp body) (funcall body) body)))
                   (insert "\n")))
             (hermes-chat--insert-diffed
              content

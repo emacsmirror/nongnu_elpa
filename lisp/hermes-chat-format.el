@@ -867,18 +867,32 @@ FIXED-WIDTHS retains a streaming table's established column allocation."
   (format "Unknown event %s"
           (or (hermes-chat--event-string event '(:event)) "unnamed")))
 
+(defconst hermes-chat--unknown-event-print-length 200
+  "`print-length' bound while formatting unknown event raw payloads.")
+
+(defconst hermes-chat--unknown-event-print-level 12
+  "`print-level' bound while formatting unknown event raw payloads.")
+
 (defun hermes-chat--unknown-event-detail (event)
   "Return expanded raw detail for unknown transport EVENT.
 The raw payload is pretty-printed and bounded rather than truncated to one
-line, so the expanded disclosure retains the data needed for a bug report."
+line, so the expanded disclosure retains the data needed for a bug report.
+Printing is bounded by `print-length' and `print-level', and payloads whose
+flat form exceeds `hermes-chat--unknown-event-raw-detail-limit' are
+truncated without pretty-printing."
   (let ((raw (plist-get event :raw)))
     (if (null raw)
         "No raw payload"
-      (let ((text (string-trim-right (pp-to-string raw))))
-        (if (> (length text) hermes-chat--unknown-event-raw-detail-limit)
-            (concat (substring text 0 hermes-chat--unknown-event-raw-detail-limit)
-                    "\n… (raw payload truncated)")
-          text)))))
+      (let* ((print-length hermes-chat--unknown-event-print-length)
+             (print-level hermes-chat--unknown-event-print-level)
+             (limit hermes-chat--unknown-event-raw-detail-limit)
+             (flat (prin1-to-string raw)))
+        (if (> (length flat) limit)
+            (concat (substring flat 0 limit) "\n… (raw payload truncated)")
+          (let ((text (string-trim-right (pp-to-string raw))))
+            (if (> (length text) limit)
+                (concat (substring text 0 limit) "\n… (raw payload truncated)")
+              text)))))))
 
 
 (defun hermes-chat--model-config-value (candidate)

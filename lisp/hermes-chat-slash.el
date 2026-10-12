@@ -887,7 +887,7 @@ draft is never edited: the command goes to the kill ring instead."
       (if (with-current-buffer buffer
             (save-restriction
               (widen)
-              (not (string-empty-p (string-trim (hermes-chat-input-string))))))
+              (not (string-empty-p (hermes-chat-input-string)))))
           (progn
             (kill-new command)
             (message "Composer has a draft; copied %s to the kill ring" command))

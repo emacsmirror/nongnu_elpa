@@ -1848,6 +1848,54 @@ PHASE defaults to `after-change-functions'."
          (should (string-match-p (regexp-quote long) expanded))
          (should (string-match-p "alien" expanded)))))))
 
+(ert-deftest hermes-chat-unknown-event-detail-is-lazy-and-bounded ()
+  "Collapsed unknown events never pretty-print; expansion formats once, bounded."
+  (let* ((huge (number-sequence 1 100000))
+         (event (list :type 'unknown :event "tool.huge"
+                      :raw `((items . ,huge) (kind . "alien"))))
+         (pp-calls 0)
+         (real-pp (symbol-function 'pp-to-string)))
+    (cl-letf (((symbol-function 'pp-to-string)
+               (lambda (&rest args)
+                 (cl-incf pp-calls)
+                 (apply real-pp args))))
+      (hermes-test-with-chat-buffer
+       (hermes-chat--upsert-transport-entry nil event)
+       (hermes-chat--upsert-transport-entry nil (list :type 'status :content "later"))
+       (should (= pp-calls 0))
+       (goto-char (point-min))
+       (search-forward "Unknown event tool.huge")
+       (push-button (1- (point)))
+       (let ((expanded (buffer-substring-no-properties
+                        (point-min) hermes-chat--input-marker)))
+         (should (string-match-p "▾ Unknown event tool.huge" expanded))
+         (should (string-match-p "(items 1 2 3" expanded))
+         (should-not (string-match-p "99999" expanded))
+         (should (< (length expanded)
+                    (+ hermes-chat--unknown-event-raw-detail-limit 500))))
+       (let ((calls pp-calls))
+         (should (<= calls 1))
+         ;; Repaints of the expanded entry reuse the cached detail.
+         (hermes-chat--upsert-transport-entry nil (list :type 'status :content "again"))
+         (goto-char (point-min))
+         (search-forward "Unknown event tool.huge")
+         (push-button (1- (point)))
+         (goto-char (point-min))
+         (search-forward "Unknown event tool.huge")
+         (push-button (1- (point)))
+         (should (= pp-calls calls)))))))
+
+(ert-deftest hermes-chat-unknown-event-detail-pretty-prints-small-payloads ()
+  "Small raw payloads are pretty-printed across lines when expanded."
+  (let ((detail (hermes-chat--unknown-event-detail
+                 (list :type 'unknown :event "x"
+                       :raw '((alpha . ((one . 1) (two . 2) (three . 3)))
+                              (beta . ((four . 4) (five . 5) (six . 6)))
+                              (gamma . "a fairly long string value to force wrapping"))))))
+    (should (string-match-p "\n" detail))
+    (should (string-match-p "gamma" detail))
+    (should-not (string-match-p "truncated" detail))))
+
 (ert-deftest hermes-chat-long-status-notice-collapses ()
   "Status notices beyond three lines collapse; short ones stay inline."
   (hermes-test-with-chat-buffer

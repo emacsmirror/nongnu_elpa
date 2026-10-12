@@ -292,6 +292,15 @@
                (hermes-chat-commands-insert (1- (point))))
              (should (equal (hermes-chat-input-string) "/queue "))
              (should (equal (current-kill 0) "/goal status"))
+             ;; Whitespace-only drafts are drafts too: never appended to.
+             (hermes-chat--delete-input-tail)
+             (save-excursion (goto-char (point-max)) (insert "  \n"))
+             (with-current-buffer view
+               (goto-char (point-min))
+               (search-forward "Queue next")
+               (hermes-chat-commands-insert))
+             (should (equal (hermes-chat-input-string) "  \n"))
+             (should (equal (current-kill 0) "/queue"))
              ;; A retired chat lifetime makes the view refuse.
              (hermes-chat--delete-input-tail)
              (setq hermes-chat--lifecycle-generation
