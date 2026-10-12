@@ -76,6 +76,7 @@
       (should first-function)
       (dolist (feature '(hermes-chat-buffer hermes-chat-draft hermes-chat-prompts
                          hermes-chat-images hermes-chat-todos hermes-chat-dashboard
+                         hermes-chat-cards
                          hermes-chat-models hermes-chat-handoff hermes-chat-slash))
         (let ((position (cl-position `(require ',feature) forms :test #'equal)))
           (should position)
