@@ -83,9 +83,9 @@ Open Workers from the owning chat to request a session-qualified interrupt."
 (require 'hermes-chat-buffer)
 
 (defface hermes-work-failed '((t :inherit error))
-  "Face for observed failed work." :group 'hermes)
+  "Face for failed, killed or lost work." :group 'hermes)
 (defface hermes-work-done '((t :inherit success))
-  "Face for observed completed processes." :group 'hermes)
+  "Face for completed work." :group 'hermes)
 (defface hermes-work-kind '((t :inherit font-lock-type-face))
   "Face for observed work kinds." :group 'hermes)
 
@@ -105,61 +105,49 @@ Open Workers from the owning chat to request a session-qualified interrupt."
     (funcall current owner)))
 
 (defun hermes-work--observations (owner)
-  "Return OWNER's last rows annotated with source freshness and observation time."
-  (mapcan
-   (lambda (kind)
-     (let* ((source (plist-get owner kind))
-            (current (and (hermes-work--current-p owner)
-                          (memq (plist-get source :coverage) '(current partial)))))
-       (mapcar (lambda (row)
-                 (append (list :stale (not current)
-                               :observed (plist-get source :observed)) row))
-               (plist-get source :rows))))
-   '(:delegates :processes)))
+  "Return OWNER's displayed workers followed by its displayed processes."
+  (let ((roster (hermes-chat--work-roster owner (float-time))))
+    (append (plist-get roster :agents) (plist-get roster :processes))))
+
+(defun hermes-work--find (key rows)
+  "Return the row in ROWS whose key is KEY."
+  (seq-find (lambda (row) (equal key (plist-get row :key))) rows))
 
 (defun hermes-work--state (row)
-  "Return the semantic label and face for observed ROW."
-  (if (plist-get row :stale)
-      '("Stale" . hermes-work-unknown)
-    (pcase (plist-get row :state)
+  "Return the label and face for ROW's state."
+  (let ((state (plist-get row :state)))
+    (pcase state
       ('running '("Running" . hermes-work-running))
-      ('done '("Done" . hermes-work-done))
-      ('failed (cons (format "Failed (%s)" (plist-get row :exit-code)) 'hermes-work-failed))
-      (_ (cons (if (equal (plist-get row :status) "exited") "Exited (?)" "Unknown")
-               'hermes-work-unknown)))))
+      ('queued '("Queued" . shadow))
+      ((or 'done 'completed) '("Done" . hermes-work-done))
+      ('failed (cons (if-let* ((code (plist-get row :exit-code)))
+                         (format "Failed (%s)" code) "Failed")
+                     'hermes-work-failed))
+      (_ (cons (capitalize (symbol-name state)) 'hermes-work-failed)))))
+
+(defun hermes-work--elapsed (row now)
+  "Return ROW's elapsed seconds at NOW, or nil when unknown."
+  (or (plist-get row :uptime)
+      (when-let* ((started (plist-get row :started)))
+        (max 0 (- now started)))))
 
 (defun hermes-work--rows (owner)
-  "Return sorted, kind-qualified table entries from OWNER's observations."
-  (mapcar
-   (lambda (row)
-     (let* ((state (hermes-work--state row))
-            (started (plist-get row :started))
-            (observed (plist-get row :observed)))
-       (list (plist-get row :key)
-             (vector (propertize (car state) 'face (cdr state))
-                     (propertize (symbol-name (plist-get row :kind)) 'face 'hermes-work-kind)
-                     (hermes-browser--face-cell
-                      (or (plist-get row :goal) (plist-get row :command) "—") 'default)
-                     (propertize (if (and started observed)
-                                     (format "%.0fs" (max 0 (- observed started))) "—")
-                                 'face 'shadow)))))
-   (sort (hermes-work--observations owner)
-         (lambda (a b)
-           (let* ((states '(running unknown failed done))
-                  (rank (lambda (row)
-                          (or (seq-position states (if (plist-get row :stale) 'unknown
-                                                     (plist-get row :state))) 1)))
-                  (x (funcall rank a)) (y (funcall rank b)))
-             (if (= x y)
-                 (string-lessp (format "%s:%s" (plist-get a :kind) (plist-get a :id))
-                               (format "%s:%s" (plist-get b :kind) (plist-get b :id)))
-               (< x y)))))))
-
-(defun hermes-work--coverage (owner kind)
-  "Return OWNER's truthful observation coverage for KIND."
-  (if (hermes-work--current-p owner)
-      (or (plist-get (plist-get owner kind) :coverage) 'unknown)
-    'stale))
+  "Return table entries for OWNER's roster: workers in tree order, then processes."
+  (let ((now (float-time)))
+    (mapcar
+     (lambda (row)
+       (let ((state (hermes-work--state row))
+             (elapsed (hermes-work--elapsed row now)))
+         (list (plist-get row :key)
+               (vector (propertize (car state) 'face (cdr state))
+                       (propertize (symbol-name (plist-get row :kind)) 'face 'hermes-work-kind)
+                       (hermes-browser--face-cell
+                        (concat (make-string (* 2 (or (plist-get row :depth) 0)) ?\s)
+                                (or (plist-get row :goal) (plist-get row :command) "—"))
+                        'default)
+                       (propertize (if elapsed (format "%.0fs" elapsed) "—")
+                                   'face 'shadow)))))
+     (hermes-work--observations owner))))
 
 (defun hermes-work--context-owner ()
   "Return this chat or work view's exact owner, without following replacements."
@@ -168,37 +156,38 @@ Open Workers from the owning chat to request a session-qualified interrupt."
 
 ;;;###autoload
 (defun hermes-chat-workers-label ()
-  "Return a local Workers count for the invoking chat or its exact work view.
-Count only observed running delegates.  Qualify stale or incomplete evidence."
+  "Return a Workers count for the invoking chat or its exact work view."
   (let* ((owner (hermes-work--context-owner))
-         (source (plist-get owner :delegates))
-         (coverage (if owner (hermes-work--coverage owner :delegates) 'unknown))
-         (unknown (seq-some (lambda (row) (eq (plist-get row :state) 'unknown))
-                            (plist-get source :rows))))
-    (concat "Workers "
-            (propertize (number-to-string (hermes-chat--work-running-count source))
-                        'face 'keymap-popup-value)
-            (unless (and (eq coverage 'current) (not unknown))
-              (propertize (format " · %s" (if (eq coverage 'current) 'unknown coverage))
-                          'face 'hermes-work-unknown)))))
+         (count (if (hermes-work--current-p owner)
+                    (car (hermes-chat--work-counts
+                          (hermes-chat--work-roster owner (float-time))))
+                  0)))
+    (concat "Workers " (propertize (number-to-string count) 'face 'keymap-popup-value))))
 
 (defun hermes-work--scope-text (owner)
-  "Return full local scope and freshness details for OWNER, even when detached."
+  "Return local scope details for OWNER, even when detached."
   (concat
-   (format "Scope: runtime %s; durable key %s\n\n"
-           (plist-get owner :runtime) (or (plist-get owner :key) "unknown"))
+   (format "Scope: runtime %s\n\n" (plist-get owner :runtime))
    "Roster visibility includes resumed lineage, not control authority.\nThe backend may refuse interrupt, steering or tail for a visible worker.\n\n"
    (if (buffer-live-p (plist-get owner :buffer))
        (with-current-buffer (plist-get owner :buffer)
          (let ((hermes-chat--work-owner owner)) (hermes-chat--work-details)))
-     "Owner destroyed; observations are stale.\nDisappearance does not prove completion.")))
+     "Owner destroyed.")))
 
 (defun hermes-work-scope-details ()
-  "Display scope, freshness and limitations for this exact work view."
+  "Display scope and limitations for this exact work view."
   (interactive nil hermes-work-mode)
   (let ((text (hermes-work--scope-text hermes-work--owner))
         (buffer (hermes-buffer--get "*Hermes Work Scope*" #'help-mode)))
     (with-help-window buffer (princ text))))
+
+(defun hermes-work--summary (owner)
+  "Return the one-line summary shown above OWNER's work list."
+  (if (hermes-work--current-p owner)
+      (let ((counts (hermes-chat--work-counts
+                     (hermes-chat--work-roster owner (float-time)))))
+        (format "Agents %d · Processes %d · ? Help" (car counts) (cdr counts)))
+    "Detached · reopen from the chat · ? Help"))
 
 (defun hermes-work--render (owner)
   "Repaint OWNER's exact list from snapshots only, without selecting it."
@@ -220,15 +209,12 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
           (goto-char (point-min))
           (let ((width (window-body-width (get-buffer-window (current-buffer) t))))
             (insert (propertize "Observed work\n" 'face 'bold)
-                    (propertize
-                     (truncate-string-to-width
-                      (format "Agents %s · Processes %s · ? Help"
-                              (hermes-work--coverage owner :delegates)
-                              (hermes-work--coverage owner :processes))
-                      width nil nil "…") 'face 'shadow)
+                    (propertize (truncate-string-to-width
+                                 (hermes-work--summary owner) width nil nil "…")
+                                'face 'shadow)
                     "\n")
             (unless tabulated-list-entries
-              (insert (propertize "No work observed in these sources.\n" 'face 'shadow)))))))))
+              (insert (propertize "No work observed.\n" 'face 'shadow)))))))))
 
 (defun hermes-work--changed ()
   "Repaint the current chat's observation list after a local state change."
@@ -272,19 +258,21 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
   "Display inert read-only details for the observed row at point."
   (interactive nil hermes-work-mode)
   (let* ((owner hermes-work--owner)
-         (key (tabulated-list-get-id))
-         (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
-                        (hermes-work--observations owner))))
+         (row (hermes-work--find (tabulated-list-get-id)
+                                 (hermes-work--observations owner))))
     (unless row (user-error "No observed work on this line"))
     (let ((buffer (generate-new-buffer "*Hermes Work Details*")))
       (with-current-buffer buffer
-        (insert (format "Observed %s — %s\n\nScope: runtime %s; durable key %s\n"
+        (insert (format "Observed %s — %s\n\nScope: runtime %s\n"
                         (plist-get row :kind) (car (hermes-work--state row))
-                        (plist-get owner :runtime) (plist-get owner :key)))
-        (dolist (field '((:id . "ID") (:status . "Raw status") (:observed . "Observed at")
-                         (:owner . "Root owner") (:parent . "Parent") (:goal . "Goal")
-                         (:model . "Model") (:command . "Command") (:cwd . "Remote cwd (inert)")
-                         (:exit-code . "Exit code") (:output-tail . "Backend output tail")))
+                        (plist-get owner :runtime)))
+        (dolist (field '((:id . "ID") (:status . "Raw status") (:parent . "Parent")
+                         (:depth . "Depth") (:delegation-id . "Delegation")
+                         (:goal . "Goal") (:model . "Model")
+                         (:tool-count . "Tool calls") (:last-tool . "Last tool")
+                         (:command . "Command") (:last-line . "Last output line")
+                         (:cwd . "Remote cwd (inert)") (:exit-code . "Exit code")
+                         (:reason . "Completion reason") (:output-tail . "Backend output tail")))
           (when (plist-member row (car field))
             (insert (format "%s: %s\n" (cdr field) (or (plist-get row (car field)) "—")))))
         (insert "\n" (hermes-work--scope-text owner))
@@ -295,18 +283,17 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
 ;;; Session-qualified worker actions
 
 (defun hermes-work--selected-worker ()
-  "Return the exact current worker row at point, or refuse the action."
+  "Return the exact running worker row at point, or refuse the action.
+The row must be in the backend roster; live events may have finished it."
   (let* ((owner hermes-work--owner)
-         (source (plist-get owner :delegates))
          (key (tabulated-list-get-id))
-         (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
-                        (plist-get source :rows))))
-    (unless (and (hermes-work--view-p owner) (hermes-work--current-p owner)
-                 (eq (plist-get source :coverage) 'current)
+         (row (hermes-work--find key (plist-get (plist-get owner :delegates) :rows))))
+    (unless (and row (hermes-work--view-p owner) (hermes-work--current-p owner)
                  (stringp (plist-get owner :runtime))
                  (not (string-empty-p (plist-get owner :runtime)))
-                 (eq (plist-get row :kind) 'delegate)
-                 (eq (plist-get row :state) 'running))
+                 (eq (plist-get (hermes-work--find key (hermes-work--observations owner))
+                                :state)
+                     'running))
       (user-error "No current running worker; refresh or reopen from its chat"))
     row))
 
@@ -317,7 +304,7 @@ Count only observed running delegates.  Qualify stale or incomplete evidence."
          (eq row (ignore-errors (hermes-work--selected-worker))))))
 
 (defun hermes-work--row-current-p (owner row)
-  "Return non-nil if OWNER retains exact ROW, regardless of poll freshness."
+  "Return non-nil if exact ROW is in attached OWNER's roster."
   (and (hermes-work--current-p owner)
        (memq row (plist-get (plist-get owner :delegates) :rows))))
 
@@ -472,7 +459,7 @@ Only structured parent tool results supply paths, never text or filenames."
   (let ((owner (plist-get binding :owner)) (row (plist-get binding :row)))
     (and (not (plist-get binding :retired)) (hermes-work--current-p owner)
          (or (plist-get binding :path)
-             ;; Poll freshness does not revoke an explicitly opened snapshot.
+             ;; A published log path stays readable while the owner is attached.
              (and row
                   (hermes-work--row-current-p owner row))))))
 
@@ -654,9 +641,8 @@ A changed roster row requires reopening a tail from the Work view."
 Use only the exact path published in this parent's structured tool result."
   (interactive nil hermes-work-mode)
   (let* ((owner hermes-work--owner)
-         (key (tabulated-list-get-id))
-         (row (seq-find (lambda (entry) (equal key (plist-get entry :key)))
-                        (hermes-work--observations owner))))
+         (row (hermes-work--find (tabulated-list-get-id)
+                                 (hermes-work--observations owner))))
     (unless row (user-error "No observed work on this line"))
     (unless (hermes-work--current-p owner) (user-error "Work owner detached"))
     (if (not (eq (plist-get row :kind) 'delegate))

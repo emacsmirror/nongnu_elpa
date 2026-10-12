@@ -1180,131 +1180,88 @@ notices instead of flattening them to plain status text."
   (let ((value (hermes-transport--get object field)))
     (and (stringp value) (not (string-empty-p value)) value)))
 
+;; Roster rows are plain plists keyed by (KIND . ID); a malformed row is
+;; skipped and a repeated ID keeps its first row.
+
+(defun hermes-transport--work-number (object field)
+  "Return a nonnegative number from OBJECT's FIELD, or nil."
+  (let ((value (hermes-transport--get object field)))
+    (and (numberp value) (>= value 0) value)))
+
+(defun hermes-transport--work-rows (result field id-field project)
+  "Return PROJECT applied to RESULT's FIELD rows that carry ID-FIELD.
+Signal unless FIELD is an array."
+  (unless (and (hash-table-p result) (vectorp (gethash field result)))
+    (error "Invalid %s roster" field))
+  (seq-uniq
+   (delq nil (mapcar (lambda (row)
+                       (and (hash-table-p row)
+                            (hermes-transport-work-string row id-field)
+                            (funcall project row)))
+                     (gethash field result)))
+   (lambda (a b) (equal (plist-get a :key) (plist-get b :key)))))
+
 (defun hermes-transport-work-delegate-row (row)
-  "Return inert display metadata for the validated delegate ROW."
+  "Return display metadata for `subagent.list' ROW.
+A listed worker is running unless the backend says it is queued."
   (let ((id (hermes-transport-work-string row 'subagent_id))
         (status (hermes-transport-work-string row 'status)))
     (list :key (cons 'delegate id) :id id :kind 'delegate
-          :status status :state (if (equal status "running") 'running 'unknown)
+          :status status :state (if (equal status "queued") 'queued 'running)
           :parent (hermes-transport-work-string row 'parent_id)
-          :owner (hermes-transport-work-string row 'owner_agent_session_id)
+          :depth (hermes-transport--work-number row 'depth)
+          :delegation-id (hermes-transport-work-string row 'delegation_id)
           :goal (or (hermes-transport-work-string row 'goal) "—")
           :model (or (hermes-transport-work-string row 'model) "—")
-          :started (let ((value (hermes-transport--get row 'started_at)))
-                     (and (numberp value) (>= value 0) value)))))
-
-(defun hermes-transport--work-delegate-index (active)
-  "Return (NODES . PARTIAL) for the lossless ACTIVE delegate array.
-Index valid rows by ID; retain ambiguous markers for duplicates and invalid
-metadata so neither can contribute roots or traversal edges."
-  (let ((nodes (make-hash-table :test #'equal))
-        partial)
-    (seq-doseq (row active)
-      (let ((id (and (hash-table-p row)
-                     (hermes-transport-work-string row 'subagent_id))))
-        (cond
-         ((not id) (setq partial t))
-         ((gethash id nodes)
-          (puthash id 'ambiguous nodes)
-          (setq partial t))
-         ((cl-some
-           (lambda (field)
-             (let ((value (hermes-transport--get row field)))
-               (and value (not (eq value :json-null))
-                    (not (hermes-transport-work-string row field)))))
-           '(parent_id owner_agent_session_id status))
-          (puthash id 'ambiguous nodes)
-          (setq partial t))
-         (t (puthash id row nodes)))))
-    (cons nodes partial)))
-
-(defun hermes-transport-work-delegates (result key)
-  "Project lossless delegation RESULT for verified durable session KEY.
-Return rows and coverage.  Signal for invalid collections or KEY.  Exclude
-ambiguous IDs and their traversal edges; malformed rows make coverage partial."
-  (unless (and (stringp key) (not (string-empty-p key))
-               (hash-table-p result) (vectorp (gethash "active" result)))
-    (error "Invalid delegate inventory or unbound durable key"))
-  (let* ((index (hermes-transport--work-delegate-index (gethash "active" result)))
-         (nodes (car index))
-         (children (make-hash-table :test #'equal))
-         (seen (make-hash-table :test #'equal))
-         roots rows)
-    (maphash
-     (lambda (id row)
-       (when (hash-table-p row)
-         (when (equal (hermes-transport-work-string row 'owner_agent_session_id) key)
-           (push id roots))
-         (when-let* ((parent (hermes-transport-work-string row 'parent_id)))
-           (push id (gethash parent children)))))
-     nodes)
-    (while roots
-      (let* ((id (pop roots)) (row (gethash id nodes)))
-        (when (and (hash-table-p row) (not (gethash id seen)))
-          (puthash id t seen)
-          (push (hermes-transport-work-delegate-row row) rows)
-          (setq roots (append (gethash id children) roots)))))
-    (list :rows rows :coverage (if (cdr index) 'partial 'current))))
+          :started (hermes-transport--work-number row 'started_at)
+          :tool-count (hermes-transport--work-number row 'tool_count)
+          :last-tool (hermes-transport-work-string row 'last_tool)
+          :accepting-steer (eq (hermes-transport--get row 'accepting_steer) t))))
 
 (defun hermes-transport-work-subagents (result)
-  "Project lossless session roster RESULT without granting control authority.
-Reject invalid arrays; omit duplicate or malformed worker identities."
-  (unless (and (hash-table-p result) (vectorp (gethash "subagents" result)))
-    (error "Invalid session worker roster"))
-  (let* ((index (hermes-transport--work-delegate-index (gethash "subagents" result)))
-         rows)
-    (maphash
-     (lambda (_id row)
-       (when (hash-table-p row)
-         (push (append (hermes-transport-work-delegate-row row)
-                       (list :accepting-steer
-                             (eq (hermes-transport--get row 'accepting_steer) t)))
-               rows)))
-     (car index))
-    (list :rows rows :coverage (if (cdr index) 'partial 'current))))
+  "Return worker rows from lossless `subagent.list' RESULT.
+Signal for a missing or malformed roster array."
+  (hermes-transport--work-rows result "subagents" 'subagent_id
+                               #'hermes-transport-work-delegate-row))
+
+(defun hermes-transport-work-process-state (status exit-code reason)
+  "Return the process state for wire STATUS, EXIT-CODE and completion REASON.
+Anything not reported as exited is running, as in the Hermes TUI."
+  (cond ((not (equal status "exited")) 'running)
+        ((equal reason "failed_start") 'failed)
+        ((member reason '("killed" "lost")) (intern reason))
+        ((and (integerp exit-code) (/= exit-code 0)) 'failed)
+        (t 'done)))
+
+(defun hermes-transport-work-last-line (text)
+  "Return the last nonblank line of TEXT, or nil."
+  (and (stringp text)
+       (car (last (split-string text "\n" t "[ \t\r]+")))))
 
 (defun hermes-transport-work-process-row (row)
-  "Return inert display metadata and typed terminal evidence for process ROW."
+  "Return display metadata for `process.list' ROW.
+Elapsed time comes from `uptime_seconds'; the wire `started_at' is a
+zone-less local timestamp and is ignored."
   (let ((id (hermes-transport-work-string row 'session_id))
         (status (hermes-transport-work-string row 'status))
-        (exit (hermes-transport--get row 'exit_code)))
+        (exit (hermes-transport--get row 'exit_code))
+        (reason (hermes-transport-work-string row 'completion_reason)))
     (list :key (cons 'process id) :id id :kind 'process :status status
-          :state (cond ((equal status "running") 'running)
-                       ((and (equal status "exited") (integerp exit))
-                        (if (zerop exit) 'done 'failed))
-                       (t 'unknown))
-          :exit-code (and (integerp exit) exit)
+          :state (hermes-transport-work-process-state status exit reason)
+          :exit-code (and (integerp exit) exit) :reason reason
           :command (or (hermes-transport-work-string row 'command) "—")
           :cwd (or (hermes-transport-work-string row 'cwd) "—")
           :output-tail (or (hermes-transport-work-string row 'output_tail) "—")
-          :started (let ((value (hermes-transport--get row 'started_at)))
-                     (and (numberp value) (>= value 0) value)))))
+          :last-line (hermes-transport-work-last-line
+                      (hermes-transport--get row 'output_preview))
+          :uptime (hermes-transport--work-number row 'uptime_seconds)
+          :exited-at (hermes-transport--work-number row 'exited_at))))
 
 (defun hermes-transport-work-processes (result)
-  "Project lossless session-scoped process RESULT into rows and coverage.
-Signal for invalid collections.  Exclude malformed rows and duplicate IDs,
-making coverage partial; missing terminal evidence never implies success."
-  (unless (and (hash-table-p result) (vectorp (gethash "processes" result)))
-    (error "Invalid process inventory"))
-  (let ((nodes (make-hash-table :test #'equal)) partial rows)
-    (seq-doseq (row (gethash "processes" result))
-      (let ((id (and (hash-table-p row)
-                     (hermes-transport-work-string row 'session_id))))
-        (cond
-         ((not id) (setq partial t))
-         ((gethash id nodes)
-          (puthash id 'ambiguous nodes)
-          (setq partial t))
-         ((let ((status (hermes-transport--get row 'status)))
-            (and status (not (eq status :json-null)) (not (stringp status))))
-          (puthash id 'ambiguous nodes)
-          (setq partial t))
-         (t (puthash id row nodes)))))
-    (maphash (lambda (_id row)
-               (when (hash-table-p row)
-                 (push (hermes-transport-work-process-row row) rows)))
-             nodes)
-    (list :rows rows :coverage (if partial 'partial 'current))))
+  "Return process rows from lossless `process.list' RESULT.
+Signal for a missing or malformed process array."
+  (hermes-transport--work-rows result "processes" 'session_id
+                               #'hermes-transport-work-process-row))
 
 (provide 'hermes-transport)
 ;;; hermes-transport.el ends here

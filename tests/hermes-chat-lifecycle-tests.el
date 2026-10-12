@@ -121,7 +121,7 @@
          (should-not hermes-chat--pending-assistant-id)
          (setf (hermes-dashboard-transport-client-refcount client) 1)
          (hermes-dashboard-transport--handle-socket-down client "Socket closed")
-         (should (memq owner cancelled))
+         (should-not (hermes-chat--work-current-p owner))
          (should-not hermes-chat--work-owner)
          (should-not (plist-get owner :timer))
          (should-not hermes-chat--dashboard-active-session-id)
@@ -158,7 +158,7 @@
           client 'exited-child
           (hermes-dashboard-transport-client-process-generation client))
          (should (hermes-dashboard-transport-client-stopping-p client))
-         (should (memq owner cancelled))
+         (should-not (hermes-chat--work-current-p owner))
          (should-not hermes-chat--work-owner)
          (should-not hermes-chat--dashboard-active-session-id)
          (should-not hermes-chat--dashboard-session-ready-p)

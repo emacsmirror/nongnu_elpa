@@ -19,6 +19,16 @@ Incompatible changes:
 
 New features and fixes:
 
+- The chat header's work count follows the Hermes TUI: =🤖 N= counts
+  running and queued workers and =⚙ M= running background processes, with
+  no trailing =?=.  Each chat keeps the last successful roster read; hiding
+  the chat, a failed read or a timeout no longer clears or doubts it.  Live
+  =subagent.*= events update the count between polls, a background process
+  notice triggers an immediate read, and finished workers and exited
+  processes stay listed for 60 seconds.  The Workers view lists workers in
+  spawn-tree order and shows depth, delegation, tool count, last tool and a
+  process's last output line; process elapsed time now comes from the
+  backend's uptime.
 - Completed paragraphs, closed code fences and complete table rows render
   as Markdown while a reply is still streaming; unfinished text stays
   literal until the turn ends.  =hermes-chat-stream-format-delay= (default

@@ -694,96 +694,53 @@
       (should (zerop calls)))))
 
 (ert-deftest hermes-transport-work-process-exit-types ()
-  "Only integer exit evidence makes an exited process done or failed."
-  (dolist (exit '("null" "false" "true" "0.0" "\"0\"" "[]" "{}"))
-    (let* ((snapshot
-            (hermes-transport-work-processes
-             (hermes-transport-json-parse-lossless
-              (format "{\"processes\":[{\"session_id\":\"p\",\"status\":\"exited\",\"exit_code\":%s}]}" exit))))
-           (row (car (plist-get snapshot :rows))))
-      (should (eq (plist-get row :state) 'unknown))
-      (should-not (plist-get row :exit-code))
+  "Exited processes are done unless a reason or nonzero integer says otherwise."
+  (dolist (case '(("\"exit_code\":0" done) ("\"exit_code\":7" failed)
+                  ("\"exit_code\":null" done) ("\"exit_code\":\"7\"" done)
+                  ("\"exit_code\":0,\"completion_reason\":\"killed\"" killed)
+                  ("\"exit_code\":0,\"completion_reason\":\"lost\"" lost)
+                  ("\"completion_reason\":\"failed_start\"" failed)))
+    (let ((row (car (hermes-transport-work-processes
+                     (hermes-transport-json-parse-lossless
+                      (format "{\"processes\":[{\"session_id\":\"p\",\"status\":\"exited\",%s}]}"
+                              (car case)))))))
+      (should (eq (plist-get row :state) (cadr case)))
       (should (equal (plist-get row :key) '(process . "p")))
-      (should (equal (plist-get row :status) "exited"))
-      (should (eq (plist-get snapshot :coverage) 'current)))))
+      (should (equal (plist-get row :status) "exited"))))
+  (should (eq (hermes-transport-work-process-state "future" nil nil) 'running)))
 
-(ert-deftest hermes-transport-work-process-partial-metadata ()
-  "Partial arrays keep only valid positives, and optional metadata stays inert."
-  (let* ((snapshot
-          (hermes-transport-work-processes
-           (hermes-transport-json-parse-lossless
-            "{\"processes\":[null,false,7,{}, {\"session_id\":\"bad\",\"status\":false},{\"session_id\":\"dup\"},{\"session_id\":\"dup\",\"status\":\"running\"},{\"session_id\":\"unknown\"},{\"session_id\":\"live\",\"status\":\"running\",\"command\":{},\"cwd\":false,\"started_at\":null}]}")))
-         (rows (plist-get snapshot :rows))
-         (live (seq-find (lambda (row) (equal (plist-get row :id) "live")) rows)))
-    (should (eq (plist-get snapshot :coverage) 'partial))
-    (should (= (length rows) 2))
+(ert-deftest hermes-transport-work-process-metadata ()
+  "Malformed rows are skipped; elapsed comes from uptime, not local ISO time."
+  (let* ((rows (hermes-transport-work-processes
+                (hermes-transport-json-parse-lossless
+                 "{\"processes\":[null,false,7,{},{\"session_id\":\"dup\",\"status\":\"running\"},{\"session_id\":\"dup\"},{\"session_id\":\"live\",\"status\":\"running\",\"command\":{},\"cwd\":false,\"started_at\":\"2026-10-12T10:00:00\",\"uptime_seconds\":42,\"output_preview\":\"first\\nlast line\\n\\n\"},{\"session_id\":\"gone\",\"status\":\"exited\",\"exit_code\":3,\"exited_at\":1700000000.5,\"completion_reason\":\"exited\"}]}")))
+         (live (seq-find (lambda (row) (equal (plist-get row :id) "live")) rows))
+         (gone (seq-find (lambda (row) (equal (plist-get row :id) "gone")) rows)))
+    (should (equal (mapcar (lambda (row) (plist-get row :id)) rows) '("dup" "live" "gone")))
     (should (eq (plist-get live :state) 'running))
     (should (equal (plist-get live :command) "—"))
     (should (equal (plist-get live :cwd) "—"))
-    (should-not (plist-get live :started))
-    (should (eq (plist-get (seq-find (lambda (row)
-                                      (equal (plist-get row :id) "unknown")) rows) :state)
-                'unknown))))
+    (should (= (plist-get live :uptime) 42))
+    (should (equal (plist-get live :last-line) "last line"))
+    (should (= (plist-get gone :exited-at) 1700000000.5))
+    (should (= (plist-get gone :exit-code) 3))
+    (should (equal (plist-get gone :reason) "exited"))))
 
-(ert-deftest hermes-transport-work-delegate-shapes ()
-  "Only real arrays establish coverage; bad rows cannot establish idle."
-  (dolist (wire '("{}" "{\"active\":null}" "{\"active\":false}"
-                  "{\"active\":{}}" "{\"active\":0}" "[]"))
-    (should-error
-     (hermes-transport-work-delegates
-      (hermes-transport-json-parse-lossless wire) "A")))
-  (should (equal (hermes-transport-work-delegates
-                  (hermes-transport-json-parse-lossless "{\"active\":[]}") "A")
-                 '(:rows nil :coverage current)))
-  (should (eq (plist-get (hermes-transport-work-delegates
-                         (hermes-transport-json-parse-lossless
-                          "{\"active\":[null,false,{},7]}") "A") :coverage)
-              'partial)))
-
-(ert-deftest hermes-transport-work-delegate-graph ()
-  "Explicit same-snapshot paths, not global counts, attribute delegates."
-  (let* ((rows (mapcar #'hermes-transport-json-parse-lossless
-                      '("{\"subagent_id\":\"root\",\"owner_agent_session_id\":\"A\",\"status\":\"running\"}"
-                        "{\"subagent_id\":\"child\",\"parent_id\":\"root\",\"status\":\"running\"}"
-                        "{\"subagent_id\":\"leaf\",\"parent_id\":\"child\",\"status\":\"mystery\"}"
-                        "{\"subagent_id\":\"foreign\",\"owner_agent_session_id\":\"B\",\"goal\":\"SECRET\"}"
-                        "{\"subagent_id\":\"orphan\",\"parent_id\":\"absent\"}"
-                        "{\"subagent_id\":\"c1\",\"parent_id\":\"c2\"}"
-                        "{\"subagent_id\":\"c2\",\"parent_id\":\"c1\"}")))
-         (result (make-hash-table :test #'equal)))
-    (dolist (order (list rows (reverse rows) (append (cdr rows) (list (car rows)))))
-      (puthash "active" (vconcat order) result)
-      (let ((snapshot (hermes-transport-work-delegates result "A")))
-        (should (equal (sort (mapcar (lambda (row) (plist-get row :id))
-                                    (plist-get snapshot :rows)) #'string<)
-                       '("child" "leaf" "root")))
-        (should-not (string-match-p "SECRET" (prin1-to-string snapshot)))))
-    (puthash "active" (vconcat rows (list (cadr rows))) result)
-    (let ((snapshot (hermes-transport-work-delegates result "A")))
-      (should (eq (plist-get snapshot :coverage) 'partial))
-      (should (equal (mapcar (lambda (row) (plist-get row :id))
-                            (plist-get snapshot :rows)) '("root"))))
-    (should-error (hermes-transport-work-delegates result nil))))
-
-(ert-deftest hermes-transport-work-delegate-ambiguous-index-and-cycle ()
-  "Malformed duplicates cannot restore roots or edges; reachable cycles end."
-  (let* ((rows (mapcar #'hermes-transport-json-parse-lossless
-                      '("{\"subagent_id\":\"root\",\"owner_agent_session_id\":\"A\",\"parent_id\":\"cycle\"}"
-                        "{\"subagent_id\":\"cycle\",\"parent_id\":\"root\"}"
-                        "{\"subagent_id\":\"dup\",\"owner_agent_session_id\":\"A\",\"parent_id\":\"root\"}"
-                        "{\"subagent_id\":\"dup\",\"status\":false}"
-                        "{\"subagent_id\":\"dup\",\"owner_agent_session_id\":\"A\"}"
-                        "{\"subagent_id\":\"hidden\",\"parent_id\":\"dup\"}"
-                        "{\"subagent_id\":\"bad\",\"owner_agent_session_id\":\"A\",\"parent_id\":false}"
-                        "{\"subagent_id\":\"foreign\",\"owner_agent_session_id\":\"a\"}")))
-         (result (make-hash-table :test #'equal)))
-    (dolist (order (list rows (reverse rows)))
-      (puthash "active" (vconcat order) result)
-      (let ((snapshot (hermes-transport-work-delegates result "A")))
-        (should (eq (plist-get snapshot :coverage) 'partial))
-        (should (equal (sort (mapcar (lambda (row) (plist-get row :id))
-                                    (plist-get snapshot :rows)) #'string<)
-                       '("cycle" "root")))))))
+(ert-deftest hermes-transport-work-subagent-rows ()
+  "Only a real array is a roster; rows keep the backend's tree metadata."
+  (dolist (wire '("{}" "{\"subagents\":null}" "{\"subagents\":false}"
+                  "{\"subagents\":{}}" "{\"subagents\":0}" "[]"))
+    (should-error (hermes-transport-work-subagents
+                   (hermes-transport-json-parse-lossless wire))))
+  (should-not (hermes-transport-work-subagents
+               (hermes-transport-json-parse-lossless "{\"subagents\":[null,false,{},7]}")))
+  (let ((row (car (hermes-transport-work-subagents
+                   (hermes-transport-json-parse-lossless
+                    "{\"subagents\":[{\"subagent_id\":\"c\",\"parent_id\":\"p\",\"depth\":1,\"delegation_id\":\"d\",\"goal\":\"G\",\"model\":\"m\",\"started_at\":12.5,\"status\":\"queued\",\"tool_count\":3,\"last_tool\":\"terminal\",\"accepting_steer\":true},{\"subagent_id\":\"c\",\"status\":\"running\"}]}")))))
+    (should (equal row '(:key (delegate . "c") :id "c" :kind delegate
+                              :status "queued" :state queued :parent "p" :depth 1
+                              :delegation-id "d" :goal "G" :model "m" :started 12.5
+                              :tool-count 3 :last-tool "terminal" :accepting-steer t)))))
 
 (ert-deftest hermes-transport-w0-lossless-json-types ()
   "Lossless parsing preserves every JSON type without altering legacy parsing."

@@ -215,8 +215,8 @@
                              (:event (:event "tool.complete" :name "delegate_task"
                                       :result ((subagent_ids "one")
                                                (live_transcripts "/remote/log"))))))
-          (let ((owner (list :buffer chat :current-p (lambda (_) t) :settle nil
-                             :delegates '(:coverage current :rows
+          (let ((owner (list :buffer chat :current-p (lambda (_) t) :settle nil :runtime "runtime"
+                             :delegates '(:sid "runtime" :rows
                                           ((:key (delegate . "one") :id "one" :kind delegate))))))
             (should (equal (hermes-work--log-path owner "one") "/remote/log"))
             (with-current-buffer view

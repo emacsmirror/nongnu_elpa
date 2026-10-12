@@ -2997,32 +2997,184 @@ tokens and `hermes-chat-context-label-map' opens the context budget view."
     ("Cancelled" . "CAN") ("Idle" . "IDL"))
   "Compact header codes, also explained in local session details.")
 
+;;; Worker roster
+
+;; Each chat owner keeps the last successful answer per kind as
+;; (:sid SID :rows ROWS :observed TIME), plus an alist of worker ID to
+;; (:state STATE :finished TIME :row ROW :goal GOAL) learned from live
+;; subagent events and from workers leaving the backend roster.  Everything
+;; shown is derived from those values by the pure functions below, following
+;; the Hermes TUI's agent and process rosters.
+
 (defvar-local hermes-chat--work-owner nil
-  "Exact attachment owning observed work, requests and cadence timer.")
+  "Exact attachment owning observed work, requests and poll timer.")
 
 (defface hermes-work-running
   '((t :inherit font-lock-keyword-face))
-  "Face for currently observed running work."
+  "Face for running work."
   :group 'hermes)
 
-(defface hermes-work-unknown
-  '((t :inherit shadow))
-  "Face for unknown, partial or stale work observations."
-  :group 'hermes)
+(defconst hermes-chat--work-retain 60
+  "Seconds finished workers and exited processes stay listed.")
 
-(defun hermes-chat--work-source (&optional kind)
-  "Return current attachment's KIND source, or stale detached evidence.
-KIND defaults to delegates."
-  (let ((source (plist-get hermes-chat--work-owner (or kind :delegates)))
-        (current-p (plist-get hermes-chat--work-owner :current-p)))
-    (if (and current-p (funcall current-p hermes-chat--work-owner))
-        source
-      (plist-put (copy-sequence source) :coverage 'stale))))
+(defun hermes-chat--work-active-p (row)
+  "Return non-nil when roster ROW is running or queued."
+  (memq (plist-get row :state) '(running queued)))
 
-(defun hermes-chat--work-running-count (source)
-  "Return the observed running count in normalized SOURCE, even if stale."
-  (seq-count (lambda (row) (eq (plist-get row :state) 'running))
-             (plist-get source :rows)))
+(defun hermes-chat--work-recent-p (time now)
+  "Return non-nil when TIME is within the retention window before NOW."
+  (and time (<= (- now time) hermes-chat--work-retain)))
+
+(defun hermes-chat--work-snapshot-rows (snapshot sid)
+  "Return SNAPSHOT's rows when it was read for session SID, else nil."
+  (and (equal (plist-get snapshot :sid) sid) (plist-get snapshot :rows)))
+
+(defun hermes-chat--work-row-id (id rows)
+  "Return the row in ROWS whose ID is ID."
+  (seq-find (lambda (row) (equal (plist-get row :id) id)) rows))
+
+(defun hermes-chat--work-event-state (name old status)
+  "Return the worker state subagent event NAME implies over OLD, or nil.
+STATUS is a completion's reported status.  A finished worker stays finished;
+progress events never create a worker, and late queueing never demotes one."
+  (pcase name
+    ("subagent.complete"
+     (if (and (stringp status) (not (string-empty-p status)))
+         (intern (downcase status))
+       'completed))
+    ((guard (and old (not (memq old '(queued running))))) old)
+    ("subagent.spawn_requested" (or old 'queued))
+    ("subagent.start" 'running)
+    ((or "subagent.thinking" "subagent.tool" "subagent.progress")
+     (and old 'running))))
+
+(defun hermes-chat--work-put (events id entry)
+  "Return EVENTS with ID's entry replaced by ENTRY, newest first."
+  (cons (cons id entry) (assoc-delete-all id (copy-sequence events))))
+
+(defun hermes-chat--work-apply-event (events event now)
+  "Return EVENTS updated by normalized subagent EVENT received at NOW.
+Return EVENTS itself when EVENT is not a subagent event or changes nothing."
+  (let* ((id (plist-get event :subagent-id))
+         (name (plist-get event :event))
+         (entry (cdr (assoc id events)))
+         (state (and (stringp id)
+                     (hermes-chat--work-event-state
+                      name (plist-get entry :state) (plist-get event :status)))))
+    (if (or (not state) (eq state (plist-get entry :state)))
+        events
+      (hermes-chat--work-put
+       events id
+       (list :state state
+             :finished (unless (memq state '(queued running)) now)
+             :row (plist-get entry :row)
+             :goal (or (plist-get entry :goal)
+                       (and (member name '("subagent.spawn_requested" "subagent.start"))
+                            (plist-get event :content))))))))
+
+(defun hermes-chat--work-retire (events previous rows now)
+  "Return EVENTS after a roster read at NOW replaced PREVIOUS with ROWS.
+A worker that left the roster is finished: `completed' unless an event already
+reported its end.  Finished entries expire after `hermes-chat--work-retain'."
+  (seq-filter
+   (lambda (entry)
+     (or (hermes-chat--work-active-p (cdr entry))
+         (hermes-chat--work-recent-p (plist-get (cdr entry) :finished) now)))
+   (seq-reduce
+    (lambda (events row)
+      (let* ((id (plist-get row :id))
+             (entry (cdr (assoc id events))))
+        (if (hermes-chat--work-row-id id rows)
+            events
+          (hermes-chat--work-put
+           events id
+           (if (hermes-chat--work-active-p entry)
+               (list :state 'completed :finished now :row row)
+             (append (list :row row
+                           :state (or (plist-get entry :state) 'completed)
+                           :finished (or (plist-get entry :finished) now))
+                     entry))))))
+    previous events)))
+
+(defun hermes-chat--work-merge-agents (events rows now)
+  "Return snapshot ROWS overlaid with EVENTS at NOW, then event-only workers.
+Event state wins because a snapshot can predate the events, except that an
+event's `queued' never overrides the snapshot.  Finished event-only workers
+are listed for `hermes-chat--work-retain' seconds.  Unchanged rows keep
+identity."
+  (append
+   (mapcar (lambda (row)
+             (let ((state (plist-get (cdr (assoc (plist-get row :id) events)) :state)))
+               (if (memq state (list nil 'queued (plist-get row :state)))
+                   row
+                 (plist-put (copy-sequence row) :state state))))
+           rows)
+   (delq nil
+         (mapcar (lambda (entry)
+                   (let ((id (car entry)) (data (cdr entry)))
+                     (when (and (not (hermes-chat--work-row-id id rows))
+                                (or (hermes-chat--work-active-p data)
+                                    (hermes-chat--work-recent-p
+                                     (plist-get data :finished) now)))
+                       (append (list :state (plist-get data :state))
+                               (or (plist-get data :row)
+                                   (list :key (cons 'delegate id) :id id :kind 'delegate
+                                         :goal (or (plist-get data :goal) "—")))))))
+                 (reverse events)))))
+
+(defun hermes-chat--work-tree (rows)
+  "Return ROWS in tree order: each parent, then its children depth first.
+Siblings keep their order in ROWS; a worker whose parent is not listed is a
+root."
+  (let ((ids (mapcar (lambda (row) (plist-get row :id)) rows)))
+    (named-let walk ((parent nil))
+      (mapcan (lambda (row)
+                (let ((up (plist-get row :parent)))
+                  (when (if parent (equal up parent)
+                          (or (null up) (not (member up ids))))
+                    (cons row (walk (plist-get row :id))))))
+              rows))))
+
+(defun hermes-chat--work-process-rows (rows now)
+  "Return process ROWS to show at time NOW, in display order.
+Running processes come first, longest running first, then exits newest first.
+Exits older than `hermes-chat--work-retain' or undated are dropped."
+  (sort (seq-filter (lambda (row)
+                      (or (eq (plist-get row :state) 'running)
+                          (hermes-chat--work-recent-p (plist-get row :exited-at) now)))
+                    rows)
+        (lambda (a b)
+          (let ((run-a (eq (plist-get a :state) 'running))
+                (run-b (eq (plist-get b :state) 'running)))
+            (cond ((not (eq run-a run-b)) run-a)
+                  (run-a (> (or (plist-get a :uptime) 0) (or (plist-get b :uptime) 0)))
+                  (t (> (plist-get a :exited-at) (plist-get b :exited-at))))))))
+
+(defun hermes-chat--work-roster (owner now)
+  "Return OWNER's displayed roster at time NOW as (:agents ROWS :processes ROWS).
+Workers are in tree order.  The header and the work views both derive from
+this value."
+  (let ((sid (plist-get owner :runtime)))
+    (list :agents (hermes-chat--work-tree
+                   (hermes-chat--work-merge-agents
+                    (plist-get owner :events)
+                    (hermes-chat--work-snapshot-rows (plist-get owner :delegates) sid)
+                    now))
+          :processes (hermes-chat--work-process-rows
+                      (hermes-chat--work-snapshot-rows (plist-get owner :processes) sid)
+                      now))))
+
+(defun hermes-chat--work-counts (roster)
+  "Return (AGENTS . PROCESSES) active counts in ROSTER."
+  (cons (seq-count #'hermes-chat--work-active-p (plist-get roster :agents))
+        (seq-count (lambda (row) (eq (plist-get row :state) 'running))
+                   (plist-get roster :processes))))
+
+(defun hermes-chat--work-current-roster ()
+  "Return this chat's roster while its work owner is attached, else nil."
+  (when-let* ((owner hermes-chat--work-owner)
+              ((funcall (plist-get owner :current-p) owner)))
+    (hermes-chat--work-roster owner (float-time))))
 
 (declare-function hermes-chat-work "hermes-subagents" ())
 
@@ -3054,61 +3206,46 @@ selected chat's context."
             (if key (single-key-description (aref key (1- (length key))))
               "mouse-1"))))
 
-(defun hermes-chat--work-label (compact)
-  "Return kind-specific active counts, or nil for fully current empty work.
-Use COMPACT notation when non-nil; incomplete observations remain explicit."
-  (when hermes-chat--work-owner
-    (let* ((sources (mapcar #'hermes-chat--work-source '(:delegates :processes)))
-           (counts (mapcar (lambda (source)
-                             (if (memq (plist-get source :coverage) '(current partial))
-                                 (hermes-chat--work-running-count source) 0)) sources))
-           (unknown (seq-some
-                     (lambda (source)
-                       (or (not (eq (plist-get source :coverage) 'current))
-                           (seq-some (lambda (row) (eq (plist-get row :state) 'unknown))
-                                     (plist-get source :rows)))) sources))
-           (parts (cl-mapcar
-                   (lambda (count kind)
-                     (when (> count 0)
-                       (cond
-                        (compact (format "%d%s" count kind))
-                        ((equal kind "a")
-                         (format "%s %d" (if (char-displayable-p ?🤖) "🤖" "Agents") count))
-                        ((char-displayable-p ?⚙) (format "⚙ %d" count))
-                        (t (format "%d %s" count (if (= count 1) "process" "processes"))))))
-                   counts '("a" "p")))
-           (active (string-join (delq nil parts) " / ")))
-      (unless (and (string-empty-p active) (not unknown))
-        (propertize
-         (if (string-empty-p active)
-             (format "%s ?" (if (char-displayable-p ?🤖) "🤖" "Agents"))
-           (concat active (and unknown " ?")))
-         'face (if (string-empty-p active) 'hermes-work-unknown 'hermes-work-running)
-         'mouse-face 'highlight
-         'help-echo (hermes-chat--work-label-help)
-         'local-map hermes-chat-work-label-map)))))
+(defun hermes-chat--work-label-text (agents processes compact)
+  "Return the header count for AGENTS and PROCESSES, or nil when both are zero.
+Use COMPACT notation when non-nil."
+  (let ((parts
+         (delq nil
+               (list (when (> agents 0)
+                       (cond (compact (format "%da" agents))
+                             ((char-displayable-p ?🤖) (format "🤖 %d" agents))
+                             (t (format "Agents %d" agents))))
+                     (when (> processes 0)
+                       (cond (compact (format "%dp" processes))
+                             ((char-displayable-p ?⚙) (format "⚙ %d" processes))
+                             (t (format "%d %s" processes
+                                        (if (= processes 1) "process" "processes")))))))))
+    (when parts
+      (propertize (string-join parts " / ")
+                  'face 'hermes-work-running
+                  'mouse-face 'highlight
+                  'help-echo (hermes-chat--work-label-help)
+                  'local-map hermes-chat-work-label-map))))
 
+(defun hermes-chat--work-label (compact)
+  "Return this chat's running work count, or nil when none is known.
+Use COMPACT notation when non-nil."
+  (when-let* ((counts (hermes-chat--work-counts (hermes-chat--work-current-roster))))
+    (hermes-chat--work-label-text (car counts) (cdr counts) compact)))
 
 (defun hermes-chat--work-details ()
-  "Return local source coverage without fetching or claiming total liveness."
-  (if (not hermes-chat--work-owner)
-      "Session work: unavailable here."
-    (concat
-     "Session work: observed delegates and registered processes; not a full work ledger.\n"
-     (mapconcat
-      (lambda (kind)
-        (let ((source (hermes-chat--work-source kind)))
-          (format "%s: %s%s; %d running in %d observed rows. Observed: %s. %s"
-                  (if (eq kind :delegates) "Delegates" "Processes (runtime-scoped)")
-                  (or (plist-get source :coverage) 'unbound)
-                  (if (plist-get source :paused) "; automatic refresh paused" "")
-                  (hermes-chat--work-running-count source)
-                  (length (plist-get source :rows))
-                  (if-let* ((time (plist-get source :observed)))
-                      (format-time-string "%F %T" (seconds-to-time time)) "—")
-                  (or (plist-get source :reason) ""))))
-      '(:delegates :processes) "\n")
-     "\nRefresh: M-x hermes-chat-work-refresh. Disappearance does not prove completion.")))
+  "Return the chat's last-known work counts without fetching."
+  (if-let* ((owner hermes-chat--work-owner)
+            (roster (hermes-chat--work-current-roster)))
+      (let ((counts (hermes-chat--work-counts roster))
+            (read (lambda (kind)
+                    (if-let* ((time (plist-get (plist-get owner kind) :observed)))
+                        (format-time-string "%T" (seconds-to-time time))
+                      "never"))))
+        (format "Workers: %d active of %d listed (last read %s)\nProcesses: %d running of %d listed (last read %s)\nRefresh: M-x hermes-chat-work-refresh."
+                (car counts) (length (plist-get roster :agents)) (funcall read :delegates)
+                (cdr counts) (length (plist-get roster :processes)) (funcall read :processes)))
+    "Session work: unavailable here."))
 
 (defun hermes-chat--truncate-left (string width)
   "Return STRING fitting WIDTH columns, keeping its end after an ellipsis.
