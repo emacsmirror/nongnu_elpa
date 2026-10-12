@@ -481,6 +481,24 @@ their nested workers, then follows the named batch."
         (should (eq (funcall face-at "exit 2") 'hermes-work-failed))
         (should-not (funcall face-at "terminal: make check"))))))
 
+(ert-deftest hermes-chat-card-process-keeps-the-command-over-its-marker ()
+  "A narrow process card drops `(background)' rather than cut the command."
+  (let ((text (lambda (width)
+                (substring-no-properties
+                 (hermes-chat--card-text
+                  (list :id "t" :role 'tool :status 'completed
+                        :metadata '(:event (:name "terminal"
+                                                  :args ((command . "nix build .#hermes --no-link")
+                                                         (background . t))))
+                        :card (list :kind 'process :now 500.0 :started 300.0 :width width
+                                    :row '(:id "p" :state running
+                                                :command "nix build .#hermes --no-link"))))))))
+    (should (string-search "nix build .#hermes --no-link (background)" (funcall text 90)))
+    (let ((narrow (funcall text 54)))
+      (should (string-search "nix build .#hermes --no-link" narrow))
+      (should-not (string-search "(background)" narrow)))
+    (should-not (string-search "(background)" (funcall text 40)))))
+
 ;;;; Width
 
 (defun hermes-test--card-overflows (text width)

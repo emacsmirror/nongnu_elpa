@@ -314,10 +314,11 @@ A running or failed process keeps its last output line below the head."
          (right (if running
                     (if (numberp started) (hermes-work-duration (- now started)) "")
                   (hermes-chat--card-verdict row now)))
-         (suffix " (background)")
-         (label (hermes-chat--card-tool-label
-                 entry (- width 4 (string-width suffix)
-                          (if (string-empty-p right) 0 (+ (string-width right) 2)))))
+         (room (- width 4 (if (string-empty-p right) 0 (+ (string-width right) 2))))
+         (label (hermes-chat--card-tool-label entry room))
+         (marker " (background)")
+         ;; The command matters more than the marker: drop it rather than cut.
+         (suffix (if (<= (+ (string-width label) (string-width marker)) room) marker ""))
          (line (plist-get row :last-line)))
     (concat
      (propertize
