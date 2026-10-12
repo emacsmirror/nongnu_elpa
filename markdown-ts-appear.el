@@ -40,6 +40,7 @@
 (require 'color)
 (require 'seq)
 (require 'subr-x)
+(require 'markdown-ts-appear-image)
 (require 'markdown-ts-appear-math)
 
 ;;; Options and faces
@@ -490,6 +491,20 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
     (and (= (treesit-node-start link) beg)
          (= (treesit-node-end link) label-end))))
 
+(defun markdown-ts-appear--image-preview-bounds-at (position)
+  "Return image source bounds when POSITION follows a native preview anchor."
+  ;; Clicking an image in an after-string places point just past its link.
+  (when (and markdown-ts-inline-images (> position (point-min)))
+    (when-let* ((preview
+                 (seq-find (lambda (overlay)
+                             (and (overlay-get overlay 'markdown-ts-image)
+                                  (= (overlay-end overlay) position)))
+                           (overlays-at (1- position))))
+                (image (markdown-ts-appear--node-ancestor
+                        (treesit-node-at (overlay-start preview) 'markdown-inline)
+                        "image")))
+      (cons (treesit-node-start image) (treesit-node-end image)))))
+
 (defun markdown-ts-appear--bounds ()
   "Return source bounds for the smallest rendered element at point."
   (let ((pos (point)))
@@ -497,7 +512,8 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
         (markdown-ts-appear--callout-bounds-at pos)
         (markdown-ts-appear--quote-marker-bounds-at pos)
         (unless (markdown-ts-appear--literal-block-at pos)
-          (markdown-ts-appear--bounds-at-point pos)))))
+          (or (markdown-ts-appear--image-preview-bounds-at pos)
+              (markdown-ts-appear--bounds-at-point pos))))))
 
 (defun markdown-ts-appear--update-inline-ranges ()
   "Update inline Tree-sitter ranges around point when needed."
@@ -938,16 +954,6 @@ at most one following space or tab and are not clipped to START or LIMIT."
                 (overlay-put overlay 'mouse-face 'highlight)
                 (overlay-put overlay 'evaporate t)))))))))
 
-(defun markdown-ts-appear--fontify-image
-    (function node override start limit &rest rest)
-  "Call FUNCTION for NODE without covering image source."
-  (if (not (markdown-ts-appear--active-p))
-      (apply function node override start limit rest)
-    (let ((markdown-ts-inline-images
-           (and markdown-ts-inline-images
-                (not (markdown-ts-appear--node-visible-p node)))))
-      (apply function node override start limit rest))))
-
 (defun markdown-ts-appear--fontify-link
     (function node override start limit &rest rest)
   "Call FUNCTION for NODE, prefixing links with an icon."
@@ -1067,10 +1073,10 @@ at most one following space or tab and are not clipped to START or LIMIT."
 ;; Obsoleted in 29.1 as a presumed lazy-lock-only hook; no replacement yet.
 ;; A replacement API is discussed in Emacs bug#81632:
 ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=81632
-(defun markdown-ts-appear--add-outline-hook (function)
-  "Add FUNCTION to the current buffer's outline visibility notifications."
+(defun markdown-ts-appear--add-outline-hook (function &optional depth)
+  "Add FUNCTION to this buffer's outline notifications at DEPTH."
   (with-suppressed-warnings ((obsolete outline-view-change-hook))
-    (add-hook 'outline-view-change-hook function nil t)))
+    (add-hook 'outline-view-change-hook function depth t)))
 
 (defun markdown-ts-appear--remove-outline-hook (function)
   "Remove FUNCTION from the current buffer's outline visibility notifications."
@@ -1129,6 +1135,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
     ;; Do not run normal teardown: text properties are shared with the base.
     (setq markdown-ts-appear-mode nil
           markdown-ts-appear--region nil)
+    (markdown-ts-appear-image--detach)
     (markdown-ts-appear-table--detach)
     (setq markdown-ts-appear-math--objects nil)
     (markdown-ts-appear-math--teardown)
@@ -1158,6 +1165,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
   (add-hook 'disable-theme-functions #'markdown-ts-appear--theme-change)
   (markdown-ts-appear--install-buffer-hooks)
   (markdown-ts-appear--install-block-font-lock)
+  (markdown-ts-appear-image--setup)
   (unless markdown-ts-hide-markup
     (setq markdown-ts-hide-markup t)
     (markdown-ts--set-hide-markup t))
@@ -1171,6 +1179,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
 (defun markdown-ts-appear--disable-buffer ()
   "Remove Markdown TS Appear integration from the current buffer."
   (markdown-ts-appear--remove-buffer-hooks)
+  (markdown-ts-appear-image--teardown)
   (markdown-ts-appear-math--teardown)
   (markdown-ts-appear-table--teardown)
   (markdown-ts-appear-stop)
@@ -1233,7 +1242,7 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
      (markdown-ts--fontify-link-node
       . ,#'markdown-ts-appear--fontify-link)
      (markdown-ts--fontify-image
-      . ,#'markdown-ts-appear--fontify-image)
+      . ,#'markdown-ts-appear-image--fontify)
      (markdown-ts--fontify-latex-block
       . ,#'markdown-ts-appear--fontify-node)
      (line-move . ,#'markdown-ts-appear-table--line-move))
@@ -1245,6 +1254,7 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
 (defconst markdown-ts-appear--required-private-functions
   '(markdown-ts--latex-block-valid-p
     markdown-ts--outline-invisible-p
+    markdown-ts--image-alone-on-line-p
     markdown-ts--make-link-button
     markdown-ts--set-hide-markup)
   "Private Markdown helpers required by Markdown TS Appear.")

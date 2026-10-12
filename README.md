@@ -102,7 +102,8 @@ Callout types are case-insensitive.  Label colors use the current theme:
 
 Colors and fonts follow `markdown-ts-mode` faces.  Use
 `markdown-ts-table-auto-align` for source-table alignment and
-`markdown-ts-inline-images` for inline images.
+`markdown-ts-inline-images` for image previews that stay visible while editing.
+The default image sizing adapts to each window.
 
 ## Modal Editing
 
@@ -164,6 +165,7 @@ emacs --batch -Q \
   -l test/markdown-ts-appear-test.el \
   -l test/markdown-ts-appear-math-test.el \
   -l test/markdown-ts-appear-table-test.el \
+  -l test/markdown-ts-appear-image-test.el \
   -f ert-run-tests-batch-and-exit
 ```
 
