@@ -127,31 +127,12 @@ Open Workers from the owning chat to request a session-qualified interrupt."
 
 ;;;; Pure outline model
 
-(defun hermes-work--glyph (unicode ascii)
-  "Return UNICODE when displayable, else ASCII."
-  (if (char-displayable-p (aref unicode 0)) unicode ascii))
-
-(defun hermes-work--state (row)
-  "Return (GLYPH FACE LABEL) for ROW's state."
-  (let ((state (plist-get row :state)) (process (eq (plist-get row :kind) 'process)))
-    (pcase state
-      ('running (list (if process (hermes-work--glyph "⚙" "%") (hermes-work--glyph "●" "*"))
-                      'hermes-work-running "running"))
-      ('queued (list (hermes-work--glyph "○" "o") 'hermes-work-queued "queued"))
-      ((or 'done 'completed) (list (hermes-work--glyph "✓" "+") 'hermes-work-done "done"))
-      ((or 'failed 'error) (list (hermes-work--glyph "✗" "x") 'hermes-work-failed "failed"))
-      ((or 'interrupted 'cancelled 'timeout 'killed)
-       (list (hermes-work--glyph "■" "!") 'hermes-work-interrupted (symbol-name state)))
-      ('lost (list "?" 'hermes-work-unknown "gone, exit unseen"))
-      (_ (list (hermes-work--glyph "·" ".") 'hermes-work-unknown
-               (if state (format "%s" state) "unknown"))))))
-
-(defun hermes-work--duration (seconds)
-  "Return SECONDS as a compact duration such as 48s, 3m 12s or 1h 05m."
-  (let ((s (max 0 (round seconds))))
-    (cond ((< s 60) (format "%ds" s))
-          ((< s 3600) (format "%dm %02ds" (/ s 60) (% s 60)))
-          (t (format "%dh %02dm" (/ s 3600) (/ (% s 3600) 60))))))
+(defun hermes-work--display (row)
+  "Return ROW's display state, glyph and face as (STATE GLYPH FACE)."
+  (let ((state (hermes-work-display-state row)))
+    (list state
+          (hermes-work-state-glyph state (eq (plist-get row :kind) 'process))
+          (hermes-work-state-face state))))
 
 (defun hermes-work--model (model)
   "Return MODEL without its vendor prefix and version suffix, or nil."
@@ -179,42 +160,52 @@ Open Workers from the owning chat to request a session-qualified interrupt."
   "Return TEXT truncated to WIDTH columns with an ellipsis."
   (truncate-string-to-width (or text "") (max 1 width) nil nil "…"))
 
+(defun hermes-work--flat (text)
+  "Return TEXT on one line."
+  (replace-regexp-in-string "[\n\t]+" " " (string-trim (or text ""))))
+
 (defun hermes-work--align (meta)
   "Return META right-aligned against the window edge."
   (concat (propertize " " 'display `(space :align-to (- right ,(1+ (string-width meta)))))
           meta))
+
+(defun hermes-work--meta (parts)
+  "Return meta PARTS, propertized strings, joined by quiet separators."
+  (mapconcat #'identity parts (propertize " · " 'face 'hermes-work-meta)))
 
 (defun hermes-work--line (key kind depth text &optional n)
   "Return an outline line plist for KEY of KIND at DEPTH showing TEXT.
 N numbers repeated lines of one KIND, such as card fields."
   (list :key key :kind kind :depth depth :text text :n (or n 0)))
 
-(defun hermes-work--heading (key depth state title meta width &optional extra)
-  "Return a heading line for KEY at DEPTH: STATE glyph, TITLE, then META.
-Truncate TITLE to fit WIDTH; EXTRA follows it unaligned."
-  (let* ((face (and meta (> (length meta) 0) (get-text-property 0 'face meta)))
+(defun hermes-work--heading (key depth glyph title parts width &optional extra title-face)
+  "Return a heading line for KEY at DEPTH: GLYPH, TITLE, then meta PARTS.
+Fit WIDTH: while TITLE's room is below the smaller of its width and half
+the line, drop leading PARTS, so the model goes first.  EXTRA follows
+TITLE unaligned; TITLE-FACE defaults to `default'.  The line records
+whether TITLE was truncated as :truncated."
+  (let* ((title (hermes-work--flat title))
          (fixed (+ (* 2 depth) 2 2 (string-width (or extra ""))))
-         (parts (split-string (or meta "") " · "))
-         ;; Narrow windows keep the goal and drop leading metadata first.
-         (meta (progn
-                 (while (and (cdr parts)
-                             (< (- width fixed (string-width (string-join parts " · ")))
-                                (max 8 (/ width 3))))
-                   (pop parts))
-                 (propertize (string-join parts " · ") 'face face)))
-         (room (- width fixed (string-width meta))))
-    (hermes-work--line
-     key 'heading depth
-     (concat (propertize (nth 0 state) 'face (nth 1 state)) " "
-             (propertize (hermes-work--fit title room)
-                         'face (if (eq (nth 1 state) 'hermes-work-done) 'shadow 'default)
-                         'help-echo title)
-             (or extra "")
-             (hermes-work--align meta)))))
+         (room (lambda () (- width fixed (string-width (hermes-work--meta parts))))))
+    (while (and (cdr parts)
+                (< (funcall room) (min (string-width title) (/ width 2))))
+      (pop parts))
+    (let ((shown (hermes-work--fit title (funcall room))))
+      (append
+       (hermes-work--line
+        key 'heading depth
+        (concat glyph " "
+                (propertize shown 'face (or title-face 'default) 'help-echo title)
+                (or extra "")
+                (hermes-work--align (hermes-work--meta parts))))
+       (list :truncated (not (equal shown title)))))))
 
-(defun hermes-work--activity (key depth tool preview width)
-  "Return KEY's activity line at DEPTH naming TOOL and PREVIEW within WIDTH."
-  (let ((room (- width (* 2 depth) 2)))
+(defun hermes-work--activity (key depth tool preview width &optional face)
+  "Return KEY's activity line at DEPTH naming TOOL and PREVIEW within WIDTH.
+PREVIEW uses FACE, by default `hermes-work-activity'."
+  (let ((room (- width (* 2 depth) 2))
+        (face (or face 'hermes-work-activity))
+        (preview (and preview (hermes-work--flat preview))))
     (hermes-work--line
      key 'activity depth
      (concat (propertize "↳ " 'face 'shadow)
@@ -223,13 +214,18 @@ Truncate TITLE to fit WIDTH; EXTRA follows it unaligned."
                          (if (and preview (> (- room (string-width tool) 1) 0))
                              (concat " " (propertize (hermes-work--fit
                                                       preview (- room (string-width tool) 1))
-                                                     'face 'hermes-work-activity))
+                                                     'face face))
                            ""))
-               (propertize (hermes-work--fit preview room) 'face 'hermes-work-activity))))))
+               (propertize (hermes-work--fit preview room) 'face face))))))
 
 (defun hermes-work--wrap (text width)
-  "Return TEXT's lines filled to WIDTH, at most four."
-  (let* ((lines (split-string (string-fill (string-trim (or text "")) (max 20 width)) "\n"))
+  "Return TEXT's lines filled to WIDTH, at most four.
+A single line that fits keeps its spacing."
+  (let* ((text (string-trim (or text "")))
+         (width (max 20 width))
+         (lines (if (and (<= (string-width text) width) (not (string-search "\n" text)))
+                    (list text)
+                  (split-string (string-fill text width) "\n")))
          (shown (seq-take lines 4)))
     (if (> (length lines) 4)
         (append (butlast shown) (list (concat (car (last shown)) " …")))
@@ -250,82 +246,99 @@ Fields with no text are omitted; text is wrapped to WIDTH."
                   lines)
             (setq label (make-string 9 ?\s))))))))
 
+(defun hermes-work--tools-text (count)
+  "Return COUNT as tool-count text, such as 9 tools or 1 tool."
+  (format "%d tool%s" count (if (= count 1) "" "s")))
+
 (defun hermes-work--agent-meta (row now)
-  "Return worker ROW's quiet metadata at NOW: model, tools, elapsed, verdict."
+  "Return worker ROW's quiet meta parts at NOW: model, tools, elapsed, verdict.
+Glyphs carry running, queued, done and failed; other states add their word."
   (let ((count (plist-get row :tool-count))
         (elapsed (hermes-work--elapsed row now))
-        (state (plist-get row :state)))
-    (string-join
-     (delq nil (list (hermes-work--model (plist-get row :model))
-                     (and count (format "%d tool%s" count (if (= count 1) "" "s")))
-                     (and elapsed (hermes-work--duration elapsed))
-                     (unless (memq state '(running queued done completed))
-                       (nth 2 (hermes-work--state row)))))
-     " · ")))
+        (state (hermes-work-display-state row)))
+    (mapcar (lambda (part) (propertize part 'face 'hermes-work-meta))
+            (delq nil (list (hermes-work--model (plist-get row :model))
+                            (and count (hermes-work--tools-text count))
+                            (and elapsed (hermes-work-duration elapsed))
+                            (unless (memq state '(running queued done failed))
+                              (hermes-work-state-label state)))))))
+
+(defun hermes-work--first-line (text)
+  "Return the first nonblank line of TEXT, or nil."
+  (car (split-string (or text "") "\n" t "[ \t\r]+")))
 
 (defun hermes-work--agent-lines (row depth view now width hidden)
   "Return the lines for worker ROW at DEPTH under VIEW at NOW within WIDTH.
 HIDDEN counts descendants folded under it."
-  (let* ((key (plist-get row :key))
-         (state (hermes-work--state row))
-         (meta (hermes-work--agent-meta row now))
-         (tool (hermes-chat--work-last-tool row))
-         (card (member key (plist-get view :cards))))
+  (pcase-let* ((key (plist-get row :key))
+               (`(,state ,glyph ,_) (hermes-work--display row))
+               (tool (hermes-chat--work-last-tool row))
+               (heading (hermes-work--heading
+                         key depth glyph (plist-get row :goal)
+                         (hermes-work--agent-meta row now) width
+                         (and hidden (> hidden 0)
+                              (propertize (format " +%d" hidden) 'face 'hermes-work-meta))
+                         (and (eq state 'done) 'shadow)))
+               (tools (plist-get row :tools)))
     (append
-     (list (hermes-work--heading
-            key depth state (plist-get row :goal)
-            (propertize meta 'face (if (memq (plist-get row :state) '(failed error))
-                                       'hermes-work-failed 'hermes-work-meta))
-            width (and hidden (> hidden 0)
-                       (propertize (format " +%d" hidden) 'face 'hermes-work-meta))))
-     (pcase (plist-get row :state)
+     (list heading)
+     (pcase state
        ('running (and tool (list (hermes-work--activity key (1+ depth) (car tool) (cdr tool) width))))
-       ('queued (list (hermes-work--activity key (1+ depth) nil "waiting for a slot" width))))
-     (and card
+       ('queued (list (hermes-work--activity key (1+ depth) nil "waiting for a slot" width)))
+       ('failed (when-let* ((text (hermes-work--first-line (plist-get row :error))))
+                  (list (hermes-work--activity key (1+ depth) nil text width
+                                               'hermes-work-failed)))))
+     (and (member key (plist-get view :cards))
           (hermes-work--card
            key (+ 2 depth)
-           (list (list "Goal" (plist-get row :goal) 'default)
+           (list (list "Goal" (and (plist-get heading :truncated) (plist-get row :goal)) 'default)
                  (list "Error" (plist-get row :error) 'hermes-work-failed)
                  (list "Summary" (plist-get row :summary) 'default)
                  (list "Recent"
-                       (and (plist-get row :tools)
+                       (and tools
                             (format "%s  (%s)"
-                                    (mapconcat #'car (last (plist-get row :tools) 4) " · ")
-                                    (or (plist-get row :tool-count) (length (plist-get row :tools)))))
-                       'hermes-work-tool))
+                                    (mapconcat #'car (last tools 4) " · ")
+                                    (hermes-work--tools-text
+                                     (or (plist-get row :tool-count) (length tools)))))
+                       'hermes-work-tool)
+                 (list "Id" (plist-get row :id) 'hermes-work-meta))
            width)))))
 
 (defun hermes-work--process-meta (row now)
-  "Return process ROW's elapsed time or exit verdict at NOW."
-  (let ((ago (and (plist-get row :exited-at)
-                  (format " · %s ago" (hermes-work--duration (- now (plist-get row :exited-at))))))
-        (elapsed (hermes-work--elapsed row now)))
-    (pcase (plist-get row :state)
-      ('running (if elapsed (hermes-work--duration elapsed) ""))
-      ((or 'done 'failed)
-       (concat (if (equal (plist-get row :reason) "failed_start") "failed to start"
-                 (format "exit %s" (or (plist-get row :exit-code) "?")))
-               ago))
-      ('killed (concat "killed" ago))
-      ('lost "gone, exit unseen")
-      (_ (or ago "")))))
+  "Return process ROW's meta parts at NOW: elapsed time or exit verdict.
+A failure's verdict carries the failed face."
+  (let* ((meta (lambda (text) (propertize text 'face 'hermes-work-meta)))
+         (failed (lambda (text) (propertize text 'face 'hermes-work-failed)))
+         (ago (and (plist-get row :exited-at)
+                   (funcall meta (format "%s ago" (hermes-work-duration
+                                                   (- now (plist-get row :exited-at)))))))
+         (elapsed (hermes-work--elapsed row now)))
+    (delq nil
+          (pcase (plist-get row :state)
+            ('running (list (and elapsed (funcall meta (hermes-work-duration elapsed)))))
+            ('done (list (funcall meta (if-let* ((code (plist-get row :exit-code)))
+                                           (format "exit %s" code)
+                                         "exited"))
+                         ago))
+            ('failed (list (funcall failed
+                                    (if (equal (plist-get row :reason) "failed_start")
+                                        "failed to start"
+                                      (format "exit %s" (or (plist-get row :exit-code) "?"))))
+                           ago))
+            ('killed (list (funcall meta "killed") ago))
+            ('lost (list (funcall failed "gone, exit unseen")))
+            (_ (list ago))))))
 
 (defun hermes-work--process-lines (row view now width)
-  "Return the lines for process ROW under VIEW at NOW within WIDTH."
-  (let* ((key (plist-get row :key))
-         (running (eq (plist-get row :state) 'running))
-         (state (hermes-work--state row))
-         (line (hermes-work--heading
-                key 0 state (plist-get row :command)
-                (propertize (hermes-work--process-meta row now) 'face 'hermes-work-meta)
-                width)))
-    (unless running
-      (let ((text (plist-get line :text)))
-        (alter-text-property 2 (length text) 'face
-                             (lambda (face) (if (eq face 'default) 'hermes-work-fading face))
-                             text)))
+  "Return the lines for process ROW under VIEW at NOW within WIDTH.
+Clean and killed exits fade; a failure keeps its command readable."
+  (pcase-let* ((key (plist-get row :key))
+               (`(,state ,glyph ,_) (hermes-work--display row))
+               (running (eq state 'running)))
     (append
-     (list line)
+     (list (hermes-work--heading
+            key 0 glyph (plist-get row :command) (hermes-work--process-meta row now) width
+            nil (unless (memq state '(running failed)) 'hermes-work-fading)))
      (and running (plist-get row :last-line)
           (list (hermes-work--activity key 1 nil (plist-get row :last-line) width)))
      (and (member key (plist-get view :cards))
@@ -341,17 +354,16 @@ HIDDEN counts descendants folded under it."
   "Return a quiet count summary of ROWS by state label."
   (let (counts)
     (dolist (row rows)
-      (let ((label (pcase (plist-get row :state)
-                     ('running "running") ('queued "queued")
-                     ((or 'done 'completed) (if (eq (plist-get row :kind) 'process) "exited" "done"))
-                     ((or 'failed 'error) "failed")
-                     (_ "stopped"))))
+      (let ((label (pcase (hermes-work-display-state row)
+                     ('done (if (eq (plist-get row :kind) 'process) "exited" "done"))
+                     ('interrupted "stopped")
+                     (state (hermes-work-state-label state)))))
         (setf (alist-get label counts nil nil #'equal)
               (1+ (alist-get label counts 0 nil #'equal)))))
     (mapconcat (lambda (label)
                  (format "%d %s" (cdr (assoc label counts)) label))
                (seq-filter (lambda (label) (assoc label counts))
-                           '("running" "queued" "done" "exited" "failed" "stopped"))
+                           '("running" "queued" "done" "exited" "failed" "stopped" "unknown"))
                " · ")))
 
 (defun hermes-work--section (key title rows view)
@@ -361,6 +373,18 @@ HIDDEN counts descendants folded under it."
    (concat (propertize (if (member key (plist-get view :folded)) "▸ " "▾ ") 'face 'shadow)
            (propertize title 'face 'hermes-work-section) "  "
            (propertize (hermes-work--counts-text rows) 'face 'hermes-work-meta))))
+
+(defun hermes-work--empty (observed)
+  "Return the empty outline's lines, before or after the first OBSERVED read."
+  (if (not observed)
+      (list (hermes-work--line '(section . empty) 'empty 0
+                               (propertize "Loading workers…" 'face 'shadow)))
+    (list (hermes-work--line '(section . empty) 'empty 0
+                             (propertize "No workers in this chat yet." 'face 'shadow))
+          (hermes-work--line '(section . empty) 'empty 0
+                             (propertize "Delegated agents and background processes appear here as they start."
+                                         'face 'shadow)
+                             1))))
 
 (defun hermes-work--outline (roster view now width)
   "Return the outline lines for ROSTER under VIEW at NOW.
@@ -373,11 +397,7 @@ WIDTH columns.  The view only inserts these lines."
          (folded (plist-get view :folded))
          lines)
     (if (not (or agents processes))
-        (list (hermes-work--line
-               '(section . empty) 'empty 0
-               (propertize (if (plist-get view :observed) "No workers in this chat yet."
-                             "Loading workers…")
-                           'face 'shadow)))
+        (hermes-work--empty (plist-get view :observed))
       (when agents
         (push (list (hermes-work--section '(section . agents) "Agents" agents view)) lines)
         (unless (member '(section . agents) folded)
@@ -425,6 +445,8 @@ WIDTH columns.  The view only inserts these lines."
 
 (defvar-local hermes-work--width nil
   "Window width the outline was last fitted to.")
+(defvar-local hermes-work--project "Hermes"
+  "Project name of the chat this view belongs to; fixed at creation.")
 
 (defun hermes-work--context-owner ()
   "Return this chat or work view's exact owner, without following replacements."
@@ -458,32 +480,42 @@ WIDTH columns.  The view only inserts these lines."
         (buffer (hermes-buffer--get "*Hermes Work Scope*" #'help-mode)))
     (with-help-window buffer (princ text))))
 
-(defun hermes-work--key (face text)
-  "Return key TEXT in FACE for header lines."
-  (propertize text 'face face))
+(defun hermes-work--hint (map command label)
+  "Return COMMAND's key in MAP, a keymap symbol, followed by quiet LABEL."
+  (concat (substitute-command-keys (format "\\<%s>\\[%s]" map command))
+          (propertize (concat " " label) 'face 'shadow)))
 
-(defun hermes-work--header (owner roster)
-  "Return the header line for OWNER's ROSTER."
-  (if (not (hermes-work--current-p owner))
-      (concat " " (propertize "last known · chat detached · reopen from the chat" 'face 'warning)
-              "  " (hermes-work--key 'help-key-binding "?")
-              (propertize " actions" 'face 'shadow))
-    (let* ((counts (hermes-chat--work-counts roster))
-           (count (lambda (states)
-                    (seq-count (lambda (row) (memq (plist-get row :state) states))
-                               (plist-get roster :agents))))
-           (failed (funcall count '(failed error)))
-           (item (lambda (glyph face count label)
-                   (concat "  " (propertize glyph 'face face) " "
-                           (propertize (number-to-string count) 'face 'font-lock-constant-face)
-                           (if label (propertize label 'face 'shadow) "")))))
-      (concat
-       (funcall item (hermes-work--glyph "●" "*") 'hermes-work-running
-                (funcall count '(running)) " running")
-       (if (> failed 0) (funcall item (hermes-work--glyph "✗" "x") 'hermes-work-failed failed nil) "")
-       (if (> (cdr counts) 0)
-           (funcall item (hermes-work--glyph "⚙" "%") 'hermes-work-running (cdr counts) nil) "")
-       "   " (hermes-work--key 'help-key-binding "?") (propertize " actions" 'face 'shadow)))))
+(defun hermes-work--project (owner)
+  "Return the project name of OWNER's chat, as named in its buffer."
+  (let ((chat (plist-get owner :buffer)))
+    (or (and (buffer-live-p chat)
+             (with-current-buffer chat
+               (ignore-errors
+                 (cdr (hermes-chat--project-identity (hermes-chat--naming-directory))))))
+        "Hermes")))
+
+(defun hermes-work--header (owner roster project)
+  "Return the header line for OWNER's ROSTER in PROJECT."
+  (concat
+   " " (propertize (hermes-buffer--mode-line-literal project) 'face 'font-lock-constant-face)
+   (if (not (hermes-work--current-p owner))
+       (concat "  " (propertize "last known · chat detached · reopen from the chat"
+                                'face 'warning))
+     (let* ((counts (hermes-chat--work-counts roster))
+            (failed (seq-count (lambda (row) (eq (hermes-work-display-state row) 'failed))
+                               (append (plist-get roster :agents)
+                                       (plist-get roster :processes))))
+            (item (lambda (glyph count label)
+                    (concat "  " glyph " "
+                            (propertize (number-to-string count) 'face 'font-lock-type-face)
+                            (if label (propertize label 'face 'shadow) "")))))
+       (concat
+        (funcall item (hermes-work-state-glyph 'running) (car counts) " running")
+        (if (> failed 0) (funcall item (hermes-work-state-glyph 'failed) failed nil) "")
+        (if (> (cdr counts) 0)
+            (funcall item (hermes-work-state-glyph 'running t) (cdr counts) nil) "")
+        "   " (hermes-work--hint 'hermes-work-mode-map 'hermes-work-mode-map-popup
+                                 "actions"))))))
 
 (defun hermes-work--line-position (pos)
   "Return the logical position of POS: (KEY KIND N COLUMN LINE)."
@@ -564,13 +596,14 @@ the previous one, then the same line number."
     (if widths (apply #'max widths) 80)))
 
 (defun hermes-work--render (owner)
-  "Repaint OWNER's exact view and details from snapshots, without selecting them."
-  (when (hermes-work--view-p owner)
-    (let* ((now (float-time))
-           (roster (hermes-chat--work-roster owner now)))
+  "Repaint OWNER's exact view and details from snapshots, without selecting them.
+Details repaint even without the list, so a detached one says so."
+  (let* ((now (float-time))
+         (roster (hermes-chat--work-roster owner now)))
+    (when (hermes-work--view-p owner)
       (with-current-buffer (plist-get owner :view)
         (setq hermes-work--width (hermes-work--fit-width)
-              header-line-format (hermes-work--header owner roster))
+              header-line-format (hermes-work--header owner roster hermes-work--project))
         ;; This read-only projection must not call modification hooks mid-print:
         ;; they can replace the view or unwind an unfinished chat settlement.
         (hermes-work--repaint
@@ -583,13 +616,13 @@ the previous one, then the same line number."
            roster
            (list :cards hermes-work--cards :folded hermes-work--folded
                  :observed (or (plist-get owner :delegates) (plist-get owner :processes)))
-           now hermes-work--width))))
-      (dolist (buffer (buffer-list))
-        (when (and (eq owner (buffer-local-value 'hermes-work--owner buffer))
-                   (hermes-browser--buffer-mode-p buffer 'hermes-work-detail-mode))
-          (with-current-buffer buffer
-            (when (hermes-buffer--owned-p 'hermes-work-detail-mode)
-              (hermes-work--detail-render roster now))))))))
+           now hermes-work--width)))))
+    (dolist (buffer (buffer-list))
+      (when (and (eq owner (buffer-local-value 'hermes-work--owner buffer))
+                 (hermes-browser--buffer-mode-p buffer 'hermes-work-detail-mode))
+        (with-current-buffer buffer
+          (when (hermes-buffer--owned-p 'hermes-work-detail-mode)
+            (hermes-work--detail-render roster now)))))))
 
 (defun hermes-work--changed ()
   "Repaint the current chat's observation list after a local state change."
@@ -749,103 +782,130 @@ their card."
               (propertize (format "%s" text) 'face (or face 'default)) "\n")
     ""))
 
-(defun hermes-work--detail-text (row agents now)
-  "Return the detail text for ROW at NOW, with AGENTS for parent and children."
-  (let* ((state (hermes-work--state row))
-         (process (eq (plist-get row :kind) 'process))
-         (id (plist-get row :id))
+(defun hermes-work--detail-meta (row agents now)
+  "Return ROW's quiet detail meta line at NOW, counting children in AGENTS."
+  (let* ((state (hermes-work-display-state row))
+         (label (propertize (hermes-work-state-label state)
+                            'face (hermes-work-state-face state))))
+    (hermes-work--meta
+     (cons label
+           (if (eq (plist-get row :kind) 'process)
+               (hermes-work--process-meta row now)
+             (let ((children (seq-count (lambda (other)
+                                          (equal (plist-get other :parent) (plist-get row :id)))
+                                        agents))
+                   (elapsed (hermes-work--elapsed row now)))
+               (mapcar (lambda (part) (propertize part 'face 'hermes-work-meta))
+                       (delq nil
+                             (list (hermes-work--model (plist-get row :model))
+                                   (and elapsed (hermes-work-duration elapsed))
+                                   (and (plist-get row :tool-count)
+                                        (hermes-work--tools-text (plist-get row :tool-count)))
+                                   (and (> children 0)
+                                        (format "%d child%s" children
+                                                (if (= children 1) "" "ren"))))))))))))
+
+(defun hermes-work--detail-agent (row agents)
+  "Return worker ROW's detail sections, with AGENTS for parent and children."
+  (let* ((id (plist-get row :id))
+         (running (eq (plist-get row :state) 'running))
          (children (seq-filter (lambda (other) (equal (plist-get other :parent) id)) agents))
          (parent (hermes-chat--work-row-id (plist-get row :parent) agents))
          (tools (plist-get row :tools))
          (title (lambda (text) (concat "\n" (propertize text 'face 'hermes-work-section) "\n"))))
     (concat
-     (propertize (nth 0 state) 'face (nth 1 state)) " "
+     (and parent (hermes-work--detail-field "Parent" (plist-get parent :goal)))
+     (and running (not (plist-get row :accepting-steer))
+          (hermes-work--detail-field "Steering" "closed"))
+     (when-let* ((tool (and running (hermes-chat--work-last-tool row))))
+       (concat (funcall title "Now")
+               (propertize (car tool) 'face 'hermes-work-tool) " "
+               (propertize (or (cdr tool) "") 'face 'hermes-work-activity) "\n"))
+     (when-let* ((text (plist-get row :error)))
+       (concat (funcall title "Error") (propertize text 'face 'hermes-work-failed) "\n"))
+     (when-let* ((text (plist-get row :summary)))
+       (concat (funcall title "Summary") text "\n"))
+     (when tools
+       (concat (funcall title (format "Tools (%s)" (or (plist-get row :tool-count)
+                                                       (length tools))))
+               (mapconcat (lambda (tool)
+                            (concat (propertize "· " 'face 'shadow)
+                                    (propertize (car tool) 'face 'hermes-work-tool) " "
+                                    (propertize (or (cdr tool) "") 'face 'hermes-work-activity)))
+                          (reverse tools) "\n")
+               "\n"
+               (let ((earlier (- (or (plist-get row :tool-count) 0) (length tools))))
+                 (if (> earlier 0)
+                     (propertize (format "… %d earlier\n" earlier) 'face 'shadow) ""))))
+     (when children
+       (concat (funcall title (format "Children (%d)" (length children)))
+               (mapconcat (lambda (child)
+                            (concat (cadr (hermes-work--display child)) " "
+                                    (plist-get child :goal)))
+                          children "\n")
+               "\n")))))
+
+(defun hermes-work--detail-text (row agents now)
+  "Return the detail text for ROW at NOW, with AGENTS for parent and children."
+  (let ((process (eq (plist-get row :kind) 'process)))
+    (concat
+     (cadr (hermes-work--display row)) " "
      (propertize (or (if process (plist-get row :command) (plist-get row :goal)) "—")
                  'face 'bold)
-     "\n"
-     (propertize
-      (string-join
-       (delq nil
-             (if process
-                 (list (nth 2 state) (hermes-work--process-meta row now))
-               (list (nth 2 state)
-                     (and (plist-get row :depth) (format "depth %d" (plist-get row :depth)))
-                     (hermes-work--model (plist-get row :model))
-                     (and (hermes-work--elapsed row now)
-                          (hermes-work--duration (hermes-work--elapsed row now)))
-                     (and (plist-get row :tool-count)
-                          (format "%d tools" (plist-get row :tool-count)))
-                     (and children (format "%d children" (length children))))))
-       " · ")
-      'face 'hermes-work-meta)
-     "\n\n"
-     (hermes-work--detail-field "Id" id 'hermes-work-meta)
+     "\n" (hermes-work--detail-meta row agents now) "\n\n"
+     (hermes-work--detail-field "Id" (plist-get row :id) 'hermes-work-meta)
      (if process
-         (concat (hermes-work--detail-field "Remote cwd (inert)" (plist-get row :cwd)
-                                            'hermes-work-activity)
+         (concat (hermes-work--detail-field "Cwd" (plist-get row :cwd) 'hermes-work-activity)
                  (hermes-work--detail-field "Reason" (plist-get row :reason))
-                 (funcall title "Output tail")
+                 "\n" (propertize "Output tail" 'face 'hermes-work-section) "\n"
                  (or (plist-get row :output-tail) "—") "\n")
-       (concat
-        (hermes-work--detail-field "Parent" (if parent (plist-get parent :goal) "the chat"))
-        (if (plist-get row :accepting-steer) "" (hermes-work--detail-field "Steering" "closed"))
-        (when-let* ((tool (and (eq (plist-get row :state) 'running)
-                               (hermes-chat--work-last-tool row))))
-          (concat (funcall title "Now")
-                  (propertize (car tool) 'face 'hermes-work-tool) " "
-                  (propertize (or (cdr tool) "") 'face 'hermes-work-activity) "\n"))
-        (when-let* ((text (plist-get row :error)))
-          (concat (funcall title "Error") (propertize text 'face 'hermes-work-failed) "\n"))
-        (when-let* ((text (plist-get row :summary)))
-          (concat (funcall title "Summary") text "\n"))
-        (when tools
-          (concat (funcall title (format "Tools (%s)" (or (plist-get row :tool-count)
-                                                          (length tools))))
-                  (mapconcat (lambda (tool)
-                               (concat (propertize "· " 'face 'shadow)
-                                       (propertize (car tool) 'face 'hermes-work-tool) " "
-                                       (propertize (or (cdr tool) "") 'face 'hermes-work-activity)))
-                             (reverse tools) "\n")
-                  "\n"
-                  (let ((earlier (- (or (plist-get row :tool-count) 0) (length tools))))
-                    (if (> earlier 0)
-                        (propertize (format "… %d earlier\n" earlier) 'face 'shadow) ""))))
-        (when children
-          (concat (funcall title (format "Children (%d)" (length children)))
-                  (mapconcat (lambda (child)
-                               (let ((s (hermes-work--state child)))
-                                 (concat (propertize (nth 0 s) 'face (nth 1 s)) " "
-                                         (plist-get child :goal))))
-                             children "\n")
-                  "\n")))))))
+       (hermes-work--detail-agent row agents)))))
 
-(defun hermes-work--detail-header (row listed)
-  "Return the detail header for ROW; LISTED is nil once it left the roster."
-  (let ((state (hermes-work--state row)) (process (eq (plist-get row :kind) 'process)))
-    (concat " " (propertize (if process "Process" "Worker") 'face 'shadow) " "
-            (propertize (hermes-buffer--mode-line-literal (plist-get row :id))
-                        'face 'font-lock-constant-face)
-            (propertize " · " 'face 'shadow)
-            (propertize (if listed (nth 2 state) "no longer listed") 'face
-                        (if listed (nth 1 state) 'warning))
-            "   "
-            (mapconcat (lambda (pair)
-                         (concat (hermes-work--key 'help-key-binding (car pair))
-                                 (propertize (concat " " (cdr pair)) 'face 'shadow)))
-                       (if process '(("k" . "kill") ("?" . "more"))
-                         '(("s" . "steer") ("k" . "interrupt") ("t" . "tail") ("?" . "more")))
-                       "  "))))
+(defun hermes-work--detail-actions (row log)
+  "Return the commands that apply to ROW as (COMMAND . LABEL).
+LOG is non-nil when the worker has a published log."
+  (append
+   (pcase (list (plist-get row :kind) (plist-get row :state))
+     (`(delegate running)
+      (append (and (plist-get row :accepting-steer) '((hermes-work-steer . "steer")))
+              '((hermes-work-interrupt . "interrupt") (hermes-work-tail . "tail"))))
+     (`(process running) '((hermes-work-interrupt . "kill")))
+     (`(delegate ,_) (and log '((hermes-work-log . "log")))))
+   '((hermes-work-detail-mode-map-popup . "more"))))
+
+(defun hermes-work--detail-header (key row current log)
+  "Return the detail header for KEY's ROW, nil once it left the roster.
+CURRENT is nil once the chat detached; LOG is non-nil for a published log.
+Only a listed row of a current chat offers actions."
+  (concat " " (propertize (if (eq (car key) 'process) "Process" "Worker") 'face 'shadow) " "
+          (propertize (hermes-buffer--mode-line-literal (cdr key))
+                      'face 'font-lock-constant-face)
+          (propertize " · " 'face 'shadow)
+          (cond ((not current) (propertize "last known · chat detached" 'face 'warning))
+                ((not row) (propertize "last known · no longer listed" 'face 'warning))
+                (t (let ((state (hermes-work-display-state row)))
+                     (concat (propertize (hermes-work-state-label state)
+                                         'face (hermes-work-state-face state))
+                             "   "
+                             (mapconcat (lambda (action)
+                                          (hermes-work--hint 'hermes-work-detail-mode-map
+                                                             (car action) (cdr action)))
+                                        (hermes-work--detail-actions row log) "  ")))))))
 
 (defun hermes-work--detail-render (roster now)
-  "Repaint this detail buffer from ROSTER at NOW, keeping place."
-  (let ((row (hermes-work--find hermes-work--detail-key
-                                (append (plist-get roster :agents)
-                                        (plist-get roster :processes)))))
-    (if (not row)
-        (setq header-line-format
-              (concat (car (split-string (or (format "%s" header-line-format) "") " · "))
-                      (propertize " · no longer listed; last known below" 'face 'warning)))
-      (setq header-line-format (hermes-work--detail-header row t))
+  "Repaint this detail buffer from ROSTER at NOW, keeping place.
+A row that left the roster keeps its last-known text."
+  (let* ((owner hermes-work--owner)
+         (key hermes-work--detail-key)
+         (current (hermes-work--current-p owner))
+         (row (hermes-work--find key (append (plist-get roster :agents)
+                                              (plist-get roster :processes)))))
+    (setq header-line-format
+          (hermes-work--detail-header
+           key row current
+           (and current row (eq (car key) 'delegate) (not (eq (plist-get row :state) 'running))
+                (hermes-work--log-path owner (cdr key)))))
+    (when row
       (hermes-browser--preserve-reading-position
        (lambda ()
          (let ((inhibit-read-only t) (inhibit-modification-hooks t))
@@ -887,6 +947,11 @@ their card."
       (hermes-work-toggle))
      (t (user-error "No observed work on this line")))))
 
+(defun hermes-work--detail-detach ()
+  "Retire this detail and settle controls it started, on kill or mode change."
+  (hermes-buffer--retire)
+  (when hermes-work--owner (hermes-work--settle-owner hermes-work--owner)))
+
 ;;; Session-qualified worker actions
 
 (defun hermes-work--target (owner key)
@@ -894,23 +959,51 @@ their card."
 Live events may have finished a listed row; then there is no target."
   (let* ((source (if (eq (car-safe key) 'process) :processes :delegates))
          (row (hermes-work--find key (plist-get (plist-get owner source) :rows))))
-    (and row (hermes-work--view-p owner) (hermes-work--current-p owner)
+    (and row (hermes-work--current-p owner)
          (stringp (plist-get owner :runtime))
          (not (string-empty-p (plist-get owner :runtime)))
          (eq (plist-get (hermes-work--find key (hermes-work--observations owner)) :state)
              'running)
          row)))
 
+(defun hermes-work--presentation ()
+  "Return the exact list or detail presentation behind a control.
+It is the buffer, its claim, mode and owner, and a detail's fixed row key."
+  (list :buffer (current-buffer) :claim hermes-buffer--owner :mode major-mode
+        :owner hermes-work--owner
+        :key (and (derived-mode-p 'hermes-work-detail-mode) hermes-work--detail-key)))
+
+(defun hermes-work--presentation-current-p (presentation)
+  "Return non-nil while PRESENTATION still presents its owner's work.
+A mode change, file association or kill retires it, and so does replacing
+the list behind its owner."
+  (let ((buffer (plist-get presentation :buffer))
+        (mode (plist-get presentation :mode))
+        (owner (plist-get presentation :owner)))
+    (and (buffer-live-p buffer)
+         (memq mode '(hermes-work-mode hermes-work-detail-mode))
+         (with-current-buffer buffer
+           (and (eq hermes-buffer--owner (plist-get presentation :claim))
+                (hermes-buffer--owned-p mode)
+                (eq hermes-work--owner owner)
+                (if (eq mode 'hermes-work-mode)
+                    (eq (plist-get owner :view) buffer)
+                  (equal hermes-work--detail-key (plist-get presentation :key))))))))
+
 (defun hermes-work--selected-worker ()
   "Return the exact running worker row at point, or refuse the action.
 The row must be in the backend roster; live events may have finished it."
   (let ((key (hermes-work--key-at-point)))
-    (or (and (eq (car-safe key) 'delegate) (hermes-work--target hermes-work--owner key))
+    (or (and (eq (car-safe key) 'delegate)
+             (hermes-work--presentation-current-p (hermes-work--presentation))
+             (hermes-work--target hermes-work--owner key))
         (user-error "No current running worker; refresh or reopen from its chat"))))
 
-(defun hermes-work--action-current-p (owner row)
-  "Return non-nil if OWNER and exact ROW remain actionable after input."
-  (eq row (hermes-work--target owner (plist-get row :key))))
+(defun hermes-work--action-current-p (owner row &optional presentation)
+  "Return non-nil if OWNER and exact ROW remain actionable after input.
+With PRESENTATION, it must still show OWNER's work too."
+  (and (or (null presentation) (hermes-work--presentation-current-p presentation))
+       (eq row (hermes-work--target owner (plist-get row :key)))))
 
 (defun hermes-work--row-current-p (owner row)
   "Return non-nil if exact ROW is in attached OWNER's roster."
@@ -921,10 +1014,8 @@ The row must be in the backend roster; live events may have finished it."
 
 (defun hermes-work--control-current-p (operation)
   "Return non-nil if OPERATION retains its original presentation authority."
-  (let ((owner (plist-get operation :owner)))
-    (and (eq (plist-get operation :view) (plist-get owner :view))
-         (hermes-work--view-p owner)
-         (hermes-work--row-current-p owner (plist-get operation :row)))))
+  (and (hermes-work--presentation-current-p (plist-get operation :presentation))
+       (hermes-work--row-current-p (plist-get operation :owner) (plist-get operation :row))))
 
 (defun hermes-work--control-finish (operation text)
   "Settle exact OPERATION once and report TEXT without touching any view."
@@ -971,17 +1062,18 @@ The row must be in the backend roster; live events may have finished it."
              (_ (format "Hermes: process kill failed: %s"
                         (or (hermes-transport--get result 'error) "unknown error")))))))
 
-(defun hermes-work--control (owner row action &optional text)
+(defun hermes-work--control (presentation owner row action &optional text)
   "Request ACTION, `interrupt', `steer' or `kill', for OWNER's exact ROW.
-Steering sends TEXT.  The backend checks control generation and process
-ownership; roster visibility never grants them."
-  (let* ((operation (list :owner owner :row row :view (plist-get owner :view)
+PRESENTATION is the list or detail the command started from; retiring it
+retires the request.  Steering sends TEXT.  The backend checks control
+generation and process ownership; roster visibility never grants them."
+  (let* ((operation (list :owner owner :row row :presentation presentation
                           :id (copy-sequence (plist-get row :id))
                           :session (copy-sequence (plist-get owner :runtime))
                           :action (symbol-name action) :sent nil :settled nil))
          (current (lambda ()
                     (and (not (plist-get operation :settled))
-                         (hermes-work--action-current-p owner row)
+                         (hermes-work--action-current-p owner row presentation)
                          (or (not (eq action 'steer)) (plist-get row :accepting-steer)))))
          ;; This predicate runs only at the transport's final send boundary,
          ;; after authentication.  A send attempt can have an uncertain outcome.
@@ -1022,27 +1114,30 @@ ownership; roster visibility never grants them."
 (defun hermes-work-interrupt ()
   "Interrupt the worker at point, or kill the process at point, after confirming."
   (interactive nil hermes-work-mode hermes-work-detail-mode)
-  (let ((owner hermes-work--owner) (key (hermes-work--key-at-point)))
+  (let ((owner hermes-work--owner) (key (hermes-work--key-at-point))
+        (presentation (hermes-work--presentation)))
     (if (eq (car-safe key) 'process)
-        (let ((row (or (hermes-work--target owner key)
+        (let ((row (or (and (hermes-work--presentation-current-p presentation)
+                            (hermes-work--target owner key))
                        (user-error "No current running process; refresh or reopen from its chat"))))
           (when (yes-or-no-p (format "Kill process `%s'? "
                                      (hermes-work--short (plist-get row :command))))
-            (hermes-work--control owner row 'kill)))
+            (hermes-work--control presentation owner row 'kill)))
       (let ((row (hermes-work--selected-worker)))
         (when (yes-or-no-p (format "Interrupt worker %s in this session? "
                                    (plist-get row :id)))
-          (hermes-work--control owner row 'interrupt))))))
+          (hermes-work--control presentation owner row 'interrupt))))))
 
 (defun hermes-work-steer ()
   "Queue steering text for the selected worker, without claiming delivery."
   (interactive nil hermes-work-mode hermes-work-detail-mode)
-  (let ((owner hermes-work--owner) (row (hermes-work--selected-worker)))
+  (let ((owner hermes-work--owner) (presentation (hermes-work--presentation))
+        (row (hermes-work--selected-worker)))
     (unless (plist-get row :accepting-steer)
       (user-error "Worker is not accepting steering"))
     (let ((text (read-string (format "Steer “%s”: " (hermes-work--short (plist-get row :goal))))))
       (unless (string-empty-p (string-trim text))
-        (hermes-work--control owner row 'steer text)))))
+        (hermes-work--control presentation owner row 'steer text)))))
 
 (defun hermes-work-tail ()
   "Display the selected worker's bounded live tail, without inferring a path.
@@ -1202,8 +1297,8 @@ The endpoint returns whole files, not a tail or a paginated transcript."
                         (propertize (if (string-empty-p text) " · empty snapshot"
                                       " · snapshot; entries may be truncated")
                                     'face 'hermes-work-meta)
-                        "  " (hermes-work--key 'help-key-binding "?")
-                        (propertize " help" 'face 'shadow))))))))
+                        "  " (hermes-work--hint 'hermes-work-log-mode-map
+                                                'hermes-work-log-mode-map-popup "help"))))))))
 
 (defun hermes-work-log-refresh ()
   "Fetch this worker's remote log or bounded tail, preserving point.
@@ -1334,10 +1429,10 @@ Live tails time out after 10 seconds and the backend bounds them to 16 KiB."
                   (hermes-work--find (hermes-work--key-at-point)
                                      (ignore-errors (hermes-work--observations hermes-work--owner))))))
     (if (not row) "Chat Workers"
-      (let ((state (hermes-work--state row)))
-        (concat (propertize (nth 0 state) 'face (nth 1 state)) " "
+      (pcase-let ((`(,state ,glyph ,face) (hermes-work--display row)))
+        (concat glyph " "
                 (hermes-work--short (or (plist-get row :goal) (plist-get row :command)))
-                " " (propertize (nth 2 state) 'face (nth 1 state)))))))
+                " " (propertize (hermes-work-state-label state) 'face face))))))
 
 (defun hermes-work--process-at-point-p ()
   "Return non-nil when the row at point is a process."
@@ -1433,7 +1528,10 @@ details, and \\[hermes-work-interrupt] interrupts a worker or kills a process."
   "Read one observed worker or process; the roster refreshes it live."
   (setq-local truncate-lines nil)
   (visual-line-mode 1)
-  (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-refresh))))
+  (setq-local revert-buffer-function (lambda (&rest _) (hermes-work-refresh)))
+  (add-hook 'after-set-visited-file-name-hook #'hermes-work--detail-detach t t)
+  (add-hook 'kill-buffer-hook #'hermes-work--detail-detach nil t)
+  (add-hook 'change-major-mode-hook #'hermes-work--detail-detach nil t))
 
 ;;;###autoload
 (defun hermes-chat-work ()
@@ -1444,11 +1542,13 @@ details, and \\[hermes-work-interrupt] interrupts a worker or kills a process."
                  (or (derived-mode-p 'hermes-chat-mode) (hermes-work--view-p owner)))
       (user-error "No attached session work owner"))
     (unless (hermes-work--view-p owner)
-      (let ((buffer (generate-new-buffer "*Hermes Workers*")))
+      (let* ((project (hermes-work--project owner))
+             (buffer (generate-new-buffer (format "*Hermes Workers: %s*" project))))
         (with-current-buffer buffer
           (hermes-work-mode)
           (hermes-buffer--claim 'hermes-work-mode)
-          (setq hermes-work--owner owner)
+          (setq hermes-work--owner owner
+                hermes-work--project project)
           (setq-local hermes-instance (plist-get owner :instance)))
         (setf (plist-get owner :view) buffer
               (plist-get owner :view-valid-p) #'hermes-work--view-p
