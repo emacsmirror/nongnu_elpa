@@ -865,6 +865,30 @@
       (markdown-ts-appear--update)
       (should (get-text-property (point-min) 'invisible)))))
 
+(ert-deftest markdown-ts-appear-test-indirect-clone-preserves-structural-invalidation ()
+  (markdown-ts-appear-test--with-buffer
+      "```\nintro\n```\n\n[Emacs](https://www.gnu.org/)\n"
+    (should
+     (seq-some
+      (lambda (overlay)
+        (overlay-get overlay 'markdown-ts-appear--link-icon))
+      (overlays-in (point-min) (point-max))))
+    (kill-buffer (clone-indirect-buffer " *markdown-structural-clone*" nil))
+    (should (markdown-ts-appear--active-p))
+    ;; The former closing fence now opens a block around the distant link.
+    (goto-char (point-min))
+    (delete-region (point) (line-beginning-position 2))
+    (run-hooks 'post-command-hook)
+    (font-lock-ensure)
+    (search-forward "Emacs")
+    (should (markdown-ts-appear-test--ancestor-type-p
+             (point) 'markdown "fenced_code_block"))
+    (should-not
+     (seq-some
+      (lambda (overlay)
+        (overlay-get overlay 'markdown-ts-appear--link-icon))
+      (overlays-in (point-min) (point-max))))))
+
 (ert-deftest markdown-ts-appear-test-kill-detaches-markers-without-fontifying ()
   (markdown-ts-appear-test--with-buffer "**bold** plain\n"
     (goto-char 3)

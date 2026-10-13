@@ -603,6 +603,55 @@
       (should (string-match-p "updated" display))
       (should (string-match-p "long value" display)))))
 
+(ert-deftest markdown-ts-appear-table-test-cursor-after-prefix-edit ()
+  (markdown-ts-appear-table-test--with-buffer
+      "intro\n\nparagraph\n\n| A | B |\n|---|---|\n| x | unique |\n\nafter\n"
+      30
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (markdown-ts-appear-stop)
+      (goto-char (point-min))
+      (insert "X")
+      (run-hooks 'post-command-hook)
+      ;; First enter the untouched row after its source positions have moved.
+      (search-forward "unique")
+      (goto-char (match-beginning 0))
+      (run-hooks 'post-command-hook)
+      (should (= (char-after) ?u))
+      (let ((anchor (cadr markdown-ts-appear-table--cursor-overlays)))
+        (should anchor)
+        (should (= (point) (overlay-start anchor)))
+        (should (equal "u"
+                       (markdown-ts-appear-table-test--cursor-character anchor)))))))
+
+(ert-deftest markdown-ts-appear-table-test-removes-overlays-after-distant-fence-insertion ()
+  (markdown-ts-appear-table-test--with-buffer
+      "intro\n\nparagraph\n\n| A | B |\n|---|---|\n| x | unique |\n\nafter\n"
+      30
+    (should (= 3 (markdown-ts-appear-table-test--row-count)))
+    ;; Change the table's syntax context without editing it or adjacent lines.
+    (goto-char (point-min))
+    (insert "```\n")
+    (run-hooks 'post-command-hook)
+    (font-lock-ensure)
+    (should-not (markdown-ts-appear-table--tables))
+    (should-not (markdown-ts-appear-table-test--overlays))))
+
+(ert-deftest markdown-ts-appear-table-test-renders-after-distant-fence-deletion ()
+  (markdown-ts-appear-table-test--with-buffer
+      "```\nintro\n\nparagraph\n\n| A | B |\n|---|---|\n| x | unique |\n\nafter\n"
+      30
+    (should-not (markdown-ts-appear-table-test--overlays))
+    (goto-char (point-min))
+    (delete-region (point) (line-beginning-position 2))
+    (run-hooks 'post-command-hook)
+    (font-lock-ensure)
+    (should (= 1 (length (markdown-ts-appear-table--tables))))
+    (should (= 3 (markdown-ts-appear-table-test--row-count)))
+    (search-forward "unique")
+    (should (string-match-p
+             "unique" (markdown-ts-appear-table-test--row-display-at (point))))))
+
 (ert-deftest markdown-ts-appear-table-test-disable-cleans-state ()
   (markdown-ts-appear-table-test--with-buffer
       "| A | B |\n|---|---|\n| x | y |\n"
