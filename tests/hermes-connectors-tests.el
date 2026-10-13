@@ -323,6 +323,28 @@ equal or older sequence; target state must not roll back."
       (should (= 1 (how-many "Reconnect github" (point-min) (point-max))))
       (should (string-match-p "waiting for browser" (buffer-string))))))
 
+(ert-deftest hermes-connectors-directory-settlement-retires-continue ()
+  "A settled directory keeps its suggestions and offers no more actions."
+  (pcase-dolist (`(,by ,label) '(("continue" "continued")
+                                 ("deadline" "timed out")))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "connection.request"
+       '((op_id . "op-d") (seq . 0) (deadline_at . 1) (timeout_seconds . 1)
+         (targets . []) (display . ((suggested . ["github"])))))
+      (hermes-test--emit-dashboard-prompt
+       client "connection.update"
+       `((owner . ((type . "session") (session_id . "sid-prompt")))
+         (op_id . "op-d") (seq . 1) (deadline_at . 1) (settled . t)
+         (settled_at . 2) (settled_by . ,by) (targets . [])))
+      (should (string-match-p
+               (concat "Connector directory · suggested github  " label)
+               (buffer-string)))
+      (should-not (string-match-p "connector actions" (buffer-string)))
+      (hermes-connectors-test--goto "Connector directory")
+      (should-not (hermes-connectors--available-p 'continue))
+      (should-error (hermes-connectors-continue) :type 'user-error))))
+
 (ert-deftest hermes-connectors-reset-forgets-operations ()
   "Clearing the chat drops cards so later tool rows cannot revive them."
   (hermes-test-with-dashboard-prompt-session (client)

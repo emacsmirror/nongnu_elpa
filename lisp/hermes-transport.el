@@ -1177,7 +1177,9 @@ Return nil when RAW lacks the name, kind, or state every frame carries."
   "Return the full connection operation snapshot in PAYLOAD, or nil.
 PAYLOAD is a `connection.request' or `connection.update' payload, a
 `pending_connection' resume snapshot, or an operation RPC result.  Every
-frame carries all targets, so the result replaces, never merges, a card."
+frame carries all targets, so the result replaces, never merges, a card.
+A directory operation has no targets; only its request carries the
+`display' suggestions, so its settlement update has neither."
   (let* ((id (hermes-transport--connection-string payload 'op_id))
          (seq (hermes-transport--get payload 'seq))
          (raw (hermes-transport--connection-list payload 'targets))
@@ -1187,15 +1189,18 @@ frame carries all targets, so the result replaces, never merges, a card."
          (suggested (and display (hermes-transport--connection-list
                                   display 'suggested)))
          (names (mapcar (lambda (target) (plist-get target :name)) targets)))
-    (when (and id (natnump seq) (listp raw)
-               (or targets (and display (listp suggested)))
+    (when (and id (natnump seq)
+               (hermes-transport--field-present-p payload 'targets)
+               (listp raw) (listp suggested)
                (not (memq nil targets))
                (equal names (seq-uniq names)))
       (list :id id :seq seq :targets targets
             :tool-call-id (hermes-transport--connection-string
                            payload 'tool_call_id)
             :suggested (and (null targets) (seq-filter #'stringp suggested))
-            :settled (eq (hermes-transport--get payload 'settled) t)))))
+            :settled (eq (hermes-transport--get payload 'settled) t)
+            :settled-by (hermes-transport--connection-string
+                         payload 'settled_by)))))
 
 (defun hermes-dashboard-transport--connection-event (type params payload)
   "Return the structured connection event TYPE from PARAMS and PAYLOAD.

@@ -6157,5 +6157,23 @@ first; an unrelated process with that PID is left alone."
     (should (equal (plist-get operation :suggested) '("gmail" "github")))
     (should-not (plist-get operation :targets))))
 
+(ert-deftest hermes-transport-dashboard-connection-directory-settlement ()
+  "A directory settlement update has no targets and no display, yet counts."
+  (let* ((events (hermes-test--dashboard-events
+                  '("connection.update"
+                    . ((op_id . "op-d") (seq . 1) (deadline_at . 1)
+                       (settled . t) (settled_at . 2) (settled_by . "deadline")
+                       (owner . ((type . "session") (session_id . "sid")))
+                       (targets . [])))
+                  '("connection.update"
+                    . ((op_id . "op-x") (seq . 1) (settled . t)
+                       (owner . ((type . "session") (session_id . "sid")))))))
+         (operation (plist-get (car events) :operation)))
+    (should (= 1 (length events)))
+    (should (equal (plist-get operation :id) "op-d"))
+    (should (plist-get operation :settled))
+    (should (equal (plist-get operation :settled-by) "deadline"))
+    (should-not (plist-get operation :targets))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

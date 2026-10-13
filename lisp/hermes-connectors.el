@@ -447,13 +447,24 @@ replies are dropped once the record's attachment is no longer current."
      width)
     (hermes-connectors--insert-buttons actions)))
 
+(defun hermes-connectors--settlement (snapshot)
+  "Return how settled SNAPSHOT ended as a short faced label, or nil."
+  (when (plist-get snapshot :settled)
+    (propertize (pcase (plist-get snapshot :settled-by)
+                  ("continue" "continued") ("deadline" "timed out")
+                  ("interrupt" "stopped") (_ "closed"))
+                'face 'shadow)))
+
 (defun hermes-connectors--print-directory (record)
   "Insert RECORD's connector directory request."
-  (insert "  " (propertize "Connector directory" 'face 'bold))
-  (when-let* ((suggested (plist-get (plist-get record :snapshot) :suggested)))
-    (insert (propertize (concat " · suggested " (string-join suggested ", "))
-                        'face 'shadow)))
-  (insert "\n"))
+  (let ((snapshot (plist-get record :snapshot)))
+    (insert "  " (propertize "Connector directory" 'face 'bold))
+    (when-let* ((suggested (plist-get snapshot :suggested)))
+      (insert (propertize (concat " · suggested " (string-join suggested ", "))
+                          'face 'shadow)))
+    (when-let* ((label (hermes-connectors--settlement snapshot)))
+      (insert "  " label))
+    (insert "\n")))
 
 (defun hermes-connectors--print (record)
   "Insert RECORD's card with the actions valid for its owner."
