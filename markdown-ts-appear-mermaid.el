@@ -145,7 +145,11 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
                         (list width (window-default-line-height window)
                               (window-font-height window 'markdown-ts-code-block)
                               (window-font-width window 'markdown-ts-code-block)
-                              truncate-lines word-wrap markdown-ts-appear-code-fence-style))
+                              tab-width truncate-lines truncate-partial-width-windows word-wrap
+                              (window-hscroll window)
+                              (and display-line-numbers
+                                   (with-selected-window window (line-number-display-width t)))
+                              markdown-ts-appear-code-fence-style))
                       (window-start window) (window-end window t))))
             (get-buffer-window-list (current-buffer) nil t))))
 

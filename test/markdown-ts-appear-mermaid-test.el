@@ -575,6 +575,43 @@
             (should-not (= (car heights) (cadr heights))))
           (should (= (length markdown-ts-appear-mermaid-test--jobs) 1)))))))
 
+(ert-deftest markdown-ts-appear-mermaid-test-gui-height-follows-layout-options ()
+  (skip-unless (display-graphic-p))
+  (dolist (change '(tabs partial hscroll numbers numbers-width))
+    (ert-info ((format "Layout change: %s" change))
+      (markdown-ts-appear-mermaid-test--deferred
+        (markdown-ts-appear-mermaid-test--buffer
+            (concat "Before\n\n```mermaid\nflowchart LR\nA["
+                    (apply #'concat (make-list 20 "label\t"))
+                    "] --> B\n```\n\nAfter\n")
+          (delete-other-windows)
+          (let ((other (split-window-right -25)))
+            (set-window-buffer other (current-buffer))
+            (setq-local truncate-lines nil
+                        truncate-partial-width-windows nil
+                        tab-width 2
+                        display-line-numbers (eq change 'numbers-width))
+            (markdown-ts-appear-mermaid-test--deliver)
+            (let* ((source (car markdown-ts-appear-mermaid--objects))
+                   (view (seq-find (lambda (view) (eq (overlay-get view 'window) other))
+                                   (overlay-get source 'markdown-ts-appear-mermaid--views)))
+                   (before (image-property (overlay-get view 'display) :max-height)))
+              (pcase change
+                ('tabs (setq-local tab-width 16))
+                ('partial (setq-local truncate-partial-width-windows t))
+                ('hscroll (set-window-hscroll other 4))
+                ('numbers (setq-local display-line-numbers t))
+                ('numbers-width (setq-local display-line-numbers-width 10)))
+              (markdown-ts-appear-mermaid--refresh)
+              (let ((height (image-property (overlay-get view 'display) :max-height)))
+                (goto-char (+ 12 (overlay-start source)))
+                (markdown-ts-appear-start)
+                (let ((actual (cdr (window-text-pixel-size
+                                    other (overlay-start source) (overlay-end source)))))
+                  (should-not (= before actual))
+                  (should (= height actual))))
+              (should (= (length markdown-ts-appear-mermaid-test--jobs) 1)))))))))
+
 (ert-deftest markdown-ts-appear-mermaid-test-gui-height-follows-text-scale-and-spacing ()
   (skip-unless (display-graphic-p))
   (markdown-ts-appear-mermaid-test--deferred
