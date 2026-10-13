@@ -2509,13 +2509,10 @@ Sending rewinds the conversation to just before this message.  Cancel with
   (interactive nil hermes-chat-mode)
   (let ((entry (hermes-chat--rewind-target "editing")))
     (setq hermes-chat--edit-turn
-          (list :row-id (plist-get entry :row-id)
-                :draft (if hermes-chat--edit-turn
-                           (plist-get hermes-chat--edit-turn :draft)
-                         (hermes-chat-input-string))
-                :client hermes-chat--dashboard-client
-                :session hermes-chat--dashboard-active-session-id
-                :lifetime hermes-chat--lifecycle-generation))
+          (append (list :draft (if hermes-chat--edit-turn
+                                   (plist-get hermes-chat--edit-turn :draft)
+                                 (hermes-chat-input-string)))
+                  (hermes-chat--rewind-owner (plist-get entry :row-id))))
     (hermes-chat--replace-input-tail (plist-get entry :content))
     (force-mode-line-update)
     (message "%s" (substitute-command-keys
@@ -2551,10 +2548,36 @@ Return non-nil when the submission starts."
     (when (hermes-chat--active-turn-p)
       (user-error "Hermes is working; wait for this turn to end before resending"))
     (when (hermes-chat--confirm-rewind "Replace this message" scope)
+      ;; Anything can happen while the user answers: recheck before
+      ;; touching the composer, so a refusal keeps the edited text.
+      (unless (eq edit hermes-chat--edit-turn)
+        (user-error "The edit was cancelled; text kept as a draft"))
+      (hermes-chat--rewind-revalidate edit scope)
       (hermes-chat--delete-input-tail)
       (setq hermes-chat--edit-turn nil)
       (force-mode-line-update)
       (hermes-chat--submit-rewind content row-id scope))))
+
+(defun hermes-chat--rewind-owner (row-id)
+  "Return the ownership plist for rewinding to the user turn ROW-ID now."
+  (list :row-id row-id
+        :client hermes-chat--dashboard-client
+        :session hermes-chat--dashboard-active-session-id
+        :lifetime hermes-chat--lifecycle-generation))
+
+(defun hermes-chat--rewind-revalidate (owner scope)
+  "Signal a `user-error' unless OWNER may still rewind over SCOPE.
+OWNER is a `hermes-chat--rewind-owner' captured before asking the user and
+SCOPE the `hermes-chat--rewind-scope' they confirmed."
+  (unless (and (hermes-chat--current-lifetime-p (plist-get owner :lifetime))
+               (eq (plist-get owner :client) hermes-chat--dashboard-client)
+               (equal (plist-get owner :session)
+                      hermes-chat--dashboard-active-session-id))
+    (user-error "The session changed while asking; nothing was sent"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Hermes started a turn while asking; nothing was sent"))
+  (unless (equal (hermes-chat--rewind-scope (plist-get owner :row-id)) scope)
+    (user-error "The conversation changed while asking; nothing was sent")))
 
 (defun hermes-chat-restore-turn ()
   "Rerun the conversation from the message at point.
@@ -2562,10 +2585,12 @@ The message is sent again unchanged after the conversation is rewound to
 just before it; later messages are removed."
   (interactive nil hermes-chat-mode)
   (let* ((entry (hermes-chat--rewind-target "rerunning"))
-         (row-id (plist-get entry :row-id))
-         (scope (hermes-chat--rewind-scope row-id)))
+         (owner (hermes-chat--rewind-owner (plist-get entry :row-id)))
+         (scope (hermes-chat--rewind-scope (plist-get owner :row-id))))
     (when (hermes-chat--confirm-rewind "Rerun from this message" scope)
-      (hermes-chat--submit-rewind (plist-get entry :content) row-id scope))))
+      (hermes-chat--rewind-revalidate owner scope)
+      (hermes-chat--submit-rewind (plist-get entry :content)
+                                  (plist-get owner :row-id) scope))))
 
 (defun hermes-chat--rewind-unavailable-p ()
   "Return non-nil when point is not on a user turn that may be rewound."

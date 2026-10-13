@@ -1529,5 +1529,46 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (should (equal hermes-chat--draft-images '(image-fixture)))
     (should (equal (hermes-chat-input-string) "Second question revised"))))
 
+(ert-deftest hermes-chat-edit-turn-revalidates-after-confirmation ()
+  "A turn or session change during the confirmation keeps the edited text."
+  (dolist (change '(busy session later gone))
+    (hermes-test-with-rewind-chat (submits _reads _prompts)
+      (hermes-test--goto-entry "Second question")
+      (hermes-chat-edit-turn)
+      (goto-char (point-max))
+      (insert " revised")
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_)
+                   (pcase change
+                     ('busy (setq hermes-chat--dashboard-running-p t))
+                     ('session (setq hermes-chat--dashboard-active-session-id
+                                     "successor"))
+                     ('later (hermes-chat--render-history
+                              '(((role . "user") (text . "Fourth") (row_id . 17)))))
+                     ('gone (setq hermes-chat--edit-turn nil)))
+                   t)))
+        (should-error (hermes-chat-send) :type 'user-error))
+      (should-not submits)
+      (should (equal (hermes-chat-input-string) "Second question revised"))
+      (unless (eq change 'gone)
+        (should hermes-chat--edit-turn)))))
+
+(ert-deftest hermes-chat-restore-turn-revalidates-after-confirmation ()
+  "A turn or session change during the rerun confirmation sends nothing."
+  (dolist (change '(busy session))
+    (hermes-test-with-rewind-chat (submits _reads _prompts)
+      (goto-char (point-max))
+      (insert "my draft")
+      (hermes-test--goto-entry "Second question")
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_)
+                   (if (eq change 'busy)
+                       (setq hermes-chat--dashboard-running-p t)
+                     (setq hermes-chat--dashboard-active-session-id "successor"))
+                   t)))
+        (should-error (hermes-chat-restore-turn) :type 'user-error))
+      (should-not submits)
+      (should (equal (hermes-chat-input-string) "my draft")))))
+
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here
