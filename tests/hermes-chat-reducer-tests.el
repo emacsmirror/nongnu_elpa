@@ -25,6 +25,12 @@
                (clear-prompts :type done :content "preview" :response-previewed t :warning "warning")
                (mark-previewed . "preview") (warning . "warning") (drop-thinking)
                (settle . done) (finish) (clear-pending) (set-dashboard-running) (drain)))
+             (hermes-chat--turn-done-effects
+              (:type done :content "new" :response-previewed t :response-transformed t)
+              ((clear-tools) (refresh-header :status ready)
+               (clear-prompts :type done :content "new" :response-previewed t :response-transformed t)
+               (mark-transformed . "new") (drop-thinking)
+               (settle . done) (finish) (clear-pending) (set-dashboard-running) (drain)))
              (hermes-chat--turn-suppressed-effects
               (:type suppressed-terminal :settle-status done :original (:type done :content "hidden"))
               ((clear-tools) (refresh-header :status ready)

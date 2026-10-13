@@ -244,6 +244,67 @@
            (should (equal (plist-get (car assistants) :content) "candidate"))
            (should (eq (plist-get (car assistants) :status) 'done))))))))
 
+(defun hermes-chat-queue-tests--assistant-texts ()
+  "Return the content of every assistant entry, in order."
+  (mapcar (lambda (entry) (plist-get entry :content))
+          (seq-filter (lambda (entry) (eq (plist-get entry :role) 'assistant))
+                      (hermes-chat--entries))))
+
+(ert-deftest hermes-chat-transformed-final-replaces-streamed-text ()
+  "A transformed final replaces this reply's streamed text, never prior turns."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'assistant "Earlier turn" 'done)
+     (gethash hermes-chat--pending-assistant-id hermes-chat--nodes))
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "TOKEN_1")))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete"
+     '((text . "example.internal") (status . "complete") (response_transformed . t)))
+    (should (equal (hermes-chat-queue-tests--assistant-texts)
+                   '("Earlier turn" "example.internal")))
+    (should-not (string-match-p "TOKEN_1" (buffer-string)))))
+
+(ert-deftest hermes-chat-transformed-final-replaces-sealed-interim ()
+  "With nothing streamed after its interim, the final replaces that interim."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "TOKEN_1")))
+    (hermes-test--emit-dashboard-prompt
+     client "message.interim" '((text . "TOKEN_1") (already_streamed . t)))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete"
+     '((text . "example.internal") (status . "complete") (response_transformed . t)))
+    (should (equal (hermes-chat-queue-tests--assistant-texts) '("example.internal")))
+    (should (eq (plist-get (car (last (hermes-chat--entries))) :status) 'done))))
+
+(ert-deftest hermes-chat-transformed-final-keeps-earlier-interims ()
+  "Commentary sealed before later streaming is a separate message and stays."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.interim" '((text . "Checking")))
+    (hermes-test--emit-dashboard-prompt client "message.delta" '((text . "TOKEN_1")))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete"
+     '((text . "example.internal") (status . "complete") (response_transformed . t)))
+    (should (equal (hermes-chat-queue-tests--assistant-texts)
+                   '("Checking" "example.internal")))))
+
+(ert-deftest hermes-chat-transformed-final-stops-at-steer ()
+  "An interim from before an accepted steer is never replaced."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt client "message.interim" '((text . "Before")))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client _content &rest args)
+                 (funcall (plist-get args :resolve) '((status . "steered"))))))
+      (goto-char (point-max))
+      (insert "Please clarify")
+      (hermes-chat-send))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete"
+     '((text . "example.internal") (status . "complete") (response_transformed . t)))
+    (should (member "Before" (hermes-chat-queue-tests--assistant-texts)))
+    (should (equal (car (last (hermes-chat-queue-tests--assistant-texts)))
+                   "example.internal"))
+    (should (string-match-p "Please clarify" (buffer-string)))))
+
 (ert-deftest hermes-chat-dashboard-buffers-new-turn-before-streaming-ack ()
   "A new turn cannot capture events until its busy-submit result is known."
   (let ((client (hermes-test--dashboard-client)) second-resolve)

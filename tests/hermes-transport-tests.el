@@ -5183,6 +5183,16 @@ This is the contract that replaces hand-mirroring every event name: an invented
          (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
     (should (equal (plist-get event :warning) "not saved to history"))))
 
+(ert-deftest hermes-transport-dashboard-message-complete-carries-transformed ()
+  "Only a true `response_transformed' marks the final as a replacement."
+  (dolist (case '((t . t) (:false . nil) (nil . nil)))
+    (let* ((frame `((jsonrpc . "2.0") (method . "event")
+                    (params . ((type . "message.complete")
+                               (payload . ((status . "complete") (text . "Final")
+                                           (response_transformed . ,(car case))))))))
+           (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+      (should (eq (plist-get event :response-transformed) (cdr case))))))
+
 (ert-deftest hermes-transport-normalizes-terminal-read-request ()
   "A `terminal.read.request' becomes a prompt-request status event."
   (let* ((frame '((jsonrpc . "2.0") (method . "event")

@@ -790,6 +790,8 @@ The :final-text field preserves literal text when PAYLOAD has no error."
     (when warning (setq event (plist-put event :warning warning)))
     (when (hermes-transport--get payload 'response_previewed)
       (setq event (plist-put event :response-previewed t)))
+    (when (eq (hermes-transport--get payload 'response_transformed) t)
+      (setq event (plist-put event :response-transformed t)))
     event))
 
 (defun hermes-dashboard-transport--message-interim-event (type params payload)

@@ -327,9 +327,11 @@ re-submits any queued turn."
          (list '(clear-tools)
                (cons 'refresh-header status)
                (cons 'clear-prompts event)
-               (cons (if (plist-get event :response-previewed)
-                         'mark-previewed
-                       'mark-done)
+               (cons (cond ((plist-get event :response-transformed)
+                            'mark-transformed)
+                           ((plist-get event :response-previewed)
+                            'mark-previewed)
+                           (t 'mark-done))
                      (plist-get event :content))
                (and-let* ((warning (plist-get event :warning)))
                  (cons 'warning warning))
@@ -482,6 +484,36 @@ and `upsert-entry'.  Other types return (STATE)."
   (hermes-chat--settle-transport-entries assistant-id 'done)
   (setq hermes-chat--dashboard-interim-assistant-id assistant-id))
 
+(defun hermes-chat--interim-precedes-p (interim-id assistant-id)
+  "Return non-nil when INTERIM-ID is ASSISTANT-ID's sealed predecessor.
+Walk back from ASSISTANT-ID and stop at the first user entry, so an
+interim from before a steer or redirect never counts."
+  (let ((node (gethash assistant-id hermes-chat--nodes))
+        found)
+    (while (and node (not found)
+                (setq node (ewoc-prev hermes-chat--ewoc node)))
+      (let ((entry (ewoc-data node)))
+        (cond ((equal (plist-get entry :id) interim-id) (setq found t))
+              ((eq (plist-get entry :role) 'user) (setq node nil)))))
+    found))
+
+(defun hermes-chat--mark-transformed-assistant (assistant-id content)
+  "Settle transformed final CONTENT as ASSISTANT-ID's authoritative reply.
+An output hook rewrote the final after streaming, so CONTENT replaces the
+streamed text instead of extending it.  When nothing streamed since the
+latest interim of this turn, CONTENT replaces that sealed interim."
+  (let ((interim-id hermes-chat--dashboard-interim-assistant-id)
+        (text (or content "")))
+    (if (and interim-id
+             (not (equal interim-id assistant-id))
+             (string-empty-p
+              (or (hermes-chat--entry-content-by-id assistant-id) ""))
+             (hermes-chat--interim-precedes-p interim-id assistant-id))
+        (progn
+          (hermes-chat--remove-entry assistant-id)
+          (hermes-chat--mark-assistant interim-id 'done text t))
+      (hermes-chat--mark-assistant assistant-id 'done text t))))
+
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
   "Settle previewed CONTENT on its interim entry, or ASSISTANT-ID as fallback."
   (let* ((interim-id hermes-chat--dashboard-interim-assistant-id)
@@ -534,6 +566,8 @@ stays side-effect-light."
      (hermes-chat--mark-assistant
       assistant-id 'done
       (hermes-chat--assistant-done-content assistant-id content) t))
+    (`(mark-transformed . ,content)
+     (hermes-chat--mark-transformed-assistant assistant-id content))
     (`(mark-previewed . ,content)
      (hermes-chat--mark-previewed-assistant assistant-id content))
     (`(append-error ,content . ,status)
