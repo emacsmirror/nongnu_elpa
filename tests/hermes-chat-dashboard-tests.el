@@ -1768,62 +1768,44 @@ indicator is on, and not at all when it is off."
            (should-not hermes-chat--pending-assistant-id)
            (should (= (length frames) 1))))))))
 
-(ert-deftest hermes-chat-dashboard-parses-vanilla-goal-status ()
-  "Vanilla `/goal status' output becomes compact header state."
-  (should
-   (equal (hermes-chat--dashboard-goal-status-projection
-           "⊙ Goal (active, 3/20 turns): Ship it")
-          '(:goal (:status "active" :running t :turns-used 3 :max-turns 20))))
-  (should
-   (equal (hermes-chat--dashboard-goal-status-projection
-           "⏳ Goal (parked 8s — timer, 3/20 turns): Ship it")
-          '(:goal (:status "inactive" :running nil :turns-used 3 :max-turns 20))))
-  (should
-   (equal (hermes-chat--dashboard-goal-status-projection
-           "No active goal. Set one with /goal <text>.")
-          '(:goal nil)))
-  (should-not
-   (hermes-chat--dashboard-goal-status-projection "Unrecognized response")))
-
-(ert-deftest hermes-chat-dashboard-refreshes-goal-from-vanilla-hermes ()
-  "Goal refresh queries the owning vanilla session and updates its header state."
+(ert-deftest hermes-chat-dashboard-refreshes-structured-controls ()
+  "Control refresh queries the owning session and accepts its snapshot."
   (let ((client (hermes-test--dashboard-client)) dispatch)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (_client name arg &rest args)
-                 (setq dispatch (list name arg args)))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-control-read)
+               (lambda (_client &rest args)
+                 (setq dispatch args))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client client
              hermes-chat--dashboard-active-session-id "sid-live")
        (hermes-chat--dashboard-refresh-goal)
-       (should (equal (car dispatch) "goal"))
-       (should (equal (cadr dispatch) "status"))
-       (should (equal (plist-get (caddr dispatch) :session-id) "sid-live"))
-       (funcall (plist-get (caddr dispatch) :resolve)
-                '((type . "exec")
-                  (output . "⊙ Goal (active, 4/20 turns): Ship it")))
-       (should (equal hermes-chat--goal
-                      '(:status "active" :running t
-                        :turns-used 4 :max-turns 20)))))))
+       (should (equal (plist-get dispatch :session-id) "sid-live"))
+       (funcall (plist-get dispatch :resolve)
+                '((control . ((revision . "hash") (updated_at . 0)
+                              (goal . ((status . "active") (turns_used . 4) (max_turns . 20)))
+                              (loop) (heartbeat)))))
+       (should (= (plist-get (plist-get (hermes-session-control-snapshot) :goal)
+                             :turns-used)
+                  4))))))
 
 (ert-deftest hermes-chat-dashboard-ignores-stale-goal-refresh ()
   "A goal status response cannot update a successor session."
   (let ((client (hermes-test--dashboard-client)) resolve)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (_client _name _arg &rest args)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-control-read)
+               (lambda (_client &rest args)
                  (setq resolve (plist-get args :resolve)))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-old"
-             hermes-chat--goal '(:running nil))
+             hermes-chat--dashboard-active-session-id "sid-old")
+       (setq hermes-session-control--state '(:snapshot (:revision "kept") :epoch 0))
        (hermes-chat--dashboard-refresh-goal)
        (setq hermes-chat--dashboard-active-session-id "sid-new")
        (funcall resolve
-                '((type . "exec")
-                  (output . "⊙ Goal (active, 4/20 turns): Ship it")))
-       (should (equal hermes-chat--goal '(:running nil)))))))
+                '((control . ((revision . "stale") (updated_at . 0)
+                              (goal . :null) (loop . :null) (heartbeat . :null)))))
+       (should (equal (plist-get (hermes-session-control-snapshot) :revision) "kept"))))))
 
-(ert-deftest hermes-chat-dashboard-record-session-refreshes-vanilla-goal ()
-  "Attaching a session requests vanilla Hermes goal state once."
+(ert-deftest hermes-chat-dashboard-record-session-refreshes-controls ()
+  "Attaching a session requests structured control state once."
   (let ((client (hermes-test--dashboard-client)) (refreshes 0))
     (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal)
                (lambda () (setq refreshes (1+ refreshes)))))

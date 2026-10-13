@@ -866,13 +866,14 @@
                  (funcall (plist-get args :resolve)
                           (if (equal name "short")
                               '((type . "alias") (target . "demo"))
-                            '((type . "exec") (output . "alias target ran")))))))
+                            '((type . "exec") (output . "alias target ran"))))))
+              ((symbol-function 'hermes-dashboard-transport-session-control-read)
+               #'ignore))
       (hermes-test-with-chat-buffer
        (insert "/short now")
        (hermes-chat-send)
        (should (equal (nreverse dispatches)
-                      '(("goal" . "status")
-                        ("short" . "now")
+                      '(("short" . "now")
                         ("demo" . "now"))))
        (should (string-match-p "alias target ran" (buffer-string)))))))
 
@@ -894,27 +895,34 @@
       (notice . "fallback notice")))
    (should (string-match-p "fallback notice" (buffer-string)))))
 
-(ert-deftest hermes-chat-goal-command-refreshes-vanilla-state ()
-  "A successful `/goal' command refreshes state through vanilla status output."
-  (let ((client (hermes-test--dashboard-client)) status-queries)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
-               (lambda (_client _command &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((type . "exec") (output . "Goal paused")))))
-              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
-               (lambda (_client name arg &rest args)
-                 (push (cons name arg) status-queries)
-                 (funcall (plist-get args :resolve)
-                          '((type . "exec")
-                            (output . "⏸ Goal (paused, 2/20 turns): Ship it"))))))
-      (hermes-test-with-chat-buffer
-       (setq hermes-chat--dashboard-client client
-             hermes-chat--dashboard-active-session-id "sid-active"
-             hermes-chat--dashboard-session-ready-p t)
-       (insert "/goal pause")
-       (hermes-chat-send)
-       (should (equal status-queries '(("goal" . "status"))))
-       (should-not (plist-get hermes-chat--goal :running))))))
+(ert-deftest hermes-chat-control-commands-refresh-structured-state ()
+  "A successful `/goal' or `/loop' command reads the structured snapshot."
+  (dolist (command '("/goal pause" "/loop stop" "/subgoal clear"))
+    (let ((client (hermes-test--dashboard-client)) reads)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+                 (lambda (_client _command &rest args)
+                   (funcall (plist-get args :resolve)
+                            '((type . "exec") (output . "Goal paused")))))
+                ((symbol-function 'hermes-dashboard-transport-command-dispatch)
+                 (lambda (&rest _) (ert-fail "No text status query")))
+                ((symbol-function 'hermes-dashboard-transport-session-control-read)
+                 (lambda (_client &rest args)
+                   (push (plist-get args :session-id) reads)
+                   (funcall (plist-get args :resolve)
+                            '((control . ((goal . ((status . "paused") (turns_used . 2)
+                                                   (max_turns . 20)))
+                                          (loop) (heartbeat)
+                                          (revision . "r") (updated_at . 1))))))))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-client client
+               hermes-chat--dashboard-active-session-id "sid-active"
+               hermes-chat--dashboard-session-ready-p t)
+         (insert command)
+         (hermes-chat-send)
+         (should (equal reads '("sid-active")))
+         (should (equal (plist-get (plist-get (hermes-session-control-snapshot) :goal)
+                                   :status)
+                        "paused")))))))
 
 (ert-deftest hermes-chat-compact-uses-session-compress ()
   "/compact uses session.compress and settles one progress line."

@@ -3268,6 +3268,7 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "n" ("New chat" hermes-chat)
   "R" ("Rename session" hermes-chat-rename)
   "S" ("List / resume sessions" hermes-list-sessions)
+  "g" ("Goal / loop controls" hermes-session-control)
   :group "Fork"
   "b" ("Branch" hermes-chat-branch
        :inapt-if #'hermes-chat--active-turn-p)
@@ -3484,6 +3485,7 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "C-c C-p" #'hermes-command-palette
   "C-c C-/" #'hermes-chat-show-commands
   "C-c C-l" #'hermes-chat-view-attachments
+  "C-c C-g" #'hermes-session-control
   "C-c C-n" #'hermes-chat
   "C-c C-r" #'hermes-chat-rename
   "C-c C-b" #'hermes-switch-to-chat)

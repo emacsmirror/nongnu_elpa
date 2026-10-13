@@ -39,6 +39,7 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-todos)
+(require 'hermes-session-control)
 (require 'hermes-chat-images)
 (require 'hermes-chat-prompts)
 (require 'hermes-notifications)
@@ -780,6 +781,7 @@ This also retries kinds the backend earlier reported as unsupported."
 (defun hermes-chat--forget-live-dashboard-session ()
   "Forget the live dashboard session while preserving the durable session key."
   (hermes-chat-todos--disconnect)
+  (hermes-session-control-forget)
   (let ((detached (hermes-chat--work-stop)))
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-running-p nil
@@ -1155,6 +1157,8 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   (hermes-chat--dashboard-note-session-info event)
   (hermes-chat--dashboard-note-server-queued-terminal event)
   (cond
+   ((eq (plist-get event :type) 'session-control)
+    (hermes-session-control-accept event))
    ;; A background (`/btw') result is owned by its own session and arrives out
    ;; of band, so handle it before the stale-turn guard would drop it and apart
    ;; from the active turn's assistant entry.
@@ -1276,21 +1280,6 @@ The shared CLIENT contributes no session identity on a shared socket."
   (or (hermes-chat--dashboard-result-string
        result '(stored_session_id resumed session_key))
       active-id))
-
-(defun hermes-chat--dashboard-goal-status-projection (output)
-  "Return compact goal projection parsed from vanilla Hermes OUTPUT.
-Return nil for unknown output and leave the current goal state unchanged."
-  (cond
-   ((and (stringp output) (string-prefix-p "No active goal." output))
-    '(:goal nil))
-   ((and (stringp output)
-         (string-match "\\([0-9]+\\)/\\([0-9]+\\) turns" output))
-    (let ((running (string-prefix-p "⊙ Goal (active," output)))
-      (list :goal
-            (list :status (if running "active" "inactive")
-                  :running running
-                  :turns-used (string-to-number (match-string 1 output))
-                  :max-turns (string-to-number (match-string 2 output))))))))
 
 (defun hermes-chat--dashboard-record-session (client result)
   "Record live and durable session identifiers from RPC RESULT in this buffer.
@@ -1435,29 +1424,8 @@ profile's workspace.  Keep the reservation through create and overrides."
           owner (error-message-string err)))))))
 
 (defun hermes-chat--dashboard-refresh-goal ()
-  "Refresh compact goal state through vanilla Hermes `/goal status'."
-  (when (and (hermes-chat--dashboard-client-live-p
-              hermes-chat--dashboard-client)
-             hermes-chat--dashboard-active-session-id)
-    (let ((buffer (current-buffer))
-          (client hermes-chat--dashboard-client)
-          (generation hermes-chat--lifecycle-generation)
-          (session-id hermes-chat--dashboard-active-session-id))
-      (hermes-dashboard-transport-command-dispatch
-       client "goal" "status"
-       :session-id session-id
-       :resolve
-       (lambda (result)
-         (hermes-chat--in-buffer buffer
-           (when (hermes-chat--dashboard-context-current-p
-                  client generation session-id)
-             (when-let* ((output (hermes-chat--dashboard-result-string
-                                  result '(output)))
-                         (projection
-                          (hermes-chat--dashboard-goal-status-projection output)))
-               (setq hermes-chat--goal (plist-get projection :goal))
-               (force-mode-line-update)))))
-       :reject #'ignore))))
+  "Read the attached session's structured automation snapshot."
+  (hermes-session-control-refresh))
 
 (defun hermes-chat--dashboard-idle-context (on-idle)
   "Return an idle-reconciliation context calling ON-IDLE when settled."
@@ -1618,7 +1586,7 @@ profile's workspace.  Keep the reservation through create and overrides."
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."
   (or (hermes-chat--session-info-event-p event)
-      (eq (plist-get event :type) 'background)
+      (memq (plist-get event :type) '(background session-control))
       (hermes-chat--reconnecting-status-event-p event)
       (hermes-chat--reconnected-status-event-p event)))
 
