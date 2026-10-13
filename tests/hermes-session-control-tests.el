@@ -508,6 +508,52 @@ LOOP overrides the loop's fields."
         (should-not (string-match-p "Disconnected\\|Reading" (buffer-string)))
         (should (hermes-session-control--offers-p "loop.resume"))))))
 
+(ert-deftest hermes-control-reconnect-retries-a-settling-session ()
+  "A briefly refused automation resume retries on the same connection.
+Retries are bounded, and detaching retires a pending retry."
+  (dolist (case '(success teardown exhausted))
+    (let ((client (hermes-test--dashboard-client)) (calls 0))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-session-control-read)
+                 #'ignore)
+                ((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client _session-id &rest args)
+                   (cl-incf calls)
+                   (if (and (eq case 'success) (= calls 2))
+                       (funcall (plist-get args :resolve)
+                                '((session_id . "sid-2") (resumed . "stored-session")))
+                     (funcall (plist-get args :reject)
+                              (propertize "session disconnect interrupt settling"
+                                          'hermes-rpc-code 4009))))))
+        (hermes-test-with-chat-buffer
+          (setq hermes-chat--session-id "stored-session"
+                hermes-chat--dashboard-client client
+                hermes-session-control--resume-p t)
+          (hermes-chat--dashboard-handle-reconnected '(:type status :status "reconnected"))
+          (should (= calls 1))
+          (should-not (string-match-p "Dashboard session failed" (buffer-string)))
+          (let ((timer hermes-chat--automation-resume-timer))
+            (should (memq timer timer-list))
+            (pcase case
+              ('success
+               (funcall (timer--function timer))
+               (should (= calls 2))
+               (should (equal hermes-chat--dashboard-active-session-id "sid-2"))
+               (should-not hermes-chat--automation-resume-timer))
+              ('teardown
+               (hermes-chat--forget-live-dashboard-session)
+               (should-not hermes-chat--automation-resume-timer)
+               (should-not (memq timer timer-list))
+               (funcall (timer--function timer))
+               (should (= calls 1)))
+              ('exhausted
+               (while hermes-chat--automation-resume-timer
+                 (funcall (timer--function hermes-chat--automation-resume-timer)))
+               (should (= calls 4))
+               (should (string-match-p "Dashboard session failed: session disconnect"
+                                       (buffer-string)))))))))))
+
 (ert-deftest hermes-control-reconnect-resumes-only-running-automation ()
   "A reconnect stays lazy unless the detached session was running automation."
   (dolist (case '((nil . nil) (t . "stored-session")))

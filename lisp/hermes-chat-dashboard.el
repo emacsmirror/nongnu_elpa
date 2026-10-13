@@ -787,6 +787,7 @@ This also retries kinds the backend earlier reported as unsupported."
           hermes-chat--dashboard-active-session-id nil)
     ;; After detaching, so an open controls view shows it disconnected.
     (hermes-session-control-forget)
+    (hermes-chat--cancel-automation-resume)
     (hermes-chat--work-publish-detached detached)))
 
 (defun hermes-chat--stop-dashboard-client ()
@@ -2514,9 +2515,54 @@ the backend reaps detached sessions, which would silently stop it."
   (if (and hermes-chat--session-id hermes-session-control--resume-p)
       (progn
         (hermes-chat--set-header-state :status 'ready :activity "Socket ready")
-        (hermes-chat--with-dashboard-session nil (current-buffer) #'ignore))
+        (hermes-chat--dashboard-resume-automation))
     (hermes-chat--set-header-state
      :status 'ready :activity "Socket ready; session resumes on next action")))
+
+(defconst hermes-chat--automation-resume-delays '(1 2 4)
+  "Seconds before each retry of a refused automation resume.")
+
+(defvar-local hermes-chat--automation-resume-timer nil
+  "The pending retry of this chat's automation resume, or nil.")
+
+(defun hermes-chat--cancel-automation-resume ()
+  "Cancel this chat's pending automation resume retry."
+  (when hermes-chat--automation-resume-timer
+    (cancel-timer hermes-chat--automation-resume-timer)
+    (setq hermes-chat--automation-resume-timer nil)))
+
+(defun hermes-chat--dashboard-resume-automation (&optional attempt)
+  "Resume this chat's stored session, which was running automation.
+The backend briefly refuses a session whose old connection is still
+settling (4007, 4009).  Retry those after each of
+`hermes-chat--automation-resume-delays' from index ATTEMPT, while this
+chat stays on the same connection."
+  (let ((buffer (current-buffer))
+        (attempt (or attempt 0)))
+    (hermes-chat--with-dashboard-session
+     nil buffer #'ignore
+     (lambda (message)
+       (let ((delay (nth attempt hermes-chat--automation-resume-delays))
+             (client hermes-chat--dashboard-client)
+             (generation hermes-chat--lifecycle-generation))
+         (if (not (and delay (stringp message)
+                       (memq (get-text-property 0 'hermes-rpc-code message)
+                             '(4007 4009))))
+             (hermes-chat--dashboard-bootstrap-error message)
+           (hermes-chat--cancel-automation-resume)
+           (let ((timer (timer-create)))
+             (timer-set-time timer (time-add nil delay))
+             (timer-set-function
+              timer
+              (lambda ()
+                (hermes-chat--in-buffer buffer
+                  (when (and (eq timer hermes-chat--automation-resume-timer)
+                             (hermes-chat--dashboard-context-current-p client generation)
+                             (not (hermes-chat--dashboard-session-attached-p)))
+                    (setq hermes-chat--automation-resume-timer nil)
+                    (hermes-chat--dashboard-resume-automation (1+ attempt))))))
+             (timer-activate timer)
+             (setq hermes-chat--automation-resume-timer timer))))))))
 
 ;;; Session title and background tasks
 
