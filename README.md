@@ -116,7 +116,10 @@ Re-enable `markdown-ts-appear-mode` after changing either preview-enable option.
 | `markdown-ts-appear-code-fence-marker` | Code block borders and language markers. |
 | `markdown-ts-appear-label` | Inverse-video style for code language and callout labels. |
 | `markdown-ts-appear-block-quote-marker` | Block quote markers. |
-| `markdown-ts-appear-table-zebra` | Alternating table row backgrounds. |
+| `markdown-ts-appear-table` | Base font and appearance of wrapped tables; set its font for monospaced alignment. |
+| `markdown-ts-appear-table-header` | Wrapped table header cells; bold by default. |
+| `markdown-ts-appear-table-border` | Wrapped table borders, independent of row shading. |
+| `markdown-ts-appear-table-zebra` | Alternating data-cell backgrounds in wrapped tables. |
 
 Other colors and fonts follow `markdown-ts-mode` and the current theme.
 

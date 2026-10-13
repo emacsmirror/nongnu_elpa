@@ -63,9 +63,25 @@
   :set #'markdown-ts-appear--set-render-option
   :group 'markdown-ts-appear)
 
+(defface markdown-ts-appear-table
+  '((t :inherit markdown-ts-table))
+  "Base face for wrapped tables, including their headers and borders.
+Customize this face's font to keep tables aligned in variable-pitch buffers."
+  :group 'markdown-ts-appear)
+
+(defface markdown-ts-appear-table-header
+  '((t :inherit markdown-ts-appear-table :weight bold))
+  "Face for cell contents in wrapped table headers."
+  :group 'markdown-ts-appear)
+
+(defface markdown-ts-appear-table-border
+  '((t :inherit (shadow markdown-ts-appear-table)))
+  "Face for generated borders in wrapped tables."
+  :group 'markdown-ts-appear)
+
 (defface markdown-ts-appear-table-zebra
-  '((t :inherit hl-line))
-  "Face for alternating data rows in rendered tables."
+  '((t :inherit (hl-line markdown-ts-appear-table)))
+  "Face for alternating wrapped table cells, excluding their borders."
   :group 'markdown-ts-appear)
 
 (defconst markdown-ts-appear-table--row-types
@@ -254,7 +270,7 @@
 (defun markdown-ts-appear-table--window-width (window)
   "Return the number of table-face columns available in WINDOW."
   (if (and window (window-live-p window))
-      (max 1 (window-max-chars-per-line window 'markdown-ts-table))
+      (max 1 (window-max-chars-per-line window 'markdown-ts-appear-table))
     80))
 
 (defun markdown-ts-appear-table--display-windows ()
@@ -270,24 +286,35 @@ Return a single nil entry when the buffer is not currently displayed."
    (lambda (window)
      (list window (or width (markdown-ts-appear-table--window-width window))
            (mapcar (lambda (attribute)
-                     (face-attribute 'markdown-ts-table attribute
+                     (face-attribute 'markdown-ts-appear-table attribute
                                      (and window (window-frame window)) 'default))
                    '(:family :foundry :width :height :weight :slant :fontset))))
    (if width (list nil) (markdown-ts-appear-table--display-windows))))
 
-(defun markdown-ts-appear-table--display-string (lines newline-p &optional face)
+(defun markdown-ts-appear-table--display-string
+    (lines newline-p &optional face prefix-length)
   "Join display LINES and preserve the source newline when NEWLINE-P.
-Apply FACE to line contents before adding the fallback faces."
-  (when face
+Apply FACE to cells, leaving generated borders and PREFIX-LENGTH characters
+of container indentation unshaded."
+  (save-match-data
     (dolist (line lines)
-      (add-face-text-property 0 (length line) face t line)))
+      (let ((pos (or prefix-length 0)))
+        (when face
+          (add-face-text-property pos (length line) face t line))
+        (while (setq pos (string-match "[│├┼┤─]+" line pos))
+          ;; Literal box-drawing characters inside a cell carry source data.
+          ;; Style borders before `--map-pipes' gives them source positions too.
+          (unless (get-text-property pos 'markdown-ts-appear-table--source line)
+            (put-text-property pos (match-end 0) 'face
+                               'markdown-ts-appear-table-border line))
+          (setq pos (match-end 0))))))
   (let ((display (concat (mapconcat #'identity lines "\n")
                          (and newline-p "\n"))))
     ;; A replacement string otherwise inherits unspecified attributes from
     ;; its source character.  Moving its anchor across a shadow-faced pipe
     ;; would recolor the entire row, including its before/after strings.
     (add-face-text-property 0 (length display)
-                            '(markdown-ts-table default) t display)
+                            '(markdown-ts-appear-table default) t display)
     display))
 
 (defun markdown-ts-appear-table--row-bounds (row)
@@ -337,7 +364,12 @@ STRIPE-P marks alternate data rows for optional background shading."
                                        (and markdown-ts-appear-table-zebra-stripe
                                             'markdown-ts-appear-table-zebra))))
                (display
-                (markdown-ts-appear-table--display-string lines newline-p stripe-face))
+                (markdown-ts-appear-table--display-string
+                 lines newline-p
+                 (if (equal (treesit-node-type row) "pipe_table_header")
+                     'markdown-ts-appear-table-header
+                   stripe-face)
+                 (length (markdown-ts-appear-table--prefix row))))
                (overlay (make-overlay beg end nil nil nil)))
     (markdown-ts-appear-table--map-pipes row display)
     (overlay-put overlay 'markdown-ts-appear-table--stripe-face stripe-face)

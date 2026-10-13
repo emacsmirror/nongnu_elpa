@@ -120,18 +120,22 @@
               (should (eq map (markdown-ts-appear-table--layout-map layout)))
               (should (eq enabled
                           (not (null (member '(:inherit markdown-ts-appear-table-zebra)
-                                             (get-text-property 0 'face display))))))
+                                             (get-text-property
+                                              (string-match "bold" display) 'face display))))))
+              (should-not (member '(:inherit markdown-ts-appear-table-zebra)
+                                  (get-text-property 0 'face display)))
               (should (memq 'bold (get-text-property
                                   (string-match "bold" display) 'face display)))
               (should-not (member '(:inherit markdown-ts-appear-table-zebra)
                                   (get-text-property (string-match "\n" display)
                                                      'face display)))
-              (let ((anchor (cadr markdown-ts-appear-table--cursor-overlays)))
+              (let* ((anchor (cadr markdown-ts-appear-table--cursor-overlays))
+                     (text (overlay-get anchor 'display))
+                     (cursor (text-property-any 0 (length text) 'cursor t text)))
                 (should (eq enabled
                             (not (null
                                   (member '(:inherit markdown-ts-appear-table-zebra)
-                                          (get-text-property
-                                           0 'face (overlay-get anchor 'display))))))))
+                                          (get-text-property cursor 'face text)))))))
               (should-not (memq #'markdown-ts-appear--update post-command-hook))
               (should (equal source (buffer-string))))))))))
 
@@ -225,17 +229,50 @@
   (markdown-ts-appear-table-test--with-buffer "| A | B |\n|---|---|\n| x | y |\n" 20
     (save-window-excursion
       (switch-to-buffer (current-buffer))
-      (let ((height (face-attribute 'markdown-ts-table :height)))
-        (unwind-protect
-            (cl-letf (((symbol-function 'markdown-ts-appear-table--window-width)
-                       (lambda (_) 40)))
-              (markdown-ts-appear-table--render)
-              (let ((overlays (copy-sequence markdown-ts-appear-table--overlays)))
-                (set-face-attribute 'markdown-ts-table nil :height
-                                    (+ 10 (face-attribute 'markdown-ts-table :height nil 'default)))
-                (markdown-ts-appear-table--refresh-windows)
-                (should-not (seq-some #'overlay-buffer overlays))))
-          (set-face-attribute 'markdown-ts-table nil :height height))))))
+      (dolist (face '(markdown-ts-table markdown-ts-appear-table))
+        (let ((height (face-attribute face :height)))
+          (unwind-protect
+              (cl-letf (((symbol-function 'markdown-ts-appear-table--window-width)
+                         (lambda (_) 40)))
+                (markdown-ts-appear-table--render)
+                (let ((overlays (copy-sequence markdown-ts-appear-table--overlays)))
+                  (set-face-attribute face nil :height
+                                      (+ 10 (face-attribute face :height nil 'default)))
+                  (markdown-ts-appear-table--refresh-windows)
+                  (should-not (seq-some #'overlay-buffer overlays))))
+            (set-face-attribute face nil :height height)))))))
+
+(ert-deftest markdown-ts-appear-table-test-header-borders-and-literal-glyphs ()
+  (let ((source "  | H│ | Title |\n  |---|---|\n  | x | plain |\n  | z│ | shaded words that wrap |\n"))
+    (markdown-ts-appear-table-test--with-buffer source 24
+      (let* ((rows (markdown-ts-appear-table-test--overlays))
+             (header (markdown-ts-appear-table-test--display (car rows)))
+             (striped (markdown-ts-appear-table-test--display (car (last rows)))))
+        (should (memq 'markdown-ts-appear-table-header
+                      (get-text-property (string-match "Title" header) 'face header)))
+        ;; A box-drawing character written in a cell is content, not a border.
+        (dolist (text (list header striped))
+          (let* ((index (1+ (string-match "[Hz]│" text)))
+                 (faces (get-text-property index 'face text)))
+            (should-not (memq 'markdown-ts-appear-table-border faces))
+            (should (or (memq 'markdown-ts-appear-table-header faces)
+                        (member '(:inherit markdown-ts-appear-table-zebra) faces)))))
+        (dolist (row rows)
+          (let ((display (markdown-ts-appear-table-test--display row)))
+            (dotimes (index (length display))
+              (let ((faces (get-text-property index 'face display)))
+                (when (memq 'markdown-ts-appear-table-border faces)
+                  (should-not (memq 'markdown-ts-appear-table-header faces))
+                  (should-not (member '(:inherit markdown-ts-appear-table-zebra) faces)))))
+            (should (memq 'markdown-ts-appear-table-border
+                          (get-text-property (string-match "[│├]" display)
+                                             'face display)))))
+        ;; Container indentation and newlines are outside the shaded cells.
+        (should-not (memq 'markdown-ts-appear-table-header
+                          (get-text-property 0 'face header)))
+        (should-not (member '(:inherit markdown-ts-appear-table-zebra)
+                            (get-text-property 0 'face striped)))
+        (should (equal source (buffer-string)))))))
 
 (ert-deftest markdown-ts-appear-table-test-outline-and-edits-force-refresh ()
   (markdown-ts-appear-table-test--with-buffer
