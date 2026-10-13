@@ -1125,6 +1125,93 @@ Delegate non-activity events to the notice and display fallback phase."
                 (hermes-dashboard-transport--payload-text payload)))
        (hermes-dashboard-transport--generic-display-event type params payload)))))
 
+(defun hermes-transport--connection-string (raw key)
+  "Return RAW's nonempty string field KEY, or nil."
+  (when-let* ((value (hermes-transport--get raw key))
+              ((stringp value))
+              ((not (string-empty-p value))))
+    value))
+
+(defun hermes-transport--connection-list (raw key)
+  "Return RAW's array field KEY as a list, or the symbol `invalid'."
+  (let ((value (hermes-transport--get raw key)))
+    (cond ((vectorp value) (append value nil))
+          ((listp value) value)
+          (t 'invalid))))
+
+(defun hermes-transport--connection-url (raw)
+  "Return RAW's web authorization link, or nil for any other scheme."
+  (when-let* ((url (hermes-transport--connection-string raw 'connect_url))
+              ((string-match-p "\\`https?://[^[:space:]]+\\'" url)))
+    url))
+
+(defun hermes-transport--connection-needs (raw)
+  "Return the credential labels RAW's install still needs.
+Keep only each field's prompt or name; defaults may be secret and the client
+never collects credentials."
+  (let ((fields (hermes-transport--connection-list raw 'required_env)))
+    (when (listp fields)
+      (delq nil (mapcar (lambda (field)
+                          (or (hermes-transport--connection-string field 'prompt)
+                              (hermes-transport--connection-string field 'name)))
+                        fields)))))
+
+(defun hermes-transport--connection-target (raw)
+  "Return the displayable, non-secret fields of connection target RAW.
+Return nil when RAW lacks the name, kind, or state every frame carries."
+  (let ((name (hermes-transport--connection-string raw 'name))
+        (kind (hermes-transport--connection-string raw 'kind))
+        (state (hermes-transport--connection-string raw 'state)))
+    (when (and name kind state)
+      (list :name name :kind kind :state state
+            :action (hermes-transport--connection-string raw 'action)
+            :alias (hermes-transport--connection-string raw 'alias)
+            :detail (hermes-transport--connection-string raw 'detail)
+            :instructions (hermes-transport--connection-string raw 'instructions)
+            :discovery-error
+            (hermes-transport--connection-string raw 'discovery_error)
+            :connect-url (hermes-transport--connection-url raw)
+            :needs (hermes-transport--connection-needs raw)))))
+
+(defun hermes-transport--connection-snapshot (payload)
+  "Return the full connection operation snapshot in PAYLOAD, or nil.
+PAYLOAD is a `connection.request' or `connection.update' payload, a
+`pending_connection' resume snapshot, or an operation RPC result.  Every
+frame carries all targets, so the result replaces, never merges, a card."
+  (let* ((id (hermes-transport--connection-string payload 'op_id))
+         (seq (hermes-transport--get payload 'seq))
+         (raw (hermes-transport--connection-list payload 'targets))
+         (targets (and (listp raw)
+                       (mapcar #'hermes-transport--connection-target raw)))
+         (display (hermes-transport--get payload 'display))
+         (suggested (and display (hermes-transport--connection-list
+                                  display 'suggested)))
+         (names (mapcar (lambda (target) (plist-get target :name)) targets)))
+    (when (and id (natnump seq) (listp raw)
+               (or targets (and display (listp suggested)))
+               (not (memq nil targets))
+               (equal names (seq-uniq names)))
+      (list :id id :seq seq :targets targets
+            :tool-call-id (hermes-transport--connection-string
+                           payload 'tool_call_id)
+            :suggested (and (null targets) (seq-filter #'stringp suggested))
+            :settled (eq (hermes-transport--get payload 'settled) t)))))
+
+(defun hermes-dashboard-transport--connection-event (type params payload)
+  "Return the structured connection event TYPE from PARAMS and PAYLOAD.
+Accept an update only when its owner is the session the frame is routed to;
+account operations belong to the Connectors page, not a chat."
+  (let ((owner (hermes-transport--get payload 'owner))
+        (session (hermes-transport--connection-string params 'session_id)))
+    (when (and session
+               (or (equal type "connection.request")
+                   (and (equal (hermes-transport--get owner 'type) "session")
+                        (equal (hermes-transport--get owner 'session_id)
+                               session))))
+      (when-let* ((snapshot (hermes-transport--connection-snapshot payload)))
+        (list :type 'connection :event type :session-id session
+              :operation snapshot)))))
+
 (defun hermes-dashboard-transport--normalize-event-frame (frame)
   "Return normalized transport events for JSON-RPC event FRAME."
   (let* ((params (hermes-transport--get frame 'params))
@@ -1132,6 +1219,10 @@ Delegate non-activity events to the notice and display fallback phase."
                 (hermes-transport--get params 'type)))
          (payload (or (hermes-transport--get params 'payload) '())))
     (pcase type
+      ((or "connection.request" "connection.update")
+       (when-let* ((event (hermes-dashboard-transport--connection-event
+                          type params payload)))
+         (list event)))
       ("gateway.ready"
        (list (hermes-dashboard-transport--status-event
               type params payload "ready" "Hermes dashboard connected")))

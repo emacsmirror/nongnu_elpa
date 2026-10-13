@@ -6066,5 +6066,96 @@ first; an unrelated process with that PID is left alone."
                '("agent.terminal.output" . ((process_id . "proc_1") (chunk . "logout\n")))
                '("terminal.close" . ((process_id . "proc_1"))))))
 
+(defconst hermes-transport-test--connection-target
+  '((name . "github") (kind . "connector") (action . "reconnect")
+    (state . "initiated") (resolved . :false) (alias . "work")
+    (instructions . "Approve access in the browser tab.")
+    (connect_url . "https://connect.example/authorize?state=abc")
+    (connection_id . "ca_123") (attempt . "a1"))
+  "A connector target as `Target.snapshot' sends it.")
+
+(ert-deftest hermes-transport-dashboard-connection-request-is-structured ()
+  "A `connection.request' frame is a typed operation, not transcript text."
+  (let* ((events (hermes-test--dashboard-events
+                  `("connection.request"
+                    . ((op_id . "op-1") (seq . 3) (deadline_at . 2000000000.5)
+                       (timeout_seconds . 600) (tool_call_id . "call-1")
+                       (targets . [,hermes-transport-test--connection-target])))))
+         (event (car events))
+         (operation (plist-get event :operation))
+         (target (car (plist-get operation :targets))))
+    (should (= 1 (length events)))
+    (should (eq (plist-get event :type) 'connection))
+    (should (equal (plist-get event :session-id) "sid"))
+    (should (equal (plist-get operation :id) "op-1"))
+    (should (= (plist-get operation :seq) 3))
+    (should (equal (plist-get operation :tool-call-id) "call-1"))
+    (should-not (plist-get operation :settled))
+    (should (equal (plist-get target :connect-url)
+                   "https://connect.example/authorize?state=abc"))
+    (should (equal (plist-get target :alias) "work"))
+    (should (equal (plist-get target :state) "initiated"))))
+
+(ert-deftest hermes-transport-dashboard-connection-update-needs-own-session ()
+  "Updates count only when their owner is the session the frame names."
+  (let ((update (lambda (owner)
+                  (hermes-test--dashboard-events
+                   `("connection.update"
+                     . ((op_id . "op-1") (seq . 4) (deadline_at . 2000000000)
+                        (settled . t) (settled_at . 2000000001)
+                        (settled_by . "all_resolved") (owner . ,owner)
+                        (target . "github") (from . "initiated")
+                        (to . "connected") (actor . "backend_watcher")
+                        (targets . [((name . "github") (kind . "connector")
+                                     (action . "reconnect")
+                                     (state . "connected"))])))))))
+    (let ((operation (plist-get (car (funcall update '((type . "session")
+                                                       (session_id . "sid"))))
+                                :operation)))
+      (should (plist-get operation :settled))
+      (should (equal (plist-get (car (plist-get operation :targets)) :state)
+                     "connected")))
+    (should-not (funcall update '((type . "session") (session_id . "other"))))
+    (should-not (funcall update '((type . "account"))))))
+
+(ert-deftest hermes-transport-dashboard-connection-drops-secrets-and-bad-frames ()
+  "Credential values never leave normalization; malformed frames vanish."
+  (let* ((target (append '((required_env
+                            . [((name . "API_KEY") (required . t) (secret . t)
+                                (default . "must-not-retain")
+                                (prompt . "Linear API key"))])
+                           (token . "must-not-retain"))
+                         (assq-delete-all
+                          'connect_url
+                          (copy-tree hermes-transport-test--connection-target))
+                         '((connect_url . "javascript:alert(1)"))))
+         (events (hermes-test--dashboard-events
+                  `("connection.request"
+                    . ((op_id . "op-1") (seq . 1) (deadline_at . 1)
+                       (timeout_seconds . 1) (targets . [,target])))
+                  '("connection.request"
+                    . ((op_id . "bad") (seq . -1) (targets . [])))
+                  '("connection.request"
+                    . ((op_id . "dup") (seq . 1)
+                       (targets . [((name . "a") (kind . "mcp") (state . "pending"))
+                                   ((name . "a") (kind . "mcp") (state . "pending"))])))))
+         (only (car (plist-get (plist-get (car events) :operation) :targets))))
+    (should (= 1 (length events)))
+    (should-not (string-match-p "must-not-retain" (prin1-to-string events)))
+    (should (equal (plist-get only :needs) '("Linear API key")))
+    (should-not (plist-get only :connect-url))))
+
+(ert-deftest hermes-transport-dashboard-connection-directory-operation ()
+  "A display operation has no targets but still opens a card."
+  (let ((operation (plist-get
+                    (car (hermes-test--dashboard-events
+                          '("connection.request"
+                            . ((op_id . "op-d") (seq . 1) (deadline_at . 1)
+                               (timeout_seconds . 1) (targets . [])
+                               (display . ((suggested . ["gmail" "github"])))))))
+                    :operation)))
+    (should (equal (plist-get operation :suggested) '("gmail" "github")))
+    (should-not (plist-get operation :targets))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here
