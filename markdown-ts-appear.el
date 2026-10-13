@@ -106,7 +106,7 @@ An empty string disables the icon."
   :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-render-callouts t
-  "Whether to render callout labels and softly tinted backgrounds."
+  "Whether to render callout labels and softly tinted header backgrounds."
   :type 'boolean
   :initialize #'custom-initialize-default
   :set #'markdown-ts-appear--set-render-option)
@@ -808,7 +808,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
                   (when (and (stringp foreground) (stringp background)
                              (color-defined-p foreground)
                              (color-defined-p background))
-                    ;; Use only 15% of the accent so the panel stays subdued.
+                    ;; Use only 15% of the accent so the header stays subdued.
                     (list :background
                           (apply #'color-rgb-to-hex
                                  (append
@@ -822,7 +822,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
     (cdr cached)))
 
 (defun markdown-ts-appear--fontify-callout (node start limit)
-  "Render callout NODE's background and label within START through LIMIT."
+  "Render callout NODE's header background and label within START through LIMIT."
   (when-let* ((markdown-ts-appear-render-callouts)
               (data (markdown-ts-appear--callout-data node))
               (beg (nth 0 data))
@@ -836,8 +836,13 @@ at most one following space or tab and are not clipped to START or LIMIT."
                     ("WARNING" 'warning)
                     ("CAUTION" 'error)
                     (_ 'markdown-ts-appear-block-quote-marker))))
-      (when-let* ((face (markdown-ts-appear--callout-background accent)))
-        (add-face-text-property start limit face))
+      (save-excursion
+        (goto-char beg)
+        (let ((header-beg (max start (line-beginning-position)))
+              (header-end (min limit (point-max) (1+ (line-end-position)))))
+          (when-let* (((< header-beg header-end))
+                      (face (markdown-ts-appear--callout-background accent)))
+            (add-face-text-property header-beg header-end face))))
       (when (and (<= start beg) (<= label-end limit)
                  (not (markdown-ts-appear--region-visible-p beg end)))
         (markdown-ts-appear--decorate
