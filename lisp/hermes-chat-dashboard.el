@@ -781,11 +781,12 @@ This also retries kinds the backend earlier reported as unsupported."
 (defun hermes-chat--forget-live-dashboard-session ()
   "Forget the live dashboard session while preserving the durable session key."
   (hermes-chat-todos--disconnect)
-  (hermes-session-control-forget)
   (let ((detached (hermes-chat--work-stop)))
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-running-p nil
           hermes-chat--dashboard-active-session-id nil)
+    ;; After detaching, so an open controls view shows it disconnected.
+    (hermes-session-control-forget)
     (hermes-chat--work-publish-detached detached)))
 
 (defun hermes-chat--stop-dashboard-client ()
@@ -1425,7 +1426,7 @@ profile's workspace.  Keep the reservation through create and overrides."
 
 (defun hermes-chat--dashboard-refresh-goal ()
   "Read the attached session's structured automation snapshot."
-  (hermes-session-control-refresh))
+  (hermes-session-control--read))
 
 (defun hermes-chat--dashboard-idle-context (on-idle)
   "Return an idle-reconciliation context calling ON-IDLE when settled."

@@ -34,6 +34,7 @@
 (declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard")
 (declare-function hermes-chat--dashboard-context-current-p "hermes-chat-dashboard")
 (declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard")
+(declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard")
 (declare-function hermes-chat--command-run-owned "hermes-chat-slash")
 (declare-function hermes-chat--command-context "hermes-chat-slash")
 (declare-function hermes-chat--command-context-current-p "hermes-chat-slash")
@@ -181,14 +182,23 @@ goal's continuation is submitted, or queued behind a running turn."
   (with-current-buffer hermes-session-control--chat
     (funcall function)))
 
+(defun hermes-session-control--read ()
+  "Read a fresh snapshot when this chat is attached; never attach for it."
+  (when (and (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+             hermes-chat--dashboard-active-session-id)
+    (hermes-session-control--send)))
+
 (defun hermes-session-control-refresh ()
-  "Read a fresh control snapshot for this chat or control view."
+  "Read a fresh control snapshot for this chat or control view.
+A detached chat resumes its session, as sending would; attaching reads
+the snapshot itself."
   (interactive)
   (if (derived-mode-p 'hermes-session-control-mode)
       (hermes-session-control--in-chat #'hermes-session-control-refresh)
-    (when (and (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-               hermes-chat--dashboard-active-session-id)
-      (hermes-session-control--send))))
+    (let ((attached (hermes-chat--dashboard-session-attached-p)))
+      (hermes-chat--with-dashboard-session
+       nil (current-buffer)
+       (lambda (_client) (when attached (hermes-session-control--read)))))))
 
 ;;;; Reconciliation
 
@@ -236,7 +246,7 @@ The timer belongs to this attachment and fires at most once."
                           (hermes-chat--dashboard-context-current-p
                            client generation session))
                  (setq hermes-session-control--timer nil)
-                 (hermes-session-control-refresh))))))
+                 (hermes-session-control--read))))))
         (timer-activate timer)
         (setq hermes-session-control--timer timer)))))
 
@@ -251,7 +261,7 @@ this session, while a goal, loop or heartbeat is running."
                  (and (eq (plist-get event :type) 'status)
                       (member (plist-get event :status)
                               '("loop" "goal" "heartbeat" "process")))))
-    (hermes-session-control-refresh)))
+    (hermes-session-control--read)))
 
 ;;;; Actions
 
@@ -530,14 +540,18 @@ heartbeat."
            (or (plist-get heartbeat :fire-count) 0))
    'shadow))
 
-(defun hermes-session-control-render (state)
-  "Insert the control view for chat STATE at point."
+(defun hermes-session-control-render (state &optional detached)
+  "Insert the control view for chat STATE at point.
+DETACHED means the chat has no live session to read."
   (let ((snapshot (plist-get state :snapshot)))
     (when-let* ((error (plist-get state :error)))
       (hermes-session-control--insert-line (concat "Failed: " error) 'error))
     (when-let* ((pending (plist-get state :pending)))
       (hermes-session-control--insert-line (format "Applying %s…" pending) 'shadow))
     (cond
+     ((and (null snapshot) detached)
+      (hermes-session-control--insert-line
+       "Disconnected.  Press g to reconnect and read the session." 'warning))
      ((null snapshot)
       (hermes-session-control--insert-line "Reading session state…" 'shadow))
      ((not (cl-some (lambda (kind) (plist-get snapshot kind)) '(:goal :loop :heartbeat)))
@@ -585,7 +599,8 @@ heartbeat."
                   (propertize "   ? actions  g refresh  n/p move" 'face 'shadow)))
     (when (buffer-live-p chat)
       (hermes-session-control-render
-       (buffer-local-value 'hermes-session-control--state chat)))
+       (buffer-local-value 'hermes-session-control--state chat)
+       (not (with-current-buffer chat (hermes-chat--dashboard-session-attached-p)))))
     (goto-char (or (hermes-session-control--item-position item) (point-min)))
     (pcase-dolist (`(,window ,window-item ,start-line) windows)
       (set-window-start window (save-excursion
@@ -684,7 +699,7 @@ heartbeat."
            (hermes-session-control--redisplay))
          (pop-to-buffer view)
          (with-current-buffer chat
-           (hermes-session-control-refresh)))))))
+           (hermes-session-control--read)))))))
 
 (provide 'hermes-session-control)
 ;;; hermes-session-control.el ends here

@@ -469,6 +469,45 @@ LOOP overrides the loop's fields."
 
 ;;;; Reconnect
 
+(ert-deftest hermes-control-view-refresh-reconnects-a-paused-session ()
+  "After a reconnect, g in an open view resumes the session and reads it."
+  (hermes-test--with-control-view
+    (let ((chat hermes-session-control--chat) resumed reads)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client session-id &rest args)
+                   (push session-id resumed)
+                   (funcall (plist-get args :resolve)
+                            '((session_id . "sid-2") (resumed . "stored-session")))))
+                ((symbol-function 'hermes-dashboard-transport-session-control-read)
+                 (lambda (_client &rest args)
+                   (push (cons (plist-get args :session-id) (plist-get args :resolve))
+                         reads))))
+        (with-current-buffer chat
+          (setq hermes-chat--session-id "stored-session")
+          (hermes-session-control-accept
+           (list :type 'session-control :session-id "sid"
+                 :control (hermes-test--control-snapshot
+                           "paused" '((goal . :null)
+                                      (loop . ((status . "paused")
+                                               (interval_seconds . 300)))))))
+          (hermes-chat--handle-reconnecting-status '(:type status :status "reconnecting"))
+          (hermes-chat--dashboard-handle-reconnected '(:type status :status "reconnected")))
+        ;; A paused loop stays lazy, and the view says why it is empty.
+        (should-not resumed)
+        (should (string-match-p "Disconnected" (buffer-string)))
+        (should-not (hermes-session-control--offers-p "loop.resume"))
+        (hermes-session-control-refresh)
+        (should (equal resumed '("stored-session")))
+        (should (equal (mapcar #'car reads) '("sid-2")))
+        (should (string-match-p "Reading session state" (buffer-string)))
+        (funcall (cdar reads)
+                 `((control . ,(hermes-test--control-wire
+                                "paused" '((goal . :null)
+                                           (loop . ((status . "paused")
+                                                    (interval_seconds . 300))))))))
+        (should-not (string-match-p "Disconnected\\|Reading" (buffer-string)))
+        (should (hermes-session-control--offers-p "loop.resume"))))))
+
 (ert-deftest hermes-control-reconnect-resumes-only-running-automation ()
   "A reconnect stays lazy unless the detached session was running automation."
   (dolist (case '((nil . nil) (t . "stored-session")))
