@@ -3742,5 +3742,36 @@
          :session-id "explicit-sid" :resolve #'ignore :reject #'ignore))
       (should (equal (cdr (assq 'session_id params)) "explicit-sid")))))
 
+(ert-deftest hermes-dashboard-not-shown-negotiation-and-reset ()
+  "Only negotiated window-owned requests decline without settling peers."
+  (dolist (flag '(t :false nil))
+    (let ((client (make-hermes-dashboard-transport-client :websocket 'socket))
+          frames success)
+      (puthash "session" 'subscriber
+               (hermes-dashboard-transport-client-session-index client))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+                 (lambda (_client _method _params resolve &rest _) (setq success resolve)))
+                ((symbol-function 'hermes-dashboard-transport--dispatch-event) #'ignore))
+        (hermes-dashboard-transport--negotiate-server-requests client #'always)
+        (funcall success `((declines_not_shown . ,flag)))
+        (let ((hermes-dashboard-transport-websocket-send-function
+               (lambda (_socket text) (push (hermes-dashboard-transport--decode-frame text) frames))))
+          (dolist (method '("preview.read" "preview.act" "terminal.read" "window.read" "tour" "mcp.setup"))
+            (hermes-dashboard-transport--handle-server-request
+             client `((id . ,method) (method . ,method) (params . ((session_id . "session")))))
+            (should (eql (hermes-transport--get (hermes-transport--get (car frames) 'error) 'code)
+                         (if (and (eq flag t) (not (equal method "mcp.setup"))) 4404 -32601))))
+          (hermes-dashboard-transport-stop client)
+          (setf (hermes-dashboard-transport-client-stopping-p client) nil
+                (hermes-dashboard-transport-client-websocket client) 'new-socket)
+          (puthash "session" 'subscriber
+                   (hermes-dashboard-transport-client-session-index client))
+          (hermes-dashboard-transport--handle-server-request
+           client '((id . "after-stop") (method . "preview.read")
+                    (params . ((session_id . "session")))))
+          (should (equal (hermes-transport--get (car frames) 'id) "after-stop"))
+          (should (eql (hermes-transport--get (hermes-transport--get (car frames) 'error) 'code)
+                       -32601)))))))
+
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here

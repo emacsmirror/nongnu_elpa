@@ -41,6 +41,7 @@
 (require 'hermes-chat-todos)
 (require 'hermes-chat-images)
 (require 'hermes-chat-prompts)
+(require 'hermes-connectors)
 (require 'hermes-notifications)
 (require 'hermes-session-title)
 
@@ -542,13 +543,16 @@ CONTEXT is (KIND SENT), SENT being when the read was sent."
                        (hermes-transport-work-subagents result)
                      (hermes-transport-work-processes result)))
            (error nil))
-    (`(,rows)
+    (`(,all)
      (let ((previous (plist-get (plist-get owner kind) :rows))
+           ;; Persisted failures are history, never live control targets.
+           (rows (seq-remove (lambda (row) (plist-get row :persisted)) all))
            (now (float-time)))
        ;; Unchanged rows keep identity, so pending tails and controls survive.
        (setf (plist-get owner kind)
              (list :sid (plist-get owner :runtime)
                    :rows (mapcar (lambda (row) (or (car (member row previous)) row)) rows)
+                   :failures (seq-filter (lambda (row) (plist-get row :persisted)) all)
                    :observed now))
        (when (eq kind :delegates)
          (setf (plist-get owner :events)
@@ -1331,7 +1335,8 @@ shared client."
      "clarify.request" `((session_id . ,session-id)) payload)))
 
 (defun hermes-chat--dashboard-restore-pending-clarify (result)
-  "Restore RESULT's pending clarification through the live event path."
+  "Restore RESULT's pending connection and clarification requests."
+  (hermes-connectors--restore result)
   (when-let* ((event (hermes-chat--dashboard-pending-clarify-event result))
               (key (hermes-chat--prompt-event-key event)))
     (let* ((existing (gethash key hermes-chat--pending-prompts))
@@ -1571,7 +1576,9 @@ profile's workspace.  Keep the reservation through create and overrides."
     (hermes-chat--work-note-event event))
   ;; Worker lifecycle feeds the roster and the spawning row's live card, not
   ;; per-child transcript rows.
-  (unless (or (and dashboard-p hermes-chat--work-owner
+  (unless (or (and dashboard-p
+                   (hermes-connectors--handle-event event))
+              (and dashboard-p hermes-chat--work-owner
                    (hermes-chat--work-event-p event))
               (and dashboard-p
                    (funcall hermes-chat--busy-submit-event-function event)))
@@ -1613,7 +1620,8 @@ profile's workspace.  Keep the reservation through create and overrides."
             (setq event (list :type 'status :status "closed"
                               :content (plist-get event :content))))
           (hermes-chat--dispatch-accepted-transport-event
-           assistant-id dashboard-p event))))))
+           assistant-id dashboard-p event)
+          (when dashboard-p (hermes-connectors--observe event)))))))
 
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."
@@ -2376,7 +2384,11 @@ GENERATION and SESSION-ID, when non-nil, retain an interactive request's owner."
     (when (hermes-chat--dashboard-context-current-p client generation session-id)
       (hermes--promise-then
        (hermes-dashboard-transport-api-request-async
-        "GET" "/api/fs/list" :query (list (cons 'path directory)) :client client)
+        "GET" "/api/fs/list"
+        :query (append (list (cons 'path directory))
+                       (when hermes-chat--profile
+                         (list (cons 'profile hermes-chat--profile))))
+        :client client)
        (lambda (result)
          (hermes-chat--in-buffer buffer
            (when (hermes-chat--dashboard-context-current-p

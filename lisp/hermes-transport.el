@@ -1198,6 +1198,104 @@ Delegate non-activity events to the notice and display fallback phase."
                 (hermes-dashboard-transport--payload-text payload)))
        (hermes-dashboard-transport--generic-display-event type params payload)))))
 
+(defun hermes-transport--connection-string (raw key)
+  "Return RAW's nonempty string field KEY, or nil."
+  (when-let* ((value (hermes-transport--get raw key))
+              ((stringp value))
+              ((not (string-empty-p value))))
+    value))
+
+(defun hermes-transport--connection-list (raw key)
+  "Return RAW's array field KEY as a list, or the symbol `invalid'."
+  (let ((value (hermes-transport--get raw key)))
+    (cond ((vectorp value) (append value nil))
+          ((listp value) value)
+          (t 'invalid))))
+
+(defun hermes-transport--connection-url (raw)
+  "Return RAW's web authorization link, or nil for any other scheme."
+  (when-let* ((url (hermes-transport--connection-string raw 'connect_url))
+              ((string-match-p "\\`https?://[^[:space:]]+\\'" url)))
+    url))
+
+(defun hermes-transport--connection-needs (raw)
+  "Return the credential labels RAW's install still needs.
+Only fields the backend requires block an install; like the backend, treat
+an omitted `required' as required.  Keep only each field's prompt or name;
+defaults may be secret and the client never collects credentials."
+  (let ((fields (hermes-transport--connection-list raw 'required_env)))
+    (when (listp fields)
+      (delq nil (mapcar (lambda (field)
+                          (when (or (hermes-transport--get field 'required)
+                                    (not (hermes-transport--field-present-p
+                                          field 'required)))
+                            (or (hermes-transport--connection-string
+                                 field 'prompt)
+                                (hermes-transport--connection-string
+                                 field 'name))))
+                        fields)))))
+
+(defun hermes-transport--connection-target (raw)
+  "Return the displayable, non-secret fields of connection target RAW.
+Return nil when RAW lacks the name, kind, or state every frame carries."
+  (let ((name (hermes-transport--connection-string raw 'name))
+        (kind (hermes-transport--connection-string raw 'kind))
+        (state (hermes-transport--connection-string raw 'state)))
+    (when (and name kind state)
+      (list :name name :kind kind :state state
+            :action (hermes-transport--connection-string raw 'action)
+            :alias (hermes-transport--connection-string raw 'alias)
+            :detail (hermes-transport--connection-string raw 'detail)
+            :instructions (hermes-transport--connection-string raw 'instructions)
+            :discovery-error
+            (hermes-transport--connection-string raw 'discovery_error)
+            :connect-url (hermes-transport--connection-url raw)
+            :needs (hermes-transport--connection-needs raw)))))
+
+(defun hermes-transport--connection-snapshot (payload)
+  "Return the full connection operation snapshot in PAYLOAD, or nil.
+PAYLOAD is a `connection.request' or `connection.update' payload, a
+`pending_connection' resume snapshot, or an operation RPC result.  Every
+frame carries all targets, so the result replaces, never merges, a card.
+A directory operation has no targets; only its request carries the
+`display' suggestions, so its settlement update has neither."
+  (let* ((id (hermes-transport--connection-string payload 'op_id))
+         (seq (hermes-transport--get payload 'seq))
+         (raw (hermes-transport--connection-list payload 'targets))
+         (targets (and (listp raw)
+                       (mapcar #'hermes-transport--connection-target raw)))
+         (display (hermes-transport--get payload 'display))
+         (suggested (and display (hermes-transport--connection-list
+                                  display 'suggested)))
+         (names (mapcar (lambda (target) (plist-get target :name)) targets)))
+    (when (and id (natnump seq)
+               (hermes-transport--field-present-p payload 'targets)
+               (listp raw) (listp suggested)
+               (not (memq nil targets))
+               (equal names (seq-uniq names)))
+      (list :id id :seq seq :targets targets
+            :tool-call-id (hermes-transport--connection-string
+                           payload 'tool_call_id)
+            :suggested (and (null targets) (seq-filter #'stringp suggested))
+            :settled (eq (hermes-transport--get payload 'settled) t)
+            :settled-by (hermes-transport--connection-string
+                         payload 'settled_by)))))
+
+(defun hermes-dashboard-transport--connection-event (type params payload)
+  "Return the structured connection event TYPE from PARAMS and PAYLOAD.
+Accept an update only when its owner is the session the frame is routed to;
+account operations belong to the Connectors page, not a chat."
+  (let ((owner (hermes-transport--get payload 'owner))
+        (session (hermes-transport--connection-string params 'session_id)))
+    (when (and session
+               (or (equal type "connection.request")
+                   (and (equal (hermes-transport--get owner 'type) "session")
+                        (equal (hermes-transport--get owner 'session_id)
+                               session))))
+      (when-let* ((snapshot (hermes-transport--connection-snapshot payload)))
+        (list :type 'connection :event type :session-id session
+              :operation snapshot)))))
+
 (defun hermes-dashboard-transport--normalize-event-frame (frame)
   "Return normalized transport events for JSON-RPC event FRAME."
   (let* ((params (hermes-transport--get frame 'params))
@@ -1205,6 +1303,10 @@ Delegate non-activity events to the notice and display fallback phase."
                 (hermes-transport--get params 'type)))
          (payload (or (hermes-transport--get params 'payload) '())))
     (pcase type
+      ((or "connection.request" "connection.update")
+       (when-let* ((event (hermes-dashboard-transport--connection-event
+                          type params payload)))
+         (list event)))
       ("gateway.ready"
        (list (hermes-dashboard-transport--status-event
               type params payload "ready" "Hermes dashboard connected")))
@@ -1298,11 +1400,31 @@ A listed worker is running unless the backend says it is queued."
           :last-tool (hermes-transport-work-string row 'last_tool)
           :accepting-steer (eq (hermes-transport--get row 'accepting_steer) t))))
 
+(defun hermes-transport-work-failure-row (row)
+  "Return read-only worker metadata for persisted failed task ROW."
+  (let* ((delegation (hermes-transport-work-string row 'delegation_id))
+         (index (hermes-transport--get row 'task_index)))
+    (unless (and (integerp index) (>= index 0))
+      (error "Invalid delegation task index"))
+    (list :key (cons 'delegate (format "delegation:%s:%d" delegation index))
+          :id (format "delegation:%s:%d" delegation index) :kind 'delegate
+          :persisted t :state 'failed
+          :delegation-id delegation :task-index index
+          :status (hermes-transport-work-string row 'status)
+          :goal (or (hermes-transport-work-string row 'goal) "—")
+          :error (hermes-transport-work-string row 'error)
+          :started (hermes-transport--work-number row 'dispatched_at)
+          :finished (hermes-transport--work-number row 'completed_at))))
+
 (defun hermes-transport-work-subagents (result)
   "Return worker rows from lossless `subagent.list' RESULT.
-Signal for a missing or malformed roster array."
-  (hermes-transport--work-rows result "subagents" 'subagent_id
-                               #'hermes-transport-work-delegate-row))
+Signal for a missing live roster or a malformed roster array.
+An absent delegation array is accepted for older backends."
+  (append (hermes-transport--work-rows result "subagents" 'subagent_id
+                                      #'hermes-transport-work-delegate-row)
+          (when (and (hash-table-p result) (gethash "delegations" result))
+            (hermes-transport--work-rows result "delegations" 'delegation_id
+                                         #'hermes-transport-work-failure-row))))
 
 (defun hermes-transport-work-process-state (status exit-code reason)
   "Return the process state for wire STATUS, EXIT-CODE and completion REASON.

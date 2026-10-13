@@ -360,10 +360,20 @@ only while the originating profile buffer still owns the operation."
          (format "cleared %s for %s" key
                  (hermes-messaging--field platform 'name)))))))
 
+(defun hermes-messaging--posture-message (posture name)
+  "Return a fixed message for connected platform NAME's auth POSTURE, or nil.
+POSTURE is the backend's `auth_posture' enum; unknown values return nil."
+  (pcase posture
+    ("deny_all" (format "%s is connected, but no users are authorized. Set an allowlist or approve a pairing request." name))
+    ("open" (format "%s is connected and open to all users." name))
+    ("allowlist" (format "%s is connected; an allowlist is configured." name))
+    ("pairing" (format "%s is connected; paired users are approved." name))))
+
 (defun hermes-messaging--safe-test-message (result platform)
   "Return a fail-closed display message for test RESULT and PLATFORM.
 Only exact messages generated from the documented platform-test states are
-accepted.  Arbitrary runtime error text is never displayed."
+accepted, after the connected platform's authorization posture.
+Arbitrary runtime error text is never displayed."
   (let* ((name (hermes-messaging--field platform 'name))
          (missing
           (delq nil
@@ -385,6 +395,9 @@ accepted.  Arbitrary runtime error text is never displayed."
                 "Setup looks complete, but the gateway has not reported a connection yet. Restart the gateway."))
          (raw (hermes-transport--field result 'message)))
     (cond
+     ((and (hermes-transport--true-p (hermes-transport--get result 'ok))
+           (hermes-messaging--posture-message
+            (hermes-transport--get result 'auth_posture) name)))
      ((and raw (member raw known)) raw)
      ((hermes-transport--true-p (hermes-transport--get result 'ok)) "Platform test succeeded.")
      (t "Platform test failed."))))

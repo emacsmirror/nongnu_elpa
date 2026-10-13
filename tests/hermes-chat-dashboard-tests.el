@@ -5148,5 +5148,110 @@ defaults to an attached chat."
     (should-not (hermes-test--offered rows '(section . agents)))
     (should-not (hermes-test--offered rows '(section . processes)))))
 
+(ert-deftest hermes-chat-directory-browser-uses-captured-profile ()
+  "File listing uses the chat profile rather than the launch default."
+  (hermes-test-with-chat-buffer
+   (let ((client (hermes-test--dashboard-client)) query)
+     (setq hermes-chat--profile "remote-work"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (_method _path &rest args)
+                  (setq query (plist-get args :query))
+                  (hermes--promise-make))))
+       (hermes-chat--browse-instance-directory client "/srv")
+       (should (equal query '((path . "/srv") (profile . "remote-work"))))))))
+
+(ert-deftest hermes-chat-work-persisted-failures-are-read-only ()
+  "Failed tasks survive fresh roster reads and cannot send live controls."
+  (hermes-test--with-worker-view
+    (with-current-buffer chat
+      (hermes-chat-work-refresh)
+      (hermes-test--work-answer
+       client "{\"subagents\":[],\"delegations\":[{\"delegation_id\":\"batch\",\"task_index\":0,\"status\":\"failed\",\"goal\":\"Check compatibility\",\"error\":\"Cannot read module\",\"dispatched_at\":10,\"completed_at\":20},{\"delegation_id\":\"batch\",\"task_index\":1,\"status\":\"error\",\"goal\":\"Check rendering\",\"error\":\"Render failed\",\"dispatched_at\":10,\"completed_at\":25}]}")
+      (let* ((rows (plist-get (hermes-chat--work-roster owner (float-time)) :agents))
+             (failures (seq-filter (lambda (row) (eq (plist-get row :state) 'failed)) rows)))
+        (should (= (length failures) 2))
+        (should-not (equal (plist-get (car failures) :key) (plist-get (cadr failures) :key)))
+        (should (equal (mapcar (lambda (row) (plist-get row :finished)) failures) '(20 25)))
+        (should (= (plist-get (car failures) :started) 10))))
+    (goto-char (point-min))
+    (search-forward "Check compatibility")
+    (should (string-match-p "Cannot read module" (buffer-string)))
+    (let ((before (length frames)))
+      (dolist (command '(hermes-work-steer hermes-work-interrupt hermes-work-tail))
+        (should-error (call-interactively command) :type 'user-error))
+      (should (= before (length frames))))))
+
+(ert-deftest hermes-chat-work-persisted-failures-follow-live-workers ()
+  "A persisted failure follows live workers unless one already shows its task."
+  (let* ((now 1000.0)
+         (event (lambda (name status index)
+                  (list :type 'event :event name :subagent-id (format "sa-%d" index)
+                        :delegation-id "batch" :task-index index :status status
+                        :content "Goal")))
+         (events (seq-reduce (lambda (events args)
+                               (hermes-chat--work-apply-event
+                                events (apply event args) now))
+                             '(("subagent.start" nil 0)
+                               ("subagent.complete" "failed" 0))
+                             nil))
+         (failure (lambda (index)
+                    (list :key (cons 'delegate (format "delegation:batch:%d" index))
+                          :id (format "delegation:batch:%d" index) :kind 'delegate
+                          :persisted t :state 'failed :delegation-id "batch"
+                          :task-index index :goal "Goal")))
+         (owner (list :runtime "sid" :events events
+                      :delegates (list :sid "sid" :rows nil
+                                       :failures (list (funcall failure 0)
+                                                       (funcall failure 1)))))
+         (agents (plist-get (hermes-chat--work-roster owner now) :agents)))
+    (should (equal (mapcar (lambda (row) (plist-get row :id)) agents)
+                   '("sa-0" "delegation:batch:1")))
+    ;; Once the live worker leaves the roster, its persisted failure remains.
+    (should (equal (mapcar (lambda (row) (plist-get row :id))
+                           (plist-get (hermes-chat--work-roster owner (+ now 3600)) :agents))
+                   '("delegation:batch:0" "delegation:batch:1")))
+    ;; A persisted failure from another runtime is not shown.
+    (setf (plist-get (plist-get owner :delegates) :sid) "old")
+    (should (equal (mapcar (lambda (row) (plist-get row :id))
+                           (plist-get (hermes-chat--work-roster owner now) :agents))
+                   '("sa-0")))))
+
+(ert-deftest hermes-chat-work-persisted-failure-matches-live-snapshot-worker ()
+  "A live worker's task index from its events dedupes its persisted failure.
+The live roster omits task indexes, so only the worker's events link it
+to the persisted task."
+  (let* ((now 1000.0)
+         (all (hermes-transport-work-subagents
+               (hermes-transport-json-parse-lossless
+                "{\"subagents\":[{\"subagent_id\":\"sa-0\",\"delegation_id\":\"batch\",\"status\":\"running\",\"goal\":\"Check compatibility\",\"started_at\":10}],\"delegations\":[{\"delegation_id\":\"batch\",\"task_index\":0,\"status\":\"failed\",\"goal\":\"Check compatibility\",\"error\":\"Cannot read module\",\"dispatched_at\":10,\"completed_at\":20}]}")))
+         (events (seq-reduce
+                  (lambda (events event) (hermes-chat--work-apply-event events event now))
+                  (list (list :type 'event :event "subagent.start" :subagent-id "sa-0"
+                              :delegation-id "batch" :task-index 0
+                              :content "Check compatibility")
+                        (list :type 'event :event "subagent.complete" :subagent-id "sa-0"
+                              :delegation-id "batch" :task-index 0 :status "failed"
+                              :content "Check compatibility"))
+                  nil))
+         (owner (list :runtime "sid" :events events
+                      :delegates (list :sid "sid"
+                                       :rows (seq-remove (lambda (row) (plist-get row :persisted)) all)
+                                       :failures (seq-filter (lambda (row) (plist-get row :persisted)) all)))))
+    (should (equal (mapcar (lambda (row) (list (plist-get row :id) (plist-get row :state)))
+                           (plist-get (hermes-chat--work-roster owner now) :agents))
+                   '(("sa-0" failed))))))
+
+(ert-deftest hermes-work-persisted-failure-meta-says-when ()
+  "A persisted failure reports its run time and how long ago it ended."
+  (let ((row (list :kind 'delegate :state 'failed :started 100 :finished 400)))
+    (should (equal (mapcar #'substring-no-properties
+                           (hermes-work--agent-meta (append '(:persisted t) row) 4000))
+                   (list (hermes-work-duration 300) (hermes-work-ago 3600))))
+    (should (equal (mapcar #'substring-no-properties (hermes-work--agent-meta row 4000))
+                   (list (hermes-work-duration 300))))))
+
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here

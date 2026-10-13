@@ -675,6 +675,7 @@ Return a promise of the response plist.  CANCEL-SETTER owns cancellation."
   ;; Server-originated requests have separate correlation and connection scope.
   (server-requests (make-hash-table :test #'equal))
   server-requests-capability
+  declines-not-shown-p
   ;; Deprecated: session identity is buffer-local.  These slots are retained
   ;; for incremental source compatibility only; chat and control paths no
   ;; longer read or write them.  Do not add new dependencies on them.

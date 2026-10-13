@@ -641,7 +641,8 @@ SINGLE-EVENT-P omits request-derived error events."
         (subscribers (hermes-dashboard-transport-client-subscribers client))
         (session-index (hermes-dashboard-transport-client-session-index client)))
     (clrhash (hermes-dashboard-transport-client-server-requests client))
-    (setf (hermes-dashboard-transport-client-server-requests-capability client) nil)
+    (setf (hermes-dashboard-transport-client-server-requests-capability client) nil
+          (hermes-dashboard-transport-client-declines-not-shown-p client) nil)
     (cl-incf (hermes-dashboard-transport-client-generation client))
     (cl-incf (hermes-dashboard-transport-client-process-generation client))
     (setf (hermes-dashboard-transport-client-stopping-p client) t
@@ -760,7 +761,8 @@ Return captured resources, never a lease on later client state."
        (hermes-dashboard-transport-client-pending client))
       (hermes-dashboard-transport--reset-readiness client))
     (clrhash (hermes-dashboard-transport-client-server-requests client))
-    (setf (hermes-dashboard-transport-client-server-requests-capability client) nil)
+    (setf (hermes-dashboard-transport-client-server-requests-capability client) nil
+          (hermes-dashboard-transport-client-declines-not-shown-p client) nil)
     (setf (hermes-dashboard-transport-client-websocket client) nil
           (hermes-dashboard-transport-client-startup-cancel client) nil
           (hermes-dashboard-transport-client-idle-timer client) nil
@@ -1283,6 +1285,14 @@ FN must accept trailing :resolve/:reject keywords, as the typed
              (gethash (plist-get request :session-id)
                       (hermes-dashboard-transport-client-session-index client))))))
 
+(defconst hermes-dashboard-transport--window-requests
+  '("preview.read" "preview.act" "terminal.read" "window.read" "tour")
+  "Server requests that only the window showing their session answers.")
+
+(defconst hermes-dashboard-transport--not-shown-code 4404
+  "JSON-RPC error code declining a window request no window here shows.
+The backend keeps the request open for other clients until all decline.")
+
 (defun hermes-dashboard-transport-answer-request
     (request result &optional resolve reject error-code)
   "Answer server REQUEST once with RESULT on its originating socket.
@@ -1302,7 +1312,9 @@ Secret values are never placed in the outgoing RPC correlation table."
                            `((jsonrpc . "2.0") (id . ,(plist-get request :id))
                              ,(if error-code
                                   `(error . ((code . ,error-code)
-                                             (message . "Request unsupported by this client")))
+                                             (message . ,(if (eql error-code hermes-dashboard-transport--not-shown-code)
+                                                             "No window in this client shows the session"
+                                                           "Request unsupported by this client"))))
                                 `(result . ,result)))))
                  t)
              ((error quit) nil))))
@@ -1365,7 +1377,12 @@ Secret values are never placed in the outgoing RPC correlation table."
                           :session-id sid :server-request request
                           :server-request-required-p t
                           :content "Unsupported backend request declined")))
-          (hermes-dashboard-transport-answer-request request nil nil nil -32601))))))
+          (hermes-dashboard-transport-answer-request
+           request nil nil nil
+           (if (and (hermes-dashboard-transport-client-declines-not-shown-p client)
+                    (member method hermes-dashboard-transport--window-requests))
+               hermes-dashboard-transport--not-shown-code
+             -32601)))))))
 
 (defun hermes-dashboard-transport--cancel-server-request (client params)
   "Retire only the request named by CLIENT's cancellation PARAMS."
@@ -1389,9 +1406,11 @@ Secret values are never placed in the outgoing RPC correlation table."
     (setf (hermes-dashboard-transport-client-server-requests-capability client) 'pending)
     (hermes-dashboard-transport-request
      client "client.capabilities" '((server_requests . t))
-     (lambda (_result)
+     (lambda (result)
        (when (funcall current)
-         (setf (hermes-dashboard-transport-client-server-requests-capability client) t)))
+         (setf (hermes-dashboard-transport-client-server-requests-capability client) t
+               (hermes-dashboard-transport-client-declines-not-shown-p client)
+               (eq (hermes-transport--get result 'declines_not_shown) t))))
      (lambda (message)
        (when (funcall current)
          (setf (hermes-dashboard-transport-client-server-requests-capability client) 'unavailable)

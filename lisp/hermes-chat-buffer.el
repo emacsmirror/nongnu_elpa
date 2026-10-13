@@ -3156,7 +3156,7 @@ progress events never create a worker, and late queueing never demotes one."
 ;; snapshot's.
 
 (defconst hermes-chat--work-activity-keys
-  '(:parent :delegation-id :started :tool-count :tools :summary :error)
+  '(:parent :delegation-id :task-index :started :tool-count :tools :summary :error)
   "Worker fields learned from subagent events besides state and goal.")
 
 (defconst hermes-chat--work-recent-tools 8
@@ -3170,8 +3170,8 @@ progress events never create a worker, and late queueing never demotes one."
 (defun hermes-chat--work-event-activity (event entry state now)
   "Return the activity that subagent EVENT contributes to ENTRY at NOW.  Pure.
 STATE is the worker state after EVENT.  Only fields EVENT carries appear:
-the parent, the delegation call that spawned the worker, the first start
-time, the tool count, the recent tools as
+the parent, the delegation call that spawned the worker and its task
+index there, the first start time, the tool count, the recent tools as
 \(NAME . TARGET) pairs, newest last, and a completion's summary, or its
 error when STATE is a failure."
   (let ((name (plist-get event :event))
@@ -3183,6 +3183,8 @@ error when STATE is a failure."
      (when-let* ((delegation (hermes-transport--non-empty-string
                               (plist-get event :delegation-id))))
        (list :delegation-id delegation))
+     (when (natnump (plist-get event :task-index))
+       (list :task-index (plist-get event :task-index)))
      (when (and (equal name "subagent.start") (not (plist-get entry :started)))
        (list :started now))
      (when (natnump count) (list :tool-count count))
@@ -3323,15 +3325,17 @@ decides.  An event-only worker the read omits is finished likewise, see
 Event state wins because a snapshot can predate the events, except that an
 event's `queued' never overrides the snapshot.  Event activity, such as the
 recent tools, their count and a completion summary, also overlays the
-snapshot; the snapshot's parent and start time stay authoritative.
-Finished event-only workers are listed for `hermes-chat--work-retain'
-seconds.  Rows without event data keep identity."
+snapshot, as does the worker's task index, which the snapshot omits; the
+snapshot's parent and start time stay authoritative.  Finished event-only
+workers are listed for `hermes-chat--work-retain' seconds.  Rows without
+event data keep identity."
   (append
    (mapcar (lambda (row)
              (let* ((data (cdr (assoc (plist-get row :id) events)))
                     (state (plist-get data :state))
                     (activity (hermes-chat--work-activity
-                               data '(:finished :tool-count :tools :summary :error))))
+                               data '(:task-index :finished :tool-count :tools
+                                      :summary :error))))
                (cond (activity
                       (append (unless (memq state (list nil 'queued))
                                 (list :state state))
@@ -3384,16 +3388,35 @@ Exits older than `hermes-chat--work-retain' or undated are dropped."
                   (run-a (> (or (plist-get a :uptime) 0) (or (plist-get b :uptime) 0)))
                   (t (> (plist-get a :exited-at) (plist-get b :exited-at))))))))
 
+(defun hermes-chat--work-unshown-failures (failures agents)
+  "Return persisted FAILURES not yet represented by a worker in AGENTS.  Pure.
+A worker represents a failure when it ran the same task of the same
+delegation."
+  (seq-remove (lambda (failure)
+                (seq-some (lambda (row)
+                            (and (equal (plist-get row :delegation-id)
+                                        (plist-get failure :delegation-id))
+                                 (eql (plist-get row :task-index)
+                                      (plist-get failure :task-index))))
+                          agents))
+              failures))
+
 (defun hermes-chat--work-roster (owner now)
   "Return OWNER's displayed roster at time NOW as (:agents ROWS :processes ROWS).
-Workers are in tree order.  The header and the work views both derive from
-this value."
-  (let ((sid (plist-get owner :runtime)))
+Workers are in tree order, followed by the session's persisted failed
+delegation tasks.  The header and the work views both derive from this value."
+  (let* ((sid (plist-get owner :runtime))
+         (delegates (plist-get owner :delegates))
+         (agents (hermes-chat--work-merge-agents
+                  (plist-get owner :events)
+                  (hermes-chat--work-snapshot-rows delegates sid)
+                  now)))
     (list :agents (hermes-chat--work-tree
-                   (hermes-chat--work-merge-agents
-                    (plist-get owner :events)
-                    (hermes-chat--work-snapshot-rows (plist-get owner :delegates) sid)
-                    now))
+                   (append agents
+                           (hermes-chat--work-unshown-failures
+                            (and (equal (plist-get delegates :sid) sid)
+                                 (plist-get delegates :failures))
+                            agents)))
           :processes (hermes-chat--work-process-rows
                       (hermes-chat--work-snapshot-rows (plist-get owner :processes) sid)
                       now))))

@@ -764,7 +764,7 @@
       (unwind-protect
           (progn
             (set-frame-width (selected-frame) 80)
-            (dolist (case '((hermes-mcp-mode hermes-mcp-mode-map "server-one" 5)
+            (dolist (case '((hermes-mcp-mode hermes-mcp-mode-map "server-one" 6)
                             (hermes-kanban-mode hermes-kanban-mode-map "task-one" 4)))
               (with-temp-buffer
                 (switch-to-buffer (current-buffer))

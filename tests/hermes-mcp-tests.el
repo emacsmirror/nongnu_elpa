@@ -107,7 +107,7 @@
          (setq-local hermes-instance '("test" . "https://backend.example"))
          (puthash "srv" '((name . "srv") (url . "https://mcp.example") (auth . "oauth"))
                   hermes-mcp--servers)
-         (setq tabulated-list-entries '(("srv" ["srv" "http" "on" "configured" "0"])))
+         (setq tabulated-list-entries '(("srv" ["srv" "http" "on" "configured" "0" ""])))
          (tabulated-list-print)
          (goto-char (point-min))
          ,@body))))
@@ -657,7 +657,7 @@
         (hermes-mcp-mode)
         (hermes-mcp--ensure-state)
         (puthash "ctx" '((name . "ctx") (enabled . t)) hermes-mcp--servers)
-        (setq tabulated-list-entries '(("ctx" ["ctx" "stdio" "on" "ok" "1"])))
+        (setq tabulated-list-entries '(("ctx" ["ctx" "stdio" "on" "ok" "1" ""])))
         (tabulated-list-print)
         (goto-char (point-min))
         (let ((origin (current-buffer)))
@@ -685,7 +685,7 @@
         (hermes-mcp-mode)
         (hermes-mcp--ensure-state)
         (puthash "ctx" '((name . "ctx") (enabled . t)) hermes-mcp--servers)
-        (setq tabulated-list-entries '(("ctx" ["ctx" "stdio" "on" "ok" "1"])))
+        (setq tabulated-list-entries '(("ctx" ["ctx" "stdio" "on" "ok" "1" ""])))
         (tabulated-list-print)
         (goto-char (point-min))
         (hermes-mcp-toggle)
@@ -1224,6 +1224,25 @@ named dashboards are indistinguishable here and must also fail closed."
         (should-not calls)
         (should-not hermes-mcp--operation)
         (should (= released 1))))))
+
+(ert-deftest hermes-mcp-plugin-ownership-is-visible-and-read-only ()
+  "Plugin ownership is shown and mutations never reach the transport."
+  (dolist (action '(hermes-mcp-toggle hermes-mcp-remove hermes-mcp-authenticate))
+    (hermes-mcp-test--transport-operation
+      (puthash "srv" '((name . "srv") (source . "plugin") (plugin . "github")
+                       (enabled . t) (url . "https://mcp.example"))
+               hermes-mcp--servers)
+      (let ((err (should-error (funcall action) :type 'user-error)))
+        (should (string-match-p "plugin github" (error-message-string err))))
+      (should-not requests)
+      (should-not timers)
+      (should (= released 0))))
+  (let* ((rows (hermes-mcp--rows
+                '((servers . (((name . "srv") (source . "plugin")
+                               (plugin . "github") (enabled . t))))) nil))
+         (cells (cadar rows)))
+    (should (equal (aref cells 5) "github"))
+    (should (eq (get-text-property 0 'face (aref cells 5)) 'shadow))))
 
 (provide 'hermes-mcp-tests)
 ;;; hermes-mcp-tests.el ends here

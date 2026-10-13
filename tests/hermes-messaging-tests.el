@@ -559,5 +559,23 @@
         (should (equal requested-profile "new"))
         (should (equal hermes-messaging-profile "new"))))))
 
+(ert-deftest hermes-messaging-test-interprets-auth-posture ()
+  "Structured authorization posture takes precedence over success and prose."
+  (let ((platform (hermes-messaging-test--platform t)))
+    (dolist (case '(("deny_all" . "Telegram is connected, but no users are authorized. Set an allowlist or approve a pairing request.")
+                    ("open" . "Telegram is connected and open to all users.")
+                    ("allowlist" . "Telegram is connected; an allowlist is configured.")
+                    ("pairing" . "Telegram is connected; paired users are approved.")))
+      (should (equal (hermes-messaging--safe-test-message
+                      `((ok . t) (state . "connected") (auth_posture . ,(car case))
+                        (message . "Connected. 3 users paired."))
+                      platform)
+                     (cdr case))))
+    ;; An unknown posture keeps the generic, fail-closed reading.
+    (should (equal (hermes-messaging--safe-test-message
+                    '((ok . t) (auth_posture . "future") (message . "Anything"))
+                    platform)
+                   "Platform test succeeded."))))
+
 (provide 'hermes-messaging-tests)
 ;;; hermes-messaging-tests.el ends here

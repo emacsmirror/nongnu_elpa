@@ -188,7 +188,9 @@ TEST-RESULTS maps server names to `test' endpoint responses."
                       'hermes-browser-status)
                      (hermes-browser--face-cell
                       (hermes-mcp--tool-count server test-results)
-                      'hermes-browser-tool-count)))))
+                      'hermes-browser-tool-count)
+                     (hermes-browser--face-cell
+                      (hermes-mcp--field server 'plugin) 'shadow)))))
    (hermes-mcp--server-list result)))
 
 (defun hermes-mcp--unsupported-api-error-p (message)
@@ -333,6 +335,7 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
   (let* ((server (hermes-mcp--server-at-point))
          (name (or (hermes-transport--field server 'name)
                    (hermes-mcp--name-at-point))))
+    (hermes-mcp--require-mutable server)
     (unless (hermes-transport--field-present-p server 'enabled)
       (user-error "MCP server %s has no enabled state; refresh or update Hermes Agent/dashboard"
                   (hermes-mcp--redact-display name)))
@@ -351,6 +354,14 @@ TARGET and GENERATION identify an existing buffer-owned refresh."
          (hermes-mcp--revert))))))
 
 ;;; Management
+
+(defun hermes-mcp--require-mutable (server)
+  "Refuse to change SERVER when a plugin provides it.
+The backend rejects such changes; refuse before sending any request."
+  (when (equal (hermes-transport--field server 'source) "plugin")
+    (user-error "MCP server %s comes from plugin %s; change it through that plugin"
+                (hermes-mcp--field server 'name)
+                (hermes-mcp--field server 'plugin))))
 
 (defun hermes-mcp--idle ()
   "Refuse another action while an owned operation is active."
@@ -465,6 +476,8 @@ Stdio arguments are entered individually, not interpreted by a shell."
   (hermes-mcp--idle)
   (let ((name (hermes-mcp--name-at-point))
         (context (hermes-mcp--context)))
+    (hermes-mcp--require-mutable
+     (and (hash-table-p hermes-mcp--servers) (gethash name hermes-mcp--servers)))
     (when (and (yes-or-no-p (format "Remove MCP server %s from this instance? "
                                     (hermes-mcp--redact-display name)))
                (hermes-mcp--current-p context))
@@ -608,6 +621,7 @@ The browser returns to the backend callback URL, which must be reachable."
   (let* ((server (hermes-mcp--server-at-point))
          (name (hermes-mcp--name-at-point))
          (context (hermes-mcp--context)))
+    (hermes-mcp--require-mutable server)
     (unless (and (hermes-transport--field server 'url)
                  (not (equal (hermes-transport--field server 'auth) "header")))
       (user-error "OAuth requires an HTTP server without header authentication"))
@@ -810,7 +824,7 @@ The browser returns to the backend callback URL, which must be reachable."
   (add-hook 'change-major-mode-hook #'hermes-mcp--cleanup nil t)
   (setq tabulated-list-format
         [("Name" 24 t) ("Type" 8 t) ("Enabled" 8 t)
-         ("Status" 12 t) ("Tools" 7 t)])
+         ("Status" 12 t) ("Tools" 7 t) ("Plugin" 0 t)])
   (setq-local revert-buffer-function #'hermes-mcp--revert)
   (tabulated-list-init-header))
 
