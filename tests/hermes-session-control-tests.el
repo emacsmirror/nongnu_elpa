@@ -448,6 +448,27 @@ LOOP overrides the loop's fields."
                          (goal) (loop) (heartbeat))))))
     (should (string-match-p "No goal, loop or heartbeat" (buffer-string)))))
 
+(ert-deftest hermes-control-push-keeps-the-reading-position ()
+  "A pushed snapshot keeps point and the window start on their text.
+That holds inside unnavigable text, and when a note is added above it."
+  (hermes-test--with-control-view
+    (let ((window (selected-window)))
+      (set-window-buffer window (current-buffer))
+      (goto-char (point-min))
+      (search-forward "Check the b")
+      (set-window-point window (point))
+      (set-window-start window (save-excursion (search-backward "Loop") (point)) t)
+      (with-current-buffer hermes-session-control--chat
+        (hermes-session-control--update '(:request "goal.pause"))
+        (hermes-session-control-accept
+         (list :type 'session-control :session-id "sid"
+               :control (hermes-test--control-snapshot "next"))))
+      (should (string-match-p "Applying goal.pause" (buffer-string)))
+      (should (looking-at-p "uild"))
+      (should (= (window-point window) (point)))
+      (should (save-excursion (goto-char (window-start window))
+                              (looking-at-p "Loop$"))))))
+
 (ert-deftest hermes-control-navigation-and-refresh-keep-the-item ()
   "n/p walk sections and criteria; a re-render keeps point on its item."
   (hermes-test--with-control-view

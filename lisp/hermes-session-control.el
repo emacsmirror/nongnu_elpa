@@ -579,17 +579,40 @@ DETACHED means the chat has no live session to read."
   "Return the start of navigation target ITEM, or nil."
   (car (rassoc item (hermes-session-control--item-starts))))
 
+(defun hermes-session-control--anchor (position)
+  "Return POSITION as (ITEM LINES COLUMN) relative to the item before it.
+ITEM is the last navigation target starting at or before POSITION, or
+nil for the top; LINES and COLUMN place POSITION from that start.  The
+anchor survives a repaint that changes other sections or adds notes."
+  (let ((start (car (last (seq-filter (lambda (entry) (<= (car entry) position))
+                                      (hermes-session-control--item-starts))))))
+    (save-excursion
+      (goto-char position)
+      (list (cdr start)
+            (- (line-number-at-pos) (line-number-at-pos (or (car start) (point-min))))
+            (current-column)))))
+
+(defun hermes-session-control--place (anchor)
+  "Return the position of ANCHOR from `hermes-session-control--anchor'.
+An item that is gone places it at the top."
+  (pcase-let ((`(,item ,lines ,column) anchor))
+    (save-excursion
+      (goto-char (or (and item (hermes-session-control--item-position item))
+                     (point-min)))
+      (forward-line lines)
+      (move-to-column column)
+      (point))))
+
 (defun hermes-session-control--redisplay ()
-  "Re-render this control view, keeping each window on the same item."
+  "Re-render this control view, keeping point and each window on its text."
   (let* ((inhibit-read-only t)
          (chat hermes-session-control--chat)
+         (point (hermes-session-control--anchor (point)))
          (windows (mapcar (lambda (window)
                             (list window
-                                  (get-text-property (window-point window)
-                                                     'hermes-session-control-item)
-                                  (line-number-at-pos (window-start window))))
-                          (get-buffer-window-list nil nil t)))
-         (item (get-text-property (point) 'hermes-session-control-item)))
+                                  (hermes-session-control--anchor (window-start window))
+                                  (hermes-session-control--anchor (window-point window))))
+                          (get-buffer-window-list nil nil t))))
     (erase-buffer)
     (setq header-line-format
           (concat " " (propertize (hermes-buffer--mode-line-literal
@@ -601,15 +624,13 @@ DETACHED means the chat has no live session to read."
       (hermes-session-control-render
        (buffer-local-value 'hermes-session-control--state chat)
        (not (with-current-buffer chat (hermes-chat--dashboard-session-attached-p)))))
-    (goto-char (or (hermes-session-control--item-position item) (point-min)))
-    (pcase-dolist (`(,window ,window-item ,start-line) windows)
+    (goto-char (hermes-session-control--place point))
+    (pcase-dolist (`(,window ,start ,place) windows)
       (set-window-start window (save-excursion
-                                 (goto-char (point-min))
-                                 (forward-line (1- start-line))
-                                 (point))
+                                 (goto-char (hermes-session-control--place start))
+                                 (line-beginning-position))
                         t)
-      (set-window-point window (or (hermes-session-control--item-position window-item)
-                                   (point-min))))))
+      (set-window-point window (hermes-session-control--place place)))))
 
 (defun hermes-session-control-next (&optional n)
   "Move to the Nth next section or criterion; backward when N is negative."
