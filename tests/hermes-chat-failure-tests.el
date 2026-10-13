@@ -284,6 +284,34 @@ Return the settled assistant entry."
         (should-error (hermes-chat-failure-retry id) :type 'user-error)
         (should-not calls)))))
 
+(ert-deftest hermes-chat-failure-older-failure-stops-offering-retry ()
+  "A newer user turn removes Retry from the older block and its popup."
+  (hermes-test-with-chat-buffer
+    (let ((id (hermes-test--fail-turn
+               '(:surface (:layer "provider" :code "rate_limit" :retryable t)
+                          :detail "429"))))
+      (should (string-match-p "\\[Retry\\] \\[Switch model\\]"
+                              (hermes-test--failure-transcript)))
+      (hermes-chat--insert-entry (hermes-chat--make-entry 'user "later" 'done))
+      (let ((text (hermes-test--failure-transcript)))
+        (should-not (string-match-p "\\[Retry\\]" text))
+        (should (string-match-p "    \\[Switch model\\]  ▸ Details\n" text)))
+      (goto-char (text-property-any (point-min) (point-max)
+                                    'hermes-chat-failure-id id))
+      (should-not (hermes-chat--failure-action-p 'retry))
+      (should (hermes-chat--failure-action-p 'switch-model))
+      ;; A later re-render (here the Details toggle) keeps it hidden.
+      (hermes-test--push-button-labeled "▸ Details")
+      (should-not (string-match-p "\\[Retry\\]" (hermes-test--failure-transcript)))
+      ;; The newest failure still offers Retry.
+      (hermes-test--fail-turn
+       '(:surface (:layer "provider" :code "timeout" :retryable t)))
+      (let ((text (hermes-test--failure-transcript)))
+        (with-temp-buffer
+          (insert text)
+          (should (= 1 (how-many (regexp-quote "[Retry]")
+                                 (point-min) (point-max)))))))))
+
 (ert-deftest hermes-chat-failure-actions-refuse-when-not-applicable ()
   "Commands refuse actions the failure does not offer; billing opens on demand."
   (hermes-test-with-chat-buffer

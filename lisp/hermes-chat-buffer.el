@@ -569,6 +569,10 @@ FUNCTION receives the entry plist and inserts its text at point.")
   "Functions called with each printed chat ENTRY to append contextual actions.
 Each runs at the end of ENTRY's text and may insert whole lines there.")
 
+(defvar hermes-chat--entry-inserted-functions nil
+  "Functions called with the EWOC node of each newly inserted chat entry.
+They may refresh earlier entries whose rendering depends on what follows.")
+
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."
   (let ((role (plist-get entry :role))
@@ -1207,6 +1211,7 @@ agent's reply can stay last while tool/status/diff entries land above it."
               (hermes-chat--register-node entry node))))))
     (hermes-chat--stream-format-schedule node)
     (hermes-chat--retire-recovery-notices)
+    (run-hook-with-args 'hermes-chat--entry-inserted-functions node)
     (hermes-chat--new-output-note)
     (hermes-chat--notify-state-change)
     node))

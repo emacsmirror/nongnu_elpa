@@ -199,21 +199,61 @@ account is not shown, because the failure block carries the same facts."
       (setq next (ewoc-next hermes-chat--ewoc next)))
     latest))
 
+(defun hermes-chat--failure-entry-actions (entry)
+  "Return the recovery actions that apply to ENTRY's failure now.
+Retry applies only while no user turn follows the failure, because the
+backend's /retry rewinds to the last user message.  An entry not yet in
+the node table is being inserted last, so it counts as the latest."
+  (let ((actions (hermes-chat-failure-actions
+                  (hermes-chat--entry-failure entry)))
+        (node (and hermes-chat--nodes
+                   (gethash (plist-get entry :id) hermes-chat--nodes))))
+    (if (and (memq 'retry actions) node
+             (not (hermes-chat--failure-latest-p node)))
+        (remq 'retry actions)
+      actions)))
+
 (defun hermes-chat--failure-action-p (action)
-  "Return non-nil when ACTION is among the actions of the failure at point."
+  "Return non-nil when ACTION is a current action of the failure at point."
   (when-let* ((id (get-text-property (point) 'hermes-chat-failure-id))
               (node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
-    (memq action (hermes-chat-failure-actions
-                  (hermes-chat--entry-failure (ewoc-data node))))))
+    (memq action (hermes-chat--failure-entry-actions (ewoc-data node)))))
 
 (defun hermes-chat--failure-require (action id)
-  "Return (NODE . FAILURE) for failure ID with ACTION among its actions.
+  "Return (NODE . FAILURE) for failure ID with ACTION applicable.
 Signal `user-error' otherwise."
   (let* ((node (hermes-chat--failure-node id))
-         (failure (hermes-chat--entry-failure (ewoc-data node))))
-    (unless (memq action (hermes-chat-failure-actions failure))
-      (user-error "This failure offers no such recovery"))
+         (entry (ewoc-data node))
+         (failure (hermes-chat--entry-failure entry)))
+    (unless (memq action (hermes-chat--failure-entry-actions entry))
+      (user-error (if (memq action (hermes-chat-failure-actions failure))
+                      "A newer turn follows this failure; retry only the latest"
+                    "This failure offers no such recovery")))
     (cons node failure)))
+
+(defun hermes-chat--failure-retire-retry (node)
+  "Re-render the failure that user entry NODE now follows.
+Its Retry no longer applies.  Older failures were refreshed when their
+own following user entry arrived, so the walk stops at the previous one."
+  (when (eq (plist-get (ewoc-data node) :role) 'user)
+    (let ((prev (ewoc-prev hermes-chat--ewoc node))
+          (done nil))
+      (while (and prev (not done))
+        (let ((entry (ewoc-data prev)))
+          (cond
+           ((eq (plist-get entry :role) 'user) (setq done t))
+           ((memq 'retry (hermes-chat-failure-actions
+                          (hermes-chat--entry-failure entry)))
+            (setq done t)
+            (hermes-chat--preserve-input-point
+             (let ((inhibit-read-only t)
+                   (buffer-undo-list t))
+               (hermes-chat--preserve-readers
+                 (ewoc-invalidate hermes-chat--ewoc prev)))))))
+        (setq prev (ewoc-prev hermes-chat--ewoc prev))))))
+
+(add-hook 'hermes-chat--entry-inserted-functions
+          #'hermes-chat--failure-retire-retry)
 
 ;;;; Commands
 
@@ -222,11 +262,9 @@ Signal `user-error' otherwise."
 Only the latest turn retries: the backend rewinds to the last user
 message, so a failure with a later turn would resend the wrong one."
   (interactive nil hermes-chat-mode)
-  (let ((node (car (hermes-chat--failure-require 'retry id))))
-    (unless (hermes-chat--failure-latest-p node)
-      (user-error "A newer turn follows this failure; retry only the latest"))
-    (hermes-chat--ensure-submit-allowed)
-    (hermes-chat--dashboard-slash-exec "retry" "" "retry")))
+  (hermes-chat--failure-require 'retry id)
+  (hermes-chat--ensure-submit-allowed)
+  (hermes-chat--dashboard-slash-exec "retry" "" "retry"))
 
 (defun hermes-chat-failure-switch-model (&optional id)
   "Open the model picker to recover from failure ID, or the one at point."
@@ -274,7 +312,7 @@ message, so a failure with a later turn would resend the wrong one."
 (defun hermes-chat--insert-failure-actions (entry failure)
   "Insert the recovery buttons that apply to FAILURE on ENTRY, if any."
   (let ((first t))
-    (dolist (action (hermes-chat-failure-actions failure))
+    (dolist (action (hermes-chat--failure-entry-actions entry))
       (pcase-let ((`(,command ,help)
                    (alist-get action hermes-chat-failure--action-commands)))
         (unless first (insert " "))
