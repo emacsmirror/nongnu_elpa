@@ -38,16 +38,29 @@ act on SNAPSHOT.")
 
 ;;; Pure projection
 
+(defconst hermes-connectors--request-keys '(:tool-call-id :suggested)
+  "Snapshot fields that only `connection.request' carries.")
+
 (defun hermes-connectors--newer (old new)
-  "Return NEW when it supersedes OLD, else OLD.
-Updates omit the tool call id; keep the one the request bound."
-  (if (and old (<= (plist-get new :seq) (plist-get old :seq)))
-      old
-    (append (list :tool-call-id (or (plist-get new :tool-call-id)
-                                    (plist-get old :tool-call-id)))
-            (cl-loop for (key value) on new by #'cddr
-                     unless (eq key :tool-call-id)
-                     append (list key value)))))
+  "Return the snapshot after NEW arrives on OLD, or OLD when unchanged.
+Target state follows the higher sequence number.  Request fields are
+immutable identity, independent of sequencing: the backend emits its
+preparation updates first, so the request can arrive at an equal or older
+sequence, and later updates omit those fields.  Keep each from whichever
+frame carried it."
+  (let* ((stale (and old (<= (plist-get new :seq) (plist-get old :seq))))
+         (winner (if stale old new))
+         (loser (if stale new old))
+         (adopted (cl-loop for key in hermes-connectors--request-keys
+                           for value = (plist-get loser key)
+                           when (and value (not (plist-get winner key)))
+                           append (list key value))))
+    (if adopted
+        (append adopted
+                (cl-loop for (key value) on winner by #'cddr
+                         unless (plist-member adopted key)
+                         append (list key value)))
+      winner)))
 
 (defun hermes-connectors--unresolved-p (target)
   "Return non-nil when TARGET still needs the user."

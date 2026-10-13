@@ -301,6 +301,28 @@ TARGETS, when given, replace the default target."
     (should (hermes-connectors--available-p 'continue))
     (should-not (hermes-connectors--available-p 'decline))))
 
+(ert-deftest hermes-connectors-request-after-update-binds-tool-row ()
+  "A request trailing its own updates still binds the card to its tool row.
+The backend emits preparation updates before `connection.request', at an
+equal or older sequence; target state must not roll back."
+  (dolist (request-seq '(2 1))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "tool.start" '((tool_id . "call-1") (name . "manage_connections")))
+      (hermes-connectors-test--update client 2 "initiated")
+      (should (gethash "connection:op-1" hermes-chat--nodes))
+      (hermes-test--emit-dashboard-prompt
+       client "connection.request"
+       (hermes-connectors-test--payload request-seq "pending"))
+      (let ((snapshot (plist-get (car hermes-connectors--operations) :snapshot)))
+        (should (equal (plist-get snapshot :tool-call-id) "call-1"))
+        (should (= (plist-get snapshot :seq) 2))
+        (should (equal (plist-get (car (plist-get snapshot :targets)) :state)
+                       "initiated")))
+      (should-not (gethash "connection:op-1" hermes-chat--nodes))
+      (should (= 1 (how-many "Reconnect github" (point-min) (point-max))))
+      (should (string-match-p "waiting for browser" (buffer-string))))))
+
 (ert-deftest hermes-connectors-reset-forgets-operations ()
   "Clearing the chat drops cards so later tool rows cannot revive them."
   (hermes-test-with-dashboard-prompt-session (client)
