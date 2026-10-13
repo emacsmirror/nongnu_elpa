@@ -2219,8 +2219,30 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
 
 (defun hermes-chat--render-history (messages)
   "Insert prior MESSAGES (from `session.resume') into the transcript."
+  (hermes-chat--render-history-entries
+   (mapcan #'hermes-chat--history-entries messages)))
+
+(defun hermes-chat--render-retained-failure (result)
+  "Rebuild the failed turn that resume RESULT retained, if any.
+Only an idle session's snapshot is a settled failure; a live one belongs
+to the running turn."
+  (when-let* (((not (hermes-chat--dashboard-result-live-turn-p result)))
+              (retained (hermes-transport-retained-turn-failure
+                         (hermes-transport--get result 'inflight))))
+    (hermes-chat--render-history-entries
+     (hermes-chat-failure-retained-entries
+      retained
+      (cl-loop for node = (ewoc-nth hermes-chat--ewoc -1)
+               then (ewoc-prev hermes-chat--ewoc node)
+               while node
+               for entry = (ewoc-data node)
+               when (eq (plist-get entry :role) 'user)
+               return (plist-get entry :content))))))
+
+(defun hermes-chat--render-history-entries (entries)
+  "Insert resumed history ENTRIES into the transcript."
   (let ((owner hermes-chat--session-bootstrap))
-    (dolist (entry (mapcan #'hermes-chat--history-entries messages))
+    (dolist (entry entries)
       ;; Retain exact entries before insertion, which can run rendering hooks.
       (when owner (push entry (plist-get owner :history-entries)))
       ;; Start the change group inside the undo-disabled transcript boundary.
@@ -2252,6 +2274,7 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
   (hermes-chat--dashboard-record-session client result)
   (hermes-chat--clear-partial-history owner)
   (hermes-chat--render-history (hermes-transport--get result 'messages))
+  (hermes-chat--render-retained-failure result)
   (when (hermes-chat--dashboard-result-live-turn-p result)
     (hermes-chat--dashboard-restore-inflight-turn client))
   (hermes-chat--dashboard-restore-pending-clarify result)

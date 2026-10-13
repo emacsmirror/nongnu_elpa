@@ -162,6 +162,28 @@ does not call the failure deterministic; a billing wall never retries."
 
 ;;;; Entry state
 
+(defun hermes-chat-failure-retained-entries (retained last-user)
+  "Return the chat entries rebuilding a RETAINED failed turn on resume.
+RETAINED is a `hermes-transport-retained-turn-failure' plist.  Its prompt
+is shown unless LAST-USER, the newest restored user text, already is it.
+A structured failure renders as a failure block under the partial reply;
+without one, the reply and raw error render like a plain failure."
+  (let ((user (plist-get retained :user))
+        (partial (plist-get retained :partial-text))
+        (failure (plist-get retained :failure)))
+    (delq nil
+          (list (and user (not (equal user last-user))
+                     (hermes-chat--make-entry 'user user 'done))
+                (if failure
+                    (hermes-chat--make-entry 'assistant (or partial "") 'error
+                                             nil (list :failure failure))
+                  (hermes-chat--make-entry
+                   'assistant
+                   (string-join (delq nil (list partial
+                                                (plist-get retained :error)))
+                                "\n\n")
+                   'error))))))
+
 (defun hermes-chat--entry-failure (entry)
   "Return the structured failure stored on ENTRY, or nil."
   (plist-get (plist-get entry :metadata) :failure))

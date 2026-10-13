@@ -334,5 +334,92 @@ Return the settled assistant entry."
         (hermes-test--push-button-labeled "[Switch model]")
         (should (equal calls '(model)))))))
 
+;;;; Resume
+
+(defconst hermes-test--retained-inflight
+  '((user . "Question") (assistant . "Half an answer") (streaming)
+    (error . "connection reset") (status . "error") (recoverable . t)
+    (error_surface . ((layer . "streaming") (code . "stream_drop")
+                      (retryable . t))))
+  "A failed turn as `session.resume' retains it in `inflight'.")
+
+(ert-deftest hermes-chat-failure-retained-inflight-is-not-live ()
+  "A terminal inflight snapshot is a settled failure, not a running turn."
+  (let ((retained (hermes-transport-retained-turn-failure
+                   hermes-test--retained-inflight)))
+    (should (equal (plist-get retained :user) "Question"))
+    (should (equal (plist-get retained :partial-text) "Half an answer"))
+    (should (equal (plist-get (plist-get retained :failure) :surface)
+                   '(:layer "streaming" :code "stream_drop" :retryable t
+                            :provider nil :provider-label nil :model nil
+                            :message nil)))
+    (should (equal (plist-get (plist-get retained :failure) :detail)
+                   "connection reset")))
+  (should-not (plist-get (hermes-transport-retained-turn-failure
+                          '((user . "Q") (error . "boom")))
+                         :failure))
+  (dolist (inflight '(((user . "Q") (assistant . "A") (streaming . t))
+                      ((user . "Q") (error . "  "))
+                      "inflight"))
+    (should-not (hermes-transport-retained-turn-failure inflight)))
+  (should-not (hermes-chat--dashboard-result-live-turn-p
+               `((running) (inflight . ,hermes-test--retained-inflight))))
+  (should (hermes-chat--dashboard-result-live-turn-p
+           `((running . t) (inflight . ,hermes-test--retained-inflight))))
+  (should (hermes-chat--dashboard-result-live-turn-p
+           '((inflight . ((user . "Q") (streaming . t)))))))
+
+(defun hermes-test--resume-with (result)
+  "Resume a stored chat whose `session.resume' answers RESULT.
+Return the chat buffer."
+  (let ((client (hermes-test--dashboard-client)) resolve buffer)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-notifications-notify) #'ignore)
+              ((symbol-function 'pop-to-buffer-same-window)
+               (lambda (buffer &rest _) buffer))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _sid &rest args)
+                 (setq resolve (plist-get args :resolve)))))
+      (setq buffer (hermes-chat-resume-session "stored"))
+      (funcall resolve (append '((session_id . "live")) result))
+      buffer)))
+
+(ert-deftest hermes-chat-failure-resume-renders-retained-failure ()
+  "Resuming an idle session with a failed turn shows its block, not busy."
+  (let ((buffer (hermes-test--resume-with
+                 `((running)
+                   (inflight . ,hermes-test--retained-inflight)
+                   (messages . (((role . "user") (text . "Question"))))))))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should-not (hermes-chat--active-turn-p))
+          (should-not hermes-chat--dashboard-running-p)
+          (should-not hermes-chat--pending-assistant-id)
+          (let ((text (hermes-test--failure-transcript)))
+            (with-temp-buffer
+              (insert text)
+              (should (= 1 (how-many "Question" (point-min) (point-max)))))
+            (should (string-match-p
+                     (concat "Half an answer\n"
+                             "  ! The connection to the model provider dropped mid-reply\n"
+                             "    streaming · stream_drop\n"
+                             "    \\[Retry\\]  ▸ Details\n")
+                     text))
+            (should-not (string-match-p "connection reset" text))))
+      (kill-buffer buffer)))
+  (let ((buffer (hermes-test--resume-with
+                 '((running)
+                   (inflight . ((user . "Fresh") (error . "boom")))
+                   (messages . nil)))))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should-not (hermes-chat--active-turn-p))
+          (let ((text (hermes-test--failure-transcript)))
+            (should (string-match-p "Fresh" text))
+            (should (string-match-p "boom" text))
+            (should-not (string-match-p "\\[Retry\\]" text))))
+      (kill-buffer buffer))))
+
 (provide 'hermes-chat-failure-tests)
 ;;; hermes-chat-failure-tests.el ends here

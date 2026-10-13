@@ -906,6 +906,27 @@ rendering.  The plist holds `:surface' and `:billing', plus, when present,
                 (and detail (list :detail detail))
                 (and partial (list :partial-text partial)))))))
 
+(defun hermes-transport-retained-turn-failure (inflight)
+  "Return the failed turn retained in a `session.resume' INFLIGHT, or nil.
+The backend keeps a failed turn replayable until the next one starts; its
+snapshot then carries a non-blank `error'.  Return a plist of `:user'
+\(the prompt), `:partial-text' (the retained reply), `:error' (the raw
+error text) and `:failure', the structured failure when a well-formed
+`error_surface' is present.  A resume carries no billing descriptor."
+  (when-let* (((hermes-transport--object-p inflight))
+              (error (hermes-transport--non-blank-string
+                      (hermes-transport--get inflight 'error))))
+    (let ((surface (hermes-transport-error-surface
+                    (hermes-transport--get inflight 'error_surface))))
+      (list :user (hermes-transport--non-blank-string
+                   (hermes-transport--get inflight 'user))
+            :partial-text (hermes-transport--non-blank-string
+                           (hermes-transport--get inflight 'assistant))
+            :error error
+            :failure (and surface
+                          (list :surface surface :billing nil
+                                :detail error))))))
+
 (defun hermes-dashboard-transport--message-complete-event (type params payload)
   "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD.
 The :final-text field preserves literal text when PAYLOAD has no error."
