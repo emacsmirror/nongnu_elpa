@@ -366,8 +366,8 @@ POSTURE is the backend's `auth_posture' enum; unknown values return nil."
   (pcase posture
     ("deny_all" (format "%s is connected, but no users are authorized. Set an allowlist or approve a pairing request." name))
     ("open" (format "%s is connected and open to all users." name))
-    ("allowlist" (format "%s is connected; only allowlisted users can reach it." name))
-    ("pairing" (format "%s is connected; only paired users can reach it." name))))
+    ("allowlist" (format "%s is connected; an allowlist is configured." name))
+    ("pairing" (format "%s is connected; paired users are approved." name))))
 
 (defun hermes-messaging--safe-test-message (result platform)
   "Return a fail-closed display message for test RESULT and PLATFORM.

@@ -564,8 +564,8 @@
   (let ((platform (hermes-messaging-test--platform t)))
     (dolist (case '(("deny_all" . "Telegram is connected, but no users are authorized. Set an allowlist or approve a pairing request.")
                     ("open" . "Telegram is connected and open to all users.")
-                    ("allowlist" . "Telegram is connected; only allowlisted users can reach it.")
-                    ("pairing" . "Telegram is connected; only paired users can reach it.")))
+                    ("allowlist" . "Telegram is connected; an allowlist is configured.")
+                    ("pairing" . "Telegram is connected; paired users are approved.")))
       (should (equal (hermes-messaging--safe-test-message
                       `((ok . t) (state . "connected") (auth_posture . ,(car case))
                         (message . "Connected. 3 users paired."))
