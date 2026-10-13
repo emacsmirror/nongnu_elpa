@@ -30,7 +30,8 @@
 
 ;;; Code:
 
-(require 'markdown-ts-mode)
+(require 'markdown-ts-appear-compat)
+(require 'outline)
 (require 'image)
 (require 'seq)
 (require 'subr-x)
@@ -46,7 +47,9 @@
 (defvar-local markdown-ts-appear-image--sources nil
   "Source overlays holding cached images and their window-specific previews.")
 (defvar-local markdown-ts-appear-image--state nil
-  "Last text modification tick and native image options checked.")
+  "Last native image options checked.")
+(defvar-local markdown-ts-appear-image--dirty nil
+  "Source overlays whose text or surrounding syntax changed.")
 (defvar-local markdown-ts-appear-image--resize-timer nil
   "Pending image resize timer.")
 
@@ -92,7 +95,7 @@ WIDTHS is an optional alist of windows and preview widths, shared by a batch."
         views)
     (when (and (overlay-buffer source) image markdown-ts-inline-images
                (display-images-p)
-               (not (markdown-ts--outline-invisible-p (overlay-start source))))
+               (not (outline-invisible-p (overlay-start source))))
       (dolist (entry (or widths (markdown-ts-appear-image--window-widths)))
         (let* ((window (car entry))
                (width (cdr entry))
@@ -126,13 +129,13 @@ WIDTHS is an optional alist of windows and preview widths, shared by a batch."
 (defun markdown-ts-appear-image--update-source (source node)
   "Update SOURCE from image NODE, reusing unchanged image files."
   (overlay-put source 'markdown-ts-appear-image--alone
-               (markdown-ts--image-alone-on-line-p node))
+               (markdown-ts-appear--native-image-alone-p node))
   (let ((destination (treesit-search-subtree node "\\`link_destination\\'")))
     (unless destination
       (overlay-put source 'markdown-ts-appear-image--image nil)
       (overlay-put source 'markdown-ts-appear-image--file-key nil))
     (when (and destination markdown-ts-inline-images (display-images-p)
-               (not (markdown-ts--outline-invisible-p (overlay-start source))))
+               (not (outline-invisible-p (overlay-start source))))
       (let* ((url (treesit-node-text destination t))
              (url (if (and (string-prefix-p "<" url) (string-suffix-p ">" url))
                       (substring url 1 -1) url))
@@ -184,33 +187,50 @@ OVERRIDE, START, END and REST are passed to the native fontifier when inactive."
               (delete-overlay overlay)))
           (setq source (make-overlay beg finish nil t nil))
           (overlay-put source 'markdown-ts-appear-image--source t)
-          (overlay-put source 'evaporate t)
+          ;; Keep collapsed sources until reconciliation removes their views.
           (push source markdown-ts-appear-image--sources))
         (unless (and (= (overlay-start source) beg) (= (overlay-end source) finish))
           (move-overlay source beg finish))
         (markdown-ts-appear-image--update-source source node)
         (markdown-ts-appear-image--sync-views source)))))
 
+(defun markdown-ts-appear-image--invalidate (beg end &rest _)
+  "Queue images on changed lines between BEG and END for reconciliation."
+  (when markdown-ts-appear-image--sources
+    (without-restriction
+      (save-excursion
+        (let ((start (progn (goto-char beg) (line-beginning-position)))
+              (finish (progn (goto-char end) (line-end-position))))
+          (dolist (source (overlays-in start finish))
+            (when (overlay-get source 'markdown-ts-appear-image--source)
+              (push source markdown-ts-appear-image--dirty))))))))
+
 (defun markdown-ts-appear-image--refresh (&rest _)
-  "Reconcile image sources after edits or native image option changes."
+  "Reconcile changed image sources or native image options."
   (when (and (markdown-ts-appear--active-p) markdown-ts-appear-image--sources)
-    (let ((state (list (buffer-chars-modified-tick) markdown-ts-inline-images
-                       markdown-ts-image-max-width markdown-ts-display-remote-inline-images)))
-      (unless (equal state markdown-ts-appear-image--state)
-        (setq markdown-ts-appear-image--state state)
+    (let* ((state (list markdown-ts-inline-images markdown-ts-image-max-width
+                       markdown-ts-display-remote-inline-images))
+           (sources (if (equal state markdown-ts-appear-image--state)
+                        (delete-dups markdown-ts-appear-image--dirty)
+                      markdown-ts-appear-image--sources)))
+      (setq markdown-ts-appear-image--state state
+            markdown-ts-appear-image--dirty nil)
+      (when sources
         (without-restriction
-          (treesit-update-ranges (point-min) (point-max))
-          (dolist (source markdown-ts-appear-image--sources)
-            (let* ((beg (overlay-start source))
-                   (node (and markdown-ts-inline-images beg
-                              (not (markdown-ts-appear--literal-block-at beg))
-                              (markdown-ts-appear--node-ancestor
-                               (treesit-node-at beg 'markdown-inline) "image"))))
-              (if (and node (= beg (treesit-node-start node))
-                       (= (overlay-end source) (treesit-node-end node)))
-                  (markdown-ts-appear-image--update-source source node)
-                (markdown-ts-appear-image--delete source))))
-          (markdown-ts-appear-image--refresh-views))))))
+          (let ((widths (markdown-ts-appear-image--window-widths)))
+            (dolist (source sources)
+              (when-let* ((beg (overlay-start source)))
+                (treesit-update-ranges beg (overlay-end source))
+                (let ((node (and markdown-ts-inline-images
+                                 (not (markdown-ts-appear--literal-block-at beg))
+                                 (markdown-ts-appear--node-ancestor
+                                  (treesit-node-at beg 'markdown-inline) "image"))))
+                  (if (and node (= beg (treesit-node-start node))
+                           (= (overlay-end source) (treesit-node-end node)))
+                      (progn
+                        (markdown-ts-appear-image--update-source source node)
+                        (markdown-ts-appear-image--sync-views source widths))
+                    (markdown-ts-appear-image--delete source)))))))))))
 
 (defun markdown-ts-appear-image--refresh-views (&optional buffer)
   "Resize cached image views in BUFFER after window changes."
@@ -240,10 +260,15 @@ OVERRIDE, START, END and REST are passed to the native fontifier when inactive."
 
 (defun markdown-ts-appear-image--setup ()
   "Install image reconciliation and window hooks in the current buffer."
+  (setq markdown-ts-appear-image--state
+        (list markdown-ts-inline-images markdown-ts-image-max-width
+              markdown-ts-display-remote-inline-images))
   (font-lock-set-defaults)
   (add-function :after (local 'font-lock-fontify-region-function)
                 #'markdown-ts-appear-image--refresh)
   (add-hook 'post-command-hook #'markdown-ts-appear-image--refresh 80 t)
+  (add-hook 'after-change-functions #'markdown-ts-appear-image--invalidate 80 t)
+  (add-hook 'markdown-ts-appear--syntax-change-functions #'markdown-ts-appear-image--invalidate nil t)
   (add-hook 'window-configuration-change-hook #'markdown-ts-appear-image--schedule-resize nil t)
   (markdown-ts-appear--add-outline-hook #'markdown-ts-appear-image--outline-change 90))
 
@@ -252,9 +277,12 @@ OVERRIDE, START, END and REST are passed to the native fontifier when inactive."
   (remove-function (local 'font-lock-fontify-region-function)
                    #'markdown-ts-appear-image--refresh)
   (remove-hook 'post-command-hook #'markdown-ts-appear-image--refresh t)
+  (remove-hook 'after-change-functions #'markdown-ts-appear-image--invalidate t)
+  (remove-hook 'markdown-ts-appear--syntax-change-functions #'markdown-ts-appear-image--invalidate t)
   (remove-hook 'window-configuration-change-hook #'markdown-ts-appear-image--schedule-resize t)
   (markdown-ts-appear--remove-outline-hook #'markdown-ts-appear-image--outline-change)
   (setq markdown-ts-appear-image--sources nil
+        markdown-ts-appear-image--dirty nil
         markdown-ts-appear-image--state nil
         markdown-ts-appear-image--resize-timer nil))
 
@@ -262,7 +290,9 @@ OVERRIDE, START, END and REST are passed to the native fontifier when inactive."
   "Remove managed image previews, hooks and timers."
   (when markdown-ts-appear-image--resize-timer
     (cancel-timer markdown-ts-appear-image--resize-timer))
-  (mapc #'markdown-ts-appear-image--delete markdown-ts-appear-image--sources)
+  (let ((sources markdown-ts-appear-image--sources))
+    (setq markdown-ts-appear-image--sources nil)
+    (mapc #'markdown-ts-appear-image--delete sources))
   (markdown-ts-appear-image--detach))
 
 (provide 'markdown-ts-appear-image)

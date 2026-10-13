@@ -1095,7 +1095,7 @@
                        (lambda (&rest _) (ert-fail "Outline visibility rescanned"))))
               (dolist (hidden '(t nil t nil))
                 (overlay-put fold 'invisible (and hidden 'outline))
-                (should (eq (not (null (markdown-ts--outline-invisible-p beg))) hidden))
+                (should (eq (not (null (outline-invisible-p beg))) hidden))
                 (run-hooks 'outline-view-change-hook)
                 (if hidden
                     (progn

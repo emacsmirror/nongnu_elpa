@@ -520,7 +520,7 @@
     (insert "**bold**\n")
     (markdown-ts-mode)
     (setq markdown-ts-hide-markup t)
-    (markdown-ts--set-hide-markup t)
+    (markdown-ts-appear--native-set-hide-markup t)
     (markdown-ts-appear-mode -1)
     (should markdown-ts-hide-markup)))
 
@@ -534,13 +534,13 @@
             (insert "**bold**\n")
             (markdown-ts-mode)
             (setq-local markdown-ts-hide-markup (not default))
-            (markdown-ts--set-hide-markup markdown-ts-hide-markup)
+            (markdown-ts-appear--native-set-hide-markup markdown-ts-hide-markup)
             (markdown-ts-appear-mode 1)
             (set-default 'markdown-ts-hide-markup default)
             (markdown-ts-appear-mode -1)
             (should (eq markdown-ts-hide-markup default))
             (should-not (local-variable-p 'markdown-ts-hide-markup))
-            (should (eq (not (null (memq 'markdown-ts--markup
+            (should (eq (not (null (memq markdown-ts-appear--markup-invisibility
                                          buffer-invisibility-spec)))
                         default))
             (set-default 'markdown-ts-hide-markup (not default))
@@ -1315,7 +1315,7 @@
     (should-not (markdown-ts-appear--active-p))
     (should-not markdown-ts-hide-markup)
     (should-not (memq #'markdown-ts-appear--after-change after-change-functions))
-    (should (markdown-ts-appear-test--advice-installed-p))))
+    (should-not (markdown-ts-appear-test--advice-installed-p))))
 
 (ert-deftest markdown-ts-appear-test-decoration-copy-filter-preserves-other-display ()
   (let ((text (propertize "ab" 'display 'other-package)))
@@ -1329,7 +1329,7 @@
   (with-temp-buffer
     (insert "ab")
     (put-text-property 1 2 'invisible 'other-package)
-    (put-text-property 2 3 'invisible 'markdown-ts--markup)
+    (put-text-property 2 3 'invisible markdown-ts-appear--markup-invisibility)
     (markdown-ts-appear--remove-markup-invisibility 1 3)
     (should (eq (get-text-property 1 'invisible) 'other-package))
     (should-not (get-text-property 2 'invisible))))

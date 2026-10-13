@@ -32,12 +32,13 @@
 ;;; Code:
 
 (require 'markdown-ts-mode)
+(require 'outline)
 (require 'image)
 (require 'seq)
 (require 'subr-x)
 
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
-(declare-function markdown-ts-appear--update "markdown-ts-appear")
+(declare-function markdown-ts-appear--tracking-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--node-ancestor "markdown-ts-appear")
 (declare-function markdown-ts-appear--first-direct-child-of-type "markdown-ts-appear")
 (declare-function markdown-ts-appear--direct-children-of-type "markdown-ts-appear")
@@ -64,7 +65,7 @@
 (defvar-local markdown-ts-appear-mermaid--objects nil
   "Source overlays holding diagram keys, images and window-specific views.")
 (defvar-local markdown-ts-appear-mermaid--scan-state nil
-  "Last text modification tick, command and theme scanned.")
+  "Last command and theme scanned, or nil when sources need rescanning.")
 (defvar-local markdown-ts-appear-mermaid--view-state nil
   "Last source, point and window state displayed.")
 
@@ -155,12 +156,12 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
 
 (defun markdown-ts-appear-mermaid--editing-p (source)
   "Return non-nil when SOURCE is being edited with source tracking active."
-  (and (memq #'markdown-ts-appear--update post-command-hook)
+  (and (markdown-ts-appear--tracking-p)
        (<= (overlay-start source) (point)) (<= (point) (overlay-end source))))
 
 (defun markdown-ts-appear-mermaid--editing-source ()
   "Return the source being edited, without visiting other diagrams."
-  (when (memq #'markdown-ts-appear--update post-command-hook)
+  (when (markdown-ts-appear--tracking-p)
     (seq-find (lambda (source)
                 (and (overlay-get source 'markdown-ts-appear-mermaid--source)
                      (markdown-ts-appear-mermaid--editing-p source)))
@@ -170,7 +171,7 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
 (defun markdown-ts-appear-mermaid--eligible-p (source windows)
   "Return non-nil when SOURCE needs a preview visible in WINDOWS."
   (and (not (markdown-ts-appear-mermaid--editing-p source))
-       (not (markdown-ts--outline-invisible-p (overlay-start source)))
+       (not (outline-invisible-p (overlay-start source)))
        (seq-some (lambda (entry)
                    (and (display-images-p (window-frame (car entry)))
                         (< (overlay-start source) (nth 4 entry))
@@ -198,7 +199,7 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
         (text (overlay-get source 'markdown-ts-appear-mermaid--source))
         (error (overlay-get source 'markdown-ts-appear-mermaid--error))
         (editing (markdown-ts-appear-mermaid--editing-p source))
-        (hidden (markdown-ts--outline-invisible-p (overlay-start source)))
+        (hidden (outline-invisible-p (overlay-start source)))
         (old (overlay-get source 'markdown-ts-appear-mermaid--views)) views)
     (pcase-dolist (`(,window ,width ,layout . ,_) windows)
       (let* ((beg (overlay-start source)) (end (overlay-end source))
@@ -362,9 +363,10 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
                   markdown-ts-appear-mermaid--view-state nil))
         (without-restriction
           (let* ((theme (if (eq (frame-parameter nil 'background-mode) 'dark) "dark" "default"))
-                 (scan (list (buffer-chars-modified-tick) markdown-ts-appear-mermaid-command theme)))
+                 (scan (list markdown-ts-appear-mermaid-command theme)))
             (unless (equal scan markdown-ts-appear-mermaid--scan-state)
-              (setq markdown-ts-appear-mermaid--scan-state scan)
+              (setq markdown-ts-appear-mermaid--scan-state scan
+                    markdown-ts-appear-mermaid--view-state nil)
               (markdown-ts-appear-mermaid--scan theme))
             (when markdown-ts-appear-mermaid--objects
               (let* ((windows (markdown-ts-appear-mermaid--windows))
@@ -387,6 +389,19 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
                       (markdown-ts-appear-mermaid--request source)))))))))
       (markdown-ts-appear-mermaid--next))))
 
+(defun markdown-ts-appear-mermaid--after-change (beg end &rest _)
+  "Invalidate the scan after an edit to a fenced block between BEG and END."
+  (when (or (seq-some (lambda (source)
+                       (overlay-get source 'markdown-ts-appear-mermaid--source))
+                     (overlays-in beg end))
+            (markdown-ts-appear--node-ancestor
+             (treesit-node-at beg 'markdown) "fenced_code_block"))
+    (setq markdown-ts-appear-mermaid--scan-state nil)))
+
+(defun markdown-ts-appear-mermaid--syntax-change (_beg _end)
+  "Recheck blocks after structural changes between _BEG and _END."
+  (setq markdown-ts-appear-mermaid--scan-state nil))
+
 (defun markdown-ts-appear-mermaid--invalidate (&rest _)
   "Recheck previews after window or outline changes."
   (setq markdown-ts-appear-mermaid--view-state nil)
@@ -408,6 +423,9 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
   (unless (image-type-available-p 'svg)
     (user-error "Mermaid previews require SVG image support"))
   (add-hook 'post-command-hook #'markdown-ts-appear-mermaid--refresh 90 t)
+  (add-hook 'after-change-functions #'markdown-ts-appear-mermaid--after-change 90 t)
+  (add-hook 'markdown-ts-appear--syntax-change-functions #'markdown-ts-appear-mermaid--syntax-change nil t)
+  (add-hook 'markdown-ts-appear--tracking-change-hook #'markdown-ts-appear-mermaid--refresh 90 t)
   (add-hook 'window-configuration-change-hook #'markdown-ts-appear-mermaid--invalidate nil t)
   (add-hook 'window-scroll-functions #'markdown-ts-appear-mermaid--scroll nil t)
   (markdown-ts-appear--add-outline-hook #'markdown-ts-appear-mermaid--invalidate 90)
@@ -416,6 +434,9 @@ LAYOUT describes source font metrics and wrapping, or nil for width-only sizing.
 (defun markdown-ts-appear-mermaid--detach ()
   "Detach Mermaid state without deleting previews inherited from a base buffer."
   (remove-hook 'post-command-hook #'markdown-ts-appear-mermaid--refresh t)
+  (remove-hook 'after-change-functions #'markdown-ts-appear-mermaid--after-change t)
+  (remove-hook 'markdown-ts-appear--syntax-change-functions #'markdown-ts-appear-mermaid--syntax-change t)
+  (remove-hook 'markdown-ts-appear--tracking-change-hook #'markdown-ts-appear-mermaid--refresh t)
   (remove-hook 'window-configuration-change-hook #'markdown-ts-appear-mermaid--invalidate t)
   (remove-hook 'window-scroll-functions #'markdown-ts-appear-mermaid--scroll t)
   (markdown-ts-appear--remove-outline-hook #'markdown-ts-appear-mermaid--invalidate)

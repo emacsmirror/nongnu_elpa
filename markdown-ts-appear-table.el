@@ -34,6 +34,7 @@
 (require 'cl-lib)
 (require 'hl-line)
 (require 'markdown-ts-mode)
+(require 'outline)
 (require 'markdown-table-wrap-pretty)
 (require 'seq)
 (require 'subr-x)
@@ -462,7 +463,7 @@ STRIPE-P marks alternate data rows for optional background shading."
                (markdown-ts-appear--active-p))
       (without-restriction
         (dolist (table (markdown-ts-appear-table--tables))
-          (unless (markdown-ts--outline-invisible-p (treesit-node-start table))
+          (unless (outline-invisible-p (treesit-node-start table))
             (markdown-ts-appear-table--render-table table windows))))
       (setq markdown-ts-appear-table--windows windows)))
   (setq markdown-ts-appear-table--dirty nil)
@@ -852,7 +853,7 @@ NOERROR and REST retain the native command's boundary behavior and options."
   (without-restriction
     (pcase-dolist (`(,beg . ,end) markdown-ts-appear-table--dirty)
       (dolist (table (markdown-ts-appear-table--tables beg end))
-        (unless (or (markdown-ts--outline-invisible-p (treesit-node-start table))
+        (unless (or (outline-invisible-p (treesit-node-start table))
                     (get-char-property (treesit-node-start table)
                                        'markdown-ts-appear-table--wrapped))
           (markdown-ts-appear-table--render-table
@@ -929,6 +930,10 @@ OLD-LENGTH is the length of the replaced text."
     (unless (fboundp 'markdown-table-wrap-pretty--render-row-lines)
       (user-error "Wrapped tables require markdown-table-wrap 0.2.0"))
     (add-hook 'post-command-hook #'markdown-ts-appear-table--post-command 20 t)
+    (add-hook 'markdown-ts-appear--tracking-change-hook
+              #'markdown-ts-appear-table--update-visibility 20 t)
+    (add-hook 'markdown-ts-appear--syntax-change-functions
+              #'markdown-ts-appear-table--invalidate nil t)
     (add-hook 'after-change-functions #'markdown-ts-appear-table--after-change 80 t)
     (add-hook 'window-configuration-change-hook
               #'markdown-ts-appear-table--schedule-render nil t)
@@ -950,6 +955,10 @@ OLD-LENGTH is the length of the replaced text."
 Do not delete overlays or cancel a timer here: those objects belong to the
 base buffer."
   (remove-hook 'post-command-hook #'markdown-ts-appear-table--post-command t)
+  (remove-hook 'markdown-ts-appear--tracking-change-hook
+               #'markdown-ts-appear-table--update-visibility t)
+  (remove-hook 'markdown-ts-appear--syntax-change-functions
+               #'markdown-ts-appear-table--invalidate t)
   (remove-hook 'after-change-functions #'markdown-ts-appear-table--after-change t)
   (remove-hook 'window-configuration-change-hook
                #'markdown-ts-appear-table--schedule-render t)

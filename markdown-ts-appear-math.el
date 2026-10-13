@@ -30,7 +30,8 @@
 
 ;;; Code:
 
-(require 'markdown-ts-mode)
+(require 'markdown-ts-appear-compat)
+(require 'outline)
 (require 'seq)
 (require 'subr-x)
 
@@ -42,7 +43,7 @@
 (declare-function markdown-ts-appear--literal-block-at "markdown-ts-appear")
 (declare-function markdown-ts-appear--node-ancestor "markdown-ts-appear")
 (declare-function markdown-ts-appear--region-visible-p "markdown-ts-appear")
-(declare-function markdown-ts-appear--update "markdown-ts-appear")
+(declare-function markdown-ts-appear--tracking-p "markdown-ts-appear")
 
 (defvar markdown-ts-appear-enable-math-preview)
 (defvar markdown-ts-appear--region)
@@ -75,19 +76,22 @@ POINT is nil when source tracking is paused.")
   "Clear previews, or only those whose source is edited between BEG and END."
   (setq markdown-ts-appear-math--scan-tick nil
         markdown-ts-appear-math--view nil)
-  (dolist (preview markdown-ts-appear-math--objects)
-    (when (or (null beg) (not (overlay-buffer preview))
-              (and (< (overlay-start preview) end)
-                   (> (overlay-end preview) beg)))
-      (markdown-ts-appear-math--delete preview))))
+  (if beg
+      (dolist (preview (overlays-in beg end))
+        (when (and (overlay-get preview 'markdown-ts-appear-math--source)
+                   (< (overlay-start preview) end) (> (overlay-end preview) beg))
+          (markdown-ts-appear-math--delete preview)))
+    (let ((previews markdown-ts-appear-math--objects))
+      (setq markdown-ts-appear-math--objects nil)
+      (mapc #'markdown-ts-appear-math--delete previews))))
 
 (defun markdown-ts-appear-math--eligible-p (beg end)
   "Return non-nil when BEG through END may cover source with a preview."
   (and markdown-ts-appear-enable-math-preview (markdown-ts-appear--active-p)
-       (not (and (memq #'markdown-ts-appear--update post-command-hook)
+       (not (and (markdown-ts-appear--tracking-p)
                  (<= beg (point)) (< (point) end)))
        (not (markdown-ts-appear--region-visible-p beg end))
-       (not (markdown-ts--outline-invisible-p beg))))
+       (not (outline-invisible-p beg))))
 
 (defun markdown-ts-appear-math--display (preview)
   "Show PREVIEW's saved image unless its source is currently revealed."
@@ -181,7 +185,7 @@ POINT is nil when source tracking is paused.")
                (end (treesit-node-end node))
                (opening (treesit-node-child node 0))
                (closing (treesit-node-child node -1)))
-          (when (and (markdown-ts--latex-block-valid-p node)
+          (when (and (markdown-ts-appear--native-latex-valid-p node)
                      (equal (treesit-node-type opening) "latex_span_delimiter")
                      (equal (treesit-node-type closing) "latex_span_delimiter")
                      (< (treesit-node-start opening) (treesit-node-start closing)))
@@ -222,7 +226,7 @@ FORCE rechecks all preview visibility, for example after outline folding."
       (let* ((tick (buffer-chars-modified-tick))
              (changed (not (equal tick markdown-ts-appear-math--scan-tick)))
              (region markdown-ts-appear--region)
-             (view (list (and (memq #'markdown-ts-appear--update post-command-hook)
+             (view (list (and (markdown-ts-appear--tracking-p)
                               (point))
                          (and region (marker-position (car region)))
                          (and region (marker-position (cdr region))))))
@@ -269,6 +273,7 @@ FORCE rechecks all preview visibility, for example after outline folding."
   (unless (image-type-available-p 'svg)
     (user-error "MathJax previews require an Emacs build with SVG support"))
   (add-hook 'post-command-hook #'markdown-ts-appear-math--refresh 90 t)
+  (add-hook 'markdown-ts-appear--tracking-change-hook #'markdown-ts-appear-math--refresh 90 t)
   (markdown-ts-appear--add-outline-hook #'markdown-ts-appear-math--outline-change)
   (add-hook 'before-change-functions #'markdown-ts-appear-math--clear nil t)
   (markdown-ts-appear-math--refresh))
@@ -276,6 +281,7 @@ FORCE rechecks all preview visibility, for example after outline folding."
 (defun markdown-ts-appear-math--teardown ()
   "Remove math preview hooks and dispose of pending and displayed results."
   (remove-hook 'post-command-hook #'markdown-ts-appear-math--refresh t)
+  (remove-hook 'markdown-ts-appear--tracking-change-hook #'markdown-ts-appear-math--refresh t)
   (markdown-ts-appear--remove-outline-hook #'markdown-ts-appear-math--outline-change)
   (remove-hook 'before-change-functions #'markdown-ts-appear-math--clear t)
   (markdown-ts-appear-math--clear))

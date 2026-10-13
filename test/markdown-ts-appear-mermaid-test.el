@@ -349,6 +349,11 @@
         (dotimes (_ 20) (markdown-ts-appear-mermaid--refresh))
         (goto-char (point-min))
         (markdown-ts-appear-mermaid--refresh))
+      (cl-letf (((symbol-function 'markdown-ts-appear-mermaid--scan)
+                 (lambda (&rest _) (ert-fail "Unrelated prose edit rescanned diagrams"))))
+        (goto-char 3)
+        (insert "new text ")
+        (run-hooks 'post-command-hook))
       (should (= (length markdown-ts-appear-mermaid-test--jobs) 1)))))
 
 (ert-deftest markdown-ts-appear-mermaid-test-waits-until-source-editing-stops ()

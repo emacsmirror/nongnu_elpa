@@ -131,6 +131,7 @@ jobs:
             -L . \
             --eval '(setq byte-compile-error-on-warn t)' \
             -f batch-byte-compile \
+            markdown-ts-appear-compat.el \
             markdown-ts-appear-image.el \
             markdown-ts-appear-math.el \
             markdown-ts-appear-mermaid.el \
@@ -144,6 +145,7 @@ jobs:
             (package-initialize)
             (require 'checkdoc)
             (dolist (file '(\"markdown-ts-appear.el\"
+                            \"markdown-ts-appear-compat.el\"
                             \"markdown-ts-appear-image.el\"
                             \"markdown-ts-appear-math.el\"
                             \"markdown-ts-appear-mermaid.el\"
@@ -155,6 +157,17 @@ jobs:
               (with-current-buffer warnings
                 (princ (buffer-string)))
               (kill-emacs 1)))"
+
+      - name: Check native Markdown API contract
+        env:
+          MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS: "1"
+        run: |
+          emacs --batch -Q \
+            --eval '(progn (require (quote package)) (package-initialize))' \
+            -L . \
+            -l test/markdown-ts-appear-test.el \
+            -l test/markdown-ts-appear-compat-test.el \
+            --eval '(ert-run-tests-batch-and-exit "compat-test\\|private-fontifier-behavior-matrix")'
 
       - name: Run tests
         env:

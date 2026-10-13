@@ -281,6 +281,35 @@
         (kill-buffer clone))
       (markdown-ts-appear-image-test--assert-preview))))
 
+(ert-deftest markdown-ts-appear-image-test-unrelated-edit-does-not-touch-files ()
+  (markdown-ts-appear-image-test--with-buffer
+      "Ordinary prose.\n\n![demo](examples/demo.svg)\n\nAfter\n"
+    (let ((preview (car (markdown-ts-appear-image-test--previews))))
+      (cl-letf (((symbol-function 'file-attributes)
+                 (lambda (&rest _) (ert-fail "Unrelated edit checked an image file"))))
+        (goto-char 3)
+        (insert "new text ")
+        (run-hooks 'post-command-hook))
+      (should (eq preview (car (markdown-ts-appear-image-test--previews)))))))
+
+(ert-deftest markdown-ts-appear-image-test-distant-fence-and-total-deletion ()
+  (markdown-ts-appear-image-test--with-buffer
+      "Before\n\n![demo](examples/demo.svg)\n\nAfter\n"
+    (let ((preview (car (markdown-ts-appear-image-test--previews))))
+      (goto-char (point-min))
+      (insert "```\n")
+      (font-lock-ensure)
+      (should-not (overlay-buffer preview))
+      (should-not markdown-ts-appear-image--sources)
+      (delete-region (point-min) (+ (point-min) 4))
+      (font-lock-ensure)
+      (markdown-ts-appear-image-test--assert-preview)
+      (setq preview (car (markdown-ts-appear-image-test--previews)))
+      (erase-buffer)
+      (run-hooks 'post-command-hook)
+      (should-not (overlay-buffer preview))
+      (should-not markdown-ts-appear-image--sources))))
+
 (ert-deftest markdown-ts-appear-image-test-gui-window-resize ()
   (skip-unless (display-graphic-p))
   (markdown-ts-appear-image-test--with-buffer "![demo](examples/demo.svg)\n\nAfter\n"

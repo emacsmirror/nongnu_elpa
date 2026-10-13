@@ -36,8 +36,9 @@
 
 ;;; Code:
 
-(require 'markdown-ts-mode)
+(require 'markdown-ts-appear-compat)
 (require 'color)
+(require 'outline)
 (require 'seq)
 (require 'subr-x)
 (require 'markdown-ts-appear-image)
@@ -157,8 +158,11 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
 (defvar-local markdown-ts-appear--last-range-line nil
   "Line beginning whose inline Tree-sitter ranges were last updated.")
 
-(defvar-local markdown-ts-appear--last-range-tick nil
-  "Modification tick of the last inline Tree-sitter range update.")
+(defvar-local markdown-ts-appear--tracking-change-hook nil
+  "Functions run when source tracking starts or stops.")
+
+(defvar-local markdown-ts-appear--syntax-change-functions nil
+  "Functions notified of changed block syntax, with arguments BEG and END.")
 
 (defvar-local markdown-ts-appear--managed-properties nil
   "Properties added by reveal mode to `font-lock-extra-managed-props'.")
@@ -183,6 +187,10 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   "Return non-nil when reveal rendering owns this buffer's text."
   (and markdown-ts-appear-mode
        (memq #'markdown-ts-appear--after-change after-change-functions)))
+
+(defun markdown-ts-appear--tracking-p ()
+  "Return non-nil while source reveal follows point in this buffer."
+  (memq #'markdown-ts-appear--update post-command-hook))
 
 (defun markdown-ts-appear--deactivate-mode ()
   "Clear Markdown TS Appear mode and unregister it locally."
@@ -212,7 +220,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   (let ((pos beg))
     (while (< pos end)
       (let ((next (next-single-property-change pos 'invisible nil end)))
-        (when (eq (get-text-property pos 'invisible) 'markdown-ts--markup)
+        (when (eq (get-text-property pos 'invisible) markdown-ts-appear--markup-invisibility)
           (remove-text-properties pos next '(invisible nil)))
         (setq pos next)))))
 
@@ -268,11 +276,12 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   (markdown-ts-appear--region-visible-p
    (treesit-node-start node) (treesit-node-end node)))
 
-(defun markdown-ts-appear--literal-block-at (position)
-  "Return the literal Markdown block containing POSITION, if any."
+(defun markdown-ts-appear--literal-block-at (position &optional node)
+  "Return the literal Markdown block containing POSITION, if any.
+NODE is the block parser node already found at POSITION, when available."
   (when-let* ((block
                (treesit-parent-until
-                (treesit-node-at position 'markdown)
+                (or node (treesit-node-at position 'markdown))
                 "\\`\\(?:fenced_code_block\\|indented_code_block\\|html_block\\)\\'"
                 t))
               ((<= (treesit-node-start block) position))
@@ -293,15 +302,18 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                      (treesit-node-parent node) "image"))))
     (cons (treesit-node-start previous) (treesit-node-end next))))
 
-(defun markdown-ts-appear--wikilink-bounds-at (position)
-  "Return syntax-aware Wiki link bounds containing POSITION."
-  (let ((positions (delete-dups
-                    (list position
-                          (max (point-min) (1- position))
-                          (min (point-max) (1+ position)))))
-        bounds)
-    (while (and positions (not bounds))
-      (let ((node (treesit-node-at (pop positions) 'markdown-inline)))
+(defun markdown-ts-appear--wikilink-bounds-at (position inline)
+  "Return Wiki link bounds at POSITION, starting from INLINE's ancestors."
+  ;; The grammar leaves the extra outer brackets outside the shortcut link.
+  (let* ((adjacent (pcase (char-after position)
+                     (?\[ (1+ position))
+                     (?\] (and (> position (point-min)) (1- position)))))
+         (nodes (if adjacent
+                    (list inline (treesit-node-at adjacent 'markdown-inline))
+                  (list inline)))
+         bounds)
+    (while (and nodes (not bounds))
+      (let ((node (pop nodes)))
         (while (and node (not bounds))
           (setq bounds (markdown-ts-appear--wikilink-bounds-for-node node)
                 node (treesit-node-parent node)))))
@@ -325,13 +337,15 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
               (font-lock-ensure beg end)
             (treesit-parser-deleted nil)))))))
 
-(defun markdown-ts-appear--bounds-at-point (pos)
-  "Return source bounds for the smallest rendered element at POS."
+(defun markdown-ts-appear--bounds-at-point (pos &optional block)
+  "Return source bounds for the smallest rendered element at POS.
+BLOCK is the Markdown node already found at POS, when available."
   (save-excursion
     (goto-char pos)
     (let* ((line-beg (line-beginning-position))
            (line-end (line-end-position))
-           (wikilink-bounds (markdown-ts-appear--wikilink-bounds-at pos))
+           (inline (treesit-node-at pos 'markdown-inline))
+           (wikilink-bounds (markdown-ts-appear--wikilink-bounds-at pos inline))
            (contains-p
             (lambda (node)
               (let ((beg (treesit-node-start node))
@@ -345,7 +359,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                                         '(?\s ?\t ?\n ?\r)))))))))
            (inline-node
             (treesit-parent-until
-             (treesit-node-at pos 'markdown-inline)
+             inline
              (lambda (node)
                (let ((type (treesit-node-type node)))
                  (and
@@ -362,7 +376,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                             (markdown-ts-appear--node-ancestor
                              (treesit-node-parent node) "image")))
                   (or (not (equal type "latex_block"))
-                      (markdown-ts--latex-block-valid-p node)))))
+                      (markdown-ts-appear--native-latex-valid-p node)))))
              t)))
       (cond
        (wikilink-bounds)
@@ -376,7 +390,7 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
        (t
         (let ((structural-node
                (treesit-parent-until
-                (treesit-node-at pos 'markdown)
+                (or block (treesit-node-at pos 'markdown))
                 (lambda (node)
                   (and
                    (funcall contains-p node)
@@ -428,11 +442,10 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
       (and (> position (point-min))
            (treesit-node-at (1- position) 'markdown))))
 
-(defun markdown-ts-appear--fence-bounds-at (position)
-  "Return fenced code block delimiter bounds at POSITION."
+(defun markdown-ts-appear--fence-bounds-at (position node)
+  "Return fenced delimiter bounds at POSITION, starting from NODE."
   (when-let* ((block (markdown-ts-appear--node-ancestor
-                      (markdown-ts-appear--markdown-node-at position)
-                      "fenced_code_block"))
+                      node "fenced_code_block"))
               (delimiters
                (markdown-ts-appear--direct-children-of-type
                 block "fenced_code_block_delimiter")))
@@ -450,10 +463,10 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
              (<= position (treesit-node-end closing)))
         (cons (treesit-node-start closing) (treesit-node-end closing)))))))
 
-(defun markdown-ts-appear--quote-marker-bounds-at (position)
-  "Return block quote marker bounds at POSITION."
+(defun markdown-ts-appear--quote-marker-bounds-at (position node)
+  "Return block quote marker bounds at POSITION, starting from NODE."
   (let ((nodes (delq nil
-                     (list (treesit-node-at position 'markdown)
+                     (list node
                            (and (> position (point-min))
                                 (treesit-node-at
                                  (1- position) 'markdown)))))
@@ -486,10 +499,9 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
                (line-end-position) t)
           (list beg (point) (match-string-no-properties 1)))))))
 
-(defun markdown-ts-appear--callout-bounds-at (position)
-  "Return rendered callout marker bounds containing POSITION."
+(defun markdown-ts-appear--callout-bounds-at (position node)
+  "Return callout bounds at POSITION, starting from NODE."
   (when-let* ((markdown-ts-appear-render-callouts)
-              (node (markdown-ts-appear--markdown-node-at position))
               (quote (markdown-ts-appear--node-ancestor node "block_quote"))
               (data (markdown-ts-appear--callout-data quote))
               (beg (nth 0 data))
@@ -531,24 +543,24 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
 
 (defun markdown-ts-appear--bounds ()
   "Return source bounds for the smallest rendered element at point."
-  (let ((pos (point)))
-    (or (markdown-ts-appear--fence-bounds-at pos)
-        (markdown-ts-appear--callout-bounds-at pos)
-        (markdown-ts-appear--quote-marker-bounds-at pos)
-        (unless (markdown-ts-appear--literal-block-at pos)
+  (let* ((pos (point))
+         (node (markdown-ts-appear--markdown-node-at pos)))
+    (or (markdown-ts-appear--fence-bounds-at pos node)
+        (markdown-ts-appear--callout-bounds-at pos node)
+        (markdown-ts-appear--quote-marker-bounds-at pos node)
+        (unless (markdown-ts-appear--literal-block-at pos node)
           (or (markdown-ts-appear--image-preview-bounds-at pos)
-              (markdown-ts-appear--bounds-at-point pos))))))
+              (markdown-ts-appear--bounds-at-point pos node))))))
 
 (defun markdown-ts-appear--update-inline-ranges ()
   "Update inline Tree-sitter ranges around point when needed."
   (let ((line-beg (line-beginning-position))
         (tick (buffer-chars-modified-tick)))
     (unless (and (equal line-beg markdown-ts-appear--last-range-line)
-                 (equal tick markdown-ts-appear--last-range-tick))
+                 (equal tick markdown-ts-appear--last-tick))
       (treesit-update-ranges
        line-beg (min (point-max) (line-beginning-position 2)))
-      (setq markdown-ts-appear--last-range-line line-beg
-            markdown-ts-appear--last-range-tick tick))))
+      (setq markdown-ts-appear--last-range-line line-beg))))
 
 (defun markdown-ts-appear--update ()
   "Reveal source for the rendered Markdown element at point."
@@ -583,12 +595,10 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   (when (markdown-ts-appear--active-p)
     (setq markdown-ts-appear--last-point nil
           markdown-ts-appear--last-tick nil
-          markdown-ts-appear--last-range-line nil
-          markdown-ts-appear--last-range-tick nil)
+          markdown-ts-appear--last-range-line nil)
     (add-hook 'post-command-hook #'markdown-ts-appear--update nil t)
     (markdown-ts-appear--update)
-    (markdown-ts-appear-table--update-visibility)
-    (markdown-ts-appear-mermaid--refresh)))
+    (run-hooks 'markdown-ts-appear--tracking-change-hook)))
 
 (defun markdown-ts-appear-stop ()
   "Stop tracking point and restore hidden Markdown markup."
@@ -596,11 +606,9 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   (remove-hook 'post-command-hook #'markdown-ts-appear--update t)
   (setq markdown-ts-appear--last-point nil
         markdown-ts-appear--last-tick nil
-        markdown-ts-appear--last-range-line nil
-        markdown-ts-appear--last-range-tick nil)
+        markdown-ts-appear--last-range-line nil)
   (markdown-ts-appear--restore)
-  (markdown-ts-appear-table--update-visibility)
-  (markdown-ts-appear-mermaid--refresh))
+  (run-hooks 'markdown-ts-appear--tracking-change-hook))
 
 ;;; Fontification and decorations
 
@@ -979,7 +987,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
           (when (overlay-get overlay 'markdown-ts-appear--image-label)
             (delete-overlay overlay)))
         (when (and markdown-ts-hide-markup
-                   (not (markdown-ts--outline-invisible-p beg)))
+                   (not (outline-invisible-p beg)))
           (let* ((description
                   (treesit-search-subtree parent "\\`image_description\\'"))
                  (url (treesit-node-text node t))
@@ -992,7 +1000,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
                 (markdown-ts-appear--decorate
                  (treesit-node-start node) (treesit-node-end node)
                  (if (string-empty-p label) url label) nil))
-              (markdown-ts--make-link-button beg end url))
+              (markdown-ts-appear--native-link-button beg end url))
             (when icon
               (let ((overlay
                      (make-overlay beg (min (1+ beg) end) nil t nil)))
@@ -1027,7 +1035,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
         (with-silent-modifications
           (if (and markdown-ts-hide-markup
                    (not (markdown-ts-appear--node-visible-p node)))
-              (put-text-property beg end 'invisible 'markdown-ts--markup)
+              (put-text-property beg end 'invisible markdown-ts-appear--markup-invisibility)
             (markdown-ts-appear--remove-markup-invisibility beg end)))
         nil)
        ((not (markdown-ts-appear--node-ancestor parent "image"))
@@ -1042,7 +1050,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
                     (markdown-ts-appear--region-visible-p end parent-end))))
           (when alias-beg
             (with-silent-modifications
-              (markdown-ts--make-link-button
+              (markdown-ts-appear--native-link-button
                beg end
                (buffer-substring-no-properties
                 beg (treesit-node-start alias-delimiter)))))
@@ -1053,9 +1061,9 @@ at most one following space or tab and are not clipped to START or LIMIT."
             (when wikilink-p
               (with-silent-modifications
                 (put-text-property (1- parent-beg) parent-beg
-                                   'invisible 'markdown-ts--markup)
+                                   'invisible markdown-ts-appear--markup-invisibility)
                 (put-text-property parent-end (1+ parent-end)
-                                   'invisible 'markdown-ts--markup)
+                                   'invisible markdown-ts-appear--markup-invisibility)
                 (when alias-beg
                   (let* ((region markdown-ts-appear--region)
                          (visible-beg (and region (marker-position (car region))))
@@ -1066,12 +1074,12 @@ at most one following space or tab and are not clipped to START or LIMIT."
                               (reveal-end (min alias-beg visible-end)))
                           (when (< beg reveal-beg)
                             (put-text-property beg reveal-beg
-                                               'invisible 'markdown-ts--markup))
+                                               'invisible markdown-ts-appear--markup-invisibility))
                           (when (< reveal-end alias-beg)
                             (put-text-property reveal-end alias-beg
-                                               'invisible 'markdown-ts--markup)))
+                                               'invisible markdown-ts-appear--markup-invisibility)))
                       (put-text-property beg alias-beg
-                                         'invisible 'markdown-ts--markup))))))
+                                         'invisible markdown-ts-appear--markup-invisibility))))))
             (when-let* ((icon (markdown-ts-appear--icon
                                (if wikilink-p 'wikilink 'link))))
               (let ((overlay (make-overlay icon-beg (min (1+ icon-beg) end)
@@ -1106,7 +1114,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
             (markdown-ts-appear--delete-rendering-overlays)
             (setq markdown-ts-appear--last-point nil)
             (font-lock-flush)
-            (when (memq #'markdown-ts-appear--update post-command-hook)
+            (when (markdown-ts-appear--tracking-p)
               (markdown-ts-appear--update)))
           (when (eq option 'markdown-ts-appear-table-style)
             (markdown-ts-appear-table--setup))))))))
@@ -1169,8 +1177,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
   (without-restriction
     (pcase-dolist (`(,beg . ,end) ranges)
       (markdown-ts-appear--invalidate beg end)
-      (when (memq #'markdown-ts-appear-table--after-change after-change-functions)
-        (markdown-ts-appear-table--invalidate beg end)))))
+      (run-hook-with-args 'markdown-ts-appear--syntax-change-functions beg end))))
 
 (defun markdown-ts-appear--install-buffer-hooks ()
   "Install buffer-local lifecycle and change hooks."
@@ -1243,6 +1250,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
 
 (defun markdown-ts-appear--enable-buffer ()
   "Install Markdown TS Appear integration in the current buffer."
+  (markdown-ts-appear--install-advice)
   (add-hook 'enable-theme-functions #'markdown-ts-appear--theme-change)
   (add-hook 'disable-theme-functions #'markdown-ts-appear--theme-change)
   (markdown-ts-appear--install-buffer-hooks)
@@ -1250,7 +1258,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
   (markdown-ts-appear-image--setup)
   (unless markdown-ts-hide-markup
     (setq markdown-ts-hide-markup t)
-    (markdown-ts--set-hide-markup t))
+    (markdown-ts-appear--native-set-hide-markup t))
   (without-restriction
     (font-lock-flush (point-min) (point-max)))
   (markdown-ts-appear-start)
@@ -1272,13 +1280,19 @@ Indirect buffers are otherwise unsupported and are not synchronized."
   (markdown-ts-appear--delete-rendering-overlays)
   (without-restriction
     (kill-local-variable 'markdown-ts-hide-markup)
-    (markdown-ts--set-hide-markup markdown-ts-hide-markup)
+    (markdown-ts-appear--native-set-hide-markup markdown-ts-hide-markup)
     (unless markdown-ts-appear--tearing-down-buffer-p
       (condition-case nil
           (font-lock-ensure (point-min) (point-max))
         (treesit-parser-deleted
          (font-lock-unfontify-region (point-min) (point-max))))))
-  (markdown-ts-appear--release-managed-properties))
+  (markdown-ts-appear--release-managed-properties)
+  (unless (seq-some (lambda (buffer)
+                     (with-current-buffer buffer (markdown-ts-appear--active-p)))
+                   (buffer-list))
+    (markdown-ts-appear--set-advice nil)
+    (remove-hook 'enable-theme-functions #'markdown-ts-appear--theme-change)
+    (remove-hook 'disable-theme-functions #'markdown-ts-appear--theme-change)))
 
 ;;;###autoload
 (define-minor-mode markdown-ts-appear-mode
@@ -1300,72 +1314,6 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
       (when initialized
         (markdown-ts-appear--disable-buffer)))))
 
-;;; Native fontifier advice
-
-(defconst markdown-ts-appear--visible-fontifiers
-  '(markdown-ts--fontify-atx-heading
-    markdown-ts--fontify-setext-heading
-    markdown-ts--fontify-link-ref-label
-    markdown-ts--fontify-link-ref-destination
-    markdown-ts--fontify-unordered-list-marker
-    markdown-ts--fontify-checkbox
-    markdown-ts--fontify-autolink
-    markdown-ts--fontify-backslash-escape
-    markdown-ts--fontify-entity
-    markdown-ts--fontify-hard-line-break
-    markdown-ts--fontify-thematic-break)
-  "Markdown fontifiers that replace or hide source markup.")
-
-(defconst markdown-ts-appear--advice-bindings
-  (append
-   `((markdown-ts--fontify-delimiter
-      . ,#'markdown-ts-appear--fontify-delimiter)
-     (markdown-ts--fontify-atx-delimiter
-      . ,#'markdown-ts-appear--fontify-node)
-     (markdown-ts--fontify-link-destination
-      . ,#'markdown-ts-appear--fontify-link-destination)
-     (markdown-ts--fontify-link-node
-      . ,#'markdown-ts-appear--fontify-link)
-     (markdown-ts--fontify-image
-      . ,#'markdown-ts-appear-image--fontify)
-     (markdown-ts--fontify-latex-block
-      . ,#'markdown-ts-appear--fontify-node)
-     (line-move . ,#'markdown-ts-appear-table--line-move))
-   (mapcar (lambda (function)
-             (cons function #'markdown-ts-appear--fontify-visible-markup))
-           markdown-ts-appear--visible-fontifiers))
-  "Fontification and table-motion functions with their package advice.")
-
-(defconst markdown-ts-appear--required-private-functions
-  '(markdown-ts--latex-block-valid-p
-    markdown-ts--outline-invisible-p
-    markdown-ts--image-alone-on-line-p
-    markdown-ts--make-link-button
-    markdown-ts--set-hide-markup)
-  "Private Markdown helpers required by Markdown TS Appear.")
-
-(defun markdown-ts-appear--missing-private-functions ()
-  "Return required private Markdown functions that are unavailable."
-  (seq-remove
-   #'fboundp
-   (append (mapcar #'car markdown-ts-appear--advice-bindings)
-           markdown-ts-appear--required-private-functions)))
-
-(defun markdown-ts-appear--set-advice (install-p)
-  "Install package advice when INSTALL-P is non-nil; otherwise remove it."
-  (dolist (binding markdown-ts-appear--advice-bindings)
-    (if install-p
-        (unless (advice-member-p (cdr binding) (car binding))
-          (advice-add (car binding) :around (cdr binding)))
-      (advice-remove (car binding) (cdr binding)))))
-
-(defun markdown-ts-appear--install-advice ()
-  "Install Markdown fontification and table-motion advice."
-  (when-let* ((missing (markdown-ts-appear--missing-private-functions)))
-    (error "Required private markdown-ts-mode functions are unavailable: %S"
-           missing))
-  (markdown-ts-appear--set-advice t))
-
 (defun markdown-ts-appear-unload-function ()
   "Remove global integration before unloading Markdown TS Appear."
   (remove-hook 'enable-theme-functions #'markdown-ts-appear--theme-change)
@@ -1376,8 +1324,6 @@ Disabling the mode resets `markdown-ts-hide-markup' to its current default."
         (markdown-ts-appear--buffer-teardown))))
   (markdown-ts-appear--set-advice nil)
   nil)
-
-(markdown-ts-appear--install-advice)
 
 (provide 'markdown-ts-appear)
 
