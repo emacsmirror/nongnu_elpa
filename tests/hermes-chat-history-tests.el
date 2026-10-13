@@ -1194,10 +1194,11 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
   (search-forward text)
   (backward-char 2))
 
-(defun hermes-test--finish-turn (_callback client)
-  "Complete the active turn and report CLIENT's session idle."
+(defun hermes-test--finish-turn (_callback client &optional content)
+  "Complete the active turn with reply CONTENT and report CLIENT's session idle."
   (hermes-chat--handle-transport-event
-   hermes-chat--pending-assistant-id '(:type done :session-id "sid-rewind"))
+   hermes-chat--pending-assistant-id
+   `(:type done :session-id "sid-rewind" :content ,content))
   (hermes-test--emit-dashboard-idle client "sid-rewind")
   (should-not (hermes-chat--active-turn-p)))
 
@@ -1569,6 +1570,29 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
         (should-error (hermes-chat-restore-turn) :type 'user-error))
       (should-not submits)
       (should (equal (hermes-chat-input-string) "my draft")))))
+
+(ert-deftest hermes-chat-history-reconcile-rereads-after-raced-turn ()
+  "A read that a whole turn raced is stale even though the chat is idle now."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-chat--request-history-reconcile)
+    (should (= (length reads) 1))
+    (goto-char (point-max))
+    (insert "Fourth question")
+    (hermes-chat-send)
+    (hermes-test--finish-turn callback client "Fourth answer")
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,hermes-test-rewind-history)))
+    (should (string-match-p "Fourth answer" (buffer-string)))
+    (should (= (length reads) 2))
+    (should hermes-chat--history-reconcile)
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,(append hermes-test-rewind-history
+                                    '(((role . "user") (text . "Fourth question")
+                                       (row_id . 21))
+                                      ((role . "assistant") (text . "Fourth answer")))))))
+    (should-not hermes-chat--history-reconcile)
+    (should (equal (hermes-test--user-row-ids) '(11 13 15 21)))
+    (should (string-match-p "Fourth answer" (buffer-string)))))
 
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here

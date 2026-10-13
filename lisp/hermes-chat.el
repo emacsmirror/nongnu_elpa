@@ -2353,7 +2353,8 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
   "Owner of a pending transcript reconciliation, or nil.
 A plist with the :client, :session and :lifetime that requested it, the
 :known node table at that time, and a :phase that is `wait' until the chat
-is idle and `read' while `session.history' is in flight.")
+is idle and `read' while `session.history' is in flight.  :read-nodes is
+the node table when that read started, to tell whether a turn raced it.")
 
 (defun hermes-chat--bind-row-id (entry-id row-id)
   "Record durable ROW-ID on the user entry ENTRY-ID, when both exist."
@@ -2374,7 +2375,8 @@ turns the session no longer has nor drops any it still has."
                 :client hermes-chat--dashboard-client
                 :session hermes-chat--dashboard-active-session-id
                 :lifetime hermes-chat--lifecycle-generation
-                :known (copy-hash-table hermes-chat--nodes)))
+                :known (copy-hash-table hermes-chat--nodes)
+                :read-nodes nil))
     (hermes-chat--history-reconcile-maybe)))
 
 (defun hermes-chat--history-reconcile-current-p (owner)
@@ -2394,7 +2396,8 @@ turns the session no longer has nor drops any it still has."
       (setq hermes-chat--history-reconcile nil))
      ((and (eq (plist-get owner :phase) 'wait)
            (not (hermes-chat--active-turn-p)))
-      (setf (plist-get owner :phase) 'read)
+      (setf (plist-get owner :phase) 'read
+            (plist-get owner :read-nodes) (copy-hash-table hermes-chat--nodes))
       (let ((buffer (current-buffer)))
         (condition-case err
             (hermes-dashboard-transport-session-history
@@ -2415,12 +2418,27 @@ turns the session no longer has nor drops any it still has."
     (hermes-chat--insert-local-status
      (format "Could not refresh the transcript: %s" message) 'error)))
 
+(defun hermes-chat--history-read-raced-p (owner)
+  "Return non-nil when a turn ran since OWNER's history read started.
+Every turn adds transcript entries; local status lines do not count."
+  (let ((before (plist-get owner :read-nodes)))
+    (catch 'raced
+      (maphash (lambda (id node)
+                 (unless (or (gethash id before)
+                             (eq (plist-get (ewoc-data node) :role) 'status))
+                   (throw 'raced t)))
+               hermes-chat--nodes)
+      nil)))
+
 (defun hermes-chat--history-reconciled (owner result)
   "Repaint the transcript from history RESULT read for OWNER.
-A turn that started during the read makes RESULT stale: read again later."
+A turn that ran during the read, even one already finished, makes RESULT
+stale: read again once the chat is idle."
   (when (hermes-chat--history-reconcile-current-p owner)
-    (if (hermes-chat--active-turn-p)
-        (setf (plist-get owner :phase) 'wait)
+    (if (or (hermes-chat--active-turn-p)
+            (hermes-chat--history-read-raced-p owner))
+        (progn (setf (plist-get owner :phase) 'wait)
+               (hermes-chat--history-reconcile-maybe))
       (setq hermes-chat--history-reconcile nil)
       (hermes-chat--repaint-history (hermes-transport--get result 'messages)
                                     (plist-get owner :known)))))
