@@ -5219,6 +5219,31 @@ defaults to an attached chat."
                            (plist-get (hermes-chat--work-roster owner now) :agents))
                    '("sa-0")))))
 
+(ert-deftest hermes-chat-work-persisted-failure-matches-live-snapshot-worker ()
+  "A live worker's task index from its events dedupes its persisted failure.
+The live roster omits task indexes, so only the worker's events link it
+to the persisted task."
+  (let* ((now 1000.0)
+         (all (hermes-transport-work-subagents
+               (hermes-transport-json-parse-lossless
+                "{\"subagents\":[{\"subagent_id\":\"sa-0\",\"delegation_id\":\"batch\",\"status\":\"running\",\"goal\":\"Check compatibility\",\"started_at\":10}],\"delegations\":[{\"delegation_id\":\"batch\",\"task_index\":0,\"status\":\"failed\",\"goal\":\"Check compatibility\",\"error\":\"Cannot read module\",\"dispatched_at\":10,\"completed_at\":20}]}")))
+         (events (seq-reduce
+                  (lambda (events event) (hermes-chat--work-apply-event events event now))
+                  (list (list :type 'event :event "subagent.start" :subagent-id "sa-0"
+                              :delegation-id "batch" :task-index 0
+                              :content "Check compatibility")
+                        (list :type 'event :event "subagent.complete" :subagent-id "sa-0"
+                              :delegation-id "batch" :task-index 0 :status "failed"
+                              :content "Check compatibility"))
+                  nil))
+         (owner (list :runtime "sid" :events events
+                      :delegates (list :sid "sid"
+                                       :rows (seq-remove (lambda (row) (plist-get row :persisted)) all)
+                                       :failures (seq-filter (lambda (row) (plist-get row :persisted)) all)))))
+    (should (equal (mapcar (lambda (row) (list (plist-get row :id) (plist-get row :state)))
+                           (plist-get (hermes-chat--work-roster owner now) :agents))
+                   '(("sa-0" failed))))))
+
 (ert-deftest hermes-work-persisted-failure-meta-says-when ()
   "A persisted failure reports its run time and how long ago it ended."
   (let ((row (list :kind 'delegate :state 'failed :started 100 :finished 400)))

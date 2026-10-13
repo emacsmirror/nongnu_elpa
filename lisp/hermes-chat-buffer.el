@@ -3319,15 +3319,17 @@ decides.  An event-only worker the read omits is finished likewise, see
 Event state wins because a snapshot can predate the events, except that an
 event's `queued' never overrides the snapshot.  Event activity, such as the
 recent tools, their count and a completion summary, also overlays the
-snapshot; the snapshot's parent and start time stay authoritative.
-Finished event-only workers are listed for `hermes-chat--work-retain'
-seconds.  Rows without event data keep identity."
+snapshot, as does the worker's task index, which the snapshot omits; the
+snapshot's parent and start time stay authoritative.  Finished event-only
+workers are listed for `hermes-chat--work-retain' seconds.  Rows without
+event data keep identity."
   (append
    (mapcar (lambda (row)
              (let* ((data (cdr (assoc (plist-get row :id) events)))
                     (state (plist-get data :state))
                     (activity (hermes-chat--work-activity
-                               data '(:finished :tool-count :tools :summary :error))))
+                               data '(:task-index :finished :tool-count :tools
+                                      :summary :error))))
                (cond (activity
                       (append (unless (memq state (list nil 'queued))
                                 (list :state state))
