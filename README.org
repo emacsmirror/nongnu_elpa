@@ -76,6 +76,10 @@ used first, annotated with session title, state and any divergent cwd.
   reasoning (=E=) in the whole chat at once, without moving point, and
   expands (=+=) or collapses (=-=) every disclosure.  Hiding wins over an
   entry's own expansion until you expand an entry of that kind by hand.
+  When the backend profile does not capture reasoning (its
+  =display.show_reasoning= is off), showing reasoning says so;
+  =M-x hermes-chat-enable-backend-reasoning= turns it on in that
+  profile's saved config, for all of its sessions, after confirmation.
 - =C-c C-c= interrupts the running turn, as in =shell-mode=; when nothing
   is running it only says so.  =C-c C-k= still interrupts and sends the
   draft.

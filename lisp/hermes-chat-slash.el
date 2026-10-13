@@ -116,26 +116,62 @@
       (plist-put (copy-sequence flags) :reasoning-effort effort)
     flags))
 
+(defvar-local hermes-chat--backend-reasoning-check nil
+  "Token of the latest backend reasoning display check, or nil.")
+
+(defun hermes-chat--backend-reasoning-check-current-p (token context)
+  "Return non-nil when check TOKEN under CONTEXT is still worth reporting.
+The check must be the latest one, its session must still own this chat,
+and reasoning must still be shown here."
+  (and (eq token hermes-chat--backend-reasoning-check)
+       (hermes-chat--command-context-current-p context)
+       (not (hermes-chat--details-hidden-p 'hermes-reasoning))))
+
 (defun hermes-chat--check-backend-reasoning ()
-  "Offer to turn on backend reasoning when it is not being sent.
+  "Say so when the backend profile does not capture reasoning.
 With display.show_reasoning off the backend sends no reasoning events,
-so showing reasoning locally would display nothing."
+so showing reasoning locally would display nothing.  Only report; the
+change itself is `hermes-chat-enable-backend-reasoning'."
+  (setq hermes-chat--backend-reasoning-check nil)
   (when-let* ((client hermes-chat--dashboard-client)
               ((hermes-chat--dashboard-session-attached-p)))
     (let ((buffer (current-buffer))
-          (context (hermes-chat--command-context client)))
+          (context (hermes-chat--command-context client))
+          (token (list 'check)))
+      (setq hermes-chat--backend-reasoning-check token)
       (hermes-dashboard-transport-config-get
        client "reasoning"
        :session-id (plist-get context :session-id)
        :resolve
        (lambda (result)
          (hermes-chat--in-buffer buffer
-           (when (and (hermes-chat--command-context-current-p context)
-                      (equal (hermes-transport--get result 'display) "hide")
-                      (y-or-n-p "Reasoning is off in the backend, so none \
-is sent.  Turn it on? "))
-             (hermes-chat--dashboard-set-reasoning "show"))))
+           (when (and (hermes-chat--backend-reasoning-check-current-p
+                       token context)
+                      (equal (hermes-transport--get result 'display) "hide"))
+             (message "%s"
+                      (substitute-command-keys
+                       "Reasoning shown, but the backend profile does not \
+capture it; \\[hermes-chat-enable-backend-reasoning] turns it on")))))
        :reject #'ignore))))
+
+(defun hermes-chat-enable-backend-reasoning ()
+  "Turn on reasoning capture in the backend profile's saved configuration.
+This sets display.show_reasoning through `config.set', the request
+`/reasoning show' makes.  The backend saves it in the profile's config,
+so it applies to every session of that profile, not only this chat."
+  (interactive nil hermes-chat-mode)
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "No attached Hermes session"))
+  (let ((buffer (current-buffer))
+        (context (hermes-chat--command-context hermes-chat--dashboard-client)))
+    (when (y-or-n-p "Turn on reasoning in the backend profile, saving \
+display.show_reasoning in its config for all of its sessions? ")
+      (unless (and (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (hermes-chat--command-context-current-p context)))
+        (user-error "Hermes session changed; backend reasoning left unchanged"))
+      (with-current-buffer buffer
+        (hermes-chat--dashboard-set-reasoning "show" context)))))
 
 (defvar-local hermes-chat--command-owner nil
   "Identity-bearing plist owning the session during a slash command RPC.
@@ -358,8 +394,10 @@ accepted explicit spelling of the default session scope."
     (and (hermes-transport--non-empty-string value)
          (cons value scope))))
 
-(defun hermes-chat--dashboard-set-reasoning (arg)
-  "Set reasoning ARG for its requested scope, then refresh the owned session."
+(defun hermes-chat--dashboard-set-reasoning (arg &optional expected)
+  "Set reasoning ARG for its requested scope, then refresh the owned session.
+EXPECTED, when non-nil, is a command context that must still own the
+chat when the request is dispatched; otherwise nothing is sent."
   (let ((buffer (current-buffer))
         (preserve-content (concat "/reasoning " arg))
         (request (hermes-chat--reasoning-request arg)))
@@ -367,6 +405,11 @@ accepted explicit spelling of the default session scope."
      preserve-content
      (lambda (client owner)
        (let ((context (hermes-chat--command-context client owner)))
+         (unless (or (null expected)
+                     (and (eq client (plist-get expected :client))
+                          (hermes-chat--command-context-current-p expected)))
+           (hermes-chat--command-stop owner)
+           (user-error "Hermes session changed; reasoning left unchanged"))
          (hermes-dashboard-transport-config-set
           client "reasoning" (car request)
           :session-id (and (not (cdr request))

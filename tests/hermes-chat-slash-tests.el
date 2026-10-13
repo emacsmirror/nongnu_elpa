@@ -1392,36 +1392,100 @@
        (hermes-chat-send)
        (should picked)))))
 
-(ert-deftest hermes-chat-show-reasoning-offers-backend-display ()
-  "Showing reasoning offers to turn it on when the backend sends none."
-  (let ((client (hermes-test--dashboard-client)) display sets asked)
+(ert-deftest hermes-chat-show-reasoning-reports-backend-display ()
+  "Showing reasoning says when the backend profile does not capture it.
+Only the latest still-relevant check reports, and it never prompts."
+  (let ((client (hermes-test--dashboard-client)) resolves sets msgs)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-config-get)
                (lambda (_client key &rest args)
                  (should (equal key "reasoning"))
                  (should (equal (plist-get args :session-id) "sid"))
-                 (funcall (plist-get args :resolve)
-                          `((value . "medium") (display . ,display)))))
+                 (push (plist-get args :resolve) resolves)))
               ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (&rest args) (push args sets)))
+              ((symbol-function 'message)
+               (lambda (format &rest args)
+                 (when format (push (apply #'format-message format args) msgs))))
+              ((symbol-function 'y-or-n-p)
+               (lambda (&rest _) (ert-fail "Prompted from a callback")))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (&rest _) (ert-fail "Prompted from a callback"))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid"
+             hermes-chat--dashboard-session-ready-p t)
+       (let ((hide '((value . "medium") (display . "hide"))))
+         ;; Hiding reasoning never asks the backend.
+         (hermes-chat-toggle-reasoning)
+         (should-not resolves)
+         ;; Show -> hide -> show: the first reply is obsolete.
+         (hermes-chat-toggle-reasoning)
+         (hermes-chat-toggle-reasoning)
+         (hermes-chat-toggle-reasoning)
+         (should (= (length resolves) 2))
+         (setq msgs nil)
+         (funcall (cadr resolves) hide)
+         (should-not msgs)
+         ;; Hidden again: even the latest reply is no longer relevant.
+         (hermes-chat-toggle-reasoning)
+         (setq msgs nil)
+         (funcall (car resolves) hide)
+         (should-not msgs)
+         ;; A current reply names the backend profile and the command.
+         (hermes-chat-toggle-reasoning)
+         (setq msgs nil)
+         (funcall (car resolves) hide)
+         (should (= (length msgs) 1))
+         (should (string-match-p "backend profile" (car msgs)))
+         (should (string-match-p "hermes-chat-enable-backend-reasoning"
+                                 (car msgs)))
+         ;; A replaced session receives no report.
+         (hermes-chat-toggle-reasoning)
+         (hermes-chat-toggle-reasoning)
+         (setq hermes-chat--dashboard-active-session-id "sid-new")
+         (setq msgs nil)
+         (funcall (car resolves) hide)
+         (should-not msgs)
+         (should-not sets))))))
+
+(ert-deftest hermes-chat-enable-backend-reasoning-confirms-profile-scope ()
+  "Enabling backend reasoning states its saved profile-wide scope."
+  (let ((client (hermes-test--dashboard-client)) sets asked)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
                (lambda (_client key value &rest args)
                  (push (list key value (plist-get args :session-id)) sets)))
+              ((symbol-function 'hermes-dashboard-transport-config-get)
+               #'ignore)
               ((symbol-function 'y-or-n-p)
                (lambda (prompt) (setq asked prompt) t)))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client client
              hermes-chat--dashboard-active-session-id "sid"
              hermes-chat--dashboard-session-ready-p t)
-       (setq display "hide")
-       ;; Hiding reasoning never asks the backend.
-       (hermes-chat-toggle-reasoning)
-       (should-not asked)
-       (hermes-chat-toggle-reasoning)
-       (should (string-match-p "off in the backend" asked))
-       (should (equal sets '(("reasoning" "show" "sid"))))
-       (setq asked nil sets nil display "show")
-       (hermes-chat-toggle-reasoning)
-       (hermes-chat-toggle-reasoning)
-       (should-not asked)
-       (should-not sets)))))
+       (call-interactively #'hermes-chat-enable-backend-reasoning)
+       (should (string-match-p "profile" asked))
+       (should (string-match-p "sav" asked))
+       (should (equal sets '(("reasoning" "show" "sid"))))))))
+
+(ert-deftest hermes-chat-enable-backend-reasoning-rechecks-after-confirm ()
+  "A session replaced during confirmation receives no config write."
+  (let ((client (hermes-test--dashboard-client)) sets)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (&rest args) (push args sets)))
+              ((symbol-function 'hermes-dashboard-transport-config-get)
+               #'ignore)
+              ((symbol-function 'y-or-n-p)
+               (lambda (_prompt)
+                 (setq hermes-chat--dashboard-active-session-id "sid-new")
+                 t)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid"
+             hermes-chat--dashboard-session-ready-p t)
+       (should-error (call-interactively #'hermes-chat-enable-backend-reasoning)
+                     :type 'user-error)
+       (should-not sets)
+       (should-not hermes-chat--command-owner)))))
 
 (ert-deftest hermes-chat-reasoning-settlement-ignores-stale-session ()
   "A late reasoning setter cannot read into a replacement session."
