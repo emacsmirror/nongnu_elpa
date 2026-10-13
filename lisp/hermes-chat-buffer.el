@@ -2140,6 +2140,10 @@ calls it so this file never references the submit pipeline defined above it.")
 (defvar hermes-chat--queue-drain-ready-function (lambda () t)
   "Function returning non-nil when the current queue may drain.")
 
+(defvar hermes-chat--history-reconcile-function #'ignore
+  "Function repainting the transcript from history after a backend rewind.
+Set by `hermes-chat' so lower layers such as slash commands can request it.")
+
 (defun hermes-chat--queue-or-submit-content (content &optional display)
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."

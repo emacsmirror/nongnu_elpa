@@ -1146,5 +1146,368 @@ Chats, with their own desktop data, are not marked at all."
     (hermes-buffer--claim 'hermes-endpoint-edit-mode)
     (should (string-match-p "draft" (hermes-buffer--warm-restart-blocker)))))
 
+;;; Editing earlier turns and rewind reconciliation
+
+(defconst hermes-test-rewind-history
+  '(((role . "user") (text . "First question") (row_id . 11))
+    ((role . "assistant") (text . "First answer") (row_id . 12))
+    ((role . "user") (text . "Second question") (row_id . 13))
+    ((role . "assistant") (text . "Second answer") (row_id . 14))
+    ((role . "user") (text . "Third question") (row_id . 15))
+    ((role . "assistant") (text . "Third answer") (row_id . 16)))
+  "Released `session.history' rows with durable row ids.")
+
+(defmacro hermes-test-with-rewind-chat (spec &rest body)
+  "Run BODY in a chat attached to a fake session showing rewind history.
+SPEC is (SUBMITS HISTORY-READS PROMPTS): variables collecting prompt.submit
+argument lists, `session.history' resolvers and y-or-n-p prompts."
+  (declare (indent 1) (debug t))
+  (pcase-let ((`(,submits ,reads ,prompts) spec))
+    `(let ((client (hermes-test--dashboard-client)) callback
+           ,submits ,reads ,prompts (answer t))
+       (ignore callback)
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                  (lambda (&rest args)
+                    (setq callback (plist-get args :callback))
+                    client))
+                 ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                  (lambda (_client text &rest args)
+                    (push (cons text args) ,submits)
+                    (funcall (plist-get args :resolve)
+                             '((status . "streaming") (user_row_id . 21)))))
+                 ((symbol-function 'hermes-dashboard-transport-session-history)
+                  (lambda (_client session &rest args)
+                    (should (equal session "sid-rewind"))
+                    (push args ,reads)))
+                 ((symbol-function 'y-or-n-p)
+                  (lambda (prompt) (push prompt ,prompts) answer)))
+         (hermes-test-with-chat-buffer
+           (setq hermes-chat--dashboard-client client
+                 hermes-chat--dashboard-active-session-id "sid-rewind"
+                 hermes-chat--dashboard-session-ready-p t)
+           (hermes-chat--render-history hermes-test-rewind-history)
+           ,@body)))))
+
+(defun hermes-test--goto-entry (text)
+  "Move point onto the transcript entry showing TEXT."
+  (goto-char (point-min))
+  (search-forward text)
+  (backward-char 2))
+
+(defun hermes-test--finish-turn (_callback client)
+  "Complete the active turn and report CLIENT's session idle."
+  (hermes-chat--handle-transport-event
+   hermes-chat--pending-assistant-id '(:type done :session-id "sid-rewind"))
+  (hermes-test--emit-dashboard-idle client "sid-rewind")
+  (should-not (hermes-chat--active-turn-p)))
+
+(defun hermes-test--user-row-ids ()
+  "Return the row ids of user entries in transcript order."
+  (mapcar (lambda (entry) (plist-get entry :row-id))
+          (ewoc-collect hermes-chat--ewoc
+                        (lambda (entry) (eq (plist-get entry :role) 'user)))))
+
+(ert-deftest hermes-transport-history-row-id-addresses-plain-user-rows ()
+  "Only plain user rows with a positive integer row id are addressable."
+  (should (eql (hermes-transport-history-row-id
+                '((role . "user") (text . "hi") (row_id . 7)))
+               7))
+  (dolist (message '(((role . "assistant") (text . "hi") (row_id . 7))
+                     ((role . "user") (text . "/demo") (row_id . 7)
+                      (display_kind . "skill_invocation"))
+                     ((role . "user") (text . "raw") (row_id . 7)
+                      (display_content . "shown"))
+                     ((role . "user") (text . "hi") (row_id . "7"))
+                     ((role . "user") (text . "hi") (row_id . 0))
+                     ((role . "user") (text . "hi"))))
+    (should-not (hermes-transport-history-row-id message))))
+
+(ert-deftest hermes-dashboard-prompt-submit-sends-truncation-wire-params ()
+  "Truncation keys reach the wire in snake case; ordinary submits omit them."
+  (let (params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client _method request &rest _) (push request params))))
+      (hermes-dashboard-transport-prompt-submit
+       'client "edited" :session-id "sid" :truncate-before-row-id 13
+       :confirm-truncate t :confirm-deep-truncate t)
+      (hermes-dashboard-transport-prompt-submit 'client "plain" :session-id "sid"))
+    (should (equal (sort (mapcar #'car (cadr params)) #'string<)
+                   '(confirm_deep_truncate confirm_truncate session_id text
+                     truncate_before_row_id)))
+    (should (eql (alist-get 'truncate_before_row_id (cadr params)) 13))
+    (should (eq (alist-get 'confirm_truncate (cadr params)) t))
+    (should (equal (sort (mapcar #'car (car params)) #'string<)
+                   '(session_id text)))))
+
+(ert-deftest hermes-chat-rewind-keeps-history-and-live-row-ids ()
+  "History and accepted live user turns keep their durable identity."
+  (hermes-test-with-rewind-chat (submits _reads _prompts)
+    (should (equal (hermes-test--user-row-ids) '(11 13 15)))
+    (goto-char (point-max))
+    (insert "Fourth question")
+    (hermes-chat-send)
+    (should (equal (caar submits) "Fourth question"))
+    ;; An ordinary submit never carries truncation parameters.
+    (dolist (key '(:truncate-before-row-id :confirm-truncate
+                   :confirm-deep-truncate :confirm-empty-truncate))
+      (should-not (plist-get (cdar submits) key)))
+    (should (equal (hermes-test--user-row-ids) '(11 13 15 21)))))
+
+(ert-deftest hermes-chat-edit-turn-resends-with-confirmed-truncation ()
+  "Editing a turn sends its row id and the confirmations the user gave."
+  (hermes-test-with-rewind-chat (submits _reads prompts)
+    (goto-char (point-max))
+    (insert "my draft")
+    (hermes-test--goto-entry "Second question")
+    (call-interactively (key-binding (kbd "e")))
+    (should (equal (hermes-chat-input-string) "Second question"))
+    (should (string-match-p "editing" (hermes-chat--mode-line-process)))
+    (goto-char (point-max))
+    (insert " (revised)")
+    (call-interactively (key-binding (kbd "RET")))
+    (should (equal (car prompts)
+                   "Replace this message, removing 1 later message? "))
+    (pcase-let ((`(,text . ,args) (car submits)))
+      (should (equal text "Second question (revised)"))
+      (should (eql (plist-get args :truncate-before-row-id) 13))
+      (should (eq (plist-get args :confirm-truncate) t))
+      (should (eq (plist-get args :confirm-deep-truncate) t))
+      (should-not (plist-get args :confirm-empty-truncate)))
+    (should-not hermes-chat--edit-turn)
+    (should (string-empty-p (hermes-chat-input-string)))))
+
+(ert-deftest hermes-chat-edit-turn-confirms-scope ()
+  "The first turn needs empty consent; the last needs neither deep nor empty."
+  (dolist (case '(("First question" 11 "removing 2 later messages" nil t)
+                  ("Third question" 15 nil nil nil)))
+    (pcase-let ((`(,text ,row-id ,phrase ,deep ,empty) case))
+      (hermes-test-with-rewind-chat (submits _reads prompts)
+        (hermes-test--goto-entry text)
+        (hermes-chat-edit-turn)
+        (hermes-chat-send)
+        (should (equal (car prompts)
+                       (format "Replace this message%s? "
+                               (if phrase (concat ", " phrase) ""))))
+        (let ((args (cdar submits)))
+          (should (eql (plist-get args :truncate-before-row-id) row-id))
+          (should (eq (plist-get args :confirm-deep-truncate) (or deep (and phrase t))))
+          (should (eq (plist-get args :confirm-empty-truncate) empty)))))))
+
+(ert-deftest hermes-chat-edit-turn-declined-keeps-edit ()
+  "Declining the confirmation sends nothing and keeps the edit open."
+  (hermes-test-with-rewind-chat (submits _reads _prompts)
+    (setq answer nil)
+    (hermes-test--goto-entry "Second question")
+    (hermes-chat-edit-turn)
+    (hermes-chat-send)
+    (should-not submits)
+    (should hermes-chat--edit-turn)
+    (should (equal (hermes-chat-input-string) "Second question"))))
+
+(ert-deftest hermes-chat-edit-turn-cancel-restores-draft ()
+  "Escape cancels editing and restores the earlier draft."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (goto-char (point-max))
+    (insert "my draft")
+    (should-not (key-binding (kbd "<escape>")))
+    (hermes-test--goto-entry "Third question")
+    (hermes-chat-edit-turn)
+    ;; Choosing another turn keeps the original draft.
+    (hermes-test--goto-entry "First question")
+    (hermes-chat-edit-turn)
+    (should (equal (hermes-chat-input-string) "First question"))
+    (call-interactively (key-binding (kbd "<escape>")))
+    (should-not hermes-chat--edit-turn)
+    (should (equal (hermes-chat-input-string) "my draft"))
+    (should-not (hermes-chat--mode-line-process))))
+
+(ert-deftest hermes-chat-edit-turn-popup-group-follows-point ()
+  "The Message group appears only on your own message or while editing."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (let ((message-keys
+           (lambda ()
+             (mapcar (lambda (entry) (plist-get entry :key))
+                     (plist-get (seq-find
+                                 (lambda (group) (equal (plist-get group :name) "Message"))
+                                 (apply #'append
+                                        (keymap-popup--meta hermes-chat-actions-map
+                                                            'descriptions)))
+                                :entries))))
+          (visible-p (lambda ()
+                       (string-match-p "Edit and resend"
+                                       (keymap-popup--render
+                                        (keymap-popup--meta hermes-chat-actions-map
+                                                            'descriptions))))))
+      (should (equal (funcall message-keys) '("C" "U" "Z")))
+      (goto-char (point-max))
+      (should-not (funcall visible-p))
+      (hermes-test--goto-entry "Second answer")
+      (should-not (funcall visible-p))
+      (hermes-test--goto-entry "Second question")
+      (should (funcall visible-p))
+      (should (eq (keymap-lookup hermes-chat-actions-map "C") #'hermes-chat-edit-turn))
+      (should-not (string-match-p "Cancel edit"
+                                  (keymap-popup--render
+                                   (keymap-popup--meta hermes-chat-actions-map
+                                                       'descriptions))))
+      (hermes-chat-edit-turn)
+      (goto-char (point-max))
+      (should (string-match-p "Cancel edit"
+                              (keymap-popup--render
+                               (keymap-popup--meta hermes-chat-actions-map
+                                                   'descriptions)))))))
+
+(ert-deftest hermes-chat-edit-turn-refusals ()
+  "Editing is refused while busy, off a user turn, or without an address."
+  (hermes-test-with-rewind-chat (submits _reads _prompts)
+    (hermes-test--goto-entry "Second answer")
+    (should-error (hermes-chat-edit-turn) :type 'user-error)
+    (goto-char (point-max))
+    (should-error (hermes-chat-edit-turn) :type 'user-error)
+    (hermes-test--goto-entry "Second question")
+    (setq hermes-chat--dashboard-running-p t)
+    (should (string-match-p
+             "wait for this turn"
+             (cadr (should-error (hermes-chat-edit-turn) :type 'user-error))))
+    (should (hermes-chat--rewind-unavailable-p))
+    (setq hermes-chat--dashboard-running-p nil)
+    (should-not (hermes-chat--rewind-unavailable-p))
+    (hermes-chat-edit-turn)
+    ;; A turn that starts after editing began also refuses the resend.
+    (setq hermes-chat--dashboard-running-p t)
+    (goto-char (point-max))
+    (should-error (hermes-chat-send) :type 'user-error)
+    (setq hermes-chat--dashboard-running-p nil)
+    (hermes-chat--render-history
+     '(((role . "user") (text . "/demo") (display_kind . "skill_invocation")
+        (row_id . 31))))
+    (hermes-test--goto-entry "/demo")
+    (should-error (hermes-chat-edit-turn) :type 'user-error)
+    (should-not submits)))
+
+(ert-deftest hermes-chat-edit-turn-stale-session-refuses ()
+  "An edit begun in one session never truncates its successor."
+  (hermes-test-with-rewind-chat (submits _reads _prompts)
+    (hermes-test--goto-entry "Second question")
+    (hermes-chat-edit-turn)
+    (setq hermes-chat--dashboard-active-session-id "successor")
+    (goto-char (point-max))
+    (should-error (hermes-chat-send) :type 'user-error)
+    (should-not submits)
+    (should-not hermes-chat--edit-turn)
+    (should (equal (hermes-chat-input-string) "Second question"))))
+
+(ert-deftest hermes-chat-restore-turn-reruns-unchanged-text ()
+  "Rerun from here resends the turn's own text with truncation."
+  (hermes-test-with-rewind-chat (submits _reads prompts)
+    (hermes-test--goto-entry "Second question")
+    (hermes-chat-restore-turn)
+    (should (equal (car prompts)
+                   "Rerun from this message, removing 1 later message? "))
+    (should (equal (caar submits) "Second question"))
+    (should (eql (plist-get (cdar submits) :truncate-before-row-id) 13))))
+
+(ert-deftest hermes-chat-edit-turn-reconciles-after-turn ()
+  "A truncating submit repaints from history once its turn ends."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-test--goto-entry "Second question")
+    (hermes-chat-edit-turn)
+    (goto-char (point-max))
+    (delete-region (hermes-chat--input-position) (point-max))
+    (insert "Better question")
+    (hermes-chat-send)
+    ;; The turn is running: the stale history is not read yet.
+    (should-not reads)
+    (hermes-test--finish-turn callback client)
+    (should (= (length reads) 1))
+    (insert "next draft")
+    (backward-char 3)
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,(append (seq-take hermes-test-rewind-history 2)
+                                    '(((role . "user") (text . "Better question")
+                                       (row_id . 21))
+                                      ((role . "assistant") (text . "Better answer")))))))
+    (let ((text (buffer-string)))
+      (should-not (string-match-p "Second question\\|Third question" text))
+      (should (string-match-p "Better answer" text)))
+    (should (equal (hermes-test--user-row-ids) '(11 21)))
+    (should (equal (hermes-chat-input-string) "next draft"))
+    (should (= (- (point) (hermes-chat--input-position)) 7))))
+
+(ert-deftest hermes-chat-undo-reconciles-transcript ()
+  "After /undo the transcript repaints from history, keeping the notice."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (_client _command &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((type . "prefill") (message . "Third question")
+                            (notice . "Undid 1 turn"))))))
+      (goto-char (point-max))
+      (insert "/undo")
+      (hermes-chat-send)
+      (should (= (length reads) 1))
+      (funcall (plist-get (car reads) :resolve)
+               `((messages . ,(seq-take hermes-test-rewind-history 4))))
+      (let ((text (buffer-string)))
+        (should (string-match-p "Second answer" text))
+        (should-not (string-match-p "Third answer" text))
+        (should (string-match-p "Undid 1 turn" text)))
+      (should (equal (hermes-chat-input-string) "Third question")))))
+
+(ert-deftest hermes-chat-retry-reconciles-after-resent-turn ()
+  "After /retry the resent turn runs, then history replaces the old copy."
+  (hermes-test-with-rewind-chat (submits reads _prompts)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (_client _command &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((type . "send") (message . "Third question"))))))
+      (goto-char (point-max))
+      (insert "/retry")
+      (hermes-chat-send)
+      (should (equal (caar submits) "Third question"))
+      ;; Any read that raced the resent turn is stale and is read again.
+      (when reads
+        (funcall (plist-get (pop reads) :resolve)
+                 `((messages . ,(seq-take hermes-test-rewind-history 4)))))
+      (should (string-match-p "Third answer" (buffer-string)))
+      (should-not reads)
+      (hermes-test--finish-turn callback client)
+      (should (= (length reads) 1))
+      (funcall (plist-get (car reads) :resolve)
+               `((messages . ,(append (seq-take hermes-test-rewind-history 4)
+                                      '(((role . "user") (text . "Third question")
+                                         (row_id . 21))
+                                        ((role . "assistant") (text . "New answer")))))))
+      (let ((text (buffer-string)))
+        (should-not (string-match-p "Third answer" text))
+        (should (string-match-p "New answer" text)))
+      (should (equal (hermes-test--user-row-ids) '(11 13 21))))))
+
+(ert-deftest hermes-chat-rewind-reconcile-stale-owners-stay-quiet ()
+  "A history read cannot repaint a successor session, lifetime or client."
+  (dolist (change '(session lifetime client))
+    (hermes-test-with-rewind-chat (_submits reads _prompts)
+      (hermes-chat--request-history-reconcile)
+      (should (= (length reads) 1))
+      (pcase change
+        ('session (setq hermes-chat--dashboard-active-session-id "successor"))
+        ('lifetime (setq hermes-chat--lifecycle-generation
+                         (hermes-chat--next-lifetime-token)))
+        ('client (setq hermes-chat--dashboard-client (hermes-test--dashboard-client))))
+      (let ((before (buffer-string)))
+        (funcall (plist-get (car reads) :resolve) '((messages)))
+        (funcall (plist-get (car reads) :reject) "late failure")
+        (should (equal (buffer-string) before))))))
+
+(ert-deftest hermes-chat-rewind-reconcile-failure-keeps-transcript ()
+  "A failed read reports itself and deletes nothing."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-chat--request-history-reconcile)
+    (funcall (plist-get (car reads) :reject) "socket closed")
+    (let ((text (buffer-string)))
+      (should (string-match-p "Third answer" text))
+      (should (string-match-p "Could not refresh the transcript: socket closed" text)))
+    (should-not hermes-chat--history-reconcile)))
+
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here

@@ -1846,10 +1846,15 @@ RESOLVE and REJECT receive the asynchronous request result."
          (hermes-dashboard-transport-dispatch-guard
           (or (plist-get context :application-guard)
               hermes-dashboard-transport-dispatch-guard))
+         (truncation (plist-get context :truncation))
          (send (lambda ()
                  (hermes-dashboard-transport-prompt-submit
                   client prompt :session-id session
                   :queued (and (plist-get context :application-guard) t)
+                  :truncate-before-row-id (plist-get truncation :row-id)
+                  :confirm-truncate (and truncation t)
+                  :confirm-deep-truncate (plist-get truncation :deep)
+                  :confirm-empty-truncate (plist-get truncation :empty)
                   :resolve resolve
                   :reject (if record
                               (lambda (_)

@@ -295,6 +295,9 @@ Its :input-edited slot records composer changes since command admission.")
   (hermes-chat--command-finish
    context
    (lambda ()
+     ;; The backend rewound the session: repaint from its history.
+     (when (member name '("undo" "retry"))
+       (funcall hermes-chat--history-reconcile-function))
      (hermes-chat--handle-command-result
       result arg (let ((owner (plist-get context :owner)))
                    ;; Pre-reload commands have no composer edit evidence.

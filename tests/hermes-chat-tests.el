@@ -1840,7 +1840,7 @@ Run BODY from a buffer visiting ROOT, then kill the chats and the root."
                             (mapcar (lambda (group) (plist-get group :name)) row))
                           rows)
                    '(("Turn" "Compose") ("Configure" "Browse")
-                     ("Show" "Aside" "Prompt"))))))
+                     ("Show" "Aside" "Message" "Prompt"))))))
 
 (ert-deftest hermes-chat-actions-popup-groups-stay-small ()
   "Every chat popup group, root and child, offers at most four actions."

@@ -872,6 +872,11 @@ extends the input instead of prepending a blank line to it."
 (defun hermes-chat--submit-resolved (context result)
   "Settle CONTEXT from dashboard prompt RESULT."
   (hermes-chat--image-admission-ack (plist-get context :admission) result)
+  (unless (plist-get context :display)
+    (hermes-chat--bind-row-id (plist-get context :user-id)
+                              (hermes-transport--get result 'user_row_id)))
+  (when (plist-get context :truncation)
+    (hermes-chat--request-history-reconcile))
   (when-let* ((record (plist-get (plist-get context :queue-entry) :image-record)))
     (unless (eq (plist-get record :state) 'uncertain)
       (setf (plist-get record :state) 'accepted))
@@ -1025,6 +1030,12 @@ extends the input instead of prepending a blank line to it."
     (hermes-chat--clear-submit-context context queue-id)
     (message "Hermes transport failed: %s" message)))
 
+(defvar hermes-chat--submit-truncation nil
+  "Truncation plist for the submission being started, or nil.
+Let-bound by the edit commands: :row-id names the durable user row to rewind
+before, :deep and :empty carry the user's confirmation of removing later
+turns or the whole transcript.")
+
 (defun hermes-chat--make-submit-context (content display queue-entry user assistant)
   "Return transport context for CONTENT, DISPLAY, QUEUE-ENTRY, USER, and ASSISTANT."
   (let ((dashboard-p (hermes-chat--dashboard-default-transport-p)))
@@ -1032,6 +1043,7 @@ extends the input instead of prepending a blank line to it."
           :lifetime hermes-chat--lifecycle-generation
           :client nil
           :admission nil
+          :truncation hermes-chat--submit-truncation
           :application-guard nil
           :application-claim nil
           :application-observer nil :application-admitted nil
@@ -2181,7 +2193,12 @@ Use the backend's display projection; hidden rows return nil."
           (text (hermes-transport--non-empty-string
                  (hermes-transport-history-text projection))))
       (pcase role
-        ("user" (and text (hermes-chat--make-entry 'user text 'done)))
+        ("user"
+         (and text
+              (let ((entry (hermes-chat--make-entry 'user text 'done)))
+                (if-let* ((row-id (hermes-transport-history-row-id message)))
+                    (plist-put entry :row-id row-id)
+                  entry))))
         ("assistant" (and text (hermes-chat--make-entry 'assistant text 'done)))
         ("tool"
          (hermes-chat--make-entry
@@ -2329,6 +2346,237 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
                        (hermes-chat--drain-queued-message))))))
              :reject #'failed)
           (error (failed (error-message-string err))))))))
+
+;;; Authoritative transcript reconciliation
+
+(defvar-local hermes-chat--history-reconcile nil
+  "Owner of a pending transcript reconciliation, or nil.
+A plist with the :client, :session and :lifetime that requested it, the
+:known node table at that time, and a :phase that is `wait' until the chat
+is idle and `read' while `session.history' is in flight.")
+
+(defun hermes-chat--bind-row-id (entry-id row-id)
+  "Record durable ROW-ID on the user entry ENTRY-ID, when both exist."
+  (when-let* ((row-id (hermes-transport-row-id row-id))
+              (node (and hermes-chat--nodes
+                         (gethash entry-id hermes-chat--nodes)))
+              (entry (ewoc-data node)))
+    (when (eq (plist-get entry :role) 'user)
+      (ewoc-set-data node (plist-put entry :row-id row-id)))))
+
+(defun hermes-chat--request-history-reconcile ()
+  "Repaint the transcript from backend history once this chat is idle.
+Use after the backend rewinds the session, so the transcript never keeps
+turns the session no longer has nor drops any it still has."
+  (when (and hermes-chat--dashboard-client hermes-chat--dashboard-active-session-id)
+    (setq hermes-chat--history-reconcile
+          (list :phase 'wait
+                :client hermes-chat--dashboard-client
+                :session hermes-chat--dashboard-active-session-id
+                :lifetime hermes-chat--lifecycle-generation
+                :known (copy-hash-table hermes-chat--nodes)))
+    (hermes-chat--history-reconcile-maybe)))
+
+(defun hermes-chat--history-reconcile-current-p (owner)
+  "Return non-nil when OWNER still belongs to this chat's live session."
+  (and owner
+       (eq owner hermes-chat--history-reconcile)
+       (hermes-chat--current-lifetime-p (plist-get owner :lifetime))
+       (eq (plist-get owner :client) hermes-chat--dashboard-client)
+       (equal (plist-get owner :session) hermes-chat--dashboard-active-session-id)))
+
+(defun hermes-chat--history-reconcile-maybe ()
+  "Read history for a waiting reconciliation once no turn is active."
+  (let ((owner hermes-chat--history-reconcile))
+    (cond
+     ((null owner))
+     ((not (hermes-chat--history-reconcile-current-p owner))
+      (setq hermes-chat--history-reconcile nil))
+     ((and (eq (plist-get owner :phase) 'wait)
+           (not (hermes-chat--active-turn-p)))
+      (setf (plist-get owner :phase) 'read)
+      (let ((buffer (current-buffer)))
+        (condition-case err
+            (hermes-dashboard-transport-session-history
+             (plist-get owner :client) (plist-get owner :session)
+             :resolve (lambda (result)
+                        (hermes-chat--in-buffer buffer
+                          (hermes-chat--history-reconciled owner result)))
+             :reject (lambda (message)
+                       (hermes-chat--in-buffer buffer
+                         (hermes-chat--history-reconcile-failed owner message))))
+          (error (hermes-chat--history-reconcile-failed
+                  owner (error-message-string err)))))))))
+
+(defun hermes-chat--history-reconcile-failed (owner message)
+  "Report MESSAGE for reconciliation OWNER, leaving the transcript as is."
+  (when (hermes-chat--history-reconcile-current-p owner)
+    (setq hermes-chat--history-reconcile nil)
+    (hermes-chat--insert-local-status
+     (format "Could not refresh the transcript: %s" message) 'error)))
+
+(defun hermes-chat--history-reconciled (owner result)
+  "Repaint the transcript from history RESULT read for OWNER.
+A turn that started during the read makes RESULT stale: read again later."
+  (when (hermes-chat--history-reconcile-current-p owner)
+    (if (hermes-chat--active-turn-p)
+        (setf (plist-get owner :phase) 'wait)
+      (setq hermes-chat--history-reconcile nil)
+      (hermes-chat--repaint-history (hermes-transport--get result 'messages)
+                                    (plist-get owner :known)))))
+
+(defun hermes-chat--repaint-history (messages known)
+  "Replace the transcript with history MESSAGES.
+Local status lines added since KNOWN, a node table snapshot, follow the
+history, so the notice that caused the repaint stays visible."
+  (let* ((kept (seq-filter
+                (lambda (entry)
+                  (and (eq (plist-get entry :role) 'status)
+                       (not (gethash (plist-get entry :id) known))))
+                (ewoc-collect hermes-chat--ewoc #'always)))
+         (entries (append (mapcan #'hermes-chat--history-entries messages) kept)))
+    (hermes-chat--preserve-input-point
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t))
+        (hermes-chat--preserve-readers
+          (ewoc-filter hermes-chat--ewoc #'ignore)
+          (clrhash hermes-chat--nodes)
+          (dolist (entry entries)
+            (hermes-chat--register-node
+             entry (ewoc-enter-last hermes-chat--ewoc entry))))))
+    (hermes-chat--notify-state-change)))
+
+;;; Editing earlier turns
+
+(defvar-local hermes-chat--edit-turn nil
+  "The earlier user turn being edited in the composer, or nil.
+A plist with the turn's durable :row-id, the composer :draft it replaced,
+and the :client, :session and :lifetime that own the edit.")
+
+(defun hermes-chat--user-turn-at (position)
+  "Return the user entry at POSITION, or signal a `user-error'."
+  (let* ((node (and (not (hermes-chat--point-in-input-p))
+                    (hermes-chat--entry-node-at position)))
+         (entry (and node (ewoc-data node))))
+    (unless (eq (plist-get entry :role) 'user)
+      (user-error "Point is not on one of your messages"))
+    entry))
+
+(defun hermes-chat--rewind-target (verb)
+  "Return the user entry at point that may be rewound to for VERB."
+  (let ((entry (hermes-chat--user-turn-at (point))))
+    (when (hermes-chat--active-turn-p)
+      (user-error "Hermes is working; wait for this turn to end before %s" verb))
+    (unless (hermes-chat--dashboard-session-attached-p)
+      (user-error "No live Hermes session to rewind"))
+    (unless (plist-get entry :row-id)
+      (user-error "This message has no saved address; reload the session to %s it"
+                  (if (equal verb "editing") "edit" "rerun")))
+    entry))
+
+(defun hermes-chat--rewind-scope (row-id)
+  "Return (FIRST-P . LATER) for the user turn ROW-ID, or nil when absent.
+FIRST-P is non-nil when no user turn precedes it; LATER counts user turns
+after it."
+  (let ((users (seq-filter (lambda (entry) (eq (plist-get entry :role) 'user))
+                           (ewoc-collect hermes-chat--ewoc #'always))))
+    (when-let* ((tail (seq-drop-while
+                       (lambda (entry) (not (eql (plist-get entry :row-id) row-id)))
+                       users)))
+      (cons (eq tail users) (1- (length tail))))))
+
+(defun hermes-chat--confirm-rewind (prompt scope)
+  "Ask with PROMPT whether to rewind SCOPE, a `hermes-chat--rewind-scope'."
+  (y-or-n-p
+   (format "%s%s? " prompt
+           (pcase (cdr scope)
+             (0 "")
+             (1 ", removing 1 later message")
+             (n (format ", removing %d later messages" n))))))
+
+(defun hermes-chat--submit-rewind (content row-id scope)
+  "Submit CONTENT in place of user turn ROW-ID covering SCOPE."
+  (let ((hermes-chat--submit-truncation
+         (list :row-id row-id
+               :deep (and (> (cdr scope) 0) t)
+               :empty (car scope))))
+    (hermes-chat--submit-content content)))
+
+(defun hermes-chat-edit-turn ()
+  "Edit the message at point in the composer and resend it from there.
+Sending rewinds the conversation to just before this message.  Cancel with
+\\[hermes-chat-edit-cancel] to restore the previous draft."
+  (interactive nil hermes-chat-mode)
+  (let ((entry (hermes-chat--rewind-target "editing")))
+    (setq hermes-chat--edit-turn
+          (list :row-id (plist-get entry :row-id)
+                :draft (if hermes-chat--edit-turn
+                           (plist-get hermes-chat--edit-turn :draft)
+                         (hermes-chat-input-string))
+                :client hermes-chat--dashboard-client
+                :session hermes-chat--dashboard-active-session-id
+                :lifetime hermes-chat--lifecycle-generation))
+    (hermes-chat--replace-input-tail (plist-get entry :content))
+    (force-mode-line-update)
+    (message "%s" (substitute-command-keys
+                   "Editing an earlier message: \\[hermes-chat-send] resends, \\[hermes-chat-edit-cancel] cancels"))))
+
+(defun hermes-chat-edit-cancel ()
+  "Stop editing an earlier message and restore the previous draft."
+  (interactive nil hermes-chat-mode)
+  (let ((edit hermes-chat--edit-turn))
+    (unless edit (user-error "Not editing an earlier message"))
+    (setq hermes-chat--edit-turn nil)
+    (hermes-chat--replace-input-tail (plist-get edit :draft))
+    (force-mode-line-update)))
+
+(defun hermes-chat--editing-p ()
+  "Return non-nil while the composer edits an earlier message."
+  (and hermes-chat--edit-turn t))
+
+(defun hermes-chat--send-edit (content)
+  "Resend edited CONTENT in place of the turn being edited.
+Return non-nil when the submission starts."
+  (let* ((edit hermes-chat--edit-turn)
+         (row-id (plist-get edit :row-id))
+         (scope (hermes-chat--rewind-scope row-id)))
+    (unless (and (hermes-chat--current-lifetime-p (plist-get edit :lifetime))
+                 (eq (plist-get edit :client) hermes-chat--dashboard-client)
+                 (equal (plist-get edit :session)
+                        hermes-chat--dashboard-active-session-id)
+                 scope)
+      (setq hermes-chat--edit-turn nil)
+      (force-mode-line-update)
+      (user-error "The edited message is gone from this session; text kept as a draft"))
+    (when (hermes-chat--active-turn-p)
+      (user-error "Hermes is working; wait for this turn to end before resending"))
+    (when (hermes-chat--confirm-rewind "Replace this message" scope)
+      (hermes-chat--delete-input-tail)
+      (setq hermes-chat--edit-turn nil)
+      (force-mode-line-update)
+      (hermes-chat--submit-rewind content row-id scope))))
+
+(defun hermes-chat-restore-turn ()
+  "Rerun the conversation from the message at point.
+The message is sent again unchanged after the conversation is rewound to
+just before it; later messages are removed."
+  (interactive nil hermes-chat-mode)
+  (let* ((entry (hermes-chat--rewind-target "rerunning"))
+         (row-id (plist-get entry :row-id))
+         (scope (hermes-chat--rewind-scope row-id)))
+    (when (hermes-chat--confirm-rewind "Rerun from this message" scope)
+      (hermes-chat--submit-rewind (plist-get entry :content) row-id scope))))
+
+(defun hermes-chat--rewind-unavailable-p ()
+  "Return non-nil when point is not on a user turn that may be rewound."
+  (or (hermes-chat--active-turn-p)
+      (not (ignore-errors
+             (plist-get (hermes-chat--user-turn-at (point)) :row-id)))))
+
+(defun hermes-chat--message-actions-p ()
+  "Return non-nil when point is on a user turn or an edit is open."
+  (or hermes-chat--edit-turn
+      (and (ignore-errors (hermes-chat--user-turn-at (point))) t)))
 
 (defun hermes-chat--send-during-history ()
   "Queue composer input behind history, retrying a failed read on Send."
@@ -2523,6 +2771,8 @@ history read, including with empty input when a queued message is retained."
              ((hermes-chat--parse-slash content)
               (hermes-chat--handle-slash-content content)
               t)
+             (hermes-chat--edit-turn
+              (hermes-chat--send-edit content))
              ((and (hermes-chat--active-turn-p)
                    (null hermes-chat--session-bootstrap)
                    (null hermes-chat--application-context)
@@ -3303,9 +3553,18 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
                   'local-map hermes-chat-images-mode-line-map
                   'help-echo "mouse-1 or C-c C-o I: Preview, remove or recover images"))))
 
+(defun hermes-chat--edit-mode-line ()
+  "Return the compact editing-an-earlier-message segment, or nil."
+  (when hermes-chat--edit-turn
+    (propertize " ✎ editing" 'face 'mode-line-emphasis
+                'help-echo (substitute-command-keys
+                            "\\[hermes-chat-send] resends from that message; \
+\\[hermes-chat-edit-cancel] restores the previous draft"))))
+
 (defun hermes-chat--mode-line-process ()
   "Return this chat's mode-line process segments, or nil when there are none."
-  (when-let* ((parts (delq nil (list (hermes-chat--images-mode-line)
+  (when-let* ((parts (delq nil (list (hermes-chat--edit-mode-line)
+                                     (hermes-chat--images-mode-line)
                                      (hermes-chat--new-output-mode-line)))))
     (apply #'concat parts)))
 
@@ -3441,6 +3700,13 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "y" ("Side question (btw)" hermes-chat-btw)
   "G" ("Background task" hermes-chat-background)
   "!" ("Stop processes" hermes-chat-stop-processes)
+  :group ("Message" :if #'hermes-chat--message-actions-p)
+  "C" ("Edit and resend" hermes-chat-edit-turn
+       :inapt-if #'hermes-chat--rewind-unavailable-p)
+  "U" ("Rerun from here" hermes-chat-restore-turn
+       :inapt-if #'hermes-chat--rewind-unavailable-p)
+  "Z" ("Cancel edit" hermes-chat-edit-cancel
+       :if #'hermes-chat--editing-p)
   :group ("Prompt" :if #'hermes-chat--pending-prompt-p)
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt))
@@ -3514,6 +3780,11 @@ into `hermes-chat-mode', so each activation owns exactly one hint."
   "n" (hermes-chat--transcript-key #'hermes-chat-next-turn)
   "p" (hermes-chat--transcript-key #'hermes-chat-previous-turn)
   "w" (hermes-chat--transcript-key #'hermes-chat-copy)
+  "e" (hermes-chat--transcript-key #'hermes-chat-edit-turn)
+  ;; Escape cancels an edit; otherwise it keeps its native meaning.
+  "<escape>" '(menu-item "" hermes-chat-edit-cancel
+                         :filter (lambda (command)
+                                   (and hermes-chat--edit-turn command)))
   "SPC" (hermes-chat--transcript-key #'scroll-up-command)
   "S-SPC" (hermes-chat--transcript-key #'scroll-down-command nil t)
   "DEL" (hermes-chat--transcript-key #'scroll-down-command nil t)
@@ -3570,6 +3841,8 @@ depth so a globalized linter re-enabled after the mode body is overridden."
             #'hermes-chat-todos--clear nil t)
   (add-hook 'hermes-chat-submit-inhibit-functions
             #'hermes-chat--images-inhibit nil t)
+  (add-hook 'hermes-chat-state-change-hook
+            #'hermes-chat--history-reconcile-maybe nil t)
   (setq-local desktop-save-buffer #'hermes-chat--desktop-save)
   (setq-local imenu-create-index-function #'hermes-chat--imenu-index)
   (add-hook 'warm-restart-blocker-functions
@@ -3632,6 +3905,8 @@ session is titled, after that title -- so chats stay filterable with
 (defun hermes-chat--install-registries ()
   "Install chat-owned callbacks into lower-layer registries."
   (setq hermes-chat--submit-function #'hermes-chat--submit-content
+        hermes-chat--history-reconcile-function
+        #'hermes-chat--request-history-reconcile
         hermes-chat--queue-drain-ready-function
         #'hermes-chat--dashboard-queue-drain-ready-p
         hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer

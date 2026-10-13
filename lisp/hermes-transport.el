@@ -195,6 +195,21 @@ public commentary strings."
                                                   nil)))
             :reasoning (or (hermes-transport--display-string reasoning) "")))))
 
+(defun hermes-transport-row-id (value)
+  "Return VALUE as a durable history row id, or nil.
+Row ids are positive integers; anything else is not an address."
+  (and (natnump value) (> value 0) value))
+
+(defun hermes-transport-history-row-id (message)
+  "Return the durable row id addressing user history MESSAGE, or nil.
+Only plain user turns qualify: a projected row such as a skill invocation
+displays text that differs from what the model saw, so resending it would
+not reproduce the turn."
+  (and (equal (hermes-transport--get message 'role) "user")
+       (null (hermes-transport--get message 'display_kind))
+       (not (hermes-transport--field-present-p message 'display_content))
+       (hermes-transport-row-id (hermes-transport--get message 'row_id))))
+
 (defun hermes-transport-history-text (projection)
   "Return the visible reply text of history PROJECTION.
 Public commentary precedes the content as paragraphs unless it only

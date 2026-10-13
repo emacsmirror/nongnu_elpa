@@ -355,8 +355,15 @@ RESOLVE and REJECT receive the result or error.  Upload local bytes first."
     hermes-dashboard-transport-prompt-submit "prompt.submit"
   "Send TEXT through `prompt.submit' on CLIENT.
 SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
-result or error.  QUEUED forces non-interrupting admission when busy."
-  :args (text) :keys (queued) :session t)
+result or error.  QUEUED forces non-interrupting admission when busy.
+TRUNCATE-BEFORE-ROW-ID rewinds the session to just before that durable user
+row before TEXT runs; the backend refuses it without CONFIRM-TRUNCATE.
+CONFIRM-DEEP-TRUNCATE allows removing more than one user turn and
+CONFIRM-EMPTY-TRUNCATE allows replacing the whole transcript."
+  :args (text)
+  :keys (queued truncate-before-row-id confirm-truncate
+                confirm-deep-truncate confirm-empty-truncate)
+  :session t)
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-prompt-background "prompt.background"
