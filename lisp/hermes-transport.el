@@ -1225,11 +1225,31 @@ A listed worker is running unless the backend says it is queued."
           :last-tool (hermes-transport-work-string row 'last_tool)
           :accepting-steer (eq (hermes-transport--get row 'accepting_steer) t))))
 
+(defun hermes-transport-work-failure-row (row)
+  "Return read-only worker metadata for persisted failed task ROW."
+  (let* ((delegation (hermes-transport-work-string row 'delegation_id))
+         (index (hermes-transport--get row 'task_index)))
+    (unless (and (integerp index) (>= index 0))
+      (error "Invalid delegation task index"))
+    (list :key (cons 'delegate (format "delegation:%s:%d" delegation index))
+          :id (format "delegation:%s:%d" delegation index) :kind 'delegate
+          :persisted t :state 'failed
+          :delegation-id delegation :task-index index
+          :status (hermes-transport-work-string row 'status)
+          :goal (or (hermes-transport-work-string row 'goal) "—")
+          :error (hermes-transport-work-string row 'error)
+          :started (hermes-transport--work-number row 'dispatched_at)
+          :finished (hermes-transport--work-number row 'completed_at))))
+
 (defun hermes-transport-work-subagents (result)
   "Return worker rows from lossless `subagent.list' RESULT.
-Signal for a missing or malformed roster array."
-  (hermes-transport--work-rows result "subagents" 'subagent_id
-                               #'hermes-transport-work-delegate-row))
+Signal for a missing live roster or a malformed roster array.
+An absent delegation array is accepted for older backends."
+  (append (hermes-transport--work-rows result "subagents" 'subagent_id
+                                      #'hermes-transport-work-delegate-row)
+          (when (and (hash-table-p result) (gethash "delegations" result))
+            (hermes-transport--work-rows result "delegations" 'delegation_id
+                                         #'hermes-transport-work-failure-row))))
 
 (defun hermes-transport-work-process-state (status exit-code reason)
   "Return the process state for wire STATUS, EXIT-CODE and completion REASON.

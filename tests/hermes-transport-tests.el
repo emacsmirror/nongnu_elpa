@@ -6066,5 +6066,21 @@ first; an unrelated process with that PID is left alone."
                '("agent.terminal.output" . ((process_id . "proc_1") (chunk . "logout\n")))
                '("terminal.close" . ((process_id . "proc_1"))))))
 
+(ert-deftest hermes-transport-work-subagents-reads-persisted-failures ()
+  "Failed delegation tasks become read-only rows keyed by delegation and task."
+  (let ((parse #'hermes-transport-json-parse-lossless))
+    (should (equal (hermes-transport-work-subagents
+                    (funcall parse "{\"subagents\":[]}"))
+                   nil))
+    (let ((rows (hermes-transport-work-subagents
+                 (funcall parse "{\"subagents\":[],\"delegations\":[{\"delegation_id\":\"d1\",\"task_index\":2,\"status\":\"timeout\",\"goal\":\"Audit\",\"error\":\"Timed out\",\"dispatched_at\":10,\"completed_at\":70}]}"))))
+      (should (equal (car rows)
+                     '(:key (delegate . "delegation:d1:2") :id "delegation:d1:2"
+                            :kind delegate :persisted t :state failed
+                            :delegation-id "d1" :task-index 2 :status "timeout"
+                            :goal "Audit" :error "Timed out" :started 10 :finished 70))))
+    (should-error (hermes-transport-work-subagents
+                   (funcall parse "{\"subagents\":[],\"delegations\":[{\"delegation_id\":\"d1\",\"task_index\":\"x\"}]}")))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

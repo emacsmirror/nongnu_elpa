@@ -254,14 +254,19 @@ Fields with no text are omitted; text is wrapped to WIDTH."
 (defun hermes-work--agent-meta (row now)
   "Return worker ROW's quiet meta parts at NOW: model, tools, elapsed, verdict.
 Glyphs carry running, done and failed; other states add their word last,
-in the time column, as a queued worker has no time yet."
+in the time column, as a queued worker has no time yet.  A persisted
+failure, which stays listed for up to a day, also says how long ago it
+ended."
   (let ((count (plist-get row :tool-count))
         (elapsed (hermes-work--elapsed row now))
-        (state (hermes-work-display-state row)))
+        (state (hermes-work-display-state row))
+        (finished (plist-get row :finished)))
     (mapcar (lambda (part) (propertize part 'face 'hermes-work-meta))
             (delq nil (list (hermes-work--model (plist-get row :model))
                             (and count (hermes-work--tools-text count))
                             (and elapsed (hermes-work-duration elapsed))
+                            (and (plist-get row :persisted) finished
+                                 (hermes-work-ago (max 0 (- now finished))))
                             (unless (memq state '(running done failed))
                               (hermes-work-state-label state)))))))
 

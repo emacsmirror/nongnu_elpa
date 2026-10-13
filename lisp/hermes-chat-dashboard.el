@@ -542,13 +542,16 @@ CONTEXT is (KIND SENT), SENT being when the read was sent."
                        (hermes-transport-work-subagents result)
                      (hermes-transport-work-processes result)))
            (error nil))
-    (`(,rows)
+    (`(,all)
      (let ((previous (plist-get (plist-get owner kind) :rows))
+           ;; Persisted failures are history, never live control targets.
+           (rows (seq-remove (lambda (row) (plist-get row :persisted)) all))
            (now (float-time)))
        ;; Unchanged rows keep identity, so pending tails and controls survive.
        (setf (plist-get owner kind)
              (list :sid (plist-get owner :runtime)
                    :rows (mapcar (lambda (row) (or (car (member row previous)) row)) rows)
+                   :failures (seq-filter (lambda (row) (plist-get row :persisted)) all)
                    :observed now))
        (when (eq kind :delegates)
          (setf (plist-get owner :events)
