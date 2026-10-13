@@ -85,41 +85,40 @@ installation.  No additional Emacs package is required.
 
 ## Configuration
 
-| Option                                   | Default | Values and effect                                        |
+Use `setopt` or Customize for options, and `custom-set-faces` or Customize for
+faces.  See `C-h v` and `M-x describe-face` for full documentation.
+
+### Options
+
+| Option | Default | Values and effect |
 | --- | --- | --- |
-| `markdown-ts-appear-enable-math-preview` | `nil` | `t` enables asynchronous math previews. |
-| `markdown-ts-appear-enable-mermaid-preview` | `nil` | `t` previews unedited `mermaid` fenced blocks. |
-| `markdown-ts-appear-mermaid-command` | `"mmdc"` | Mermaid CLI executable. |
-| `markdown-ts-appear-mermaid-size` | `source` | `source`: fit source height; positive integer: limit only width, in pixels. |
 | `markdown-ts-appear-link-icon` | `""` | String before ordinary links; empty disables it. |
 | `markdown-ts-appear-image-icon` | `""` | String before image links; empty disables it. |
 | `markdown-ts-appear-wikilink-icon` | `"◆"` | String before Wiki links; empty disables it. |
 | `markdown-ts-appear-code-fence-style` | `connected` | `raw` or `connected` fences with a language label. |
 | `markdown-ts-appear-block-quote-marker` | `"▎"` | Replacement string; `nil` keeps the original marker. |
-| `markdown-ts-appear-render-callouts` | `t` | Callout labels and faint backgrounds, kept while editing. |
+| `markdown-ts-appear-render-callouts` | `t` | Show callout labels and faint backgrounds. |
 | `markdown-ts-appear-table-style` | `wrapped` | `raw`, `unicode`, or width-aware `wrapped` tables. |
-| `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second data row. |
-| `markdown-ts-appear-table-zebra` | `:inherit hl-line` | Stripe face. |
+| `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second data row in `wrapped` tables. |
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
+| `markdown-ts-appear-enable-math-preview` | `nil` | `t` enables asynchronous math previews. |
+| `markdown-ts-appear-enable-mermaid-preview` | `nil` | `t` previews unedited `mermaid` fenced blocks. |
+| `markdown-ts-appear-mermaid-command` | `"mmdc"` | Mermaid CLI executable. |
+| `markdown-ts-appear-mermaid-size` | `source` | `source`: fit source height; positive integer: limit only width, in pixels. |
 
-Use `setopt` or Customize to apply visual options to active buffers immediately.
+Visual options applied through `setopt` or Customize update active buffers.
 Re-enable `markdown-ts-appear-mode` after changing either preview-enable option.
 
-Callout types are case-insensitive.  Label colors use the current theme:
+### Faces
 
-| Type      | Face                                    |
+| Face | Purpose |
 | --- | --- |
-| NOTE | `link` |
-| TIP | `success` |
-| IMPORTANT | `font-lock-keyword-face` |
-| WARNING | `warning` |
-| CAUTION | `error` |
-| Other | `markdown-ts-appear-block-quote-marker` |
+| `markdown-ts-appear-code-fence-marker` | Code block borders and language markers. |
+| `markdown-ts-appear-label` | Inverse-video style for code language and callout labels. |
+| `markdown-ts-appear-block-quote-marker` | Block quote markers. |
+| `markdown-ts-appear-table-zebra` | Alternating table row backgrounds. |
 
-Colors and fonts follow `markdown-ts-mode` faces.  Use
-`markdown-ts-table-auto-align` for source-table alignment and
-`markdown-ts-inline-images` for image previews that stay visible while editing.
-The default image sizing adapts to each window.
+Other colors and fonts follow `markdown-ts-mode` and the current theme.
 
 ## Modal Editing
 
