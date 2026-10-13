@@ -34,6 +34,11 @@
 (declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard")
 (declare-function hermes-chat--dashboard-context-current-p "hermes-chat-dashboard")
 (declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard")
+(declare-function hermes-chat--command-run-owned "hermes-chat-slash")
+(declare-function hermes-chat--command-context "hermes-chat-slash")
+(declare-function hermes-chat--command-context-current-p "hermes-chat-slash")
+(declare-function hermes-chat--command-stop "hermes-chat-slash")
+(declare-function hermes-chat--handle-command-result "hermes-chat-slash")
 
 ;;;; State
 
@@ -114,31 +119,44 @@ MESSAGE is one of (:push SNAPSHOT), (:request ACTION),
 
 ;;;; Requests
 
-(defun hermes-session-control--send (&optional action args)
-  "Read this chat's snapshot, or apply ACTION with ARGS.
-The reply applies only to the same attachment and epoch."
+(defun hermes-session-control--send (&optional action args context)
+  "Read this chat's snapshot, or apply ACTION with ARGS under command CONTEXT.
+The reply applies only to the same attachment and epoch.  An action's
+reply releases CONTEXT's command owner and then handles the backend's
+`dispatch' exactly as the matching slash command's result: a resumed
+goal's continuation is submitted, or queued behind a running turn."
   (let* ((buffer (current-buffer))
          (client hermes-chat--dashboard-client)
          (session hermes-chat--dashboard-active-session-id)
          (generation hermes-chat--lifecycle-generation)
+         (owner (plist-get context :owner))
          (epoch (or (plist-get hermes-session-control--state :epoch) 0))
          (settle
-          (lambda (message)
+          (lambda (message &optional dispatch)
             (when (buffer-live-p buffer)
               (with-current-buffer buffer
-                (if (hermes-chat--dashboard-context-current-p
-                     client generation session)
-                    (hermes-session-control--update message)
-                  ;; A successor attachment owns the snapshot; free the action.
-                  (when action
-                    (hermes-session-control--update (list :fail nil action))))))))
+                (let ((current (if context
+                                   (hermes-chat--command-context-current-p context)
+                                 (hermes-chat--dashboard-context-current-p
+                                  client generation session))))
+                  (when owner (hermes-chat--command-stop owner))
+                  (if current
+                      (progn
+                        (hermes-session-control--update message)
+                        (when (consp dispatch)
+                          (hermes-chat--handle-command-result
+                           dispatch nil (plist-get owner :input-edited))))
+                    ;; A successor attachment owns the snapshot; free the action.
+                    (when action
+                      (hermes-session-control--update (list :fail nil action)))))))))
          (resolve
           (lambda (result)
             (funcall settle
                      (if-let* ((snapshot (hermes-transport-control-snapshot
                                           (hermes-transport--get result 'control))))
                          (list :reply epoch snapshot action)
-                       (list :fail "invalid control snapshot" action)))))
+                       (list :fail "invalid control snapshot" action))
+                     (and action (hermes-transport--get result 'dispatch)))))
          (reject
           (lambda (err)
             (funcall settle (list :fail (format "%s" err) action)))))
@@ -238,7 +256,12 @@ The reply applies only to the same attachment and epoch."
                    (hermes-session-control--offers-p action))
         (user-error "Session state changed; review it and try again"))
       (with-current-buffer chat
-        (hermes-session-control--send action args)))))
+        ;; Hold the chat's command owner, as the slash command would, so
+        ;; its result cannot race a send and lands only on this attachment.
+        (hermes-chat--command-run-owned
+         nil (lambda (client owner)
+               (hermes-session-control--send
+                action args (hermes-chat--command-context client owner))))))))
 
 (defmacro hermes-session-control--define-actions (&rest specs)
   "Define one view command per (NAME ACTION DOC) in SPECS."

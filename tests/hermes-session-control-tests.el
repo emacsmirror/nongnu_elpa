@@ -44,7 +44,8 @@ OVERRIDES is an alist of top-level sections replacing the defaults."
   (declare (indent 0) (debug t))
   `(hermes-test-with-chat-buffer
      (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
-           hermes-chat--dashboard-active-session-id "sid")
+           hermes-chat--dashboard-active-session-id "sid"
+           hermes-chat--dashboard-session-ready-p t)
      ,@body))
 
 ;;;; Reducer
@@ -213,6 +214,50 @@ OVERRIDES is an alist of top-level sections replacing the defaults."
         (hermes-session-control-subgoal-remove)
         (should (equal (caar sent) "subgoal.remove"))
         (should (equal (plist-get (cdar sent) :args) '((index . 2))))))))
+
+(defun hermes-test--goal-resume-envelope ()
+  "Return the released `session.control' reply to goal.resume."
+  `((control . ,(hermes-test--control "resumed"))
+    (dispatch . ((type . "send")
+                 (output . :null)
+                 (notice . "▶ Goal resumed: Ship the release\nContinuing now — taking the next step.")
+                 (message . "[Continuing toward your standing goal]\nGoal: Ship the release")
+                 (display . "/goal resume")))))
+
+(ert-deftest hermes-control-goal-resume-sends-the-backend-continuation ()
+  "Goal Resume submits the backend's continuation like /goal resume does.
+The draft stays in the composer, and a busy chat queues the continuation."
+  (dolist (busy '(nil t))
+    (hermes-test--with-control-view
+      (let ((chat hermes-session-control--chat) submitted queued)
+        (with-current-buffer chat
+          (hermes-session-control-accept
+           (list :type 'session-control :session-id "sid"
+                 :control (hermes-test--control-snapshot
+                           "paused" '((goal . ((title . "Ship the release")
+                                               (status . "paused")))))))
+          (goto-char (point-max))
+          (insert "my draft")
+          (when busy (setq hermes-chat--dashboard-running-p t)))
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-session-control)
+                   (lambda (_client _action &rest args)
+                     (funcall (plist-get args :resolve)
+                              (hermes-transport-json-parse
+                               (json-serialize (hermes-test--goal-resume-envelope))))))
+                  ((symbol-function 'hermes-chat--queue-content)
+                   (lambda (content &rest _) (push content queued)))
+                  ((symbol-function 'hermes-chat--drain-queued-message) #'ignore))
+          (with-current-buffer chat
+            (setq-local hermes-chat--submit-function
+                        (lambda (content &rest _) (push content submitted))))
+          (hermes-session-control-goal-resume))
+        (with-current-buffer chat
+          (should (equal (hermes-chat-input-string) "my draft"))
+          (should (string-match-p "Goal resumed" (buffer-string)))
+          (should-not hermes-chat--command-owner)
+          (should (equal (if busy queued submitted)
+                         '("[Continuing toward your standing goal]\nGoal: Ship the release")))
+          (should-not (if busy submitted queued)))))))
 
 ;;;; Presentation
 
