@@ -2756,6 +2756,9 @@ history read, including with empty input when a queued message is retained."
   (cond
    ((eq (plist-get hermes-chat--session-bootstrap :kind) 'history)
     (hermes-chat--send-during-history))
+   ((and hermes-chat--edit-turn hermes-chat--draft-images)
+    ;; An image draft is its own submission, so it would bypass the rewind.
+    (user-error "An edited message cannot carry images; remove them first"))
    (hermes-chat--draft-images (hermes-chat--queue-image-draft))
    (t
     (let ((content (hermes-chat--trimmed-input))

@@ -1509,5 +1509,25 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
       (should (string-match-p "Could not refresh the transcript: socket closed" text)))
     (should-not hermes-chat--history-reconcile)))
 
+(ert-deftest hermes-chat-edit-turn-refuses-staged-images ()
+  "Send with staged images while editing refuses and keeps the edit."
+  (hermes-test-with-rewind-chat (submits _reads _prompts)
+    (hermes-test--goto-entry "Second question")
+    (hermes-chat-edit-turn)
+    (goto-char (point-max))
+    (insert " revised")
+    (setq hermes-chat--draft-images '(image-fixture))
+    (let ((hermes-chat--image-prior-submits (make-hash-table :test #'equal))
+          (hermes-chat--image-session-blocks (make-hash-table :test #'equal)))
+      (cl-letf (((symbol-function 'hermes-chat--queue-image-draft)
+                 (lambda () (error "Images must not be sent while editing"))))
+        (should (string-match-p
+                 "images"
+                 (cadr (should-error (hermes-chat-send) :type 'user-error))))))
+    (should-not submits)
+    (should hermes-chat--edit-turn)
+    (should (equal hermes-chat--draft-images '(image-fixture)))
+    (should (equal (hermes-chat-input-string) "Second question revised"))))
+
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here
