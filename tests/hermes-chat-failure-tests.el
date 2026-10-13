@@ -228,6 +228,39 @@ Return the assistant entry id."
         (should (string-match-p "Error: boom" text))
         (should-not (string-match-p "!\\|\\[Retry\\]" text))))))
 
+;;;; Partial replies
+
+(defun hermes-test--fail-streamed-turn (streamed partial)
+  "Stream STREAMED into a new assistant turn, then fail it with PARTIAL.
+Return the settled assistant entry."
+  (let* ((node (hermes-chat--insert-entry
+                (hermes-chat--make-entry 'assistant "" 'streaming)))
+         (id (plist-get (ewoc-data node) :id)))
+    (when streamed
+      (hermes-chat--append-assistant-content id streamed 'streaming))
+    (hermes-chat--mark-assistant-failure
+     id (list :surface '(:layer "streaming" :code "stream_drop" :retryable t)
+              :partial-text partial)
+     'error)
+    (ewoc-data node)))
+
+(ert-deftest hermes-chat-failure-partial-text-is-authoritative ()
+  "The retained partial replaces streamed text instead of repeating it."
+  (dolist (case '(("Half an answer" "Half an answer" "Half an answer")
+                  (nil "Half an answer" "Half an answer")
+                  ("Half an ans" "Half an answer." "Half an answer.")))
+    (hermes-test-with-chat-buffer
+      (pcase-let* ((`(,streamed ,partial ,expected) case)
+                   (entry (hermes-test--fail-streamed-turn streamed partial))
+                   (text (hermes-test--failure-transcript)))
+        (should (equal (plist-get entry :content) expected))
+        (should (eq (plist-get entry :status) 'error))
+        (should (hermes-chat--entry-failure entry))
+        (with-temp-buffer
+          (insert text)
+          (should (= 1 (how-many (regexp-quote "Half an ans")
+                                 (point-min) (point-max)))))))))
+
 ;;;; Actions
 
 (ert-deftest hermes-chat-failure-retry-dispatches-slash-retry ()

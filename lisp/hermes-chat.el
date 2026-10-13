@@ -502,13 +502,16 @@ interim from before a steer or redirect never counts."
               ((eq (plist-get entry :role) 'user) (setq node nil)))))
     found))
 
-(defun hermes-chat--mark-transformed-assistant (assistant-id content)
+(defun hermes-chat--mark-transformed-assistant
+    (assistant-id content &optional status)
   "Settle transformed final CONTENT as ASSISTANT-ID's authoritative reply.
 An output hook rewrote the final after streaming, so CONTENT replaces the
 streamed text instead of extending it.  When nothing streamed since the
-latest interim of this turn, CONTENT replaces that sealed interim."
+latest interim of this turn, CONTENT replaces that sealed interim.
+STATUS defaults to `done'.  Return the ID of the entry now holding CONTENT."
   (let ((interim-id hermes-chat--dashboard-interim-assistant-id)
-        (text (or content "")))
+        (text (or content ""))
+        (status (or status 'done)))
     (if (and interim-id
              (not (equal interim-id assistant-id))
              (string-empty-p
@@ -516,8 +519,10 @@ latest interim of this turn, CONTENT replaces that sealed interim."
              (hermes-chat--interim-precedes-p interim-id assistant-id))
         (progn
           (hermes-chat--remove-entry assistant-id)
-          (hermes-chat--mark-assistant interim-id 'done text t))
-      (hermes-chat--mark-assistant assistant-id 'done text t))))
+          (hermes-chat--mark-assistant interim-id status text t)
+          interim-id)
+      (hermes-chat--mark-assistant assistant-id status text t)
+      assistant-id)))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
   "Settle previewed CONTENT on its interim entry, or ASSISTANT-ID as fallback."

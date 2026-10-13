@@ -38,6 +38,8 @@
                   (name arg raw))
 (declare-function hermes-chat-switch-model "hermes-chat-models"
                   (&optional refresh))
+(declare-function hermes-chat--mark-transformed-assistant "hermes-chat"
+                  (assistant-id content &optional status))
 
 ;;;; Pure presentation
 
@@ -166,13 +168,15 @@ does not call the failure deterministic; a billing wall never retries."
 
 (defun hermes-chat--mark-assistant-failure (assistant-id failure status)
   "Settle ASSISTANT-ID in STATUS carrying structured FAILURE.
-A retained partial reply is appended; the backend's prose account is not,
-because the failure block shows the same facts."
-  (let ((partial (plist-get failure :partial-text)))
-    (when partial
-      (hermes-chat--append-assistant-content assistant-id partial status))
+A retained partial reply is the backend's whole retained text, so it
+replaces what streamed instead of extending it; the backend's prose
+account is not shown, because the failure block carries the same facts."
+  (let ((id (if-let* ((partial (plist-get failure :partial-text)))
+                (hermes-chat--mark-transformed-assistant
+                 assistant-id partial status)
+              assistant-id)))
     (hermes-chat--update-entry
-     assistant-id
+     id
      (lambda (entry)
        (hermes-chat--entry-with
         entry :status status
