@@ -40,6 +40,10 @@
 (defvar-local hermes-session-control--state nil
   "This chat's control state: (:snapshot S :epoch N :pending A :error E).")
 
+(defvar-local hermes-session-control--resume-p nil
+  "Non-nil when the detached session was running automation.
+A reconnect resumes such a session instead of leaving it lazy.")
+
 (defvar-local hermes-session-control--view nil
   "The control view showing this chat.")
 
@@ -76,6 +80,12 @@ MESSAGE is one of (:push SNAPSHOT), (:request ACTION),
   "Return this chat's current control snapshot."
   (plist-get hermes-session-control--state :snapshot))
 
+(defun hermes-session-control-active-p (snapshot)
+  "Return non-nil when SNAPSHOT has a goal, loop or heartbeat running."
+  (cl-some (lambda (kind)
+             (equal (plist-get (plist-get snapshot kind) :status) "active"))
+           '(:goal :loop :heartbeat)))
+
 (defun hermes-session-control--update (message)
   "Reduce MESSAGE into this chat's state and redisplay it."
   (setq hermes-session-control--state
@@ -96,7 +106,10 @@ MESSAGE is one of (:push SNAPSHOT), (:request ACTION),
     (hermes-session-control--update (list :push (plist-get event :control)))))
 
 (defun hermes-session-control-forget ()
-  "Drop the detached session's snapshot."
+  "Drop the detached session's snapshot, remembering whether it ran."
+  (when-let* ((snapshot (hermes-session-control-snapshot)))
+    (setq hermes-session-control--resume-p
+          (hermes-session-control-active-p snapshot)))
   (hermes-session-control--update '(:forget)))
 
 ;;;; Requests

@@ -286,5 +286,31 @@ OVERRIDES is an alist of top-level sections replacing the defaults."
     (should (equal (get-text-property (point) 'hermes-session-control-item) '(:subgoal . 1)))
     (should-error (hermes-session-control-previous 9) :type 'user-error)))
 
+;;;; Reconnect
+
+(ert-deftest hermes-control-reconnect-resumes-only-running-automation ()
+  "A reconnect stays lazy unless the detached session was running automation."
+  (dolist (case '((nil . nil) (t . "stored-session")))
+    (let ((client (hermes-test--dashboard-client)) resumed)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                 (lambda (&rest _) client))
+                ((symbol-function 'hermes-dashboard-transport-session-resume)
+                 (lambda (_client session-id &rest _args) (setq resumed session-id))))
+        (hermes-test-with-chat-buffer
+          (setq hermes-chat--session-id "stored-session"
+                hermes-chat--dashboard-client client
+                hermes-chat--dashboard-active-session-id "sid")
+          (when (car case)
+            (hermes-session-control-accept
+             (list :type 'session-control :session-id "sid"
+                   :control (hermes-test--control-snapshot "a"))))
+          (let ((callback (hermes-chat--transport-callback
+                           (current-buffer) "asst" t
+                           (hermes-chat--next-transport-generation))))
+            (funcall callback '(:type status :status "reconnecting"))
+            (should-not (hermes-session-control-header))
+            (funcall callback '(:type status :status "reconnected")))
+          (should (equal resumed (cdr case))))))))
+
 (provide 'hermes-session-control-tests)
 ;;; hermes-session-control-tests.el ends here

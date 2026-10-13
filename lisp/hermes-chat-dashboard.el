@@ -2505,10 +2505,16 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
     (hermes-chat--queue-or-submit-content content display)))
 
 (defun hermes-chat--dashboard-handle-reconnected (_event)
-  "Render a ready socket while leaving the durable session lazy."
+  "Render a ready socket while leaving the durable session lazy.
+A session that was running a goal, loop or heartbeat resumes at once:
+the backend reaps detached sessions, which would silently stop it."
   (hermes-chat--insert-local-status "Dashboard socket reconnected" 'ready)
-  (hermes-chat--set-header-state
-   :status 'ready :activity "Socket ready; session resumes on next action"))
+  (if (and hermes-chat--session-id hermes-session-control--resume-p)
+      (progn
+        (hermes-chat--set-header-state :status 'ready :activity "Socket ready")
+        (hermes-chat--with-dashboard-session nil (current-buffer) #'ignore))
+    (hermes-chat--set-header-state
+     :status 'ready :activity "Socket ready; session resumes on next action")))
 
 ;;; Session title and background tasks
 
