@@ -21,7 +21,7 @@ rendered appearance when point leaves.  This minor mode extends the built-in
 `markdown-ts-mode` without changing buffer text.
 
 Optional features include link icons, code fences, quote markers, callout
-labels, width-aware table views, and MathJax previews.
+labels, width-aware table views, and MathJax and Mermaid previews.
 
 ## Requirements
 
@@ -30,6 +30,8 @@ labels, width-aware table views, and MathJax previews.
 - `markdown-table-wrap` 0.2.0+.
 - For math previews: the `mathjax` package, Node.js, and an Emacs build with SVG
   image support.
+- For Mermaid previews: [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli)
+  (`mmdc`) with its browser runtime, and SVG image support.
 
 ## Installation
 
@@ -70,11 +72,24 @@ Install Node.js separately and use an Emacs build with SVG support.  Installing
 the backend is loaded when previews are enabled, and rendering is requested
 only for eligible formulas.
 
+For Mermaid diagrams, install the CLI separately with
+`npm install -g @mermaid-js/mermaid-cli`, then enable:
+
+```emacs-lisp
+(setopt markdown-ts-appear-enable-mermaid-preview t)
+```
+
+Ensure `mmdc` can render a diagram on its own.  Puppeteer's
+`PUPPETEER_EXECUTABLE_PATH` environment variable can select an existing Chrome
+installation.  No additional Emacs package is required.
+
 ## Configuration
 
 | Option                                   | Default | Values and effect                                        |
 | --- | --- | --- |
 | `markdown-ts-appear-enable-math-preview` | `nil` | `t` enables asynchronous math previews. |
+| `markdown-ts-appear-enable-mermaid-preview` | `nil` | `t` previews unedited `mermaid` fenced blocks. |
+| `markdown-ts-appear-mermaid-command` | `"mmdc"` | Mermaid CLI executable. |
 | `markdown-ts-appear-link-icon` | `""` | String before ordinary links; empty disables it. |
 | `markdown-ts-appear-image-icon` | `""` | String before image links; empty disables it. |
 | `markdown-ts-appear-wikilink-icon` | `"◆"` | String before Wiki links; empty disables it. |
@@ -87,7 +102,7 @@ only for eligible formulas.
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 
 Use `setopt` or Customize to apply visual options to active buffers immediately.
-Re-enable `markdown-ts-appear-mode` after changing the math preview option.
+Re-enable `markdown-ts-appear-mode` after changing either preview-enable option.
 
 Callout types are case-insensitive.  Label colors use the current theme:
 
@@ -152,7 +167,11 @@ to each buffer and are removed when appear mode is disabled.
 - Indirect buffers are unsupported; clones are detached from active tracking.
 - Unchanged formulas reuse their previews.  Standalone display math is centered;
   inline math stays in the text.
-- If math setup fails, disable appear mode, fix the missing dependency, then
+- Mermaid renders visible, unedited blocks asynchronously, one job at a time.
+  Identical diagrams share cached images; failed diagrams keep their source,
+  with details available on hover.  Short source blocks retain room for the
+  previous preview while editing; longer code can grow normally.
+- If preview setup fails, disable appear mode, fix the missing dependency, then
   re-enable it.
 
 ## Development
@@ -166,11 +185,14 @@ emacs --batch -Q \
   -l test/markdown-ts-appear-math-test.el \
   -l test/markdown-ts-appear-table-test.el \
   -l test/markdown-ts-appear-image-test.el \
+  -l test/markdown-ts-appear-mermaid-test.el \
   -f ert-run-tests-batch-and-exit
 ```
 
 Add `MARKDOWN_TS_APPEAR_REQUIRE_MATHJAX=1` to require the optional math
-dependencies and real SVG rendering tests.  Without the corresponding
+dependencies and real SVG rendering tests, or
+`MARKDOWN_TS_APPEAR_REQUIRE_MERMAID=1` to require the Mermaid CLI tests.
+Without the corresponding
 environment variable, tests with unavailable dependencies are skipped.
 
 Run `python3 test/table-redisplay.py` to check actual terminal cursor positions

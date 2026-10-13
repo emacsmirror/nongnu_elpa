@@ -98,6 +98,11 @@ jobs:
             (package-install 'markdown-table-wrap)
             (package-install 'evil))"
 
+      - uses: actions/setup-node@v5
+        if: matrix.mathjax
+        with:
+          node-version: "24"
+
       - name: Install optional MathJax dependency
         if: matrix.mathjax
         run: |
@@ -113,6 +118,12 @@ jobs:
                          (mathjax-available-p))
               (error \"MathJax or Node.js is unavailable\")))"
 
+      - name: Install optional Mermaid CLI
+        if: matrix.mathjax
+        run: |
+          npm install --prefix "$RUNNER_TEMP/mermaid" @mermaid-js/mermaid-cli@12.0.0
+          echo "$RUNNER_TEMP/mermaid/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Byte-compile
         run: |
           emacs --batch -Q \
@@ -122,6 +133,7 @@ jobs:
             -f batch-byte-compile \
             markdown-ts-appear-image.el \
             markdown-ts-appear-math.el \
+            markdown-ts-appear-mermaid.el \
             markdown-ts-appear-table.el \
             markdown-ts-appear.el
 
@@ -134,6 +146,7 @@ jobs:
             (dolist (file '(\"markdown-ts-appear.el\"
                             \"markdown-ts-appear-image.el\"
                             \"markdown-ts-appear-math.el\"
+                            \"markdown-ts-appear-mermaid.el\"
                             \"markdown-ts-appear-table.el\"))
               (find-file file)
               (checkdoc-current-buffer t))
@@ -147,6 +160,7 @@ jobs:
         env:
           MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS: "1"
           MARKDOWN_TS_APPEAR_REQUIRE_MATHJAX: ${{ matrix.mathjax }}
+          MARKDOWN_TS_APPEAR_REQUIRE_MERMAID: ${{ matrix.mathjax }}
         run: |
           emacs --batch -Q \
             --eval '(progn (require (quote package)) (package-initialize))' \
@@ -155,6 +169,7 @@ jobs:
             -l test/markdown-ts-appear-math-test.el \
             -l test/markdown-ts-appear-table-test.el \
             -l test/markdown-ts-appear-image-test.el \
+            -l test/markdown-ts-appear-mermaid-test.el \
             -f ert-run-tests-batch-and-exit
 
       - name: Check real terminal cursor and Evil insert transitions

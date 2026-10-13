@@ -42,6 +42,7 @@
 (require 'subr-x)
 (require 'markdown-ts-appear-image)
 (require 'markdown-ts-appear-math)
+(require 'markdown-ts-appear-mermaid)
 
 ;;; Options and faces
 
@@ -55,6 +56,16 @@ Install `mathjax' separately; previews also require Node.js and SVG support.
 The backend is loaded only when this option is enabled for appear mode.
 Re-enable `markdown-ts-appear-mode' after changing this option."
   :type 'boolean)
+
+(defcustom markdown-ts-appear-enable-mermaid-preview nil
+  "Whether to preview unedited Mermaid fenced blocks as SVG diagrams.
+Install the optional Mermaid CLI (mmdc) separately.
+Re-enable `markdown-ts-appear-mode' after changing this option."
+  :type 'boolean)
+
+(defcustom markdown-ts-appear-mermaid-command "mmdc"
+  "Mermaid CLI executable used to render diagrams asynchronously."
+  :type 'string)
 
 (defcustom markdown-ts-appear-link-icon ""
   "Icon displayed before rendered Markdown links.
@@ -563,7 +574,8 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
           markdown-ts-appear--last-range-tick nil)
     (add-hook 'post-command-hook #'markdown-ts-appear--update nil t)
     (markdown-ts-appear--update)
-    (markdown-ts-appear-table--update-visibility)))
+    (markdown-ts-appear-table--update-visibility)
+    (markdown-ts-appear-mermaid--refresh)))
 
 (defun markdown-ts-appear-stop ()
   "Stop tracking point and restore hidden Markdown markup."
@@ -574,7 +586,8 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
         markdown-ts-appear--last-range-line nil
         markdown-ts-appear--last-range-tick nil)
   (markdown-ts-appear--restore)
-  (markdown-ts-appear-table--update-visibility))
+  (markdown-ts-appear-table--update-visibility)
+  (markdown-ts-appear-mermaid--refresh))
 
 ;;; Fontification and decorations
 
@@ -1060,14 +1073,15 @@ at most one following space or tab and are not clipped to START or LIMIT."
             (markdown-ts-appear-table--setup)))))))
 
 (defun markdown-ts-appear--theme-change (_theme)
-  "Refresh callout backgrounds after a theme change."
+  "Refresh callout backgrounds and diagram previews after a theme change."
   (setq markdown-ts-appear--callout-backgrounds nil)
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
-      (when (and (markdown-ts-appear--active-p)
-                 markdown-ts-appear-render-callouts)
-        (without-restriction
-          (font-lock-flush))))))
+      (when (markdown-ts-appear--active-p)
+        (when markdown-ts-appear-render-callouts
+          (without-restriction (font-lock-flush)))
+        (when (memq #'markdown-ts-appear-mermaid--refresh post-command-hook)
+          (run-at-time 0 nil #'markdown-ts-appear-mermaid--refresh-buffer buffer))))))
 
 ;; Folding changes overlays, not text, so renderers need this notification.
 ;; Obsoleted in 29.1 as a presumed lazy-lock-only hook; no replacement yet.
@@ -1136,6 +1150,7 @@ Indirect buffers are otherwise unsupported and are not synchronized."
     (setq markdown-ts-appear-mode nil
           markdown-ts-appear--region nil)
     (markdown-ts-appear-image--detach)
+    (markdown-ts-appear-mermaid--detach)
     (markdown-ts-appear-table--detach)
     (setq markdown-ts-appear-math--objects nil)
     (markdown-ts-appear-math--teardown)
@@ -1174,12 +1189,15 @@ Indirect buffers are otherwise unsupported and are not synchronized."
   (markdown-ts-appear-start)
   (markdown-ts-appear-table--setup)
   (when markdown-ts-appear-enable-math-preview
-    (markdown-ts-appear-math--setup)))
+    (markdown-ts-appear-math--setup))
+  (when markdown-ts-appear-enable-mermaid-preview
+    (markdown-ts-appear-mermaid--setup)))
 
 (defun markdown-ts-appear--disable-buffer ()
   "Remove Markdown TS Appear integration from the current buffer."
   (markdown-ts-appear--remove-buffer-hooks)
   (markdown-ts-appear-image--teardown)
+  (markdown-ts-appear-mermaid--teardown)
   (markdown-ts-appear-math--teardown)
   (markdown-ts-appear-table--teardown)
   (markdown-ts-appear-stop)

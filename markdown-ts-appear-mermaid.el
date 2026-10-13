@@ -1,0 +1,407 @@
+;;; markdown-ts-appear-mermaid.el --- Asynchronous Mermaid previews -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026 Thysrael
+
+;; Author: Thysrael <thysrael@163.com>
+;; Assisted-by: OpenCode:gpt-6-astra
+;; Maintainer: Thysrael <thysrael@163.com>
+;; Keywords: text, convenience
+;; URL: https://github.com/Thysrael/markdown-ts-appear
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+;;
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; Preview fenced Mermaid blocks through the optional mmdc executable.
+;; A shared queue runs one renderer at a time and coalesces identical jobs.
+;; Source overlays retain images while their source is revealed for editing.
+
+;;; Code:
+
+(require 'markdown-ts-mode)
+(require 'image)
+(require 'seq)
+(require 'subr-x)
+
+(declare-function image-size "image.c" (spec &optional pixels frame))
+(declare-function markdown-ts-appear--active-p "markdown-ts-appear")
+(declare-function markdown-ts-appear--update "markdown-ts-appear")
+(declare-function markdown-ts-appear--node-ancestor "markdown-ts-appear")
+(declare-function markdown-ts-appear--first-direct-child-of-type "markdown-ts-appear")
+(declare-function markdown-ts-appear--direct-children-of-type "markdown-ts-appear")
+(declare-function markdown-ts-appear--add-outline-hook "markdown-ts-appear")
+(declare-function markdown-ts-appear--remove-outline-hook "markdown-ts-appear")
+
+(defvar markdown-ts-appear-enable-mermaid-preview)
+(defvar markdown-ts-appear-mermaid-command)
+
+(defvar markdown-ts-appear-mermaid--cache (make-hash-table :test #'equal :weakness 'value)
+  "Images keyed by (COMMAND THEME BODY), shared while previews retain them.")
+(defvar markdown-ts-appear-mermaid--queue nil
+  "Pending jobs, each a (KEY . SOURCE-OVERLAYS) pair.")
+(defvar markdown-ts-appear-mermaid--job nil
+  "Job currently being rendered.")
+(defvar markdown-ts-appear-mermaid--process nil
+  "Current asynchronous mmdc process.")
+(defvar markdown-ts-appear-mermaid--query nil
+  "Compiled fenced-block query.")
+(defvar markdown-ts-appear-mermaid--refreshing nil
+  "Non-nil while measuring or updating Mermaid views.")
+(defvar-local markdown-ts-appear-mermaid--objects nil
+  "Source overlays holding diagram keys, images and window-specific views.")
+(defvar-local markdown-ts-appear-mermaid--scan-state nil
+  "Last text modification tick, command and theme scanned.")
+(defvar-local markdown-ts-appear-mermaid--view-state nil
+  "Last source, point and window state displayed.")
+
+(defun markdown-ts-appear-mermaid--delete (source)
+  "Delete SOURCE and its views."
+  (mapc #'delete-overlay (overlay-get source 'markdown-ts-appear-mermaid--views))
+  (delete-overlay source))
+
+(defun markdown-ts-appear-mermaid--body (node)
+  "Return closed block NODE's code without Markdown container prefixes."
+  (when-let* ((body (markdown-ts-appear--first-direct-child-of-type node "code_fence_content")))
+    (let ((position (treesit-node-start body))
+          (delimiters (markdown-ts-appear--direct-children-of-type node "fenced_code_block_delimiter"))
+          parts)
+      (dolist (child (markdown-ts-appear--direct-children-of-type body "block_continuation"))
+        (push (buffer-substring-no-properties position (treesit-node-start child)) parts)
+        (setq position (treesit-node-end child)))
+      (push (buffer-substring-no-properties position (treesit-node-end body)) parts)
+      (let ((code (apply #'concat (nreverse parts))))
+        (if (length= delimiters 2) code
+          ;; At EOF the grammar can include the closing fence in the content.
+          (when (= (treesit-node-end node) (point-max))
+            (save-match-data
+              (let ((opening (treesit-node-text (car delimiters) t)))
+                (when (string-match
+                       (format "\n[ \t]\\{0,3\\}%s\\{%d,\\}[ \t]*\\'"
+                               (regexp-quote (substring opening 0 1)) (length opening)) code)
+                  (substring code 0 (1+ (match-beginning 0))))))))))))
+
+(defun markdown-ts-appear-mermaid--end (node)
+  "Return NODE's end, preserving its final newline outside the preview."
+  (let ((end (treesit-node-end node)))
+    (if (eq (char-before end) ?\n) (1- end) end)))
+
+(defun markdown-ts-appear-mermaid--scan (theme)
+  "Reconcile Mermaid sources with the current syntax and THEME."
+  (with-memoization markdown-ts-appear-mermaid--query
+    (treesit-query-compile 'markdown '((fenced_code_block) @block)))
+  (let ((existing (make-hash-table :test #'eql)) current)
+    (dolist (source markdown-ts-appear-mermaid--objects)
+      (if (overlay-buffer source)
+          (puthash (overlay-start source) source existing)
+        (markdown-ts-appear-mermaid--delete source)))
+    (dolist (node (treesit-query-capture (treesit-buffer-root-node 'markdown)
+                                        markdown-ts-appear-mermaid--query nil nil t))
+      (when-let* ((language (treesit-search-subtree node "\\`language\\'"))
+                  ((string= (downcase (treesit-node-text language t)) "mermaid"))
+                  (body (markdown-ts-appear-mermaid--body node)))
+        (let* ((beg (treesit-node-start node))
+               (end (markdown-ts-appear-mermaid--end node))
+               (source (or (gethash beg existing) (make-overlay beg end nil t nil)))
+               (text (buffer-substring-no-properties beg end))
+               (key (list markdown-ts-appear-mermaid-command theme body)))
+          (remhash beg existing)
+          (unless (= (overlay-end source) end) (move-overlay source beg end))
+          (unless (equal text (overlay-get source 'markdown-ts-appear-mermaid--source))
+            (overlay-put source 'markdown-ts-appear-mermaid--source text))
+          (unless (equal key (overlay-get source 'markdown-ts-appear-mermaid--key))
+            (overlay-put source 'markdown-ts-appear-mermaid--key key)
+            (overlay-put source 'markdown-ts-appear-mermaid--image
+                         (gethash key markdown-ts-appear-mermaid--cache))
+            (overlay-put source 'markdown-ts-appear-mermaid--error nil))
+          (push source current))))
+    (maphash (lambda (_ source) (markdown-ts-appear-mermaid--delete source)) existing)
+    (setq markdown-ts-appear-mermaid--objects (nreverse current))))
+
+(defun markdown-ts-appear-mermaid--windows ()
+  "Return (WINDOW WIDTH CHAR-HEIGHT START END) for windows showing this buffer."
+  (mapcar (lambda (window)
+            (list window
+                  (if (eq markdown-ts-image-max-width 'window)
+                      (window-body-width window t) markdown-ts-image-max-width)
+                  (frame-char-height (window-frame window))
+                  (window-start window) (window-end window t)))
+          (get-buffer-window-list (current-buffer) nil t)))
+
+(defun markdown-ts-appear-mermaid--editing-p (source)
+  "Return non-nil when SOURCE is being edited with source tracking active."
+  (and (memq #'markdown-ts-appear--update post-command-hook)
+       (<= (overlay-start source) (point)) (<= (point) (overlay-end source))))
+
+(defun markdown-ts-appear-mermaid--editing-source ()
+  "Return the source being edited, without visiting other diagrams."
+  (when (memq #'markdown-ts-appear--update post-command-hook)
+    (seq-find (lambda (source)
+                (and (overlay-get source 'markdown-ts-appear-mermaid--source)
+                     (markdown-ts-appear-mermaid--editing-p source)))
+              (append (overlays-at (point))
+                      (overlays-at (max (point-min) (1- (point))))))))
+
+(defun markdown-ts-appear-mermaid--eligible-p (source windows)
+  "Return non-nil when SOURCE needs a preview visible in WINDOWS."
+  (and (not (markdown-ts-appear-mermaid--editing-p source))
+       (not (markdown-ts--outline-invisible-p (overlay-start source)))
+       (seq-some (lambda (entry)
+                   (and (display-images-p (window-frame (car entry)))
+                        (< (overlay-start source) (nth 4 entry))
+                        (> (overlay-end source) (nth 3 entry))))
+                 windows)))
+
+(defun markdown-ts-appear-mermaid--display (source windows)
+  "Synchronize SOURCE's image or editable code with WINDOWS."
+  (let ((image (overlay-get source 'markdown-ts-appear-mermaid--image))
+        (text (overlay-get source 'markdown-ts-appear-mermaid--source))
+        (error (overlay-get source 'markdown-ts-appear-mermaid--error))
+        (editing (markdown-ts-appear-mermaid--editing-p source))
+        (hidden (markdown-ts--outline-invisible-p (overlay-start source)))
+        (old (overlay-get source 'markdown-ts-appear-mermaid--views)) views)
+    (pcase-dolist (`(,window ,width ,char-height . ,_) windows)
+      (let* ((beg (overlay-start source)) (end (overlay-end source))
+             (view (or (seq-find (lambda (view) (eq (overlay-get view 'window) window)) old)
+                       (let ((view (make-overlay beg end nil t nil)))
+                         (overlay-put view 'window window)
+                         (overlay-put view 'priority 200)
+                         view)))
+             (previous (overlay-get view 'markdown-ts-appear-mermaid--state))
+             (state (list image text width char-height editing hidden error)))
+        (unless (and (= beg (overlay-start view)) (= end (overlay-end view)))
+          (move-overlay view beg end))
+        (unless (equal state previous)
+          (overlay-put view 'markdown-ts-appear-mermaid--state state)
+          (overlay-put view 'display nil)
+          (overlay-put view 'after-string nil)
+          (overlay-put view 'help-echo error)
+          (unless hidden
+            (if (and image (not editing) (display-images-p (window-frame window)))
+                (let* ((key (cons image width))
+                       (spec (or (and (equal key (overlay-get view 'markdown-ts-appear-mermaid--image-key))
+                                      (overlay-get view 'markdown-ts-appear-mermaid--image))
+                                 (cons 'image (plist-put (copy-sequence (cdr image)) :max-width width)))))
+                  (overlay-put view 'display spec)
+                  (unless (eq spec (overlay-get view 'markdown-ts-appear-mermaid--image))
+                    (overlay-put view 'markdown-ts-appear-mermaid--image spec)
+                    (overlay-put view 'markdown-ts-appear-mermaid--image-key key)
+                    (overlay-put view 'markdown-ts-appear-mermaid--height nil)))
+              (when-let* ((spec (overlay-get view 'markdown-ts-appear-mermaid--image))
+                          ((display-graphic-p (window-frame window)))
+                          (height (or (overlay-get view 'markdown-ts-appear-mermaid--height)
+                                      (overlay-put view 'markdown-ts-appear-mermaid--height
+                                                   (cdr (image-size spec t (window-frame window))))))
+                          (padding (- height (cdr (window-text-pixel-size window beg end))))
+                          ((>= padding char-height)))
+                (overlay-put view 'after-string
+                             (concat "\n" (propertize " " 'display `(space :height (,padding)))))))))
+        (push view views)))
+    (dolist (view old) (unless (memq view views) (delete-overlay view)))
+    (setq views (nreverse views))
+    (unless (equal views old)
+      (overlay-put source 'markdown-ts-appear-mermaid--views views))))
+
+(defun markdown-ts-appear-mermaid--current-p (source key)
+  "Return non-nil if SOURCE still represents a live Mermaid block with KEY."
+  (when-let* ((buffer (overlay-buffer source)))
+    (with-current-buffer buffer
+      (and markdown-ts-appear-enable-mermaid-preview (markdown-ts-appear--active-p)
+           (equal key (overlay-get source 'markdown-ts-appear-mermaid--key))
+           (without-restriction
+             (let* ((beg (overlay-start source)) (end (overlay-end source))
+                    (node (markdown-ts-appear--node-ancestor
+                           (treesit-node-at beg 'markdown) "fenced_code_block")))
+               (and node (= beg (treesit-node-start node))
+                    (= end (markdown-ts-appear-mermaid--end node))
+                    (equal (buffer-substring-no-properties beg end)
+                           (overlay-get source 'markdown-ts-appear-mermaid--source)))))))))
+
+(defun markdown-ts-appear-mermaid--complete (job image error)
+  "Finish JOB with IMAGE or ERROR, discarding results for obsolete sources."
+  (when (eq job markdown-ts-appear-mermaid--job)
+    (setq markdown-ts-appear-mermaid--job nil markdown-ts-appear-mermaid--process nil)
+    (when image (puthash (car job) image markdown-ts-appear-mermaid--cache))
+    (let (buffers)
+      (dolist (source (cdr job))
+        (when (markdown-ts-appear-mermaid--current-p source (car job))
+          (overlay-put source 'markdown-ts-appear-mermaid--image image)
+          (overlay-put source 'markdown-ts-appear-mermaid--error error)
+          (push (overlay-buffer source) buffers)))
+      (dolist (buffer (seq-uniq buffers))
+        (with-current-buffer buffer
+          (setq markdown-ts-appear-mermaid--view-state nil)
+          (markdown-ts-appear-mermaid--refresh)
+          ;; A shorter preview can expose another diagram below the old viewport.
+          (when image
+            (run-at-time 0 nil #'markdown-ts-appear-mermaid--refresh-buffer buffer))))
+      (when (and error buffers)
+        (message "Mermaid preview failed; hover the source block for details")))
+    (markdown-ts-appear-mermaid--next)))
+
+(defun markdown-ts-appear-mermaid--render (job)
+  "Start an asynchronous mmdc process for JOB."
+  (let* ((directory (make-temp-file "markdown-ts-appear-mermaid-" t))
+         (default-directory (file-name-as-directory directory))
+         (input (expand-file-name "diagram.mmd" directory))
+         (output (expand-file-name "diagram.svg" directory))
+         (config (expand-file-name "config.json" directory))
+         (log (generate-new-buffer " *markdown-ts-appear-mermaid*"))
+         (key (car job)))
+    (condition-case err
+        (progn
+          (let ((coding-system-for-write 'utf-8-unix))
+            (with-temp-file input (insert (nth 2 key)))
+            (with-temp-file config (insert "{\"htmlLabels\":false}")))
+          (setq markdown-ts-appear-mermaid--process
+                (make-process
+                 :name "markdown-ts-appear-mermaid" :buffer log :noquery t
+                 :connection-type 'pipe :coding 'utf-8-unix
+                 :command (list (car key) "-i" input "-o" output "-c" config
+                                "-b" "transparent" "-t" (cadr key))
+                 :sentinel
+                 (lambda (process _event)
+                   (when (memq (process-status process) '(exit signal))
+                     (set-process-sentinel process #'ignore)
+                     (unwind-protect
+                         (let (image error)
+                           (condition-case err
+                               (if (and (zerop (process-exit-status process))
+                                        (file-readable-p output))
+                                   (with-temp-buffer
+                                     (insert-file-contents output)
+                                     (setq image (create-image (buffer-string) 'svg t :scale 1)))
+                                 (setq error (with-current-buffer log (string-trim (buffer-string)))))
+                             (error (setq error (error-message-string err))))
+                            (markdown-ts-appear-mermaid--complete
+                             job image (and (not image)
+                                            (if (or (null error) (string-empty-p error))
+                                                "No SVG image was produced" error))))
+                       (kill-buffer log)
+                       (delete-directory directory t)))))))
+      (error
+       (kill-buffer log)
+       (delete-directory directory t)
+       (markdown-ts-appear-mermaid--complete job nil (error-message-string err))))))
+
+(defun markdown-ts-appear-mermaid--next ()
+  "Start the next job that still has a visible, unedited source."
+  (while (and (not markdown-ts-appear-mermaid--job) markdown-ts-appear-mermaid--queue)
+    (let ((job (pop markdown-ts-appear-mermaid--queue)))
+      (when (seq-some (lambda (source)
+                        (and (markdown-ts-appear-mermaid--current-p source (car job))
+                             (with-current-buffer (overlay-buffer source)
+                               (markdown-ts-appear-mermaid--eligible-p
+                                source (markdown-ts-appear-mermaid--windows)))))
+                      (cdr job))
+        (setq markdown-ts-appear-mermaid--job job)
+        (markdown-ts-appear-mermaid--render job)))))
+
+(defun markdown-ts-appear-mermaid--request (source)
+  "Queue SOURCE, sharing an existing request for the same diagram."
+  (let* ((key (overlay-get source 'markdown-ts-appear-mermaid--key))
+         (job (or (and (equal key (car markdown-ts-appear-mermaid--job))
+                       markdown-ts-appear-mermaid--job)
+                  (assoc key markdown-ts-appear-mermaid--queue))))
+    (if job
+        (unless (memq source (cdr job)) (setcdr job (cons source (cdr job))))
+      (setq markdown-ts-appear-mermaid--queue
+            (nconc markdown-ts-appear-mermaid--queue (list (list key source)))))))
+
+(defun markdown-ts-appear-mermaid--refresh (&rest _)
+  "Update changed sources and preview visibility without repeating renders."
+  (when (and (not markdown-ts-appear-mermaid--refreshing)
+             (memq #'markdown-ts-appear-mermaid--refresh post-command-hook))
+    (let ((markdown-ts-appear-mermaid--refreshing t))
+      (if (not (and markdown-ts-appear-enable-mermaid-preview (markdown-ts-appear--active-p)))
+          (progn
+            (mapc #'markdown-ts-appear-mermaid--delete markdown-ts-appear-mermaid--objects)
+            (setq markdown-ts-appear-mermaid--objects nil
+                  markdown-ts-appear-mermaid--scan-state nil
+                  markdown-ts-appear-mermaid--view-state nil))
+        (without-restriction
+          (let* ((theme (if (eq (frame-parameter nil 'background-mode) 'dark) "dark" "default"))
+                 (scan (list (buffer-chars-modified-tick) markdown-ts-appear-mermaid-command theme)))
+            (unless (equal scan markdown-ts-appear-mermaid--scan-state)
+              (setq markdown-ts-appear-mermaid--scan-state scan)
+              (markdown-ts-appear-mermaid--scan theme))
+            (when markdown-ts-appear-mermaid--objects
+              (let* ((windows (markdown-ts-appear-mermaid--windows))
+                     (previous markdown-ts-appear-mermaid--view-state)
+                     (view (list scan windows (markdown-ts-appear-mermaid--editing-source))))
+                (unless (equal view previous)
+                  (setq markdown-ts-appear-mermaid--view-state view)
+                  (dolist (source (if (and (equal scan (car previous))
+                                          (equal windows (cadr previous)))
+                                     (delq nil (list (nth 2 previous) (nth 2 view)))
+                                   markdown-ts-appear-mermaid--objects))
+                    (unless (overlay-get source 'markdown-ts-appear-mermaid--image)
+                      (when-let* ((image (gethash (overlay-get source 'markdown-ts-appear-mermaid--key)
+                                                 markdown-ts-appear-mermaid--cache)))
+                        (overlay-put source 'markdown-ts-appear-mermaid--image image)))
+                    (markdown-ts-appear-mermaid--display source windows)
+                    (when (and (not (overlay-get source 'markdown-ts-appear-mermaid--image))
+                               (not (overlay-get source 'markdown-ts-appear-mermaid--error))
+                               (markdown-ts-appear-mermaid--eligible-p source windows))
+                      (markdown-ts-appear-mermaid--request source)))))))))
+      (markdown-ts-appear-mermaid--next))))
+
+(defun markdown-ts-appear-mermaid--invalidate (&rest _)
+  "Recheck previews after window or outline changes."
+  (setq markdown-ts-appear-mermaid--view-state nil)
+  (markdown-ts-appear-mermaid--refresh))
+
+(defun markdown-ts-appear-mermaid--scroll (window _start)
+  "Refresh previews when WINDOW scrolls to START."
+  (markdown-ts-appear-mermaid--refresh-buffer (window-buffer window)))
+
+(defun markdown-ts-appear-mermaid--refresh-buffer (buffer)
+  "Refresh visible diagrams if BUFFER is still live."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer (markdown-ts-appear-mermaid--refresh))))
+
+(defun markdown-ts-appear-mermaid--setup ()
+  "Install Mermaid previews in the current buffer."
+  (unless (executable-find markdown-ts-appear-mermaid-command)
+    (user-error "Mermaid previews require mmdc; install @mermaid-js/mermaid-cli"))
+  (unless (image-type-available-p 'svg)
+    (user-error "Mermaid previews require SVG image support"))
+  (add-hook 'post-command-hook #'markdown-ts-appear-mermaid--refresh 90 t)
+  (add-hook 'window-configuration-change-hook #'markdown-ts-appear-mermaid--invalidate nil t)
+  (add-hook 'window-scroll-functions #'markdown-ts-appear-mermaid--scroll nil t)
+  (markdown-ts-appear--add-outline-hook #'markdown-ts-appear-mermaid--invalidate 90)
+  (markdown-ts-appear-mermaid--refresh))
+
+(defun markdown-ts-appear-mermaid--detach ()
+  "Detach Mermaid state without deleting previews inherited from a base buffer."
+  (remove-hook 'post-command-hook #'markdown-ts-appear-mermaid--refresh t)
+  (remove-hook 'window-configuration-change-hook #'markdown-ts-appear-mermaid--invalidate t)
+  (remove-hook 'window-scroll-functions #'markdown-ts-appear-mermaid--scroll t)
+  (markdown-ts-appear--remove-outline-hook #'markdown-ts-appear-mermaid--invalidate)
+  (setq markdown-ts-appear-mermaid--objects nil
+        markdown-ts-appear-mermaid--scan-state nil
+        markdown-ts-appear-mermaid--view-state nil))
+
+(defun markdown-ts-appear-mermaid--teardown ()
+  "Remove Mermaid previews and cancel a render without remaining subscribers."
+  (mapc #'markdown-ts-appear-mermaid--delete markdown-ts-appear-mermaid--objects)
+  (markdown-ts-appear-mermaid--detach)
+  (when (and (process-live-p markdown-ts-appear-mermaid--process)
+             (not (seq-some #'overlay-buffer (cdr markdown-ts-appear-mermaid--job))))
+    ;; Let Puppeteer close its browser instead of abruptly killing Node.
+    (interrupt-process markdown-ts-appear-mermaid--process)))
+
+(provide 'markdown-ts-appear-mermaid)
+;;; markdown-ts-appear-mermaid.el ends here
