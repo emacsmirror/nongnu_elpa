@@ -469,7 +469,7 @@
           (should-not (process-live-p process))
           (should-not (buffer-live-p log)))))))
 
-(ert-deftest markdown-ts-appear-mermaid-test-gui-retains-preview-height-while-editing ()
+(ert-deftest markdown-ts-appear-mermaid-test-gui-preview-fits-source-height ()
   (skip-unless (display-graphic-p))
   (markdown-ts-appear-mermaid-test--deferred
     (markdown-ts-appear-mermaid-test--buffer markdown-ts-appear-mermaid-test--diagram
@@ -478,19 +478,79 @@
       (let* ((source (car markdown-ts-appear-mermaid--objects))
              (view (markdown-ts-appear-mermaid-test--view))
              (image (overlay-get view 'display))
-             (height (cdr (window-text-pixel-size nil (overlay-start source) (overlay-end source)))))
+             (height (plist-get (cdr image) :max-height)))
+        (should (> height 0))
+        (should (<= (cdr (image-size image t)) height))
         (goto-char (point-min))
         (search-forward "flowchart")
         (markdown-ts-appear-start)
         (redisplay t)
         (should-not (overlay-get view 'display))
-        (should (overlay-get view 'after-string))
-        (should (<= (abs (- height (cdr (window-text-pixel-size
-                                        nil (overlay-start source) (overlay-end source)))))
-                    (frame-char-height)))
+        (should-not (overlay-get view 'after-string))
+        (should (= height (cdr (window-text-pixel-size nil (overlay-start source) (overlay-end source)))))
         (markdown-ts-appear-stop)
         (should (eq image (overlay-get view 'display)))
         (should-not (overlay-get view 'after-string))))))
+
+(ert-deftest markdown-ts-appear-mermaid-test-gui-small-diagrams-are-not-enlarged ()
+  (skip-unless (display-graphic-p))
+  (markdown-ts-appear-mermaid-test--deferred
+    (markdown-ts-appear-mermaid-test--buffer markdown-ts-appear-mermaid-test--diagram
+      (let ((markdown-ts-appear-mermaid-test--svg
+             "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='16'><rect width='32' height='16' fill='blue'/></svg>"))
+        (markdown-ts-appear-mermaid-test--deliver)
+        (let ((view (markdown-ts-appear-mermaid-test--view)))
+          (should (equal (image-size (overlay-get view 'display) t) '(32 . 16)))
+          (should-not (overlay-get view 'after-string)))))))
+
+(ert-deftest markdown-ts-appear-mermaid-test-gui-height-follows-wrapped-code ()
+  (skip-unless (display-graphic-p))
+  (markdown-ts-appear-mermaid-test--deferred
+    (markdown-ts-appear-mermaid-test--buffer
+        (concat "Before\n\n```mermaid\nflowchart LR\nA["
+                (apply #'concat (make-list 30 "long label "))
+                "] --> B\n```\n\nAfter\n")
+      (let ((markdown-ts-image-max-width 2000)
+            (markdown-ts-appear-mermaid-test--svg
+             "<svg xmlns='http://www.w3.org/2000/svg' width='100' height='2000'><rect width='100' height='2000' fill='blue'/></svg>"))
+        (visual-line-mode 1)
+        (markdown-ts-appear-mermaid-test--deliver)
+        (delete-other-windows)
+        (let ((other (split-window-right -25)) heights)
+          (set-window-buffer other (current-buffer))
+          (markdown-ts-appear-mermaid--invalidate)
+          (let ((source (car markdown-ts-appear-mermaid--objects)))
+            (dolist (view (overlay-get source 'markdown-ts-appear-mermaid--views))
+              (let* ((window (overlay-get view 'window))
+                     (image (overlay-get view 'display))
+                     (limit (plist-get (cdr image) :max-height)))
+                (push limit heights)
+                (should (= (plist-get (cdr image) :max-width) 2000))
+                (should (<= (cdr (image-size image t (window-frame window))) limit))))
+            (goto-char (+ 12 (overlay-start source)))
+            (markdown-ts-appear-start)
+            (dolist (view (overlay-get source 'markdown-ts-appear-mermaid--views))
+              (let ((window (overlay-get view 'window)))
+                (should (= (image-property (overlay-get view 'markdown-ts-appear-mermaid--image) :max-height)
+                           (cdr (window-text-pixel-size window (overlay-start source) (overlay-end source)))))))
+            (should-not (= (car heights) (cadr heights))))
+          (should (= (length markdown-ts-appear-mermaid-test--jobs) 1)))))))
+
+(ert-deftest markdown-ts-appear-mermaid-test-gui-height-follows-text-scale-and-spacing ()
+  (skip-unless (display-graphic-p))
+  (markdown-ts-appear-mermaid-test--deferred
+    (markdown-ts-appear-mermaid-test--buffer markdown-ts-appear-mermaid-test--diagram
+      (markdown-ts-appear-mermaid-test--deliver)
+      (let* ((view (markdown-ts-appear-mermaid-test--view))
+             (height (plist-get (cdr (overlay-get view 'display)) :max-height)))
+        (text-scale-increase 2)
+        (markdown-ts-appear-mermaid--refresh)
+        (let ((scaled (plist-get (cdr (overlay-get view 'display)) :max-height)))
+          (should (> scaled height))
+          (setq-local line-spacing 5)
+          (markdown-ts-appear-mermaid--refresh)
+          (should (> (plist-get (cdr (overlay-get view 'display)) :max-height) scaled)))
+        (should (= (length markdown-ts-appear-mermaid-test--jobs) 1))))))
 
 (ert-deftest markdown-ts-appear-mermaid-test-gui-window-specific-scaling ()
   (skip-unless (display-graphic-p))

@@ -169,8 +169,9 @@ to each buffer and are removed when appear mode is disabled.
   inline math stays in the text.
 - Mermaid renders visible, unedited blocks asynchronously, one job at a time.
   Identical diagrams share cached images; failed diagrams keep their source,
-  with details available on hover.  Short source blocks retain room for the
-  previous preview while editing; longer code can grow normally.
+  with details available on hover.  Diagrams are only scaled down, preserving
+  their aspect ratio, to fit the code block's displayed height.  Editing shows
+  the code at its natural height without padding.
 - If preview setup fails, disable appear mode, fix the missing dependency, then
   re-enable it.
 
