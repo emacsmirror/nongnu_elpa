@@ -103,7 +103,7 @@
   "Marker ranges around edits whose tables need rebuilding.")
 
 (defvar-local markdown-ts-appear-table--view nil
-  "Last visible source region applied to wrapped-table overlays.")
+  "Markers delimiting the source region revealed by wrapped-table overlays.")
 
 (defvar-local markdown-ts-appear-table--resize-timer nil
   "Idle timer used to debounce wrapped-table rendering after resize.")
@@ -177,12 +177,12 @@
 
 (defun markdown-ts-appear-table--delete-overlays ()
   "Delete all wrapped-table overlays in the current buffer."
+  (markdown-ts-appear-table--restore-view)
   (markdown-ts-appear-table--delete-cursor-overlays)
   (dolist (overlay markdown-ts-appear-table--overlays)
     (delete-overlay overlay))
   (setq markdown-ts-appear-table--overlays nil
-        markdown-ts-appear-table--windows nil
-        markdown-ts-appear-table--view nil))
+        markdown-ts-appear-table--windows nil))
 
 (defun markdown-ts-appear-table--rows (table)
   "Return source row nodes directly below TABLE."
@@ -449,6 +449,14 @@ DISPLAY-P non-nil restores their rendered display."
            (and display-p
                 (markdown-ts-appear-table--layout-display
                  (overlay-get overlay 'markdown-ts-appear-table--layout)))))))))
+
+(defun markdown-ts-appear-table--restore-view ()
+  "Restore the previously revealed rows and release their region markers."
+  (when markdown-ts-appear-table--view
+    (markdown-ts-appear-table--set-region-display markdown-ts-appear-table--view t)
+    (set-marker (car markdown-ts-appear-table--view) nil)
+    (set-marker (cdr markdown-ts-appear-table--view) nil)
+    (setq markdown-ts-appear-table--view nil)))
 
 (defun markdown-ts-appear-table--visible-region ()
   "Return numeric bounds of source currently revealed by the main mode."
@@ -785,11 +793,16 @@ NOERROR and REST retain the native command's boundary behavior and options."
 (defun markdown-ts-appear-table--update-visibility ()
   "Synchronize wrapped rows with the main mode's visible source region."
   (let ((view (markdown-ts-appear-table--visible-region)))
-    (unless (equal view markdown-ts-appear-table--view)
-      (markdown-ts-appear-table--set-region-display
-       markdown-ts-appear-table--view t)
+    (unless (if view
+                (and markdown-ts-appear-table--view
+                     (= (car view) (car markdown-ts-appear-table--view))
+                     (= (cdr view) (cdr markdown-ts-appear-table--view)))
+              (null markdown-ts-appear-table--view))
+      (markdown-ts-appear-table--restore-view)
       (markdown-ts-appear-table--set-region-display view nil)
-      (setq markdown-ts-appear-table--view view))
+      (setq markdown-ts-appear-table--view
+            (and view (cons (copy-marker (car view))
+                            (copy-marker (cdr view) t)))))
     (markdown-ts-appear-table--update-cursor-row)))
 
 (defun markdown-ts-appear-table--post-command ()
@@ -803,8 +816,7 @@ NOERROR and REST retain the native command's boundary behavior and options."
 (defun markdown-ts-appear-table--render-edited ()
   "Render tables around edits that have lost their overlays."
   ;; Let `markdown-ts-appear-table--update-visibility' hide new rows too.
-  (markdown-ts-appear-table--set-region-display markdown-ts-appear-table--view t)
-  (setq markdown-ts-appear-table--view nil)
+  (markdown-ts-appear-table--restore-view)
   (without-restriction
     (pcase-dolist (`(,beg . ,end) markdown-ts-appear-table--dirty)
       (dolist (table (markdown-ts-appear-table--tables beg end))
@@ -822,8 +834,13 @@ NOERROR and REST retain the native command's boundary behavior and options."
              (markdown-ts-appear--active-p))
     (markdown-ts-appear-table--update-cursor-row)))
 
-(defun markdown-ts-appear-table--after-change (beg end _old-length)
-  "Invalidate wrapped tables on lines around the edit between BEG and END."
+(defun markdown-ts-appear-table--after-change (beg end old-length)
+  "Invalidate wrapped tables on lines around the edit between BEG and END.
+OLD-LENGTH is the length of the replaced text."
+  ;; Deleted rows can evaporate before `overlays-in' can find them.
+  (when (> old-length 0)
+    (setq markdown-ts-appear-table--overlays
+          (seq-filter #'overlay-buffer markdown-ts-appear-table--overlays)))
   (save-excursion
     (markdown-ts-appear-table--invalidate
      (progn (goto-char beg) (line-beginning-position 0))
