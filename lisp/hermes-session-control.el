@@ -95,6 +95,9 @@ MESSAGE is one of (:push SNAPSHOT), (:request ACTION),
   "Reduce MESSAGE into this chat's state and redisplay it."
   (setq hermes-session-control--state
         (hermes-session-control-reduce hermes-session-control--state message))
+  (pcase (car message)
+    ((or :push :reply) (hermes-session-control--schedule))
+    (:forget (hermes-session-control--cancel)))
   (force-mode-line-update)
   (let ((chat (current-buffer)))
     (when (buffer-live-p hermes-session-control--view)
@@ -186,6 +189,69 @@ goal's continuation is submitted, or queued behind a running turn."
     (when (and (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
                hermes-chat--dashboard-active-session-id)
       (hermes-session-control--send))))
+
+;;;; Reconciliation
+
+;; The backend pushes a snapshot after an action, a slash command and a
+;; model turn's post-turn hooks, but not when a loop tick fires, when a
+;; slash-only tick completes, or while a turn runs.  So the chat rereads
+;; at those boundaries: after a turn ends, after a loop, goal, heartbeat
+;; or process notice, and once just after the loop's next tick is due.
+
+(defconst hermes-session-control--due-grace 5
+  "Seconds after a loop tick is due before rereading the session state.")
+
+(defvar-local hermes-session-control--timer nil
+  "The one-shot reread timed after the active loop's next tick, or nil.")
+
+(defun hermes-session-control--cancel ()
+  "Cancel this chat's pending tick reread."
+  (when hermes-session-control--timer
+    (cancel-timer hermes-session-control--timer)
+    (setq hermes-session-control--timer nil)))
+
+(defun hermes-session-control--schedule ()
+  "Replace the reread with one just after the active loop's next tick.
+The timer belongs to this attachment and fires at most once."
+  (hermes-session-control--cancel)
+  (let* ((loop (plist-get (hermes-session-control-snapshot) :loop))
+         (due (plist-get loop :next-due-at))
+         (delay (and (equal (plist-get loop :status) "active")
+                     (not (plist-get loop :deferred-by-goal))
+                     (numberp due)
+                     (- due (float-time)))))
+    (when (and delay (> delay 0))
+      (let* ((buffer (current-buffer))
+             (client hermes-chat--dashboard-client)
+             (generation hermes-chat--lifecycle-generation)
+             (session hermes-chat--dashboard-active-session-id)
+             (timer (timer-create)))
+        (timer-set-time timer (time-add nil (+ delay hermes-session-control--due-grace)))
+        (timer-set-function
+         timer
+         (lambda ()
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (when (and (eq timer hermes-session-control--timer)
+                          (hermes-chat--dashboard-context-current-p
+                           client generation session))
+                 (setq hermes-session-control--timer nil)
+                 (hermes-session-control-refresh))))))
+        (timer-activate timer)
+        (setq hermes-session-control--timer timer)))))
+
+(defun hermes-session-control-observe (event)
+  "Reread automation state when EVENT may have changed it unannounced.
+That is a turn's end or a loop, goal, heartbeat or process notice for
+this session, while a goal, loop or heartbeat is running."
+  (when (and (hermes-session-control-active-p (hermes-session-control-snapshot))
+             (member (plist-get event :session-id)
+                     (list nil hermes-chat--dashboard-active-session-id))
+             (or (memq (plist-get event :type) '(done error))
+                 (and (eq (plist-get event :type) 'status)
+                      (member (plist-get event :status)
+                              '("loop" "goal" "heartbeat" "process")))))
+    (hermes-session-control-refresh)))
 
 ;;;; Actions
 

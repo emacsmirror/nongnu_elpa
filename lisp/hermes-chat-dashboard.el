@@ -1536,7 +1536,8 @@ profile's workspace.  Keep the reservation through create and overrides."
   "Route admitted EVENT for ASSISTANT-ID, using dashboard policy if DASHBOARD-P."
   (hermes-chat--status-rule-note-event)
   (when dashboard-p
-    (hermes-chat--work-note-event event))
+    (hermes-chat--work-note-event event)
+    (hermes-session-control-observe event))
   ;; Worker lifecycle feeds the roster and the spawning row's live card, not
   ;; per-child transcript rows.
   (unless (or (and dashboard-p hermes-chat--work-owner

@@ -259,6 +259,142 @@ The draft stays in the composer, and a busy chat queues the continuation."
                          '("[Continuing toward your standing goal]\nGoal: Ship the release")))
           (should-not (if busy submitted queued)))))))
 
+;;;; Reconciliation
+
+(defmacro hermes-test--with-control-wire (reads &rest body)
+  "Run BODY in a chat whose dashboard callback and reads are captured.
+Each `session.control.read' pushes its resolve function onto READS."
+  (declare (indent 1) (debug t))
+  `(hermes-test--with-control-chat
+     (let* ((client hermes-chat--dashboard-client)
+            (callback (hermes-chat--transport-callback
+                       (current-buffer) nil t hermes-chat--transport-generation))
+            (,reads nil))
+       (setf (hermes-dashboard-transport-client-callback client) callback
+             hermes-chat--dashboard-active-session-id "sid-active")
+       (cl-letf (((symbol-function 'hermes-dashboard-transport-session-control-read)
+                  (lambda (_client &rest args)
+                    (should (equal (plist-get args :session-id) "sid-active"))
+                    (push (plist-get args :resolve) ,reads))))
+         (unwind-protect (progn ,@body)
+           (when (bound-and-true-p hermes-session-control--timer)
+             (cancel-timer hermes-session-control--timer)))))))
+
+(defun hermes-test--loop-control (revision ticks &rest loop)
+  "Return a released snapshot at REVISION whose loop fired TICKS of 5.
+LOOP overrides the loop's fields."
+  (hermes-test--control
+   revision
+   `((goal . :null)
+     (loop . ,(append loop
+                      `((status . "active") (prompt . "Check the build")
+                        (mode . "interval") (interval_seconds . 300)
+                        (current_delay . 300) (times . 5) (ticks_fired . ,ticks)
+                        (awaiting_response . :false) (deferred_by_goal . :false)))))))
+
+(defun hermes-test--control-header ()
+  "Return this chat's plain control header."
+  (when-let* ((header (hermes-session-control-header)))
+    (substring-no-properties header)))
+
+(ert-deftest hermes-control-model-tick-rereads-at-fire-and-turn-end ()
+  "A model-backed tick advances the header without a backend push."
+  (hermes-test--with-control-wire reads
+    (let ((due (+ (float-time) 300)))
+      (hermes-test--emit-dashboard-event
+       client "session.control.update"
+       `((control . ,(hermes-test--loop-control "a" 2 `(next_due_at . ,due)))))
+      (should-not reads)
+      ;; The tick fires: a status notice, then the turn; no snapshot yet.
+      (hermes-test--emit-dashboard-event
+       client "status.update" '((kind . "loop") (text . "↻ /loop wakeup #3 firing…")))
+      (should (= (length reads) 1))
+      (funcall (pop reads)
+               `((control . ,(hermes-transport-json-parse
+                              (json-serialize
+                               (hermes-test--loop-control
+                                "b" 3 '(awaiting_response . t)
+                                `(next_due_at . ,(+ due 300))))))))
+      (should (equal (hermes-test--control-header) "Loop waiting 3/5 · every 5m"))
+      (hermes-test--emit-dashboard-event
+       client "message.complete" '((text . "Build is green") (status . "complete")))
+      (should (= (length reads) 1))
+      (funcall (pop reads)
+               `((control . ,(hermes-transport-json-parse
+                              (json-serialize
+                               (hermes-test--loop-control
+                                "c" 3 `(next_due_at . ,(+ due 600))))))))
+      (should (string-prefix-p "Loop 3/5 · every 5m · next "
+                               (hermes-test--control-header)))
+      ;; The last tick's turn ends the loop.
+      (hermes-test--emit-dashboard-event
+       client "message.complete" '((text . "Done") (status . "complete")))
+      (funcall (pop reads)
+               `((control . ,(hermes-transport-json-parse
+                              (json-serialize
+                               (hermes-test--loop-control "d" 5 '(status . "done")))))))
+      (should-not (hermes-test--control-header))
+      (should-not hermes-session-control--timer)
+      ;; Nothing running: turns no longer reread.
+      (hermes-test--emit-dashboard-event
+       client "message.complete" '((text . "Hi") (status . "complete")))
+      (should-not reads))))
+
+(ert-deftest hermes-control-slash-tick-rereads-once-after-due-time ()
+  "A slash-only tick is reconciled by its notice and one timer after due."
+  (hermes-test--with-control-wire reads
+    (let ((due (+ (float-time) 300)))
+      (hermes-test--emit-dashboard-event
+       client "session.control.update"
+       `((control . ,(hermes-test--loop-control "a" 2 `(next_due_at . ,due)))))
+      (let ((timer hermes-session-control--timer))
+        (should (timerp timer))
+        (should (< 300 (float-time (time-subtract (timer--time timer) nil)) 306))
+        ;; A slash tick reports only its output.
+        (hermes-test--emit-dashboard-event
+         client "status.update" '((kind . "loop") (text . "Recap: 2 PRs open")))
+        (funcall (pop reads)
+                 `((control . ,(hermes-transport-json-parse
+                                (json-serialize
+                                 (hermes-test--loop-control
+                                  "b" 3 `(next_due_at . ,(+ due 300))))))))
+        (should (string-prefix-p "Loop 3/5" (hermes-test--control-header)))
+        ;; The new snapshot replaced the timer with one for its due time.
+        (should-not (memq timer timer-list))
+        (setq timer hermes-session-control--timer)
+        (should (< 600 (float-time (time-subtract (timer--time timer) nil)) 606))
+        (should-not reads)
+        ;; With no notice at all, the timer rereads once.
+        (funcall (timer--function timer))
+        (should-not hermes-session-control--timer)
+        (should (= (length reads) 1))
+        (funcall (pop reads)
+                 `((control . ,(hermes-transport-json-parse
+                                (json-serialize
+                                 (hermes-test--loop-control
+                                  "c" 4 '(status . "paused")
+                                  `(next_due_at . ,(+ due 600))))))))
+        (should (string-prefix-p "Loop paused 4/5" (hermes-test--control-header)))
+        (should-not hermes-session-control--timer)
+        ;; A fired timer never rereads twice.
+        (funcall (timer--function timer))
+        (should-not reads)))))
+
+(ert-deftest hermes-control-detach-retires-the-tick-timer ()
+  "Detaching cancels the reread, and its stale callback stays inert."
+  (hermes-test--with-control-wire reads
+    (hermes-test--emit-dashboard-event
+     client "session.control.update"
+     `((control . ,(hermes-test--loop-control
+                    "a" 2 `(next_due_at . ,(+ (float-time) 60))))))
+    (let ((timer hermes-session-control--timer))
+      (should (memq timer timer-list))
+      (hermes-chat--forget-live-dashboard-session)
+      (should-not hermes-session-control--timer)
+      (should-not (memq timer timer-list))
+      (funcall (timer--function timer))
+      (should-not reads))))
+
 ;;;; Presentation
 
 (ert-deftest hermes-control-header-summarizes-running-automation ()
