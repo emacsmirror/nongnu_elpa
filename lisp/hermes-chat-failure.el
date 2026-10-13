@@ -173,14 +173,45 @@ without one, the reply and raw error render like a plain failure."
                  (hermes-chat--make-entry 'assistant "" 'error)
                  retained)))))
 
-(defun hermes-chat-failure-retained-reply (entry retained)
+(defun hermes-chat-failure-reply-text (partial shown &optional earlier)
+  "Return the text for a failed turn's last reply segment, or nil.
+PARTIAL is the backend's text for the whole turn, SHOWN the segment's
+current text and EARLIER the texts of the turn's earlier segments, oldest
+first.  The partial is authoritative: its part past EARLIER replaces
+SHOWN when the two echo each other, unless SHOWN already holds more.  So
+neither persisted earlier segments nor newer partial text repeat or go
+missing.  Without PARTIAL, SHOWN stays; nil means PARTIAL is not this
+segment's text.  Pure."
+  (let ((rest (or partial "")))
+    ;; Strip the earlier segments only when they all lead the partial.
+    (let ((tail rest))
+      (while (and tail earlier)
+        (let ((segment (string-trim (or (pop earlier) "")))
+              (trimmed (string-trim-left tail)))
+          (setq tail (and (string-prefix-p segment trimmed)
+                          (substring trimmed (length segment))))))
+      (when tail (setq rest (if (eq tail rest) rest (string-trim-left tail)))))
+    (cond
+     ((string-empty-p (or partial "")) shown)
+     ((string-empty-p (or shown "")) rest)
+     ((hermes-chat--text-echoes-p rest shown)
+      (if (> (length (hermes-chat--normalize-for-dedup rest))
+             (length (hermes-chat--normalize-for-dedup shown)))
+          rest
+        shown)))))
+
+(defun hermes-chat-failure-retained-reply (entry retained &optional earlier)
   "Return assistant ENTRY settled as the reply of RETAINED's failed turn.
-ENTRY's text is the reply when it has one, as when history already holds
-the partial; else the retained partial is.  Applying it again is a no-op.  Pure."
+EARLIER lists the texts of the turn's earlier reply segments, oldest
+first.  The retained partial is authoritative for the turn
+\(`hermes-chat-failure-reply-text'); ENTRY's own text stays when it
+already holds more.  Applying it again is a no-op.  Pure."
   (let* ((failure (plist-get retained :failure))
          (error (plist-get retained :error))
-         (text (or (hermes-transport--non-empty-string (plist-get entry :content))
-                   (plist-get retained :partial-text)))
+         (shown (hermes-transport--non-empty-string (plist-get entry :content)))
+         (text (or (hermes-chat-failure-reply-text
+                    (plist-get retained :partial-text) shown earlier)
+                   shown))
          (content (if (or failure (null error)
                           (and text (string-suffix-p error text)))
                       (or text "")

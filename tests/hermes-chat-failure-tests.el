@@ -553,6 +553,58 @@ Return the chat buffer."
       (should (equal (hermes-test--failure-rows)
                      '((user "Question" nil) (assistant "A full answer" nil)))))))
 
+(defconst hermes-test--retained-two-segments
+  '((user . "Question") (assistant . "First segment. Second segment.")
+    (streaming) (error . "connection reset") (status . "error")
+    (recoverable . t)
+    (error_surface . ((layer . "streaming") (code . "stream_drop")
+                      (retryable . t))))
+  "A failed turn whose partial outgrew the interim segment history holds.")
+
+(ert-deftest hermes-chat-failure-resume-keeps-newer-retained-suffix ()
+  "The retained partial is authoritative over a shorter persisted segment.
+History holds only the sealed interim segment; the partial's newer
+suffix shows once, on resume and on every later reconciliation."
+  (let ((buffer (hermes-test--resume-with
+                 (hermes-transport-json-parse
+                  (concat "{\"running\":false,\"inflight\":{\"user\":\"Question\","
+                          "\"assistant\":\"First segment. Second segment.\","
+                          "\"streaming\":false,\"error\":\"connection reset\","
+                          "\"status\":\"error\",\"recoverable\":true,"
+                          "\"error_surface\":{\"layer\":\"streaming\","
+                          "\"code\":\"stream_drop\",\"retryable\":true}},"
+                          "\"messages\":[{\"role\":\"user\",\"text\":\"Question\","
+                          "\"row_id\":1},{\"role\":\"assistant\","
+                          "\"text\":\"First segment. \",\"row_id\":2}]}")))))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (equal (hermes-test--failure-rows)
+                         '((user "Question" nil)
+                           (assistant "First segment. Second segment." t))))
+          (dotimes (_ 2)
+            (hermes-chat--repaint-history
+             '(((role . "user") (text . "Question") (row_id . 1))
+               ((role . "assistant") (text . "First segment. ") (row_id . 2)))
+             (copy-hash-table hermes-chat--nodes))
+            (should (equal (hermes-test--failure-rows)
+                           '((user "Question" nil)
+                             (assistant "First segment. Second segment." t))))))
+      (kill-buffer buffer)))
+  ;; Earlier persisted segments stay; the reply shows only the newer suffix.
+  (hermes-test-with-chat-buffer
+    (hermes-chat--render-history
+     '(((role . "user") (text . "Question"))
+       ((role . "assistant") (text . "First segment. "))
+       ((role . "assistant") (text . "Second"))))
+    (dotimes (_ 2)
+      (hermes-chat--render-retained-failure
+       `((running) (inflight . ,hermes-test--retained-two-segments)))
+      (should (equal (hermes-test--failure-rows)
+                     '((user "Question" nil)
+                       (assistant "First segment. " nil)
+                       (assistant "Second segment." t))))
+      (should (= 1 (hermes-test--count-in-transcript "First segment."))))))
+
 (ert-deftest hermes-chat-failure-backend-turn-retires-older-retry ()
   "A backend-owned turn after a failure retires that failure's Retry.
 /retry would rewind the backend's newer turn instead."

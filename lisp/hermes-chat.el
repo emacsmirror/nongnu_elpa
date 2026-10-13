@@ -2283,7 +2283,8 @@ backend-owned turn shows no prompt to match."
 Only an idle session's snapshot is a settled failure; a live one belongs
 to the running turn.  The snapshot carries no row identity, so it is the
 newest turn only when that shows the same prompt and either no reply yet
-or the retained partial itself; the failure then settles that reply.
+or replies echoing the retained partial; the failure then settles the
+last reply, which shows the partial past the earlier segments.
 Otherwise the failed turn follows, prompt included."
   (when-let* (((not (hermes-chat--dashboard-result-live-turn-p result)))
               (retained (hermes-transport-retained-turn-failure
@@ -2303,7 +2304,10 @@ Otherwise the failed turn follows, prompt included."
       (if (and same replies)
           (let* ((node (car (last replies)))
                  (entry (hermes-chat-failure-retained-reply
-                         (ewoc-data node) retained))
+                         (ewoc-data node) retained
+                         (mapcar (lambda (earlier)
+                                   (plist-get (ewoc-data earlier) :content))
+                                 (butlast replies))))
                  (owner hermes-chat--session-bootstrap))
             ;; Bootstrap cleanup removes history entries by identity.
             (when owner (push entry (plist-get owner :history-entries)))
@@ -2609,8 +2613,11 @@ ITEMS lists, in order, WANT's
 entries with each replaced by the local node already showing it: a tool
 row by its call id in BY-CALL, any other entry by equal content in TURN.
 TURN's local presentation stays in place between them, and its failure
-settles the reply when that reply is the failure's partial, or stays as
-is when the history has no reply.  USED marks claimed nodes.  The
+settles the reply when that reply echoes the failure's partial, or stays
+as is when the history has no reply.  The partial is authoritative for
+the reply's text (`hermes-chat-failure-reply-text'); when no node shows
+the reply already, the failed node itself does.  USED marks claimed
+nodes.  The
 \(NODE . ENTRY) pairs in UPDATES refresh a kept node's identity or failure."
   (let ((pending (cdr turn)) items updates)
     (cl-flet ((advance (node)
@@ -2652,25 +2659,40 @@ is when the history has no reply.  USED marks claimed nodes.  The
                                   (reverse (cdr turn))))
                 ((not (gethash failed used))))
       ;; ITEMS is still newest first.
-      (let* ((reply (seq-find (lambda (item)
-                                (eq (plist-get (hermes-chat--item-entry item) :role)
-                                    'assistant))
-                              items))
+      (let* ((replies (seq-filter (lambda (item)
+                                    (eq (plist-get (hermes-chat--item-entry item) :role)
+                                        'assistant))
+                                  items))
+             (reply (car replies))
              (shown (and reply (hermes-chat--item-entry reply)))
-             (partial (plist-get (ewoc-data failed) :content)))
+             (partial (plist-get (ewoc-data failed) :content))
+             (text (and reply
+                        (not (string-empty-p (or partial "")))
+                        (hermes-chat-failure-reply-text
+                         partial (plist-get shown :content)
+                         (mapcar (lambda (item)
+                                   (plist-get (hermes-chat--item-entry item) :content))
+                                 (reverse (cdr replies)))))))
         (cond
          ((null reply) (push failed items))
-         ((and (not (string-empty-p (or partial "")))
-               (hermes-chat--text-echoes-p partial (plist-get shown :content)))
-          (let ((settled (hermes-chat--entry-with
-                          shown :status 'error
-                          :metadata (plist-put
-                                     (copy-sequence (plist-get shown :metadata))
-                                     :failure (hermes-chat--entry-failure
-                                               (ewoc-data failed))))))
-            (if (hermes-chat--node-item-p reply)
-                (push (cons reply settled) updates)
-              (setq items (cl-substitute settled reply items :test #'eq))))))))
+         ((hermes-chat--node-item-p reply)
+          (when text
+            (push (cons reply (hermes-chat--entry-with
+                               shown :status 'error :content text
+                               :metadata (plist-put
+                                          (copy-sequence (plist-get shown :metadata))
+                                          :failure (hermes-chat--entry-failure
+                                                    (ewoc-data failed)))))
+                  updates)))
+         (text
+          ;; The failed node itself shows the reply, so repeating this
+          ;; reconciliation keeps it rather than printing a new one.
+          (puthash failed t used)
+          (setq items (cl-substitute failed reply items :test #'eq))
+          (unless (equal text partial)
+            (push (cons failed (hermes-chat--entry-with
+                                (ewoc-data failed) :status 'error :content text))
+                  updates))))))
     (cons (nreverse items) updates)))
 
 (defun hermes-chat--node-item-p (item)
