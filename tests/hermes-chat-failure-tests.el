@@ -421,5 +421,138 @@ Return the chat buffer."
             (should-not (string-match-p "\\[Retry\\]" text))))
       (kill-buffer buffer))))
 
+;;;; Authority across segments, resume and repaint
+
+(defun hermes-test--failure-rows ()
+  "Return (ROLE CONTENT FAILED) for each transcript entry."
+  (mapcar (lambda (entry)
+            (list (plist-get entry :role) (plist-get entry :content)
+                  (and (hermes-chat--entry-failure entry) t)))
+          (hermes-chat--entries)))
+
+(defun hermes-test--count-in-transcript (text)
+  "Return how often TEXT occurs in the transcript."
+  (let ((transcript (hermes-test--failure-transcript)))
+    (with-temp-buffer
+      (insert transcript)
+      (how-many (regexp-quote text) (point-min) (point-max)))))
+
+(defconst hermes-test--stream-drop
+  '((layer . "streaming") (code . "stream_drop") (retryable . t))
+  "A retryable mid-reply `error_surface'.")
+
+(ert-deftest hermes-chat-failure-partial-replaces-interim-segments ()
+  "The partial is the whole turn's text, so it replaces sealed segments."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt
+     client "message.delta" '((text . "First segment. ")))
+    (hermes-test--emit-dashboard-prompt
+     client "message.interim" '((text . "First segment. ") (already_streamed . t)))
+    (hermes-test--emit-dashboard-prompt
+     client "message.delta" '((text . "Second segment.")))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete"
+     `((text . "First segment. Second segment.") (status . "error") (partial . t)
+       (error . "connection reset") (error_surface . ,hermes-test--stream-drop)))
+    (should (equal (seq-filter (lambda (row) (eq (car row) 'assistant))
+                               (hermes-test--failure-rows))
+                   '((assistant "First segment. Second segment." t))))
+    (should (= 1 (hermes-test--count-in-transcript "First segment.")))))
+
+(ert-deftest hermes-chat-failure-partial-stops-at-redirect ()
+  "Text before an accepted redirect belongs to the turn it ended."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--insert-entry (hermes-chat--make-entry 'user "Question" 'done))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'assistant "Before redirect." 'done))
+    (hermes-chat--insert-entry
+     (hermes-chat--entry-with (hermes-chat--make-entry 'user "Instead" 'done)
+                              :redirect t))
+    (let ((entry (hermes-test--fail-streamed-turn "After" "After redirect.")))
+      (should (equal (plist-get entry :content) "After redirect."))
+      (should (equal (mapcar #'cadr (hermes-test--failure-rows))
+                     '("Question" "Before redirect." "Instead"
+                       "After redirect."))))))
+
+(ert-deftest hermes-chat-failure-resume-attaches-to-history-reply ()
+  "History holding the partial gets the failure, not a second copy."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--render-history
+     '(((role . "user") (text . "Question"))
+       ((role . "assistant") (text . "Half an answer"))))
+    (dotimes (_ 2)
+      (hermes-chat--render-retained-failure
+       `((running) (inflight . ,hermes-test--retained-inflight)))
+      (should (equal (hermes-test--failure-rows)
+                     '((user "Question" nil) (assistant "Half an answer" t))))))
+  (let ((buffer (hermes-test--resume-with
+                 `((running)
+                   (inflight . ,hermes-test--retained-inflight)
+                   (messages . (((role . "user") (text . "Question"))
+                                ((role . "assistant") (text . "Half an answer"))))))))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (= 1 (hermes-test--count-in-transcript "Half an answer")))
+          (should (string-match-p "\\[Retry\\]" (hermes-test--failure-transcript))))
+      (kill-buffer buffer))))
+
+(ert-deftest hermes-chat-failure-resume-repeated-prompt-is-a-new-turn ()
+  "An answered turn with the same prompt is not the failed one."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--render-history
+     '(((role . "user") (text . "Question"))
+       ((role . "assistant") (text . "Old answer"))))
+    (hermes-chat--render-retained-failure
+     `((running)
+       (inflight . ((user . "Question") (error . "build failed")
+                    (error_surface . ((layer . "runtime") (code . "agent_init_failed")
+                                      (retryable . t)))))))
+    (should (equal (hermes-test--failure-rows)
+                   '((user "Question" nil) (assistant "Old answer" nil)
+                     (user "Question" nil) (assistant "" t))))))
+
+(ert-deftest hermes-chat-failure-repaint-recomputes-retry ()
+  "A repaint adding a later turn retires the kept failure's Retry."
+  (hermes-test-with-chat-buffer
+    (hermes-chat--render-history '(((role . "user") (text . "Question") (row_id . 1))))
+    (let ((failure (hermes-test--fail-turn
+                    '(:surface (:layer "provider" :code "rate_limit" :retryable t)))))
+      (hermes-chat--repaint-history
+       '(((role . "user") (text . "Question") (row_id . 1))
+         ((role . "user") (text . "Later") (row_id . 2)))
+       (copy-hash-table hermes-chat--nodes))
+      (should (gethash failure hermes-chat--nodes))
+      (should-not (string-match-p "\\[Retry\\]" (hermes-test--failure-transcript)))
+      (goto-char (text-property-any (point-min) (point-max)
+                                    'hermes-chat-failure-id failure))
+      (should-not (hermes-chat--failure-action-p 'retry)))))
+
+(ert-deftest hermes-chat-failure-repaint-keeps-resumed-failure ()
+  "Reconciling a resumed failure keeps it on history's reply."
+  (hermes-test-with-chat-buffer
+    (let ((history '(((role . "user") (text . "Question") (row_id . 1))
+                     ((role . "assistant") (text . "Half an answer") (row_id . 2)))))
+      (hermes-chat--render-history history)
+      (hermes-chat--render-retained-failure
+       `((running) (inflight . ,hermes-test--retained-inflight)))
+      (hermes-chat--repaint-history history (copy-hash-table hermes-chat--nodes))
+      (should (equal (hermes-test--failure-rows)
+                     '((user "Question" nil) (assistant "Half an answer" t))))
+      ;; A rebuilt reply equal to the partial still carries the failure.
+      (hermes-chat--repaint-history
+       (list (car history)
+             '((role . "assistant") (text . "Half an answer.") (row_id . 3)))
+       (copy-hash-table hermes-chat--nodes))
+      (should (equal (hermes-test--failure-rows)
+                     '((user "Question" nil) (assistant "Half an answer." t))))
+      ;; A different reply means the turn ran again: the failure is gone.
+      (hermes-chat--repaint-history
+       (list (car history)
+             '((role . "assistant") (text . "A full answer") (row_id . 4)))
+       (copy-hash-table hermes-chat--nodes))
+      (should (equal (hermes-test--failure-rows)
+                     '((user "Question" nil) (assistant "A full answer" nil)))))))
+
+
 (provide 'hermes-chat-failure-tests)
 ;;; hermes-chat-failure-tests.el ends here

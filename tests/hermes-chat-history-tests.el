@@ -1594,10 +1594,13 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (should (equal (hermes-test--user-row-ids) '(11 13 15 21)))
     (should (string-match-p "Fourth answer" (buffer-string)))))
 
-(defun hermes-test--insert-turn-extras ()
-  "Append a worker card and a task node to the last turn; return their ids."
+(defun hermes-test--insert-turn-extras (&optional call)
+  "Append a worker card and a task node to the last turn; return their ids.
+CALL is the card's tool call id, if any."
   (let ((card (hermes-chat--entry-with
-               (hermes-chat--make-entry 'tool "delegate_task" 'done)
+               (hermes-chat--make-entry
+                'tool "delegate_task" 'done nil
+                (and call (list :event (list :type 'tool :tool-call-id call))))
                :card '(:kind delegate :rows ((:id "worker-1" :state running)))))
         (tasks (hermes-chat--entry-with
                 (hermes-chat--make-entry 'tasks "" 'done) :tasks '(:items nil))))
@@ -1607,16 +1610,18 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (list (plist-get card :id) (plist-get tasks :id))))
 
 (ert-deftest hermes-chat-history-reconcile-keeps-surviving-turns ()
-  "Turns history still has keep their entries, cards and task nodes."
+  "Turns history still has keep their entries, cards and task nodes.
+A worker card stands in for the history tool row with its call id."
   (hermes-test-with-rewind-chat (_submits reads _prompts)
-    (let* ((ids (hermes-test--insert-turn-extras))
+    (let* ((ids (hermes-test--insert-turn-extras "call-7"))
            (first (gethash (plist-get (car (hermes-chat--entries)) :id)
                            hermes-chat--nodes)))
       (hermes-chat--request-history-reconcile)
       (funcall (plist-get (car reads) :resolve)
                `((messages . ,(append hermes-test-rewind-history
                                       '(((role . "tool") (name . "delegate_task")
-                                         (context . "spawn")))))))
+                                         (context . "spawn")
+                                         (tool_call_id . "call-7")))))))
       (should (eq (gethash (plist-get (ewoc-data first) :id) hermes-chat--nodes)
                   first))
       (should (plist-get (ewoc-data (gethash (car ids) hermes-chat--nodes)) :card))
@@ -1641,6 +1646,181 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
       (should-not (string-match-p "Third" (buffer-string)))
       (should (gethash (plist-get second :id) hermes-chat--nodes))
       (should (equal (hermes-test--user-row-ids) '(11 13))))))
+
+
+;;;; History authority
+
+(defun hermes-test--contents ()
+  "Return the transcript's entry contents in order."
+  (mapcar (lambda (entry) (plist-get entry :content)) (hermes-chat--entries)))
+
+(ert-deftest hermes-chat-history-reconcile-ignores-status-lines ()
+  "A local status line during the read is not a raced turn."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-chat--request-history-reconcile)
+    (hermes-chat--insert-local-status "Notice" 'done)
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,hermes-test-rewind-history)))
+    (should (= (length reads) 1))
+    (should-not hermes-chat--history-reconcile)
+    (should (equal (car (last (hermes-test--contents))) "Notice"))))
+
+(ert-deftest hermes-chat-history-reconcile-drops-undone-remote-turn ()
+  "A backend-owned turn is its own turn, so undoing it removes its reply."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-chat--dispatch-accepted-transport-event
+     nil t '(:type status :event "message.start" :status "started"
+                   :session-id "sid-rewind"))
+    (should hermes-chat--pending-assistant-id)
+    (hermes-test--finish-turn callback client "Remote answer")
+    (should (string-match-p "Remote answer" (buffer-string)))
+    (hermes-chat--request-history-reconcile)
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,hermes-test-rewind-history)))
+    (should-not (string-match-p "Remote answer" (buffer-string)))
+    (should (equal (hermes-test--contents)
+                   '("First question" "First answer" "Second question"
+                     "Second answer" "Third question" "Third answer")))))
+
+(ert-deftest hermes-chat-history-reconcile-refreshes-surviving-reply ()
+  "A surviving turn shows history's reply, not the stale local one."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-chat--request-history-reconcile)
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,(append (seq-take hermes-test-rewind-history 5)
+                                   '(((role . "assistant") (text . "Corrected answer")
+                                      (row_id . 16)))))))
+    (should (string-match-p "Corrected answer" (buffer-string)))
+    (should-not (string-match-p "Third answer" (buffer-string)))))
+
+(ert-deftest hermes-chat-history-reconcile-orders-missing-and-rowless-turns ()
+  "Missing turns land in history order; row-less ones rebuild in order."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (hermes-chat--repaint-history
+     (append (seq-take hermes-test-rewind-history 2)
+             '(((role . "user") (text . "Missing question") (row_id . 17))
+               ((role . "assistant") (text . "Missing answer") (row_id . 18)))
+             (nthcdr 2 hermes-test-rewind-history)
+             '(((role . "user") (text . "Last question") (row_id . 19))
+               ((role . "assistant") (text . "Last answer") (row_id . 20))))
+     (copy-hash-table hermes-chat--nodes))
+    (should (equal (hermes-test--user-row-ids) '(11 17 13 15 19)))
+    (should (equal (hermes-test--contents)
+                   '("First question" "First answer" "Missing question"
+                     "Missing answer" "Second question" "Second answer"
+                     "Third question" "Third answer" "Last question"
+                     "Last answer"))))
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (hermes-chat--repaint-history
+     (mapcar (lambda (row) (assq-delete-all 'row_id (copy-tree row)))
+             hermes-test-rewind-history)
+     (copy-hash-table hermes-chat--nodes))
+    (should (equal (hermes-test--contents)
+                   '("First question" "First answer" "Second question"
+                     "Second answer" "Third question" "Third answer")))))
+
+(ert-deftest hermes-chat-history-reconcile-retires-dropped-task-node ()
+  "Dropping the turn with the task node forgets the node's id."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (hermes-test--insert-turn-extras)
+    (hermes-chat--request-history-reconcile)
+    (funcall (plist-get (car reads) :resolve)
+             `((messages . ,(seq-take hermes-test-rewind-history 4))))
+    (should-not (plist-get hermes-chat-todos--turn-entry :id))))
+
+(ert-deftest hermes-chat-busy-submit-binds-receipt-row ()
+  "A queued busy submit keeps the row its receipt names."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (hermes-chat--settle-busy-submit
+     '(:content "Fourth question" :events nil)
+     '((status . "queued") (user_row_id . 21)))
+    (let ((entry (ewoc-data (gethash hermes-chat--server-queued-user-id
+                                     hermes-chat--nodes))))
+      (should (= (plist-get entry :turn-row) 21)))
+    (let ((ids (hermes-test--insert-turn-extras)))
+      (hermes-chat--repaint-history
+       (append hermes-test-rewind-history
+               '(((role . "user") (text . "Fourth question") (row_id . 21))
+                 ((role . "assistant") (text . "Fourth answer"))))
+       (copy-hash-table hermes-chat--nodes))
+      (should (gethash (car ids) hermes-chat--nodes))
+      (should (gethash (cadr ids) hermes-chat--nodes)))))
+
+(ert-deftest hermes-chat-persisted-turn-binds-turn-row ()
+  "A terminal receipt names the turn's user row; redirects are skipped."
+  (should (eql (plist-get (hermes-dashboard-transport--message-complete-event
+                           "message.complete" '((session_id . "s"))
+                           '((text . "done") (status . "complete")
+                             (persisted_turn . ((row_ids . [21 22])
+                                                (user_row_id . 21)))))
+                          :user-row-id)
+               21))
+  (should (member '(bind-turn-row . 21)
+                  (hermes-chat--turn-done-effects
+                   '(:type done :content "x" :user-row-id 21) nil)))
+  (should (member '(bind-turn-row . 21)
+                  (hermes-chat--turn-error-effects
+                   '(:type error :content "x" :user-row-id 21) nil)))
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (hermes-chat--settle-busy-submit
+     '(:content "Fourth question" :events nil) '((status . "queued")))
+    (let ((user-id hermes-chat--server-queued-user-id)
+          (assistant-id hermes-chat--server-queued-assistant-id))
+      (should-not (plist-get (ewoc-data (gethash user-id hermes-chat--nodes))
+                             :turn-row))
+      (hermes-chat--insert-entry
+       (hermes-chat--entry-with (hermes-chat--make-entry 'user "Also" 'done)
+                                :redirect t))
+      (let ((later (hermes-chat--make-entry 'assistant "Fourth answer" 'done)))
+        (hermes-chat--insert-entry later)
+        (hermes-chat--apply-turn-effect (plist-get later :id)
+                                        '(bind-turn-row . 21)))
+      (should (= (plist-get (ewoc-data (gethash user-id hermes-chat--nodes))
+                            :turn-row)
+                 21))
+      (ignore assistant-id))))
+
+(ert-deftest hermes-chat-history-reconcile-keeps-cards-by-call-id ()
+  "A row-less live turn keeps its card and task node through its tool call."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'user "Fourth question" 'done))
+    (let* ((ids (hermes-test--insert-turn-extras "call-9"))
+           (card (gethash (car ids) hermes-chat--nodes)))
+      (hermes-chat--insert-entry
+       (hermes-chat--make-entry 'assistant "Stale local answer" 'done))
+      (hermes-chat--repaint-history
+       (append hermes-test-rewind-history
+               '(((role . "user") (text . "Fourth question") (row_id . 21))
+                 ((role . "tool") (name . "delegate_task") (context . "spawn")
+                  (tool_call_id . "call-9"))
+                 ((role . "assistant") (text . "Fourth answer") (row_id . 23))))
+       (copy-hash-table hermes-chat--nodes))
+      (should (eq (gethash (car ids) hermes-chat--nodes) card))
+      (should (gethash (cadr ids) hermes-chat--nodes))
+      (should (= 1 (seq-count (lambda (entry) (eq (plist-get entry :role) 'tool))
+                              (hermes-chat--entries))))
+      ;; Live presentation stays above the reply, as it streamed.
+      (should (equal (last (hermes-test--contents) 3)
+                     '("delegate_task" "" "Fourth answer")))
+      (should-not (string-match-p "Stale local answer" (buffer-string)))
+      (should (equal (hermes-test--user-row-ids) '(11 13 15 21))))))
+
+(ert-deftest hermes-chat-history-reconcile-rebuild-cost ()
+  "Rebuilding a long transcript stays well under a second."
+  (hermes-test-with-rewind-chat (_submits _reads _prompts)
+    (let ((rows (cl-loop for i from 1 to 400
+                         append `(((role . "user") (text . ,(format "Q%d" i))
+                                   (row_id . ,(* 2 i)))
+                                  ((role . "assistant") (text . ,(format "A%d" i))
+                                   (row_id . ,(1+ (* 2 i))))))))
+      (hermes-chat--repaint-history rows (copy-hash-table hermes-chat--nodes))
+      (let ((start (float-time)))
+        (hermes-chat--repaint-history
+         (append rows '(((role . "user") (text . "Q401") (row_id . 900))))
+         (copy-hash-table hermes-chat--nodes))
+        (should (< (- (float-time) start) 1.0)))
+      (should (= (length (hermes-chat--entries)) 801)))))
 
 
 (provide 'hermes-chat-history-tests)

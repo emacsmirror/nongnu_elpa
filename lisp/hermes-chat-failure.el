@@ -38,8 +38,6 @@
                   (name arg raw))
 (declare-function hermes-chat-switch-model "hermes-chat-models"
                   (&optional refresh))
-(declare-function hermes-chat--mark-transformed-assistant "hermes-chat"
-                  (assistant-id content &optional status))
 
 ;;;; Pure presentation
 
@@ -162,48 +160,79 @@ does not call the failure deterministic; a billing wall never retries."
 
 ;;;; Entry state
 
-(defun hermes-chat-failure-retained-entries (retained last-user)
+(defun hermes-chat-failure-retained-entries (retained &optional prompt)
   "Return the chat entries rebuilding a RETAINED failed turn on resume.
-RETAINED is a `hermes-transport-retained-turn-failure' plist.  Its prompt
-is shown unless LAST-USER, the newest restored user text, already is it.
+RETAINED is a `hermes-transport-retained-turn-failure' plist.  With PROMPT,
+its user text opens the turn; otherwise the transcript already shows it.
 A structured failure renders as a failure block under the partial reply;
 without one, the reply and raw error render like a plain failure."
-  (let ((user (plist-get retained :user))
-        (partial (plist-get retained :partial-text))
-        (failure (plist-get retained :failure)))
+  (let ((user (plist-get retained :user)))
     (delq nil
-          (list (and user (not (equal user last-user))
-                     (hermes-chat--make-entry 'user user 'done))
-                (if failure
-                    (hermes-chat--make-entry 'assistant (or partial "") 'error
-                                             nil (list :failure failure))
-                  (hermes-chat--make-entry
-                   'assistant
-                   (string-join (delq nil (list partial
-                                                (plist-get retained :error)))
-                                "\n\n")
-                   'error))))))
+          (list (and prompt user (hermes-chat--make-entry 'user user 'done))
+                (hermes-chat-failure-retained-reply
+                 (hermes-chat--make-entry 'assistant "" 'error)
+                 retained)))))
+
+(defun hermes-chat-failure-retained-reply (entry retained)
+  "Return assistant ENTRY settled as the reply of RETAINED's failed turn.
+ENTRY's text is the reply when it has one, as when history already holds
+the partial; else the retained partial is.  Applying it again is a no-op.  Pure."
+  (let* ((failure (plist-get retained :failure))
+         (error (plist-get retained :error))
+         (text (or (hermes-transport--non-empty-string (plist-get entry :content))
+                   (plist-get retained :partial-text)))
+         (content (if (or failure (null error)
+                          (and text (string-suffix-p error text)))
+                      (or text "")
+                    (string-join (delq nil (list text error)) "\n\n"))))
+    (hermes-chat--entry-with
+     entry :status 'error :content content
+     :metadata (if failure
+                   (plist-put (copy-sequence (plist-get entry :metadata))
+                              :failure failure)
+                 (plist-get entry :metadata)))))
 
 (defun hermes-chat--entry-failure (entry)
   "Return the structured failure stored on ENTRY, or nil."
   (plist-get (plist-get entry :metadata) :failure))
 
+(defun hermes-chat--turn-reply-ids (assistant-id)
+  "Return the ids of ASSISTANT-ID's reply segments, oldest first.
+The reply is every assistant entry since the last user entry before
+ASSISTANT-ID, the prompt or an accepted redirect, or since the assistant
+entry opening a backend-owned turn, through ASSISTANT-ID itself."
+  (let ((node (and hermes-chat--nodes (gethash assistant-id hermes-chat--nodes)))
+        ids)
+    (while node
+      (let ((entry (ewoc-data node)))
+        (if (eq (plist-get entry :role) 'user)
+            (setq node nil)
+          (when (eq (plist-get entry :role) 'assistant)
+            (push (plist-get entry :id) ids))
+          (setq node (and (not (plist-get entry :turn-start))
+                          (ewoc-prev hermes-chat--ewoc node))))))
+    ids))
+
 (defun hermes-chat--mark-assistant-failure (assistant-id failure status)
   "Settle ASSISTANT-ID in STATUS carrying structured FAILURE.
-A retained partial reply is the backend's whole retained text, so it
-replaces what streamed instead of extending it; the backend's prose
+A retained partial reply is the backend's whole text for the turn since
+its last user boundary, so it replaces every reply segment streamed since
+then with one segment instead of extending them; the backend's prose
 account is not shown, because the failure block carries the same facts."
-  (let ((id (if-let* ((partial (plist-get failure :partial-text)))
-                (hermes-chat--mark-transformed-assistant
-                 assistant-id partial status)
-              assistant-id)))
-    (hermes-chat--update-entry
-     id
-     (lambda (entry)
-       (hermes-chat--entry-with
-        entry :status status
-        :metadata (plist-put (copy-sequence (plist-get entry :metadata))
-                             :failure failure))))))
+  (when-let* ((partial (plist-get failure :partial-text))
+              (ids (hermes-chat--turn-reply-ids assistant-id)))
+    ;; A redirect's saved prefix belongs to the turn before the boundary.
+    (let ((text (hermes-chat--assistant-segment-content (car ids) partial)))
+      (dolist (id (butlast ids))
+        (hermes-chat--remove-entry id t))
+      (hermes-chat--mark-assistant assistant-id status text t)))
+  (hermes-chat--update-entry
+   assistant-id
+   (lambda (entry)
+     (hermes-chat--entry-with
+      entry :status status
+      :metadata (plist-put (copy-sequence (plist-get entry :metadata))
+                           :failure failure)))))
 
 (defun hermes-chat--failure-node (&optional id)
   "Return the EWOC node of failure entry ID, or of the failure at point."
@@ -276,6 +305,16 @@ own following user entry arrived, so the walk stops at the previous one."
 
 (add-hook 'hermes-chat--entry-inserted-functions
           #'hermes-chat--failure-retire-retry)
+
+(defun hermes-chat-failure-refresh-actions ()
+  "Re-render every failure block so its actions fit the transcript now.
+A rebuild that bypasses `hermes-chat--entry-inserted-functions' calls this
+once, since Retry applies only while no user turn follows a failure."
+  (hermes-chat--preserve-input-point
+    (let ((inhibit-read-only t)
+          (buffer-undo-list t))
+      (hermes-chat--preserve-readers
+        (ewoc-map #'hermes-chat--entry-failure hermes-chat--ewoc)))))
 
 ;;;; Commands
 

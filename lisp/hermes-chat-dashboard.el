@@ -1557,11 +1557,14 @@ profile's workspace.  Keep the reservation through create and overrides."
    "Hermes session is still running; prompt was not submitted." t)
   (hermes-chat--settle-transport-entries assistant-id 'error))
 
-(defun hermes-chat--dashboard-insert-inflight-assistant ()
-  "Insert and return an assistant entry for a resumed in-flight turn."
+(defun hermes-chat--dashboard-insert-inflight-assistant (&optional turn-start)
+  "Insert and return an assistant entry for a resumed in-flight turn.
+With TURN-START the entry opens a backend-owned turn that has no visible
+user entry, so it bounds its turn the way a user entry does."
   (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
          (assistant-id (plist-get entry :id)))
-    (hermes-chat--insert-entry entry)
+    (hermes-chat--insert-entry
+     (if turn-start (plist-put entry :turn-start t) entry))
     assistant-id))
 
 (defun hermes-chat--dispatch-accepted-transport-event
@@ -1652,7 +1655,7 @@ profile's workspace.  Keep the reservation through create and overrides."
                      (equal hermes-chat--dashboard-active-session-id
                             (plist-get context :session-id)))
                 (plist-get context :assistant-id)
-              (hermes-chat--dashboard-insert-inflight-assistant))))
+              (hermes-chat--dashboard-insert-inflight-assistant t))))
       (hermes-chat--clear-active-tools)
       (setq hermes-chat--dashboard-running-p t
             hermes-chat--pending-assistant-id assistant-id

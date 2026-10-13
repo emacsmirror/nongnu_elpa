@@ -229,6 +229,15 @@ pending reply; never while an old stream is suppressed."
                     :items (plist-get hermes-chat-todos--turn-entry :items)))
         (hermes-chat--insert-entry entry (hermes-chat--pending-assistant-node)))))))
 
+(defun hermes-chat-todos-forget-removed-entry ()
+  "Forget this turn's task node once the transcript no longer has it.
+A transcript rebuild may drop the turn that showed it."
+  (when-let* ((id (plist-get hermes-chat-todos--turn-entry :id))
+              ((not (and (hash-table-p hermes-chat--nodes)
+                         (gethash id hermes-chat--nodes)))))
+    (setq hermes-chat-todos--turn-entry
+          (plist-put (copy-sequence hermes-chat-todos--turn-entry) :id nil))))
+
 (defun hermes-chat-todos--open-button (_button)
   "Open the live task panel from a transcript task node."
   (hermes-chat-show-todos))

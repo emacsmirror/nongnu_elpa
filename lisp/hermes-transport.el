@@ -970,6 +970,12 @@ The :final-text field preserves literal text when PAYLOAD has no error."
     (when-let* (((eq (plist-get event :type) 'error))
                 (failure (hermes-transport-turn-failure payload)))
       (setq event (plist-put event :failure failure)))
+    ;; The receipt names the committed user row that opened this turn.
+    (when-let* ((row (hermes-transport-row-id
+                      (hermes-transport--get
+                       (hermes-transport--get payload 'persisted_turn)
+                       'user_row_id))))
+      (setq event (plist-put event :user-row-id row)))
     event))
 
 (defun hermes-dashboard-transport--message-interim-event (type params payload)

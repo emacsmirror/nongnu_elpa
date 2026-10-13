@@ -316,10 +316,14 @@ line."
       (append (list (cons 'set-dashboard-running running))
               (unless running '((drain)))))))
 
-(defun hermes-chat--turn-terminal-suffix (status)
-  "Return the ordered terminal settlement effects for STATUS."
-  (list (cons 'settle status) '(finish) '(clear-pending)
-        '(set-dashboard-running) '(drain)))
+(defun hermes-chat--turn-terminal-suffix (status &optional event)
+  "Return the ordered terminal settlement effects for STATUS.
+A committed user row named by terminal EVENT first binds the turn."
+  (append
+   (and-let* ((row (plist-get event :user-row-id)))
+     (list (cons 'bind-turn-row row)))
+   (list (cons 'settle status) '(finish) '(clear-pending)
+         '(set-dashboard-running) '(drain))))
 
 (defun hermes-chat--turn-done-effects (event status)
   "Return the ordered effect list for a `done' EVENT with header STATUS.
@@ -339,7 +343,7 @@ re-submits any queued turn."
                (and-let* ((warning (plist-get event :warning)))
                  (cons 'warning warning))
                '(drop-thinking)))
-   (hermes-chat--turn-terminal-suffix 'done)))
+   (hermes-chat--turn-terminal-suffix 'done event)))
 
 (defun hermes-chat--turn-suppressed-effects (event status)
   "Return the ordered effect list for a `suppressed-terminal' EVENT.
@@ -352,7 +356,8 @@ assistant entry, so the reply placeholder keeps its text."
          (cons 'clear-prompts (plist-get event :original))
          (cons 'mark-status (plist-get event :settle-status))
          '(drop-thinking))
-   (hermes-chat--turn-terminal-suffix (plist-get event :settle-status))))
+   (hermes-chat--turn-terminal-suffix (plist-get event :settle-status)
+                                      (plist-get event :original))))
 
 (defun hermes-chat--turn-error-effects (event status)
   "Return the ordered effect list for an `error' EVENT with header STATUS."
@@ -371,7 +376,7 @@ assistant entry, so the reply placeholder keeps its text."
                (if-let* ((failure (plist-get event :failure)))
                    (cons 'mark-failure (cons failure estatus))
                  (cons 'append-error (cons content estatus))))))
-     (hermes-chat--turn-terminal-suffix estatus))))
+     (hermes-chat--turn-terminal-suffix estatus event))))
 
 (defun hermes-chat--turn-reduce-status (state event now)
   "Return (NEW-STATE . EFFECTS) for a status EVENT on STATE at time NOW.
@@ -502,16 +507,13 @@ interim from before a steer or redirect never counts."
               ((eq (plist-get entry :role) 'user) (setq node nil)))))
     found))
 
-(defun hermes-chat--mark-transformed-assistant
-    (assistant-id content &optional status)
+(defun hermes-chat--mark-transformed-assistant (assistant-id content)
   "Settle transformed final CONTENT as ASSISTANT-ID's authoritative reply.
 An output hook rewrote the final after streaming, so CONTENT replaces the
 streamed text instead of extending it.  When nothing streamed since the
-latest interim of this turn, CONTENT replaces that sealed interim.
-STATUS defaults to `done'.  Return the ID of the entry now holding CONTENT."
+latest interim of this turn, CONTENT replaces that sealed interim."
   (let ((interim-id hermes-chat--dashboard-interim-assistant-id)
-        (text (or content ""))
-        (status (or status 'done)))
+        (text (or content "")))
     (if (and interim-id
              (not (equal interim-id assistant-id))
              (string-empty-p
@@ -519,10 +521,8 @@ STATUS defaults to `done'.  Return the ID of the entry now holding CONTENT."
              (hermes-chat--interim-precedes-p interim-id assistant-id))
         (progn
           (hermes-chat--remove-entry assistant-id)
-          (hermes-chat--mark-assistant interim-id status text t)
-          interim-id)
-      (hermes-chat--mark-assistant assistant-id status text t)
-      assistant-id)))
+          (hermes-chat--mark-assistant interim-id 'done text t))
+      (hermes-chat--mark-assistant assistant-id 'done text t))))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
   "Settle previewed CONTENT on its interim entry, or ASSISTANT-ID as fallback."
@@ -587,6 +587,7 @@ stays side-effect-light."
     (`(mark-status . ,status)
      (hermes-chat--mark-assistant assistant-id status nil t))
     ('(drop-thinking) (hermes-chat--drop-duplicate-thinking assistant-id))
+    (`(bind-turn-row . ,row) (hermes-chat--bind-turn-row assistant-id row))
     (`(settle . ,status)
      (hermes-chat--images-settle assistant-id status)
      (hermes-chat--settle-transport-entries assistant-id status))
@@ -665,12 +666,13 @@ of its own."
             hermes-chat--server-queued-prior-terminal-p nil))))
 
 (defun hermes-chat--activate-backend-turn (content)
-  "Record CONTENT as a backend-started turn and make it current."
+  "Record CONTENT as a backend-started turn and make it current.
+Return the new user entry's id."
   (when-let* ((assistant-id hermes-chat--pending-assistant-id))
     (hermes-chat--mark-assistant assistant-id 'done nil t)
     (hermes-chat--settle-transport-entries assistant-id 'done)
     (hermes-chat--dashboard-finish-assistant assistant-id))
-  (pcase-let ((`(,_user-id . ,assistant-id)
+  (pcase-let ((`(,user-id . ,assistant-id)
                (hermes-chat--insert-backend-turn content)))
     (hermes-chat--clear-active-tools)
     (hermes-chat-todos--begin assistant-id)
@@ -684,12 +686,15 @@ of its own."
           hermes-chat--process hermes-chat--dashboard-client)
     (hermes-chat--set-header-state
      :status 'pending :activity "Waiting for Hermes"
-     :assistant-id assistant-id)))
+     :assistant-id assistant-id)
+    user-id))
 
 (defun hermes-chat--accept-redirected-content (context)
   "Insert CONTEXT's accepted input at the held stream boundary.
 Events have been held since submission, so the original assistant still ends
-at that boundary even when a terminal event preceded the receipt."
+at that boundary even when a terminal event preceded the receipt.  The entry
+is marked `:redirect': it continues the running turn rather than opening one.
+Return its id."
   (let* ((assistant-id (plist-get context :assistant-id))
          (node (and hermes-chat--nodes (gethash assistant-id hermes-chat--nodes)))
          (entry (and node (ewoc-data node))))
@@ -698,11 +703,13 @@ at that boundary even when a terminal event preceded the receipt."
             (prefix (concat (plist-get entry :stream-prefix) (plist-get entry :content))))
         (hermes-chat--update-entry
          next-id (lambda (next) (hermes-chat--entry-with next :stream-prefix prefix))))))
-  (hermes-chat--insert-entry
-   (hermes-chat--make-entry 'user (plist-get context :content) 'done)
-   (hermes-chat--pending-assistant-node))
-  (when-let* ((admission (plist-get context :admission)))
-    (setf (plist-get admission :assistant-id) hermes-chat--pending-assistant-id)))
+  (let ((entry (hermes-chat--entry-with
+                (hermes-chat--make-entry 'user (plist-get context :content) 'done)
+                :redirect t)))
+    (hermes-chat--insert-entry entry (hermes-chat--pending-assistant-node))
+    (when-let* ((admission (plist-get context :admission)))
+      (setf (plist-get admission :assistant-id) hermes-chat--pending-assistant-id))
+    (plist-get entry :id)))
 
 (defun hermes-chat--message-start-event-p (event)
   "Return non-nil when EVENT is an assistant message start."
@@ -722,32 +729,40 @@ at that boundary even when a terminal event preceded the receipt."
       (funcall callback event))))
 
 (defun hermes-chat--resolve-streaming-busy-submit (context content events)
-  "Activate CONTEXT's streaming CONTENT and replay EVENTS at their boundary."
+  "Activate CONTEXT's streaming CONTENT and replay EVENTS at their boundary.
+Return the new user entry's id."
   (let* ((start (cl-position-if #'hermes-chat--message-start-event-p events))
          (before (if start (seq-take events start) events))
          (after (and start (nthcdr start events))))
     (hermes-chat--replay-busy-submit-events context before)
-    (hermes-chat--activate-backend-turn content)
-    (when-let* ((admission (plist-get context :admission)))
-      (setf (plist-get admission :assistant-id) hermes-chat--pending-assistant-id))
-    (hermes-chat--replay-busy-submit-events context after)))
+    (prog1 (hermes-chat--activate-backend-turn content)
+      (when-let* ((admission (plist-get context :admission)))
+        (setf (plist-get admission :assistant-id) hermes-chat--pending-assistant-id))
+      (hermes-chat--replay-busy-submit-events context after))))
 
 (defun hermes-chat--settle-busy-submit (context result)
   "Settle busy submission CONTEXT from backend RESULT and replay held events."
   (let ((content (plist-get context :content))
         (events (hermes-chat--busy-submit-events context))
         (status (hermes-chat--status-name
-                 (hermes-chat--result-string result 'status))))
+                 (hermes-chat--result-string result 'status)))
+        ;; A receipt may name the committed user row; terminal events
+        ;; carry it otherwise (`hermes-chat--bind-turn-row').
+        (row (hermes-transport--get result 'user_row_id)))
     (hermes-chat--image-admission-ack (plist-get context :admission) result)
     (setq hermes-chat--busy-submit-context nil)
     (pcase status
       ("queued"
        (hermes-chat--record-server-queued-content content)
+       (hermes-chat--bind-row-id hermes-chat--server-queued-user-id row)
        (hermes-chat--replay-busy-submit-events context events))
       ((or "steered" "redirected")
-       (hermes-chat--accept-redirected-content context)
+       (hermes-chat--bind-row-id
+        (hermes-chat--accept-redirected-content context) row)
        (hermes-chat--replay-busy-submit-events context events))
-      (_ (hermes-chat--resolve-streaming-busy-submit context content events)))))
+      (_ (hermes-chat--bind-row-id
+          (hermes-chat--resolve-streaming-busy-submit context content events)
+          row t)))))
 
 (defun hermes-chat--hold-busy-submit-event (event)
   "Hold EVENT while a busy submission awaits the backend policy result."
@@ -2216,15 +2231,19 @@ Use the backend's display projection; hidden rows return nil."
                   entry))))
         ("assistant" (and text (hermes-chat--make-entry 'assistant text 'done)))
         ("tool"
-         (hermes-chat--make-entry
-          'tool
-          (hermes-chat--tool-head
-           (or (hermes-transport--scalar-string
-                (hermes-transport--get message 'name))
-               "tool")
-           (hermes-transport--scalar-string
-            (hermes-transport--get message 'context)))
-          'done))))))
+         (let ((entry (hermes-chat--make-entry
+                       'tool
+                       (hermes-chat--tool-head
+                        (or (hermes-transport--scalar-string
+                             (hermes-transport--get message 'name))
+                            "tool")
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get message 'context)))
+                       'done)))
+           (if-let* ((call (hermes-transport--non-empty-string
+                            (hermes-transport--get message 'tool_call_id))))
+               (plist-put entry :tool-call-id call)
+             entry)))))))
 
 (defun hermes-chat--history-entries (message)
   "Return the chat entries for a resumed history MESSAGE, in order.
@@ -2242,22 +2261,53 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
   (hermes-chat--render-history-entries
    (mapcan #'hermes-chat--history-entries messages)))
 
+(defun hermes-chat--newest-turn ()
+  "Return (USER-NODE . REPLY-NODES) for the transcript's newest user turn.
+REPLY-NODES are the assistant nodes after USER-NODE, oldest first."
+  (let ((node (ewoc-nth hermes-chat--ewoc -1))
+        replies)
+    (while (and node (not (eq (plist-get (ewoc-data node) :role) 'user)))
+      (when (eq (plist-get (ewoc-data node) :role) 'assistant)
+        (push node replies))
+      (setq node (ewoc-prev hermes-chat--ewoc node)))
+    (cons node replies)))
+
 (defun hermes-chat--render-retained-failure (result)
   "Rebuild the failed turn that resume RESULT retained, if any.
 Only an idle session's snapshot is a settled failure; a live one belongs
-to the running turn."
+to the running turn.  The snapshot carries no row identity, so it is the
+newest turn only when that shows the same prompt and either no reply yet
+or the retained partial itself; the failure then settles that reply.
+Otherwise the failed turn follows, prompt included."
   (when-let* (((not (hermes-chat--dashboard-result-live-turn-p result)))
               (retained (hermes-transport-retained-turn-failure
                          (hermes-transport--get result 'inflight))))
-    (hermes-chat--render-history-entries
-     (hermes-chat-failure-retained-entries
-      retained
-      (cl-loop for node = (ewoc-nth hermes-chat--ewoc -1)
-               then (ewoc-prev hermes-chat--ewoc node)
-               while node
-               for entry = (ewoc-data node)
-               when (eq (plist-get entry :role) 'user)
-               return (plist-get entry :content))))))
+    (pcase-let* ((`(,user . ,replies) (hermes-chat--newest-turn))
+                 (partial (plist-get retained :partial-text))
+                 (same (and user
+                            (equal (plist-get retained :user)
+                                   (plist-get (ewoc-data user) :content))
+                            (or (null replies)
+                                (and partial
+                                     (hermes-chat--text-echoes-p
+                                      partial
+                                      (mapconcat (lambda (node)
+                                                   (plist-get (ewoc-data node) :content))
+                                                 replies " ")))))))
+      (if (and same replies)
+          (let* ((node (car (last replies)))
+                 (entry (hermes-chat-failure-retained-reply
+                         (ewoc-data node) retained))
+                 (owner hermes-chat--session-bootstrap))
+            ;; Bootstrap cleanup removes history entries by identity.
+            (when owner (push entry (plist-get owner :history-entries)))
+            (hermes-chat--preserve-input-point
+              (let ((inhibit-read-only t)
+                    (buffer-undo-list t))
+                (ewoc-set-data node entry)
+                (ewoc-invalidate hermes-chat--ewoc node))))
+        (hermes-chat--render-history-entries
+         (hermes-chat-failure-retained-entries retained (not same)))))))
 
 (defun hermes-chat--render-history-entries (entries)
   "Insert resumed history ENTRIES into the transcript."
@@ -2484,18 +2534,37 @@ stale: read again once the chat is idle."
       (hermes-chat--repaint-history (hermes-transport--get result 'messages)
                                     (plist-get owner :known)))))
 
+(defun hermes-chat--bind-turn-row (assistant-id row)
+  "Record committed user ROW as the identity of ASSISTANT-ID's turn.
+The turn opens at the last user entry before ASSISTANT-ID that is not an
+accepted redirect, or at the assistant entry opening a backend-owned turn.
+An identity the submit receipt already bound stays."
+  (let ((node (and hermes-chat--nodes (gethash assistant-id hermes-chat--nodes)))
+        found)
+    (while (and node (not found))
+      (let ((entry (ewoc-data node)))
+        (if (or (plist-get entry :turn-start)
+                (and (eq (plist-get entry :role) 'user)
+                     (not (plist-get entry :redirect))))
+            (setq found node)
+          (setq node (ewoc-prev hermes-chat--ewoc node)))))
+    (when-let* ((row (hermes-transport-row-id row))
+                ((and found (not (plist-get (ewoc-data found) :turn-row)))))
+      (ewoc-set-data found (plist-put (ewoc-data found) :turn-row row)))))
+
 (defun hermes-chat--split-turns (items entry-of)
   "Split ITEMS into one (ROW . ITEMS) per turn, in transcript order.
-ENTRY-OF maps an item to its chat entry.  A user entry starts a turn whose
-ROW is the entry's durable :turn-row, or nil without one; items before the
-first user entry form the turn `prefix'.  Pure."
-  (let (turns)
+ENTRY-OF maps an item to its chat entry.  A user entry, or an assistant
+entry opening a backend-owned turn, starts a turn whose ROW is the
+entry's durable :turn-row, or nil without one; items before the first
+turn form the turn `prefix', which is always first.  Pure."
+  (let ((turns (list (list 'prefix))))
     (dolist (item items)
       (let ((entry (funcall entry-of item)))
-        (cond ((eq (plist-get entry :role) 'user)
-               (push (list (plist-get entry :turn-row) item) turns))
-              (turns (push item (cdar turns)))
-              (t (push (list 'prefix item) turns)))))
+        (if (or (eq (plist-get entry :role) 'user)
+                (plist-get entry :turn-start))
+            (push (list (plist-get entry :turn-row) item) turns)
+          (push item (cdar turns)))))
     (mapcar (lambda (turn) (cons (car turn) (reverse (cdr turn))))
             (nreverse turns))))
 
@@ -2507,48 +2576,198 @@ first user entry form the turn `prefix'.  Pure."
       (setq node (ewoc-next hermes-chat--ewoc node)))
     (nreverse nodes)))
 
+(defun hermes-chat--entry-tool-call-id (entry)
+  "Return the durable tool call id of tool ENTRY, or nil."
+  (and (eq (plist-get entry :role) 'tool)
+       (or (plist-get entry :tool-call-id)
+           (plist-get (plist-get (plist-get entry :metadata) :event)
+                      :tool-call-id))))
+
+(defun hermes-chat--local-presentation-p (entry)
+  "Return non-nil when ENTRY is presentation history cannot rebuild.
+Worker cards qualify, as does any role history never has, such as task
+nodes, diffs and status lines."
+  (or (plist-get entry :card)
+      (not (memq (plist-get entry :role) '(user assistant commentary tool)))))
+
+(defun hermes-chat--same-content-p (node entry)
+  "Return non-nil when NODE already displays history ENTRY's content."
+  (let ((shown (ewoc-data node)))
+    (and (eq (plist-get shown :role) (plist-get entry :role))
+         (not (hermes-chat--entry-tool-call-id shown))
+         (equal (plist-get shown :content) (plist-get entry :content)))))
+
+(defun hermes-chat--repaint-turn (want turn by-call used)
+  "Plan rebuilding history turn WANT over local TURN.
+WANT is a history (ROW . ENTRIES) turn and TURN the local (ROW . NODES)
+turn with the same identity, or nil.  The value is (ITEMS . UPDATES).
+ITEMS lists, in order, WANT's
+entries with each replaced by the local node already showing it: a tool
+row by its call id in BY-CALL, any other entry by equal content in TURN.
+TURN's local presentation stays in place between them, and its failure
+settles the reply when that reply is the failure's partial, or stays as
+is when the history has no reply.  USED marks claimed nodes.  The
+\(NODE . ENTRY) pairs in UPDATES refresh a kept node's identity or failure."
+  (let ((pending (cdr turn)) items updates)
+    (cl-flet ((advance (node)
+                ;; Keep TURN's presentation that precedes NODE.
+                (when-let* ((tail (memq node pending)))
+                  (while (not (eq (car pending) node))
+                    (let ((skipped (pop pending)))
+                      (when (hermes-chat--local-presentation-p (ewoc-data skipped))
+                        (push skipped items))))
+                  (setq pending (cdr tail)))))
+      (dolist (entry (cdr want))
+        (let ((node (if-let* ((call (hermes-chat--entry-tool-call-id entry)))
+                        (gethash call by-call)
+                      (seq-find (lambda (node) (hermes-chat--same-content-p node entry))
+                                pending))))
+          (if (or (null node) (gethash node used))
+              (push entry items)
+            (puthash node t used)
+            (advance node)
+            (push node items)
+            (when (eq (plist-get entry :role) 'user)
+              (let ((shown (ewoc-data node)))
+                (unless (and (equal (plist-get shown :row-id) (plist-get entry :row-id))
+                             (equal (plist-get shown :turn-row) (plist-get entry :turn-row)))
+                  (push (cons node (hermes-chat--entry-with
+                                    shown :row-id (plist-get entry :row-id)
+                                    :turn-row (plist-get entry :turn-row)))
+                        updates)))))))
+      ;; Live presentation streamed above the turn's final reply.
+      (let ((reply (and items (not (hermes-chat--node-item-p (car items)))
+                        (eq (plist-get (car items) :role) 'assistant)
+                        (pop items))))
+        (dolist (node pending)
+          (when (hermes-chat--local-presentation-p (ewoc-data node))
+            (push node items)))
+        (when reply (push reply items))))
+    (when-let* ((failed (seq-find (lambda (node)
+                                    (hermes-chat--entry-failure (ewoc-data node)))
+                                  (reverse (cdr turn))))
+                ((not (gethash failed used))))
+      ;; ITEMS is still newest first.
+      (let* ((reply (seq-find (lambda (item)
+                                (eq (plist-get (hermes-chat--item-entry item) :role)
+                                    'assistant))
+                              items))
+             (shown (and reply (hermes-chat--item-entry reply)))
+             (partial (plist-get (ewoc-data failed) :content)))
+        (cond
+         ((null reply) (push failed items))
+         ((and (not (string-empty-p (or partial "")))
+               (hermes-chat--text-echoes-p partial (plist-get shown :content)))
+          (let ((settled (hermes-chat--entry-with
+                          shown :status 'error
+                          :metadata (plist-put
+                                     (copy-sequence (plist-get shown :metadata))
+                                     :failure (hermes-chat--entry-failure
+                                               (ewoc-data failed))))))
+            (if (hermes-chat--node-item-p reply)
+                (push (cons reply settled) updates)
+              (setq items (cl-substitute settled reply items :test #'eq))))))))
+    (cons (nreverse items) updates)))
+
+(defun hermes-chat--node-item-p (item)
+  "Return non-nil when repaint ITEM is a kept EWOC node, not a new entry."
+  (not (keywordp (car-safe item))))
+
+(defun hermes-chat--item-entry (item)
+  "Return the chat entry that repaint ITEM displays."
+  (if (hermes-chat--node-item-p item) (ewoc-data item) item))
+
 (defun hermes-chat--repaint-history (messages known)
-  "Reconcile the transcript with history MESSAGES by durable turn identity.
-Turns the history still has keep their entries, with live worker cards and
-task nodes; turns it no longer has are removed; turns shown here without
-an identity, or not at all, are inserted from the history in its order.
-Local status lines added since KNOWN, a node table snapshot, stay, so the
-notice that caused the repaint remains visible."
-  (let ((wanted (hermes-chat--split-turns
-                 (mapcan #'hermes-chat--history-entries messages) #'identity))
-        (kept (make-hash-table :test #'eql))
+  "Rebuild the transcript from history MESSAGES, its authority for content.
+Every turn shows exactly the history's entries, in its order.  A node
+already showing an entry stays: a tool row or worker card matched by its
+durable call id, anything else by equal content within the turn with the
+same durable user row (or the same tool calls).  That turn's local
+presentation, such as task nodes and diffs, and its failure stay with
+it; anything else is removed, so content from dropped or replaced turns
+never survives.  Local status lines added since KNOWN, a node table
+snapshot, stay, so the notice that caused the repaint remains visible."
+  (let* ((wanted (hermes-chat--split-turns
+                  (mapcan #'hermes-chat--history-entries messages) #'identity))
+         (local (hermes-chat--split-turns (hermes-chat--ewoc-nodes) #'ewoc-data))
+         (by-row (make-hash-table :test #'eql))
+         (by-call (make-hash-table :test #'equal))
+         (turn-of (make-hash-table :test #'eq))
+         (used (make-hash-table :test #'eq))
+         (claimed (make-hash-table :test #'eq))
+         items updates)
+    (dolist (turn local)
+      (when (and (car turn) (not (gethash (car turn) by-row)))
+        (puthash (car turn) turn by-row))
+      (dolist (node (cdr turn))
+        (puthash node turn turn-of)
+        (when-let* ((call (hermes-chat--entry-tool-call-id (ewoc-data node))))
+          (unless (gethash call by-call) (puthash call node by-call)))))
+    (dolist (want wanted)
+      (let ((turn (or (and (car want) (gethash (car want) by-row))
+                      (seq-some (lambda (entry)
+                                  (when-let* ((call (hermes-chat--entry-tool-call-id entry))
+                                              (node (gethash call by-call)))
+                                    (gethash node turn-of)))
+                                (cdr want)))))
+        (when (gethash turn claimed) (setq turn nil))
+        (when turn (puthash turn t claimed))
+        (pcase-let ((`(,turn-items . ,turn-updates)
+                     (hermes-chat--repaint-turn want turn by-call used)))
+          (setq items (nconc items turn-items)
+                updates (nconc turn-updates updates)))))
+    ;; The notices that caused this repaint stay last.
+    (dolist (node (hermes-chat--ewoc-nodes))
+      (let ((entry (ewoc-data node)))
+        (when (and (eq (plist-get entry :role) 'status)
+                   (not (gethash (plist-get entry :id) known))
+                   (not (memq node items)))
+          (setq items (nconc items (list node))))))
+    (hermes-chat--repaint-apply items updates)))
+
+(defun hermes-chat--repaint-apply (items updates)
+  "Make the transcript show ITEMS, kept nodes and new entries, in order.
+A kept node out of transcript order is printed anew from its data, since
+EWOC cannot move nodes.  Apply UPDATES, (NODE . ENTRY) pairs, to kept
+nodes, then let failures recompute which recovery actions still apply."
+  (let ((kept (make-hash-table :test #'eq))
+        (last 0)
         successor)
+    (setq items (mapcar (lambda (item)
+                          (if (and (hermes-chat--node-item-p item)
+                                   (> (ewoc-location item) last))
+                              (progn (setq last (ewoc-location item))
+                                     (puthash item t kept)
+                                     item)
+                            (if (hermes-chat--node-item-p item)
+                                (or (cdr (assq item updates)) (ewoc-data item))
+                              item)))
+                        items))
     (hermes-chat--preserve-input-point
       (let ((inhibit-read-only t)
             (buffer-undo-list t))
         (hermes-chat--preserve-readers
-          (dolist (turn (hermes-chat--split-turns (hermes-chat--ewoc-nodes)
-                                                  #'ewoc-data))
-            (if (and (car turn)
-                     (not (gethash (car turn) kept))
-                     (or (eq (car turn) 'prefix)
-                         (assoc (car turn) wanted)))
-                (puthash (car turn) (cadr turn) kept)
-              (dolist (node (cdr turn))
-                (let ((entry (ewoc-data node)))
-                  (unless (and (eq (plist-get entry :role) 'status)
-                               (not (gethash (plist-get entry :id) known)))
-                    (hermes-chat--stream-format-retire (plist-get entry :id))
-                    (remhash (plist-get entry :id) hermes-chat--nodes)
-                    (ewoc-delete hermes-chat--ewoc node))))))
-          ;; Walk backwards so each missing turn lands before its successor.
-          (dolist (turn (reverse wanted))
+          (dolist (node (hermes-chat--ewoc-nodes))
+            (unless (gethash node kept)
+              (let ((id (plist-get (ewoc-data node) :id)))
+                (hermes-chat--stream-format-retire id)
+                (remhash id hermes-chat--nodes)
+                (ewoc-delete hermes-chat--ewoc node))))
+          ;; Walk backwards so each new entry lands before its successor.
+          (dolist (item (reverse items))
             (setq successor
-                  (or (and (car turn) (gethash (car turn) kept))
-                      (let (first)
-                        (dolist (entry (cdr turn) first)
-                          (let ((node (if successor
-                                          (ewoc-enter-before hermes-chat--ewoc
-                                                             successor entry)
-                                        (ewoc-enter-last hermes-chat--ewoc entry))))
-                            (hermes-chat--register-node entry node)
-                            (setq first (or first node)))))
-                      successor))))))
+                  (if (hermes-chat--node-item-p item)
+                      item
+                    (hermes-chat--register-node
+                     item (if successor
+                              (ewoc-enter-before hermes-chat--ewoc successor item)
+                            (ewoc-enter-last hermes-chat--ewoc item))))))
+          (pcase-dolist (`(,node . ,entry) updates)
+            (when (gethash node kept)
+              (ewoc-set-data node entry)
+              (ewoc-invalidate hermes-chat--ewoc node)))
+          (hermes-chat-failure-refresh-actions))))
+    (hermes-chat-todos-forget-removed-entry)
     (hermes-chat--notify-state-change)))
 
 ;;; Editing earlier turns
