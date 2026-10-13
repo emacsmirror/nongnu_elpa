@@ -85,6 +85,16 @@ used first, annotated with session title, state and any divergent cwd.
   (=b=), Hand off (=H=) and Compress (=z=, =/compress=; =C-u= asks for a
   focus topic).  Activity (=B=) lists queue, workers, tasks and output;
   Directory (=w=) sets the chat's working directory.
+- =C-c C-g= (or Session menu, =g=) shows this session's goal, loop and
+  heartbeat as the backend reports them.  =n= and =p= move through sections
+  and criteria, =g= refreshes, and =?= offers only the actions valid now:
+  pause, resume, release a wait, add or remove criteria, stop or clear.
+  Clearing asks first.  The header shows a running or paused loop and goal
+  with budget and cadence, e.g. =Loop 2/5 · every 10m · next 14:05 · Goal
+  3/20 turns=, and nothing when none runs.  Start them with =/goal= and
+  =/loop= as usual.  A chat whose session was running automation resumes
+  it when the socket reconnects; other chats stay lazy.  The released
+  backend can add and remove criteria but not mark one done.
 - Stop processes asks the connected Hermes instance to stop every
   terminal process registered with it, across all of its chats, not only
   this one.  It does not cancel the running model turn or delegated
