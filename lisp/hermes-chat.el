@@ -2262,15 +2262,21 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
    (mapcan #'hermes-chat--history-entries messages)))
 
 (defun hermes-chat--newest-turn ()
-  "Return (USER-NODE . REPLY-NODES) for the transcript's newest user turn.
-REPLY-NODES are the assistant nodes after USER-NODE, oldest first."
+  "Return (USER-NODE . REPLY-NODES) for the transcript's newest turn.
+REPLY-NODES are the assistant nodes since the last turn boundary, oldest
+first.  USER-NODE is that boundary when it is a user entry, else nil: a
+backend-owned turn shows no prompt to match."
   (let ((node (ewoc-nth hermes-chat--ewoc -1))
-        replies)
-    (while (and node (not (eq (plist-get (ewoc-data node) :role) 'user)))
-      (when (eq (plist-get (ewoc-data node) :role) 'assistant)
-        (push node replies))
-      (setq node (ewoc-prev hermes-chat--ewoc node)))
-    (cons node replies)))
+        replies boundary)
+    (while (and node (not boundary))
+      (let ((entry (ewoc-data node)))
+        (when (eq (plist-get entry :role) 'assistant)
+          (push node replies))
+        (if (hermes-chat--turn-boundary-p entry)
+            (setq boundary node)
+          (setq node (ewoc-prev hermes-chat--ewoc node)))))
+    (cons (and boundary (eq (plist-get (ewoc-data boundary) :role) 'user) boundary)
+          replies)))
 
 (defun hermes-chat--render-retained-failure (result)
   "Rebuild the failed turn that resume RESULT retained, if any.
@@ -2543,9 +2549,8 @@ An identity the submit receipt already bound stays."
         found)
     (while (and node (not found))
       (let ((entry (ewoc-data node)))
-        (if (or (plist-get entry :turn-start)
-                (and (eq (plist-get entry :role) 'user)
-                     (not (plist-get entry :redirect))))
+        (if (and (hermes-chat--turn-boundary-p entry)
+                 (not (plist-get entry :redirect)))
             (setq found node)
           (setq node (ewoc-prev hermes-chat--ewoc node)))))
     (when-let* ((row (hermes-transport-row-id row))
@@ -2554,15 +2559,14 @@ An identity the submit receipt already bound stays."
 
 (defun hermes-chat--split-turns (items entry-of)
   "Split ITEMS into one (ROW . ITEMS) per turn, in transcript order.
-ENTRY-OF maps an item to its chat entry.  A user entry, or an assistant
-entry opening a backend-owned turn, starts a turn whose ROW is the
-entry's durable :turn-row, or nil without one; items before the first
-turn form the turn `prefix', which is always first.  Pure."
+ENTRY-OF maps an item to its chat entry.  A turn boundary
+\(`hermes-chat--turn-boundary-p') starts a turn whose ROW is the entry's
+durable :turn-row, or nil without one; items before the first turn form
+the turn `prefix', which is always first.  Pure."
   (let ((turns (list (list 'prefix))))
     (dolist (item items)
       (let ((entry (funcall entry-of item)))
-        (if (or (eq (plist-get entry :role) 'user)
-                (plist-get entry :turn-start))
+        (if (hermes-chat--turn-boundary-p entry)
             (push (list (plist-get entry :turn-row) item) turns)
           (push item (cdar turns)))))
     (mapcar (lambda (turn) (cons (car turn) (reverse (cdr turn))))

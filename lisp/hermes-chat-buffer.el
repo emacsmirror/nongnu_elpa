@@ -1951,6 +1951,15 @@ Shown as annotations after the model in the chat header.")
       (setq copy (plist-put copy (pop props) (pop props))))
     copy))
 
+(defun hermes-chat--turn-boundary-p (entry)
+  "Return non-nil when transcript ENTRY opens a turn.
+A user entry does, the prompt or an accepted redirect, and so does an
+assistant entry marked `:turn-start' that opens a backend-owned turn
+with no visible user entry.  This is the one notion of turn boundary for
+grouping, reply segments, failure recovery and resume.  Pure."
+  (or (eq (plist-get entry :role) 'user)
+      (plist-get entry :turn-start)))
+
 (defun hermes-chat--make-entry (role content &optional status id metadata)
   "Return a chat entry plist for ROLE and CONTENT.
 STATUS defaults to `done'.  ID defaults to a generated local ID.

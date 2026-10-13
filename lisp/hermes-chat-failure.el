@@ -198,19 +198,17 @@ the partial; else the retained partial is.  Applying it again is a no-op.  Pure.
 
 (defun hermes-chat--turn-reply-ids (assistant-id)
   "Return the ids of ASSISTANT-ID's reply segments, oldest first.
-The reply is every assistant entry since the last user entry before
-ASSISTANT-ID, the prompt or an accepted redirect, or since the assistant
-entry opening a backend-owned turn, through ASSISTANT-ID itself."
+The reply is every assistant entry since the last turn boundary before
+ASSISTANT-ID (`hermes-chat--turn-boundary-p'), through ASSISTANT-ID
+itself; an assistant boundary is its own first segment."
   (let ((node (and hermes-chat--nodes (gethash assistant-id hermes-chat--nodes)))
         ids)
     (while node
       (let ((entry (ewoc-data node)))
-        (if (eq (plist-get entry :role) 'user)
-            (setq node nil)
-          (when (eq (plist-get entry :role) 'assistant)
-            (push (plist-get entry :id) ids))
-          (setq node (and (not (plist-get entry :turn-start))
-                          (ewoc-prev hermes-chat--ewoc node))))))
+        (when (eq (plist-get entry :role) 'assistant)
+          (push (plist-get entry :id) ids))
+        (setq node (and (not (hermes-chat--turn-boundary-p entry))
+                        (ewoc-prev hermes-chat--ewoc node)))))
     ids))
 
 (defun hermes-chat--mark-assistant-failure (assistant-id failure status)
@@ -241,18 +239,19 @@ account is not shown, because the failure block carries the same facts."
         (user-error "No turn failure at point"))))
 
 (defun hermes-chat--failure-latest-p (node)
-  "Return non-nil when no user turn follows failure NODE."
+  "Return non-nil when no turn boundary follows failure NODE.
+A later user entry or backend-owned turn makes the failure an old one."
   (let ((next (ewoc-next hermes-chat--ewoc node))
         (latest t))
     (while (and next latest)
-      (when (eq (plist-get (ewoc-data next) :role) 'user)
+      (when (hermes-chat--turn-boundary-p (ewoc-data next))
         (setq latest nil))
       (setq next (ewoc-next hermes-chat--ewoc next)))
     latest))
 
 (defun hermes-chat--failure-entry-actions (entry)
   "Return the recovery actions that apply to ENTRY's failure now.
-Retry applies only while no user turn follows the failure, because the
+Retry applies only while no turn follows the failure, because the
 backend's /retry rewinds to the last user message.  An entry not yet in
 the node table is being inserted last, so it counts as the latest."
   (let ((actions (hermes-chat-failure-actions
@@ -283,16 +282,17 @@ Signal `user-error' otherwise."
     (cons node failure)))
 
 (defun hermes-chat--failure-retire-retry (node)
-  "Re-render the failure that user entry NODE now follows.
+  "Re-render the failure that turn boundary NODE now follows.
 Its Retry no longer applies.  Older failures were refreshed when their
-own following user entry arrived, so the walk stops at the previous one."
-  (when (eq (plist-get (ewoc-data node) :role) 'user)
+own following boundary arrived, so the walk stops at the previous one;
+a backend-owned turn's failure is its own boundary, so it is checked
+first."
+  (when (hermes-chat--turn-boundary-p (ewoc-data node))
     (let ((prev (ewoc-prev hermes-chat--ewoc node))
           (done nil))
       (while (and prev (not done))
         (let ((entry (ewoc-data prev)))
           (cond
-           ((eq (plist-get entry :role) 'user) (setq done t))
            ((memq 'retry (hermes-chat-failure-actions
                           (hermes-chat--entry-failure entry)))
             (setq done t)
@@ -300,7 +300,8 @@ own following user entry arrived, so the walk stops at the previous one."
              (let ((inhibit-read-only t)
                    (buffer-undo-list t))
                (hermes-chat--preserve-readers
-                 (ewoc-invalidate hermes-chat--ewoc prev)))))))
+                 (ewoc-invalidate hermes-chat--ewoc prev)))))
+           ((hermes-chat--turn-boundary-p entry) (setq done t))))
         (setq prev (ewoc-prev hermes-chat--ewoc prev))))))
 
 (add-hook 'hermes-chat--entry-inserted-functions
@@ -309,7 +310,7 @@ own following user entry arrived, so the walk stops at the previous one."
 (defun hermes-chat-failure-refresh-actions ()
   "Re-render every failure block so its actions fit the transcript now.
 A rebuild that bypasses `hermes-chat--entry-inserted-functions' calls this
-once, since Retry applies only while no user turn follows a failure."
+once, since Retry applies only while no turn follows a failure."
   (hermes-chat--preserve-input-point
     (let ((inhibit-read-only t)
           (buffer-undo-list t))

@@ -553,6 +553,37 @@ Return the chat buffer."
       (should (equal (hermes-test--failure-rows)
                      '((user "Question" nil) (assistant "A full answer" nil)))))))
 
+(ert-deftest hermes-chat-failure-backend-turn-retires-older-retry ()
+  "A backend-owned turn after a failure retires that failure's Retry.
+/retry would rewind the backend's newer turn instead."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (funcall (hermes-chat--submit-resolve-callback
+              (current-buffer) hermes-chat--unsettled-submit-context)
+             '((status . "accepted") (user_row_id . 1)))
+    (hermes-test--emit-dashboard-prompt
+     client "message.complete"
+     `((text . "failed") (status . "error") (error . "timeout")
+       (error_surface . ((layer . "provider") (code . "timeout") (retryable . t)))
+       (persisted_turn . ((user_row_id . 1)))))
+    (let ((failed (plist-get (car (last (hermes-chat--entries))) :id))
+          calls)
+      (should (= 1 (hermes-test--count-in-transcript "[Retry]")))
+      (hermes-test--emit-dashboard-prompt client "message.start" nil)
+      (should-not (string-match-p "\\[Retry\\]" (hermes-test--failure-transcript)))
+      ;; The backend turn failing in turn offers Retry on its own block only.
+      (hermes-test--emit-dashboard-prompt
+       client "message.complete"
+       `((text . "remote failed") (status . "error") (error . "timeout")
+         (error_surface . ((layer . "provider") (code . "timeout") (retryable . t)))))
+      (should (= 1 (hermes-test--count-in-transcript "[Retry]")))
+      (let ((remote (plist-get (car (last (hermes-chat--entries))) :id)))
+        (should (memq 'retry (hermes-chat--failure-entry-actions
+                              (ewoc-data (gethash remote hermes-chat--nodes))))))
+      (cl-letf (((symbol-function 'hermes-chat--dashboard-slash-exec)
+                 (lambda (&rest args) (push args calls))))
+        (should-error (hermes-chat-failure-retry failed) :type 'user-error))
+      (should-not calls))))
+
 
 (provide 'hermes-chat-failure-tests)
 ;;; hermes-chat-failure-tests.el ends here
