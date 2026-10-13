@@ -104,8 +104,8 @@
         (cons (downcase rest) "")))))
 
 (defun hermes-chat--refresh-goal-after-command (name)
-  "Refresh goal state when slash command NAME may have changed it."
-  (when (string-equal name "goal")
+  "Refresh goal, loop and heartbeat state when command NAME may change it."
+  (when (member name '("goal" "loop" "heartbeat" "subgoal"))
     (hermes-chat--dashboard-refresh-goal)))
 
 (defun hermes-chat--reasoning-flags (flags result)

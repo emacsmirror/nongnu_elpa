@@ -121,6 +121,19 @@ separately as a `btw.complete' event."
   :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-control-read "session.control.read"
+  "Read CLIENT's SESSION-ID goal, loop and heartbeat snapshot.
+RESOLVE receives the control envelope; REJECT receives the error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-control "session.control"
+  "Apply ACTION to CLIENT's SESSION-ID with optional ARGS object.
+ARGS contains text for subgoal.add or a one-based index for subgoal.remove.
+RESOLVE receives the control envelope; REJECT receives the error."
+  :args (action) :keys (args) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-close "session.close"
   "Close CLIENT's exact live SESSION-ID, without deleting stored history.
 RESOLVE and REJECT receive the asynchronous result or error."

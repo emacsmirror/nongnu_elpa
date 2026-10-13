@@ -39,6 +39,7 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-todos)
+(require 'hermes-session-control)
 (require 'hermes-chat-images)
 (require 'hermes-chat-prompts)
 (require 'hermes-connectors)
@@ -788,6 +789,9 @@ This also retries kinds the backend earlier reported as unsupported."
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-running-p nil
           hermes-chat--dashboard-active-session-id nil)
+    ;; After detaching, so an open controls view shows it disconnected.
+    (hermes-session-control-forget)
+    (hermes-chat--cancel-automation-resume)
     (hermes-chat--work-publish-detached detached)))
 
 (defun hermes-chat--stop-dashboard-client ()
@@ -1159,6 +1163,8 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   (hermes-chat--dashboard-note-session-info event)
   (hermes-chat--dashboard-note-server-queued-terminal event)
   (cond
+   ((eq (plist-get event :type) 'session-control)
+    (hermes-session-control-accept event))
    ;; A background (`/btw') result is owned by its own session and arrives out
    ;; of band, so handle it before the stale-turn guard would drop it and apart
    ;; from the active turn's assistant entry.
@@ -1281,21 +1287,6 @@ The shared CLIENT contributes no session identity on a shared socket."
        result '(stored_session_id resumed session_key))
       active-id))
 
-(defun hermes-chat--dashboard-goal-status-projection (output)
-  "Return compact goal projection parsed from vanilla Hermes OUTPUT.
-Return nil for unknown output and leave the current goal state unchanged."
-  (cond
-   ((and (stringp output) (string-prefix-p "No active goal." output))
-    '(:goal nil))
-   ((and (stringp output)
-         (string-match "\\([0-9]+\\)/\\([0-9]+\\) turns" output))
-    (let ((running (string-prefix-p "⊙ Goal (active," output)))
-      (list :goal
-            (list :status (if running "active" "inactive")
-                  :running running
-                  :turns-used (string-to-number (match-string 1 output))
-                  :max-turns (string-to-number (match-string 2 output))))))))
-
 (defun hermes-chat--dashboard-record-session (client result)
   "Record live and durable session identifiers from RPC RESULT in this buffer.
 CLIENT is the shared transport client; it is used only to bind the
@@ -1359,15 +1350,22 @@ shared client."
        (or (null session-id)
            (equal session-id hermes-chat--dashboard-active-session-id))))
 
+(defun hermes-chat--dashboard-bootstrap-connection-p (owner)
+  "Return non-nil when OWNER's client still has the connection OWNER began on."
+  (= (plist-get owner :queue-connection)
+     (hermes-dashboard-transport-client-generation (plist-get owner :client))))
+
 (defun hermes-chat--dashboard-bootstrap-current-p (owner)
   "Return non-nil when OWNER still owns this buffer's fresh session setup."
   (and (eq owner hermes-chat--session-bootstrap)
-       (or (not (eq (plist-get owner :kind) 'queued))
-           (and (eq (plist-get owner :queue-context)
-                    hermes-chat--unsettled-submit-context)
-                (= (plist-get owner :queue-connection)
-                   (hermes-dashboard-transport-client-generation
-                    (plist-get owner :client)))))
+       (pcase (plist-get owner :kind)
+         ('queued
+          (and (eq (plist-get owner :queue-context)
+                   hermes-chat--unsettled-submit-context)
+               (hermes-chat--dashboard-bootstrap-connection-p owner)))
+         ;; A resume receipt is meaningful only on the socket that sent it.
+         ('resume (hermes-chat--dashboard-bootstrap-connection-p owner))
+         (_ t))
        (hermes-chat--dashboard-context-current-p (plist-get owner :client)
                                                   (plist-get owner :generation)
                                                   (plist-get owner :session-id))))
@@ -1406,6 +1404,23 @@ shared client."
         (funcall continuation)
       ((error quit) (funcall (plist-get owner :reject) (error-message-string err))))))
 
+(defun hermes-chat--dashboard-resume-bootstrap (owner buffer resolver)
+  "Resume BUFFER's stored session for OWNER through RESOLVER.
+OWNER keeps the reservation until the receipt, so no other resume starts
+meanwhile and only this resume's receipt reaches RESOLVER."
+  (setf (plist-get owner :phase) 'resume)
+  (condition-case err
+      (hermes-dashboard-transport-session-resume
+       (plist-get owner :client) hermes-chat--session-id
+       :cols (hermes-chat--dashboard-cols)
+       :profile hermes-chat--profile
+       :resolve resolver
+       :reject (lambda (message)
+                 (hermes-chat--in-buffer buffer
+                   (hermes-chat--dashboard-abort-bootstrap owner message))))
+    ((error quit)
+     (hermes-chat--dashboard-abort-bootstrap owner (error-message-string err)))))
+
 (defun hermes-chat--dashboard-start-bootstrap (owner buffer resolver)
   "Create OWNER's session in BUFFER through RESOLVER.
 Omit an unselected remote cwd: only the backend knows the selected
@@ -1440,29 +1455,8 @@ profile's workspace.  Keep the reservation through create and overrides."
           owner (error-message-string err)))))))
 
 (defun hermes-chat--dashboard-refresh-goal ()
-  "Refresh compact goal state through vanilla Hermes `/goal status'."
-  (when (and (hermes-chat--dashboard-client-live-p
-              hermes-chat--dashboard-client)
-             hermes-chat--dashboard-active-session-id)
-    (let ((buffer (current-buffer))
-          (client hermes-chat--dashboard-client)
-          (generation hermes-chat--lifecycle-generation)
-          (session-id hermes-chat--dashboard-active-session-id))
-      (hermes-dashboard-transport-command-dispatch
-       client "goal" "status"
-       :session-id session-id
-       :resolve
-       (lambda (result)
-         (hermes-chat--in-buffer buffer
-           (when (hermes-chat--dashboard-context-current-p
-                  client generation session-id)
-             (when-let* ((output (hermes-chat--dashboard-result-string
-                                  result '(output)))
-                         (projection
-                          (hermes-chat--dashboard-goal-status-projection output)))
-               (setq hermes-chat--goal (plist-get projection :goal))
-               (force-mode-line-update)))))
-       :reject #'ignore))))
+  "Read the attached session's structured automation snapshot."
+  (hermes-session-control--read))
 
 (defun hermes-chat--dashboard-idle-context (on-idle)
   "Return an idle-reconciliation context calling ON-IDLE when settled."
@@ -1573,7 +1567,8 @@ profile's workspace.  Keep the reservation through create and overrides."
   "Route admitted EVENT for ASSISTANT-ID, using dashboard policy if DASHBOARD-P."
   (hermes-chat--status-rule-note-event)
   (when dashboard-p
-    (hermes-chat--work-note-event event))
+    (hermes-chat--work-note-event event)
+    (hermes-session-control-observe event))
   ;; Worker lifecycle feeds the roster and the spawning row's live card, not
   ;; per-child transcript rows.
   (unless (or (and dashboard-p
@@ -1626,7 +1621,7 @@ profile's workspace.  Keep the reservation through create and overrides."
 (defun hermes-chat--assistant-independent-event-p (event)
   "Return non-nil when dashboard EVENT does not belong to an assistant turn."
   (or (hermes-chat--session-info-event-p event)
-      (eq (plist-get event :type) 'background)
+      (memq (plist-get event :type) '(background session-control))
       (hermes-chat--reconnecting-status-event-p event)
       (hermes-chat--reconnected-status-event-p event)))
 
@@ -2442,27 +2437,34 @@ without file-name handlers or home-directory abbreviation."
 With CREATE-P non-nil the resolver handles a fresh `session.create' result,
 so pending create-time runtime overrides are applied before ACTION.  RESUME-P
 applies only retry-owned overrides and otherwise discards them.  REJECT receives
-an override failure."
+an override failure.  BOOTSTRAP is the exact setup or resume owner; a resume
+owner is released once its receipt arrives."
   (lambda (result)
     (hermes-chat--in-buffer buffer
       (when (if bootstrap
                 (hermes-chat--dashboard-bootstrap-current-p bootstrap)
               (hermes-chat--dashboard-context-current-p client generation))
-        (hermes-chat--dashboard-record-session client result)
-        (when (hermes-chat--dashboard-result-live-turn-p result)
-          (hermes-chat--dashboard-restore-inflight-turn client)
-          (hermes-chat--dashboard-bind-stream-callback
-           client hermes-chat--pending-assistant-id)
-          (hermes-chat--dashboard-restore-pending-clarify result))
-        (cond
-         (create-p
-          (hermes-chat--dashboard-apply-bootstrap-overrides
-           bootstrap client (lambda () (funcall action client)) generation reject))
-         (resume-p
-          (hermes-chat--dashboard-apply-retry-overrides
-           client (lambda () (funcall action client)) generation reject))
-         (t
-          (funcall action client)))))))
+        (let ((attach
+               (lambda ()
+                 (hermes-chat--dashboard-record-session client result)
+                 (when (hermes-chat--dashboard-result-live-turn-p result)
+                   (hermes-chat--dashboard-restore-inflight-turn client)
+                   (hermes-chat--dashboard-bind-stream-callback
+                    client hermes-chat--pending-assistant-id)
+                   (hermes-chat--dashboard-restore-pending-clarify result))
+                 (cond
+                  (create-p
+                   (hermes-chat--dashboard-apply-bootstrap-overrides
+                    bootstrap client (lambda () (funcall action client))
+                    generation reject))
+                  (resume-p
+                   (hermes-chat--dashboard-apply-retry-overrides
+                    client (lambda () (funcall action client)) generation reject))
+                  (t
+                   (funcall action client))))))
+          (if (and bootstrap resume-p)
+              (hermes-chat--dashboard-finish-bootstrap bootstrap attach)
+            (funcall attach)))))))
 
 (defun hermes-chat--dashboard-create-title ()
   "Return the canonical title for a fresh dashboard session."
@@ -2496,14 +2498,16 @@ When dashboard session bootstrap fails, call REJECT with the error message."
       (hermes-chat--dashboard-apply-retry-overrides
        client (lambda () (funcall action client)) generation reject))
      (hermes-chat--session-id
-      (hermes-dashboard-transport-session-resume
-       client hermes-chat--session-id
-       :cols (hermes-chat--dashboard-cols)
-       :profile hermes-chat--profile
-       :resolve (hermes-chat--dashboard-action-resolver
-                 buffer client action generation nil reject t)
-       :reject (hermes-chat--dashboard-action-rejecter
-                buffer client generation reject)))
+      ;; This resume, explicit or automatic, supersedes a pending retry.
+      (hermes-chat--cancel-automation-resume)
+      (let* ((scoped-reject (hermes-chat--dashboard-action-rejecter
+                             buffer client generation reject))
+             (owner (hermes-chat--dashboard-begin-bootstrap
+                     client 'resume scoped-reject)))
+        (hermes-chat--dashboard-resume-bootstrap
+         owner buffer
+         (hermes-chat--dashboard-action-resolver
+          buffer client action generation nil scoped-reject t owner))))
      (t
       (let* ((scoped-reject (hermes-chat--dashboard-action-rejecter
                              buffer client generation reject))
@@ -2549,10 +2553,64 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
     (hermes-chat--queue-or-submit-content content display)))
 
 (defun hermes-chat--dashboard-handle-reconnected (_event)
-  "Render a ready socket while leaving the durable session lazy."
+  "Render a ready socket while leaving the durable session lazy.
+A session that was running a goal, loop or heartbeat resumes at once:
+the backend reaps detached sessions, which would silently stop it."
   (hermes-chat--insert-local-status "Dashboard socket reconnected" 'ready)
-  (hermes-chat--set-header-state
-   :status 'ready :activity "Socket ready; session resumes on next action"))
+  (if (and hermes-chat--session-id hermes-session-control--resume-p)
+      (progn
+        (hermes-chat--set-header-state :status 'ready :activity "Socket ready")
+        (hermes-chat--dashboard-resume-automation))
+    (hermes-chat--set-header-state
+     :status 'ready :activity "Socket ready; session resumes on next action")))
+
+(defconst hermes-chat--automation-resume-delays '(1 2 4)
+  "Seconds before each retry of a refused automation resume.")
+
+(defvar-local hermes-chat--automation-resume-timer nil
+  "The pending retry of this chat's automation resume, or nil.")
+
+(defun hermes-chat--cancel-automation-resume ()
+  "Cancel this chat's pending automation resume retry."
+  (when hermes-chat--automation-resume-timer
+    (cancel-timer hermes-chat--automation-resume-timer)
+    (setq hermes-chat--automation-resume-timer nil)))
+
+(defun hermes-chat--dashboard-resume-automation (&optional attempt)
+  "Resume this chat's stored session, which was running automation.
+The backend briefly refuses a session whose old connection is still
+settling (4007, 4009).  Retry those after each of
+`hermes-chat--automation-resume-delays' from index ATTEMPT, while this
+chat stays on the same connection."
+  (let ((buffer (current-buffer))
+        (attempt (or attempt 0)))
+    (hermes-chat--with-dashboard-session
+     nil buffer #'ignore
+     (lambda (message)
+       (let ((delay (nth attempt hermes-chat--automation-resume-delays))
+             (client hermes-chat--dashboard-client)
+             (generation hermes-chat--lifecycle-generation))
+         (if (not (and delay (stringp message)
+                       (memq (get-text-property 0 'hermes-rpc-code message)
+                             '(4007 4009))))
+             (hermes-chat--dashboard-bootstrap-error message)
+           (hermes-chat--cancel-automation-resume)
+           (let ((timer (timer-create)))
+             (timer-set-time timer (time-add nil delay))
+             (timer-set-function
+              timer
+              (lambda ()
+                (hermes-chat--in-buffer buffer
+                  (when (and (eq timer hermes-chat--automation-resume-timer)
+                             (hermes-chat--dashboard-context-current-p client generation)
+                             (not (hermes-chat--dashboard-session-attached-p))
+                             ;; Another setup will attach; never queue behind it.
+                             (not (hermes-chat--dashboard-bootstrap-current-p
+                                   hermes-chat--session-bootstrap)))
+                    (setq hermes-chat--automation-resume-timer nil)
+                    (hermes-chat--dashboard-resume-automation (1+ attempt))))))
+             (timer-activate timer)
+             (setq hermes-chat--automation-resume-timer timer))))))))
 
 ;;; Session title and background tasks
 

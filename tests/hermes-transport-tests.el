@@ -6082,14 +6082,74 @@ first; an unrelated process with that PID is left alone."
         (when (process-live-p p) (delete-process p))))))
 
 (ert-deftest hermes-transport-dashboard-drops-session-bookkeeping-events ()
-  "Usage ticks, title pushes and control snapshots are not transcript events."
+  "Usage ticks and title pushes are not transcript events."
   (should-not (hermes-test--dashboard-events
                '("session.usage" . ((usage . ((model . "m") (calls . 1)))))
-               '("session.title" . ((session_id . "stored") (title . "Title")))
-               '("session.control.update"
-                 . ((control . ((goal . :null) (loop . :null)
-                                (heartbeat . :null) (revision . "")
-                                (updated_at . 0))))))))
+               '("session.title" . ((session_id . "stored") (title . "Title"))))))
+
+(defconst hermes-test--released-control
+  '((goal . ((title . "Ship the release") (status . "active")
+             (turns_used . 3) (max_turns . 20)
+             (contract . ((outcome . "A working release") (verification . "")
+                          (constraints . "") (boundaries . "") (stop_when . "")))
+             (subgoals . ["Test recovery" "Review changes"])
+             (gates . [((command . "make check") (timeout_seconds . 600)
+                        (max_retries . 2) (attempts . 1) (last_exit_code . :null))])
+             (created_at . 100) (last_verdict . "continue")
+             (wait_barrier . ((type . "pid") (target . 42) (reason . "Build")))))
+    (loop . ((prompt . "Check progress") (status . "active") (mode . "interval")
+             (interval_seconds . 300) (current_delay . 300) (times . 5)
+             (until . "") (max_ticks . 100) (ticks_fired . 2)
+             (created_at . 100) (last_fired_at . 150) (next_due_at . 450)
+             (awaiting_response . :false) (deferred_by_goal . t)))
+    (heartbeat . :null)
+    (revision . "3f2a") (updated_at . 150))
+  "A `session.control' snapshot exactly as the released backend shapes it.")
+
+(ert-deftest hermes-transport-dashboard-normalizes-control-update ()
+  "A pushed control snapshot becomes one structured, non-transcript event."
+  (let* ((events (hermes-test--dashboard-events
+                  `("session.control.update" . ((control . ,hermes-test--released-control)))))
+         (event (car events))
+         (control (plist-get event :control))
+         (goal (plist-get control :goal))
+         (loop (plist-get control :loop)))
+    (should (= (length events) 1))
+    (should (eq (plist-get event :type) 'session-control))
+    (should (equal (plist-get event :session-id) "sid"))
+    (should (equal (plist-get control :revision) "3f2a"))
+    (should (= (plist-get control :updated-at) 150))
+    (should (equal (plist-get goal :subgoals) '("Test recovery" "Review changes")))
+    (should (equal (plist-get goal :contract) '(:outcome "A working release")))
+    (should (equal (plist-get goal :gates)
+                   '((:command "make check" :timeout-seconds 600
+                      :max-retries 2 :attempts 1))))
+    (should (equal (plist-get goal :wait-barrier)
+                   '(:type "pid" :target "42" :reason "Build")))
+    (should (eq (plist-get loop :deferred-by-goal) t))
+    (should-not (plist-member loop :awaiting-response))
+    (should-not (plist-member loop :until))
+    (should (plist-member control :heartbeat))
+    (should-not (plist-get control :heartbeat))
+    (should-not (hermes-chat--transcript-event-p event))))
+
+(ert-deftest hermes-transport-dashboard-control-update-rejects-malformed ()
+  "A malformed control snapshot makes no claim; an empty one clears."
+  (let ((empty '((goal . :null) (loop . :null) (heartbeat . :null)
+                 (revision . "") (updated_at . 0))))
+    (should (equal (plist-get (plist-get (car (hermes-test--dashboard-events
+                                                `("session.control.update"
+                                                  . ((control . ,empty)))))
+                                         :control)
+                              :revision)
+                   ""))
+    (dolist (bad (list '((revision . "x"))
+                       '((goal . :null) (loop . :null) (heartbeat . :null)
+                         (revision . 7))
+                       (cons '(goal . ((status . "exploded"))) (cdr empty))
+                       :null))
+      (should-not (hermes-test--dashboard-events
+                   `("session.control.update" . ((control . ,bad))))))))
 
 (ert-deftest hermes-transport-work-last-line-skips-shell-logout ()
   "A login shell's closing `logout' does not hide the process's last line."

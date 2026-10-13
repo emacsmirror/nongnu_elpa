@@ -43,6 +43,7 @@
 (require 'hermes-preview-format)
 (require 'hermes-dashboard-api)
 (require 'hermes-transport)
+(require 'hermes-session-control)
 
 (autoload 'hermes-preview-open "hermes-preview")
 
@@ -1978,6 +1979,7 @@ METADATA is stored as the entry's `:metadata' plist."
         hermes-chat--agent-name nil
         hermes-chat--context nil
         hermes-chat--goal nil
+        hermes-session-control--state nil
         hermes-chat--runtime-flags nil)
   (force-mode-line-update)
   (hermes-chat--notify-state-change))
@@ -3617,7 +3619,9 @@ During redisplay Emacs selects the window whose header is being evaluated."
                 (list (hermes-chat--header-model-segment)
                       (hermes-chat--header-context-segment)
                       (and status (hermes-chat--header-detail label)))
-                (hermes-chat--work-label (< width 50))))
+                (let ((parts (delq nil (list (hermes-session-control-header (< width 90))
+                                            (hermes-chat--work-label (< width 50))))))
+                  (when parts (string-join parts " · ")))))
          (text (if (and (char-displayable-p ?⚕)
                         (<= (+ (string-width text) (string-width "⚕ | ")) width))
                    (if (string-empty-p text)
