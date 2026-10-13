@@ -496,12 +496,51 @@
   (skip-unless (display-graphic-p))
   (markdown-ts-appear-mermaid-test--deferred
     (markdown-ts-appear-mermaid-test--buffer markdown-ts-appear-mermaid-test--diagram
-      (let ((markdown-ts-appear-mermaid-test--svg
+      (let ((markdown-ts-appear-mermaid-size 'source)
+            (markdown-ts-appear-mermaid-test--svg
              "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='16'><rect width='32' height='16' fill='blue'/></svg>"))
         (markdown-ts-appear-mermaid-test--deliver)
         (let ((view (markdown-ts-appear-mermaid-test--view)))
-          (should (equal (image-size (overlay-get view 'display) t) '(32 . 16)))
-          (should-not (overlay-get view 'after-string)))))))
+          (dolist (size '(source 120))
+            (setopt markdown-ts-appear-mermaid-size size)
+            (should (equal (image-size (overlay-get view 'display) t) '(32 . 16)))
+            (should-not (overlay-get view 'after-string))))))))
+
+(ert-deftest markdown-ts-appear-mermaid-test-gui-size-option-updates-cached-preview ()
+  (skip-unless (display-graphic-p))
+  (markdown-ts-appear-mermaid-test--deferred
+    (let ((markdown-ts-appear-mermaid-size 'source)
+          (markdown-ts-image-max-width 120)
+          (markdown-ts-appear-mermaid-test--svg
+           "<svg xmlns='http://www.w3.org/2000/svg' width='240' height='960'><rect width='240' height='960' fill='blue'/></svg>"))
+      (markdown-ts-appear-mermaid-test--buffer markdown-ts-appear-mermaid-test--diagram
+        (markdown-ts-appear-mermaid-test--deliver)
+        (let* ((source (car markdown-ts-appear-mermaid--objects))
+               (view (markdown-ts-appear-mermaid-test--view))
+               (image (overlay-get source 'markdown-ts-appear-mermaid--image))
+               (preview (overlay-get view 'display))
+               (height (image-property preview :max-height)))
+          (should (< height 480))
+          (cl-letf (((symbol-function 'markdown-ts-appear-mermaid--source-height)
+                     (lambda (&rest _) (ert-fail "Unnecessary source measurement"))))
+            ;; The width matches the default limit; only the sizing mode changes.
+            (setopt markdown-ts-appear-mermaid-size 120)
+            (should-not (image-property (overlay-get view 'display) :max-height))
+            (should (equal (image-size (overlay-get view 'display) t) '(120 . 480)))
+            (setopt markdown-ts-appear-mermaid-size 60)
+            (should (equal (image-size (overlay-get view 'display) t) '(60 . 240)))
+            (goto-char (+ 12 (overlay-start source)))
+            (markdown-ts-appear-start)
+            (should-not (overlay-get view 'display))
+            (should-not (overlay-get view 'after-string))
+            (markdown-ts-appear-stop)
+            (should (equal (image-size (overlay-get view 'display) t) '(60 . 240)))
+            (setopt markdown-ts-appear-mermaid-size 'source)
+            (should (equal (overlay-get view 'display) preview)))
+          (should (eq (overlay-get source 'markdown-ts-appear-mermaid--image) image))
+          (should-not (image-property image :max-width))
+          (should-not (image-property image :max-height))
+          (should (= (length markdown-ts-appear-mermaid-test--jobs) 1)))))))
 
 (ert-deftest markdown-ts-appear-mermaid-test-gui-height-follows-wrapped-code ()
   (skip-unless (display-graphic-p))

@@ -46,6 +46,7 @@
 
 (defvar markdown-ts-appear-enable-mermaid-preview)
 (defvar markdown-ts-appear-mermaid-command)
+(defvar markdown-ts-appear-mermaid-size)
 (defvar markdown-ts-appear-code-fence-style)
 
 (defvar markdown-ts-appear-mermaid--cache (make-hash-table :test #'equal :weakness 'value)
@@ -132,18 +133,21 @@
 
 (defun markdown-ts-appear-mermaid--windows ()
   "Return (WINDOW WIDTH LAYOUT START END) for windows showing this buffer.
-LAYOUT describes the text width, font metrics and wrapping used by source code."
-  (mapcar (lambda (window)
-            (let ((width (window-body-width window t)))
-              (list window
-                    (if (eq markdown-ts-image-max-width 'window)
-                        width markdown-ts-image-max-width)
-                    (list width (window-default-line-height window)
-                          (window-font-height window 'markdown-ts-code-block)
-                          (window-font-width window 'markdown-ts-code-block)
-                          truncate-lines word-wrap markdown-ts-appear-code-fence-style)
-                    (window-start window) (window-end window t))))
-          (get-buffer-window-list (current-buffer) nil t)))
+LAYOUT describes source font metrics and wrapping, or nil for width-only sizing."
+  (let* ((source-height (eq markdown-ts-appear-mermaid-size 'source))
+         (max-width (if source-height markdown-ts-image-max-width
+                      markdown-ts-appear-mermaid-size)))
+    (mapcar (lambda (window)
+              (let ((width (window-body-width window t)))
+                (list window
+                      (if (eq max-width 'window) width max-width)
+                      (when source-height
+                        (list width (window-default-line-height window)
+                              (window-font-height window 'markdown-ts-code-block)
+                              (window-font-width window 'markdown-ts-code-block)
+                              truncate-lines word-wrap markdown-ts-appear-code-fence-style))
+                      (window-start window) (window-end window t))))
+            (get-buffer-window-list (current-buffer) nil t))))
 
 (defun markdown-ts-appear-mermaid--editing-p (source)
   "Return non-nil when SOURCE is being edited with source tracking active."
@@ -209,20 +213,21 @@ LAYOUT describes the text width, font metrics and wrapping used by source code."
           (overlay-put view 'after-string nil)
           (overlay-put view 'help-echo error)
           (when (and image (not editing) (not hidden) (display-images-p (window-frame window)))
-            (let ((size-key (cons text layout)))
-              (unless (equal size-key (overlay-get view 'markdown-ts-appear-mermaid--size-key))
-                ;; Other windows' image overlays can affect pixel measurement too.
-                (overlay-put view 'markdown-ts-appear-mermaid--source-height
-                             (markdown-ts-appear-mermaid--source-height
-                              source window (append old views)))
-                (overlay-put view 'markdown-ts-appear-mermaid--size-key size-key)))
-            (let* ((height (overlay-get view 'markdown-ts-appear-mermaid--source-height))
+            (when layout
+              (let ((size-key (cons text layout)))
+                (unless (equal size-key (overlay-get view 'markdown-ts-appear-mermaid--size-key))
+                  ;; Other windows' image overlays can affect pixel measurement too.
+                  (overlay-put view 'markdown-ts-appear-mermaid--source-height
+                               (markdown-ts-appear-mermaid--source-height
+                                source window (append old views)))
+                  (overlay-put view 'markdown-ts-appear-mermaid--size-key size-key))))
+            (let* ((height (and layout (overlay-get view 'markdown-ts-appear-mermaid--source-height)))
                    (key (list image width height))
                    (spec (or (and (equal key (overlay-get view 'markdown-ts-appear-mermaid--image-key))
                                   (overlay-get view 'markdown-ts-appear-mermaid--image))
                              (let ((spec (copy-sequence image)))
-                               (setf (image-property spec :max-width) width
-                                     (image-property spec :max-height) height)
+                               (setf (image-property spec :max-width) width)
+                               (when height (setf (image-property spec :max-height) height))
                                spec))))
               (overlay-put view 'display spec)
               (unless (eq spec (overlay-get view 'markdown-ts-appear-mermaid--image))

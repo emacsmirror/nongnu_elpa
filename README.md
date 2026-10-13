@@ -90,6 +90,7 @@ installation.  No additional Emacs package is required.
 | `markdown-ts-appear-enable-math-preview` | `nil` | `t` enables asynchronous math previews. |
 | `markdown-ts-appear-enable-mermaid-preview` | `nil` | `t` previews unedited `mermaid` fenced blocks. |
 | `markdown-ts-appear-mermaid-command` | `"mmdc"` | Mermaid CLI executable. |
+| `markdown-ts-appear-mermaid-size` | `source` | `source`: fit source height; positive integer: limit only width, in pixels. |
 | `markdown-ts-appear-link-icon` | `""` | String before ordinary links; empty disables it. |
 | `markdown-ts-appear-image-icon` | `""` | String before image links; empty disables it. |
 | `markdown-ts-appear-wikilink-icon` | `"◆"` | String before Wiki links; empty disables it. |
@@ -170,8 +171,9 @@ to each buffer and are removed when appear mode is disabled.
 - Mermaid renders visible, unedited blocks asynchronously, one job at a time.
   Identical diagrams share cached images; failed diagrams keep their source,
   with details available on hover.  Diagrams are only scaled down, preserving
-  their aspect ratio, to fit the code block's displayed height.  Editing shows
-  the code at its natural height without padding.
+  their aspect ratio, to fit the code block's displayed height by default, or
+  the configured maximum width.  Editing shows the code at its natural height
+  without padding.
 - If preview setup fails, disable appear mode, fix the missing dependency, then
   re-enable it.
 

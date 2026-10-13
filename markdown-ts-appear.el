@@ -67,6 +67,16 @@ Re-enable `markdown-ts-appear-mode' after changing this option."
   "Mermaid CLI executable used to render diagrams asynchronously."
   :type 'string)
 
+(defcustom markdown-ts-appear-mermaid-size 'source
+  "How to size Mermaid previews, preserving aspect ratio without enlarging.
+The default `source' limits height to the code block's displayed height
+and width to `markdown-ts-image-max-width'.
+A positive integer limits only the width, in pixels."
+  :type '(choice (const :tag "Fit source height" source)
+                 (integer :tag "Maximum width in pixels"))
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
+
 (defcustom markdown-ts-appear-link-icon ""
   "Icon displayed before rendered Markdown links.
 An empty string disables the icon."
@@ -1054,8 +1064,12 @@ at most one following space or tab and are not clipped to START or LIMIT."
     (with-current-buffer buffer
       (when (and (markdown-ts-appear--active-p)
                  (not (local-variable-p option)))
-        (if (eq option 'markdown-ts-appear-table-zebra-stripe)
-            (markdown-ts-appear-table--refresh-stripes)
+        (cond
+         ((eq option 'markdown-ts-appear-mermaid-size)
+          (markdown-ts-appear-mermaid--refresh))
+         ((eq option 'markdown-ts-appear-table-zebra-stripe)
+          (markdown-ts-appear-table--refresh-stripes))
+         (t
           (when (eq option 'markdown-ts-appear-table-style)
             (markdown-ts-appear-table--teardown))
           (without-restriction
@@ -1070,7 +1084,7 @@ at most one following space or tab and are not clipped to START or LIMIT."
             (when (memq #'markdown-ts-appear--update post-command-hook)
               (markdown-ts-appear--update)))
           (when (eq option 'markdown-ts-appear-table-style)
-            (markdown-ts-appear-table--setup)))))))
+            (markdown-ts-appear-table--setup))))))))
 
 (defun markdown-ts-appear--theme-change (_theme)
   "Refresh callout backgrounds and diagram previews after a theme change."
