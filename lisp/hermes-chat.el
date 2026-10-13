@@ -163,6 +163,7 @@ Inside a project, its root basename becomes the canonical session label."
 (require 'hermes-chat-models)
 (require 'hermes-chat-handoff)
 (require 'hermes-chat-slash)
+(require 'hermes-chat-failure)
 
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
@@ -258,7 +259,9 @@ reasoning.  Keep the activity neutral and use empty content only to clear it."
        (list :status status
              :activity (if (hermes-chat--interrupted-status-p status)
                            "Interrupted"
-                         (or (hermes-chat--event-string
+                         (or (and-let* ((failure (plist-get event :failure)))
+                               (hermes-chat-failure-title failure))
+                             (hermes-chat--event-string
                               event '(:content :error))
                              "Transport error")))))
     ('unknown (list :status 'error
@@ -365,7 +368,9 @@ assistant entry, so the reply placeholder keeps its text."
          (list '(clear-tools)
                (cons 'refresh-header status)
                (cons 'clear-prompts event)
-               (cons 'append-error (cons content estatus)))))
+               (if-let* ((failure (plist-get event :failure)))
+                   (cons 'mark-failure (cons failure estatus))
+                 (cons 'append-error (cons content estatus))))))
      (hermes-chat--turn-terminal-suffix estatus))))
 
 (defun hermes-chat--turn-reduce-status (state event now)
@@ -497,13 +502,16 @@ interim from before a steer or redirect never counts."
               ((eq (plist-get entry :role) 'user) (setq node nil)))))
     found))
 
-(defun hermes-chat--mark-transformed-assistant (assistant-id content)
+(defun hermes-chat--mark-transformed-assistant
+    (assistant-id content &optional status)
   "Settle transformed final CONTENT as ASSISTANT-ID's authoritative reply.
 An output hook rewrote the final after streaming, so CONTENT replaces the
 streamed text instead of extending it.  When nothing streamed since the
-latest interim of this turn, CONTENT replaces that sealed interim."
+latest interim of this turn, CONTENT replaces that sealed interim.
+STATUS defaults to `done'.  Return the ID of the entry now holding CONTENT."
   (let ((interim-id hermes-chat--dashboard-interim-assistant-id)
-        (text (or content "")))
+        (text (or content ""))
+        (status (or status 'done)))
     (if (and interim-id
              (not (equal interim-id assistant-id))
              (string-empty-p
@@ -511,8 +519,10 @@ latest interim of this turn, CONTENT replaces that sealed interim."
              (hermes-chat--interim-precedes-p interim-id assistant-id))
         (progn
           (hermes-chat--remove-entry assistant-id)
-          (hermes-chat--mark-assistant interim-id 'done text t))
-      (hermes-chat--mark-assistant assistant-id 'done text t))))
+          (hermes-chat--mark-assistant interim-id status text t)
+          interim-id)
+      (hermes-chat--mark-assistant assistant-id status text t)
+      assistant-id)))
 
 (defun hermes-chat--mark-previewed-assistant (assistant-id content)
   "Settle previewed CONTENT on its interim entry, or ASSISTANT-ID as fallback."
@@ -572,6 +582,8 @@ stays side-effect-light."
      (hermes-chat--mark-previewed-assistant assistant-id content))
     (`(append-error ,content . ,status)
      (hermes-chat--append-assistant-content assistant-id content status))
+    (`(mark-failure ,failure . ,status)
+     (hermes-chat--mark-assistant-failure assistant-id failure status))
     (`(mark-status . ,status)
      (hermes-chat--mark-assistant assistant-id status nil t))
     ('(drop-thinking) (hermes-chat--drop-duplicate-thinking assistant-id))
@@ -2227,8 +2239,30 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
 
 (defun hermes-chat--render-history (messages)
   "Insert prior MESSAGES (from `session.resume') into the transcript."
+  (hermes-chat--render-history-entries
+   (mapcan #'hermes-chat--history-entries messages)))
+
+(defun hermes-chat--render-retained-failure (result)
+  "Rebuild the failed turn that resume RESULT retained, if any.
+Only an idle session's snapshot is a settled failure; a live one belongs
+to the running turn."
+  (when-let* (((not (hermes-chat--dashboard-result-live-turn-p result)))
+              (retained (hermes-transport-retained-turn-failure
+                         (hermes-transport--get result 'inflight))))
+    (hermes-chat--render-history-entries
+     (hermes-chat-failure-retained-entries
+      retained
+      (cl-loop for node = (ewoc-nth hermes-chat--ewoc -1)
+               then (ewoc-prev hermes-chat--ewoc node)
+               while node
+               for entry = (ewoc-data node)
+               when (eq (plist-get entry :role) 'user)
+               return (plist-get entry :content))))))
+
+(defun hermes-chat--render-history-entries (entries)
+  "Insert resumed history ENTRIES into the transcript."
   (let ((owner hermes-chat--session-bootstrap))
-    (dolist (entry (mapcan #'hermes-chat--history-entries messages))
+    (dolist (entry entries)
       ;; Retain exact entries before insertion, which can run rendering hooks.
       (when owner (push entry (plist-get owner :history-entries)))
       ;; Start the change group inside the undo-disabled transcript boundary.
@@ -2260,6 +2294,7 @@ An assistant row's reasoning precedes its reply as a collapsed entry."
   (hermes-chat--dashboard-record-session client result)
   (hermes-chat--clear-partial-history owner)
   (hermes-chat--render-history (hermes-transport--get result 'messages))
+  (hermes-chat--render-retained-failure result)
   (when (hermes-chat--dashboard-result-live-turn-p result)
     (hermes-chat--dashboard-restore-inflight-turn client))
   (hermes-chat--dashboard-restore-pending-clarify result)

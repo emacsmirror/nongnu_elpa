@@ -849,6 +849,99 @@ The plist holds :used, :max, and :percent for the model's context window."
           :max max
           :percent (or (hermes-transport--get usage 'context_percent) 0))))
 
+(defun hermes-transport--explicit-false-p (object key)
+  "Return non-nil when OBJECT carries KEY as an explicit JSON false or null."
+  (and (hermes-transport--field-present-p object key)
+       (memq (hermes-transport--get object key) '(nil :json-false :json-null))
+       t))
+
+(defun hermes-transport--string-fields (object fields)
+  "Return a plist of OBJECT's string FIELDS.
+FIELDS is a list of (WIRE-KEY . PROPERTY) pairs.  Each PROPERTY maps to
+the non-empty string value, or nil when absent, empty or not a string."
+  (cl-loop for (key . property) in fields
+           append (list property (hermes-transport--non-empty-string
+                                  (hermes-transport--get object key)))))
+
+(defun hermes-transport-error-surface (value)
+  "Return the advisory `error_surface' VALUE as a plist, or nil.
+Require an object with a non-empty string `layer'.  A missing `code'
+reads as \"unknown\".  `:retryable' is nil only for an explicit false,
+as the released clients read it."
+  (when-let* (((hermes-transport--object-p value))
+              (layer (hermes-transport--non-empty-string
+                      (hermes-transport--get value 'layer))))
+    (append
+     (list :layer layer
+           :code (or (hermes-transport--non-empty-string
+                      (hermes-transport--get value 'code))
+                     "unknown")
+           :retryable (not (hermes-transport--explicit-false-p
+                            value 'retryable)))
+     (hermes-transport--string-fields
+      value '((provider . :provider) (provider_label . :provider-label)
+              (model . :model) (message . :message))))))
+
+(defun hermes-transport-billing-block (value)
+  "Return the billing-wall VALUE as a plist, or nil when not an object.
+Keep `billing_url' as `:url' only when it is an absolute http(s) URL, so a
+recovery link never opens anything else."
+  (when (hermes-transport--object-p value)
+    (let ((url (hermes-transport--non-empty-string
+                (hermes-transport--get value 'billing_url))))
+      (append
+       (hermes-transport--string-fields
+        value '((provider . :provider) (provider_label . :provider-label)
+                (model . :model) (message . :message)))
+       (list :url (and url (string-match-p "\\`https?://[^[:space:]]+\\'" url)
+                       url)
+             :nous (eq (hermes-transport--get value 'is_nous) t))))))
+
+(defun hermes-transport-turn-failure (payload)
+  "Return the structured failure facts of a failed turn PAYLOAD, or nil.
+Present only when the backend sent a well-formed `error_surface' or
+`billing' object; plain failures return nil and keep their ordinary
+rendering.  The plist holds `:surface' and `:billing', plus, when present,
+`:reason' (`failure_reason'), `:detail' (the raw `error' text) and
+`:partial-text' (the retained reply text of a `partial' turn)."
+  (let ((surface (hermes-transport-error-surface
+                  (hermes-transport--get payload 'error_surface)))
+        (billing (hermes-transport-billing-block
+                  (hermes-transport--get payload 'billing))))
+    (when (or surface billing)
+      (let ((reason (hermes-transport--non-empty-string
+                     (hermes-transport--get payload 'failure_reason)))
+            (detail (hermes-transport--non-empty-string
+                     (hermes-transport--get payload 'error)))
+            (partial (and (eq (hermes-transport--get payload 'partial) t)
+                          (hermes-transport--non-empty-string
+                           (hermes-transport--get payload 'text)))))
+        (append (list :surface surface :billing billing)
+                (and reason (list :reason reason))
+                (and detail (list :detail detail))
+                (and partial (list :partial-text partial)))))))
+
+(defun hermes-transport-retained-turn-failure (inflight)
+  "Return the failed turn retained in a `session.resume' INFLIGHT, or nil.
+The backend keeps a failed turn replayable until the next one starts; its
+snapshot then carries a non-blank `error'.  Return a plist of `:user'
+\(the prompt), `:partial-text' (the retained reply), `:error' (the raw
+error text) and `:failure', the structured failure when a well-formed
+`error_surface' is present.  A resume carries no billing descriptor."
+  (when-let* (((hermes-transport--object-p inflight))
+              (error (hermes-transport--non-blank-string
+                      (hermes-transport--get inflight 'error))))
+    (let ((surface (hermes-transport-error-surface
+                    (hermes-transport--get inflight 'error_surface))))
+      (list :user (hermes-transport--non-blank-string
+                   (hermes-transport--get inflight 'user))
+            :partial-text (hermes-transport--non-blank-string
+                           (hermes-transport--get inflight 'assistant))
+            :error error
+            :failure (and surface
+                          (list :surface surface :billing nil
+                                :detail error))))))
+
 (defun hermes-dashboard-transport--message-complete-event (type params payload)
   "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD.
 The :final-text field preserves literal text when PAYLOAD has no error."
@@ -874,6 +967,9 @@ The :final-text field preserves literal text when PAYLOAD has no error."
       (setq event (plist-put event :response-previewed t)))
     (when (eq (hermes-transport--get payload 'response_transformed) t)
       (setq event (plist-put event :response-transformed t)))
+    (when-let* (((eq (plist-get event :type) 'error))
+                (failure (hermes-transport-turn-failure payload)))
+      (setq event (plist-put event :failure failure)))
     event))
 
 (defun hermes-dashboard-transport--message-interim-event (type params payload)

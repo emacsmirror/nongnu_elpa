@@ -1338,9 +1338,11 @@ shared client."
       (hermes-chat--render-dashboard-turn-event assistant-id event))))
 
 (defun hermes-chat--dashboard-result-live-turn-p (result)
-  "Return non-nil when RESULT reports the resumed session is still busy."
+  "Return non-nil when RESULT reports the resumed session is still busy.
+An in-flight snapshot of a turn that already failed is not a live turn."
   (or (hermes-transport--get result 'running)
-      (hermes-transport--get result 'inflight)))
+      (when-let* ((inflight (hermes-transport--get result 'inflight)))
+        (not (hermes-transport-retained-turn-failure inflight)))))
 
 (defun hermes-chat--dashboard-context-current-p
     (client generation &optional session-id)
