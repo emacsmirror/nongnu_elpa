@@ -5148,5 +5148,20 @@ defaults to an attached chat."
     (should-not (hermes-test--offered rows '(section . agents)))
     (should-not (hermes-test--offered rows '(section . processes)))))
 
+(ert-deftest hermes-chat-directory-browser-uses-captured-profile ()
+  "File listing uses the chat profile rather than the launch default."
+  (hermes-test-with-chat-buffer
+   (let ((client (hermes-test--dashboard-client)) query)
+     (setq hermes-chat--profile "remote-work"
+           hermes-chat--dashboard-client client
+           hermes-chat--dashboard-session-ready-p t
+           hermes-chat--dashboard-active-session-id "sid")
+     (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                (lambda (_method _path &rest args)
+                  (setq query (plist-get args :query))
+                  (hermes--promise-make))))
+       (hermes-chat--browse-instance-directory client "/srv")
+       (should (equal query '((path . "/srv") (profile . "remote-work"))))))))
+
 (provide 'hermes-chat-dashboard-tests)
 ;;; hermes-chat-dashboard-tests.el ends here

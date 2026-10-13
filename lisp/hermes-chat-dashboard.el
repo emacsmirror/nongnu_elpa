@@ -2376,7 +2376,11 @@ GENERATION and SESSION-ID, when non-nil, retain an interactive request's owner."
     (when (hermes-chat--dashboard-context-current-p client generation session-id)
       (hermes--promise-then
        (hermes-dashboard-transport-api-request-async
-        "GET" "/api/fs/list" :query (list (cons 'path directory)) :client client)
+        "GET" "/api/fs/list"
+        :query (append (list (cons 'path directory))
+                       (when hermes-chat--profile
+                         (list (cons 'profile hermes-chat--profile))))
+        :client client)
        (lambda (result)
          (hermes-chat--in-buffer buffer
            (when (hermes-chat--dashboard-context-current-p
