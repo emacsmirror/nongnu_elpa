@@ -345,6 +345,23 @@ equal or older sequence; target state must not roll back."
       (should-not (hermes-connectors--available-p 'continue))
       (should-error (hermes-connectors-continue) :type 'user-error))))
 
+(ert-deftest hermes-connectors-optional-credentials-stay-approvable ()
+  "Optional credential fields neither block Approve nor read as needs."
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt
+     client "connection.request"
+     (hermes-connectors-test--payload
+      1 nil
+      '((name . "linear") (kind . "plugin") (action . "install")
+        (state . "pending")
+        (required_env . [((name . "LINEAR_TOKEN") (required . :false)
+                          (secret . t) (default . "")
+                          (prompt . "Optional token"))]))))
+    (should-not (string-match-p "Needs" (buffer-string)))
+    (hermes-connectors-test--goto "Install linear")
+    (should (hermes-connectors--available-p 'approve))
+    (should (equal (hermes-connectors-test--buttons) '("Approve")))))
+
 (ert-deftest hermes-connectors-reset-forgets-operations ()
   "Clearing the chat drops cards so later tool rows cannot revive them."
   (hermes-test-with-dashboard-prompt-session (client)

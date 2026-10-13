@@ -6175,5 +6175,23 @@ first; an unrelated process with that PID is left alone."
     (should (equal (plist-get operation :settled-by) "deadline"))
     (should-not (plist-get operation :targets))))
 
+(ert-deftest hermes-transport-dashboard-connection-needs-only-required ()
+  "Only fields the backend requires are needs; omitted `required' means yes."
+  (let* ((field (lambda (name &rest extra)
+                  (append extra `((name . ,name) (secret . t) (default . "")))))
+         (target `((name . "linear") (kind . "mcp") (state . "pending")
+                   (required_env
+                    . [,(funcall field "OPTIONAL_A" '(required . :false))
+                       ,(funcall field "OPTIONAL_B" '(required . :null))
+                       ,(funcall field "TOKEN")
+                       ,(funcall field "KEY" '(required . t))])))
+         (events (hermes-test--dashboard-events
+                  `("connection.request"
+                    . ((op_id . "op-1") (seq . 0) (targets . [,target]))))))
+    (should (equal (plist-get (car (plist-get (plist-get (car events) :operation)
+                                              :targets))
+                              :needs)
+                   '("TOKEN" "KEY")))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

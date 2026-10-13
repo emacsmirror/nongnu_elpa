@@ -1147,13 +1147,19 @@ Delegate non-activity events to the notice and display fallback phase."
 
 (defun hermes-transport--connection-needs (raw)
   "Return the credential labels RAW's install still needs.
-Keep only each field's prompt or name; defaults may be secret and the client
-never collects credentials."
+Only fields the backend requires block an install; like the backend, treat
+an omitted `required' as required.  Keep only each field's prompt or name;
+defaults may be secret and the client never collects credentials."
   (let ((fields (hermes-transport--connection-list raw 'required_env)))
     (when (listp fields)
       (delq nil (mapcar (lambda (field)
-                          (or (hermes-transport--connection-string field 'prompt)
-                              (hermes-transport--connection-string field 'name)))
+                          (when (or (hermes-transport--get field 'required)
+                                    (not (hermes-transport--field-present-p
+                                          field 'required)))
+                            (or (hermes-transport--connection-string
+                                 field 'prompt)
+                                (hermes-transport--connection-string
+                                 field 'name))))
                         fields)))))
 
 (defun hermes-transport--connection-target (raw)
