@@ -428,12 +428,16 @@ cached per event, so repaints do not pretty-print it again."
   "Return (SUMMARY BODY HELP) when transient ENTRY should collapse, or nil.
 CONTENT is ENTRY's text and BLOCKS its diff blocks.  BODY is a string or a
 function returning one, called only when the disclosure is expanded.
-Unknown events always collapse with their raw payload as BODY; tool output
-collapses when multiline; status notices collapse beyond
+Prompt-request entries never collapse, even after settlement.
+Unknown events otherwise collapse with their raw payload as BODY; tool
+output collapses when multiline; status notices collapse beyond
 `hermes-chat--status-collapse-lines'."
   (let ((role (plist-get entry :role))
         (lines (length (split-string (string-trim-right content) "\n"))))
     (cond
+     ((plist-get (plist-get (plist-get entry :metadata) :event)
+                 :prompt-request-p)
+      nil)
      ((when-let* ((event (hermes-chat--entry-unknown-event entry)))
         (list (hermes-chat--unknown-event-summary event)
               (lambda () (hermes-chat--unknown-event-body event content))

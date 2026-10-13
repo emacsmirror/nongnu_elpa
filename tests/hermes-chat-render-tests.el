@@ -2179,14 +2179,53 @@ Return a plist with :maphash calls, the :preview and :detail strings."
     (should (string-match-p "gamma" detail))
     (should-not (string-match-p "truncated" detail))))
 
+(ert-deftest hermes-chat-prompt-request-status-never-collapses ()
+  "Keep every batch question and option visible, including settled prompts."
+  (let* ((lines (list
+                 (concat "1. Rewrite roadmap's open questions: "
+                         (make-string 120 ?x) " without truncating this question?")
+                 "   a. Keep startup" "   b. Rewrite startup"
+                 "2. Which build?" "   a. Source" "   b. Binary"
+                 "3. Which editor?" "   a. Emacs" "   b. Neomacs"
+                 "4. Which release?" "   a. Stable" "   b. Development"
+                 "Answer each question in the composer."
+                 "Custom answers are welcome."))
+         (content (string-join lines "\n")))
+    (should (= (length lines) 14))
+    (dolist (status '(running done interrupted))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--pending-prompts (make-hash-table :test #'equal))
+       (when (eq status 'running)
+         (puthash "clarify:batch" '(:prompt-type "clarify")
+                  hermes-chat--pending-prompts))
+       (hermes-chat--insert-entry
+        (hermes-chat--make-entry
+         'status content status "batch-prompt"
+         '(:event (:prompt-request-p t :prompt-key "clarify:batch"))))
+       (dolist (line lines)
+         (goto-char (point-min))
+         (should (search-forward line hermes-chat--input-marker t))
+         (cl-loop for position from (- (point) (length line)) below (point)
+                  do (should-not (invisible-p position))))
+       (let ((text (buffer-substring-no-properties
+                    (point-min) hermes-chat--input-marker)))
+         (should-not (string-match-p "▸\\|(14 lines)" text))
+         (when (eq status 'running)
+           (goto-char (point-min))
+           (search-forward (car (last lines)) hermes-chat--input-marker)
+           (search-forward "[Answer]" hermes-chat--input-marker)
+           (should (equal (button-get (button-at (1- (point)))
+                                      'hermes-chat-prompt-key)
+                          "clarify:batch"))))))))
+
 (ert-deftest hermes-chat-long-status-notice-collapses ()
   "Status notices beyond three lines collapse; short ones stay inline."
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-local-status "one\ntwo\nthree" 'done)
-   (hermes-chat--insert-local-status "alpha\nbeta\ngamma\ndelta" 'done)
+   (hermes-chat--insert-local-status "alpha\nbeta\ngamma\ndelta\nepsilon" 'done)
    (let ((text (buffer-substring-no-properties (point-min) hermes-chat--input-marker)))
      (should (string-match-p "one\ntwo\nthree" text))
-     (should (string-match-p "▸ alpha  (4 lines)" text))
+     (should (string-match-p "▸ alpha  (5 lines)" text))
      (should-not (string-match-p "delta" text)))
    (goto-char (point-min))
    (search-forward "▸ alpha")
