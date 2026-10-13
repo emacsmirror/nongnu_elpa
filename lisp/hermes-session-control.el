@@ -50,6 +50,10 @@
   "Non-nil when the detached session was running automation.
 A reconnect resumes such a session instead of leaving it lazy.")
 
+(defvar-local hermes-session-control--reading nil
+  "The outstanding snapshot read, (:again FLAG), or nil.
+FLAG is non-nil when another read was asked for meanwhile.")
+
 (defvar-local hermes-session-control--view nil
   "The control view showing this chat.")
 
@@ -98,7 +102,9 @@ MESSAGE is one of (:push SNAPSHOT), (:request ACTION),
         (hermes-session-control-reduce hermes-session-control--state message))
   (pcase (car message)
     ((or :push :reply) (hermes-session-control--schedule))
-    (:forget (hermes-session-control--cancel)))
+    ;; A detached read cannot block the next attachment's.
+    (:forget (hermes-session-control--cancel)
+             (setq hermes-session-control--reading nil)))
   (force-mode-line-update)
   (let ((chat (current-buffer)))
     (when (buffer-live-p hermes-session-control--view)
@@ -123,8 +129,9 @@ MESSAGE is one of (:push SNAPSHOT), (:request ACTION),
 
 ;;;; Requests
 
-(defun hermes-session-control--send (&optional action args context)
+(defun hermes-session-control--send (&optional action args context done)
   "Read this chat's snapshot, or apply ACTION with ARGS under command CONTEXT.
+Call DONE in the chat once the request settles, whatever its outcome.
 The reply applies only to the same attachment and epoch.  An action's
 reply releases CONTEXT's command owner and then handles the backend's
 `dispatch' exactly as the matching slash command's result: a resumed
@@ -139,20 +146,22 @@ goal's continuation is submitted, or queued behind a running turn."
           (lambda (message &optional dispatch)
             (when (buffer-live-p buffer)
               (with-current-buffer buffer
-                (let ((current (if context
-                                   (hermes-chat--command-context-current-p context)
-                                 (hermes-chat--dashboard-context-current-p
-                                  client generation session))))
-                  (when owner (hermes-chat--command-stop owner))
-                  (if current
-                      (progn
-                        (hermes-session-control--update message)
-                        (when (consp dispatch)
-                          (hermes-chat--handle-command-result
-                           dispatch nil (plist-get owner :input-edited))))
-                    ;; A successor attachment owns the snapshot; free the action.
-                    (when action
-                      (hermes-session-control--update (list :fail nil action)))))))))
+                (unwind-protect
+                    (let ((current (if context
+                                       (hermes-chat--command-context-current-p context)
+                                     (hermes-chat--dashboard-context-current-p
+                                      client generation session))))
+                      (when owner (hermes-chat--command-stop owner))
+                      (if current
+                          (progn
+                            (hermes-session-control--update message)
+                            (when (consp dispatch)
+                              (hermes-chat--handle-command-result
+                               dispatch nil (plist-get owner :input-edited))))
+                        ;; A successor attachment owns the snapshot; free the action.
+                        (when action
+                          (hermes-session-control--update (list :fail nil action)))))
+                  (when done (funcall done)))))))
          (resolve
           (lambda (result)
             (funcall settle
@@ -183,10 +192,22 @@ goal's continuation is submitted, or queued behind a running turn."
     (funcall function)))
 
 (defun hermes-session-control--read ()
-  "Read a fresh snapshot when this chat is attached; never attach for it."
+  "Read a fresh snapshot when this chat is attached; never attach for it.
+Keep at most one read outstanding: asking during one schedules a single
+follow-up read of whichever session is then attached."
   (when (and (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
              hermes-chat--dashboard-active-session-id)
-    (hermes-session-control--send)))
+    (if hermes-session-control--reading
+        (setf (plist-get hermes-session-control--reading :again) t)
+      (let ((reading (list :again nil)))
+        (setq hermes-session-control--reading reading)
+        (hermes-session-control--send
+         nil nil nil
+         (lambda ()
+           (when (eq reading hermes-session-control--reading)
+             (setq hermes-session-control--reading nil)
+             (when (plist-get reading :again)
+               (hermes-session-control--read)))))))))
 
 (defun hermes-session-control-refresh ()
   "Read a fresh control snapshot for this chat or control view.

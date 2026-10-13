@@ -340,6 +340,32 @@ LOOP overrides the loop's fields."
        client "message.complete" '((text . "Hi") (status . "complete")))
       (should-not reads))))
 
+(ert-deftest hermes-control-notice-burst-coalesces-rereads ()
+  "A burst of notices keeps one read outstanding and one follow-up."
+  (hermes-test--with-control-wire reads
+    (hermes-test--emit-dashboard-event
+     client "session.control.update"
+     `((control . ,(hermes-test--loop-control "a" 2))))
+    (dotimes (_ 100)
+      (hermes-test--emit-dashboard-event
+       client "status.update" '((kind . "process") (text . "process exited"))))
+    (should (= (length reads) 1))
+    (funcall (pop reads)
+             `((control . ,(hermes-test--control-wire "b"))))
+    ;; Notices that arrived during the read get exactly one more read.
+    (should (= (length reads) 1))
+    (funcall (pop reads)
+             `((control . ,(hermes-test--control-wire "c"))))
+    (should-not reads)
+    ;; A failed read frees the slot too.
+    (hermes-test--emit-dashboard-event
+     client "status.update" '((kind . "process") (text . "process exited")))
+    (should (= (length reads) 1))
+    (funcall (pop reads) nil)
+    (hermes-test--emit-dashboard-event
+     client "status.update" '((kind . "process") (text . "process exited")))
+    (should (= (length reads) 1))))
+
 (ert-deftest hermes-control-slash-tick-rereads-once-after-due-time ()
   "A slash-only tick is reconciled by its notice and one timer after due."
   (hermes-test--with-control-wire reads
