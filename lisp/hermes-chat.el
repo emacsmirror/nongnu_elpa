@@ -2838,14 +2838,16 @@ and the :client, :session and :lifetime that own the edit.")
 
 (defun hermes-chat--rewind-scope (row-id)
   "Return (FIRST-P . LATER) for the user turn ROW-ID, or nil when absent.
-FIRST-P is non-nil when no user turn precedes it; LATER counts user turns
-after it."
-  (let ((users (seq-filter (lambda (entry) (eq (plist-get entry :role) 'user))
-                           (ewoc-collect hermes-chat--ewoc #'always))))
+FIRST-P is non-nil when no turn precedes it; LATER counts the turns after
+it.  Turns are those `hermes-chat--turn-boundary-p' opens, so a finished
+backend-owned turn, such as a loop wakeup, counts like one you sent."
+  (let ((turns (ewoc-collect hermes-chat--ewoc #'hermes-chat--turn-boundary-p)))
     (when-let* ((tail (seq-drop-while
-                       (lambda (entry) (not (eql (plist-get entry :row-id) row-id)))
-                       users)))
-      (cons (eq tail users) (1- (length tail))))))
+                       (lambda (entry)
+                         (not (and (eq (plist-get entry :role) 'user)
+                                   (eql (plist-get entry :row-id) row-id))))
+                       turns)))
+      (cons (eq tail turns) (1- (length tail))))))
 
 (defun hermes-chat--confirm-rewind (prompt scope)
   "Ask with PROMPT whether to rewind SCOPE, a `hermes-chat--rewind-scope'."
@@ -2853,8 +2855,8 @@ after it."
    (format "%s%s? " prompt
            (pcase (cdr scope)
              (0 "")
-             (1 ", removing 1 later message")
-             (n (format ", removing %d later messages" n))))))
+             (1 ", removing 1 later turn")
+             (n (format ", removing %d later turns" n))))))
 
 (defun hermes-chat--submit-rewind (content row-id scope)
   "Submit CONTENT in place of user turn ROW-ID covering SCOPE."
@@ -2944,7 +2946,7 @@ SCOPE the `hermes-chat--rewind-scope' they confirmed."
 (defun hermes-chat-restore-turn ()
   "Rerun the conversation from the message at point.
 The message is sent again unchanged after the conversation is rewound to
-just before it; later messages are removed."
+just before it; later turns are removed."
   (interactive nil hermes-chat-mode)
   (let* ((entry (hermes-chat--rewind-target "rerunning"))
          (owner (hermes-chat--rewind-owner (plist-get entry :row-id)))

@@ -1267,7 +1267,7 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (insert " (revised)")
     (call-interactively (key-binding (kbd "RET")))
     (should (equal (car prompts)
-                   "Replace this message, removing 1 later message? "))
+                   "Replace this message, removing 1 later turn? "))
     (pcase-let ((`(,text . ,args) (car submits)))
       (should (equal text "Second question (revised)"))
       (should (eql (plist-get args :truncate-before-row-id) 13))
@@ -1279,7 +1279,7 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
 
 (ert-deftest hermes-chat-edit-turn-confirms-scope ()
   "The first turn needs empty consent; the last needs neither deep nor empty."
-  (dolist (case '(("First question" 11 "removing 2 later messages" nil t)
+  (dolist (case '(("First question" 11 "removing 2 later turns" nil t)
                   ("Third question" 15 nil nil nil)))
     (pcase-let ((`(,text ,row-id ,phrase ,deep ,empty) case))
       (hermes-test-with-rewind-chat (submits _reads prompts)
@@ -1404,9 +1404,65 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (hermes-test--goto-entry "Second question")
     (hermes-chat-restore-turn)
     (should (equal (car prompts)
-                   "Rerun from this message, removing 1 later message? "))
+                   "Rerun from this message, removing 1 later turn? "))
     (should (equal (caar submits) "Second question"))
     (should (eql (plist-get (cdar submits) :truncate-before-row-id) 13))))
+
+(defun hermes-test--finish-backend-turn (client)
+  "Run a backend-owned turn, such as a loop wakeup, to completion on CLIENT."
+  (hermes-chat--dispatch-accepted-transport-event
+   nil t (hermes-test--wire-event "message.start" "{}"))
+  (hermes-chat--handle-transport-event
+   hermes-chat--pending-assistant-id
+   (hermes-test--wire-event
+    "message.complete"
+    "{\"text\":\"Loop answer\",\"status\":\"complete\"}"))
+  (hermes-test--emit-dashboard-idle client "sid-rewind")
+  (should-not (hermes-chat--active-turn-p)))
+
+(defun hermes-test--rewind-last-turn (edit)
+  "Rewind to \"Third question\" by editing when EDIT, else by rerunning."
+  (hermes-test--goto-entry "Third question")
+  (if (not edit)
+      (hermes-chat-restore-turn)
+    (hermes-chat-edit-turn)
+    (hermes-chat-send)))
+
+(ert-deftest hermes-chat-rewind-counts-finished-backend-turns ()
+  "A finished backend-owned turn after the target is a later turn to remove."
+  (dolist (edit '(nil t))
+    (hermes-test-with-rewind-chat (submits _reads prompts)
+      (hermes-test--finish-backend-turn client)
+      (hermes-test--rewind-last-turn edit)
+      (should (equal (car prompts)
+                     (format "%s, removing 1 later turn? "
+                             (if edit "Replace this message"
+                               "Rerun from this message"))))
+      (pcase-let ((`(,text . ,args) (car submits)))
+        (should (equal text "Third question"))
+        (should (eql (plist-get args :truncate-before-row-id) 15))
+        (should (eq (plist-get args :confirm-deep-truncate) t))))))
+
+(ert-deftest hermes-chat-rewind-refuses-backend-turn-during-confirmation ()
+  "A backend-owned turn that runs while the user answers voids the consent."
+  (dolist (edit '(nil t))
+    (hermes-test-with-rewind-chat (submits _reads prompts)
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (prompt)
+                   (push prompt prompts)
+                   (hermes-test--finish-backend-turn client)
+                   t)))
+        (should (string-match-p
+                 "conversation changed"
+                 (cadr (should-error (hermes-test--rewind-last-turn edit)
+                                     :type 'user-error)))))
+      (should (equal (car prompts)
+                     (if edit "Replace this message? "
+                       "Rerun from this message? ")))
+      (should-not submits)
+      (when edit
+        (should hermes-chat--edit-turn)
+        (should (equal (hermes-chat-input-string) "Third question"))))))
 
 (ert-deftest hermes-chat-edit-turn-reconciles-after-turn ()
   "A truncating submit repaints from history once its turn ends."
