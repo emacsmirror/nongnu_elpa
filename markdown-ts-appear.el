@@ -660,6 +660,17 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
   (remove-function (local 'filter-buffer-substring-function)
                    #'markdown-ts-appear--decoration-filter-copied-text))
 
+(defun markdown-ts-appear--atx-marker-visible-p (node)
+  "Return non-nil when ATX marker NODE is in an empty or incomplete heading."
+  ;; An unfinished heading at buffer end can have its marker under an ERROR
+  ;; node.  Keep it visible until there is a heading with text to render.
+  (and (string-match-p "\\`atx_h[1-6]_marker\\'" (treesit-node-type node))
+       (or (not (equal (treesit-node-type (treesit-node-parent node))
+                       "atx_heading"))
+           (save-excursion
+             (goto-char (treesit-node-start node))
+             (looking-at-p "[# \t]+$")))))
+
 (defun markdown-ts-appear--fontify-node
     (function node override start limit &rest rest)
   "Call FUNCTION for NODE without covering visible source."
@@ -667,7 +678,8 @@ The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
       (apply function node override start limit rest)
     (let ((markdown-ts-hide-markup
            (and markdown-ts-hide-markup
-                (not (markdown-ts-appear--node-visible-p node)))))
+                (not (or (markdown-ts-appear--node-visible-p node)
+                         (markdown-ts-appear--atx-marker-visible-p node))))))
       (apply function node override start limit rest))))
 
 (defun markdown-ts-appear--fence-opening-p (node)
@@ -914,7 +926,9 @@ at most one following space or tab and are not clipped to START or LIMIT."
            (markdown-ts-hide-markup
             (and markdown-ts-hide-markup
                  (not (and markup-node
-                           (markdown-ts-appear--node-visible-p markup-node))))))
+                           (or (markdown-ts-appear--node-visible-p markup-node)
+                               (markdown-ts-appear--atx-marker-visible-p
+                                markup-node)))))))
       (apply function node override start limit rest)
       (when (and markdown-ts-hide-markup
                  (equal type "setext_heading")
