@@ -1806,6 +1806,95 @@ A worker card stands in for the history tool row with its call id."
       (should-not (string-match-p "Stale local answer" (buffer-string)))
       (should (equal (hermes-test--user-row-ids) '(11 13 15 21))))))
 
+(defun hermes-test--wire-event (kind payload)
+  "Return the normalized dashboard event KIND with JSON PAYLOAD."
+  (car (hermes-dashboard-transport--normalize-event-frame
+        `((params . ((type . ,kind) (session_id . "sid-rewind")
+                     (payload . ,(hermes-transport-json-parse payload))))))))
+
+(defun hermes-test--remote-turn (client)
+  "Run a CLIENT backend-owned turn with an interim segment, card and tasks.
+Return its history rows after `hermes-test-rewind-history'."
+  (hermes-chat--dispatch-accepted-transport-event
+   nil t '(:type status :event "message.start" :status "started"
+                 :session-id "sid-rewind"))
+  (hermes-chat--handle-transport-event
+   hermes-chat--pending-assistant-id
+   (hermes-test--wire-event
+    "message.interim" "{\"text\":\"Remote interim\",\"already_streamed\":false}"))
+  (hermes-chat--handle-transport-event
+   hermes-chat--pending-assistant-id
+   (hermes-test--wire-event
+    "message.complete" (concat "{\"text\":\"Remote answer\",\"status\":\"complete\","
+                               "\"persisted_turn\":{\"user_row_id\":21}}")))
+  (hermes-test--emit-dashboard-idle client "sid-rewind")
+  (hermes-test--insert-turn-extras "remote-call")
+  (hermes-chat--insert-entry (hermes-chat--make-entry 'diff "+x" 'done))
+  '(((role . "user") (text . "Remote question") (row_id . 21))
+    ((role . "assistant") (text . "Remote interim") (row_id . 22))
+    ((role . "tool") (name . "delegate_task") (tool_call_id . "remote-call"))
+    ((role . "assistant") (text . "Remote answer") (row_id . 23))))
+
+(defun hermes-test--local-turn (_client)
+  "Run a local turn with a card and task node; return its history rows."
+  (hermes-chat--insert-entry
+   (hermes-chat--entry-with (hermes-chat--make-entry 'user "Fourth question" 'done)
+                            :turn-row 21))
+  (hermes-test--insert-turn-extras "call-9")
+  (hermes-chat--insert-entry (hermes-chat--make-entry 'assistant "Fourth answer" 'done))
+  '(((role . "user") (text . "Fourth question") (row_id . 21))
+    ((role . "tool") (name . "delegate_task") (tool_call_id . "call-9"))
+    ((role . "assistant") (text . "Fourth answer") (row_id . 22))))
+
+(defun hermes-test--failed-turn (_client)
+  "Fail a local turn past its persisted interim segment; return its rows."
+  (hermes-chat--insert-entry
+   (hermes-chat--entry-with (hermes-chat--make-entry 'user "Fourth question" 'done)
+                            :turn-row 21))
+  (let ((id (plist-get (ewoc-data (hermes-chat--insert-entry
+                                   (hermes-chat--make-entry 'assistant "" 'streaming)))
+                       :id)))
+    (hermes-chat--mark-assistant-failure
+     id (list :surface '(:layer "provider" :code "timeout" :retryable t)
+              :partial-text "Partly. More.")
+     'error))
+  (hermes-chat--insert-local-status "Turn failed" 'error)
+  '(((role . "user") (text . "Fourth question") (row_id . 21))
+    ((role . "assistant") (text . "Partly. ") (row_id . 22))))
+
+(ert-deftest hermes-chat-history-reconcile-is-idempotent ()
+  "Reconciling identical history twice leaves the presentation untouched.
+Every fixture keeps its task node, diff, status line and failure, and
+the second pass keeps the very same nodes and text."
+  (dolist (fixture '(hermes-test--remote-turn hermes-test--local-turn
+                     hermes-test--failed-turn))
+    (hermes-test-with-rewind-chat (_submits _reads _prompts)
+      (let* ((rows (append hermes-test-rewind-history (funcall fixture client)))
+             (task (plist-get hermes-chat-todos--turn-entry :id))
+             (known (copy-hash-table hermes-chat--nodes))
+             (local (seq-filter (lambda (entry)
+                                  (or (hermes-chat--local-presentation-p entry)
+                                      (hermes-chat--entry-failure entry)))
+                                (hermes-chat--entries))))
+        (hermes-chat--repaint-history rows known)
+        (let ((nodes (hermes-chat--ewoc-nodes))
+              (text (buffer-string)))
+          (ert-info ((format "%s first pass" fixture))
+            (dolist (entry local)
+              (should (seq-find (lambda (shown)
+                                  (and (eq (plist-get shown :role)
+                                           (plist-get entry :role))
+                                       (equal (hermes-chat--entry-failure shown)
+                                              (hermes-chat--entry-failure entry))))
+                                (hermes-chat--entries))))
+            (when task (should (gethash task hermes-chat--nodes))))
+          (hermes-chat--repaint-history rows known)
+          (ert-info ((format "%s second pass" fixture))
+            (should (= (length nodes) (length (hermes-chat--ewoc-nodes))))
+            (should (cl-every #'eq nodes (hermes-chat--ewoc-nodes)))
+            (should (equal text (buffer-string)))
+            (when task (should (gethash task hermes-chat--nodes)))))))))
+
 (ert-deftest hermes-chat-history-reconcile-rebuild-cost ()
   "Rebuilding a long transcript stays well under a second."
   (hermes-test-with-rewind-chat (_submits _reads _prompts)

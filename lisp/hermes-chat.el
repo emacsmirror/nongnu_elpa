@@ -2712,7 +2712,9 @@ same durable user row (or the same tool calls).  That turn's local
 presentation, such as task nodes and diffs, and its failure stay with
 it; anything else is removed, so content from dropped or replaced turns
 never survives.  Local status lines added since KNOWN, a node table
-snapshot, stay, so the notice that caused the repaint remains visible."
+snapshot, stay, so the notice that caused the repaint remains visible.
+History's user rows bound the rebuilt turns, so repainting the same
+history again changes nothing."
   (let* ((wanted (hermes-chat--split-turns
                   (mapcan #'hermes-chat--history-entries messages) #'identity))
          (local (hermes-chat--split-turns (hermes-chat--ewoc-nodes) #'ewoc-data))
@@ -2749,6 +2751,16 @@ snapshot, stay, so the notice that caused the repaint remains visible."
                    (not (gethash (plist-get entry :id) known))
                    (not (memq node items)))
           (setq items (nconc items (list node))))))
+    ;; History's user rows now bound every turn, so a kept assistant that
+    ;; opened a backend-owned turn stops being a boundary of its own.
+    ;; Otherwise the next reconciliation splits its turn in two.
+    (dolist (item items)
+      (when (hermes-chat--node-item-p item)
+        (let ((entry (or (cdr (assq item updates)) (ewoc-data item))))
+          (when (plist-get entry :turn-start)
+            (setq updates (cons (cons item (hermes-chat--entry-with
+                                            entry :turn-start nil))
+                                (assq-delete-all item updates)))))))
     (hermes-chat--repaint-apply items updates)))
 
 (defun hermes-chat--repaint-apply (items updates)
