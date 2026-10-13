@@ -163,6 +163,7 @@ Inside a project, its root basename becomes the canonical session label."
 (require 'hermes-chat-models)
 (require 'hermes-chat-handoff)
 (require 'hermes-chat-slash)
+(require 'hermes-chat-failure)
 
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
@@ -258,7 +259,9 @@ reasoning.  Keep the activity neutral and use empty content only to clear it."
        (list :status status
              :activity (if (hermes-chat--interrupted-status-p status)
                            "Interrupted"
-                         (or (hermes-chat--event-string
+                         (or (and-let* ((failure (plist-get event :failure)))
+                               (hermes-chat-failure-title failure))
+                             (hermes-chat--event-string
                               event '(:content :error))
                              "Transport error")))))
     ('unknown (list :status 'error
@@ -365,7 +368,9 @@ assistant entry, so the reply placeholder keeps its text."
          (list '(clear-tools)
                (cons 'refresh-header status)
                (cons 'clear-prompts event)
-               (cons 'append-error (cons content estatus)))))
+               (if-let* ((failure (plist-get event :failure)))
+                   (cons 'mark-failure (cons failure estatus))
+                 (cons 'append-error (cons content estatus))))))
      (hermes-chat--turn-terminal-suffix estatus))))
 
 (defun hermes-chat--turn-reduce-status (state event now)
@@ -572,6 +577,8 @@ stays side-effect-light."
      (hermes-chat--mark-previewed-assistant assistant-id content))
     (`(append-error ,content . ,status)
      (hermes-chat--append-assistant-content assistant-id content status))
+    (`(mark-failure ,failure . ,status)
+     (hermes-chat--mark-assistant-failure assistant-id failure status))
     (`(mark-status . ,status)
      (hermes-chat--mark-assistant assistant-id status nil t))
     ('(drop-thinking) (hermes-chat--drop-duplicate-thinking assistant-id))
