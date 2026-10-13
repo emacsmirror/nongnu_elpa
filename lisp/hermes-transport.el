@@ -1095,17 +1095,120 @@ Delegate non-activity events to the notice and display fallback phase."
      (list (hermes-dashboard-transport--payload-event type params payload 'thinking)))
     (_ (hermes-dashboard-transport--normalize-notice-events type params payload))))
 
+;;;; Session controls
+
+(defconst hermes-transport--control-sections
+  '((goal ("active" "paused" "done")
+          (title . string) (status . string) (turns_used . integer)
+          (max_turns . integer) (created_at . number) (updated_at . number)
+          (paused_reason . string) (last_verdict . string)
+          (last_reason . string) (subgoals . strings) (contract . contract)
+          (gates . gates) (wait_barrier . barrier))
+    (loop ("active" "paused" "done")
+          (prompt . string) (status . string) (mode . string)
+          (interval_seconds . number) (current_delay . number)
+          (times . integer) (until . string) (max_ticks . integer)
+          (ticks_fired . integer) (created_at . number)
+          (last_fired_at . number) (next_due_at . number)
+          (awaiting_response . boolean) (deferred_by_goal . boolean)
+          (paused_reason . string) (last_stop_reason . string))
+    (heartbeat ("active" "paused")
+               (prompt . string) (status . string)
+               (interval_seconds . number) (created_at . number)
+               (last_fired_at . number) (fire_count . integer)))
+  "Released `session.control' sections: statuses, then (FIELD . TYPE).")
+
+(defun hermes-transport--control-key (field)
+  "Return the Lisp keyword for snake_case wire FIELD."
+  (intern (concat ":" (string-replace "_" "-" (symbol-name field)))))
+
+(defun hermes-transport--control-plist (object specs)
+  "Return OBJECT's SPECS fields as a plist, dropping ill-typed values.
+SPECS is a list of (FIELD . TYPE)."
+  (cl-loop for (field . type) in specs
+           for value = (hermes-transport--control-value
+                        type (hermes-transport--get object field))
+           when value append (list (hermes-transport--control-key field) value)))
+
+(defun hermes-transport--control-value (type value)
+  "Return VALUE coerced to wire TYPE, or nil when it does not match."
+  (pcase-exhaustive type
+    ('string (hermes-transport--non-empty-string value))
+    ('number (and (numberp value) value))
+    ('integer (and (integerp value) value))
+    ('boolean (eq value t))
+    ('strings (and (listp value) (seq-filter #'stringp value)))
+    ('contract (and (consp value)
+                    (hermes-transport--control-plist
+                     value '((outcome . string) (verification . string)
+                             (constraints . string) (boundaries . string)
+                             (stop_when . string)))))
+    ('gates (and (listp value)
+                 (mapcar (lambda (gate)
+                           (hermes-transport--control-plist
+                            gate '((command . string) (timeout_seconds . integer)
+                                   (max_retries . integer) (attempts . integer)
+                                   (last_exit_code . integer))))
+                         (seq-filter #'consp value))))
+    ('barrier (and (consp value)
+                   (member (hermes-transport--get value 'type)
+                           '("until" "session" "pid"))
+                   (hermes-transport--control-plist
+                    value '((type . string) (until_at . number)
+                            (target . scalar) (reason . string)))))
+    ('scalar (hermes-transport--scalar-string value))))
+
+(defun hermes-transport-control-snapshot (object)
+  "Normalize a released `session.control' snapshot OBJECT.
+Return (:revision R :updated-at T :goal G :loop L :heartbeat H), where an
+absent section is nil.  Return nil when OBJECT is malformed: a missing
+section key or a section without a known status makes no claim at all.
+The revision is an opaque content hash, empty when nothing is set."
+  (when (and (consp object)
+             (stringp (hermes-transport--get object 'revision))
+             (seq-every-p (lambda (section)
+                            (hermes-transport--field-present-p object (car section)))
+                          hermes-transport--control-sections))
+    (catch 'malformed
+      (append
+       (list :revision (hermes-transport--get object 'revision)
+             :updated-at (or (hermes-transport--control-value
+                              'number (hermes-transport--get object 'updated_at))
+                             0))
+       (cl-loop for (name statuses . specs) in hermes-transport--control-sections
+                for raw = (hermes-transport--get object name)
+                append (list (hermes-transport--control-key name)
+                             (when raw
+                               (unless (and (consp raw)
+                                            (member (hermes-transport--get raw 'status)
+                                                    statuses))
+                                 (throw 'malformed nil))
+                               (hermes-transport--control-plist raw specs))))))))
+
+(defun hermes-dashboard-transport--control-event (type params payload)
+  "Return a `session-control' event for TYPE, PARAMS and PAYLOAD, or nil."
+  (when-let* ((control (hermes-transport-control-snapshot
+                        (hermes-transport--get payload 'control))))
+    (append (hermes-dashboard-transport--event-base type params payload)
+            (list :type 'session-control :control control))))
+
 (defun hermes-dashboard-transport--normalize-notice-events (type params payload)
   "Return notice or fallback display events for TYPE, PARAMS and PAYLOAD."
   (pcase type
+    ;; Goal, loop and heartbeat snapshots are session state for the header
+    ;; and the controls view, never transcript.
+    ("session.control.update"
+     (when-let* ((event (hermes-dashboard-transport--control-event
+                         type params payload)))
+       (list event)))
     ;; Voice and skin changes are client-UI concerns, not transcript content.
-    ;; Usage ticks, title pushes and goal/loop control snapshots are session
-    ;; bookkeeping the stock TUI routes to its status bar, never transcript.
+    ;; Usage ticks and title pushes are session bookkeeping the stock TUI
+    ;; routes to its status bar, never transcript.
     ;; Agent terminal events feed the desktop's terminal tabs: output chunks
     ;; carry no text field, so they rendered as a bare label.  Process cards
     ;; already show the last line and the exit.
     ((or "voice.status" "voice.transcript" "skin.changed"
-         "session.usage" "session.title" "session.control.update"
+         "session.usage" "session.title"
          "agent.terminal.output" "terminal.close")
      nil)
     ("review.summary"
