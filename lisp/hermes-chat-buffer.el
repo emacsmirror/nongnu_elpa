@@ -1927,7 +1927,8 @@ Preserve point and narrowing.  When appending, insert error NOTICE if non-nil."
   "Compact structured goal state for the chat header.")
 
 (defvar-local hermes-chat--runtime-flags nil
-  "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
+  "Runtime flags from `session.info'.
+Keys are :reasoning-effort, :service-tier, :fast and :yolo.
 Shown as annotations after the model in the chat header.")
 
 (defvar hermes-chat--entry-counter 0
@@ -2939,7 +2940,12 @@ With LABEL, budget the complete action label, not only its value."
                                          :reasoning-effort))))
            (propertize effort 'face 'hermes-chat-header-reasoning))
          (and (plist-get hermes-chat--runtime-flags :fast)
-              (propertize "fast" 'face 'hermes-chat-header-tier))
+              (propertize (if (equal (plist-get hermes-chat--runtime-flags
+                                                :service-tier)
+                                     "ultrafast")
+                              "ultrafast"
+                            "fast")
+                          'face 'hermes-chat-header-tier))
          (and (plist-get hermes-chat--runtime-flags :yolo)
               (propertize "YOLO" 'face 'hermes-chat-header-warning)))))
 

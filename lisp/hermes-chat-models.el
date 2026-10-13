@@ -104,7 +104,9 @@ capabilities."
                     "free"
                   (hermes-chat--model-price provider model))
                 (and (eq (hermes-transport--get caps 'reasoning) t) "reasoning")
-                (and (eq (hermes-transport--get caps 'fast) t) "fast")))))
+                ;; Ultrafast implies fast; name the stronger tier.
+                (cond ((eq (hermes-transport--get caps 'ultrafast) t) "ultrafast")
+                      ((eq (hermes-transport--get caps 'fast) t) "fast"))))))
 
 (defun hermes-chat--model-candidate (provider model)
   "Return one completion candidate for MODEL in PROVIDER row."

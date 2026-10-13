@@ -187,7 +187,7 @@ Inside a project, its root basename becomes the canonical session label."
     (setq hermes-chat--model model))
   (when-let* ((agent (plist-get event :agent-name)))
     (setq hermes-chat--agent-name agent))
-  (dolist (key '(:reasoning-effort :fast :yolo))
+  (dolist (key '(:reasoning-effort :service-tier :fast :yolo))
     (when-let* ((tail (plist-member event key)))
       (setq hermes-chat--runtime-flags
             (plist-put hermes-chat--runtime-flags key (cadr tail)))))

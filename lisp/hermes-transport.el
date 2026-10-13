@@ -971,7 +971,7 @@ The :final-text field preserves literal text when PAYLOAD has no error."
 (defun hermes-dashboard-transport--session-info-event (type params payload)
   "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD.
 Surface the session's model, profile (agent) name, and runtime flags --
-reasoning effort, fast/priority tier, and approval bypass (yolo) -- so the
+reasoning effort, service tier, and approval bypass (yolo) -- so the
 chat header can show them."
   (let* ((running-present
           (hermes-transport--field-present-p payload 'running))
@@ -999,6 +999,10 @@ chat header can show them."
     (when (hermes-transport--field-present-p payload 'fast)
       (setq event (plist-put event :fast
                              (eq (hermes-transport--get payload 'fast) t))))
+    (when (hermes-transport--field-present-p payload 'service_tier)
+      (setq event (plist-put event :service-tier
+                             (hermes-transport--scalar-string
+                              (hermes-transport--get payload 'service_tier)))))
     (when (hermes-transport--field-present-p payload 'yolo)
       (setq event (plist-put event :yolo
                              (eq (hermes-transport--get payload 'yolo) t))))

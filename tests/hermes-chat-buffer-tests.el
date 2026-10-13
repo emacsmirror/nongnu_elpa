@@ -1450,6 +1450,27 @@ Fill EXCHANGES settled exchanges first, then stream into a fresh reply."
                           (hermes-chat--header-runtime-segments))
                   '("high")))))
 
+(ert-deftest hermes-chat-header-names-ultrafast-tier ()
+  "An applied ultrafast tier is not presented as ordinary fast."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--run-turn-reducer nil
+    '(:type status :event "session.info" :status "ready"
+            :model "gpt-5.5" :service-tier "ultrafast" :fast t))
+   (should (equal (mapcar #'substring-no-properties
+                          (hermes-chat--header-runtime-segments))
+                  '("ultrafast")))
+   ;; A tier that does not apply on this route shows nothing.
+   (hermes-chat--run-turn-reducer nil
+    '(:type status :event "session.info" :status "ready"
+            :service-tier "ultrafast" :fast nil))
+   (should-not (hermes-chat--header-runtime-segments))
+   (hermes-chat--run-turn-reducer nil
+    '(:type status :event "session.info" :status "ready"
+            :service-tier "priority" :fast t))
+   (should (equal (mapcar #'substring-no-properties
+                          (hermes-chat--header-runtime-segments))
+                  '("fast")))))
+
 (ert-deftest hermes-chat-header-model-segment-without-flags-is-bare ()
   "Without runtime flags the model segment is the bare model id."
   (hermes-test-with-chat-buffer

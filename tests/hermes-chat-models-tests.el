@@ -239,7 +239,8 @@
                                                     (fast . t)
                                                     (context_window . 200000))))))
                        ((slug . "openrouter") (name . "OpenRouter")
-                        (authenticated . t) (models . ("claude" ((id . "gemini"))))))))))
+                        (authenticated . t) (models . ("claude" ((id . "gemini"))))
+                        (capabilities . ((gemini . ((fast . t) (ultrafast . t)))))))))))
          (labels (mapcar #'car cands))
          (providers (mapcar (lambda (cand)
                               (plist-get (cdr cand) :provider))
@@ -248,6 +249,7 @@
     (should (equal (car labels) "claude · Anthropic (anthropic)"))
     (should (equal (plist-get (cdar cands) :details)
                    '("200k ctx" "$3/$15" "reasoning" "fast")))
+    (should (equal (plist-get (cdr (nth 2 cands)) :details) '("ultrafast")))
     (should (equal (hermes-chat--model-config-value (cdar cands))
                    "claude --provider anthropic"))))
 
