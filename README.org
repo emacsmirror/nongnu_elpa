@@ -563,6 +563,24 @@ confuse live sessions with the same stored ID in different profiles.
 Older backends without project methods show an unsupported status; ordinary
 session browsing remains available.
 
+** Connector authorization during chat
+
+A running connector tool can request authorization or repair.  Its card shows
+backend status and the account alias beneath that tool call, or as a separate
+transcript entry until the tool row arrives.  Activate =Authorize= with =RET=
+or the mouse to open the browser.  On a card, =?= lists currently valid actions:
+=o= opens the link, =g= checks authorization now, =a= approves a pending install,
+=r= retries a failed or expired link, =d= skips that connector, and =c= lets the
+tool continue with the outcomes reached so far.  The backend watches
+authorization; opening a link does not mark it connected.  An install that
+needs credentials names them; enter those in Hermes Desktop.
+
+Pending operations are restored from =session.resume= after reconnecting a
+running chat.  Operation sequence numbers reject older updates.  Connector
+credentials are neither collected nor persisted by the client.  This feature
+requires the backend connector service; provider OAuth, MCP setup, and the
+account/catalog/policy browsers are separate features.
+
 ** Hosted Group Chats
 
 =M-x hermes-list-groups= reads rooms hosted by the selected backend.  The
