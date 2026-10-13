@@ -386,14 +386,31 @@ this session, while a goal, loop or heartbeat is running."
   "Return the non-nil WORDS joined by spaces."
   (string-join (delq nil words) " "))
 
+(defun hermes-session-control--label (text)
+  "Return label TEXT, muted so the values beside it stand out."
+  (and text (propertize text 'face 'shadow)))
+
+(defconst hermes-session-control--separator (propertize " · " 'face 'shadow)
+  "The muted separator between summary fields.")
+
+(defun hermes-session-control--state (state)
+  "Return STATE, marked when it needs the user's eye."
+  (and state
+       (propertize state 'face (pcase state
+                                 ((or "paused" "waiting" "parked") 'warning)
+                                 ("done" 'success)
+                                 (_ nil)))))
+
 (defun hermes-session-control--goal-summary (goal &optional name compact)
   "Return GOAL's state and turn budget after NAME, without units when COMPACT."
   (hermes-session-control--words
-   name
-   (cond ((plist-get goal :wait-barrier) "waiting")
-         ((not (equal (plist-get goal :status) "active")) (plist-get goal :status)))
-   (format "%d/%d%s" (or (plist-get goal :turns-used) 0)
-           (or (plist-get goal :max-turns) 0) (if compact "" " turns"))))
+   (hermes-session-control--label name)
+   (hermes-session-control--state
+    (cond ((plist-get goal :wait-barrier) "waiting")
+          ((not (equal (plist-get goal :status) "active")) (plist-get goal :status))))
+   (concat (format "%d/%d" (or (plist-get goal :turns-used) 0)
+                   (or (plist-get goal :max-turns) 0))
+           (if compact "" (hermes-session-control--label " turns")))))
 
 (defun hermes-session-control--loop-summary (loop &optional name compact)
   "Return LOOP's state, ticks and cadence after NAME.
@@ -407,30 +424,36 @@ COMPACT omits the next tick."
          (next (and (not compact) (not state)
                     (hermes-session-control--clock (plist-get loop :next-due-at)))))
     (concat (hermes-session-control--words
-             name state
+             (hermes-session-control--label name)
+             (hermes-session-control--state state)
              (if (and times (> times 0)) (format "%d/%d" ticks times)
-               (format "%d %s" ticks (if (= ticks 1) "tick" "ticks"))))
-            " · "
+               (concat (number-to-string ticks)
+                       (hermes-session-control--label
+                        (if (= ticks 1) " tick" " ticks")))))
+            hermes-session-control--separator
             (if (equal (plist-get loop :mode) "self_paced")
-                (concat "self-paced "
+                (concat (hermes-session-control--label "self-paced ")
                         (hermes-session-control--duration (plist-get loop :current-delay)))
-              (concat "every "
+              (concat (hermes-session-control--label "every ")
                       (hermes-session-control--duration (plist-get loop :interval-seconds))))
-            (if next (concat " · next " next) ""))))
+            (if next
+                (concat hermes-session-control--separator
+                        (hermes-session-control--label "next ") next)
+              ""))))
 
 (defun hermes-session-control--heartbeat-summary (heartbeat &optional name)
   "Return HEARTBEAT's state and cadence after NAME."
   (hermes-session-control--words
-   name
+   (hermes-session-control--label name)
    (unless (equal (plist-get heartbeat :status) "active")
-     (plist-get heartbeat :status))
-   "every"
+     (hermes-session-control--state (plist-get heartbeat :status)))
+   (hermes-session-control--label "every")
    (hermes-session-control--duration (plist-get heartbeat :interval-seconds))))
 
 (defun hermes-session-control-header (&optional compact)
   "Return this chat's goal, loop and heartbeat for the header, or nil.
 Finished ones are omitted.  COMPACT drops units, the next tick and the
-heartbeat."
+heartbeat.  Labels are muted; values and states needing attention are not."
   (let* ((snapshot (hermes-session-control-snapshot))
          (goal (plist-get snapshot :goal))
          (loop (plist-get snapshot :loop))
@@ -443,7 +466,7 @@ heartbeat."
                             (when (and heartbeat (not compact))
                               (hermes-session-control--heartbeat-summary
                                heartbeat "Heartbeat"))))))
-    (when parts (propertize (string-join parts " · ") 'face 'shadow))))
+    (when parts (string-join parts hermes-session-control--separator))))
 
 ;;;; View
 
@@ -456,14 +479,23 @@ heartbeat."
   (let ((start (point)))
     (insert "  " text "\n")
     (let ((fill-prefix "    ")) (fill-region start (point)))
-    (when face (add-face-text-property start (point) face))
+    (when face (add-face-text-property start (point) face t))
     (when item
       (put-text-property (+ start 2) (1- (point)) 'hermes-session-control-item item))))
 
 (defun hermes-session-control--sentence (text)
-  "Return TEXT with its first letter upcased."
+  "Return TEXT with its first letter upcased, keeping its faces."
   (if (string-empty-p text) text
-    (concat (upcase (substring text 0 1)) (substring text 1))))
+    (let ((text (copy-sequence text)))
+      (aset text 0 (upcase (aref text 0)))
+      text)))
+
+(defun hermes-session-control--status-line (summary section)
+  "Return SUMMARY as a sentence, followed by SECTION's reason for pausing."
+  (concat (hermes-session-control--sentence summary)
+          (if-let* ((reason (plist-get section :paused-reason)))
+              (concat hermes-session-control--separator reason)
+            "")))
 
 (defun hermes-session-control--insert-fields (value fields)
   "Insert VALUE's FIELDS that are set, each (KEY . LABEL), as secondary lines."
@@ -485,14 +517,18 @@ heartbeat."
   "Insert the GOAL section."
   (hermes-session-control--insert-heading "Goal" :goal)
   (hermes-session-control--insert-line (or (plist-get goal :title) ""))
+  ;; The wait line below says it is waiting, and for what.
   (hermes-session-control--insert-line
-   (hermes-session-control--sentence (hermes-session-control--goal-summary goal))
+   (hermes-session-control--status-line
+    (hermes-session-control--goal-summary (plist-put (copy-sequence goal)
+                                                     :wait-barrier nil))
+    goal)
    'shadow)
   (when-let* ((wait (plist-get goal :wait-barrier)))
     (hermes-session-control--insert-line
      (hermes-session-control--wait-text wait) 'warning))
   (hermes-session-control--insert-fields
-   goal '((:paused-reason . "Paused") (:last-verdict . "Verdict")
+   goal '((:last-verdict . "Verdict")
           (:last-reason . "Reason")))
   (hermes-session-control--insert-fields
    (plist-get goal :contract)
@@ -519,13 +555,12 @@ heartbeat."
   (hermes-session-control--insert-heading "Loop" :loop)
   (hermes-session-control--insert-line (or (plist-get loop :prompt) ""))
   (hermes-session-control--insert-line
-   (hermes-session-control--sentence (hermes-session-control--loop-summary loop))
+   (hermes-session-control--status-line
+    (hermes-session-control--loop-summary loop) loop)
    'shadow)
-  (when (plist-get loop :deferred-by-goal)
-    (hermes-session-control--insert-line "Parked while the goal runs" 'shadow))
   (hermes-session-control--insert-fields
    loop '((:until . "Until") (:max-ticks . "Tick cap")
-          (:paused-reason . "Paused") (:last-stop-reason . "Stopped")))
+          (:last-stop-reason . "Stopped")))
   (when-let* ((last (hermes-session-control--clock (plist-get loop :last-fired-at))))
     (hermes-session-control--insert-line (concat "Last tick: " last) 'shadow)))
 
@@ -551,7 +586,7 @@ DETACHED means the chat has no live session to read."
     (cond
      ((and (null snapshot) detached)
       (hermes-session-control--insert-line
-       "Disconnected.  Press g to reconnect and read the session." 'warning))
+       "Disconnected · press g to reconnect" 'warning))
      ((null snapshot)
       (hermes-session-control--insert-line "Reading session state…" 'shadow))
      ((not (cl-some (lambda (kind) (plist-get snapshot kind)) '(:goal :loop :heartbeat)))

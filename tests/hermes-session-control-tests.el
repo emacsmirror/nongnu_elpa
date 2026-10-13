@@ -430,6 +430,61 @@ LOOP overrides the loop's fields."
                                           :control (hermes-test--control-snapshot "a")))
                                    (hermes-chat--header-line 120))))))
 
+(defun hermes-test--face-at (string text)
+  "Return the face of the first occurrence of TEXT in STRING."
+  (get-text-property (string-search text string) 'face string))
+
+(ert-deftest hermes-control-header-mutes-labels-and-marks-attention ()
+  "Labels are muted, values are plain, and paused or parked states stand out."
+  (hermes-test--with-control-chat
+    (hermes-session-control-accept
+     (list :type 'session-control :session-id "sid"
+           :control (hermes-test--control-snapshot
+                     "a" '((goal . ((status . "paused") (turns_used . 3) (max_turns . 20)))
+                           (loop . ((status . "active") (interval_seconds . 300)
+                                    (ticks_fired . 1) (deferred_by_goal . t)))))))
+    (let ((header (hermes-session-control-header)))
+      (should (equal (substring-no-properties header)
+                     "Loop parked 1 tick · every 5m · Goal paused 3/20 turns"))
+      (should (eq (hermes-test--face-at header "Loop") 'shadow))
+      (should (eq (hermes-test--face-at header " · ") 'shadow))
+      (should (eq (hermes-test--face-at header "every") 'shadow))
+      (should (eq (hermes-test--face-at header "parked") 'warning))
+      (should (eq (hermes-test--face-at header "paused") 'warning))
+      (should-not (hermes-test--face-at header "5m"))
+      (should-not (hermes-test--face-at header "3/20")))))
+
+(ert-deftest hermes-control-view-says-each-state-once ()
+  "A waiting goal and a parked loop are explained once, and stand out."
+  (hermes-test--with-control-view
+    (with-current-buffer hermes-session-control--chat
+      (hermes-session-control-accept
+       (list :type 'session-control :session-id "sid"
+             :control (hermes-test--control-snapshot
+                       "b" '((goal . ((title . "Ship it") (status . "active")
+                                      (turns_used . 3) (max_turns . 20)
+                                      (wait_barrier . ((type . "pid") (target . 7)))))
+                             (loop . ((status . "active") (prompt . "Poll")
+                                      (interval_seconds . 300) (ticks_fired . 1)
+                                      (deferred_by_goal . t))))))))
+    (let ((text (buffer-string)))
+      (should (= 1 (cl-count-if (lambda (line) (string-match-p "[Ww]ait" line))
+                                (split-string text "\n"))))
+      (should (= 1 (cl-count-if (lambda (line) (string-match-p "[Pp]ark" line))
+                                (split-string text "\n"))))
+      (should (memq 'warning (ensure-list (hermes-test--face-at text "Parked")))))
+    (with-current-buffer hermes-session-control--chat
+      (hermes-session-control-accept
+       (list :type 'session-control :session-id "sid"
+             :control (hermes-test--control-snapshot
+                       "c" '((goal . ((title . "Ship it") (status . "paused")
+                                      (turns_used . 3) (max_turns . 20)
+                                      (paused_reason . "budget check")))
+                             (loop . :null))))))
+    (should (equal (seq-filter (lambda (line) (string-match-p "[Pp]aused" line))
+                               (split-string (buffer-string) "\n"))
+                   '("  Paused 3/20 turns · budget check")))))
+
 (ert-deftest hermes-control-view-shows-only-present-sections ()
   "The view renders real fields and omits absent sections and empty fields."
   (hermes-test--with-control-view
