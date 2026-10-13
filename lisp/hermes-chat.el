@@ -2173,40 +2173,52 @@ visible while reading."
        (hermes-chat--read-raw-profile notice)))))
 
 (defun hermes-chat--history-entry (message)
-  "Return a chat entry for a resumed history MESSAGE, or nil to skip it."
-  (let ((role (hermes-transport--scalar-string
-               (hermes-transport--get message 'role)))
-        (text (hermes-transport--scalar-string
-               (hermes-transport--get message 'text))))
-    (pcase role
-      ("user" (and text (hermes-chat--make-entry 'user text 'done)))
-      ("assistant" (and text (hermes-chat--make-entry 'assistant text 'done)))
-      ("tool"
-       (hermes-chat--make-entry
-        'tool
-        (hermes-chat--tool-head
-         (or (hermes-transport--scalar-string
-              (hermes-transport--get message 'name))
-             "tool")
-         (hermes-transport--scalar-string
-          (hermes-transport--get message 'context)))
-        'done)))))
+  "Return a chat entry for a resumed history MESSAGE, or nil to skip it.
+Use the backend's display projection; hidden rows return nil."
+  (when-let* ((projection (hermes-transport-history-projection message)))
+    (let ((role (hermes-transport--scalar-string
+                 (hermes-transport--get message 'role)))
+          (text (hermes-transport--non-empty-string
+                 (hermes-transport-history-text projection))))
+      (pcase role
+        ("user" (and text (hermes-chat--make-entry 'user text 'done)))
+        ("assistant" (and text (hermes-chat--make-entry 'assistant text 'done)))
+        ("tool"
+         (hermes-chat--make-entry
+          'tool
+          (hermes-chat--tool-head
+           (or (hermes-transport--scalar-string
+                (hermes-transport--get message 'name))
+               "tool")
+           (hermes-transport--scalar-string
+            (hermes-transport--get message 'context)))
+          'done))))))
+
+(defun hermes-chat--history-entries (message)
+  "Return the chat entries for a resumed history MESSAGE, in order.
+An assistant row's reasoning precedes its reply as a collapsed entry."
+  (let ((reasoning (and (equal (hermes-transport--get message 'role) "assistant")
+                        (hermes-transport--non-blank-string
+                         (plist-get (hermes-transport-history-projection message)
+                                    :reasoning)))))
+    (delq nil (list (and reasoning
+                         (hermes-chat--make-entry 'commentary reasoning 'done))
+                    (hermes-chat--history-entry message)))))
 
 (defun hermes-chat--render-history (messages)
   "Insert prior MESSAGES (from `session.resume') into the transcript."
   (let ((owner hermes-chat--session-bootstrap))
-    (dolist (message messages)
-      (when-let* ((entry (hermes-chat--history-entry message)))
-        ;; Retain exact entries before insertion, which can run rendering hooks.
-        (when owner (push entry (plist-get owner :history-entries)))
-        ;; Start the change group inside the undo-disabled transcript boundary.
-        ;; EWOC links before printing; retry retires a failed, now empty node.
-        (hermes-chat--preserve-input-point
-         (let ((inhibit-read-only t)
-               (buffer-undo-list t))
-           (hermes-chat--register-node
-            entry (atomic-change-group (ewoc-enter-last hermes-chat--ewoc entry)))))
-        (hermes-chat--notify-state-change)))))
+    (dolist (entry (mapcan #'hermes-chat--history-entries messages))
+      ;; Retain exact entries before insertion, which can run rendering hooks.
+      (when owner (push entry (plist-get owner :history-entries)))
+      ;; Start the change group inside the undo-disabled transcript boundary.
+      ;; EWOC links before printing; retry retires a failed, now empty node.
+      (hermes-chat--preserve-input-point
+       (let ((inhibit-read-only t)
+             (buffer-undo-list t))
+         (hermes-chat--register-node
+          entry (atomic-change-group (ewoc-enter-last hermes-chat--ewoc entry)))))
+      (hermes-chat--notify-state-change))))
 
 (defun hermes-chat--clear-partial-history (owner)
   "Remove only history entries retained by the current bootstrap OWNER."

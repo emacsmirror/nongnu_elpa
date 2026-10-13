@@ -575,29 +575,8 @@ Never retry a mutation after an uncertain outcome."
   (interactive nil hermes-sessions-mode hermes-session-detail-mode)
   (hermes-sessions--set-archived nil))
 
-(defun hermes-sessions--display-string (value)
-  "Return a readable display string for VALUE."
-  (cond
-   ((null value) nil)
-   ((hermes-transport--scalar-string value))
-   ((vectorp value)
-    (hermes-sessions--display-string (append value nil)))
-   ((and (listp value) (not (hermes-transport--object-p value)))
-    (string-join
-     (delq nil
-           (mapcar (lambda (item)
-                     (let ((text (hermes-sessions--display-string item)))
-                       (and text (not (string-empty-p text)) text)))
-                   value))
-     "\n"))
-   ((hermes-transport--object-p value)
-    (or (hermes-sessions--display-string
-         (hermes-transport--get-any value '(text content output preview summary)))
-        (let ((kind (hermes-transport--display-field value 'type)))
-          (and (not (string-empty-p kind))
-               (format "[%s]" kind)))
-        (prin1-to-string value)))
-   (value (format "%s" value))))
+(defalias 'hermes-sessions--display-string #'hermes-transport--display-string
+  "Return a readable display string for VALUE.")
 
 (defun hermes-sessions--message-role (message)
   "Return MESSAGE's role as a lowercase string."
@@ -606,10 +585,9 @@ Never retry a mutation after an uncertain outcome."
                 "system")))
 
 (defun hermes-sessions--message-text (message)
-  "Return MESSAGE's readable text body."
-  (or (hermes-sessions--display-string
-       (hermes-transport--get-any message '(text content context output)))
-      ""))
+  "Return MESSAGE's readable text body, or nil when the backend hides it."
+  (and-let* ((projection (hermes-transport-history-projection message)))
+    (hermes-transport-history-text projection)))
 
 (defun hermes-sessions--markdown (session messages)
   "Return SESSION and MESSAGES as Markdown."
@@ -618,11 +596,13 @@ Never retry a mutation after an uncertain outcome."
                  (or (hermes-sessions--non-empty-field session 'title)
                      "Hermes session")
                  (hermes-sessions--id session))
-         (mapcar (lambda (message)
-                   (format "## %s\n\n%s"
-                           (hermes-sessions--message-label message)
-                           (hermes-sessions--message-text message)))
-                 messages))
+         (delq nil
+               (mapcar (lambda (message)
+                         (when-let* ((text (hermes-sessions--message-text message)))
+                           (format "## %s\n\n%s"
+                                   (hermes-sessions--message-label message)
+                                   text)))
+                       messages)))
    "\n\n"))
 
 (defun hermes-sessions--write-export (session messages file)
@@ -696,8 +676,8 @@ Never retry a mutation after an uncertain outcome."
       (insert args "\n"))))
 
 (defun hermes-sessions--insert-message (message)
-  "Insert one history MESSAGE at point."
-  (let ((text (hermes-sessions--message-text message)))
+  "Insert one history MESSAGE at point, unless the backend hides it."
+  (when-let* ((text (hermes-sessions--message-text message)))
     (insert (propertize (format "[%s]\n" (hermes-sessions--message-label message))
                         'face 'font-lock-keyword-face))
     (insert (if (string-empty-p text) "[empty]" text) "\n")

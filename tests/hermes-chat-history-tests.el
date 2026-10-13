@@ -175,6 +175,18 @@
               (should (equal hermes-chat--dashboard-active-session-id "live-1")))
           (kill-buffer buffer))))))
 
+(ert-deftest hermes-chat-resume-history-uses-display-projection ()
+  "Resumed history shows display fields, skips hidden rows, folds reasoning."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--render-history hermes-test-display-history)
+   (let ((entries (hermes-chat--entries)))
+     (hermes-test-assert-display-history
+      (mapconcat (lambda (entry) (or (plist-get entry :content) "")) entries "\n")
+      t)
+     (should (equal (mapcar (lambda (entry) (plist-get entry :role)) entries)
+                    '(user commentary assistant commentary assistant)))
+     (should-not (string-match-p "Visible reasoning" (buffer-string))))))
+
 (ert-deftest hermes-chat-dashboard-resume-running-restores-inflight-guard ()
   (let* ((client-1 (hermes-test--dashboard-client))
          (client-2 (hermes-test--dashboard-client))

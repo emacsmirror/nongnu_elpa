@@ -505,6 +505,18 @@
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
+(ert-deftest hermes-sessions-detail-uses-display-projection ()
+  "Session detail and export show display fields and skip hidden rows."
+  (let ((buffer (hermes-sessions--render-detail
+                 '((id . "s1") (title . "First")) hermes-test-display-history 5)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (hermes-test-assert-display-history (buffer-string))
+          (should-not (string-match-p "Reasoning" (buffer-string))))
+      (kill-buffer buffer)))
+  (hermes-test-assert-display-history
+   (hermes-sessions--markdown '((id . "s1")) hermes-test-display-history)))
+
 (ert-deftest hermes-sessions-display-string-renders-structured-fallbacks ()
   "Structured history values render type or object fallback text."
   (should (equal (hermes-sessions--display-string '((type . "image_url")))

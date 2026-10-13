@@ -232,6 +232,28 @@ retain explicitly supplied readback, including a differing workspace."
                (hermes-test--queued-contents))
       (member (hermes-chat-input-string) candidates)))
 
+(defconst hermes-test-display-history
+  '(((role . "user") (content . "Hidden scaffolding") (display_kind . "hidden"))
+    ((role . "user") (content . "Raw steer") (display_content . "Visible request"))
+    ((role . "assistant") (content . "Raw answer") (display_content . "Visible answer")
+     (codex_message_items . "[]") (display_commentary . ["Visible commentary"])
+     (reasoning . "Raw reasoning") (display_reasoning . "Visible reasoning"))
+    ((role . "assistant") (content . "Suppressed answer") (display_content . "")
+     (display_commentary . []) (reasoning . "Suppressed reasoning")
+     (display_reasoning . ""))
+    ((role . "assistant") (text . "Legacy answer") (reasoning . "Legacy reasoning")))
+  "Released history rows carrying display projections, and a legacy row.")
+
+(defun hermes-test-assert-display-history (text &optional reasoning)
+  "Assert TEXT shows only projected history; with REASONING, also reasoning."
+  (dolist (visible (append '("Visible request" "Visible answer"
+                             "Visible commentary" "Legacy answer")
+                           (and reasoning '("Visible reasoning" "Legacy reasoning"))))
+    (should (string-match-p (regexp-quote visible) text)))
+  (dolist (hidden '("Hidden scaffolding" "Raw steer" "Raw answer" "Raw reasoning"
+                    "Suppressed"))
+    (should-not (string-match-p (regexp-quote hidden) text))))
+
 (defmacro hermes-test-with-dashboard-prompt-session (spec &rest body)
   "Create a chat using fake dashboard SPEC's client, then run BODY."
   (declare (indent 1) (debug t))

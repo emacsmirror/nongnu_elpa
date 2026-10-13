@@ -5183,6 +5183,36 @@ This is the contract that replaces hand-mirroring every event name: an invented
          (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
     (should (equal (plist-get event :warning) "not saved to history"))))
 
+(ert-deftest hermes-transport-history-projection-prefers-present-display-fields ()
+  "Present display fields win even when null; absent ones fall back; hidden is nil."
+  (should-not (hermes-transport-history-projection
+               '((role . "user") (content . "x") (display_kind . "hidden"))))
+  (should (equal (hermes-transport-history-projection
+                  '((role . "assistant") (content . "raw") (display_content)
+                    (reasoning . "raw") (display_reasoning)
+                    (display_commentary . [" "])))
+                 '(:content "" :commentary nil :reasoning "")))
+  (should (equal (hermes-transport-history-projection
+                  '((role . "user") (content . [((type . "text") (text . "a"))
+                                                ((type . "image_url"))])))
+                 '(:content "a\n[image_url]" :commentary nil :reasoning "")))
+  (should (equal (plist-get (hermes-transport-history-projection
+                             '((role . "assistant") (text . "t")
+                               (reasoning_details . [((summary . "why"))])))
+                            :reasoning)
+                 "why")))
+
+(ert-deftest hermes-transport-history-text-joins-public-commentary ()
+  "Commentary precedes the reply, but not when it only repeats the reply."
+  (should (equal (hermes-transport-history-text
+                  '(:content "Done." :commentary ("Checking." "Reading.")))
+                 "Checking.\n\nReading.\n\nDone."))
+  (should (equal (hermes-transport-history-text
+                  '(:content "Checking.\nDone." :commentary ("Checking." "Done.")))
+                 "Checking.\nDone."))
+  (should (equal (hermes-transport-history-text '(:content "" :commentary ("Only.")))
+                 "Only.")))
+
 (ert-deftest hermes-transport-dashboard-message-complete-carries-transformed ()
   "Only a true `response_transformed' marks the final as a replacement."
   (dolist (case '((t . t) (:false . nil) (nil . nil)))

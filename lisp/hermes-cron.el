@@ -381,31 +381,21 @@ PINNED-INSTANCE retains a Routines view's backend for transcript actions."
    client session-id profile hermes-dashboard-transport--api-dispatch-guard))
 
 (defun hermes-cron--message-text (message)
-  "Return MESSAGE's textual content as a string."
-  (let ((content (hermes-transport--get message 'content)))
-    (or (hermes-transport--scalar-string content)
-        (and (or (listp content) (vectorp content))
-             (string-join
-              (delq nil
-                    (mapcar (lambda (part)
-                              (or (hermes-transport--scalar-string part)
-                                  (hermes-transport--non-blank-string
-                                   (hermes-transport--display-field part 'text))))
-                            (if (vectorp content) (append content nil) content)))
-              "\n"))
-        "")))
+  "Return MESSAGE's visible text as a string, or nil when the backend hides it."
+  (and-let* ((projection (hermes-transport-history-projection message)))
+    (hermes-transport-history-text projection)))
 
 (defun hermes-cron--format-message (message)
   "Return display text for a run transcript MESSAGE."
   (let ((role (or (hermes-transport--non-blank-string
                    (hermes-transport--display-field message 'role))
                   "message"))
-        (text (hermes-cron--message-text message)))
+        (text (or (hermes-cron--message-text message) "")))
     (concat "## " role "\n\n" (if (string-empty-p text) "(no content)" text) "\n")))
 
 (defun hermes-cron--display-run (session-id messages &optional profile instance)
   "Display run SESSION-ID's transcript MESSAGES for PROFILE on INSTANCE."
-  (let ((entries (if (vectorp messages) (append messages nil) messages)))
+  (let ((entries (seq-filter #'hermes-cron--message-text (append messages nil))))
     (with-current-buffer (hermes-buffer--get "*Hermes Cron Run*"
                                             #'hermes-cron-run-mode)
       (when instance (hermes-browser--own-instance instance))

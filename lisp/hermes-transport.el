@@ -147,6 +147,73 @@ False, null, strings and other numbers are not true flags."
   "Return VALUE when it is a non-empty string, else nil."
   (and (stringp value) (not (string-empty-p value)) value))
 
+(defun hermes-transport--display-string (value)
+  "Return a readable display string for history VALUE, or nil.
+Join structured content parts by line; a part without text shows its type."
+  (cond
+   ((null value) nil)
+   ((hermes-transport--scalar-string value))
+   ((vectorp value)
+    (hermes-transport--display-string (append value nil)))
+   ((and (listp value) (not (hermes-transport--object-p value)))
+    (string-join
+     (delq nil (mapcar (lambda (item)
+                         (hermes-transport--non-empty-string
+                          (hermes-transport--display-string item)))
+                       value))
+     "\n"))
+   ((hermes-transport--object-p value)
+    (or (hermes-transport--display-string
+         (hermes-transport--get-any value '(text content output preview summary)))
+        (let ((kind (hermes-transport--display-field value 'type)))
+          (and (not (string-empty-p kind))
+               (format "[%s]" kind)))
+        (prin1-to-string value)))
+   (value (format "%s" value))))
+
+(defun hermes-transport-history-projection (message)
+  "Return the display projection of history MESSAGE, or nil to hide it.
+The backend may attach display_content, display_commentary and
+display_reasoning; a present field wins even when empty or null, and an
+absent one falls back to the raw fields.  Rows whose display_kind is
+\"hidden\" are model-facing scaffolding and return nil.  Otherwise return
+a plist: :content and :reasoning strings, and :commentary, a list of
+public commentary strings."
+  (unless (equal (hermes-transport--get message 'display_kind) "hidden")
+    (let ((content (hermes-transport--get-any
+                    message '(display_content text content context output)))
+          (reasoning
+           (if (hermes-transport--field-present-p message 'display_reasoning)
+               (hermes-transport--get message 'display_reasoning)
+             (hermes-transport--get-any
+              message '(reasoning reasoning_content reasoning_details)))))
+      (list :content (or (hermes-transport--display-string content) "")
+            ;; Only the backend may authorize commentary: raw sidecars stay out.
+            :commentary (delq nil (mapcar #'hermes-transport--non-blank-string
+                                          (append (hermes-transport--get
+                                                   message 'display_commentary)
+                                                  nil)))
+            :reasoning (or (hermes-transport--display-string reasoning) "")))))
+
+(defun hermes-transport-history-text (projection)
+  "Return the visible reply text of history PROJECTION.
+Public commentary precedes the content as paragraphs unless it only
+repeats the content."
+  (let ((content (plist-get projection :content))
+        (commentary (plist-get projection :commentary)))
+    (if (or (null commentary)
+            (equal (hermes-transport--collapse-space
+                    (string-join commentary " "))
+                   (hermes-transport--collapse-space content)))
+        content
+      (string-join (append commentary
+                           (and (not (string-empty-p content)) (list content)))
+                   "\n\n"))))
+
+(defun hermes-transport--collapse-space (text)
+  "Return TEXT trimmed, with each whitespace run made one space."
+  (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " (or text ""))))
+
 (defun hermes-transport--non-blank-string (value)
   "Return VALUE trimmed when it is non-blank, else nil."
   (and (stringp value)

@@ -752,6 +752,18 @@
                  "x\ny"))
   (should (equal (hermes-cron--message-text '((role . "user"))) "")))
 
+(ert-deftest hermes-cron-run-transcript-uses-display-projection ()
+  "Run transcripts show display fields and leave hidden rows out entirely."
+  (cl-letf (((symbol-function 'pop-to-buffer) #'ignore))
+    (unwind-protect
+        (progn
+          (hermes-cron--display-run "run" hermes-test-display-history)
+          (with-current-buffer "*Hermes Cron Run*"
+            (hermes-test-assert-display-history (buffer-string))
+            (should (= 4 (how-many "^## " (point-min) (point-max))))))
+      (when-let* ((buffer (get-buffer "*Hermes Cron Run*")))
+        (kill-buffer buffer)))))
+
 (ert-deftest hermes-cron-format-message-includes-role-and-text ()
   "A formatted run message shows its role header and content."
   (let ((out (hermes-cron--format-message '((role . "assistant") (content . "done")))))
