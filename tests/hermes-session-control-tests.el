@@ -630,6 +630,73 @@ Retries are bounded, and detaching retires a pending retry."
                (should (string-match-p "Dashboard session failed: session disconnect"
                                        (buffer-string)))))))))))
 
+;; Session resume in tests resolves through the captured callbacks.
+(defun hermes-test--resume-receipt (running)
+  "Return a resume receipt for the stored session with RUNNING."
+  `((session_id . "sid") (resumed . "stored-session") (running . ,running)))
+
+(ert-deftest hermes-control-refresh-supersedes-a-pending-resume-retry ()
+  "An explicit refresh during a pending automation retry owns the resume.
+The retry is retired, and a second refresh cannot start another resume."
+  (let ((client (hermes-test--dashboard-client)) calls requests)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-control-read)
+               #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client session-id &rest args)
+                 (push session-id calls)
+                 (if (= (length calls) 1)
+                     (funcall (plist-get args :reject)
+                              (propertize "settling" 'hermes-rpc-code 4009))
+                   (setq requests (append requests (list args)))))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--session-id "stored-session"
+              hermes-chat--dashboard-client client
+              hermes-session-control--resume-p t)
+        (hermes-chat--dashboard-handle-reconnected nil)
+        (let ((timer hermes-chat--automation-resume-timer))
+          (should timer)
+          (hermes-session-control-refresh)
+          (should (= (length calls) 2))
+          (should-not hermes-chat--automation-resume-timer)
+          (should-not (memq timer timer-list))
+          ;; A retry already queued for delivery stays inert.
+          (funcall (timer--function timer))
+          (hermes-session-control-refresh)
+          (should (= (length calls) 2))
+          (funcall (plist-get (car requests) :resolve)
+                   (hermes-test--resume-receipt t))
+          (should (equal hermes-chat--dashboard-active-session-id "sid"))
+          (should hermes-chat--dashboard-running-p)
+          (should-not hermes-chat--session-bootstrap))))))
+
+(ert-deftest hermes-control-stale-resume-receipt-cannot-overwrite-successor ()
+  "A resume receipt from a retired connection leaves its successor alone."
+  (let ((client (hermes-test--dashboard-client)) requests)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-control-read)
+               #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _session-id &rest args)
+                 (setq requests (append requests (list args))))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--session-id "stored-session"
+              hermes-chat--dashboard-client client)
+        (hermes-session-control-refresh)
+        (should (= (length requests) 1))
+        ;; The socket was replaced without delivering the old rejection.
+        (cl-incf (hermes-dashboard-transport-client-generation client))
+        (hermes-session-control-refresh)
+        (should (= (length requests) 2))
+        (funcall (plist-get (nth 1 requests) :resolve)
+                 (hermes-test--resume-receipt t))
+        (should hermes-chat--dashboard-running-p)
+        (funcall (plist-get (nth 0 requests) :resolve)
+                 (hermes-test--resume-receipt nil))
+        (should hermes-chat--dashboard-running-p)))))
+
 (ert-deftest hermes-control-reconnect-resumes-only-running-automation ()
   "A reconnect stays lazy unless the detached session was running automation."
   (dolist (case '((nil . nil) (t . "stored-session")))
