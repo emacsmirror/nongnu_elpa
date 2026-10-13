@@ -872,9 +872,9 @@ extends the input instead of prepending a blank line to it."
 (defun hermes-chat--submit-resolved (context result)
   "Settle CONTEXT from dashboard prompt RESULT."
   (hermes-chat--image-admission-ack (plist-get context :admission) result)
-  (unless (plist-get context :display)
-    (hermes-chat--bind-row-id (plist-get context :user-id)
-                              (hermes-transport--get result 'user_row_id)))
+  (hermes-chat--bind-row-id (plist-get context :user-id)
+                            (hermes-transport--get result 'user_row_id)
+                            (not (plist-get context :display)))
   (when (plist-get context :truncation)
     (hermes-chat--request-history-reconcile))
   (when-let* ((record (plist-get (plist-get context :queue-entry) :image-record)))
@@ -2196,6 +2196,9 @@ Use the backend's display projection; hidden rows return nil."
         ("user"
          (and text
               (let ((entry (hermes-chat--make-entry 'user text 'done)))
+                (when-let* ((row (hermes-transport-row-id
+                                  (hermes-transport--get message 'row_id))))
+                  (setq entry (plist-put entry :turn-row row)))
                 (if-let* ((row-id (hermes-transport-history-row-id message)))
                     (plist-put entry :row-id row-id)
                   entry))))
@@ -2356,14 +2359,17 @@ A plist with the :client, :session and :lifetime that requested it, the
 is idle and `read' while `session.history' is in flight.  :read-nodes is
 the node table when that read started, to tell whether a turn raced it.")
 
-(defun hermes-chat--bind-row-id (entry-id row-id)
-  "Record durable ROW-ID on the user entry ENTRY-ID, when both exist."
+(defun hermes-chat--bind-row-id (entry-id row-id &optional address-p)
+  "Record durable ROW-ID as the turn identity of user entry ENTRY-ID.
+With ADDRESS-P, ROW-ID also addresses the turn for editing.  Do nothing
+unless both exist."
   (when-let* ((row-id (hermes-transport-row-id row-id))
               (node (and hermes-chat--nodes
                          (gethash entry-id hermes-chat--nodes)))
               (entry (ewoc-data node)))
     (when (eq (plist-get entry :role) 'user)
-      (ewoc-set-data node (plist-put entry :row-id row-id)))))
+      (setq entry (plist-put entry :turn-row row-id))
+      (ewoc-set-data node (if address-p (plist-put entry :row-id row-id) entry)))))
 
 (defun hermes-chat--request-history-reconcile ()
   "Repaint the transcript from backend history once this chat is idle.
@@ -2443,25 +2449,71 @@ stale: read again once the chat is idle."
       (hermes-chat--repaint-history (hermes-transport--get result 'messages)
                                     (plist-get owner :known)))))
 
+(defun hermes-chat--split-turns (items entry-of)
+  "Split ITEMS into one (ROW . ITEMS) per turn, in transcript order.
+ENTRY-OF maps an item to its chat entry.  A user entry starts a turn whose
+ROW is the entry's durable :turn-row, or nil without one; items before the
+first user entry form the turn `prefix'.  Pure."
+  (let (turns)
+    (dolist (item items)
+      (let ((entry (funcall entry-of item)))
+        (cond ((eq (plist-get entry :role) 'user)
+               (push (list (plist-get entry :turn-row) item) turns))
+              (turns (push item (cdar turns)))
+              (t (push (list 'prefix item) turns)))))
+    (mapcar (lambda (turn) (cons (car turn) (reverse (cdr turn))))
+            (nreverse turns))))
+
+(defun hermes-chat--ewoc-nodes ()
+  "Return the transcript's EWOC nodes in order."
+  (let ((node (ewoc-nth hermes-chat--ewoc 0)) nodes)
+    (while node
+      (push node nodes)
+      (setq node (ewoc-next hermes-chat--ewoc node)))
+    (nreverse nodes)))
+
 (defun hermes-chat--repaint-history (messages known)
-  "Replace the transcript with history MESSAGES.
-Local status lines added since KNOWN, a node table snapshot, follow the
-history, so the notice that caused the repaint stays visible."
-  (let* ((kept (seq-filter
-                (lambda (entry)
-                  (and (eq (plist-get entry :role) 'status)
-                       (not (gethash (plist-get entry :id) known))))
-                (ewoc-collect hermes-chat--ewoc #'always)))
-         (entries (append (mapcan #'hermes-chat--history-entries messages) kept)))
+  "Reconcile the transcript with history MESSAGES by durable turn identity.
+Turns the history still has keep their entries, with live worker cards and
+task nodes; turns it no longer has are removed; turns shown here without
+an identity, or not at all, are inserted from the history in its order.
+Local status lines added since KNOWN, a node table snapshot, stay, so the
+notice that caused the repaint remains visible."
+  (let ((wanted (hermes-chat--split-turns
+                 (mapcan #'hermes-chat--history-entries messages) #'identity))
+        (kept (make-hash-table :test #'eql))
+        successor)
     (hermes-chat--preserve-input-point
       (let ((inhibit-read-only t)
             (buffer-undo-list t))
         (hermes-chat--preserve-readers
-          (ewoc-filter hermes-chat--ewoc #'ignore)
-          (clrhash hermes-chat--nodes)
-          (dolist (entry entries)
-            (hermes-chat--register-node
-             entry (ewoc-enter-last hermes-chat--ewoc entry))))))
+          (dolist (turn (hermes-chat--split-turns (hermes-chat--ewoc-nodes)
+                                                  #'ewoc-data))
+            (if (and (car turn)
+                     (not (gethash (car turn) kept))
+                     (or (eq (car turn) 'prefix)
+                         (assoc (car turn) wanted)))
+                (puthash (car turn) (cadr turn) kept)
+              (dolist (node (cdr turn))
+                (let ((entry (ewoc-data node)))
+                  (unless (and (eq (plist-get entry :role) 'status)
+                               (not (gethash (plist-get entry :id) known)))
+                    (hermes-chat--stream-format-retire (plist-get entry :id))
+                    (remhash (plist-get entry :id) hermes-chat--nodes)
+                    (ewoc-delete hermes-chat--ewoc node))))))
+          ;; Walk backwards so each missing turn lands before its successor.
+          (dolist (turn (reverse wanted))
+            (setq successor
+                  (or (and (car turn) (gethash (car turn) kept))
+                      (let (first)
+                        (dolist (entry (cdr turn) first)
+                          (let ((node (if successor
+                                          (ewoc-enter-before hermes-chat--ewoc
+                                                             successor entry)
+                                        (ewoc-enter-last hermes-chat--ewoc entry))))
+                            (hermes-chat--register-node entry node)
+                            (setq first (or first node)))))
+                      successor))))))
     (hermes-chat--notify-state-change)))
 
 ;;; Editing earlier turns

@@ -1419,7 +1419,7 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (hermes-chat-send)
     ;; The turn is running: the stale history is not read yet.
     (should-not reads)
-    (hermes-test--finish-turn callback client)
+    (hermes-test--finish-turn callback client "Better answer")
     (should (= (length reads) 1))
     (insert "next draft")
     (backward-char 3)
@@ -1472,7 +1472,7 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
                  `((messages . ,(seq-take hermes-test-rewind-history 4)))))
       (should (string-match-p "Third answer" (buffer-string)))
       (should-not reads)
-      (hermes-test--finish-turn callback client)
+      (hermes-test--finish-turn callback client "New answer")
       (should (= (length reads) 1))
       (funcall (plist-get (car reads) :resolve)
                `((messages . ,(append (seq-take hermes-test-rewind-history 4)
@@ -1593,6 +1593,55 @@ argument lists, `session.history' resolvers and y-or-n-p prompts."
     (should-not hermes-chat--history-reconcile)
     (should (equal (hermes-test--user-row-ids) '(11 13 15 21)))
     (should (string-match-p "Fourth answer" (buffer-string)))))
+
+(defun hermes-test--insert-turn-extras ()
+  "Append a worker card and a task node to the last turn; return their ids."
+  (let ((card (hermes-chat--entry-with
+               (hermes-chat--make-entry 'tool "delegate_task" 'done)
+               :card '(:kind delegate :rows ((:id "worker-1" :state running)))))
+        (tasks (hermes-chat--entry-with
+                (hermes-chat--make-entry 'tasks "" 'done) :tasks '(:items nil))))
+    (hermes-chat--insert-entry card)
+    (hermes-chat--insert-entry tasks)
+    (setq hermes-chat-todos--turn-entry (list :id (plist-get tasks :id)))
+    (list (plist-get card :id) (plist-get tasks :id))))
+
+(ert-deftest hermes-chat-history-reconcile-keeps-surviving-turns ()
+  "Turns history still has keep their entries, cards and task nodes."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (let* ((ids (hermes-test--insert-turn-extras))
+           (first (gethash (plist-get (car (hermes-chat--entries)) :id)
+                           hermes-chat--nodes)))
+      (hermes-chat--request-history-reconcile)
+      (funcall (plist-get (car reads) :resolve)
+               `((messages . ,(append hermes-test-rewind-history
+                                      '(((role . "tool") (name . "delegate_task")
+                                         (context . "spawn")))))))
+      (should (eq (gethash (plist-get (ewoc-data first) :id) hermes-chat--nodes)
+                  first))
+      (should (plist-get (ewoc-data (gethash (car ids) hermes-chat--nodes)) :card))
+      (should (gethash (plist-get hermes-chat-todos--turn-entry :id)
+                       hermes-chat--nodes))
+      (should (equal (hermes-test--user-row-ids) '(11 13 15)))
+      (should (= (seq-count (lambda (entry) (eq (plist-get entry :role) 'tool))
+                            (hermes-chat--entries))
+                 1)))))
+
+(ert-deftest hermes-chat-history-reconcile-removes-only-dropped-turns ()
+  "A rewind removes the dropped turns and keeps earlier ones untouched."
+  (hermes-test-with-rewind-chat (_submits reads _prompts)
+    (let ((ids (hermes-test--insert-turn-extras))
+          (second (seq-find (lambda (entry)
+                              (equal (plist-get entry :content) "Second answer"))
+                            (hermes-chat--entries))))
+      (hermes-chat--request-history-reconcile)
+      (funcall (plist-get (car reads) :resolve)
+               `((messages . ,(seq-take hermes-test-rewind-history 4))))
+      (should-not (gethash (car ids) hermes-chat--nodes))
+      (should-not (string-match-p "Third" (buffer-string)))
+      (should (gethash (plist-get second :id) hermes-chat--nodes))
+      (should (equal (hermes-test--user-row-ids) '(11 13))))))
+
 
 (provide 'hermes-chat-history-tests)
 ;;; hermes-chat-history-tests.el ends here
