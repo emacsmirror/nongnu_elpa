@@ -116,6 +116,27 @@
       (plist-put (copy-sequence flags) :reasoning-effort effort)
     flags))
 
+(defun hermes-chat--check-backend-reasoning ()
+  "Offer to turn on backend reasoning when it is not being sent.
+With display.show_reasoning off the backend sends no reasoning events,
+so showing reasoning locally would display nothing."
+  (when-let* ((client hermes-chat--dashboard-client)
+              ((hermes-chat--dashboard-session-attached-p)))
+    (let ((buffer (current-buffer))
+          (context (hermes-chat--command-context client)))
+      (hermes-dashboard-transport-config-get
+       client "reasoning"
+       :session-id (plist-get context :session-id)
+       :resolve
+       (lambda (result)
+         (hermes-chat--in-buffer buffer
+           (when (and (hermes-chat--command-context-current-p context)
+                      (equal (hermes-transport--get result 'display) "hide")
+                      (y-or-n-p "Reasoning is off in the backend, so none \
+is sent.  Turn it on? "))
+             (hermes-chat--dashboard-set-reasoning "show"))))
+       :reject #'ignore))))
+
 (defvar-local hermes-chat--command-owner nil
   "Identity-bearing plist owning the session during a slash command RPC.
 Its :input-edited slot records composer changes since command admission.")

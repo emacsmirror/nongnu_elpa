@@ -3060,9 +3060,12 @@ entry by hand shows tool output again."
 (defun hermes-chat-toggle-reasoning ()
   "Show or hide every expanded reasoning body in this chat.
 Hiding wins over per-entry expansion and keeps point; expanding a
-reasoning entry by hand shows reasoning again."
+reasoning entry by hand shows reasoning again.  Showing it offers to
+turn reasoning on in the backend when the backend is not sending it."
   (interactive nil hermes-chat-mode)
-  (hermes-chat--toggle-details 'hermes-reasoning "Reasoning"))
+  (hermes-chat--toggle-details 'hermes-reasoning "Reasoning")
+  (unless (hermes-chat--details-hidden-p 'hermes-reasoning)
+    (hermes-chat--check-backend-reasoning)))
 
 (defun hermes-chat--expandable-entry-p (entry)
   "Return non-nil when ENTRY has a collapsible body."
