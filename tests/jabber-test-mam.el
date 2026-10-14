@@ -15,6 +15,7 @@
 (require 'jabber-core)
 (require 'jabber-message-correct)
 (require 'jabber-moderation)
+(require 'jabber-message-thread)
 (require 'jabber-omemo-store)
 (require 'jabber-archive-test-helpers)
 
@@ -826,6 +827,9 @@ WHERE stanza_id = 'stanza-000001'"))))))
             (jabber-mam--peer-syncing nil)
             (jabber-mam--dirty-peers nil)
             (jabber-mam--tx-depth 0)
+            (jabber-mam--redraw-timer nil)
+            (jabber-mam--redraw-peers nil)
+            (jabber-mam--tx-peers nil)
             (jabber-mam-sync-complete-functions nil)
             (jabber-mam-peer-syncing-functions nil)
             (fsm-debug nil)
@@ -833,7 +837,9 @@ WHERE stanza_id = 'stanza-000001'"))))))
        (cl-letf (((symbol-function 'jabber-send-sexp)
                   (lambda (_jc xml &rest _) (push xml sent))))
          (unwind-protect (progn ,@body)
-           (jabber-mam--cleanup-all))))))
+           (jabber-mam--cleanup-all)
+           (when jabber-mam--redraw-timer
+             (cancel-timer jabber-mam--redraw-timer)))))))
 
 (defun jabber-test-mam--reply (jc request &optional from failure incomplete)
   "Deliver REQUEST's IQ reply through JC's native FSM.
@@ -1667,6 +1673,433 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
             (jabber-test-mam--reply other foreign-request)
             (should (equal '(success) foreign-outcomes))
             (should (= 0 jabber-mam--tx-depth))))))))
+
+;;; Progressive room catch-up display
+
+(defun jabber-test-mam--room-message (jc request room index)
+  "Deliver room archive message INDEX for REQUEST through JC.
+ROOM is the archive JID."
+  (let* ((jabber-test-mam-queryid
+          (jabber-xml-get-attribute
+           (car (jabber-xml-get-children request 'query)) 'queryid))
+         (xml (jabber-test-mam--make-message index room "groupchat")))
+    (setf (cadr xml) `((from . ,room)))
+    (jabber-mam--process-message jc xml)))
+
+(defun jabber-test-mam--room-page (jc request room index complete)
+  "Deliver room archive message INDEX and REQUEST's fin through JC.
+ROOM is the archive JID.  COMPLETE marks the last page."
+  (jabber-test-mam--room-message jc request room index)
+  (fsm-send-sync
+   jc `(:stanza
+        (iq ((type . "result") (from . ,room)
+             (id . ,(jabber-xml-get-attribute request 'id)))
+            (fin ((xmlns . ,jabber-mam-xmlns)
+                  (complete . ,(if complete "true" "false")))
+                 (set ((xmlns . ,jabber-mam-rsm-xmlns))
+                      (last () ,(format "archive-%06d" index))))))))
+
+(defun jabber-test-mam--wait-for (predicate)
+  "Run timers until PREDICATE returns non-nil or two seconds pass."
+  (let ((deadline (+ (float-time) 2)))
+    (while (and (not (funcall predicate)) (< (float-time) deadline))
+      (accept-process-output nil 0.05))
+    (funcall predicate)))
+
+(ert-deftest jabber-test-mam-room-catch-up-is-progressive ()
+  "Committed room pages appear while catch-up continues, with an indicator."
+  (jabber-test-mam--with-native
+    (let* ((room "room@example.com")
+           (jabber-mam-page-size 1)
+           (jabber-mam--redraw-delay 0.05)
+           (jabber-mam-sync-complete-functions
+            (list #'jabber-chat--handle-mam-sync-complete))
+           (jabber-chat-mode-hook nil)
+           (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+           (jabber-jid-obarray (make-vector 127 0))
+           (jabber-groupchat-buffer-format " *jabber-test-mam-%a-%j*")
+           (buffer (jabber-muc-create-buffer jc room))
+           (foreign (jabber-muc-create-buffer other room)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'jabber-disco-get-info)
+                     (lambda (jc _to _node callback closure)
+                       (funcall callback jc closure
+                                (list nil (list jabber-mam-xmlns))))))
+            (with-current-buffer buffer
+              (goto-char (point-max))
+              (insert "unsent draft"))
+            (jabber-mam-muc-joined jc room)
+            (should (buffer-local-value 'jabber-chat-mam-syncing buffer))
+            (should-not (buffer-local-value 'jabber-chat-mam-syncing foreign))
+            (jabber-test-mam--room-page jc (car sent) room 1 nil)
+            ;; Page 1 is committed; the next page is still outstanding.
+            (should (jabber-test-mam--wait-for
+                     (lambda () (= 2 (length sent)))))
+            (should (jabber-test-mam--wait-for
+                     (lambda ()
+                       (with-current-buffer buffer
+                         (string-search "Message 1" (buffer-string))))))
+            (should (jabber-mam-syncing-p))
+            (should (buffer-local-value 'jabber-chat-mam-syncing buffer))
+            (with-current-buffer foreign
+              (should-not (string-search "Message 1" (buffer-string))))
+            (jabber-test-mam--room-page jc (car sent) room 2 t)
+            (should-not (jabber-mam-syncing-p))
+            (should-not (buffer-local-value 'jabber-chat-mam-syncing buffer))
+            (should (jabber-test-mam--wait-for
+                     (lambda ()
+                       (with-current-buffer buffer
+                         (string-search "Message 2" (buffer-string))))))
+            (with-current-buffer buffer
+              (let ((text (buffer-string)))
+                (should (= 1 (cl-count-if
+                              (lambda (data)
+                                (equal "Message 1" (plist-get (cadr data) :body)))
+                              (ewoc-collect jabber-chat-ewoc #'identity))))
+                (should (string-search "Message 1" text))
+                (should (equal "unsent draft"
+                               (buffer-substring-no-properties
+                                jabber-point-insert (point-max)))))))
+        (kill-buffer buffer)
+        (kill-buffer foreign)))))
+
+(ert-deftest jabber-test-mam-progressive-redraw-keeps-history-reader ()
+  "A progressive redraw leaves a buffer alone while its reader reads history.
+The refresh reloads only the newest backlog window, which can evict the
+reader's anchor and move the window to the composer.  The buffer is left
+for the completion refresh, which behaves as it did before progressive
+display and so is not asserted to keep the anchor."
+  (jabber-test-mam--with-native
+    (save-window-excursion
+      (let* ((room "room@example.com")
+             (jabber-backlog-number 10)
+             (jabber-mam-page-size 1)
+             (jabber-mam--redraw-delay 0.05)
+             (jabber-mam-sync-complete-functions
+              (list #'jabber-chat--handle-mam-sync-complete))
+             (jabber-chat-mode-hook nil)
+             (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+             (jabber-jid-obarray (make-vector 127 0))
+             (jabber-groupchat-buffer-format " *jabber-test-mam-%a-%j*")
+             (buffer (jabber-muc-create-buffer jc room)))
+        (unwind-protect
+            (progn
+              ;; Seed ten loaded messages from a completed page.
+              (jabber-mam--query jc nil nil nil nil room nil 10)
+              (let ((request (car sent)))
+                (dolist (index '(1 2 4 5 7 8 10 11 13))
+                  (jabber-test-mam--room-message jc request room index))
+                (jabber-test-mam--room-page jc request room 14 t))
+              (should (jabber-test-mam--wait-for
+                       (lambda () (null jabber-mam--redraw-timer))))
+              (with-current-buffer buffer
+                (should (string-search "Message 1" (buffer-string)))
+                (goto-char (point-max))
+                (insert "draft survives"))
+              (switch-to-buffer buffer)
+              (let* ((window (selected-window))
+                     (pos (with-current-buffer buffer
+                            (ewoc-location
+                             (jabber-chat-ewoc-find-by-id "archive-000001")))))
+                (set-window-start window pos t)
+                (set-window-point window pos)
+                (with-current-buffer buffer
+                  (should (equal '(msg . "archive-000001")
+                                 (jabber-chat-buffer--window-anchor window))))
+                ;; Page 16 commits; the catch-up continues.
+                (jabber-mam--query jc "archive-000014" nil nil nil room)
+                (jabber-test-mam--room-page jc (car sent) room 16 nil)
+                (should jabber-mam--redraw-timer)
+                (should (jabber-test-mam--wait-for
+                         (lambda () (null jabber-mam--redraw-timer))))
+                (should (jabber-mam-syncing-p))
+                (with-current-buffer buffer
+                  (should (equal '(msg . "archive-000001")
+                                 (jabber-chat-buffer--window-anchor window)))
+                  (should (equal "draft survives"
+                                 (buffer-substring-no-properties
+                                  jabber-point-insert (point-max))))
+                  (should-not (string-search "Message 16" (buffer-string))))
+                ;; Completion still refreshes the deferred buffer.
+                (should (jabber-test-mam--wait-for
+                         (lambda () (= 3 (length sent)))))
+                (jabber-test-mam--room-page jc (car sent) room 17 t)
+                (should-not (jabber-mam-syncing-p))
+                (with-current-buffer buffer
+                  (should (string-search "Message 16" (buffer-string)))
+                  (should (string-search "Message 17" (buffer-string)))
+                  (should (equal "draft survives"
+                                 (buffer-substring-no-properties
+                                  jabber-point-insert (point-max)))))))
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-mam-rollback-redraws-speculative-rows ()
+  "A rolled-back page's rows leave the buffer after a progressive redraw.
+The redraw can show a later page's rows before its transaction commits;
+a real SQLITE_FULL then rolls that transaction back.  The redraw delay
+exceeds the 0.1 s pagination delay, so page 2's row is stored first."
+  (jabber-test-mam--with-native
+    (let* ((room "room@example.com")
+           (jabber-mam-page-size 1)
+           (jabber-mam--redraw-delay 0.5)
+           (jabber-mam-sync-complete-functions
+            (list #'jabber-chat--handle-mam-sync-complete))
+           (jabber-chat-mode-hook nil)
+           (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+           (jabber-jid-obarray (make-vector 127 0))
+           (jabber-groupchat-buffer-format " *jabber-test-mam-%a-%j*")
+           (buffer (jabber-muc-create-buffer jc room)))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer
+              (goto-char (point-max))
+              (insert "unsent draft"))
+            (sqlite-execute
+             jabber-db--connection
+             (format "PRAGMA max_page_count=%d"
+                     (+ 20 (caar (sqlite-select jabber-db--connection
+                                                "PRAGMA page_count")))))
+            (jabber-mam--query jc nil nil nil nil room)
+            (jabber-test-mam--room-page jc (car sent) room 1 nil)
+            (should (jabber-test-mam--wait-for (lambda () (= 2 (length sent)))))
+            ;; Page 2's row is stored, but its transaction is still open.
+            (jabber-test-mam--room-message jc (car sent) room 2)
+            (should (jabber-test-mam--wait-for
+                     (lambda ()
+                       (with-current-buffer buffer
+                         (string-search "Message 2" (buffer-string))))))
+            (should (= 1 jabber-mam--tx-depth))
+            (should-not jabber-mam--redraw-timer)
+            ;; A real application writer exhausts the database.
+            (should (string-match-p
+                     "full"
+                     (error-message-string
+                      (should-error
+                       (jabber-omemo-store-save "me@example.com"
+                                                (make-string (* 1024 1024) ?x))
+                       :type 'sqlite-error))))
+            (jabber-test-mam--reply jc (car sent) room)
+            (should-not (jabber-mam-syncing-p))
+            (should (equal '(("Message 1"))
+                           (sqlite-select jabber-db--connection
+                                          "SELECT body FROM message ORDER BY id")))
+            (should (jabber-test-mam--wait-for
+                     (lambda ()
+                       (with-current-buffer buffer
+                         (not (string-search "Message 2" (buffer-string)))))))
+            (with-current-buffer buffer
+              (should (string-search "Message 1" (buffer-string)))
+              (should (equal "unsent draft"
+                             (buffer-substring-no-properties
+                              jabber-point-insert (point-max))))))
+        (kill-buffer buffer)))))
+
+(ert-deftest jabber-test-mam-progressive-redraw-keeps-idless-history-reader ()
+  "A progressive redraw leaves a history reader alone without message IDs.
+Stored incoming chat messages need not carry message/@id or an XEP-0359
+server-id, so the reader's window has no message anchor; it still does
+not follow the composer and must not be moved there mid-sync."
+  (jabber-test-mam--with-native
+    (save-window-excursion
+      (let* ((peer "friend@example.com")
+             (jabber-backlog-number 10)
+             (jabber-mam--redraw-delay 0.05)
+             (jabber-chat-mode-hook nil)
+             (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+             (jabber-chat-buffer-format " *jabber-test-mam-%a-%j*")
+             (buffer (jabber-chat-create-buffer jc peer))
+             (refreshes 0)
+             (refresh (symbol-function 'jabber-chat-buffer-refresh)))
+        (unwind-protect
+            (progn
+              (dotimes (index 10)
+                (jabber-db-store-message "me@example.com" peer "in" "chat"
+                                         (format "Existing message %d\n%s" index
+                                                 (make-string 100 ?x))
+                                         (+ 1700000000 index) "phone"))
+              (with-current-buffer buffer (jabber-chat-buffer-refresh))
+              (switch-to-buffer buffer)
+              (let ((node (ewoc-nth jabber-chat-ewoc 0)))
+                (while (eq (car (ewoc-data node)) :rare-time)
+                  (setq node (ewoc-next jabber-chat-ewoc node)))
+                (set-window-start (selected-window) (ewoc-location node) t)
+                (set-window-point (selected-window) (ewoc-location node)))
+              (should (< (window-point (selected-window)) jabber-point-insert))
+              (should (jabber-chat-buffer--reading-history-p))
+              (cl-letf (((symbol-function 'jabber-chat-buffer-refresh)
+                         (lambda () (cl-incf refreshes) (funcall refresh))))
+                (jabber-mam--query jc)
+                (let* ((request (car sent))
+                       (jabber-test-mam-queryid
+                        (jabber-xml-get-attribute
+                         (car (jabber-xml-get-children request 'query))
+                         'queryid))
+                       (xml (jabber-test-mam--make-message 1 peer "chat"))
+                       (inner (nth 2 (jabber-mam--parse-result xml))))
+                  (setf (cadr inner) (assq-delete-all 'id (cadr inner)))
+                  (jabber-mam--process-message jc xml)
+                  (jabber-test-mam--reply jc request nil nil t))
+                (should (jabber-test-mam--wait-for
+                         (lambda () (null jabber-mam--redraw-timer))))
+                (should (jabber-mam-syncing-p))
+                (should (= 0 refreshes))))
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-mam-progressive-redraw-thread-and-account-policy ()
+  "Progressive redraw skips history readers in any window, per account.
+A thread buffer read in one of two windows is skipped while its parent
+refreshes; once both windows follow the composer it refreshes.  The
+completion refresh covers a history reader.  Another account's buffers
+for the same room are never touched."
+  (jabber-test-mam--with-native
+    (save-window-excursion
+      (let* ((room "room@example.com")
+             (jabber-chat-mode-hook nil)
+             (jabber-message-thread-use-buffers t)
+             (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+             (jabber-jid-obarray (make-vector 127 0))
+             (jabber-groupchat-buffer-format " *jabber-test-mam-%a-%j*")
+             (parent (jabber-muc-create-buffer jc room))
+             (foreign-parent (jabber-muc-create-buffer other room))
+             (thread (jabber-message-thread-create-buffer
+                      jc room "groupchat" "thread-a" nil parent))
+             (foreign-thread (jabber-message-thread-create-buffer
+                              other room "groupchat" "thread-a" nil
+                              foreign-parent))
+             (peers (list (list "me@example.com" room "groupchat")))
+             refreshed marked)
+        (unwind-protect
+            (progn
+              (with-current-buffer thread
+                (jabber-chat-ewoc-enter
+                 (list :muc-foreign
+                       (list :id "client-1" :server-id "room-1"
+                             :body "Read me"
+                             :from "room@example.com/occupant"
+                             :msg-type "groupchat"
+                             :timestamp (seconds-to-time 1700000000)))))
+              (switch-to-buffer thread)
+              (let* ((bottom (selected-window))
+                     (history (split-window-below))
+                     (insert (buffer-local-value 'jabber-point-insert thread))
+                     (pos (with-current-buffer thread
+                            (ewoc-location
+                             (jabber-chat-ewoc-find-by-id "room-1")))))
+                (set-window-buffer history thread)
+                (set-window-point bottom insert)
+                (set-window-start history pos t)
+                (set-window-point history pos)
+                (with-current-buffer thread
+                  (should (jabber-chat-buffer--reading-history-p)))
+                (cl-letf (((symbol-function 'jabber-chat-buffer-refresh)
+                           (lambda () (push (current-buffer) refreshed)))
+                          ((symbol-function
+                            'jabber-db-mark-message-thread-read)
+                           (lambda (&rest args) (push args marked))))
+                  (jabber-chat--handle-mam-sync-complete peers t)
+                  (should (memq parent refreshed))
+                  (should-not (memq thread refreshed))
+                  (should-not (memq foreign-parent refreshed))
+                  (should-not (memq foreign-thread refreshed))
+                  (should-not marked)
+                  ;; Both windows follow the composer.
+                  (set-window-point history insert)
+                  (setq refreshed nil)
+                  (jabber-chat--handle-mam-sync-complete peers t)
+                  (should (memq thread refreshed))
+                  (should (= 1 (length marked)))
+                  (should-not (memq foreign-thread refreshed))
+                  ;; Completion refreshes even a history reader.
+                  (set-window-point history pos)
+                  (setq refreshed nil)
+                  (jabber-chat--handle-mam-sync-complete peers)
+                  (should (memq thread refreshed)))))
+          (dolist (buffer (list thread foreign-thread parent foreign-parent))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(ert-deftest jabber-test-mam-rollback-reconciles-history-reader ()
+  "A rollback drops speculative rows even from a history reader's buffer.
+The progressive redraw skips a buffer whose reader scrolled into
+history, so the rollback must refresh it directly once the query has
+settled rather than defer to another progressive redraw."
+  (jabber-test-mam--with-native
+    (save-window-excursion
+      (let* ((room "room@example.com")
+             (jabber-mam-page-size 1)
+             (jabber-mam--redraw-delay 1.0)
+             (jabber-chat-mode-hook nil)
+             (jabber-mam-sync-complete-functions
+              (list #'jabber-chat--handle-mam-sync-complete))
+             (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+             (jabber-jid-obarray (make-vector 127 0))
+             (jabber-groupchat-buffer-format " *jabber-test-mam-%a-%j*")
+             (buffer (jabber-muc-create-buffer jc room)))
+        (unwind-protect
+            (progn
+              (sqlite-execute
+               jabber-db--connection
+               (format "PRAGMA max_page_count=%d"
+                       (+ 20 (caar (sqlite-select jabber-db--connection
+                                                  "PRAGMA page_count")))))
+              (jabber-mam--query jc nil nil nil nil room)
+              (jabber-test-mam--room-page jc (car sent) room 1 nil)
+              (should (jabber-test-mam--wait-for
+                       (lambda () (= 2 (length sent)))))
+              (jabber-test-mam--room-message jc (car sent) room 2)
+              (should (jabber-test-mam--wait-for
+                       (lambda ()
+                         (with-current-buffer buffer
+                           (string-search "Message 2" (buffer-string))))))
+              (should (= 1 jabber-mam--tx-depth))
+              (should-not jabber-mam--redraw-timer)
+              ;; The reader scrolls into history before page 2 settles.
+              (switch-to-buffer buffer)
+              (let ((pos (with-current-buffer buffer
+                           (ewoc-location
+                            (jabber-chat-ewoc-find-by-id "archive-000002")))))
+                (set-window-start (selected-window) pos t)
+                (set-window-point (selected-window) pos))
+              (with-current-buffer buffer
+                (should (jabber-chat-buffer--reading-history-p)))
+              (should (string-match-p
+                       "full"
+                       (error-message-string
+                        (should-error
+                         (jabber-omemo-store-save
+                          "me@example.com" (make-string (* 1024 1024) ?x))
+                         :type 'sqlite-error))))
+              (jabber-test-mam--reply jc (car sent) room)
+              (should-not (jabber-mam-syncing-p))
+              (should (equal '(("Message 1"))
+                             (sqlite-select jabber-db--connection
+                                            "SELECT body FROM message ORDER BY id")))
+              (should (jabber-test-mam--wait-for
+                       (lambda ()
+                         (with-current-buffer buffer
+                           (not (string-search "Message 2"
+                                               (buffer-string))))))))
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-mam-peer-syncing-hook-keeps-three-arguments ()
+  "Three-argument handlers still run; a failing one strands no catch-up."
+  (jabber-test-mam--with-native
+    (let* ((peer "friend@example.com")
+           (calls nil)
+           (jabber-mam-peer-syncing-functions
+            (list (lambda (_peer _type _syncing-p) (error "Handler bug"))
+                  (lambda (peer type syncing-p)
+                    (push (list peer type syncing-p) calls)))))
+      (cl-letf (((symbol-function 'jabber-disco-get-info)
+                 (lambda (jc _to _node callback closure)
+                   (funcall callback jc closure
+                            (list nil (list jabber-mam-xmlns))))))
+        (jabber-mam-chat-opened jc peer)
+        (should (equal (list (list peer "chat" t)) calls))
+        (should (= 1 (length sent)))
+        (jabber-test-mam--reply jc (car sent))
+        (should (equal (list peer "chat" nil) (car calls)))
+        (should-not jabber-mam--peer-syncing)
+        (should-not (jabber-mam-syncing-p))))))
 
 (provide 'jabber-test-mam)
 

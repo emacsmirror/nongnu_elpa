@@ -103,6 +103,18 @@ transaction contribution, pagination timer and completion callbacks.")
 (defvar jabber-mam--dirty-peers nil
   "Peers awaiting refresh after COMMIT, as (ACCOUNT PEER TYPE) entries.")
 
+(defvar jabber-mam--tx-peers nil
+  "Peers stored in the open shared transaction, as (ACCOUNT PEER TYPE).")
+
+(defvar jabber-mam--redraw-peers nil
+  "Committed peers awaiting a progressive redraw, as (ACCOUNT PEER TYPE).")
+
+(defvar jabber-mam--redraw-delay 1.0
+  "Seconds to coalesce committed pages before redrawing their buffers.")
+
+(defvar jabber-mam--redraw-timer nil
+  "Pending timer for `jabber-mam--redraw-committed', or nil.")
+
 (defvar jabber-mam--tx-depth 0
   "Reference count for the shared MAM transaction.
 Each active page owns exactly one contribution; waiting timers own none.")
@@ -156,11 +168,21 @@ Return its unique token, or nil when one was already active."
           (delq entry jabber-mam--peer-syncing))
     t))
 
+(defun jabber-mam--signal-peer-syncing (jc peer type syncing-p)
+  "Show whether JC is syncing PEER of TYPE, then run the public hook.
+SYNCING-P is non-nil when sync starts, nil when it ends.  The built-in
+indicator needs JC to find an account's room buffer, so it is updated
+here rather than from `jabber-mam-peer-syncing-functions'.  Contain
+failures so a faulty handler cannot strand a catch-up."
+  (jabber-lifecycle--call-contained
+   #'jabber-chat--update-mam-syncing jc peer type syncing-p)
+  (jabber-lifecycle--dispatch-contained
+   'jabber-mam-peer-syncing-functions peer type syncing-p))
+
 (defun jabber-mam--finish-peer-sync (jc peer token)
   "Finish TOKEN's peer catch-up for JC and PEER."
   (when (jabber-mam--end-peer-sync jc peer token)
-    (jabber-lifecycle--dispatch-contained
-     'jabber-mam-peer-syncing-functions peer "chat" nil)))
+    (jabber-mam--signal-peer-syncing jc peer "chat" nil)))
 
 (defun jabber-mam--release-page (query)
   "Release QUERY's page and transaction contribution at most once."
@@ -520,7 +542,8 @@ comparing with the account username to handle nick changes."
   "Record that PEER's buffer needs redisplay after sync.
 JC identifies the local account.  TYPE is the message type."
   (let ((entry (list (jabber-connection-bare-jid jc) peer type)))
-    (cl-pushnew entry jabber-mam--dirty-peers :test #'equal)))
+    (cl-pushnew entry jabber-mam--dirty-peers :test #'equal)
+    (cl-pushnew entry jabber-mam--tx-peers :test #'equal)))
 
 
 (defun jabber-mam--redraw-dirty ()
@@ -532,6 +555,30 @@ Drains `jabber-mam--dirty-peers' and runs
     (when peers
       (jabber-lifecycle--dispatch-contained
        'jabber-mam-sync-complete-functions peers))))
+
+(defun jabber-mam--redraw-committed ()
+  "Refresh open buffers of peers whose pages have committed or rolled back.
+Unlike `jabber-mam--redraw-dirty', this does not signal completion, and
+it skips buffers whose reader is scrolled into history; the completion
+refresh covers those.  It can run while a later page's transaction is
+open and so show rows that page later rolls back; the rollback then
+refreshes those buffers immediately, which drops them."
+  (setq jabber-mam--redraw-timer nil)
+  (when-let* ((peers (prog1 jabber-mam--redraw-peers
+                       (setq jabber-mam--redraw-peers nil))))
+    (jabber-lifecycle--call-contained
+     #'jabber-chat--handle-mam-sync-complete peers t)))
+
+(defun jabber-mam--schedule-redraw (peers)
+  "Refresh committed PEERS' buffers after `jabber-mam--redraw-delay'.
+Pages committed while the timer is pending share its redraw, so a long
+catch-up shows its progress without rebuilding buffers for every page."
+  (dolist (entry peers)
+    (cl-pushnew entry jabber-mam--redraw-peers :test #'equal))
+  (unless jabber-mam--redraw-timer
+    (setq jabber-mam--redraw-timer
+          (run-with-timer jabber-mam--redraw-delay nil
+                          #'jabber-mam--redraw-committed))))
 
 ;;; Shared transaction management
 
@@ -546,7 +593,8 @@ BEGIN a SQLite transaction when transitioning from 0 to 1."
         ((error quit)
          (ignore-error sqlite-error (sqlite-execute db "ROLLBACK"))
          (signal (car err) (cdr err)))))
-    (setq jabber-mam--tx-progress nil))
+    (setq jabber-mam--tx-progress nil
+          jabber-mam--tx-peers nil))
   (cl-incf jabber-mam--tx-depth))
 
 (defun jabber-mam--tx-end ()
@@ -557,6 +605,8 @@ COMMIT the SQLite transaction when transitioning from 1 to 0."
     (when (zerop jabber-mam--tx-depth)
       (when-let* ((db (jabber-db-ensure-open)))
         (let ((committed nil)
+              (peers (prog1 jabber-mam--tx-peers
+                       (setq jabber-mam--tx-peers nil)))
               (receipts (prog1 (reverse jabber-mam--tx-progress)
                           (setq jabber-mam--tx-progress nil))))
           (unwind-protect
@@ -575,13 +625,20 @@ COMMIT the SQLite transaction when transitioning from 1 to 0."
                        (plist-get query :with) expected uid
                        (plist-get query :coverage-start)))))
                 (sqlite-execute db "COMMIT")
-                (setq committed t))
+                (setq committed t)
+                (when peers
+                  (jabber-mam--schedule-redraw peers)))
             (unless committed
               (unwind-protect
                   ;; Automatic rollback also makes ROLLBACK report that no
                   ;; transaction exists.  Preserve the original failure.
                   (ignore-error sqlite-error (sqlite-execute db "ROLLBACK"))
                 (setq jabber-mam--dirty-peers nil)
+                ;; A progressive redraw may already show rolled-back rows.
+                ;; Re-read committed state now, including history readers.
+                (when peers
+                  (jabber-lifecycle--call-contained
+                   #'jabber-chat--handle-mam-sync-complete peers))
                 (dolist (receipt receipts)
                   (plist-put (car receipt) :failed t))
                 ;; Accepted incomplete pages may be waiting on timers.  They
@@ -792,7 +849,7 @@ Sets the syncing indicator immediately; clears it when the catch-up
 query completes (or when disco reveals MAM is not supported)."
   (when-let* ((token (and jabber-mam-enable
                           (jabber-mam--begin-peer-sync jc peer))))
-    (run-hook-with-args 'jabber-mam-peer-syncing-functions peer "chat" t)
+    (jabber-mam--signal-peer-syncing jc peer "chat" t)
     (condition-case err
         (jabber-disco-get-info
          jc (jabber-connection-bare-jid jc) nil
@@ -812,8 +869,7 @@ query completes (or when disco reveals MAM is not supported)."
     (jabber-mam--query
      jc last-id nil nil start group nil nil
      (lambda ()
-       (jabber-lifecycle--dispatch-contained
-        'jabber-mam-peer-syncing-functions group "groupchat" nil)))))
+       (jabber-mam--signal-peer-syncing jc group "groupchat" nil)))))
 
 (defun jabber-mam-muc-joined (jc group)
   "Trigger MUC MAM catch-up after joining GROUP.
@@ -821,8 +877,7 @@ JC is the Jabber connection.  Called from MUC self-presence handler.
 Sets the syncing indicator immediately; clears it when the catch-up
 query completes (or when disco reveals MAM is not supported)."
   (when jabber-mam-enable
-    (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                        group "groupchat" t)
+    (jabber-mam--signal-peer-syncing jc group "groupchat" t)
     (jabber-disco-get-info
      jc group nil
      (lambda (jc closure-data result)
@@ -831,8 +886,7 @@ query completes (or when disco reveals MAM is not supported)."
                   (not (eq (car result) 'error))
                   (member jabber-mam-xmlns (cadr result)))
              (jabber-mam--muc-catch-up jc group)
-           (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                               group "groupchat" nil))))
+           (jabber-mam--signal-peer-syncing jc group "groupchat" nil))))
      (list group))))
 
 (defun jabber-mam-sync-buffer ()
@@ -851,13 +905,12 @@ Refresh the buffer after settlement."
          (peer (or group
                    (jabber-jid-user (bound-and-true-p jabber-chatting-with))))
          (type (if group "groupchat" "chat")))
-    (run-hook-with-args 'jabber-mam-peer-syncing-functions peer type t)
+    (jabber-mam--signal-peer-syncing jc peer type t)
     (jabber-mam--mark-dirty jc peer type)
     (jabber-mam--query
      jc nil nil (unless group peer) nil group t count
      (lambda ()
-       (jabber-lifecycle--dispatch-contained
-        'jabber-mam-peer-syncing-functions peer type nil)))))
+       (jabber-mam--signal-peer-syncing jc peer type nil)))))
 
 ;;; Disconnect cleanup
 

@@ -751,25 +751,35 @@ reload, so a reader scrolled up in history is not yanked to the top."
 
 ;;; MAM hook listeners
 
-(defvar jabber-mam-peer-syncing-functions)    ; jabber-mam.el
 (defvar jabber-mam-sync-complete-functions)  ; jabber-mam.el
 
-(defun jabber-chat--handle-mam-peer-syncing (peer type syncing-p)
-  "Update syncing indicator for PEER's chat buffer.
+(declare-function jabber-muc-find-buffer "jabber-muc" (group &optional jc))
+
+(defun jabber-chat--update-mam-syncing (jc peer type syncing-p)
+  "Update syncing indicator for PEER's chat buffer on JC.
 TYPE is \"groupchat\" or \"chat\".  SYNCING-P is non-nil when
 sync starts, nil when it ends."
-  (when-let* ((kind (if (string= type "groupchat") 'muc 'chat))
-              (buffer (jabber-buffer-registry-find kind peer))
+  (when-let* ((buffer (if (string= type "groupchat")
+                          (jabber-muc-find-buffer peer jc)
+                        (jabber-buffer-registry-find 'chat peer)))
               ((buffer-live-p buffer)))
     (with-current-buffer buffer
       (setq jabber-chat-mam-syncing syncing-p)
       (force-mode-line-update))))
 
-(add-hook 'jabber-mam-peer-syncing-functions #'jabber-chat--handle-mam-peer-syncing)
+(defun jabber-chat-buffer--reading-history-p ()
+  "Return non-nil when a window is reading the current buffer's history.
+Such a window does not follow the input area, and a refresh may evict
+what it shows from the reloaded backlog."
+  (seq-some (lambda (window)
+              (not (jabber-chat-buffer--recenter-input-p window)))
+            (get-buffer-window-list (current-buffer) nil t)))
 
-(defun jabber-chat--handle-mam-sync-complete (peers)
+(defun jabber-chat--handle-mam-sync-complete (peers &optional progressive)
   "Refresh chat buffers that received MAM messages.
-PEERS is a list of (ACCOUNT PEER TYPE) entries."
+PEERS is a list of (ACCOUNT PEER TYPE) entries.  When PROGRESSIVE is
+non-nil, the sync is still running: skip buffers whose reader is
+scrolled into history and leave them for the completion refresh."
   (dolist (entry peers)
     (pcase-let* ((`(,account ,peer ,type) entry)
            (parent-buffers
@@ -802,14 +812,18 @@ PEERS is a list of (ACCOUNT PEER TYPE) entries."
                             (bound-and-true-p jabber-message-thread-peer))
                      (equal type
                             (bound-and-true-p jabber-message-thread-type)))
-            (when (get-buffer-window thread-buffer t)
-              (jabber-db-mark-message-thread-read
-               account peer type jabber-message-thread-id))
-            (jabber-chat-buffer-refresh))))
+            (unless (and progressive
+                         (jabber-chat-buffer--reading-history-p))
+              (when (get-buffer-window thread-buffer t)
+                (jabber-db-mark-message-thread-read
+                 account peer type jabber-message-thread-id))
+              (jabber-chat-buffer-refresh)))))
       (dolist (parent-buffer parent-buffers)
         (when (buffer-live-p parent-buffer)
           (with-current-buffer parent-buffer
-            (jabber-chat-buffer-refresh)))))))
+            (unless (and progressive
+                         (jabber-chat-buffer--reading-history-p))
+              (jabber-chat-buffer-refresh))))))))
 
 (add-hook 'jabber-mam-sync-complete-functions #'jabber-chat--handle-mam-sync-complete)
 
