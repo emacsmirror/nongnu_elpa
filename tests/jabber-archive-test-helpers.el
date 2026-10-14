@@ -37,8 +37,9 @@
           (jabber-db-path (expand-file-name "history.sqlite" directory))
           (jabber-db--connection nil)
           (jabber-mam--syncing nil)
-          (jabber-mam--tx-depth 0)
           (jabber-mam--dirty-peers nil)
+          (jabber-mam--redraw-peers nil)
+          (jabber-mam--redraw-timer nil)
           (jabber-open-info-queries nil)
           (jabber-db-message-thread-stored-functions nil)
           (jabber-history-inhibit-received-message-functions nil)
@@ -49,6 +50,8 @@
            (jabber-db-ensure-open)
            ,@body)
        (jabber-mam--cleanup-all)
+       (when jabber-mam--redraw-timer
+         (cancel-timer jabber-mam--redraw-timer))
        (jabber-db-close)
        (delete-directory directory t))))
 
@@ -70,6 +73,15 @@
                 (set ((xmlns . "http://jabber.org/protocol/rsm"))
                      ,@(when uid `((last () ,uid))))))
    (cons query (plist-get query :page))))
+
+(defun jabber-test-archive--idle-p ()
+  "Return non-nil when no SQLite transaction is open on the database.
+MAM must never hold a transaction while it waits for the network."
+  (condition-case nil
+      (progn (sqlite-execute jabber-db--connection "BEGIN")
+             (sqlite-execute jabber-db--connection "ROLLBACK")
+             t)
+    (sqlite-error nil)))
 
 (defun jabber-test-archive--progress (&optional account archive with)
   "Read native progress for ACCOUNT, ARCHIVE and WITH."

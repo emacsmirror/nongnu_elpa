@@ -57,7 +57,8 @@
       (should (equal (cadr request) "bodyless")))))
 
 (ert-deftest jabber-test-archive-commit-is-the-receipt ()
-  "Independent SQLite readers see both effects and progress only at commit."
+  "Independent SQLite readers see each result at its commit, progress at fin.
+Each page settles independently of other pending pages."
   (jabber-test-archive--with-file
     (let* ((first (jabber-mam--query jc))
            (second (jabber-mam--query jc nil nil nil nil "room@example.com"))
@@ -68,12 +69,13 @@
              (jabber-test-archive--result first "uid"
               '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
                         (body () "visible at commit"))))
-            (jabber-test-archive--fin jc first "uid")
-            (should-not (sqlite-select reader "SELECT uid FROM mam_progress"))
-            (should-not (sqlite-select reader "SELECT body FROM message"))
-            (jabber-test-archive--fin jc second "room-uid")
             (should (equal '(("visible at commit"))
                            (sqlite-select reader "SELECT body FROM message")))
+            (should-not (sqlite-select reader "SELECT uid FROM mam_progress"))
+            (jabber-test-archive--fin jc first "uid")
+            (should (equal '(("uid"))
+                           (sqlite-select reader "SELECT uid FROM mam_progress")))
+            (jabber-test-archive--fin jc second "room-uid")
             (should (equal '(("uid") ("room-uid"))
                            (sqlite-select reader "SELECT uid FROM mam_progress ORDER BY archive"))))
         (sqlite-close reader)))))
@@ -192,20 +194,22 @@
       (should-not (plist-get query :start)))))
 
 (ert-deftest jabber-test-archive-commit-fault-rolls-back ()
-  "A native COMMIT failure rolls back cursor and page effects, then retries."
+  "A native COMMIT failure rolls back the result and fails its page, then retries."
   (jabber-test-archive--with-file
     (let ((query (jabber-mam--query jc)) outcome
           (execute (symbol-function 'sqlite-execute)))
       (plist-put query :result-callback (lambda (value) (setq outcome value)))
-      (jabber-mam--process-message jc
-       (jabber-test-archive--result query "failed"
-        '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
-                  (body () "uncommitted"))))
       (cl-letf (((symbol-function 'sqlite-execute)
                  (lambda (db sql &rest args)
                    (if (equal sql "COMMIT") (error "Commit fault")
                      (apply execute db sql args)))))
-        (should-error (jabber-test-archive--fin jc query "failed")))
+        (should-error
+         (jabber-mam--process-message jc
+          (jabber-test-archive--result query "failed"
+           '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
+                     (body () "uncommitted"))))))
+      (should (jabber-test-archive--idle-p))
+      (jabber-test-archive--fin jc query "failed")
       (should (eq outcome 'failed)))
     (jabber-db-close)
     (should-not (jabber-test-archive--progress))
@@ -236,9 +240,11 @@
              (let ((debug-on-error nil)
                    (jabber-message-chain
                     (list #'jabber-mam--process-message
-                          (cons 0 (lambda (&rest _)
-                                    (cl-incf called)
-                                    (error "Downstream fault"))))))
+                          (cons 0 (lambda (_jc xml)
+                                    (when (jabber-xml-get-attribute
+                                           xml 'jabber-mam--origin)
+                                      (cl-incf called)
+                                      (error "Downstream fault")))))))
                (jabber-process-input jc
                 (jabber-test-archive--result query "bad"
                  '(message ((from . "friend@example.com"))))))
@@ -252,12 +258,12 @@
       (should-not (jabber-test-archive--progress)))))
 
 (ert-deftest jabber-test-archive-completed-room-retirement-before-commit ()
-  "Room leave revokes accepted but not yet durable room progress only."
+  "Room leave before fin revokes that room's progress only."
   (jabber-test-archive--with-file
     (let ((room (jabber-mam--query jc nil nil nil nil "room@example.com"))
           (personal (jabber-mam--query jc)))
-      (jabber-test-archive--fin jc room "retired")
       (jabber-mam--cancel-muc-query "room@example.com" jc)
+      (jabber-test-archive--fin jc room "retired")
       (jabber-test-archive--fin jc personal "personal"))
     (jabber-db-close)
     (should-not (jabber-test-archive--progress nil "room@example.com"))
@@ -361,7 +367,7 @@
     (should-not (sqlite-select jabber-db--connection "SELECT * FROM message_archive"))))
 
 (ert-deftest jabber-test-archive-progress-sql-fault-and-retry ()
-  "Roll back page effects when SQLite itself rejects cursor persistence."
+  "Fail the page when SQLite rejects its cursor; the retry deduplicates."
   (jabber-test-archive--with-file
     (sqlite-execute jabber-db--connection
      "CREATE TRIGGER reject_progress BEFORE INSERT ON mam_progress
@@ -371,15 +377,21 @@ BEGIN SELECT RAISE(ABORT, 'cursor fault'); END")
        (jabber-test-archive--result query "uid"
         '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
                   (body () "atomic"))))
-      (should-error (jabber-test-archive--fin jc query "uid")))
+      (should-error (jabber-test-archive--fin jc query "uid"))
+      (should-not jabber-mam--syncing))
     (jabber-db-close)
     (should-not (jabber-test-archive--progress))
-    (should-not (sqlite-select jabber-db--connection "SELECT id FROM message"))
+    (should (equal '(("atomic")) (sqlite-select jabber-db--connection "SELECT body FROM message")))
     (sqlite-execute jabber-db--connection "DROP TRIGGER reject_progress")
     (let ((query (jabber-mam--query jc)))
-      (jabber-test-archive--fin jc query "retry"))
+      (jabber-mam--process-message jc
+       (jabber-test-archive--result query "uid"
+        '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
+                  (body () "atomic"))))
+      (jabber-test-archive--fin jc query "uid"))
     (jabber-db-close)
-    (should (equal '("retry" nil) (jabber-test-archive--progress)))))
+    (should (equal '("uid" nil) (jabber-test-archive--progress)))
+    (should (equal '(("atomic")) (sqlite-select jabber-db--connection "SELECT body FROM message")))))
 
 (ert-deftest jabber-test-archive-pagination-send-failure ()
   "A failed next-page send retains only the already committed predecessor."
@@ -399,6 +411,58 @@ BEGIN SELECT RAISE(ABORT, 'cursor fault'); END")
       (should-not jabber-mam--syncing))
     (jabber-db-close)
     (should (equal '("accepted" nil) (jabber-test-archive--progress)))))
+
+;; A live action can reference an archived original of the page still
+;; in flight.  Each result commits on arrival, so the original exists by
+;; the time the live handler looks for it.
+(ert-deftest jabber-test-archive-live-action-during-page ()
+  "A live correction or reaction to an in-flight page's result is kept."
+  (dolist (size '(1 50))
+    (pcase-dolist (`(,action ,room)
+                   '((correction nil) (reaction nil) (reaction t)))
+      (jabber-test-archive--with-file
+        (let* ((peer (if room "room@example.com" "friend@example.com"))
+               (from (concat peer (if room "/alice" "/phone")))
+               (type (if room "groupchat" "chat"))
+               (jabber-mam-page-size size)
+               (jabber-history-inhibit-received-message-functions
+                '(jabber-message-correct--inhibit
+                  jabber-reactions--history-inhibit-p))
+               (jabber-message-chain
+                (list #'jabber-mam--process-message #'jabber-process-chat
+                      #'jabber-muc-process-message
+                      #'jabber-reactions--handle-message
+                      #'jabber-db--message-handler))
+               (query (jabber-mam--query jc nil nil nil nil (and room peer))))
+          (jabber-process-input
+           jc (jabber-test-archive--result
+               query "target"
+               `(message ((from . ,from) (type . ,type) (id . "target"))
+                         (body () "original")
+                         ,@(when room
+                             '((stanza-id ((xmlns . "urn:xmpp:sid:0")
+                                           (by . "room@example.com")
+                                           (id . "target"))))))))
+          (jabber-process-input
+           jc (if (eq action 'correction)
+                  `(message ((from . ,from) (type . ,type) (id . "edit"))
+                            (body () "corrected")
+                            (replace ((xmlns . "urn:xmpp:message-correct:0")
+                                      (id . "target"))))
+                `(message ((from . ,from) (type . ,type))
+                          (reactions ((xmlns . "urn:xmpp:reactions:0")
+                                      (id . "target"))
+                                     (reaction () "good")))))
+          (jabber-test-archive--fin jc query "target")
+          (jabber-db-close)
+          (should (equal (if (eq action 'correction) '(("corrected")) '(("original")))
+                         (sqlite-select (jabber-db-ensure-open)
+                                        "SELECT body FROM message")))
+          (should (equal (and (eq action 'reaction) '(("good")))
+                         (sqlite-select jabber-db--connection
+                                        "SELECT reaction FROM message_reaction")))
+          (should (equal '("target" nil)
+                         (jabber-test-archive--progress nil (and room peer)))))))))
 
 (provide 'jabber-test-archive-persistence)
 ;;; jabber-test-archive-persistence.el ends here

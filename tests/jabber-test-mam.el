@@ -124,6 +124,16 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
   (list (list :id id :jc jc :current-p (jabber-mam--session-predicate jc)
               :to nil :page (list nil) :transaction nil)))
 
+;; Bodyless results reach downstream handlers as an unwrapped copy, while
+;; live handlers see only the consumed envelope.
+(defun jabber-test-mam--dispatched (jc stanza)
+  "Process MAM STANZA on JC; return the unwrapped stanzas sent downstream."
+  (let* ((seen nil)
+         (jabber-message-chain (list (lambda (_jc xml) (push xml seen)))))
+    (jabber-mam--process-message jc stanza)
+    (should-not (cddr stanza))
+    (nreverse seen)))
+
 ;;; Group 0: Hook defaults
 
 (ert-deftest jabber-test-mam-post-connect-hook-default ()
@@ -194,11 +204,9 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
            (count 3650)
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
            (jabber-muc-participants nil))
-      ;; Feed all messages through the process function inside a transaction
-      (jabber-db-with-transaction
-        (dotimes (i count)
-          (let ((xml (jabber-test-mam--make-message i)))
-            (jabber-mam--process-message jc xml))))
+      ;; Each message commits in its own short transaction.
+      (dotimes (i count)
+        (jabber-mam--process-message jc (jabber-test-mam--make-message i)))
       ;; Verify all stored
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
                                    0 (+ 1700000000 (* count 86400))
@@ -214,13 +222,8 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
            (count 3650)
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
            (jabber-muc-participants nil))
-      ;; First pass
-      (jabber-db-with-transaction
-        (dotimes (i count)
-          (jabber-mam--process-message
-           jc (jabber-test-mam--make-message i))))
-      ;; Second pass (re-sync)
-      (jabber-db-with-transaction
+      ;; First pass, then a re-sync
+      (dotimes (_pass 2)
         (dotimes (i count)
           (jabber-mam--process-message
            jc (jabber-test-mam--make-message i))))
@@ -269,16 +272,24 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
 ;;; Group 3: Transaction batching
 
 (ert-deftest jabber-test-mam-transaction-batching ()
-  "Messages processed inside one transaction are all stored."
+  "Each processed message commits in its own transaction."
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (batch-count 500)
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-muc-participants nil))
-      (jabber-db-with-transaction
+           (jabber-muc-participants nil)
+           (execute (symbol-function 'sqlite-execute))
+           (commits 0))
+      (cl-letf (((symbol-function 'sqlite-execute)
+                 (lambda (db sql &rest args)
+                   (when (equal sql "COMMIT")
+                     (cl-incf commits))
+                   (apply execute db sql args))))
         (dotimes (i batch-count)
           (jabber-mam--process-message
-           jc (jabber-test-mam--make-message i))))
+           jc (jabber-test-mam--make-message i))
+          (should (jabber-test-archive--idle-p))))
+      (should (= batch-count commits))
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
                                    0 (+ 1700000000 (* batch-count 86400))
                                    -1)))
@@ -292,22 +303,20 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
            (jabber-muc-participants nil)
            (stanza (jabber-test-mam--make-message 1))
            (inner (nth 2 (jabber-mam--parse-result stanza)))
-           (envelope (unibyte-string ?J ?O ?M ?E ?M ?O 0 1 0))
-           (body (car (jabber-xml-get-children inner 'body))))
+           (envelope (unibyte-string ?J ?O ?M ?E ?M ?O 0 1 0)))
       (setcdr (last inner) '((encrypted ((xmlns . "eu.siacs.conversations.axolotl")))))
       (sqlite-execute jabber-db--connection "\
 INSERT INTO omemo_skipped_keys
   (account, jid, device_id, dh_key, message_number, message_key, created_at)
   VALUES ('me@example.com', 'friend@example.com', 7, 'dh', 3, 'mk', 0)")
-      (sqlite-execute jabber-db--connection "BEGIN")
       (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
                  (lambda (_jc message)
+                   (should-not (jabber-test-archive--idle-p))
                    (jabber-omemo-store-save-session-and-clear-legacy-keys
                     "me@example.com" "friend@example.com" 7 envelope)
-                   (setcdr (cdr body) '("decrypted"))
-                   message)))
+                   (jabber-chat--set-body message "decrypted"))))
         (jabber-mam--process-message jc stanza))
-      (sqlite-execute jabber-db--connection "COMMIT")
+      (should (jabber-test-archive--idle-p))
       (should (equal envelope
                      (jabber-omemo-store-load-session
                       "me@example.com" "friend@example.com" 7)))
@@ -423,10 +432,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
       (puthash room (list (cons jc "mynick")) jabber-muc--rooms)
-      (jabber-db-with-transaction
-        (dotimes (i 10)
-          (jabber-mam--process-message
-           jc (jabber-test-mam--make-muc-message i room "mynick"))))
+      (dotimes (i 10)
+        (jabber-mam--process-message
+         jc (jabber-test-mam--make-muc-message i room "mynick")))
       (let ((rows (jabber-db-query "me@example.com" room
                                    0 (+ 1700000000 (* 10 86400)) -1)))
         (should (= 10 (length rows)))
@@ -443,11 +451,10 @@ OUR-NICK is our nickname; every 3rd message is from us."
            (jabber-muc-participants
             `((,room ("mynick" . nil) ("otherperson" . nil)))))
       (puthash room (list (cons jc "mynick")) jabber-muc--rooms)
-      (jabber-db-with-transaction
-        (jabber-mam--process-message
-         jc (jabber-test-mam--make-muc-message 0 room "mynick"))  ; from us (idx%3=0)
-        (jabber-mam--process-message
-         jc (jabber-test-mam--make-muc-message 1 room "mynick"))) ; from other (idx%3=1)
+      (jabber-mam--process-message
+       jc (jabber-test-mam--make-muc-message 0 room "mynick"))  ; from us (idx%3=0)
+      (jabber-mam--process-message
+       jc (jabber-test-mam--make-muc-message 1 room "mynick")) ; from other (idx%3=1)
       (let ((rows (jabber-db-query "me@example.com" room
                                    0 (+ 1700000000 (* 2 86400)) -1)))
         (should (= 2 (length rows)))
@@ -487,7 +494,6 @@ OUR-NICK is our nickname; every 3rd message is from us."
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-muc-participants nil))
       (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
       (jabber-mam--process-message
@@ -505,7 +511,6 @@ WHERE stanza_id = 'stanza-000001'"))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-muc-participants nil))
       (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
       (jabber-mam--process-message
@@ -523,7 +528,6 @@ WHERE stanza_id = 'stanza-000001'"))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-muc-participants nil)
            (correction
             (jabber-test-mam--make-correction-message
@@ -559,7 +563,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (stanza (jabber-test-mam--make-message 1)))
       (jabber-mam--process-message jc stanza)
@@ -570,7 +573,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (quote "Δύο άτομα δίνουν πόνο έξω")
            (body (concat "> " quote "\n👍"))
@@ -599,12 +601,12 @@ WHERE stanza_id = 'stanza-000001'"))))))
                                                                     (for . ,jabber-reactions-xmlns))
                                                                    (body nil))
                                                          (body nil ,body)))))))
-      (jabber-mam--process-message jc stanza)
-      (should-not (sqlite-select (jabber-db-ensure-open)
-                    "SELECT body FROM message WHERE server_id = ?"
-                    '("archive-reaction-1")))
-      (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
-      (should (car (jabber-xml-get-children stanza 'reactions))))))
+      (let ((unwrapped (car (jabber-test-mam--dispatched jc stanza))))
+        (should-not (sqlite-select (jabber-db-ensure-open)
+                      "SELECT body FROM message WHERE server_id = ?"
+                      '("archive-reaction-1")))
+        (should (jabber-xml-get-attribute unwrapped 'jabber-mam--origin))
+        (should (car (jabber-xml-get-children unwrapped 'reactions)))))))
 
 (ert-deftest jabber-test-mam-author-retract-fallback-unwrapped-not-stored ()
   "Archived author retraction is unwrapped but never stored as chat text."
@@ -612,7 +614,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
 
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (stanza
             `(message ((from . "room@conference.example"))
@@ -640,25 +641,24 @@ WHERE stanza_id = 'stanza-000001'"))))))
        "me@example.com" "room@conference.example" "in" "groupchat"
        "original message" 1786628700 "alice" "original-client-id"
        "target-server-id" "occupant-alice")
-      (cl-letf (((symbol-function
-                  'jabber-moderation--room-supports-occupant-id-p)
-                 (lambda (_room owner) (eq owner jc))))
-        (jabber-mam--process-message jc stanza)
-        (should (jabber-moderation--handle-message jc stanza)))
-      (should
-       (equal '(("original message" "room@conference.example/alice"))
-              (sqlite-select
-               (jabber-db-ensure-open)
-               "SELECT body, retracted_by FROM message ORDER BY id")))
-      (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
-      (should (jabber-moderation--muc-retraction-message-p stanza)))))
+      (let ((unwrapped (car (jabber-test-mam--dispatched jc stanza))))
+        (cl-letf (((symbol-function
+                    'jabber-moderation--room-supports-occupant-id-p)
+                   (lambda (_room owner) (eq owner jc))))
+          (should (jabber-moderation--handle-message jc unwrapped)))
+        (should
+         (equal '(("original message" "room@conference.example/alice"))
+                (sqlite-select
+                 (jabber-db-ensure-open)
+                 "SELECT body, retracted_by FROM message ORDER BY id")))
+        (should (jabber-xml-get-attribute unwrapped 'jabber-mam--origin))
+        (should (jabber-moderation--muc-retraction-message-p unwrapped))))))
 
 (ert-deftest jabber-test-mam-bodyless-stanza-unwrapped ()
   "Bodyless MAM result is unwrapped with original sender and MAM marker."
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Receipt stanza: no body, just a <received/> element
            (stanza `(message ((from . "me@example.com"))
@@ -673,17 +673,17 @@ WHERE stanza_id = 'stanza-000001'"))))))
                                                           (id . "receipt-1"))
                                                          (received ((xmlns . "urn:xmpp:receipts")
                                                                     (id . "msg-42")))))))))
-      (jabber-mam--process-message jc stanza)
-      ;; Outer stanza should now have inner message's from
-      (should (string= "alice@example.com/res"
-                        (jabber-xml-get-attribute stanza 'from)))
-      ;; MAM origin marker should be set
-      (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
-      ;; Archive id is needed by downstream tombstone handlers.
-      (should (equal "archive-001"
-                     (jabber-xml-get-attribute stanza 'jabber-mam--archive-id)))
-      ;; The receipt element should be a child
-      (should (car (jabber-xml-get-children stanza 'received))))))
+      (let ((unwrapped (car (jabber-test-mam--dispatched jc stanza))))
+        ;; The dispatched stanza has the inner message's from
+        (should (string= "alice@example.com/res"
+                         (jabber-xml-get-attribute unwrapped 'from)))
+        ;; MAM origin marker should be set
+        (should (jabber-xml-get-attribute unwrapped 'jabber-mam--origin))
+        ;; Archive id is needed by downstream tombstone handlers.
+        (should (equal "archive-001"
+                       (jabber-xml-get-attribute unwrapped 'jabber-mam--archive-id)))
+        ;; The receipt element should be a child
+        (should (car (jabber-xml-get-children unwrapped 'received)))))))
 
 ;;; Group 9: query ID validation
 
@@ -692,7 +692,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc "known-query"))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Build stanza with queryid that doesn't match
            (stanza `(message ((from . "me@example.com"))
@@ -718,7 +717,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc "known-query"))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Use the test helper but we need to add queryid
            (stanza `(message ((from . "me@example.com"))
@@ -745,7 +743,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (jabber-muc--rooms (make-hash-table :test 'equal))
            ;; Outer from is evil.com, not our bare JID
@@ -772,7 +769,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
   (jabber-test-mam-with-db
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (jabber-test-mam--queries jc jabber-test-mam-queryid))
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Normal 1:1 MAM result with from=our bare JID
            (stanza (jabber-test-mam--make-message 5)))
@@ -788,7 +784,6 @@ WHERE stanza_id = 'stanza-000001'"))))))
            (room "room@conference.example.com")
            (jabber-mam--syncing (jabber-test-mam--queries jc "muc-query"))
 
-           (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
@@ -826,10 +821,8 @@ WHERE stanza_id = 'stanza-000001'"))))))
             (jabber-mam--syncing nil)
             (jabber-mam--peer-syncing nil)
             (jabber-mam--dirty-peers nil)
-            (jabber-mam--tx-depth 0)
             (jabber-mam--redraw-timer nil)
             (jabber-mam--redraw-peers nil)
-            (jabber-mam--tx-peers nil)
             (jabber-mam-sync-complete-functions nil)
             (jabber-mam-peer-syncing-functions nil)
             (fsm-debug nil)
@@ -894,15 +887,15 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
       (let ((room-request (car sent)))
         (jabber-mam--query jc nil "other-query")
         (let ((other-request (car sent)))
-          (should (= 2 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (jabber-mam--cancel-muc-query "room@example.com")
-          (should (= 1 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (jabber-test-mam--reply jc room-request "room@example.com" error-first)
           (jabber-test-mam--reply jc room-request "room@example.com" (not error-first))
-          (should (= 1 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (should (jabber-mam-syncing-p))
           (jabber-test-mam--reply jc other-request)
-          (should (= 0 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (should-not (jabber-mam-syncing-p)))))))
 
 (ert-deftest jabber-test-mam-native-bounded-sync-preserves-absence ()
@@ -929,7 +922,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
           ('disconnect (jabber-mam--cleanup-connection jc)))
         (should (= 2 (caar (sqlite-select jabber-db--connection
                                           "SELECT count(*) FROM message"))))
-        (should (= 0 jabber-mam--tx-depth))))))
+        (should (jabber-test-archive--idle-p))))))
 
 (ert-deftest jabber-test-mam-native-iq-admission ()
   "Forged IQs leave the real page pending; valid completion fires once."
@@ -948,14 +941,14 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
               (jabber-test-mam--reply (car case) request (cadr case) failure)
               (should (eq pending (assoc id jabber-open-info-queries)))
               (should (= 0 calls))
-              (should (= 1 jabber-mam--tx-depth)))
+              (should (jabber-test-archive--idle-p)))
             (when room
               (jabber-test-mam--reply jc request nil failure)
               (should (eq pending (assoc id jabber-open-info-queries))))
             (jabber-test-mam--reply jc request room failure)
             (jabber-test-mam--reply jc request room failure)
             (should (= 1 calls))
-            (should (= 0 jabber-mam--tx-depth))
+            (should (jabber-test-archive--idle-p))
             (should-not jabber-open-info-queries)))))))
 
 (ert-deftest jabber-test-mam-native-missing-from-and-retirement ()
@@ -992,7 +985,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
           (jabber-test-mam--reply jc first "room@example.com" nil t)
           (should (= 0 calls))
           (should-not outcomes)
-          (should (= 0 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (should (jabber-mam-syncing-p))
           (let* ((timer (plist-get query :timer))
                  (function (timer--function timer))
@@ -1010,7 +1003,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
             (if (eq ending 'success)
                 (progn
                   (should (= 2 (length sent)))
-                  (should (= 1 jabber-mam--tx-depth))
+                  (should (jabber-test-archive--idle-p))
                   (let* ((payload (car (jabber-xml-get-children (car sent) 'query)))
                          (rsm (car (jabber-xml-get-children payload 'set))))
                     (should (equal '(after nil "next-page")
@@ -1026,10 +1019,10 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
             (should (= 1 (length outcomes)))
             (should-not (jabber-mam-syncing-p))
             (should-not jabber-open-info-queries)
-            (should (= 0 jabber-mam--tx-depth))))))))
+            (should (jabber-test-archive--idle-p))))))))
 
 (ert-deftest jabber-test-mam-native-cancelled-callbacks-preserve-transaction ()
-  "Captured stale callbacks cannot commit a surviving query's SQLite writes."
+  "Captured stale callbacks cannot settle a surviving query or its cursor."
   (jabber-test-mam--with-native
     (let ((calls 0) (jabber-test-mam-queryid "survivor"))
       (jabber-mam--query jc nil "cancelled" nil nil "room@example.com"
@@ -1047,53 +1040,46 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                           (fin ((xmlns . "urn:xmpp:mam:2") (complete . "true"))))
                      (cdr callback)))
           (should (= 1 calls))
-          (should (= 1 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (let ((reader (sqlite-open jabber-db-path)))
             (unwind-protect
                 (progn
-                  (should-not (sqlite-select reader "SELECT body FROM message"))
-                  (jabber-test-mam--reply jc request)
+                  ;; The result committed on arrival; its cursor waits for fin.
                   (should (equal '(("Message 1"))
-                                 (sqlite-select reader "SELECT body FROM message"))))
+                                 (sqlite-select reader "SELECT body FROM message")))
+                  (should-not (sqlite-select reader "SELECT uid FROM mam_progress"))
+                  (jabber-test-mam--reply jc request)
+                  (should (sqlite-select reader "SELECT uid FROM mam_progress")))
               (sqlite-close reader)))
           (should (= 2 calls))
           (should-not jabber-open-info-queries))))))
 
 (ert-deftest jabber-test-mam-native-query-start-failures ()
-  "Real BEGIN failure and failed send settle only the owned contribution."
-  (dolist (failure '(begin begin-quit send quit))
+  "Failed send settles only the owned query and touches no transaction."
+  (dolist (failure '(send quit))
     (jabber-test-mam--with-native
       (let ((calls 0) outcomes returned quit-seen)
-        (when (eq failure 'begin)
-          (sqlite-execute jabber-db--connection "BEGIN"))
-        (let ((begin (symbol-function 'jabber-mam--tx-begin)))
-          (cl-letf (((symbol-function 'jabber-mam--tx-begin)
-                     (lambda ()
-                       (if (eq failure 'begin-quit) (signal 'quit nil)
-                         (funcall begin))))
-                    ((symbol-function 'jabber-send-sexp)
-                     (lambda (&rest _)
-                       (if (eq failure 'quit) (signal 'quit nil)
-                         (error "Injected send failure")))))
-            (condition-case nil
-                (progn
-                  (jabber-mam--query
-                   jc nil nil nil nil nil nil nil
-                   (lambda () (cl-incf calls))
-                   (lambda (outcome) (push (list outcome returned) outcomes)))
-                  (setq returned t))
-              (quit (setq quit-seen t)))))
+        ;; Another writer's open transaction is neither joined nor ended.
+        (sqlite-execute jabber-db--connection "BEGIN")
+        (cl-letf (((symbol-function 'jabber-send-sexp)
+                   (lambda (&rest _)
+                     (if (eq failure 'quit) (signal 'quit nil)
+                       (error "Injected send failure")))))
+          (condition-case nil
+              (progn
+                (jabber-mam--query
+                 jc nil nil nil nil nil nil nil
+                 (lambda () (cl-incf calls))
+                 (lambda (outcome) (push (list outcome returned) outcomes)))
+                (setq returned t))
+            (quit (setq quit-seen t))))
         (should (= 1 calls))
-        (should (eq quit-seen (and (memq failure '(quit begin-quit)) t)))
+        (should (eq quit-seen (eq failure 'quit)))
         (should (equal (list (list (if quit-seen 'cancelled 'failed) nil)) outcomes))
         (should-not (jabber-mam-syncing-p))
         (should-not jabber-open-info-queries)
-        (should (= 0 jabber-mam--tx-depth))
-        ;; Failed BEGIN never releases somebody else's transaction.
-        (when (eq failure 'begin)
-          (sqlite-execute jabber-db--connection "ROLLBACK"))
-        (sqlite-execute jabber-db--connection "BEGIN")
-        (sqlite-execute jabber-db--connection "COMMIT")))))
+        (should-not (jabber-test-archive--idle-p))
+        (sqlite-execute jabber-db--connection "ROLLBACK")))))
 
 (ert-deftest jabber-test-mam-native-stale-cursor-retry ()
   "A stale cursor retry retains filters and callback and cannot loop forever."
@@ -1113,7 +1099,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
           (stale)
           (should (= 0 calls))
           (should-not outcomes)
-          (should (= 1 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (if failure (stale) (jabber-test-mam--reply jc (car sent))))
         (should (= 2 (length sent)))
         (should (= 1 calls))
@@ -1126,16 +1112,22 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
           (should-not (string-match-p "<after>" xml)))))))
 
 (ert-deftest jabber-test-mam-native-reentrant-decrypt-retirement ()
-  "Retirement during decryption prevents storage and unwrapping afterwards."
+  "Retirement during decryption prevents storage and downstream dispatch."
   (jabber-test-mam--with-native
-    (let ((jabber-test-mam-queryid "retire"))
+    (let* ((jabber-test-mam-queryid "retire")
+           (dispatched nil)
+           (jabber-message-chain (list (lambda (_jc xml) (push xml dispatched))))
+           ;; A bodyless receipt would otherwise be dispatched downstream.
+           (receipt (jabber-test-mam--make-message 1)))
       (jabber-mam--query jc nil "retire")
+      (setf (nthcdr 2 (nth 3 (nth 2 (nth 2 receipt))))
+            '((received ((xmlns . "urn:xmpp:receipts") (id . "x")))))
       (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
                  (lambda (_jc xml) (jabber-mam--cleanup-connection jc) xml)))
-        (let ((xml (jabber-test-mam--make-message 1)))
-          (jabber-mam--process-message jc xml)
-          (should (cddr xml))
-          (should-not (jabber-xml-get-attribute xml 'jabber-mam--origin))))
+        (jabber-mam--process-message jc (jabber-test-mam--make-message 2))
+        (jabber-mam--process-message jc receipt))
+      (should-not dispatched)
+      (should (jabber-test-archive--idle-p))
       (should-not (sqlite-select jabber-db--connection "SELECT body FROM message")))))
 
 (ert-deftest jabber-test-mam-native-buffer-sync-contract ()
@@ -1200,11 +1192,11 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
         (jabber-mam--cleanup-connection jc)
         (jabber-mam--cleanup-connection jc)
         (should (= 1 calls))
-        (should (= 1 jabber-mam--tx-depth))
+        (should (jabber-test-archive--idle-p))
         (should (= 1 (length jabber-open-info-queries)))
         (jabber-test-mam--reply other request)
         (should (= 2 calls))
-        (should (= 0 jabber-mam--tx-depth))
+        (should (jabber-test-archive--idle-p))
         (should-not (jabber-mam-syncing-p))))))
 
 ;;; Native room departure and disconnect fault regressions
@@ -1305,18 +1297,18 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
               (jabber-test-mam--deliver-late-page capture))
             (jabber-muc-remove-groupchat room jc)
             (should (= 3 a-calls))
-            (should (= (if b-waiting 0 1) jabber-mam--tx-depth))
+            (should (jabber-test-archive--idle-p))
             (let ((reader (sqlite-open jabber-db-path)))
               (unwind-protect
                   (progn
-                    (should (= (if b-waiting 1 0)
-                               (caar (sqlite-select reader "SELECT count(*) FROM message"))))
+                    ;; Writes outside a result are never held by a MAM page.
+                    (should (= 1 (caar (sqlite-select reader "SELECT count(*) FROM message"))))
                     (when b-waiting
                       (let ((timer (nth 3 survivor)))
                         (should (memq timer timer-list))
                         (cancel-timer timer)
                         (apply (timer--function timer) (timer--args timer))))
-                    (should (= 1 jabber-mam--tx-depth))
+                    (should (jabber-test-archive--idle-p))
                     (should (= 1 (length jabber-open-info-queries)))
                     (let* ((jabber-test-mam-queryid "survivor")
                            (xml (jabber-test-mam--make-message 1 room "groupchat")))
@@ -1325,7 +1317,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                     (jabber-test-mam--reply
                      other (if b-waiting (car sent) (nth 1 survivor)) room)
                     (should (= 1 b-calls))
-                    (should (= 0 jabber-mam--tx-depth))
+                    (should (jabber-test-archive--idle-p))
                     (should (equal '(("me@example.com" "A accepted")
                                      ("other@example.com" "Message 1"))
                                    (sqlite-select reader
@@ -1351,7 +1343,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
         (should-not (jabber-muc-joined-p room))
         (should (= 2 calls))
         (should (equal (list survivor) jabber-mam--syncing))
-        (should (= 1 jabber-mam--tx-depth))
+        (should (jabber-test-archive--idle-p))
         (should (= 1 (length jabber-open-info-queries)))))))
 
 (ert-deftest jabber-test-mam-native-cleanup-callback-faults ()
@@ -1401,10 +1393,11 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
               (unwind-protect
                   (progn
                     (if (eq ending 'all)
-                        (should (= 0 jabber-mam--tx-depth))
-                      (should (= 1 jabber-mam--tx-depth))
+                        (should (jabber-test-archive--idle-p))
+                      (should (jabber-test-archive--idle-p))
                       (should (= 1 (length jabber-open-info-queries)))
-                      (should-not (sqlite-select reader "SELECT body FROM message"))
+                      (should (equal '(("accepted"))
+                                     (sqlite-select reader "SELECT body FROM message")))
                       (jabber-test-mam--reply other survivor))
                     (should (equal '(("accepted"))
                                    (sqlite-select reader "SELECT body FROM message"))))
@@ -1415,7 +1408,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                            (alist-get 'foreign outcomes)))
             (should-not jabber-mam--syncing)
             (should-not jabber-open-info-queries)
-            (should (= 0 jabber-mam--tx-depth))))))))
+            (should (jabber-test-archive--idle-p))))))))
 
 (ert-deftest jabber-test-mam-native-cleanup-presentation-faults ()
   "Attempt every peer and redraw hook despite earlier errors or quits."
@@ -1456,7 +1449,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
         (should-not jabber-mam--peer-syncing)
         (should-not jabber-open-info-queries)
         (should-not jabber-mam--dirty-peers)
-        (should (= 0 jabber-mam--tx-depth))))))
+        (should (jabber-test-archive--idle-p))))))
 
 (ert-deftest jabber-test-mam-native-public-disconnect-settlement ()
   "Real voluntary single/all-account and lost-session paths settle personal MAM."
@@ -1502,15 +1495,16 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                         (should-not b-outcomes)
                         (should (eq :session-established (get other :state)))
                         (should (memq other jabber-connections))
-                        (should (= 1 jabber-mam--tx-depth))
+                        (should (jabber-test-archive--idle-p))
                         (should (= 1 (length jabber-open-info-queries)))
-                        (should-not (sqlite-select reader "SELECT body FROM message"))
+                        (should (equal '(("accepted"))
+                                       (sqlite-select reader "SELECT body FROM message")))
                         (jabber-test-mam--reply other survivor))
                       (should (equal '(("accepted"))
                                      (sqlite-select reader "SELECT body FROM message"))))
                   (sqlite-close reader)))
               (should (= 1 b-calls))
-              (should (= 0 jabber-mam--tx-depth))
+              (should (jabber-test-archive--idle-p))
               (should (equal (list (if (eq ending 'all) 'cancelled 'success))
                              b-outcomes))
               (should-not jabber-mam--syncing)
@@ -1529,7 +1523,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                      (lambda () (cl-incf calls))
                      (lambda (outcome)
                        (push (list outcome calls (length jabber-mam--syncing)
-                                   jabber-mam--tx-depth
+                                   (jabber-test-archive--idle-p)
                                    (length jabber-open-info-queries))
                              observations))))
              (request (car sent))
@@ -1547,7 +1541,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
         (jabber-test-mam--reply jc request "room@example.com")
         (jabber-test-mam--reply jc request "room@example.com" t)
         (should (equal (list (list (if (eq ending 'bounded) 'success ending)
-                                  1 0 0 0)) observations))
+                                  1 0 t 0)) observations))
         (should-not (memq query jabber-mam--syncing))
         (should (= 1 calls))
         (should (= 1 (length refreshes)))
@@ -1574,7 +1568,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
         (should (equal '(failed) outcomes))
         (should-not jabber-mam--syncing)
         (should-not jabber-open-info-queries)
-        (should (= 0 jabber-mam--tx-depth))
+        (should (jabber-test-archive--idle-p))
         (should (= 1 (length sent)))))))
 
 (ert-deftest jabber-test-mam-native-cancel-then-new-query-outcomes ()
@@ -1590,7 +1584,7 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
           (jabber-mam--cancel-muc-query "room@example.com" jc)
           (should (= 1 a))
           (should (equal '(cancelled) a-outcomes))
-          (should (= 0 jabber-mam--tx-depth))
+          (should (jabber-test-archive--idle-p))
           (let* ((survivor (jabber-mam--query
                             jc nil jabber-test-mam-queryid nil nil nil nil nil
                             (lambda () (cl-incf b))
@@ -1612,15 +1606,19 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
                   (should (= 0 b))
                   (should (equal '(cancelled) a-outcomes))
                   (should-not b-outcomes)
-                  (should (= 1 jabber-mam--tx-depth))
+                  (should (jabber-test-archive--idle-p))
                   (should (equal (list survivor) jabber-mam--syncing))
                   (should (equal (list pending) jabber-open-info-queries))
-                  (should-not (sqlite-select reader "SELECT body FROM message"))
+                  ;; The survivor's result committed on arrival; stale
+                  ;; callbacks could not settle its cursor.
+                  (should (equal '(("Message 1"))
+                                 (sqlite-select reader "SELECT body FROM message")))
+                  (should-not (sqlite-select reader "SELECT uid FROM mam_progress"))
                   (jabber-test-mam--reply jc request)
                   (should (= 1 a))
                   (should (= 1 b))
                   (should (equal '(success) b-outcomes))
-                  (should (= 0 jabber-mam--tx-depth))
+                  (should (jabber-test-archive--idle-p))
                   (should (equal '(("Message 1"))
                                  (sqlite-select reader "SELECT body FROM message"))))
               (sqlite-close reader))))))))
@@ -1667,23 +1665,26 @@ FROM is the archive sender; FAILURE and INCOMPLETE select the response."
             (should-not foreign-outcomes)
             (should (equal (list foreign) jabber-mam--syncing))
             (should (equal (list foreign-iq) jabber-open-info-queries))
-            (should (= 1 jabber-mam--tx-depth))
+            (should (jabber-test-archive--idle-p))
             (jabber-test-mam--deliver-late-page capture)
             (should (= 1 (length outcomes)))
             (jabber-test-mam--reply other foreign-request)
             (should (equal '(success) foreign-outcomes))
-            (should (= 0 jabber-mam--tx-depth))))))))
+            (should (jabber-test-archive--idle-p))))))))
 
 ;;; Progressive room catch-up display
 
-(defun jabber-test-mam--room-message (jc request room index)
+(defun jabber-test-mam--room-message (jc request room index &optional body)
   "Deliver room archive message INDEX for REQUEST through JC.
-ROOM is the archive JID."
+ROOM is the archive JID.  BODY, when non-nil, replaces the message body."
   (let* ((jabber-test-mam-queryid
           (jabber-xml-get-attribute
            (car (jabber-xml-get-children request 'query)) 'queryid))
          (xml (jabber-test-mam--make-message index room "groupchat")))
     (setf (cadr xml) `((from . ,room)))
+    (when body
+      (let ((inner (nth 2 (jabber-mam--parse-result xml))))
+        (setcar (cddr (car (jabber-xml-get-children inner 'body))) body)))
     (jabber-mam--process-message jc xml)))
 
 (defun jabber-test-mam--room-page (jc request room index complete)
@@ -1834,14 +1835,14 @@ display and so is not asserted to keep the anchor."
           (kill-buffer buffer))))))
 
 (ert-deftest jabber-test-mam-rollback-redraws-speculative-rows ()
-  "A rolled-back page's rows leave the buffer after a progressive redraw.
-The redraw can show a later page's rows before its transaction commits;
-a real SQLITE_FULL then rolls that transaction back.  The redraw delay
-exceeds the 0.1 s pagination delay, so page 2's row is stored first."
+  "A result whose transaction fails never shows its row in the buffer.
+Each result commits in its own short transaction before any redraw can
+read it.  A real SQLITE_FULL while storing page 2 leaves page 1 displayed,
+page 2 nowhere and the draft intact."
   (jabber-test-mam--with-native
     (let* ((room "room@example.com")
            (jabber-mam-page-size 1)
-           (jabber-mam--redraw-delay 0.5)
+           (jabber-mam--redraw-delay 0.05)
            (jabber-mam-sync-complete-functions
             (list #'jabber-chat--handle-mam-sync-complete))
            (jabber-chat-mode-hook nil)
@@ -1862,33 +1863,27 @@ exceeds the 0.1 s pagination delay, so page 2's row is stored first."
             (jabber-mam--query jc nil nil nil nil room)
             (jabber-test-mam--room-page jc (car sent) room 1 nil)
             (should (jabber-test-mam--wait-for (lambda () (= 2 (length sent)))))
-            ;; Page 2's row is stored, but its transaction is still open.
-            (jabber-test-mam--room-message jc (car sent) room 2)
             (should (jabber-test-mam--wait-for
                      (lambda ()
                        (with-current-buffer buffer
-                         (string-search "Message 2" (buffer-string))))))
-            (should (= 1 jabber-mam--tx-depth))
-            (should-not jabber-mam--redraw-timer)
-            ;; A real application writer exhausts the database.
-            (should (string-match-p
-                     "full"
-                     (error-message-string
-                      (should-error
-                       (jabber-omemo-store-save "me@example.com"
-                                                (make-string (* 1024 1024) ?x))
-                       :type 'sqlite-error))))
+                         (string-search "Message 1" (buffer-string))))))
+            ;; Page 2's row arrives; it does not fit in the database.
+            (should-error
+             (jabber-test-mam--room-message
+              jc (car sent) room 2
+              (concat "Message 2 " (make-string (* 1024 1024) ?x)))
+             :type 'sqlite-error)
+            (should (jabber-test-archive--idle-p))
             (jabber-test-mam--reply jc (car sent) room)
             (should-not (jabber-mam-syncing-p))
             (should (equal '(("Message 1"))
                            (sqlite-select jabber-db--connection
                                           "SELECT body FROM message ORDER BY id")))
             (should (jabber-test-mam--wait-for
-                     (lambda ()
-                       (with-current-buffer buffer
-                         (not (string-search "Message 2" (buffer-string)))))))
+                     (lambda () (null jabber-mam--redraw-timer))))
             (with-current-buffer buffer
               (should (string-search "Message 1" (buffer-string)))
+              (should-not (string-search "Message 2" (buffer-string)))
               (should (equal "unsent draft"
                              (buffer-substring-no-properties
                               jabber-point-insert (point-max))))))
@@ -2018,15 +2013,14 @@ for the same room are never touched."
             (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
 (ert-deftest jabber-test-mam-rollback-reconciles-history-reader ()
-  "A rollback drops speculative rows even from a history reader's buffer.
-The progressive redraw skips a buffer whose reader scrolled into
-history, so the rollback must refresh it directly once the query has
-settled rather than defer to another progressive redraw."
+  "A history reader never sees a result whose transaction fails.
+The reader scrolls into history before page 2 arrives; page 2's transaction
+fails, so its row is never displayed and page 1 stays visible."
   (jabber-test-mam--with-native
     (save-window-excursion
       (let* ((room "room@example.com")
              (jabber-mam-page-size 1)
-             (jabber-mam--redraw-delay 1.0)
+             (jabber-mam--redraw-delay 0.05)
              (jabber-chat-mode-hook nil)
              (jabber-mam-sync-complete-functions
               (list #'jabber-chat--handle-mam-sync-complete))
@@ -2045,39 +2039,34 @@ settled rather than defer to another progressive redraw."
               (jabber-test-mam--room-page jc (car sent) room 1 nil)
               (should (jabber-test-mam--wait-for
                        (lambda () (= 2 (length sent)))))
-              (jabber-test-mam--room-message jc (car sent) room 2)
               (should (jabber-test-mam--wait-for
                        (lambda ()
                          (with-current-buffer buffer
-                           (string-search "Message 2" (buffer-string))))))
-              (should (= 1 jabber-mam--tx-depth))
-              (should-not jabber-mam--redraw-timer)
+                           (string-search "Message 1" (buffer-string))))))
               ;; The reader scrolls into history before page 2 settles.
               (switch-to-buffer buffer)
               (let ((pos (with-current-buffer buffer
                            (ewoc-location
-                            (jabber-chat-ewoc-find-by-id "archive-000002")))))
+                            (jabber-chat-ewoc-find-by-id "archive-000001")))))
                 (set-window-start (selected-window) pos t)
                 (set-window-point (selected-window) pos))
               (with-current-buffer buffer
                 (should (jabber-chat-buffer--reading-history-p)))
-              (should (string-match-p
-                       "full"
-                       (error-message-string
-                        (should-error
-                         (jabber-omemo-store-save
-                          "me@example.com" (make-string (* 1024 1024) ?x))
-                         :type 'sqlite-error))))
+              (should-error
+               (jabber-test-mam--room-message
+                jc (car sent) room 2
+                (concat "Message 2 " (make-string (* 1024 1024) ?x)))
+               :type 'sqlite-error)
               (jabber-test-mam--reply jc (car sent) room)
               (should-not (jabber-mam-syncing-p))
               (should (equal '(("Message 1"))
                              (sqlite-select jabber-db--connection
                                             "SELECT body FROM message ORDER BY id")))
               (should (jabber-test-mam--wait-for
-                       (lambda ()
-                         (with-current-buffer buffer
-                           (not (string-search "Message 2"
-                                               (buffer-string))))))))
+                       (lambda () (null jabber-mam--redraw-timer))))
+              (with-current-buffer buffer
+                (should (string-search "Message 1" (buffer-string)))
+                (should-not (string-search "Message 2" (buffer-string)))))
           (kill-buffer buffer))))))
 
 (ert-deftest jabber-test-mam-peer-syncing-hook-keeps-three-arguments ()

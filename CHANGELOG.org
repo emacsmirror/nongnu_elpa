@@ -25,6 +25,10 @@
   the message when that ID is unambiguous within the room (#81).
 - Keep that upgrade fast on large histories: identity changes no longer
   rewrite the search index, and Emacs reports when it upgrades the database.
+- Store each archived message in its own short database transaction instead
+  of holding one open across archive page requests, so a failed page no
+  longer rolls back unrelated live messages or OMEMO state, and a retry
+  decrypts from the restored state (#87).
 
 * [0.15.0]
 #+date: 2026-10-02

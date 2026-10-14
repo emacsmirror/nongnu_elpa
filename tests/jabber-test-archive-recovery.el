@@ -4,12 +4,13 @@
 (require 'jabber-omemo-store)
 (require 'jabber-chat)
 
+;; A real application writer, not a mocked execute or trigger, hits
+;; SQLITE_FULL.  It rolls back only itself, never a committed result.
 (ert-deftest jabber-test-archive-recovery-native-store-full ()
-  "Reject orphan receipts after a shared OMEMO write rolls SQLite back."
+  "A full database rolls back only its own write, never a committed result."
   (dolist (paginate '(nil t))
     (jabber-test-archive--with-file
-      (let ((jabber-mam--tx-progress nil)
-            (jabber-mam--peer-syncing nil))
+      (let ((jabber-mam--peer-syncing nil))
 	(jabber-test-archive--fin jc (jabber-mam--query jc) "predecessor")
 	(sqlite-execute jabber-db--connection
 			(format "PRAGMA max_page_count=%d"
@@ -17,51 +18,58 @@
 	(let* ((first (jabber-mam--catch-up jc))
                (second (jabber-mam--query jc nil nil "friend@example.com"))
                (inner '(message ((from . "friend@example.com/phone")
-                                 (type . "chat") (id . "lost"))
+                                 (type . "chat") (id . "kept"))
 				(body () "must survive with cursor")))
                outcome)
           (should (equal "predecessor" (plist-get first :after)))
           (plist-put second :result-callback (lambda (value) (setq outcome value)))
           (jabber-mam--process-message jc
-				       (jabber-test-archive--result first "lost-message-uid" inner))
-          (if paginate
-              (jabber-mam--handle-fin
-               jc '(iq () (fin ((xmlns . "urn:xmpp:mam:2"))
-                               (set ((xmlns . "http://jabber.org/protocol/rsm"))
-                                    (last () "lost-message-uid"))))
-               (cons first (plist-get first :page)))
-            (jabber-test-archive--fin jc first "lost-message-uid"))
-          ;; A real application writer, not a mocked execute or trigger, causes
-          ;; SQLITE_FULL to roll back the *whole* physical transaction.
+				       (jabber-test-archive--result first "kept-message-uid" inner))
           (let ((err (should-error
                       (jabber-omemo-store-save "me@example.com"
 					       (make-string (* 1024 1024) ?x)) :type 'sqlite-error)))
             (should (string-match-p "full" (error-message-string err))))
-          (should-not (sqlite-select jabber-db--connection "SELECT body FROM message"))
-          (should-error (jabber-test-archive--fin jc second nil))
-          (should (eq outcome 'failed))
-          (jabber-db-close)
-          (should (equal '("predecessor" nil) (jabber-test-archive--progress)))
-          (should (plist-get first :failed))
-          (should-not jabber-mam--syncing)
-          (should-not jabber-mam--tx-progress)
+          (if paginate
+              (jabber-mam--handle-fin
+               jc '(iq () (fin ((xmlns . "urn:xmpp:mam:2"))
+                               (set ((xmlns . "http://jabber.org/protocol/rsm"))
+                                    (last () "kept-message-uid"))))
+               (cons first (plist-get first :page)))
+            (jabber-test-archive--fin jc first "kept-message-uid"))
+          (jabber-test-archive--fin jc second nil)
+          (should (eq outcome 'success))
+          (should (eq paginate (and (memq first jabber-mam--syncing) t)))
+          (jabber-mam--cleanup-connection jc)
           (should-not jabber-mam--dirty-peers)
           (should-not jabber-open-info-queries)
           (should-not (plist-get first :timer))
-          (should (zerop jabber-mam--tx-depth))
           (jabber-db-close)
-          (should (equal '("predecessor" nil) (jabber-test-archive--progress)))
-          (should-not (jabber-test-archive--progress nil nil "friend@example.com"))
-          (should-not (sqlite-select jabber-db--connection "SELECT body FROM message"))
-          (let ((retry (jabber-mam--catch-up jc)))
-            (should (equal "predecessor" (plist-get retry :after)))
-            (jabber-mam--process-message jc
-					 (jabber-test-archive--result retry "lost-message-uid" inner))
-            (jabber-test-archive--fin jc retry "lost-message-uid"))
-          (jabber-db-close)
-          (should (equal '("lost-message-uid" nil) (jabber-test-archive--progress)))
+          (should (equal '("kept-message-uid" nil) (jabber-test-archive--progress)))
           (should (equal '(("must survive with cursor"))
                          (sqlite-select jabber-db--connection "SELECT body FROM message"))))))))
+
+(ert-deftest jabber-test-archive-recovery-own-result-store-full ()
+  "A full database rolls back its result and fails the page without a cursor."
+  (jabber-test-archive--with-file
+    (jabber-test-archive--fin jc (jabber-mam--query jc) "predecessor")
+    (sqlite-execute jabber-db--connection
+		    (format "PRAGMA max_page_count=%d"
+			    (+ 20 (caar (sqlite-select jabber-db--connection "PRAGMA page_count")))))
+    (let ((query (jabber-mam--catch-up jc))
+          (inner `(message ((from . "friend@example.com/phone") (type . "chat") (id . "lost"))
+                           (body () ,(make-string (* 1024 1024) ?x)))))
+      (let ((err (should-error
+                  (jabber-mam--process-message
+                   jc (jabber-test-archive--result query "lost-uid" inner))
+                  :type 'sqlite-error)))
+        (should (string-match-p "full" (error-message-string err))))
+      (should (jabber-test-archive--idle-p))
+      (jabber-test-archive--fin jc query "lost-uid")
+      (should (plist-get query :failed))
+      (should-not jabber-mam--syncing))
+    (jabber-db-close)
+    (should (equal '("predecessor" nil) (jabber-test-archive--progress)))
+    (should-not (sqlite-select jabber-db--connection "SELECT body FROM message"))))
 
 (ert-deftest jabber-test-archive-recovery-statement-local-fault ()
   "Keep valid page effects when only another writer's statement aborts."
@@ -113,36 +121,60 @@
                    (sqlite-select jabber-db--connection "SELECT body FROM message")))))
 
 (ert-deftest jabber-test-archive-recovery-replacement-transaction ()
-  "A new empty physical transaction cannot bless old accepted receipts."
+  "A result never joins, commits or ends another writer's open transaction."
   (jabber-test-archive--with-file
     (let ((first (jabber-mam--query jc))
           (second (jabber-mam--query jc nil nil "friend@example.com")))
-      (jabber-test-archive--fin jc first "lost")
-      (sqlite-execute jabber-db--connection "ROLLBACK")
+      (jabber-test-archive--fin jc first "durable")
       (sqlite-execute jabber-db--connection "BEGIN")
-      (should-error (jabber-test-archive--fin jc second nil) :type 'sqlite-error)
-      (should-not jabber-mam--tx-progress)
-      (should-not jabber-mam--syncing)
-      (should (zerop jabber-mam--tx-depth)))
+      (sqlite-execute jabber-db--connection
+                      "INSERT INTO mam_progress (account, archive, scope, uid)
+VALUES ('me@example.com', 'me@example.com', 'foreign@example.com', 'foreign')")
+      (should-error
+       (jabber-mam--process-message
+        jc (jabber-test-archive--result
+            second "blessed"
+            '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
+                      (body () "never blessed"))))
+       :type 'sqlite-error)
+      (should (plist-get second :failed))
+      ;; The foreign transaction is still open and still owns its write.
+      (should-not (jabber-test-archive--idle-p))
+      (should (jabber-test-archive--progress nil nil "foreign@example.com"))
+      (sqlite-execute jabber-db--connection "ROLLBACK")
+      (jabber-test-archive--fin jc second "blessed")
+      (should-not jabber-mam--syncing))
     (jabber-db-close)
-    (should-not (jabber-test-archive--progress))))
+    (should (equal '("durable" nil) (jabber-test-archive--progress)))
+    (should-not (jabber-test-archive--progress nil nil "friend@example.com"))
+    (should-not (jabber-test-archive--progress nil nil "foreign@example.com"))
+    (should-not (sqlite-select jabber-db--connection "SELECT body FROM message"))))
 
 (ert-deftest jabber-test-archive-recovery-native-commit-fault ()
-  "A deferred foreign-key failure at native COMMIT invalidates all receipts."
+  "A deferred foreign-key failure at native COMMIT rolls back its result."
   (jabber-test-archive--with-file
     (sqlite-execute jabber-db--connection "CREATE TABLE control_parent(id INTEGER PRIMARY KEY)")
     (sqlite-execute jabber-db--connection "CREATE TABLE control_child(parent INTEGER REFERENCES control_parent(id) DEFERRABLE INITIALLY DEFERRED)")
-    (let ((query (jabber-mam--query jc)) outcome)
+    (let ((query (jabber-mam--query jc)) outcome
+          (execute (symbol-function 'sqlite-execute)))
       (plist-put query :result-callback (lambda (value) (setq outcome value)))
-      (jabber-mam--process-message jc
-				   (jabber-test-archive--result query "uid"
-								'(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
-									  (body () "atomic"))))
-      (sqlite-execute jabber-db--connection "INSERT INTO control_child VALUES (999)")
-      (should-error (jabber-test-archive--fin jc query "uid") :type 'sqlite-error)
+      ;; Violate the deferred constraint inside the result's own transaction.
+      (cl-letf (((symbol-function 'sqlite-execute)
+                 (lambda (db sql &rest args)
+                   (when (equal sql "COMMIT")
+                     (funcall execute db "INSERT INTO control_child VALUES (999)"))
+                   (apply execute db sql args))))
+        (should-error
+         (jabber-mam--process-message
+          jc (jabber-test-archive--result
+              query "uid"
+              '(message ((from . "friend@example.com/phone") (type . "chat") (id . "one"))
+                        (body () "atomic"))))
+         :type 'sqlite-error))
+      (should (jabber-test-archive--idle-p))
+      (jabber-test-archive--fin jc query "uid")
       (should (eq 'failed outcome))
-      (should (zerop jabber-mam--tx-depth))
-      (should-not jabber-mam--tx-progress)
+      (should-not jabber-mam--syncing)
       (should-not jabber-mam--dirty-peers))
     (jabber-db-close)
     (should-not (jabber-test-archive--progress))

@@ -897,6 +897,40 @@ body with \"[LABEL: could not decrypt]\" and return XML-DATA."
 (defvar jabber-chat--decrypt-retryable-failure-p nil
   "Non-nil when a decrypt failure may be retried safely.")
 
+(defvar jabber-chat--decrypt-undo nil
+  "Functions to call if the enclosing storage transaction rolls back.
+Nil outside such a transaction.  Each restores in-memory state that
+processing inside it consumed or changed, so a retry starts again from
+the restored durable state.")
+
+(defvar jabber-chat--decrypt-commit nil
+  "Effects deferred until the enclosing storage transaction commits.")
+
+(defun jabber-chat--on-decrypt-rollback (function)
+  "Call FUNCTION if the enclosing storage transaction rolls back."
+  (when jabber-chat--decrypt-undo
+    (push function jabber-chat--decrypt-undo)))
+
+(defun jabber-chat--restore-on-rollback (&rest symbols)
+  "Restore SYMBOLS' current values here if the transaction rolls back.
+Buffer-local SYMBOLS are restored in the current buffer."
+  (let ((buffer (current-buffer))
+        (values (mapcar #'symbol-value symbols)))
+    (jabber-chat--on-decrypt-rollback
+     (lambda ()
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (let ((values values))
+             (dolist (symbol symbols)
+               (set symbol (pop values))))))))))
+
+(defun jabber-chat--on-decrypt-commit (function)
+  "Call FUNCTION after the enclosing storage transaction commits.
+Outside such a transaction, call it now."
+  (if jabber-chat--decrypt-undo
+      (push function jabber-chat--decrypt-commit)
+    (funcall function)))
+
 ;;; Decrypt dedup cache
 
 (defvar jabber-chat--decrypt-cache (make-hash-table :test #'equal)
@@ -1048,7 +1082,9 @@ When KEY is non-nil and a handler ran, record the outcome in
                         (jabber-chat--decrypt-cache-put
                          key (list :context context
                                    :outcome (or outcome 'failed)
-                                   :label (plist-get props :error-label)))))
+                                   :label (plist-get props :error-label)))
+                        (jabber-chat--on-decrypt-rollback
+                         (lambda () (remhash key jabber-chat--decrypt-cache)))))
                     result)
            finally return xml-data))
 

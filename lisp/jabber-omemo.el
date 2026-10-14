@@ -391,6 +391,8 @@ Returns a deserialized store user-ptr, cached for future calls."
                               (jabber-omemo-deserialize-store blob)
                             (let ((new-blob (jabber-omemo-setup-store)))
                               (jabber-omemo-store-save account new-blob)
+                              (jabber-chat--on-decrypt-rollback
+                               (lambda () (remhash account jabber-omemo--stores)))
                               (jabber-omemo-deserialize-store new-blob)))))
           (puthash account store-ptr jabber-omemo--stores)
           store-ptr))))
@@ -403,6 +405,8 @@ Returns an integer, cached for future calls."
         (let ((id (or (jabber-omemo-store-load-device-id account)
                       (let ((new-id (jabber-omemo--generate-device-id)))
                         (jabber-omemo-store-save-device-id account new-id)
+                        (jabber-chat--on-decrypt-rollback
+                         (lambda () (remhash account jabber-omemo--device-ids)))
                         new-id))))
           (puthash account id jabber-omemo--device-ids)
           id))))
@@ -1038,8 +1042,13 @@ sessions.  Schedules a debounced flush."
     (let ((id (jabber-omemo-used-pre-key-id session-ptr))
           (account (jabber-connection-bare-jid jc)))
       (when (> id 0)
-        (cl-pushnew id (gethash account
-                                jabber-omemo--pending-prekey-removals))
+        (unless (memql id (gethash account
+                                   jabber-omemo--pending-prekey-removals))
+          (push id (gethash account jabber-omemo--pending-prekey-removals))
+          (jabber-chat--on-decrypt-rollback
+           (lambda ()
+             (cl-callf2 delete id (gethash account
+                                           jabber-omemo--pending-prekey-removals)))))
         (jabber-omemo--schedule-prekey-flush jc)))))
 
 (defun jabber-omemo--schedule-prekey-flush (jc)
@@ -1427,6 +1436,13 @@ Signals structured errors that callers can dispatch on:
                        jc sender-jid sender-did store-ptr
                        pre-key-p key-data)))
           (setq jabber-chat--decrypt-consumed-p t)
+          ;; A rolled-back MAM page restores the durable session; forget
+          ;; the consumed copy so its retry decrypts from that state.
+          (jabber-chat--on-decrypt-rollback
+           (lambda ()
+             (remhash (jabber-omemo--session-key account sender-jid sender-did)
+                      jabber-omemo--sessions)
+             (remhash account jabber-omemo--stores)))
           (jabber-omemo--persist-store jc)
           (when fresh-p
             (jabber-omemo--note-consumed-prekey jc session-ptr))
@@ -1442,8 +1458,11 @@ Signals structured errors that callers can dispatch on:
             (jabber-omemo--save-session jc sender-jid sender-did
                                         session-ptr)
             (when hb
-              (jabber-omemo--send-heartbeat
-               jc sender-jid sender-did hb)))
+              ;; Rollback reloads the unadvanced sending chain: never put
+              ;; a step on the wire that durable state may not keep.
+              (jabber-chat--on-decrypt-commit
+               (lambda ()
+                 (jabber-omemo--send-heartbeat jc sender-jid sender-did hb)))))
           (if payload
               (let* ((plaintext (jabber-omemo-decrypt-message
 				 decrypted-key iv payload))
@@ -1542,6 +1561,9 @@ empty failures remain bodyless."
     (if cached
         (progn
           (remhash echo-key jabber-omemo--sent-muc-plaintexts)
+          ;; Our own ciphertext omits our device: keep the only plaintext.
+          (jabber-chat--on-decrypt-rollback
+           (lambda () (puthash echo-key cached jabber-omemo--sent-muc-plaintexts)))
           (jabber-chat--set-body xml-data cached))
       (pcase (plist-get detected :type)
        ('omemo

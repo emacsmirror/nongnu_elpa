@@ -368,6 +368,24 @@ Added to `kill-buffer-hook' in chat buffers."
   (and (jabber-xml-get-children xml-data 'body)
        (not (jabber-reactions--reaction-only-p xml-data))))
 
+(defun jabber-chatstates--restore-thread-on-rollback ()
+  "Restore this buffer's thread identity if archive storage rolls back.
+A <gone/> renews or retires it alongside durable writes the rollback undoes."
+  (let ((buffer (current-buffer))
+        (keys jabber-buffer-registry--keys))
+    (jabber-chat--on-decrypt-rollback
+     (lambda ()
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (jabber-buffer-registry--remove-current)
+           (setq jabber-buffer-registry--keys keys)
+           (dolist (key keys)
+             (puthash key buffer jabber-buffer-registry--buffers))))))
+    (jabber-chat--restore-on-rollback
+     'jabber-message-thread-session-id 'jabber-message-thread-id
+     'jabber-message-thread-parent-id 'jabber-message-thread--root-reply-id
+     'jabber-message-thread--root-reply-jid)))
+
 (defun jabber-chatstates--handle-direct-state (buffer jc xml-data)
   "Update direct chat BUFFER from XML-DATA received on JC."
   (with-current-buffer buffer
@@ -387,6 +405,7 @@ Added to `kill-buffer-hook' in chat buffers."
           (when (eq state 'gone)
             (jabber-chatstates-stop-timer)
             (setq jabber-chatstates-composing-sent nil)
+            (jabber-chatstates--restore-thread-on-rollback)
             (if (bound-and-true-p jabber-message-thread-id)
                 (jabber-message-thread--renew-id)
               (jabber-chat--retire-session-thread jc)))

@@ -13,6 +13,7 @@
 (require 'jabber-mam)
 (require 'jabber-muc)
 (require 'jabber-reactions)
+(require 'jabber-archive-test-helpers)
 
 (declare-function jabber-db-replace-reactions
                   "jabber-db" (account peer type target-id sender reactions
@@ -584,7 +585,6 @@ FROM message ORDER BY id")))))
 (defun jabber-test-db--replay-message (from inner &optional room)
   "Replay INNER from FROM through a native MAM query, optionally for ROOM."
   (let ((jabber-mam--syncing nil)
-        (jabber-mam--tx-depth 0)
         (jabber-mam--dirty-peers nil)
         (jabber-mam-sync-complete-functions nil)
         (jabber-open-info-queries nil)
@@ -597,7 +597,7 @@ FROM message ORDER BY id")))))
           (progn
             (jabber-mam--query 'jc nil "replay" nil nil room)
             (should (equal "replay" (jabber-xml-get-attribute sent 'queryid)))
-            (should (= jabber-mam--tx-depth 1))
+            (should (jabber-test-archive--idle-p))
             (jabber-mam--process-message 'jc stanza)
             ;; A rejected result must not make an unchanged-row test pass.
             (should-not (jabber-xml-node-children stanza))
@@ -608,7 +608,7 @@ FROM message ORDER BY id")))))
                                 (complete . "true"))))
                      closure)
             (should-not jabber-mam--syncing)
-            (should (= jabber-mam--tx-depth 0))
+            (should (jabber-test-archive--idle-p))
             (should-not jabber-mam--dirty-peers))
         (jabber-mam--cleanup-connection 'jc)))))
 

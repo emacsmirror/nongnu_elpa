@@ -286,6 +286,9 @@ pair (ACCEPTED . CASCADE-EPOCH)."
                    (or (null current-status)
                        (jabber-receipts--status-upgrades-p
                         current-status status)))
+          (jabber-receipts--restore-on-rollback node)
+          (jabber-chat--restore-on-rollback
+           'jabber-receipts--latest-displayed-ts 'jabber-chat-receipt-message)
           (plist-put msg :status status)
           (jabber-chat-ewoc-invalidate node)
           (when (eq node (jabber-receipts--latest-local-node))
@@ -295,6 +298,20 @@ pair (ACCEPTED . CASCADE-EPOCH)."
               (setq jabber-receipts--latest-displayed-ts msg-epoch))
             (jabber-receipts--cascade-displayed node))
           (cons t (and displayed-p msg-epoch)))))))
+
+(defun jabber-receipts--restore-on-rollback (node)
+  "Restore NODE's current status if archive storage rolls back.
+Otherwise a retry sees the status as current and skips the durable write."
+  (let ((buffer (current-buffer))
+        (msg (cadr (ewoc-data node)))
+        (status (plist-get (cadr (ewoc-data node)) :status)))
+    (jabber-chat--on-decrypt-rollback
+     (lambda ()
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (plist-put msg :status status)
+           (let ((inhibit-read-only t))
+             (jabber-chat-ewoc-invalidate node))))))))
 
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM on JC.
@@ -339,6 +356,7 @@ also seen.  Only promotes :local nodes whose :status is :delivered."
         (cond
          ((and (eq type :local)
                (eq (plist-get msg :status) :delivered))
+          (jabber-receipts--restore-on-rollback prev)
           (plist-put msg :status :displayed)
           (jabber-chat-ewoc-invalidate prev))
          ((and (eq type :local)

@@ -166,8 +166,10 @@ Set to a string to also append XML input and output to that file."
   "Handler installed during stanza dispatch to record a downstream failure.
 Bound per dispatch; call it without arguments on an error or quit.")
 
-(defun jabber-process-input (jc xml-data)
-  "Dispatch XML-DATA received on JC through its stanza handler chain."
+(defun jabber-process-input (jc xml-data &optional error-handler)
+  "Dispatch XML-DATA received on JC through its stanza handler chain.
+Handler errors are contained.  When ERROR-HANDLER is non-nil, first call
+it with each error or quit condition; it may signal to stop dispatch."
   (let* ((jabber-xml-data xml-data)
          (jabber-stanza-error-handler nil)
          (tag (jabber-xml-node-name xml-data))
@@ -180,6 +182,8 @@ Bound per dispatch; call it without arguments on an error or quit.")
         (condition-case err
             (funcall handler jc xml-data)
           ((debug error quit)
+           (when error-handler
+             (funcall error-handler err))
            (when jabber-stanza-error-handler
              (funcall jabber-stanza-error-handler))
            (when (eq (car err) 'quit)

@@ -180,33 +180,36 @@ BEGIN SELECT RAISE(ABORT, 'injected snapshot fault'); END")
                       "SELECT body FROM message WHERE peer = 'other@example.com'"))))))
 
 (ert-deftest jabber-test-action-storage-reaction-physical-rollback-control ()
-  "A transaction-wide SQLite rollback fails the whole MAM commit closed."
+  "A transaction-wide SQLite rollback in a result fails its page closed.
+Earlier results committed in their own transactions and stay durable."
   (jabber-test-archive--with-file
     (let ((before (jabber-test-action-storage--seed jc)))
       ;; Install outside the page transaction, which the fault discards.
       (sqlite-execute jabber-db--connection "CREATE TRIGGER snapshot_fault
 BEFORE INSERT ON message_reaction WHEN NEW.reaction = 'bad'
 BEGIN SELECT RAISE(ROLLBACK, 'injected transaction loss'); END")
-      (let ((query (jabber-mam--query jc))
-            (jabber-message-chain jabber-test-action-storage--mam-chain))
+      (let* ((outcome nil)
+             (query (jabber-mam--query jc nil nil nil nil nil nil nil nil
+                                       (lambda (value) (setq outcome value))))
+             (jabber-message-chain jabber-test-action-storage--mam-chain))
         (jabber-process-input
          jc (jabber-test-archive--result
              query "body-uid"
-             '(message ((from . "friend@example.com/phone") (type . "chat") (id . "lost"))
-                       (body () "lost"))))
+             '(message ((from . "friend@example.com/phone") (type . "chat") (id . "kept"))
+                       (body () "kept"))))
         (jabber-process-input
          jc (jabber-test-archive--result
              query "reaction-uid" (jabber-test-action-storage--reaction-stanza)))
-        ;; The lost transaction cannot be released, so settlement fails.
-        (should-error (jabber-test-archive--fin jc query "reaction-uid")
-                      :type 'sqlite-error))
+        (should (jabber-test-archive--idle-p))
+        (jabber-test-archive--fin jc query "reaction-uid")
+        (should (eq outcome 'failed)))
       (sqlite-execute jabber-db--connection "DROP TRIGGER snapshot_fault")
       (jabber-db-close)
       (jabber-db-ensure-open)
       (should (equal before (jabber-test-action-storage--state)))
       (should-not (jabber-test-archive--progress))
-      (should-not (sqlite-select jabber-db--connection
-                                 "SELECT id FROM message WHERE body = 'lost'")))))
+      (should (sqlite-select jabber-db--connection
+                             "SELECT id FROM message WHERE body = 'kept'")))))
 
 ;;;; Reference candidates
 
