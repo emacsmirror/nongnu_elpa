@@ -32,6 +32,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'cursor-sensor)
 (require 'hl-line)
 (require 'markdown-ts-mode)
 (require 'outline)
@@ -105,7 +106,7 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
 (cl-defstruct (markdown-ts-appear-table--layout
                (:constructor markdown-ts-appear-table--make-layout))
   "A row's display, render-time start and lazily constructed motion geometry."
-  display origin map lines)
+  display origin map lines hidden)
 
 (cl-defstruct (markdown-ts-appear-table--line
                (:constructor markdown-ts-appear-table--make-line))
@@ -128,6 +129,9 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
 
 (defvar-local markdown-ts-appear-table--windows nil
   "Window widths and font attributes used by the last successful render.")
+
+(defvar-local markdown-ts-appear-table--owns-cursor-mode nil
+  "Non-nil when wrapped tables enabled `cursor-intangible-mode'.")
 
 (defun markdown-ts-appear--fontify-table-row (row start limit)
   "Render delimiter characters in table ROW between START and LIMIT."
@@ -188,6 +192,12 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
 
 (defun markdown-ts-appear-table--delete-cursor-overlays ()
   "Delete interactive display overlays for the rendered row at point."
+  (when markdown-ts-appear-table--cursor-row
+    (mapc #'delete-overlay
+          (overlay-get markdown-ts-appear-table--cursor-row
+                       'markdown-ts-appear-table--hidden))
+    (overlay-put markdown-ts-appear-table--cursor-row
+                 'markdown-ts-appear-table--hidden nil))
   (dolist (overlay markdown-ts-appear-table--cursor-overlays)
     (delete-overlay overlay))
   (setq markdown-ts-appear-table--cursor-overlays nil
@@ -510,7 +520,7 @@ character.  Navigation stops are offsets from the source-row overlay."
         (offset 0)
         (line-beg 0) (line-index 0) (column 0)
         (runs (make-hash-table :test #'eq))
-        stops lines previous)
+        stops lines previous hidden)
     (dolist (glyph (string-glyph-split display))
       (let ((next (+ offset (length glyph))) position)
         (dotimes (index (length glyph))
@@ -564,6 +574,8 @@ character.  Navigation stops are offsets from the source-row overlay."
                                (substring display
                                           (markdown-ts-appear-table--position-beg position)
                                           boundary)))))))
+          (when (< (1+ left) index)
+            (push (cons (1+ left) index) hidden))
           (cl-loop for gap from (1+ left) below index
                    do (aset
                        map gap
@@ -574,13 +586,17 @@ character.  Navigation stops are offsets from the source-row overlay."
                          (aref map left))
                         (t (aref map index))))))
         (setq previous index)))
+    (let ((tail (if previous (1+ previous) 0))
+          (limit (- (length map) (if (eq (char-before end) ?\n) 1 0))))
+      (when (< tail limit) (push (cons tail limit) hidden)))
     (let ((last (if previous (aref map previous)
                   (markdown-ts-appear-table--make-position
                    :beg 0 :end 1 :line 0 :column 0))))
       (cl-loop for index from (if previous (1+ previous) 0) below (length map)
                do (aset map index last)))
     (setf (markdown-ts-appear-table--layout-map layout) map
-          (markdown-ts-appear-table--layout-lines layout) (vconcat (nreverse lines)))
+          (markdown-ts-appear-table--layout-lines layout) (vconcat (nreverse lines))
+          (markdown-ts-appear-table--layout-hidden layout) (nreverse hidden))
     layout))
 
 (defun markdown-ts-appear-table--layout (row)
@@ -620,8 +636,19 @@ character.  Navigation stops are offsets from the source-row overlay."
 
 (defun markdown-ts-appear-table--make-cursor-overlays (row-overlay window)
   "Make ROW-OVERLAY interactive in WINDOW without revealing its source."
-  (let ((beg (overlay-start row-overlay)))
-    (markdown-ts-appear-table--layout row-overlay)
+  (let ((beg (overlay-start row-overlay))
+        (layout (markdown-ts-appear-table--layout row-overlay))
+        hidden)
+    ;; Hidden markup and discarded padding should not become cursor stops.
+    ;; These overlays disappear with the interactive row when source is revealed.
+    (pcase-dolist (`(,start . ,end) (markdown-ts-appear-table--layout-hidden layout))
+      (let ((overlay (make-overlay (+ beg start) (+ beg end))))
+        (overlay-put overlay 'cursor-intangible t)
+        (overlay-put overlay 'window window)
+        (push overlay hidden)))
+    (overlay-put row-overlay 'markdown-ts-appear-table--hidden hidden)
+    (unless (window-parameter window 'cursor-intangible--last-point)
+      (set-window-parameter window 'cursor-intangible--last-point (point)))
     (dotimes (_ 3)
       (let ((overlay (make-overlay beg beg)))
         (overlay-put overlay 'display "")
@@ -847,6 +874,13 @@ NOERROR and REST retain the native command's boundary behavior and options."
         (markdown-ts-appear-table--render-edited)
       (markdown-ts-appear-table--update-visibility))))
 
+(defun markdown-ts-appear-table--after-cursor-adjustment (window)
+  "Update WINDOW's table anchor after native cursor adjustment."
+  (when (and (eq window (selected-window))
+             markdown-ts-appear-table--cursor-row
+             (/= (point) (overlay-start (cadr markdown-ts-appear-table--cursor-overlays))))
+    (markdown-ts-appear-table--update-cursor-row)))
+
 (defun markdown-ts-appear-table--render-edited ()
   "Render tables around edits that have lost their overlays."
   ;; Let `markdown-ts-appear-table--update-visibility' hide new rows too.
@@ -930,6 +964,11 @@ OLD-LENGTH is the length of the replaced text."
   (when (eq markdown-ts-appear-table-style 'wrapped)
     (unless (fboundp 'markdown-table-wrap-pretty--render-row-lines)
       (user-error "Wrapped tables require markdown-table-wrap 0.2.0"))
+    (unless cursor-intangible-mode
+      (cursor-intangible-mode 1)
+      (setq markdown-ts-appear-table--owns-cursor-mode t))
+    (add-hook 'pre-redisplay-functions
+              #'markdown-ts-appear-table--after-cursor-adjustment 90 t)
     (add-hook 'post-command-hook #'markdown-ts-appear-table--post-command 20 t)
     (add-hook 'markdown-ts-appear--tracking-change-hook
               #'markdown-ts-appear-table--update-visibility 20 t)
@@ -956,6 +995,11 @@ OLD-LENGTH is the length of the replaced text."
 Do not delete overlays or cancel a timer here: those objects belong to the
 base buffer."
   (remove-hook 'post-command-hook #'markdown-ts-appear-table--post-command t)
+  (remove-hook 'pre-redisplay-functions
+               #'markdown-ts-appear-table--after-cursor-adjustment t)
+  (when markdown-ts-appear-table--owns-cursor-mode
+    (cursor-intangible-mode -1)
+    (setq markdown-ts-appear-table--owns-cursor-mode nil))
   (remove-hook 'markdown-ts-appear--tracking-change-hook
                #'markdown-ts-appear-table--update-visibility t)
   (remove-hook 'markdown-ts-appear--syntax-change-functions

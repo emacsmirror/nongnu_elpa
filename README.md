@@ -168,6 +168,8 @@ to each buffer and are removed when appear mode is disabled.
 - Enabling appear mode turns on `markdown-ts-hide-markup`.  Disabling it
   removes the buffer-local override and uses the current default value.
 - Indirect buffers are unsupported; clones are detached from active tracking.
+- Wrapped-table navigation skips hidden source characters. Revealing the row
+  restores access to all of its source.
 - Unchanged formulas reuse their previews.  Standalone display math is centered;
   inline math stays in the text.
 - Mermaid renders visible, unedited blocks asynchronously, one job at a time.
@@ -189,6 +191,7 @@ emacs --batch -Q \
   -l test/markdown-ts-appear-test.el \
   -l test/markdown-ts-appear-math-test.el \
   -l test/markdown-ts-appear-table-test.el \
+  -l test/markdown-ts-appear-table-navigation-test.el \
   -l test/markdown-ts-appear-image-test.el \
   -l test/markdown-ts-appear-mermaid-test.el \
   -f ert-run-tests-batch-and-exit

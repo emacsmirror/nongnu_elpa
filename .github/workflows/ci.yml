@@ -181,6 +181,7 @@ jobs:
             -l test/markdown-ts-appear-test.el \
             -l test/markdown-ts-appear-math-test.el \
             -l test/markdown-ts-appear-table-test.el \
+            -l test/markdown-ts-appear-table-navigation-test.el \
             -l test/markdown-ts-appear-image-test.el \
             -l test/markdown-ts-appear-mermaid-test.el \
             -f ert-run-tests-batch-and-exit
