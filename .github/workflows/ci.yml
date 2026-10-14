@@ -12,40 +12,31 @@ permissions:
 
 jobs:
   test:
-    name: Emacs ${{ matrix.emacs-version }} / grammar ${{ matrix.grammar-version }} / MathJax ${{ matrix.mathjax }}
-    runs-on: ${{ matrix.mathjax && 'macos-15' || 'ubuntu-latest' }}
+    name: Emacs ${{ matrix.emacs-version }} / SVG ${{ matrix.svg }}
+    runs-on: ${{ matrix.svg && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - emacs-version: "31.1"
-            grammar-version: pinned
-            grammar-commit: "413285231ce8fa8b11e7074bbe265b48aa7277f9"
-            mathjax: true
+            svg: true
           - emacs-version: "31.1"
-            grammar-version: latest
-            grammar-commit: ""
-            mathjax: false
+            svg: false
           - emacs-version: snapshot
-            grammar-version: pinned
-            grammar-commit: "413285231ce8fa8b11e7074bbe265b48aa7277f9"
-            mathjax: false
-          - emacs-version: snapshot
-            grammar-version: latest
-            grammar-commit: ""
-            mathjax: false
+            svg: false
 
     steps:
       - uses: actions/checkout@v5
 
       - uses: purcell/setup-emacs@master
-        if: ${{ !matrix.mathjax }}
+        if: ${{ !matrix.svg }}
         with:
           version: ${{ matrix.emacs-version }}
 
       # purcell's minimal builds have no image support; previews need real SVG.
       - name: Install SVG-capable Emacs
-        if: matrix.mathjax
+        if: matrix.svg
         working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -59,34 +50,21 @@ jobs:
           echo "$RUNNER_TEMP/emacs/Emacs.app/Contents/MacOS/bin" >> "$GITHUB_PATH"
 
       - name: Install Tree-sitter grammars
-        env:
-          MARKDOWN_GRAMMAR_COMMIT: ${{ matrix.grammar-commit }}
         run: |
           emacs --batch -Q --eval "(progn
             (require 'treesit)
-            (require 'subr-x)
-            (let* ((commit (getenv \"MARKDOWN_GRAMMAR_COMMIT\"))
-                   (revision (unless (string-empty-p commit)
-                               (list :commit commit)))
-                   (repository
-                    \"https://github.com/tree-sitter-grammars/tree-sitter-markdown\"))
-              (setq treesit-language-source-alist
-                    (list
-                     (cons 'markdown
-                           (append (list repository) revision
-                                   (list :source-dir
-                                         \"tree-sitter-markdown/src\")))
-                     (cons 'markdown-inline
-                           (append (list repository) revision
-                                   (list :source-dir
-                                         \"tree-sitter-markdown-inline/src\")))
-                     '(c
-                       \"https://github.com/tree-sitter/tree-sitter-c\"
-                       :commit \"3aa2995549d5d8b26928e8d3fa2770fd4327414e\"))))
+            (setq treesit-language-source-alist
+                  '((markdown
+                     \"https://github.com/tree-sitter-grammars/tree-sitter-markdown\"
+                     :source-dir \"tree-sitter-markdown/src\")
+                    (markdown-inline
+                     \"https://github.com/tree-sitter-grammars/tree-sitter-markdown\"
+                     :source-dir \"tree-sitter-markdown-inline/src\")
+                    (c \"https://github.com/tree-sitter/tree-sitter-c\")))
             (mapc #'treesit-install-language-grammar
                   '(markdown markdown-inline c))
             (unless (treesit-ready-p '(markdown markdown-inline c))
-              (error \"Required Tree-sitter grammars are unavailable\"))))"
+              (error \"Required Tree-sitter grammars are unavailable\")))"
 
       - name: Install required package dependencies
         run: |
@@ -99,12 +77,12 @@ jobs:
             (package-install 'evil))"
 
       - uses: actions/setup-node@v5
-        if: matrix.mathjax
+        if: matrix.svg
         with:
-          node-version: "24"
+          node-version: "lts/*"
 
       - name: Install optional MathJax dependency
-        if: matrix.mathjax
+        if: matrix.svg
         run: |
           emacs --batch -Q --eval "(progn
             (require 'package)
@@ -119,10 +97,13 @@ jobs:
               (error \"MathJax or Node.js is unavailable\")))"
 
       - name: Install optional Mermaid CLI
-        if: matrix.mathjax
+        if: matrix.svg
         run: |
-          npm install --prefix "$RUNNER_TEMP/mermaid" @mermaid-js/mermaid-cli@12.0.0
+          chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+          test -x "$chrome"
+          PUPPETEER_SKIP_DOWNLOAD=true npm install --prefix "$RUNNER_TEMP/mermaid" @mermaid-js/mermaid-cli
           echo "$RUNNER_TEMP/mermaid/node_modules/.bin" >> "$GITHUB_PATH"
+          echo "PUPPETEER_EXECUTABLE_PATH=$chrome" >> "$GITHUB_ENV"
 
       - name: Byte-compile
         run: |
@@ -158,33 +139,14 @@ jobs:
                 (princ (buffer-string)))
               (kill-emacs 1)))"
 
-      - name: Check native Markdown API contract
-        env:
-          MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS: "1"
-        run: |
-          emacs --batch -Q \
-            --eval '(progn (require (quote package)) (package-initialize))' \
-            -L . \
-            -l test/markdown-ts-appear-test.el \
-            -l test/markdown-ts-appear-compat-test.el \
-            --eval '(ert-run-tests-batch-and-exit "compat-test\\|private-fontifier-behavior-matrix")'
-
       - name: Run tests
+        timeout-minutes: 10
         env:
           MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS: "1"
-          MARKDOWN_TS_APPEAR_REQUIRE_MATHJAX: ${{ matrix.mathjax }}
-          MARKDOWN_TS_APPEAR_REQUIRE_MERMAID: ${{ matrix.mathjax }}
+          MARKDOWN_TS_APPEAR_REQUIRE_MATHJAX: ${{ matrix.svg }}
+          MARKDOWN_TS_APPEAR_REQUIRE_MERMAID: ${{ matrix.svg }}
         run: |
-          emacs --batch -Q \
-            --eval '(progn (require (quote package)) (package-initialize))' \
-            -L . \
-            -l test/markdown-ts-appear-test.el \
-            -l test/markdown-ts-appear-math-test.el \
-            -l test/markdown-ts-appear-table-test.el \
-            -l test/markdown-ts-appear-table-navigation-test.el \
-            -l test/markdown-ts-appear-image-test.el \
-            -l test/markdown-ts-appear-mermaid-test.el \
-            -f ert-run-tests-batch-and-exit
+          emacs --batch -Q -l test/run-tests.el
 
       - name: Check real terminal cursor and Evil insert transitions
         run: |
@@ -220,3 +182,26 @@ jobs:
                            (nth 0 issue) (nth 1 issue)
                            (nth 2 issue) (nth 3 issue)))
                 (kill-emacs (if issues 1 0))))"
+
+  melpazoid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Prepare melpazoid
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y emacs-nox
+          git clone --depth 1 https://github.com/riscy/melpazoid.git "$RUNNER_TEMP/melpazoid"
+
+      - name: Check package
+        env:
+          LOCAL_REPO: ${{ github.workspace }}
+          RECIPE: '(markdown-ts-appear :fetcher github :repo "Thysrael/markdown-ts-appear")'
+          EXIST_OK: "true"
+          WARN_IS_ERROR: "false"
+        run: make -C "$RUNNER_TEMP/melpazoid"
