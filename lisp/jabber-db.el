@@ -153,7 +153,8 @@ END"
   INSERT INTO message_fts(message_fts, rowid, body)
     VALUES ('delete', old.id, old.body);
 END"
-    "CREATE TRIGGER IF NOT EXISTS message_au AFTER UPDATE ON message BEGIN
+    "CREATE TRIGGER IF NOT EXISTS message_au AFTER UPDATE OF body ON message
+BEGIN
   INSERT INTO message_fts(message_fts, rowid, body)
     VALUES ('delete', old.id, old.body);
   INSERT INTO message_fts(rowid, body) VALUES (new.id, new.body);
@@ -764,19 +765,34 @@ rescan the room's history per candidate.")
 Older releases kept the room archive UID only in `message_archive' when
 the forwarded stanza lacked a room stanza ID.  Promote it to room and
 server identity only from the room's own archive, for an ID-less row
-with exactly one UID there, when no other row in the room uses it."
+with exactly one UID there, when no other row in the room uses it.
+Also narrow the full-text trigger to body changes, which makes this and
+later identity updates cheap on large histories."
   (jabber-db--with-savepoint db
-    (pcase-dolist (`(,id ,uid)
-                   (and (sqlite-select db "SELECT 1 FROM message_archive LIMIT 1")
-                        (sqlite-select db jabber-db--v15-candidates-query)))
-      (sqlite-execute db "UPDATE message SET room_id = ?, server_id = ? WHERE id = ?"
-                      (list uid uid id)))
+    ;; Identity updates must not rewrite the full-text index of every row.
+    (sqlite-execute db "DROP TRIGGER IF EXISTS message_au")
+    (sqlite-execute db (seq-find (lambda (ddl)
+                                   (string-match-p "TRIGGER IF NOT EXISTS message_au" ddl))
+                                 jabber-db--schema-ddl))
+    (when (sqlite-select db "SELECT 1 FROM message_archive LIMIT 1")
+      (sqlite-execute db "CREATE TEMP TABLE jabber_v15 (id INTEGER PRIMARY KEY, uid TEXT)")
+      (sqlite-execute db (concat "INSERT INTO jabber_v15 "
+                                 jabber-db--v15-candidates-query))
+      (sqlite-execute db "UPDATE message
+SET room_id = (SELECT uid FROM jabber_v15 WHERE jabber_v15.id = message.id),
+    server_id = (SELECT uid FROM jabber_v15 WHERE jabber_v15.id = message.id)
+WHERE id IN (SELECT id FROM jabber_v15)")
+      (sqlite-execute db "DROP TABLE jabber_v15"))
     (sqlite-execute db "PRAGMA user_version=15")))
 
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (jabber-db--with-savepoint db
     (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
+      (when (< 0 version jabber-db--schema-version)
+        ;; Large histories can take a while; say so before Emacs pauses.
+        (message "Upgrading Jabber database to schema %d..."
+                 jabber-db--schema-version))
       (when (zerop version)
         (jabber-db--init-schema db)
         (sqlite-execute db

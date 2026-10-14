@@ -382,5 +382,27 @@ SELECT account, peer, CAST(id AS TEXT), id FROM message")
                                    db jabber-db--v15-candidates-query)))))
       (sqlite-close db))))
 
+(ert-deftest jabber-test-archive-repair-v15-identity-updates-skip-fts ()
+  "After v15, identity updates leave the full-text index alone.
+Body updates still reindex, so search keeps working."
+  (jabber-test-archive--with-file
+    (ignore jc)
+    (sqlite-execute jabber-db--connection "PRAGMA user_version=14")
+    (jabber-db-close)
+    (jabber-db-ensure-open)
+  (let ((db jabber-db--connection))
+    (sqlite-execute db "INSERT INTO message (id, account, peer, type, direction, body, timestamp)
+VALUES (1, 'me', 'room', 'groupchat', 'in', 'hello world', 1)")
+    (let ((changes (lambda ()
+                     (caar (sqlite-select db "SELECT total_changes()")))))
+      (let ((before (funcall changes)))
+        (sqlite-execute db "UPDATE message SET room_id = 'r1', server_id = 'r1' WHERE id = 1")
+        (should (= 1 (- (funcall changes) before))))
+      (sqlite-execute db "UPDATE message SET body = 'goodbye moon' WHERE id = 1")
+      (should (equal '((1)) (sqlite-select
+                             db "SELECT rowid FROM message_fts WHERE message_fts MATCH 'moon'")))
+      (should-not (sqlite-select
+                   db "SELECT rowid FROM message_fts WHERE message_fts MATCH 'hello'"))))))
+
 (provide 'jabber-test-archive-repair)
 ;;; jabber-test-archive-repair.el ends here

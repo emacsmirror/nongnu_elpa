@@ -23,6 +23,8 @@
 - Let historical room archive messages stored without a room stanza ID be
   replied to and reacted to again: upgrading copies their room archive ID into
   the message when that ID is unambiguous within the room (#81).
+- Keep that upgrade fast on large histories: identity changes no longer
+  rewrite the search index, and Emacs reports when it upgrades the database.
 
 * [0.15.0]
 #+date: 2026-10-02
