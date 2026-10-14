@@ -65,8 +65,9 @@
   :group 'markdown-ts-appear)
 
 (defface markdown-ts-appear-table
-  '((t :inherit markdown-ts-table))
+  '((t nil))
   "Base face for wrapped tables, including their headers and borders.
+No font or background is imposed by default.
 Customize this face's font to keep tables aligned in variable-pitch buffers."
   :group 'markdown-ts-appear)
 
@@ -76,7 +77,7 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
   :group 'markdown-ts-appear)
 
 (defface markdown-ts-appear-table-border
-  '((t :inherit (shadow markdown-ts-appear-table)))
+  '((t :inherit (markdown-ts-appear-table shadow)))
   "Face for generated borders in wrapped tables."
   :group 'markdown-ts-appear)
 

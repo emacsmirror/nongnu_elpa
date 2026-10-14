@@ -229,7 +229,7 @@
   (markdown-ts-appear-table-test--with-buffer "| A | B |\n|---|---|\n| x | y |\n" 20
     (save-window-excursion
       (switch-to-buffer (current-buffer))
-      (dolist (face '(markdown-ts-table markdown-ts-appear-table))
+      (dolist (face '(default markdown-ts-appear-table))
         (let ((height (face-attribute face :height)))
           (unwind-protect
               (cl-letf (((symbol-function 'markdown-ts-appear-table--window-width)
