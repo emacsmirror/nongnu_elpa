@@ -50,7 +50,8 @@
                      (jabber-test-archive--progress nil "room@conference.example.com")))
       (jabber-db-close)
       (jabber-db-ensure-open)
-      (should (= 14 (caar (sqlite-select jabber-db--connection "PRAGMA user_version"))))
+      (should (= jabber-db--schema-version
+                 (caar (sqlite-select jabber-db--connection "PRAGMA user_version"))))
       (should (= 1 (caar (sqlite-select jabber-db--connection "SELECT count(*) FROM message")))))))
 
 (ert-deftest jabber-test-archive-repair-references ()
@@ -283,6 +284,103 @@
           (jabber-test-archive-repair--open)
           (should (equal before (sqlite-select jabber-db--connection "SELECT * FROM message ORDER BY id")))
           (should (equal summary (jabber-db-message-thread-summary "me@example.com" "room@conference.example.com" "groupchat" "thread"))))))))
+
+;;; Standalone historical room archive rows
+
+(defun jabber-test-archive-repair--standalone (&optional uid archive)
+  "Store an ID-less groupchat row owned by ARCHIVE's UID, return its ID.
+ARCHIVE defaults to the room's own archive, UID to \"solo-uid\"."
+  (let ((id (jabber-db-store-message
+             "me@example.com" "room@conference.example.com" "in" "groupchat"
+             "An archived message" 1735689600 "nick")))
+    (sqlite-execute jabber-db--connection
+                    "INSERT INTO message_archive VALUES (?, ?, ?, ?)"
+                    (list "me@example.com"
+                          (or archive "room@conference.example.com")
+                          (or uid "solo-uid") id))
+    id))
+
+(defun jabber-test-archive-repair--v14-reference (id)
+  "Reopen the fixture as schema 14 and return row ID's backlog reference."
+  (sqlite-execute jabber-db--connection "PRAGMA user_version=14")
+  (jabber-db-close)
+  (jabber-db-ensure-open)
+  (should (= jabber-db--schema-version
+             (caar (sqlite-select jabber-db--connection "PRAGMA user_version"))))
+  (plist-get (seq-find (lambda (entry) (eql id (plist-get entry :db-id)))
+                       (jabber-db-backlog "me@example.com"
+                                          "room@conference.example.com"))
+             :server-id))
+
+(ert-deftest jabber-test-archive-repair-standalone-room-uid ()
+  "A historical row owned only by its room archive gains the room UID."
+  (jabber-test-archive--with-file
+    (ignore jc)
+    (let ((id (jabber-test-archive-repair--standalone)))
+      (should (equal "solo-uid" (jabber-test-archive-repair--v14-reference id)))
+      (should (equal '(("solo-uid" "solo-uid"))
+                     (sqlite-select jabber-db--connection
+                                    "SELECT room_id, server_id FROM message WHERE id = ?"
+                                    (list id)))))))
+
+(ert-deftest jabber-test-archive-repair-standalone-controls ()
+  "Personal archives, collisions, ambiguity and existing IDs stay unchanged."
+  (dolist (kind '(personal collision ambiguous room-id server-id))
+    (jabber-test-archive--with-file
+      (ignore jc)
+      (let ((id (jabber-test-archive-repair--standalone
+                 nil (and (eq kind 'personal) "me@example.com"))))
+        (pcase kind
+          ('collision
+           (jabber-db-store-message
+            "me@example.com" "room@conference.example.com" "in" "groupchat"
+            "Other" 1735689601 "nick" nil "solo-uid" nil nil nil nil nil
+            '(:room-id "solo-uid")))
+          ('ambiguous
+           (sqlite-execute jabber-db--connection
+                           "INSERT INTO message_archive VALUES (?, ?, ?, ?)"
+                           (list "me@example.com" "room@conference.example.com"
+                                 "other-uid" id)))
+          ('room-id
+           (sqlite-execute jabber-db--connection
+                           "UPDATE message SET room_id = 'explicit' WHERE id = ?"
+                           (list id)))
+          ('server-id
+           (sqlite-execute jabber-db--connection
+                           "UPDATE message SET server_id = 'inner' WHERE id = ?"
+                           (list id))))
+        (let ((before (sqlite-select jabber-db--connection
+                                     "SELECT * FROM message ORDER BY id")))
+          (should (equal (pcase kind ('room-id "explicit") ('server-id "inner"))
+                         (jabber-test-archive-repair--v14-reference id)))
+          (should (equal before (sqlite-select jabber-db--connection
+                                               "SELECT * FROM message ORDER BY id"))))))))
+
+(ert-deftest jabber-test-archive-repair-v15-collision-seeks-identity-index ()
+  "The v15 candidate query seeks identity indexes without statistics.
+Opening a large 0.15.0 database must not rescan a room's history for
+every candidate row."
+  (let ((db (sqlite-open)))
+    (unwind-protect
+        (progn
+          (jabber-db--init-schema db)
+          (sqlite-execute db "WITH RECURSIVE n(i) AS (VALUES (1) UNION ALL
+SELECT i + 1 FROM n WHERE i < 4000)
+INSERT INTO message (id, account, peer, type, direction, body, timestamp)
+SELECT i, 'me', 'room', 'groupchat', 'in', 'history', i FROM n")
+          (sqlite-execute db "INSERT INTO message_archive
+SELECT account, peer, CAST(id AS TEXT), id FROM message")
+          (let ((plan (mapconcat (lambda (row) (format "%s" (car (last row))))
+                                 (sqlite-select
+                                  db (concat "EXPLAIN QUERY PLAN "
+                                             jabber-db--v15-candidates-query))
+                                 "\n")))
+            (should-not (string-match-p "idx_msg_peer_ts" plan))
+            (should (string-match-p "idx_msg_room_id" plan))
+            (should (string-match-p "idx_msg_server_id" plan)))
+          (should (= 4000 (length (sqlite-select
+                                   db jabber-db--v15-candidates-query)))))
+      (sqlite-close db))))
 
 (provide 'jabber-test-archive-repair)
 ;;; jabber-test-archive-repair.el ends here

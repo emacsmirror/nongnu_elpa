@@ -327,7 +327,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 14
+(defconst jabber-db--schema-version 15
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -742,6 +742,37 @@ AND old.origin_id IS NULL AND old.room_id IS NULL")))
           (jabber-db--reconcile-room-split db (car pair) (cadr pair)))))
     (sqlite-execute db "PRAGMA user_version=14")))
 
+(defconst jabber-db--v15-candidates-query "SELECT m.id, ma.uid FROM message_archive AS ma
+JOIN message AS m ON m.id = ma.message_id
+WHERE m.account = ma.account AND m.peer = ma.archive AND m.type = 'groupchat'
+AND ma.uid != '' AND m.room_id IS NULL AND m.server_id IS NULL
+AND NOT EXISTS (SELECT 1 FROM message_archive AS dup
+ WHERE dup.message_id = m.id AND dup.account = ma.account
+ AND dup.archive = ma.archive AND dup.uid != ma.uid)
+AND NOT EXISTS (SELECT 1 FROM message AS other
+ WHERE other.account = m.account AND other.room_id = ma.uid
+ AND other.peer = m.peer)
+AND NOT EXISTS (SELECT 1 FROM message AS other
+ WHERE other.account = m.account AND other.server_id = ma.uid
+ AND other.peer = m.peer)"
+  "Standalone room archive rows the v15 migration may promote, as (ID UID).
+Each collision check seeks one identity index; a combined OR would
+rescan the room's history per candidate.")
+
+(defun jabber-db--migrate-v14-to-v15 (db)
+  "Give standalone historical room archive rows their room UID in DB.
+Older releases kept the room archive UID only in `message_archive' when
+the forwarded stanza lacked a room stanza ID.  Promote it to room and
+server identity only from the room's own archive, for an ID-less row
+with exactly one UID there, when no other row in the room uses it."
+  (jabber-db--with-savepoint db
+    (pcase-dolist (`(,id ,uid)
+                   (and (sqlite-select db "SELECT 1 FROM message_archive LIMIT 1")
+                        (sqlite-select db jabber-db--v15-candidates-query)))
+      (sqlite-execute db "UPDATE message SET room_id = ?, server_id = ? WHERE id = ?"
+                      (list uid uid id)))
+    (sqlite-execute db "PRAGMA user_version=15")))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (jabber-db--with-savepoint db
@@ -793,6 +824,9 @@ AND old.origin_id IS NULL AND old.room_id IS NULL")))
         (jabber-db--migrate-v13-to-v14 db)
         (setq version 14))
       (when (= version 14)
+        (jabber-db--migrate-v14-to-v15 db)
+        (setq version 15))
+      (when (= version 15)
         (jabber-db--repair-reaction-actors db)))))
 
 (defun jabber-db-ensure-open ()
@@ -1049,11 +1083,16 @@ OOB-ENTRIES replaces the row's OOB metadata when BODY is upgraded."
          (list message-id (car entry) (cdr entry)))))))
 
 (defun jabber-db--backfill-message-ids (db message-id stanza-id server-id)
-  "Fill missing STANZA-ID and SERVER-ID on exact MESSAGE-ID in DB."
-  (sqlite-execute
-   db "UPDATE message SET stanza_id = COALESCE(stanza_id, ?),
-server_id = COALESCE(server_id, ?) WHERE id = ?"
-   (list stanza-id server-id message-id)))
+  "Fill missing STANZA-ID and SERVER-ID on exact MESSAGE-ID in DB.
+Rows that would keep both values are not rewritten, so exact replays
+do not fire the full-text update trigger."
+  (when (or stanza-id server-id)
+    (sqlite-execute
+     db "UPDATE message SET stanza_id = COALESCE(stanza_id, ?),
+server_id = COALESCE(server_id, ?) WHERE id = ?
+AND ((stanza_id IS NULL AND ? IS NOT NULL)
+     OR (server_id IS NULL AND ? IS NOT NULL))"
+     (list stanza-id server-id message-id stanza-id server-id))))
 
 (defun jabber-db--backfill-reply-fields (db message-id reply)
   "Fill NULL reply columns in DB for exact MESSAGE-ID using REPLY.
@@ -1292,11 +1331,15 @@ AND (room_id IS NOT NULL OR (server_id IS NULL AND stanza_id = ?))"
     (and (= (length candidates) 1) (= (length matches) 1) (car matches))))
 
 (defun jabber-db--enrich-message-identity (db id account identity)
-  "Append compatible IDENTITY to exact ID in DB for ACCOUNT."
-  (sqlite-execute db "UPDATE message SET origin_id = COALESCE(origin_id, ?),
-room_id = COALESCE(room_id, ?) WHERE id = ?"
-                  (list (plist-get identity :origin-id)
-                        (plist-get identity :room-id) id))
+  "Append compatible IDENTITY to exact ID in DB for ACCOUNT.
+Only a missing origin or room ID rewrites the row."
+  (let ((origin (plist-get identity :origin-id))
+        (room (plist-get identity :room-id)))
+    (when (or origin room)
+      (sqlite-execute db "UPDATE message SET origin_id = COALESCE(origin_id, ?),
+room_id = COALESCE(room_id, ?) WHERE id = ?
+AND ((origin_id IS NULL AND ? IS NOT NULL) OR (room_id IS NULL AND ? IS NOT NULL))"
+                      (list origin room id origin room))))
   (when-let* ((archive (plist-get identity :archive))
               (uid (plist-get identity :archive-id)))
     (sqlite-execute db
@@ -1594,15 +1637,17 @@ transport alias after origin enrichment; room references use only room
 identity, falling back to the historical server field.  Archive UIDs
 never identify action targets.  Return all candidates to detect collisions."
   (when (and account peer type target-id)
-    (sqlite-select
-     db
-     (format "SELECT id, body, retracted, direction, resource FROM message
-WHERE account = ? AND peer = ? AND type = ? AND %s"
-             (if (equal type "groupchat")
-                 "COALESCE(room_id, server_id) = ?"
-               "(origin_id = ? OR stanza_id = ?)"))
-     (append (list account peer type target-id)
-             (unless (equal type "groupchat") (list target-id))))))
+    (let ((scope "SELECT id, body, retracted, direction, resource FROM message
+WHERE account = ? AND peer = ? AND type = ? AND ")
+          (parameters (list account peer type target-id)))
+      ;; Separate branches seek the identity indexes instead of peer history.
+      ;; UNION returns a row matching both aliases once; distinct rows remain.
+      (sqlite-select
+       db (if (equal type "groupchat")
+              (concat scope "room_id = ? UNION "
+                      scope "room_id IS NULL AND server_id = ?")
+            (concat scope "origin_id = ? UNION " scope "stanza_id = ?"))
+       (append parameters parameters)))))
 
 (defun jabber-db-reply-target-body (account peer reply-id muc-p &optional sender)
   "Return the body of the unique message REPLY-ID references, or nil.
@@ -1676,7 +1721,8 @@ TYPE is the target message type.  Return non-nil when the target message
 exists and the replacement was applied.  Empty REACTIONS deletes SENDER's
 stored reactions for the target.  Non-nil UPDATED-AT is source ordered and
 older or equal values are ignored.  Nil UPDATED-AT is a local replacement
-and is always accepted with the current timestamp."
+and is always accepted with the current timestamp.  The actor timestamp
+and snapshot change together: an error or quit leaves both unchanged."
   (when-let* ((db (jabber-db-ensure-open))
               (message-id (jabber-db--message-id-for-reaction-target
                            db account peer type target-id)))
@@ -1685,19 +1731,22 @@ and is always accepted with the current timestamp."
                   db message-id sender updated-at))
       (let ((deduplicated (delete-dups (cl-remove-if-not #'stringp reactions)))
             (replacement-updated-at (or updated-at (floor (float-time)))))
-        (sqlite-execute db "INSERT INTO message_reaction_actor \
+        ;; The actor watermark and its snapshot are one replacement.
+        (jabber-db--with-savepoint db
+          (sqlite-execute db "INSERT INTO message_reaction_actor \
 (message_id, sender, updated_at) VALUES (?, ?, ?) \
 ON CONFLICT(message_id, sender) DO UPDATE SET updated_at = excluded.updated_at"
-                        (list message-id sender replacement-updated-at))
-        (sqlite-execute db "DELETE FROM message_reaction \
+                          (list message-id sender replacement-updated-at))
+          (sqlite-execute db "DELETE FROM message_reaction \
 WHERE message_id = ? AND sender = ?"
-                        (list message-id sender))
-        (dolist (reaction deduplicated)
-          (unless (string-empty-p reaction)
-            (sqlite-execute db "INSERT INTO message_reaction \
+                          (list message-id sender))
+          (dolist (reaction deduplicated)
+            (unless (string-empty-p reaction)
+              (sqlite-execute db "INSERT INTO message_reaction \
 (message_id, sender, reaction, updated_at) VALUES (?, ?, ?, ?)"
-                            (list message-id sender reaction replacement-updated-at))))
-        t))))
+                              (list message-id sender reaction
+                                    replacement-updated-at))))
+          t)))))
 
 (defun jabber-db-reactions-for-message-ids (message-ids)
   "Return reaction state for MESSAGE-IDS keyed by message DB id.
@@ -2158,10 +2207,25 @@ row ID.  ROOT-STANZA-ID and ROOT-SERVER-ID are wire identifiers."
    (root-stanza-id
     (equal root-stanza-id (plist-get msg :id)))))
 
+(defun jabber-db--thread-root-identity
+    (type root-message-id root-stanza-id root-server-id)
+  "Return (COLUMN EXPRESSION VALUE) selecting a thread root, or nil.
+TYPE, ROOT-MESSAGE-ID, ROOT-STANZA-ID and ROOT-SERVER-ID take the
+precedence of `jabber-db--message-thread-root-p'.  Rows whose COLUMN
+equals VALUE belong to the thread; EXPRESSION is the row value that
+predicate compares with VALUE."
+  (cond
+   (root-message-id (list "id" "id" root-message-id))
+   ((and (equal type "groupchat") root-server-id)
+    (list "server_id" "COALESCE(room_id, server_id)" root-server-id))
+   (root-stanza-id (list "stanza_id" "stanza_id" root-stanza-id))))
+
 (defun jabber-db-thread-backlog
     (account peer type thread-id &optional count start-time)
   "Return THREAD-ID's root and replies for ACCOUNT, PEER, and TYPE.
-Results are reverse chronological, limited by COUNT after START-TIME."
+Results are reverse chronological, limited by COUNT after START-TIME.
+The newest matching root follows at most COUNT - 1 newest replies;
+COUNT t returns every reply."
   (when-let* ((db (jabber-db-ensure-open))
               (thread-row
                (car (sqlite-select
@@ -2170,35 +2234,33 @@ Results are reverse chronological, limited by COUNT after START-TIME."
 FROM message_thread WHERE account = ? AND peer = ? AND type = ? \
 AND thread_id = ?"
                      (list account peer type thread-id)))))
-    (let* ((root-message-id (nth 0 thread-row))
-           (root-stanza-id (nth 1 thread-row))
-           (root-server-id (nth 2 thread-row))
-           (cutoff (floor (or start-time 0)))
-           (rows (sqlite-select
-                  db
-                  (concat jabber-db--backlog-columns "\
+    (pcase-let* ((`(,column ,expression ,root-id)
+                  (apply #'jabber-db--thread-root-identity type thread-row))
+                 (limit (or count jabber-backlog-number))
+                 (scope (concat jabber-db--backlog-columns "\
  WHERE account = ? AND peer = ? AND type = ? AND timestamp >= ? \
-AND (thread_id = ? OR CASE WHEN ? IS NOT NULL THEN id = ? \
-WHEN ? = 'groupchat' AND ? IS NOT NULL THEN server_id = ? \
-WHEN ? IS NOT NULL THEN stanza_id = ? ELSE 0 END) \
-ORDER BY timestamp DESC")
-                  (list account peer type cutoff thread-id
-                        root-message-id root-message-id
-                        type root-server-id root-server-id
-                        root-stanza-id root-stanza-id)))
-           (plists (mapcar #'jabber-db--row-to-plist rows))
-           (root (seq-find
-                  (lambda (msg)
-                    (jabber-db--message-thread-root-p
-                     msg type root-message-id root-stanza-id root-server-id))
-                  plists))
-           (limit (or count jabber-backlog-number))
-           (replies (seq-remove (lambda (msg) (eq msg root)) plists))
-           (selected (if (eq limit t) replies
-                       (seq-take replies (max 0 (1- limit)))))
-           (result (append selected (and root (list root)))))
+AND (thread_id = ?" (and column (format " OR %s = ?" column)) ")"))
+                 (params (append (list account peer type
+                                       (floor (or start-time 0)) thread-id)
+                                 (and column (list root-id))))
+                 (root (and column
+                            (car (sqlite-select
+                                  db
+                                  (format "%s AND %s = ? \
+ORDER BY timestamp DESC, id DESC LIMIT 1" scope expression)
+                                  (append params (list root-id))))))
+                 (replies (sqlite-select
+                           db
+                           (concat scope " AND id IS NOT ? \
+ORDER BY timestamp DESC, id DESC LIMIT ?")
+                           (append params
+                                   (list (car root)
+                                         (if (eq limit t) -1
+                                           (max 0 (1- limit))))))))
       (jabber-db--attach-reactions
-       (jabber-db--attach-oob-entries db result)))))
+       (jabber-db--attach-oob-entries
+        db (mapcar #'jabber-db--row-to-plist
+                   (append replies (and root (list root)))))))))
 
 (defun jabber-db-mark-message-thread-read
     (account peer type thread-id)

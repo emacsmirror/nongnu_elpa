@@ -12,6 +12,17 @@
   be loaded instead of failing to open chats.
 - Add =MBED_STATIC=1= to link Mbed TLS into the module; the Nix development
   shell uses it so modules survive store garbage collection.
+- Store a sender's reaction timestamp and reactions as one database change.
+  A storage error or quit no longer leaves a partial snapshot whose newer
+  timestamp makes the same live or archived update look stale on retry.
+- Look up reply and reaction targets through the identity indexes instead of
+  scanning a conversation's history, keeping room-ID precedence, the
+  historical server-ID fallback and ambiguity checks unchanged.
+- Stop exact archive replays from rewriting stored messages and their search
+  index; thread views read only the messages they display.
+- Let historical room archive messages stored without a room stanza ID be
+  replied to and reacted to again: upgrading copies their room archive ID into
+  the message when that ID is unambiguous within the room (#81).
 
 * [0.15.0]
 #+date: 2026-10-02
