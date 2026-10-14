@@ -27,10 +27,9 @@ labels, width-aware table views, and MathJax and Mermaid previews.
 
 - Emacs 31.1+ with Tree-sitter support.
 - The `markdown` and `markdown-inline` grammars.
-- `markdown-table-wrap` 0.2.0+.
-- For math previews: the `mathjax` package, Node.js, and an Emacs build with SVG
+- Math (optional): the `mathjax` package, Node.js, and an Emacs build with SVG
   image support.
-- For Mermaid previews: [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli)
+- Mermaid (optional): [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli)
   (`mmdc`) with its browser runtime, and SVG image support.
 
 ## Installation
@@ -44,8 +43,6 @@ After [configuring the archive](https://melpa.org/#/getting-started), use:
   :hook (markdown-ts-mode . markdown-ts-appear-mode))
 ```
 
-The `markdown-table-wrap` dependency is installed automatically.
-
 Or install the latest Git revision:
 
 ```emacs-lisp
@@ -56,8 +53,14 @@ Or install the latest Git revision:
   :hook (markdown-ts-mode . markdown-ts-appear-mode))
 ```
 
-MathJax is optional and is not installed as a dependency.  To opt in, install
-`mathjax` explicitly and enable previews:
+## Optional previews
+
+Math and Mermaid previews are disabled by default. Both require an Emacs build
+with SVG image support.
+
+### Math
+
+Install MathJax from MELPA and enable previews:
 
 ```emacs-lisp
 (use-package mathjax
@@ -67,13 +70,13 @@ MathJax is optional and is not installed as a dependency.  To opt in, install
   (markdown-ts-appear-enable-math-preview t))
 ```
 
-Install Node.js separately and use an Emacs build with SVG support.  Installing
-`mathjax` does not install Node.js.  Math previews are disabled by default;
-the backend is loaded when previews are enabled, and rendering is requested
-only for eligible formulas.
+Install [Node.js](https://nodejs.org/) separately; the Emacs package does not
+install its runtime.
 
-For Mermaid diagrams, install the CLI separately with
-`npm install -g @mermaid-js/mermaid-cli`, then enable:
+### Mermaid
+
+Install [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli) and its browser
+runtime, then enable:
 
 ```emacs-lisp
 (setopt markdown-ts-appear-enable-mermaid-preview t)
@@ -186,15 +189,7 @@ to each buffer and are removed when appear mode is disabled.
 ```sh
 MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS=1 \
 emacs --batch -Q \
-  --eval '(progn (require (quote package)) (package-initialize) (setq load-prefer-newer t))' \
-  -L . \
-  -l test/markdown-ts-appear-test.el \
-  -l test/markdown-ts-appear-math-test.el \
-  -l test/markdown-ts-appear-table-test.el \
-  -l test/markdown-ts-appear-table-navigation-test.el \
-  -l test/markdown-ts-appear-image-test.el \
-  -l test/markdown-ts-appear-mermaid-test.el \
-  -f ert-run-tests-batch-and-exit
+  -l test/run-tests.el
 ```
 
 Add `MARKDOWN_TS_APPEAR_REQUIRE_MATHJAX=1` to require the optional math
@@ -203,6 +198,9 @@ dependencies and real SVG rendering tests, or
 Without the corresponding
 environment variable, tests with unavailable dependencies are skipped.
 
+CI uses batch tests and real SVG rendering. Omit `--batch` to include graphical
+interaction tests locally.
+
 Run `python3 test/table-redisplay.py` to check actual terminal cursor positions
 and Evil insert transitions.  This uses a real PTY and the supplied three-column
 CJK regression table; it requires Python 3, Evil, and the Markdown grammars.
@@ -210,6 +208,18 @@ CJK regression table; it requires Python 3, Evil, and the Markdown grammars.
 `test/benchmark-table.el` measures cold row entry, cached motion, and unchanged
 window notifications.  Initialize packages and put the library to measure first
 on `load-path`, then load that file; timings include garbage collection.
+
+`test/benchmark-editing.el` measures typing, deletion, style-boundary movement
+and table navigation, including redraw time. In a separate graphical Emacs:
+
+```sh
+APPEAR_BENCH_MODE=math emacs -Q \
+  --eval '(progn (require (quote package)) (package-initialize))' \
+  -L . -l test/benchmark-editing.el
+```
+
+Compare `native`, `appear` and `math` modes. The benchmark reports latency, GC
+time and fontification/scan counts, then exits.
 
 ## License
 
