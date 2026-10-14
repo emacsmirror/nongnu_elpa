@@ -322,8 +322,9 @@ NODE is the block parser node already found at POSITION, when available."
                (< position (cdr bounds)))
       bounds)))
 
-(defun markdown-ts-appear--restore ()
-  "Restore hidden markup in the previously revealed region."
+(defun markdown-ts-appear--restore (&optional defer)
+  "Restore hidden markup in the previously revealed region.
+When DEFER is non-nil, let redisplay fontify the region after a text edit."
   (when-let* ((region markdown-ts-appear--region))
     (let ((beg (marker-position (car region)))
           (end (marker-position (cdr region))))
@@ -333,9 +334,10 @@ NODE is the block parser node already found at POSITION, when available."
       (when (and beg end (not markdown-ts-appear--tearing-down-buffer-p))
         (without-restriction
           (font-lock-flush beg end)
-          (condition-case nil
-              (font-lock-ensure beg end)
-            (treesit-parser-deleted nil)))))))
+          (unless defer
+            (condition-case nil
+                (font-lock-ensure beg end)
+              (treesit-parser-deleted nil))))))))
 
 (defun markdown-ts-appear--bounds-at-point (pos &optional block)
   "Return source bounds for the smallest rendered element at POS.
@@ -568,7 +570,9 @@ BLOCK is the Markdown node already found at POS, when available."
         (tick (buffer-chars-modified-tick)))
     (unless (and (equal position markdown-ts-appear--last-point)
                  (equal tick markdown-ts-appear--last-tick))
-      (let* ((region markdown-ts-appear--region)
+      (let* ((edited (and markdown-ts-appear--last-tick
+                          (not (equal tick markdown-ts-appear--last-tick))))
+             (region markdown-ts-appear--region)
              (old-beg (and region (marker-position (car region))))
              (old-end (and region (marker-position (cdr region)))))
         (without-restriction
@@ -580,12 +584,14 @@ BLOCK is the Markdown node already found at POS, when available."
                         (and old-beg old-end
                              (= beg old-beg) (= end old-end))
                       (null region))
-              (markdown-ts-appear--restore)
+              ;; An edit already dirtied its block.  A partial synchronous
+              ;; refresh here would reintroduce hidden JIT boundaries in it.
+              (markdown-ts-appear--restore edited)
               (when bounds
                 (setq markdown-ts-appear--region
                       (cons (copy-marker beg) (copy-marker end t)))
                 (font-lock-flush beg end)
-                (font-lock-ensure beg end)))))
+                (unless edited (font-lock-ensure beg end))))))
         (setq markdown-ts-appear--last-point position
               markdown-ts-appear--last-tick tick)))))
 
@@ -1155,6 +1161,10 @@ at most one following space or tab and are not clipped to START or LIMIT."
 (defun markdown-ts-appear--invalidate (beg end)
   "Delete icons and refontify text between BEG and END."
   (markdown-ts-appear--delete-rendering-overlays beg end)
+  ;; JIT-lock splits work at invisible-property boundaries.  Drop stale markup
+  ;; so an edited block is refontified together, not once per hidden delimiter.
+  (with-silent-modifications
+    (markdown-ts-appear--remove-markup-invisibility beg end))
   (font-lock-flush beg end))
 
 (defun markdown-ts-appear--after-change (beg end _old-length)

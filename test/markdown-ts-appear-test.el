@@ -752,6 +752,38 @@
         (overlay-get overlay 'markdown-ts-appear--link-icon))
       (overlays-in (point-min) (point-max))))))
 
+(ert-deftest markdown-ts-appear-test-edit-fontifies-inline-markup-in-one-jit-pass ()
+  (dolist (markup '("**one** and **two**" "*one* and *two*" "`one` and `two`"
+                    "[one](https://one.test) and [two](https://two.test)"))
+    (dolist (edit '(insert delete))
+      (ert-info ((format "%s in %s" edit markup))
+        (markdown-ts-appear-test--with-buffer (concat "Before " markup " after.\n")
+          (rename-buffer "*appear-inline-jit-test*" t)
+          (let ((noninteractive nil)) (font-lock-mode 1))
+          (font-lock-ensure)
+          (if (eq edit 'insert)
+              (progn (goto-char (point-max)) (backward-char) (insert "x"))
+            (goto-char (point-min)) (search-forward "one") (delete-char -1))
+          ;; Redisplay starts at the visible beginning of the changed paragraph.
+          ;; Old invisible delimiters must not split it into many tiny JIT chunks.
+          (jit-lock-function (point-min))
+          (should-not (text-property-not-all (point-min) (point-max) 'fontified t))
+          (should (text-property-any (point-min) (point-max) 'invisible
+                                    markdown-ts-appear--markup-invisibility)))))))
+
+(ert-deftest markdown-ts-appear-test-delete-delimiter-does-not-refragment-fontification ()
+  (markdown-ts-appear-test--with-buffer "Before `one` and `two` after.\n"
+    (rename-buffer "*appear-delete-jit-test*" t)
+    (let ((noninteractive nil)) (font-lock-mode 1))
+    (font-lock-ensure)
+    (goto-char (point-min)) (search-forward "`one") (backward-char 4)
+    (markdown-ts-appear--update)
+    (should markdown-ts-appear--region)
+    (delete-char 1)
+    (markdown-ts-appear--update)
+    (jit-lock-function (point-min))
+    (should-not (text-property-not-all (point-min) (point-max) 'fontified t))))
+
 (ert-deftest markdown-ts-appear-test-edit-preserves-fontification ()
   (markdown-ts-appear-test--with-buffer "**bold**plain\n"
     (should (get-text-property (point-min) 'invisible))
