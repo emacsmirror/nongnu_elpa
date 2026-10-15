@@ -95,7 +95,7 @@ faces.  See `C-h v` and `M-x describe-face` for full documentation.
 
 | Option | Default | Values and effect |
 | --- | --- | --- |
-| `markdown-ts-appear-heading-bullets` | `nil` | List of strings or characters, cycled by ATX heading level; `nil` keeps normal rendering. |
+| `markdown-ts-appear-heading-bullets` | `nil` | List of strings or characters, e.g. `'("◉" "○")`, cycled by ATX heading level; `nil` keeps normal rendering. |
 | `markdown-ts-appear-link-icon` | `""` | String before ordinary links; empty disables it. |
 | `markdown-ts-appear-image-icon` | `""` | String before image links; empty disables it. |
 | `markdown-ts-appear-wikilink-icon` | `"◆"` | String before Wiki links; empty disables it. |
@@ -112,13 +112,6 @@ faces.  See `C-h v` and `M-x describe-face` for full documentation.
 
 Visual options applied through `setopt` or Customize update active buffers.
 Re-enable `markdown-ts-appear-mode` after changing either preview-enable option.
-
-For example, replace rendered `#` heading markers with symbols:
-
-```emacs-lisp
-(setopt markdown-ts-appear-heading-bullets
-        '("◉" "○" "✸" "✿" "◆" "▶"))
-```
 
 ### Faces
 
