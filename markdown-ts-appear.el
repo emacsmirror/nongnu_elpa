@@ -78,6 +78,16 @@ A positive integer limits only the width, in pixels."
   :initialize #'custom-initialize-default
   :set #'markdown-ts-appear--set-render-option)
 
+(defcustom markdown-ts-appear-heading-bullets nil
+  "Symbols replacing the leading hashes of rendered ATX headings.
+Each entry is a string or character, followed by a space when displayed.
+Entries cycle through heading levels one to six.  Nil keeps the normal
+heading rendering.  Empty headings and headings being edited keep their
+source markers."
+  :type '(repeat (choice (string :tag "String") (character :tag "Character")))
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
+
 (defcustom markdown-ts-appear-link-icon ""
   "Icon displayed before rendered Markdown links.
 An empty string disables the icon."
@@ -744,6 +754,35 @@ BLOCK is the Markdown node already found at POS, when available."
                 (not (or (markdown-ts-appear--node-visible-p node)
                          (markdown-ts-appear--atx-marker-visible-p node))))))
       (apply function node override start limit rest))))
+
+(defun markdown-ts-appear--fontify-heading-marker
+    (function node override start limit &rest rest)
+  "Call FUNCTION for NODE, decorating rendered ATX heading markers.
+OVERRIDE, START, LIMIT and REST are the native fontifier arguments."
+  (if (and markdown-ts-appear-heading-bullets
+           (markdown-ts-appear--active-p)
+           markdown-ts-hide-markup
+           (not (markdown-ts-appear--node-visible-p node))
+           (not (markdown-ts-appear--atx-marker-visible-p node)))
+      (let* ((marker-end (treesit-node-end node))
+             (beg (save-excursion
+                    (goto-char (treesit-node-start node))
+                    (skip-chars-forward " \t" marker-end)
+                    (point)))
+             (level (- marker-end beg))
+             (end (save-excursion
+                    (goto-char marker-end)
+                    (skip-chars-forward " \t" (line-end-position))
+                    (point)))
+             (bullet (nth (mod (1- level) (length markdown-ts-appear-heading-bullets))
+                          markdown-ts-appear-heading-bullets))
+             (markdown-ts-hide-markup nil))
+        (apply function node override start limit rest)
+        (when (and (<= start beg) (<= end limit))
+          (markdown-ts-appear--decorate
+           beg end (concat (if (characterp bullet) (char-to-string bullet) bullet) " ")
+           (intern (format "markdown-ts-heading-%d" level)))))
+    (apply #'markdown-ts-appear--fontify-node function node override start limit rest)))
 
 (defun markdown-ts-appear--fence-opening-p (node)
   "Return non-nil when fenced delimiter NODE opens its code block."
