@@ -290,6 +290,13 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
       (max 1 (window-max-chars-per-line window 'markdown-ts-appear-table))
     80))
 
+(defun markdown-ts-appear-table--line-prefix-width (position window)
+  "Return the column width of a string line prefix at POSITION in WINDOW."
+  (let ((prefix (or (get-char-property position 'line-prefix
+                                     (and (window-live-p window) window))
+                    line-prefix)))
+    (if (stringp prefix) (string-width prefix) 0)))
+
 (defun markdown-ts-appear-table--display-windows ()
   "Return live non-minibuffer windows showing the current buffer.
 Return a single nil entry when the buffer is not currently displayed."
@@ -428,11 +435,17 @@ STRIPE-P marks alternate data rows for optional background shading."
          (prefix-width (apply #'max 0 (mapcar #'string-width prefixes)))
          (id (list 'table)))
     (pcase-dolist (`(,window ,width ,_font) windows)
-      (let ((data-row-index 0)
-            (widths (markdown-table-wrap-compute-widths
-                     (car cells) (cddr cells)
-                     (max 1 (- width prefix-width))
-                     (length aligns))))
+      (let* ((data-row-index 0)
+             (indent-width
+              (apply #'max 0
+                     (mapcar (lambda (row)
+                               (markdown-ts-appear-table--line-prefix-width
+                                (car (markdown-ts-appear-table--row-bounds row)) window))
+                             rows)))
+             (widths (markdown-table-wrap-compute-widths
+                      (car cells) (cddr cells)
+                      (max 1 (- width prefix-width indent-width))
+                      (length aligns))))
         (cl-mapc
          (lambda (row contents prefix)
            (let* ((type (treesit-node-type row))
