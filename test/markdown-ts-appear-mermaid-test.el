@@ -25,6 +25,7 @@
 (defconst markdown-ts-appear-mermaid-test--svg
   "<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><rect width='240' height='240' fill='#7dd3fc'/></svg>")
 (defvar markdown-ts-appear-mermaid-test--jobs nil)
+(defvar markdown-ts-appear-mermaid-test--command "mmdc")
 
 (defmacro markdown-ts-appear-mermaid-test--isolated (&rest body)
   "Run BODY with isolated render state."
@@ -60,7 +61,7 @@
                (let ((markdown-ts-inline-images nil)
                      (markdown-ts-appear-enable-math-preview nil)
                      (markdown-ts-appear-enable-mermaid-preview t)
-                     (markdown-ts-appear-mermaid-command "mmdc")
+                     (markdown-ts-appear-mermaid-command markdown-ts-appear-mermaid-test--command)
                      (treesit-font-lock-level 4))
                  (markdown-ts-mode)
                  (goto-char (point-max))
@@ -379,6 +380,37 @@
         (should (equal (buffer-string) markdown-ts-appear-mermaid-test--diagram))
         (should-not markdown-ts-appear-mermaid--objects)
         (should-not (memq #'markdown-ts-appear-mermaid--refresh post-command-hook))))))
+
+(ert-deftest markdown-ts-appear-mermaid-test-function-command ()
+  (dolist (result '(svg callback-error signal))
+    (markdown-ts-appear-mermaid-test--isolated
+      (let* (calls callback
+             (markdown-ts-appear-mermaid-test--command
+              (lambda (code theme done)
+                (push (list code theme) calls)
+                (setq callback done)
+                (when (eq result 'signal) (error "Renderer failed")))))
+        (cl-letf (((symbol-function 'executable-find) #'ignore)
+                  ((symbol-function 'image-type-available-p) (lambda (_) t))
+                  ((symbol-function 'display-images-p) (lambda (&rest _) t)))
+          (markdown-ts-appear-mermaid-test--buffer markdown-ts-appear-mermaid-test--diagram
+            (let ((source (car markdown-ts-appear-mermaid--objects)))
+              (should (equal (mapcar #'car calls) '("flowchart LR\nA --> B\n")))
+              (should (member (cadar calls) '("default" "dark")))
+              (pcase result
+                ('svg (funcall callback markdown-ts-appear-mermaid-test--svg))
+                ('callback-error (funcall callback nil "Bad diagram")))
+              (should-not markdown-ts-appear-mermaid--job)
+              (if (eq result 'svg)
+                  (progn
+                    (should (equal (plist-get (cdr (overlay-get source 'markdown-ts-appear-mermaid--image))
+                                              :data)
+                                   markdown-ts-appear-mermaid-test--svg))
+                    (should (overlay-get (markdown-ts-appear-mermaid-test--view) 'display)))
+                (should (equal (overlay-get source 'markdown-ts-appear-mermaid--error)
+                               (if (eq result 'signal) "Renderer failed" "Bad diagram")))
+                (should-not (overlay-get (markdown-ts-appear-mermaid-test--view) 'display)))
+              (should (= (length calls) 1)))))))))
 
 (ert-deftest markdown-ts-appear-mermaid-test-gui-defers-offscreen-diagrams ()
   (skip-unless (display-graphic-p))

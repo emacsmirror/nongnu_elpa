@@ -86,6 +86,34 @@ Ensure `mmdc` can render a diagram on its own.  Puppeteer's
 `PUPPETEER_EXECUTABLE_PATH` environment variable can select an existing Chrome
 installation.  No additional Emacs package is required.
 
+To render elsewhere, such as through a [Kroki](https://kroki.io/) server, set
+`markdown-ts-appear-mermaid-command` to a function instead of an executable:
+
+```emacs-lisp
+(defun my/mermaid-kroki (code theme callback)
+  (require 'url)
+  (let ((url-request-method "POST")
+        (url-request-extra-headers '(("Content-Type" . "text/plain")))
+        (url-request-data (encode-coding-string code 'utf-8)))
+    (url-retrieve
+     (format "https://kroki.io/mermaid/svg?theme=%s&html-labels=false" theme)
+     (lambda (status)
+       (let ((error (plist-get status :error))
+             (body (and url-http-end-of-headers
+                        (decode-coding-string
+                         (buffer-substring-no-properties
+                          (1+ url-http-end-of-headers) (point-max))
+                         'utf-8))))
+         (kill-buffer)
+         (if (and body (not error))
+             (funcall callback body)
+           (funcall callback nil (cond (body (string-trim body))
+                                       (error (error-message-string error)))))))
+     nil t t)))
+
+(setopt markdown-ts-appear-mermaid-command #'my/mermaid-kroki)
+```
+
 ## Configuration
 
 Use `setopt` or Customize for options, and `custom-set-faces` or Customize for
@@ -107,7 +135,7 @@ faces.  See `C-h v` and `M-x describe-face` for full documentation.
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 | `markdown-ts-appear-enable-math-preview` | `nil` | `t` enables asynchronous math previews. |
 | `markdown-ts-appear-enable-mermaid-preview` | `nil` | `t` previews unedited `mermaid` fenced blocks. |
-| `markdown-ts-appear-mermaid-command` | `"mmdc"` | Mermaid CLI executable. |
+| `markdown-ts-appear-mermaid-command` | `"mmdc"` | Mermaid CLI executable, or a function `(CODE THEME CALLBACK)` that calls `CALLBACK` with the SVG text, or with `nil` and an error message. |
 | `markdown-ts-appear-mermaid-size` | `source` | `source`: fit source height; positive integer: limit only width, in pixels. |
 
 Visual options applied through `setopt` or Customize update active buffers.

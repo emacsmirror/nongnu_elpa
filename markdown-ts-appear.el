@@ -65,8 +65,12 @@ Re-enable `markdown-ts-appear-mode' after changing this option."
   :type 'boolean)
 
 (defcustom markdown-ts-appear-mermaid-command "mmdc"
-  "Mermaid CLI executable used to render diagrams asynchronously."
-  :type 'string)
+  "Mermaid CLI executable or function used to render diagrams asynchronously.
+A function is called with the diagram CODE, the Mermaid THEME name and a
+CALLBACK.  It must call CALLBACK once, possibly later, with the SVG text,
+or with nil and an error message.  Emacs cannot display HTML labels, so the
+SVG should not rely on foreignObject."
+  :type '(choice (string :tag "Executable") (function :tag "Function")))
 
 (defcustom markdown-ts-appear-mermaid-size 'source
   "How to size Mermaid previews, preserving aspect ratio without enlarging.
