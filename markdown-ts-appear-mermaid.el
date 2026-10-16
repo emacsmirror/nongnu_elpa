@@ -25,7 +25,8 @@
 
 ;;; Commentary:
 
-;; Preview fenced Mermaid blocks through the optional mmdc executable.
+;; Preview fenced Mermaid blocks through the optional mmdc executable or a
+;; custom rendering function.
 ;; A shared queue runs one renderer at a time and coalesces identical jobs.
 ;; Source overlays retain images while their source is revealed for editing.
 
@@ -285,6 +286,21 @@ UPDATE is t to recompute all window ends, or a window to update only its end."
     (markdown-ts-appear-mermaid--next t)))
 
 (defun markdown-ts-appear-mermaid--render (job)
+  "Render JOB with a custom function or an mmdc process."
+  (let ((key (car job)))
+    (if (not (functionp (car key)))
+        (markdown-ts-appear-mermaid--render-process job)
+      (condition-case err
+          (funcall (car key) (nth 2 key) (cadr key)
+                   (lambda (svg &optional error)
+                     (markdown-ts-appear-mermaid--complete
+                      job (and svg (create-image svg 'svg t :scale 1))
+                      (and (not svg)
+                           (if (or (null error) (string-empty-p error))
+                               "No SVG image was produced" error)))))
+        (error (markdown-ts-appear-mermaid--complete job nil (error-message-string err)))))))
+
+(defun markdown-ts-appear-mermaid--render-process (job)
   "Start an asynchronous mmdc process for JOB."
   (let* ((directory (make-temp-file "markdown-ts-appear-mermaid-" t))
          (default-directory (file-name-as-directory directory))
@@ -427,7 +443,8 @@ UPDATE selects which window ends to recompute."
 
 (defun markdown-ts-appear-mermaid--setup ()
   "Install Mermaid previews in the current buffer."
-  (unless (executable-find markdown-ts-appear-mermaid-command)
+  (unless (or (functionp markdown-ts-appear-mermaid-command)
+              (executable-find markdown-ts-appear-mermaid-command))
     (user-error "Mermaid previews require mmdc; install @mermaid-js/mermaid-cli"))
   (unless (image-type-available-p 'svg)
     (user-error "Mermaid previews require SVG image support"))
