@@ -534,21 +534,22 @@ to standard output face."
                            font-lock-face ,face))))
 
 (defun geiser-repl--narrow-to-prompt ()
-  "Narrow to active prompt region and return t, otherwise returns nil."
-  (let* ((proc (get-buffer-process (current-buffer)))
-         (pmark (and proc (process-mark proc)))
-         (intxt (when (>= (point) (marker-position pmark))
-                  (save-excursion
-                    (if comint-eol-on-send
-                        (if comint-use-prompt-regexp
-                            (end-of-line)
-                          (goto-char (field-end))))
-                    (buffer-substring pmark (point)))))
-         (prompt-beg (marker-position pmark))
-         (prompt-end (+ prompt-beg (length intxt))))
-    (when (> (length intxt) 0)
-      (narrow-to-region prompt-beg prompt-end)
-      t)))
+  "Narrow to active prompt region and return t, otherwise returns nil.
+Returns nil when the buffer has no live process (e.g. while the REPL
+is being restarted), since there is no process mark to anchor to."
+  (when-let* ((proc (get-buffer-process (current-buffer)))
+              (pmark (process-mark proc))
+              (prompt-beg (marker-position pmark))
+              ((>= (point) prompt-beg)))
+    (let ((intxt (save-excursion
+                   (if comint-eol-on-send
+                       (if comint-use-prompt-regexp
+                           (end-of-line)
+                         (goto-char (field-end))))
+                   (buffer-substring pmark (point)))))
+      (when (> (length intxt) 0)
+        (narrow-to-region prompt-beg (+ prompt-beg (length intxt)))
+        t))))
 
 (defun geiser-repl--wrap-fontify-region-function (_beg _end &optional _loudly)
   (save-restriction
