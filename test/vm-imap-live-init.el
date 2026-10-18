@@ -36,6 +36,7 @@
 
 (require 'vm-test-init)
 (require 'cl-lib)
+(require 'subr-x)
 
 ;; Load these before anything binds their variables.  Under lexical binding a
 ;; `let' on a name that is not yet special creates a *lexical* binding, and
@@ -170,24 +171,60 @@ happened to the mail-sending tests."
       (vm-imap-live--read-until conn "^\\* \\(OK\\|PREAUTH\\)")
       conn)))
 
+(defun vm-imap-live--connection-lost (doing original)
+  "Signal that the server closed the connection while DOING.
+ORIGINAL is the error that reported the close, or nil where the close was
+noticed rather than signalled; its text is carried into this one so that
+nothing is lost by explaining it.
+
+DOING names the step and never the command: a LOGIN carries the password."
+  (error (concat "Live IMAP server closed the connection while %s%s.  "
+                 "dovecot drops about 1%% of IMAPS connections just after a "
+                 "successful login, which is the server rather than VM or "
+                 "this harness (emacs-vm/vm#864).  Run the test again.  "
+                 "Twice running is not that fault and wants looking at: "
+                 "check the server is up and its log for this connection")
+         doing
+         (if original
+             ;; trimmed: process-send-string's own message ends in a
+             ;; newline, which would break this one across two lines
+             (format " (%s)" (string-trim (error-message-string original)))
+           "")))
+
+(defun vm-imap-live--seen-p (start regexp)
+  "Return non-nil if REGEXP matches in the current buffer at or after START."
+  (save-excursion
+    (goto-char start)
+    (re-search-forward regexp nil t)))
+
 (defun vm-imap-live--read-until (conn regexp)
   "Read from CONN until REGEXP matches a line.  Return all text read."
   (with-current-buffer (vm-imap-live-conn-buffer conn)
-    (let ((start (point-max)))
+    (let ((start (point-max))
+          (process (vm-imap-live-conn-process conn)))
       (with-timeout (vm-imap-live-timeout
                      (error "Timed out awaiting %s; got: %s"
                             regexp (buffer-substring start (point-max))))
-        (goto-char start)
-        (while (not (save-excursion
-                      (goto-char start)
-                      (re-search-forward regexp nil t)))
-          (accept-process-output (vm-imap-live-conn-process conn) 0 200)))
+        (while (not (vm-imap-live--seen-p start regexp))
+          (accept-process-output process 0 200)
+          ;; A dead process answers at once, so without this the wait becomes
+          ;; a spin until `vm-imap-live-timeout' and reports a timeout for
+          ;; what is a closed connection.  The second look is for output
+          ;; delivered alongside the close.
+          (unless (or (process-live-p process)
+                      (vm-imap-live--seen-p start regexp))
+            (vm-imap-live--connection-lost "awaiting a reply" nil))))
       (buffer-substring-no-properties start (point-max)))))
 
 (defun vm-imap-live--send (conn string)
   "Send STRING to CONN followed by CRLF."
-  (process-send-string (vm-imap-live-conn-process conn)
-                       (concat string "\r\n")))
+  (let ((process (vm-imap-live-conn-process conn)))
+    (condition-case err
+        (process-send-string process (concat string "\r\n"))
+      (error
+       (unless (process-live-p process)
+         (vm-imap-live--connection-lost "sending a command" err))
+       (signal (car err) (cdr err))))))
 
 (defun vm-imap-live-cmd (conn format &rest args)
   "Run a tagged IMAP command on CONN and return (STATUS . TEXT).
