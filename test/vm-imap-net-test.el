@@ -3413,6 +3413,37 @@ without being filled again."
        (vm-imap-net-test--append-held uid))
      ,@body))
 
+(defun vm-imap-net-test--append-message (message)
+  "Put MESSAGE at the end of the folder's list."
+  (if vm-message-list
+      (setcdr (vm-last vm-message-list) (list message))
+    (setq vm-message-list (list message)))
+  message)
+
+(ert-deftest vm-imap-net-test-a-message-with-no-uid-is-not-stale ()
+  "REGRESSION: a message that never had a UID is not left behind by a reset.
+
+`vm-imap-net-stale-messages' compared UIDVALIDITY and nothing else, so a
+message with no UID compared unequal to the mailbox and was labelled stale
+on every synchronise.  The label says the mailbox reset its UIDVALIDITY and
+left this message behind, which is not what happened, and it is permanent:
+`vm-imap-get-synchronization-data' then leaves a labelled message out of the
+set of UIDs the cache is known to hold.
+
+A folder of 8487 messages had its first one labelled this way, UID and
+UIDVALIDITY both nil against a mailbox validity of 1778127965
+(emacs-vm/vm#913)."
+  (vm-imap-net-test--in-a-folder-holding '("1" "2")
+    (let ((orphan (vm-imap-net-test--append-message
+                   (vm-imap-net-test--message-holding nil nil)))
+          (reset (vm-imap-net-test--append-message
+                  (vm-imap-net-test--message-holding "3" "6"))))
+      ;; the one from a mailbox that reset its UIDVALIDITY is still stale
+      (should (memq reset (vm-imap-net-stale-messages)))
+      (should-not (memq orphan (vm-imap-net-stale-messages)))
+      ;; nor is it one the server has lost: that already asked for a UID
+      (should-not (memq orphan (vm-imap-net-messages-not-on-the-server))))))
+
 (ert-deftest vm-imap-net-test-the-held-uid-table-follows-an-append ()
   "A message appended to the folder is held, and the table is not built again.
 
