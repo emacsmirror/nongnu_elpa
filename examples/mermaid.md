@@ -1,6 +1,12 @@
 # Mermaid previews
 
-Enable `markdown-ts-appear-enable-mermaid-preview` and restart appear mode.
+Register the Mermaid CLI renderer:
+
+```emacs-lisp
+(setopt markdown-ts-appear-diagram-renderers
+        '(("mermaid" . markdown-ts-appear-diagram-mmdc)))
+```
+
 Enter a diagram to edit its source; leave it to restore the preview.
 
 ```mermaid
