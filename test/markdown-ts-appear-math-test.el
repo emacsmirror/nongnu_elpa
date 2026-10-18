@@ -91,7 +91,9 @@
                            (unless (eq feature 'latex-to-svg-for-markdown)
                              (funcall original feature filename noerror)))))
                 (setq markdown-ts-appear-enable-math-preview t)
-                (should-error (markdown-ts-appear-mode 1) :type 'user-error))))
+                (let ((err (should-error (markdown-ts-appear-mode 1) :type 'user-error)))
+                  (should (string-match-p "0.3.0.*instead of MathJax"
+                                          (error-message-string err)))))))
         (markdown-ts-appear-mode -1)))))
 
 (ert-deftest markdown-ts-appear-math-test-owned-lifecycle ()
@@ -365,6 +367,65 @@
                     (with-current-buffer clone
                       (should (= 2 (length (markdown-ts-appear-math-test--previews))))))
                 (kill-buffer clone)))))))))
+
+(ert-deftest markdown-ts-appear-math-test-dependency-version-floors ()
+  (cl-letf (((symbol-function 'latex-to-svg-frontend-span-at) #'ignore)
+            ((symbol-function 'latex-to-svg-frontend-spans) #'ignore))
+    (dolist (requirement markdown-ts-appear-math--requirements)
+      (dolist (case `((,(cadr requirement) . t)
+                     (,(nth 2 requirement) . t)
+                     ("0.23.0" . t) ("20261018.1" . t)
+                     ("0.14.0" . nil) ("20261013.1836" . nil)
+                     (nil . nil)))
+        (cl-letf (((symbol-function 'markdown-ts-appear-math--loaded-version)
+                   (lambda (package)
+                     (if (eq package (car requirement)) (car case)
+                       (cadr (assq package markdown-ts-appear-math--requirements))))))
+          (if (cdr case)
+              (markdown-ts-appear-math--check-dependencies)
+            (let ((err (should-error (markdown-ts-appear-math--check-dependencies)
+                                     :type 'user-error)))
+              (should (string-match-p (symbol-name (car requirement)) (error-message-string err)))
+              (should (string-match-p "restart Emacs" (error-message-string err))))))))))
+
+(ert-deftest markdown-ts-appear-math-test-version-follows-loaded-library ()
+  (let ((directory (make-temp-file "appear-version-" t)))
+    (unwind-protect
+        (let* ((source (expand-file-name "loaded.el" directory))
+               (load-history `((,(concat source "c") (provide . appear-test-package)))))
+          ;; A byte-compiled load must read its own source, not a newer copy
+          ;; available elsewhere on load-path after a package upgrade.
+          (with-temp-file source
+            (insert ";;; loaded.el --- Test\n;; Version: 0.22.1\n"))
+          (cl-letf (((symbol-function 'locate-library)
+                     (lambda (&rest _) (ert-fail "Must inspect the loaded library"))))
+            (should (equal (markdown-ts-appear-math--loaded-version 'appear-test-package) "0.22.1")))
+          (with-temp-file source
+            (insert ";;; loaded.el --- Test\n;; Version: 0.22.2\n;; Package-Version: 20261017.1107\n"))
+          (should (equal (markdown-ts-appear-math--loaded-version 'appear-test-package) "20261017.1107"))
+          (let ((load-history `((,source (provide . appear-test-package)))))
+            (should (equal (markdown-ts-appear-math--loaded-version 'appear-test-package) "20261017.1107")))
+          (delete-file source)
+          (should-not (markdown-ts-appear-math--loaded-version 'appear-test-package)))
+      (delete-directory directory t))))
+
+(ert-deftest markdown-ts-appear-math-test-rejects-old-frontend-in-both-mode-orders ()
+  (dolist (first '(appear math owned))
+    (markdown-ts-appear-math-test--buffer "$x$\n"
+      (markdown-ts-appear-math-test--rendered
+        (when (eq first 'math) (latex-to-svg-for-markdown-mode 1))
+        (when (eq first 'appear) (markdown-ts-appear-mode 1))
+        (let ((reveal latex-to-svg-frontend-reveal))
+          (cl-letf (((symbol-function 'markdown-ts-appear-math--loaded-version)
+                     (lambda (package)
+                       (if (eq package 'latex-to-svg-frontend) "20261014.2006"
+                         (cadr (assq package markdown-ts-appear-math--requirements))))))
+            (if (eq first 'appear)
+                (should-error (latex-to-svg-for-markdown-mode 1) :type 'user-error)
+              (setq markdown-ts-appear-enable-math-preview t)
+              (should-error (markdown-ts-appear-mode 1) :type 'user-error))
+            (should-not markdown-ts-appear-math--saved-reveal)
+            (should (eq reveal latex-to-svg-frontend-reveal))))))))
 
 (provide 'markdown-ts-appear-math-test)
 ;;; markdown-ts-appear-math-test.el ends here

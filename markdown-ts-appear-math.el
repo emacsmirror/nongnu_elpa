@@ -9,6 +9,7 @@
 
 ;;; Code:
 (require 'seq)
+(require 'lisp-mnt)
 
 (declare-function latex-to-svg-for-markdown-mode "latex-to-svg-for-markdown")
 (declare-function latex-to-svg-frontend-span-at "latex-to-svg-frontend")
@@ -29,6 +30,42 @@
 
 (defvar markdown-ts-appear-math--fontifying-spans nil
   "Current (BUFFER . FUNCTION) returning math spans for a fontification pass.")
+
+(defconst markdown-ts-appear-math--requirements
+  '((latex-to-svg-for-markdown "0.22.2" "20261017.1107")
+    (latex-to-svg-frontend "0.22.2" "20261017.1107")
+    (latex-to-svg-backend "0.15.0" "20261014.1334"))
+  "Minimum stable and MELPA versions for each math dependency.")
+
+(defun markdown-ts-appear-math--loaded-version (package)
+  "Read PACKAGE's version from the library actually loaded in this session.
+Do not use `load-path': an upgrade may have activated a newer directory
+while the old library is still loaded.  Return nil if its source is unavailable."
+  (when-let* ((file (car (seq-find
+                         (lambda (entry) (member (cons 'provide package) (cdr entry)))
+                         load-history)))
+              (source (if (string-suffix-p ".elc" file) (substring file 0 -1) file))
+              (source (cond ((file-readable-p source) source)
+                            ((file-readable-p (concat source ".gz")) (concat source ".gz")))))
+    (with-temp-buffer
+      (insert-file-contents source nil 0 4096)
+      (lm-package-version))))
+
+(defun markdown-ts-appear-math--check-dependencies ()
+  "Reject unsupported math dependencies before taking over their reveal policy."
+  (dolist (requirement markdown-ts-appear-math--requirements)
+    (let* ((package (car requirement))
+           (version (markdown-ts-appear-math--loaded-version package))
+           (parsed (and version (ignore-errors (version-to-list version))))
+           (minimum (if (and parsed (>= (car parsed) 20000000))
+                        (nth 2 requirement) (cadr requirement))))
+      (unless (and parsed (version-list-<= (version-to-list minimum) parsed))
+        (user-error
+         "Math previews require %s %s+ (MELPA %s+); loaded %s. Upgrade the latex-to-svg packages and restart Emacs"
+         package (cadr requirement) (nth 2 requirement) (or version "an unknown version")))))
+  (unless (and (fboundp 'latex-to-svg-frontend-span-at)
+               (fboundp 'latex-to-svg-frontend-spans))
+    (user-error "Update latex-to-svg and restart Emacs: its span/reveal APIs are unavailable")))
 
 (defun markdown-ts-appear-math--reveal-p (_kind)
   "Return non-nil while appear tracks source at point, for any math _KIND."
@@ -90,9 +127,7 @@
   (if (and (markdown-ts-appear--active-p)
            (bound-and-true-p latex-to-svg-frontend-mode))
       (unless markdown-ts-appear-math--saved-reveal
-        (unless (and (fboundp 'latex-to-svg-frontend-span-at)
-                     (fboundp 'latex-to-svg-frontend-spans))
-          (user-error "Update latex-to-svg: this integration requires its span/reveal APIs"))
+        (markdown-ts-appear-math--check-dependencies)
         (setq markdown-ts-appear-math--saved-reveal
               (list (local-variable-p 'latex-to-svg-frontend-reveal)
                     latex-to-svg-frontend-reveal))
@@ -113,10 +148,8 @@
     (markdown-ts-appear-math--sync))
    (markdown-ts-appear-enable-math-preview
     (unless (require 'latex-to-svg-for-markdown nil t)
-      (user-error "Install the optional latex-to-svg-for-markdown package to enable math previews"))
-    (unless (and (fboundp 'latex-to-svg-frontend-span-at)
-                 (fboundp 'latex-to-svg-frontend-spans))
-      (user-error "Update latex-to-svg: this integration requires its span/reveal APIs"))
+      (user-error "Since markdown-ts-appear 0.3.0, math previews use latex-to-svg instead of MathJax. Install latex-to-svg-for-markdown 0.22.2+ and a rendering engine"))
+    (markdown-ts-appear-math--check-dependencies)
     (setq markdown-ts-appear-math--owned t)
     (latex-to-svg-for-markdown-mode 1))))
 
