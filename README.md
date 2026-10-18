@@ -120,6 +120,7 @@ faces.  See `C-h v` and `M-x describe-face` for full documentation.
 | `markdown-ts-appear-block-quote-marker` | `"▎"` | Replacement string; `nil` keeps the original marker. |
 | `markdown-ts-appear-render-callouts` | `t` | Show callout labels and faint backgrounds on the header line only. |
 | `markdown-ts-appear-table-style` | `wrapped` | `raw`, `unicode`, or width-aware `wrapped` tables. |
+| `markdown-ts-appear-table-reveal` | `row` | `row` reveals the current wrapped-table row; `table` reveals the whole table while editing. |
 | `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second data row in `wrapped` tables. |
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 | `markdown-ts-appear-enable-math-preview` | `nil` | `t` enables latex-to-svg math previews. |

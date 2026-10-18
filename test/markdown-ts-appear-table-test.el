@@ -926,5 +926,78 @@
                              concat (string (aref display index)))))
       (should (equal visible "**literal**")))))
 
+(ert-deftest markdown-ts-appear-table-test-whole-table-reveal-and-restore ()
+  (let ((markdown-ts-appear-table-reveal 'table))
+    (markdown-ts-appear-table-test--with-buffer
+        "| A | B |\n|---|---|\n| **first** | x |\n| last | y |\n\nOther\n\n| C | D |\n|---|---|\n| z | w |\n\nAfter\n" 30
+      (let* ((rows (markdown-ts-appear-table-test--overlays))
+             (first (seq-take rows 4)) (other (nthcdr 4 rows)))
+        (goto-char (point-min)) (search-forward "first")
+        (run-hooks 'post-command-hook) (font-lock-ensure)
+        (should-not (seq-some (lambda (ov) (overlay-get ov 'display)) first))
+        (should (cl-every (lambda (ov) (overlay-get ov 'display)) other))
+        (should-not (get-text-property (- (point) 6) 'invisible))
+        (let ((region markdown-ts-appear--region))
+          (search-forward "last") (run-hooks 'post-command-hook)
+          (should (eq region markdown-ts-appear--region)))
+        (markdown-ts-appear-stop)
+        (should (cl-every (lambda (ov) (overlay-get ov 'display)) rows))
+        (markdown-ts-appear-start)
+        (should-not (seq-some (lambda (ov) (overlay-get ov 'display)) first))
+        (goto-char (point-max)) (run-hooks 'post-command-hook)
+        (should (cl-every (lambda (ov) (overlay-get ov 'display)) rows))))))
+
+(ert-deftest markdown-ts-appear-table-test-whole-table-defers-edit-layout ()
+  (let ((markdown-ts-appear-table-reveal 'table))
+    (markdown-ts-appear-table-test--with-buffer
+        "| A | B |\n|---|---|\n| value | x |\n\nAfter\n" 30
+      (goto-char (point-min)) (search-forward "value") (run-hooks 'post-command-hook)
+      (let ((render (symbol-function 'markdown-ts-appear-table--render-table)) (calls 0))
+        (cl-letf (((symbol-function 'markdown-ts-appear-table--render-table)
+                   (lambda (&rest args) (cl-incf calls) (apply render args))))
+          (cl-letf (((symbol-function 'markdown-ts-appear-table--tables)
+                     (lambda (&rest _) (ert-fail "Editing rescanned tables"))))
+            (dotimes (_ 20) (insert "x") (run-hooks 'post-command-hook)))
+          (should (= calls 0))
+          (should (= 1 (length markdown-ts-appear-table--dirty)))
+          (goto-char (point-max)) (run-hooks 'post-command-hook)
+          (should (= calls 1))
+          (should-not markdown-ts-appear-table--dirty)
+          (should (string-match-p "valuexxxxx"
+                                  (markdown-ts-appear-table-test--display
+                                   (car (last (markdown-ts-appear-table-test--overlays))))))
+          (goto-char (point-min)) (search-forward "value") (run-hooks 'post-command-hook)
+          (insert "y") (run-hooks 'post-command-hook)
+          (should (= calls 1))
+          (markdown-ts-appear-stop)
+          (should (= calls 2))
+          (should-not markdown-ts-appear-table--dirty))))))
+
+(ert-deftest markdown-ts-appear-table-test-whole-table-move-to-another-table ()
+  (let ((markdown-ts-appear-table-reveal 'table))
+    (markdown-ts-appear-table-test--with-buffer
+        "| A | B |\n|---|---|\n| first | x |\n\nBetween\n\n| C | D |\n|---|---|\n| second | y |\n\nAfter\n" 30
+      (goto-char (point-min)) (search-forward "first")
+      (insert "!") (run-hooks 'post-command-hook)
+      (should markdown-ts-appear-table--dirty)
+      (search-forward "second") (run-hooks 'post-command-hook)
+      (should-not markdown-ts-appear-table--dirty)
+      (let ((rows (markdown-ts-appear-table-test--overlays)))
+        (should (cl-every (lambda (ov) (overlay-get ov 'display)) (seq-take rows 3)))
+        (should-not (seq-some (lambda (ov) (overlay-get ov 'display)) (nthcdr 3 rows)))))))
+
+(ert-deftest markdown-ts-appear-table-test-reveal-option-updates-live ()
+  (let ((markdown-ts-appear-table-reveal 'row))
+    (markdown-ts-appear-table-test--with-buffer
+        "| A | B |\n|---|---|\n| first | x |\n| last | y |\n\nAfter\n" 30
+      (goto-char (point-min)) (search-forward "first") (run-hooks 'post-command-hook)
+      (let ((rows (markdown-ts-appear-table-test--overlays)))
+        (cl-letf (((symbol-function 'markdown-ts-appear-table--render-table)
+                   (lambda (&rest _) (ert-fail "Reveal option rebuilt table layout"))))
+          (setopt markdown-ts-appear-table-reveal 'table)
+          (should-not (seq-some (lambda (ov) (overlay-get ov 'display)) rows))
+          (setopt markdown-ts-appear-table-reveal 'row)
+          (should (= 3 (length (seq-filter (lambda (ov) (overlay-get ov 'display)) rows)))))))))
+
 (provide 'markdown-ts-appear-table-test)
 ;;; markdown-ts-appear-table-test.el ends here

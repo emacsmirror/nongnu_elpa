@@ -40,6 +40,8 @@
 (require 'subr-x)
 
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
+(declare-function markdown-ts-appear--tracking-p "markdown-ts-appear")
+(declare-function markdown-ts-appear--node-ancestor "markdown-ts-appear")
 (declare-function markdown-ts-appear--add-outline-hook "markdown-ts-appear")
 (declare-function markdown-ts-appear--remove-outline-hook "markdown-ts-appear")
 (declare-function markdown-ts-appear--decorate "markdown-ts-appear")
@@ -54,6 +56,17 @@
 
 (defvar markdown-ts-appear-table-style)
 (defvar markdown-ts-appear--region)
+
+(defcustom markdown-ts-appear-table-reveal 'row
+  "Source revealed while editing a wrapped table.
+The default `row' reveals the current row.  With `table', reveal the
+whole table and defer its layout until point leaves or source tracking
+stops.  Reading with source tracking paused keeps tables rendered."
+  :type '(choice (const :tag "Current row" row)
+                 (const :tag "Whole table" table))
+  :group 'markdown-ts-appear
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-table-wrap-resize-delay 0.2
   "Seconds to debounce wrapped-table rendering after window changes."
@@ -660,6 +673,20 @@ DISPLAY-P non-nil restores their rendered display."
     (set-marker (cdr markdown-ts-appear-table--view) nil)
     (setq markdown-ts-appear-table--view nil)))
 
+(defun markdown-ts-appear-table--reveal-bounds (&optional node)
+  "Return whole-table source bounds at point, using block NODE when supplied."
+  (when-let* (((eq markdown-ts-appear-table-reveal 'table))
+              ((eq markdown-ts-appear-table-style 'wrapped))
+              ((markdown-ts-appear--tracking-p))
+              (table (markdown-ts-appear--node-ancestor
+                      (or node (treesit-node-at (point) 'markdown)) "pipe_table"))
+              (beg (treesit-node-start table))
+              (end (treesit-node-end table)))
+    (when (and (<= beg (point))
+               (or (< (point) end)
+                   (and (= end (point-max)) (not (eq (char-before end) ?\n)))))
+      (cons beg end))))
+
 (defun markdown-ts-appear-table--visible-region ()
   "Return numeric bounds of source currently revealed by the main mode."
   (or (when-let* ((region markdown-ts-appear--region)
@@ -1029,7 +1056,11 @@ NOERROR and REST retain the native command's boundary behavior and options."
   "Rebuild edited tables and synchronize source visibility after a command."
   (when (and (eq markdown-ts-appear-table-style 'wrapped)
              (markdown-ts-appear--active-p))
-    (if markdown-ts-appear-table--dirty
+    (if (and markdown-ts-appear-table--dirty
+             (not (when-let* ((table (markdown-ts-appear-table--reveal-bounds)))
+                    (cl-every (lambda (range)
+                                (and (< (car range) (cdr table)) (> (cdr range) (car table))))
+                              markdown-ts-appear-table--dirty))))
         (markdown-ts-appear-table--render-edited)
       (markdown-ts-appear-table--update-visibility))))
 
@@ -1044,15 +1075,19 @@ NOERROR and REST retain the native command's boundary behavior and options."
   "Render tables around edits that have lost their overlays."
   ;; Let `markdown-ts-appear-table--update-visibility' hide new rows too.
   (markdown-ts-appear-table--restore-view)
-  (without-restriction
-    (pcase-dolist (`(,beg . ,end) markdown-ts-appear-table--dirty)
-      (dolist (table (markdown-ts-appear-table--tables beg end))
-        (unless (or (outline-invisible-p (treesit-node-start table))
-                    (get-char-property (treesit-node-start table)
-                                       'markdown-ts-appear-table--wrapped))
-          (markdown-ts-appear-table--render-table
-           table markdown-ts-appear-table--windows)))))
-  (setq markdown-ts-appear-table--dirty nil)
+  (let ((editing (markdown-ts-appear-table--reveal-bounds)) pending)
+    (without-restriction
+      (dolist (range markdown-ts-appear-table--dirty)
+        (let (deferred)
+          (dolist (table (markdown-ts-appear-table--tables (car range) (cdr range)))
+            (cond
+             ((and editing (= (car editing) (treesit-node-start table))) (setq deferred t))
+             ((not (or (outline-invisible-p (treesit-node-start table))
+                       (get-char-property (treesit-node-start table)
+                                          'markdown-ts-appear-table--wrapped)))
+              (markdown-ts-appear-table--render-table table markdown-ts-appear-table--windows))))
+          (when deferred (push range pending)))))
+    (setq markdown-ts-appear-table--dirty (nreverse pending)))
   (markdown-ts-appear-table--update-visibility))
 
 (defun markdown-ts-appear-table--selection-change (_window)
@@ -1075,7 +1110,11 @@ OLD-LENGTH is the length of the replaced text."
 
 (defun markdown-ts-appear-table--invalidate (beg end)
   "Drop overlays of tables between BEG and END and queue them for rebuilding."
-  (push (cons (copy-marker beg) (copy-marker end t)) markdown-ts-appear-table--dirty)
+  (let ((previous (car markdown-ts-appear-table--dirty)))
+    (if (and previous (<= beg (cdr previous)) (>= end (car previous)))
+        (progn (set-marker (car previous) (min beg (car previous)))
+               (set-marker (cdr previous) (max end (cdr previous))))
+      (push (cons (copy-marker beg) (copy-marker end t)) markdown-ts-appear-table--dirty)))
   (when-let* ((tables (seq-keep (lambda (overlay)
                                   (overlay-get overlay 'markdown-ts-appear-table--wrapped))
                                 (overlays-in beg end))))
@@ -1128,7 +1167,7 @@ OLD-LENGTH is the length of the replaced text."
               #'markdown-ts-appear-table--after-cursor-adjustment 90 t)
     (add-hook 'post-command-hook #'markdown-ts-appear-table--post-command 20 t)
     (add-hook 'markdown-ts-appear--tracking-change-hook
-              #'markdown-ts-appear-table--update-visibility 20 t)
+              #'markdown-ts-appear-table--post-command 20 t)
     (add-hook 'markdown-ts-appear--syntax-change-functions
               #'markdown-ts-appear-table--invalidate nil t)
     (add-hook 'after-change-functions #'markdown-ts-appear-table--after-change 80 t)
@@ -1158,7 +1197,7 @@ base buffer."
     (cursor-intangible-mode -1)
     (setq markdown-ts-appear-table--owns-cursor-mode nil))
   (remove-hook 'markdown-ts-appear--tracking-change-hook
-               #'markdown-ts-appear-table--update-visibility t)
+               #'markdown-ts-appear-table--post-command t)
   (remove-hook 'markdown-ts-appear--syntax-change-functions
                #'markdown-ts-appear-table--invalidate t)
   (remove-hook 'after-change-functions #'markdown-ts-appear-table--after-change t)

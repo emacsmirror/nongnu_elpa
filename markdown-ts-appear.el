@@ -619,13 +619,14 @@ BLOCK is the Markdown node already found at POS, when available."
   "Return source bounds for the smallest rendered element at point."
   (let* ((pos (point))
          (node (markdown-ts-appear--markdown-node-at pos)))
-    (unless (markdown-ts-appear-math--span-at pos)
-      (or (markdown-ts-appear--fence-bounds-at pos node)
-          (markdown-ts-appear--callout-bounds-at pos node)
-          (markdown-ts-appear--quote-marker-bounds-at pos node)
-          (unless (markdown-ts-appear--literal-block-at pos node)
-            (or (markdown-ts-appear--image-preview-bounds-at pos)
-                (markdown-ts-appear--bounds-at-point pos node)))))))
+    (or (markdown-ts-appear-table--reveal-bounds node)
+        (unless (markdown-ts-appear-math--span-at pos)
+          (or (markdown-ts-appear--fence-bounds-at pos node)
+              (markdown-ts-appear--callout-bounds-at pos node)
+              (markdown-ts-appear--quote-marker-bounds-at pos node)
+              (unless (markdown-ts-appear--literal-block-at pos node)
+                (or (markdown-ts-appear--image-preview-bounds-at pos)
+                    (markdown-ts-appear--bounds-at-point pos node))))))))
 
 (defun markdown-ts-appear--update-inline-ranges ()
   "Update inline Tree-sitter ranges around point when needed."
@@ -1266,6 +1267,10 @@ at most one following space or tab and are not clipped to START or LIMIT."
             (markdown-ts-appear-diagram--setup)))
          ((eq option 'markdown-ts-appear-table-zebra-stripe)
           (markdown-ts-appear-table--refresh-stripes))
+         ((eq option 'markdown-ts-appear-table-reveal)
+          (setq markdown-ts-appear--last-point nil)
+          (when (markdown-ts-appear--tracking-p) (markdown-ts-appear--update))
+          (markdown-ts-appear-table--post-command))
          (t
           (when (eq option 'markdown-ts-appear-table-style)
             (markdown-ts-appear-table--teardown))
