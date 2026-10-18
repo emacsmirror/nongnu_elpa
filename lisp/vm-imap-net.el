@@ -1079,10 +1079,17 @@ The current buffer is the folder."
 
 (defun vm-imap-net-stale-messages ()
   "The folder's messages whose UIDVALIDITY is not the mailbox's.
-The current buffer is the folder."
+The current buffer is the folder.
+
+A message with no UID is not one of them.  It did not come from this mailbox,
+or its UID was lost, and either way there is nothing to compare: it was
+labelled stale on every synchronise, which says the mailbox reset its
+UIDVALIDITY and left this message behind, and that label is permanent
+(emacs-vm/vm#913)."
   (seq-filter (lambda (message)
-		(not (equal (vm-imap-uid-validity-of message)
-			    (vm-folder-imap-uid-validity))))
+		(and (vm-imap-uid-of message)
+		     (not (equal (vm-imap-uid-validity-of message)
+				 (vm-folder-imap-uid-validity)))))
 	      vm-message-list))
 
 (defmacro vm-imap-net-as-folder (&rest body)

@@ -1091,7 +1091,13 @@ expunges and which the folder carries in its `X-VM-IMAP-To-Expunge' header."
     ;; in the cache.
     (setq mp vm-message-list)
     (while mp
-      (cond ((not (equal (vm-imap-uid-validity-of (car mp)) uid-validity))
+      (cond ((null (vm-imap-uid-of (car mp)))
+	     ;; Nothing to compare: the message did not come from this mailbox,
+	     ;; or its UID was lost.  Neither stale nor missing from the
+	     ;; server, and not a UID the cache can be said to hold
+	     ;; (emacs-vm/vm#913).
+	     nil)
+	    ((not (equal (vm-imap-uid-validity-of (car mp)) uid-validity))
 	     (setq stale-list (cons (car mp) stale-list)))
 	    ((member "stale" (vm-decoded-labels-of (car mp)))
 	     nil)
