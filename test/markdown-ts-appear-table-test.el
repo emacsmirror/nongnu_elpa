@@ -560,9 +560,9 @@
         (set-window-buffer second (current-buffer))
         (markdown-ts-appear-stop)
         (cl-letf (((symbol-function 'markdown-ts-appear-table--cell)
-                   (lambda (node)
-                     (cl-incf calls)
-                     (funcall cell-function node))))
+                   (lambda (node parser)
+                      (cl-incf calls)
+                     (funcall cell-function node parser))))
           (markdown-ts-appear-table--render))
         (should (= 4 calls))
         (dolist (window (list first second first))
@@ -851,6 +851,80 @@
       (set-window-configuration configuration)
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
+
+(ert-deftest markdown-ts-appear-table-test-native-nested-inline-syntax ()
+  (markdown-ts-appear-table-test--with-buffer
+      "| A | Details |\n|---|---|\n| x | **bold _inner_** \\*literal\\* `` `x` **raw** `` [a **link**](https://example.com/a_(b)) |\n"
+      100
+    (goto-char (point-min)) (forward-line 2)
+    (let* ((display (markdown-ts-appear-table-test--row-display-at (point)))
+           (inner (string-match "inner" display))
+           (link (string-match "link" display)))
+      (should (string-match-p (regexp-quote "bold inner *literal* `x` **raw** a link") display))
+      (should (memq 'bold (get-text-property inner 'face display)))
+      (should (memq 'italic (get-text-property inner 'face display)))
+      (should (memq 'markdown-ts-code-span
+                    (get-text-property (string-match "raw" display) 'face display)))
+      (should (memq 'bold (get-text-property link 'face display)))
+      (should (memq 'link (get-text-property link 'face display)))
+      (should (equal (get-text-property link 'help-echo display) "https://example.com/a_(b)")))))
+
+(ert-deftest markdown-ts-appear-table-test-wrap-preserves-glyphs-and-source ()
+  (dolist (word '("abcdefghijk" "中文连续长词" "ééé" "👩‍💻👩‍💻👩‍💻" "🇨🇳🇨🇳🇨🇳" "👍🏽👍🏽👍🏽" "❤️❤️❤️"))
+    (let ((text (copy-sequence word)))
+      (dotimes (index (length text))
+        (put-text-property index (1+ index) 'markdown-ts-appear-table--source index text))
+      (let* ((glyphs (string-glyph-split text))
+             (minimum (apply #'max (mapcar #'string-width glyphs))))
+        (dolist (width (list minimum (+ minimum 1) (+ minimum 3)))
+          (let ((lines (markdown-ts-appear-table--wrap text width)))
+            (should (equal-including-properties (apply #'concat lines) text))
+            (should (equal (apply #'append (mapcar #'string-glyph-split lines)) glyphs))
+            (should (cl-every (lambda (line) (<= (string-width line) width)) lines))))))))
+
+(ert-deftest markdown-ts-appear-table-test-width-budget-and-monotonicity ()
+  (dolist (rows '((("a" "b" "c") ("" "" ""))
+                  (("long header" "x" "列") ("a long value" "" "中文👩‍💻"))
+                  (("" "" "") ("" "" ""))))
+    (let* ((metrics (markdown-ts-appear-table--metrics rows 3))
+           (minimum (+ 10 (cl-reduce #'+ (cdr metrics))))
+           previous)
+      (dotimes (offset 60)
+        (let* ((width (+ minimum offset))
+               (columns (markdown-ts-appear-table--widths metrics width)))
+          (should (<= (+ 10 (apply #'+ columns)) width))
+          (should (cl-every #'< '(0 0 0) columns))
+          (when previous (should (cl-every #'<= previous columns)))
+          (setq previous columns)
+          (dolist (row rows)
+            (let ((lines (markdown-ts-appear-table--row-lines row columns '(left center right))))
+              (should (cl-every (lambda (line) (= (string-width line) (+ 10 (apply #'+ columns)))) lines)))))))))
+
+(ert-deftest markdown-ts-appear-table-test-narrow-columns-and-missing-cells ()
+  (markdown-ts-appear-table-test--with-buffer
+      "| 左 | Center | Right |\n|:---|:---:|---:|\n| 中文中文 | ééé | 👩‍💻👩‍💻 |\n| | | |\n| x |\n"
+      3
+    (let ((widths nil))
+      (dolist (overlay (markdown-ts-appear-table-test--overlays))
+        (dolist (line (string-lines (markdown-ts-appear-table-test--display overlay)))
+          (push (string-width line) widths)))
+      ;; When the window cannot fit borders plus one glyph per column, allow
+      ;; horizontal overflow rather than splitting glyphs or losing columns.
+      (should (cl-every (lambda (width) (= width (car widths))) widths))
+      (should (> (car widths) 3)))))
+
+(ert-deftest markdown-ts-appear-table-test-alignment-and-inline-code-literals ()
+  (should (equal (markdown-ts-appear-table--row-lines '("x" "y" "z") '(5 5 5) '(left center right))
+                 '("│ x     │   y   │     z │")))
+  (markdown-ts-appear-table-test--with-buffer
+      "| A | B |\n|---|---|\n| x | `**literal**` |\n" 12
+    (goto-char (point-min)) (forward-line 2)
+    (let* ((display (markdown-ts-appear-table-test--row-display-at (point)))
+           (visible (cl-loop for index below (length display)
+                             when (memq 'markdown-ts-code-span
+                                        (get-text-property index 'face display))
+                             concat (string (aref display index)))))
+      (should (equal visible "**literal**")))))
 
 (provide 'markdown-ts-appear-table-test)
 ;;; markdown-ts-appear-table-test.el ends here

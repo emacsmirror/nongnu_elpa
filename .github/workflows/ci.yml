@@ -73,7 +73,6 @@ jobs:
             (add-to-list 'package-archives
                          '(\"melpa\" . \"https://melpa.org/packages/\") t)
             (package-refresh-contents)
-            (package-install 'markdown-table-wrap)
             (package-install 'evil)
             (package-install 'latex-to-svg-for-markdown))"
 
@@ -133,6 +132,18 @@ jobs:
               (with-current-buffer warnings
                 (princ (buffer-string)))
               (kill-emacs 1)))"
+
+      - name: Load wrapped tables without external packages
+        run: |
+          emacs --batch -Q -L . --eval '(progn
+            (require (quote markdown-ts-appear))
+            (with-temp-buffer
+              (insert "| A | B |\n|---|---|\n| x | **text** |\n")
+              (markdown-ts-mode)
+              (markdown-ts-appear-mode 1)
+              (unless (= 3 (length markdown-ts-appear-table--overlays))
+                (error "Wrapped tables did not render"))
+              (markdown-ts-appear-mode -1)))'
 
       - name: Run tests
         timeout-minutes: 10

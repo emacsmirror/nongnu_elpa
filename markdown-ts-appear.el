@@ -6,7 +6,7 @@
 ;; Assisted-by: OpenCode:gpt-5.6-sol
 ;; Maintainer: Thysrael <thysrael@163.com>
 ;; Version: 0.2.4
-;; Package-Requires: ((emacs "31.1") (markdown-table-wrap "0.2.0"))
+;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: text, convenience
 ;; URL: https://github.com/Thysrael/markdown-ts-appear
 
@@ -137,7 +137,7 @@ When nil, preserve the original Markdown marker."
 
 (defcustom markdown-ts-appear-table-style 'wrapped
   "How rendered Markdown pipe tables should display.
-The `wrapped' style uses `markdown-table-wrap' to fit cells to the window."
+The `wrapped' style fits cells to the window without changing buffer text."
   :type '(choice (const :tag "Raw Markdown" raw)
                  (const :tag "Unicode delimiters" unicode)
                  (const :tag "Wrapped Unicode table" wrapped))

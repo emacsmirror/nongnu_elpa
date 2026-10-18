@@ -36,7 +36,6 @@
 (require 'hl-line)
 (require 'markdown-ts-mode)
 (require 'outline)
-(require 'markdown-table-wrap-pretty)
 (require 'seq)
 (require 'subr-x)
 
@@ -45,6 +44,8 @@
 (declare-function markdown-ts-appear--remove-outline-hook "markdown-ts-appear")
 (declare-function markdown-ts-appear--decorate "markdown-ts-appear")
 (declare-function markdown-ts-appear--direct-children-of-type
+                  "markdown-ts-appear")
+(declare-function markdown-ts-appear--first-direct-child-of-type
                   "markdown-ts-appear")
 (declare-function markdown-ts-appear--node-visible-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--region-visible-p "markdown-ts-appear")
@@ -235,11 +236,52 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
      (lambda (node) (equal (treesit-node-type node) cell-type))
      (treesit-node-children row 'named))))
 
-(defun markdown-ts-appear-table--cell (node)
-  "Render cell NODE with original source positions on surviving characters."
+(defun markdown-ts-appear-table--inline (node text)
+  "Render inline NODE from TEXT, retaining properties on surviving characters."
+  (let* ((type (treesit-node-type node))
+         (beg (1- (treesit-node-start node)))
+         (end (1- (treesit-node-end node))))
+    (pcase type
+      ("emphasis_delimiter" "")
+      ("backslash_escape" (substring text (1+ beg) end))
+      ("code_span"
+       (let* ((size (- (treesit-node-end (treesit-node-child node 0)) (1+ beg)))
+              (code (substring text (+ beg size) (- end size))))
+         (when (and (string-prefix-p " " code) (string-suffix-p " " code)
+                    (string-match-p "[^ ]" code))
+           (setq code (substring code 1 -1)))
+         (propertize code 'face 'markdown-ts-code-span)))
+      ((or "inline_link" "image")
+       (let* ((label (markdown-ts-appear--first-direct-child-of-type
+                      node (if (equal type "image") "image_description" "link_text")))
+              (destination (markdown-ts-appear--first-direct-child-of-type node "link_destination"))
+              (result (if label (markdown-ts-appear-table--inline label text) "")))
+         (add-face-text-property 0 (length result) 'link t result)
+         (add-text-properties 0 (length result)
+                              (list 'mouse-face 'highlight 'help-echo
+                                    (and destination (treesit-node-text destination t))) result)
+         result))
+      ((or "inline" "link_text" "image_description"
+           "strong_emphasis" "emphasis" "strikethrough")
+       (let ((position beg) parts)
+         (dolist (child (treesit-node-children node t))
+           (push (substring text position (1- (treesit-node-start child))) parts)
+           (push (markdown-ts-appear-table--inline child text) parts)
+           (setq position (1- (treesit-node-end child))))
+         (push (substring text position end) parts)
+         (let ((result (apply #'concat (nreverse parts)))
+               (face (pcase type
+                       ("strong_emphasis" 'bold) ("emphasis" 'italic)
+                       ("strikethrough" '(:strike-through t)))))
+           (when face (add-face-text-property 0 (length result) face t result))
+           result)))
+      (_ (substring text beg end)))))
+
+(defun markdown-ts-appear-table--cell (node parser)
+  "Render cell NODE with scratch PARSER, retaining source positions."
   (let* ((beg (treesit-node-start node))
          (text (treesit-node-text node t)))
-    (if (not (string-match-p "[\\\\`*~[!]" text))
+    (if (not (string-match-p "[\\\\`*_~[!]" text))
         ;; Plain cells only lose whitespace during wrapping.  Carry one
         ;; source run instead of allocating a property interval per character.
         (propertize (string-trim text)
@@ -247,36 +289,126 @@ Customize this face's font to keep tables aligned in variable-pitch buffers."
       (dotimes (index (length text))
         (put-text-property index (1+ index)
                            'markdown-ts-appear-table--source (+ beg index) text))
-      ;; Protect escaped pipes from the backend's unannotated replacement.
-      ;; Restore only after inline rendering so a preceding backslash cannot
-      ;; cause a second unescape.
-      (let ((index 0) pipes)
-        (setq text
-              (replace-regexp-in-string
-               "\\\\|"
-               (lambda (match)
-                 (let ((token (format "\0APPEAR%d\0" index)))
-                   (push (substring match 1) pipes)
-                   (setq index (1+ index))
-                   token))
-               (string-trim text) t t))
-        (setq text (markdown-table-wrap-pretty-render-inline-spans text))
-        ;; Use the surrounding major mode's code face, including theme settings.
-        (setq index 0)
-        (while (setq index (text-property-any
-                           index (length text) 'face 'markdown-table-wrap-pretty-code-face text))
-          (let ((end (next-single-property-change index 'face text (length text))))
-            (put-text-property index end 'face 'markdown-ts-code-span text)
-            (setq index end)))
-        (if (null pipes) text
-          (setq pipes (vconcat (nreverse pipes)))
-          (replace-regexp-in-string
-           "\0APPEAR[0-9]+\0"
-           (lambda (match)
-             (apply #'propertize
-                    (copy-sequence (aref pipes (string-to-number (substring match 7 -1))))
-                    (text-properties-at 0 match)))
-           text t t))))))
+      ;; GFM unescapes table pipes before parsing inline syntax, even in code.
+      (setq text (replace-regexp-in-string "\\\\|" (lambda (match) (substring match 1))
+                                          (string-trim text) t t))
+      (with-current-buffer (treesit-parser-buffer parser)
+        (erase-buffer)
+        (insert text)
+        (markdown-ts-appear-table--inline (treesit-parser-root-node parser) text)))))
+
+(defun markdown-ts-appear-table--minimum-width (text)
+  "Return the width of TEXT's widest indivisible display glyph."
+  (let ((position 0) (width 1) (length (length text)))
+    ;; Like the display engine, measure compositions as units.  Ordinary CJK
+    ;; characters need only char-width, not a substring allocation per glyph.
+    (while (< position length)
+      (let* ((composition (find-composition position length text))
+             (end (if composition (car composition) length)))
+        (while (< position end)
+          (setq width (max width (char-width (aref text position)))
+                position (1+ position)))
+        (when composition
+          (setq width (max width (string-width text position (cadr composition)))
+                position (cadr composition)))))
+    width))
+
+(defun markdown-ts-appear-table--metrics (rows columns)
+  "Measure ROWS once, returning natural and minimum widths for COLUMNS."
+  (let ((natural (make-vector columns 1)) (minimum (make-vector columns 1)))
+    (dolist (row rows)
+      (cl-loop for text in row for column from 0 below columns do
+               (aset natural column (max (aref natural column) (string-width text)))
+               (unless (= (length text) (string-bytes text))
+                 (aset minimum column (max (aref minimum column)
+                                           (markdown-ts-appear-table--minimum-width text))))))
+    (cons natural minimum)))
+
+(defun markdown-ts-appear-table--widths (metrics available)
+  "Distribute AVAILABLE columns using METRICS, including borders and padding."
+  (let* ((natural (car metrics))
+         (columns (length natural))
+         (budget (- available (1+ (* 3 columns)))))
+    (if (<= (cl-reduce #'+ natural) budget)
+        (append natural nil)
+      (let ((widths (copy-sequence (cdr metrics)))
+            (weights (vconcat (mapcar #'sqrt natural))))
+        (setq budget (- budget (cl-reduce #'+ widths)))
+        ;; Capped square-root weights keep short columns readable.  Assigning
+        ;; each spare column by priority also makes growth monotonic on resize.
+        (while (> budget 0)
+          (let (best (priority -1))
+            (dotimes (column columns)
+              (when (< (aref widths column) (aref natural column))
+                (let ((score (/ (aref weights column) (1+ (* 2 (aref widths column))))))
+                  (when (> score priority) (setq best column priority score)))))
+            (cl-incf (aref widths best))
+            (cl-decf budget)))
+        (append widths nil)))))
+
+(defun markdown-ts-appear-table--split-word (word width)
+  "Split an overlong WORD at WIDTH columns, keeping properties and glyphs intact."
+  (let ((beg 0) parts)
+    (if (= (length word) (string-bytes word))
+        (while (< beg (length word))
+          (let ((end (min (length word) (+ beg width))))
+            (push (substring word beg end) parts)
+            (setq beg end)))
+      (let ((offset 0) (used 0))
+        (dolist (glyph (string-glyph-split word))
+          (let ((size (string-width glyph)))
+            (when (and (> used 0) (> (+ used size) width))
+              (push (substring word beg offset) parts)
+              (setq beg offset used 0))
+            (setq offset (+ offset (length glyph)) used (+ used size))))
+        (push (substring word beg) parts)))
+    (nreverse parts)))
+
+(defun markdown-ts-appear-table--wrap (text width)
+  "Wrap TEXT to WIDTH columns, preserving faces and source positions."
+  (if (and (<= (string-width text) width) (not (string-match-p "[\t\n]\\|  " text)))
+      (list text)
+    (let ((position 0) (used 0) parts lines)
+      (while (string-match "[^ \t\n]+" text position)
+        (let* ((beg (match-beginning 0)) (end (match-end 0))
+               (word (substring text beg end))
+               (size (string-width word)))
+          (when (and parts (> (+ used 1 size) width))
+            (push (apply #'concat (nreverse parts)) lines)
+            (setq parts nil used 0))
+          (when parts
+            ;; Retain an actual source space; padding and normalized tabs have
+            ;; no source position and are handled by the existing navigation map.
+            (push (if (eq (aref text (1- beg)) ?\s) (substring text (1- beg) beg) " ") parts)
+            (cl-incf used))
+          (if (<= size width)
+              (progn (push word parts) (setq used (+ used size)))
+            (let ((chunks (markdown-ts-appear-table--split-word word width)))
+              (while (cdr chunks) (push (pop chunks) lines))
+              (setq parts (list (car chunks)) used (string-width (car chunks)))))
+          (setq position end)))
+      (when parts (push (apply #'concat (nreverse parts)) lines))
+      (or (nreverse lines) '("")))))
+
+(defun markdown-ts-appear-table--row-lines (cells widths aligns)
+  "Render CELLS as wrapped lines with WIDTHS and ALIGNS."
+  (let ((wrapped (cl-loop for width in widths for remaining = cells then (cdr remaining)
+                          collect (markdown-ts-appear-table--wrap (or (car remaining) "") width)))
+        lines)
+    (while (seq-some #'identity wrapped)
+      (let ((parts (list "│ ")))
+        (cl-loop for remaining on wrapped for width in widths for align in aligns
+                 for first = t then nil do
+                 (unless first (push " │ " parts))
+                 (let* ((text (or (pop (car remaining)) ""))
+                        (padding (- width (string-width text)))
+                        (left (pcase align ('right padding) ('center (/ padding 2)) (_ 0))))
+                   (push (make-string left ?\s) parts)
+                   (push text parts)
+                   (push (make-string (- padding left) ?\s) parts)))
+        (push " │" parts)
+        (push (apply #'concat (nreverse parts)) lines)))
+    (nreverse lines)))
 
 (defun markdown-ts-appear-table--prefix (row)
   "Return the container prefix before table ROW."
@@ -417,13 +549,15 @@ STRIPE-P marks alternate data rows for optional background shading."
 (defun markdown-ts-appear-table--render-table (table windows)
   "Render TABLE using the window and width records in WINDOWS."
   (let* ((rows (markdown-ts-appear-table--rows table))
-         (markdown-table-wrap-pretty-prettify t)
-         (cells (mapcar (lambda (row)
-                          (unless (equal (treesit-node-type row)
-                                         "pipe_table_delimiter_row")
-                            (mapcar #'markdown-ts-appear-table--cell
-                                    (markdown-ts-appear-table--row-cells row))))
-                        rows))
+         ;; markdown-ts-mode does not provide inline parsers for table cells.
+         ;; Reuse one scratch parser; plain cells need no inline parsing at all.
+         (cells (with-temp-buffer
+                  (let ((parser (treesit-parser-create 'markdown-inline)))
+                    (mapcar (lambda (row)
+                              (unless (equal (treesit-node-type row) "pipe_table_delimiter_row")
+                                (mapcar (lambda (cell) (markdown-ts-appear-table--cell cell parser))
+                                        (markdown-ts-appear-table--row-cells row))))
+                            rows))))
          (aligns (mapcar
                   (lambda (cell)
                     (let ((text (string-trim (treesit-node-text cell t))))
@@ -432,6 +566,7 @@ STRIPE-P marks alternate data rows for optional background shading."
                             ((string-suffix-p ":" text) 'right)
                             (t 'left))))
                   (markdown-ts-appear-table--row-cells (cadr rows))))
+         (metrics (markdown-ts-appear-table--metrics cells (length aligns)))
          (prefixes (mapcar #'markdown-ts-appear-table--prefix rows))
          (prefix-width (apply #'max 0 (mapcar #'string-width prefixes)))
          (id (list 'table)))
@@ -443,10 +578,7 @@ STRIPE-P marks alternate data rows for optional background shading."
                                (markdown-ts-appear-table--line-prefix-width
                                 (car (markdown-ts-appear-table--row-bounds row)) window))
                              rows)))
-             (widths (markdown-table-wrap-compute-widths
-                      (car cells) (cddr cells)
-                      (max 1 (- width prefix-width indent-width))
-                      (length aligns))))
+             (widths (markdown-ts-appear-table--widths metrics (- width prefix-width indent-width))))
         (cl-mapc
          (lambda (row contents prefix)
            (let* ((type (treesit-node-type row))
@@ -454,8 +586,8 @@ STRIPE-P marks alternate data rows for optional background shading."
                    (mapcar
                     (lambda (line) (concat prefix line))
                     (if (equal type "pipe_table_delimiter_row")
-                        (list (markdown-table-wrap-pretty--render-separator-line widths aligns))
-                      (markdown-table-wrap-pretty--render-row-lines contents widths aligns))))
+                        (list (concat "├─" (mapconcat (lambda (size) (make-string size ?─)) widths "─┼─") "─┤"))
+                      (markdown-ts-appear-table--row-lines contents widths aligns))))
                   (stripe-p
                    (and (equal type "pipe_table_row")
                         (cl-evenp (cl-incf data-row-index)))))
@@ -989,8 +1121,6 @@ OLD-LENGTH is the length of the replaced text."
 (defun markdown-ts-appear-table--setup ()
   "Install wrapped-table rendering when requested by the main mode."
   (when (eq markdown-ts-appear-table-style 'wrapped)
-    (unless (fboundp 'markdown-table-wrap-pretty--render-row-lines)
-      (user-error "Wrapped tables require markdown-table-wrap 0.2.0"))
     (unless cursor-intangible-mode
       (cursor-intangible-mode 1)
       (setq markdown-ts-appear-table--owns-cursor-mode t))
