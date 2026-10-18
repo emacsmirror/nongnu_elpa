@@ -339,6 +339,34 @@ suggestion must not be `vm-check-configuration' by another name."
         (vm-suggest-checking-configuration-maybe)
         (should-not (get-buffer "*VM Configuration*"))))))
 
+(ert-deftest vm-configuration-test-a-broken-check-is-reported-not-thrown ()
+  "REGRESSION: a fault in the check does not come out as a timer error.
+
+`vm-suggest-checking-configuration-maybe' runs from an idle timer as a
+folder is being opened, and it is a convenience nobody asked for.  A fault
+in it used to reach the reader as
+
+    Error running timer 'vm-suggest-checking-configuration-maybe':
+    (error \"No match data, because no search succeeded\")
+
+which says nothing about VM and nothing about what to do (emacs-vm/vm#912).
+It now says which, and names the command that raises it again."
+  (let ((vm-suggest-checking-configuration t)
+        (vm-suggested-checking-configuration nil)
+        (said nil))
+    (cl-letf (((symbol-function 'vm-configuration-problems)
+               (lambda () (error "No match data, because no search succeeded")))
+              ((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (setq said (apply #'format args)))))
+      ;; the point of the test: this returns rather than signalling
+      (vm-suggest-checking-configuration-maybe))
+    (should said)
+    (should (string-match-p "could not check your configuration" said))
+    (should (string-match-p "No match data" said))
+    (should (string-match-p "vm-check-configuration" said))))
+
+
 (provide 'vm-configuration-test)
 
 ;;; vm-configuration-test.el ends here
