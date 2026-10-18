@@ -131,16 +131,23 @@ emacs_run () {
     # What the pass asked for, so the log shows it rather than leaving the
     # reader to work it out from the number of skips.
     echo "   VM_TEST_LIVE=$emacs_run_live VM_TEST_OPTIONAL=$emacs_run_optional"
+    # stdin is /dev/null, so a test that asks the reader something fails
+    # instead of waiting for an answer that is never coming.  A batch Emacs
+    # reads a prompt from stdin: at a terminal that is a silent hang, with no
+    # timer running and nothing in the log to say what it wants, and the
+    # prompt itself goes to the pass's log file where nobody is looking.  At
+    # /dev/null the read ends at once and ert names the test.
     if [ "$verbose" = yes ]; then
         env VM_TEST_LIVE="$emacs_run_live" \
             VM_TEST_OPTIONAL="$emacs_run_optional" \
             "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
             --eval '(setq ert-batch-print-level 5)' \
-            --eval '(setq ert-batch-print-length 10)' "$@"
+            --eval '(setq ert-batch-print-length 10)' "$@" </dev/null
     else
         env VM_TEST_LIVE="$emacs_run_live" \
             VM_TEST_OPTIONAL="$emacs_run_optional" \
-            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@"
+            "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@" \
+            </dev/null
     fi
 }
 

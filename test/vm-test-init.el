@@ -870,17 +870,25 @@ answers for itself."
   (error "No reader here to give a password to"))
 
 (defun vm-test-run-test-isolated (run-test test)
-  "Run TEST through RUN-TEST, then undo its effect on global state."
-  (if (not vm-test-isolate-global-state)
-      (funcall run-test test)
-    (let ((state (vm-test-snapshot-global-state))
-          (buffers (buffer-list)))
-      (unwind-protect
-          (cl-letf (((symbol-function 'read-passwd) #'vm-test-no-reader-here))
-            (funcall run-test test))
-        (vm-test-cancel-composition-timer)
-        (vm-test-restore-global-state state)
-        (vm-test-kill-new-buffers buffers)))))
+  "Run TEST through RUN-TEST, then undo its effect on global state.
+
+The password stub is outside the isolation on purpose.  It is not about
+keeping one test out of the next: it is what stops a batch Emacs waiting on
+standard input for ever, which is a hang rather than a failure and takes the
+whole run with it.  `leak-report.el' turns the isolation off, and with the
+stub inside it the leaks pass ran without the one thing that makes a prompt
+fail -- a release check sat forty minutes on `IMAP password for someone@host
+[INBOX]: ' before anyone noticed."
+  (cl-letf (((symbol-function 'read-passwd) #'vm-test-no-reader-here))
+    (if (not vm-test-isolate-global-state)
+        (funcall run-test test)
+      (let ((state (vm-test-snapshot-global-state))
+            (buffers (buffer-list)))
+        (unwind-protect
+            (funcall run-test test)
+          (vm-test-cancel-composition-timer)
+          (vm-test-restore-global-state state)
+          (vm-test-kill-new-buffers buffers))))))
 
 (advice-add 'ert-run-test :around #'vm-test-run-test-isolated)
 
