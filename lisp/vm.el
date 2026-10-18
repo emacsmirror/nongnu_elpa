@@ -1932,16 +1932,27 @@ silent for everyone it has nothing to tell."
   (when (and vm-suggest-checking-configuration
              (not vm-suggested-checking-configuration))
     (setq vm-suggested-checking-configuration t)
-    (let ((problems (length (vm-configuration-problems))))
-      (when (> problems 0)
-        ;; No pause: said when Emacs is idle, it stays until the reader does
-        ;; something, and a `sit-for' inside a timer runs the command loop
-        ;; again where it stands.
-        (vm-warn 1 0 (concat "VM has %d setting%s missing.  M-x"
-                             " vm-check-configuration says which, and what to"
-                             " set (vm-suggest-checking-configuration to stop"
-                             " this)")
-                 problems (if (= problems 1) "" "s"))))))
+    ;; A convenience that nobody asked for runs here, from a timer, as a
+    ;; folder is being opened.  A fault in it is reported as a fault in it
+    ;; rather than let out as "Error running timer" over the startup, which
+    ;; says nothing about VM and nothing about what to do (emacs-vm/vm#912).
+    (condition-case err
+        (let ((problems (length (vm-configuration-problems))))
+          (when (> problems 0)
+            ;; No pause: said when Emacs is idle, it stays until the reader
+            ;; does something, and a `sit-for' inside a timer runs the command
+            ;; loop again where it stands.
+            (vm-warn 1 0 (concat "VM has %d setting%s missing.  M-x"
+                                 " vm-check-configuration says which, and what"
+                                 " to set (vm-suggest-checking-configuration"
+                                 " to stop this)")
+                     problems (if (= problems 1) "" "s"))))
+      (error
+       (vm-warn 0 2 (concat "VM could not check your configuration: %s."
+                            "  M-x vm-check-configuration raises it again,"
+                            " with a backtrace under M-x"
+                            " toggle-debug-on-error")
+                (error-message-string err))))))
 
 (defun vm-suggest-checking-configuration-later ()
   "Make the suggestion once Emacs is idle, rather than now.
