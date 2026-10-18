@@ -1,3 +1,8 @@
+2026-10-18  Ulrich Müller  <ulm@gentoo.org>
+
+	* ebuild-mode.el (ebuild-repo-mode-maybe-enable): Check the other
+	conditions first, before accessing the filesystem.
+
 2026-10-10  Ulrich Müller  <ulm@gentoo.org>
 
 	* test/*.el: Add no-byte-compile and no-update-autoloads as

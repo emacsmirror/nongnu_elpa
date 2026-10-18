@@ -1033,11 +1033,12 @@ See `bug-reference-url-format' for further details.")
   "Enable `ebuild-repo-mode' when the file is in an ebuild repository."
   ;; We assume that we are in an ebuild repository if we find a file
   ;; "profiles/repo_name" in any (nth level) parent dir
-  (and buffer-file-name
-       (locate-dominating-file buffer-file-name "profiles/repo_name")
+  (and (not ebuild-repo-mode)
+       buffer-file-name
        ;; Don't enable the mode for patches
        (not (string-match-p "\\.\\(diff\\|patch\\)\\'" buffer-file-name))
        (not (derived-mode-p 'diff-mode))
+       (locate-dominating-file buffer-file-name "profiles/repo_name")
        (ebuild-repo-mode 1)))
 
 (defun ebuild-mode-insert-tag-line ()
