@@ -6841,6 +6841,35 @@ calling it a fault."
 	  " cache and every other one like it, keeping the previous contents"
 	  " in a backup file.  Nothing is refetched.\n\n"))
 
+(defun vm-check-folder-messages-with-no-uid ()
+  "The folder's messages that carry no IMAP UID.
+Only for a folder read from an IMAP mailbox: every message in one of those
+came from the server under a UID.  One with none was left in the cache by a
+fetch that did not finish, with none of VM's data on it, so the next fetch
+brought that mail again and the folder holds it twice (emacs-vm/vm#914).  A
+folder read from a file answers with none, `vm-folder-access-method' being
+nil there."
+  (when (eq vm-folder-access-method 'imap)
+    (seq-filter (lambda (message) (null (vm-imap-uid-of message)))
+		vm-message-list)))
+
+(defun vm-check-folder-no-uid-advice (orphans)
+  "What to do about ORPHANS, the messages carrying no IMAP UID."
+  (format (concat "%d message%s carr%s no IMAP UID, %s.\n\nEvery message in a"
+		  " folder read from an IMAP mailbox came from the server under"
+		  " a UID.  One with none was left behind by a fetch that did"
+		  " not finish, before VM put each bunch into the folder in one"
+		  " piece: it has none of VM's data on it, so VM cannot tell"
+		  " it is the server's message and the next fetch brought"
+		  " that mail again.  The folder holds it twice.\n\nThe copy"
+		  " with no UID is the one to delete: the other is the one the"
+		  " server knows about, and nothing will fetch this one"
+		  " again.\n\n")
+	  (length orphans)
+	  (if (cdr orphans) "s" "")
+	  (if (cdr orphans) "y" "ies")
+	  (mapconcat (lambda (message) (vm-number-of message)) orphans ", ")))
+
 (defun vm-check-folder-report (faults reader held survey)
   "Say what `vm-check-folder' found.
 FAULTS is what the lengths said, READER how many messages walking the
@@ -6856,6 +6885,7 @@ the same case: the folder is sound, and a folder VM would not create now is
 what this command is asked to notice."
   (if (and (null faults)
 	   (equal reader held)
+	   (null (vm-check-folder-messages-with-no-uid))
 	   (not (vm-check-folder-misnamed-p survey held))
 	   (not (vm-check-folder-older-cache-p)))
       (vm-inform 5 "%s: %s, %d messages, sound"
@@ -6881,6 +6911,9 @@ what this command is asked to notice."
 	  (princ (format (concat "The folder holds %d messages and walking the"
 				 " separators finds %d.\n\n")
 			 held reader)))
+	(let ((orphans (vm-check-folder-messages-with-no-uid)))
+	  (when orphans
+	    (princ (vm-check-folder-no-uid-advice orphans))))
 	(when faults
 	  (princ (format "%d message%s with a length the body does not match:\n"
 			 (length faults) (if (cdr faults) "s" "")))
