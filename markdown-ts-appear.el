@@ -801,14 +801,18 @@ OVERRIDE, START, LIMIT and REST are the native fontifier arguments."
            (intern (format "markdown-ts-heading-%d" level)))))
     (apply #'markdown-ts-appear--fontify-node function node override start limit rest)))
 
-(defun markdown-ts-appear--fence-opening-p (node)
-  "Return non-nil when fenced delimiter NODE opens its code block."
-  (when-let* ((block (markdown-ts-appear--node-ancestor
-                      (treesit-node-parent node) "fenced_code_block"))
-              (opening
-               (markdown-ts-appear--first-direct-child-of-type
-                block "fenced_code_block_delimiter")))
-    (= (treesit-node-start node) (treesit-node-start opening))))
+(defun markdown-ts-appear--fence-start (node)
+  "Return the first fence character in NODE, excluding leading indentation."
+  (save-excursion
+    (goto-char (treesit-node-start node))
+    (skip-chars-forward " \t" (treesit-node-end node))
+    (point)))
+
+(defun markdown-ts-appear--code-indent (column)
+  "Move over whitespace up to COLUMN, returning any tab overshoot as spaces."
+  (while (and (< (current-column) column) (memq (char-after) '(?\s ?\t)))
+    (forward-char))
+  (make-string (max 0 (- (current-column) column)) ?\s))
 
 (defun markdown-ts-appear--fontify-fence (node visible-p start limit)
   "Render fence NODE between START and LIMIT unless VISIBLE-P."
@@ -816,7 +820,10 @@ OVERRIDE, START, LIMIT and REST are the native fontifier arguments."
              (eq markdown-ts-appear-code-fence-style 'connected)
              (<= start (treesit-node-start node))
              (<= (treesit-node-end node) limit))
-    (if (markdown-ts-appear--fence-opening-p node)
+    (if (= (treesit-node-start node)
+           (treesit-node-start
+            (markdown-ts-appear--first-direct-child-of-type
+             (treesit-node-parent node) "fenced_code_block_delimiter")))
         (let* ((block (treesit-node-parent node))
                (info
                 (markdown-ts-appear--first-direct-child-of-type
@@ -825,7 +832,7 @@ OVERRIDE, START, LIMIT and REST are the native fontifier arguments."
                              (treesit-node-end node))))
           (when (<= header-end limit)
             (markdown-ts-appear--decorate
-             (treesit-node-start node) (treesit-node-end node)
+             (markdown-ts-appear--fence-start node) (treesit-node-end node)
              (if info
                  (concat
                   (propertize "╭─" 'face 'markdown-ts-appear-code-fence-marker)
@@ -836,10 +843,22 @@ OVERRIDE, START, LIMIT and REST are the native fontifier arguments."
             (when (< (treesit-node-end node) header-end)
               (markdown-ts-appear--decorate
                (treesit-node-end node) header-end "" nil))))
-      (markdown-ts-appear--decorate
-       (treesit-node-start node) (treesit-node-end node)
-       "╰─"
-       'markdown-ts-appear-code-fence-marker))))
+      (let ((column (save-excursion
+                      (goto-char (markdown-ts-appear--fence-start
+                                  (markdown-ts-appear--first-direct-child-of-type
+                                   (treesit-node-parent node) "fenced_code_block_delimiter")))
+                      (current-column))))
+        (save-excursion
+          (goto-char (markdown-ts-appear--fence-start node))
+          (skip-chars-backward " \t" (line-beginning-position))
+          ;; Keep the quote's own separator; only normalize fence indentation.
+          (when (and (eq (char-before) ?>) (memq (char-after) '(?\s ?\t)))
+            (forward-char))
+          (when (<= start (point))
+            (markdown-ts-appear--decorate
+             (point) (treesit-node-end node)
+             (concat (make-string (max 0 (- column (current-column))) ?\s) "╰─")
+             'markdown-ts-appear-code-fence-marker)))))))
 
 (defun markdown-ts-appear--quote-prefixes (node start limit)
   "Return structural quote prefixes in NODE intersecting START through LIMIT.
@@ -877,6 +896,9 @@ at most one following space or tab and are not clipped to START or LIMIT."
                         node "code_fence_content")))
     (let* ((delimiters (markdown-ts-appear--direct-children-of-type
                         node "fenced_code_block_delimiter"))
+           (column (save-excursion
+                     (goto-char (markdown-ts-appear--fence-start (car delimiters)))
+                     (current-column)))
            (closing (and (cdr delimiters) (car (last delimiters))))
            (content-beg (treesit-node-start content))
            (body-beg (save-excursion
@@ -896,13 +918,32 @@ at most one following space or tab and are not clipped to START or LIMIT."
         ;; so it gets the block face explicitly, as the fence lines do.
         (if (not (markdown-ts-appear--node-ancestor
                   (treesit-node-parent node) "block_quote"))
-            (markdown-ts-appear--decorate-line-prefix
-             beg end "│ " (list 'markdown-ts-appear-code-fence-marker
-                                block-face))
+            (let ((prefix (concat (make-string column ?\s) "│ "))
+                  (face (list 'markdown-ts-appear-code-fence-marker block-face)))
+              (if (zerop column)
+                  (markdown-ts-appear--decorate-line-prefix beg end prefix face)
+                (markdown-ts-appear--decorate-prefix beg end 'wrap-prefix
+                                                     (propertize prefix 'face face))
+                (save-excursion
+                  (goto-char beg)
+                  (unless (bolp) (forward-line 1))
+                  (while (< (point) end)
+                    (let* ((line-beg (point))
+                           (extra (markdown-ts-appear--code-indent column)))
+                      (if (= line-beg (point))
+                          (markdown-ts-appear--decorate-prefix
+                           line-beg (min end (line-beginning-position 2)) 'line-prefix
+                           (propertize prefix 'face face))
+                        (markdown-ts-appear--decorate
+                         line-beg (min end (point)) (concat prefix extra) face)))
+                    (forward-line 1)))))
           (let ((wrap-beg (max beg content-beg))
                 (wrap-prefix
                  (markdown-ts-appear--code-quote-prefix
-                  (buffer-substring-no-properties body-beg content-beg)
+                  (concat (buffer-substring-no-properties body-beg content-beg)
+                          (make-string (max 0 (- column (save-excursion
+                                                        (goto-char content-beg)
+                                                        (current-column)))) ?\s))
                   block-face)))
             (when (< wrap-beg end)
               (markdown-ts-appear--decorate-prefix
@@ -912,10 +953,17 @@ at most one following space or tab and are not clipped to START or LIMIT."
               (when (and (<= beg marker-beg) (< marker-beg end)
                          (not (markdown-ts-appear--region-visible-p
                                marker-beg (1+ marker-beg))))
-                (markdown-ts-appear--decorate
-                 marker-beg (min end marker-end)
-                 (markdown-ts-appear--code-quote-prefix "> " block-face)
-                 nil)))))))))
+                (save-excursion
+                  (goto-char marker-end)
+                  (let* ((padding (make-string (max 0 (- column (current-column))) ?\s))
+                         (extra (markdown-ts-appear--code-indent column)))
+                    (markdown-ts-appear--decorate
+                     marker-beg (min end (point))
+                     (concat (markdown-ts-appear--code-quote-prefix
+                              (concat (buffer-substring-no-properties marker-beg marker-end) padding)
+                              block-face)
+                             extra)
+                     nil)))))))))))
 
 (defun markdown-ts-appear--callout-background (accent)
   "Return a faint background face derived from ACCENT and the default face."

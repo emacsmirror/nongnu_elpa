@@ -1094,6 +1094,126 @@
            (memq 'markdown-ts-code-block-markup-hidden
                  (ensure-list (get-text-property index 'face prefix)))))))))
 
+(defun markdown-ts-appear-test--displayed-line ()
+  "Return the current line with its text-property replacements and prefix."
+  (let ((position (line-beginning-position)) (end (line-end-position)) parts)
+    (push (or (get-text-property position 'line-prefix) "") parts)
+    (while (< position end)
+      (let ((display (get-text-property position 'display))
+            (next (next-single-property-change position 'display nil end)))
+        (push (if (stringp display) display
+                (buffer-substring-no-properties position next)) parts)
+        (setq position next)))
+    (apply #'concat (nreverse parts))))
+
+(ert-deftest markdown-ts-appear-test-indented-fence-borders-align ()
+  (dolist (exclude-indent '(nil t))
+    (let ((node-start (symbol-function 'treesit-node-start)))
+      ;; Exercise grammars that include indentation in delimiter nodes and
+      ;; ones that start the nodes at the literal backticks or tildes (#21).
+      (cl-letf (((symbol-function 'treesit-node-start)
+                 (lambda (node)
+                   (let ((start (funcall node-start node)))
+                     (if (and exclude-indent
+                              (equal (treesit-node-type node) "fenced_code_block_delimiter"))
+                         (save-excursion
+                           (goto-char start)
+                           (skip-chars-forward " \t" (treesit-node-end node))
+                           (point))
+                       start)))))
+        (dolist (container '(("" "" 0) ("- item\n\n  " "  " 2)
+                             ("> " "> " 2) ("> > " "> > " 4) ("- > " "  > " 4)))
+          (dolist (fence '("```" "~~~"))
+            (dotimes (opening 4)
+              (dotimes (closing 4)
+                (let* ((prefix (cadr container))
+                       (column (+ (nth 2 container) opening))
+                       (source (concat (car container) (make-string opening ?\s) fence "text\n"
+                                       prefix (make-string (+ opening 2) ?\s) "payload\n"
+                                       prefix "short\n"
+                                       prefix (make-string closing ?\s) fence "\n\nAfter\n")))
+                  (markdown-ts-appear-test--with-buffer source
+                    (goto-char (point-min)) (search-forward fence)
+                    (let ((line (markdown-ts-appear-test--displayed-line)))
+                      (should (= column (string-width (substring line 0 (string-search "╭" line))))))
+                    (forward-line 1)
+                    (let* ((line (markdown-ts-appear-test--displayed-line))
+                           (bar (string-search "│" line)))
+                      (should (= column (string-width (substring line 0 bar))))
+                      (should (string-match-p "│   payload" line))
+                      (search-forward "payload")
+                      (should (= (+ column 2) (string-width (get-text-property (1- (point)) 'wrap-prefix)))))
+                    (forward-line 1)
+                    (let ((line (markdown-ts-appear-test--displayed-line)))
+                      (should (= column (string-width (substring line 0 (string-search "│" line)))))
+                      (should (string-suffix-p "│ short" line)))
+                    (forward-line 1)
+                    (let ((line (markdown-ts-appear-test--displayed-line)))
+                      (should (= column (string-width (substring line 0 (string-search "╰" line))))))
+                    (search-forward fence)
+                    (goto-char (match-beginning 0))
+                    (markdown-ts-appear--update)
+                    (should-not (string-search "╰" (markdown-ts-appear-test--displayed-line)))
+                    (should (equal source (buffer-string)))))))))))))
+
+(ert-deftest markdown-ts-appear-test-indented-fence-prefix-ownership-and-reveal ()
+  (markdown-ts-appear-test--with-buffer "   ```text\n     payload\n ```\n\nAfter\n"
+    (put-text-property (point-min) (point-max) 'line-prefix "    ")
+    (font-lock-flush) (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "```")
+    (let ((position (match-beginning 0)))
+      (goto-char position) (markdown-ts-appear--update)
+      (should-not (get-text-property position 'display))
+      (goto-char (point-max)) (markdown-ts-appear--update)
+      (goto-char position)
+      (should (string-prefix-p "       ╭" (markdown-ts-appear-test--displayed-line))))
+    (forward-line 1)
+    (should (string-prefix-p "       │   payload" (markdown-ts-appear-test--displayed-line)))
+    (markdown-ts-appear-mode -1)
+    (should (equal (get-text-property (point) 'line-prefix) "    "))
+    (should-not (get-text-property (point) 'display))))
+
+(ert-deftest markdown-ts-appear-test-indented-fence-tabs-and-unclosed-body ()
+  (markdown-ts-appear-test--with-buffer "   ```text\n\tpayload\n\nshort\n"
+    (setq-local tab-width 8)
+    (font-lock-flush) (font-lock-ensure)
+    (goto-char (point-min)) (forward-line 1)
+    (should (equal (markdown-ts-appear-test--displayed-line) "   │      payload"))
+    (forward-line 1)
+    (should (equal (markdown-ts-appear-test--displayed-line) "   │ "))
+    (forward-line 1)
+    (should (equal (markdown-ts-appear-test--displayed-line) "   │ short"))
+    (setopt markdown-ts-appear-code-fence-style 'raw)
+    (font-lock-ensure)
+    (should-not (text-property-not-all (point-min) (point-max) 'display nil))
+    (should-not (text-property-not-all (point-min) (point-max) 'line-prefix nil))
+    (should-not (text-property-not-all (point-min) (point-max) 'wrap-prefix nil))))
+
+(ert-deftest markdown-ts-appear-test-gui-indented-fence-alignment ()
+  (skip-unless (display-graphic-p))
+  (save-window-excursion
+    (dolist (container '(("" "") ("- item\n\n  " "  ") ("> " "> ")))
+      (dotimes (indent 4)
+        (let ((spaces (make-string indent ?\s)))
+          (markdown-ts-appear-test--with-buffer
+              (concat (car container) spaces "```text\n"
+                      (cadr container) spaces "payload\n"
+                      (cadr container) "```\n\nAfter\n")
+            (switch-to-buffer (current-buffer))
+            (setq-local face-remapping-alist
+                        '((markdown-ts-code-block default)
+                          (markdown-ts-code-block-markup-hidden default)))
+            (goto-char (point-max)) (redisplay t)
+            (let ((width (window-font-width nil 'default)) opening body closing)
+              (goto-char (point-min)) (search-forward "```text")
+              (setq opening (car (posn-x-y (posn-at-point (match-beginning 0)))))
+              (forward-line 1) (search-forward "payload")
+              (setq body (car (posn-x-y (posn-at-point (match-beginning 0)))))
+              (forward-line 1)
+              (setq closing (car (posn-x-y (posn-at-point (line-end-position)))))
+              (should (= (+ opening (* 2 width)) body closing)))))))))
+
 (ert-deftest markdown-ts-appear-test-renders-code-fence-without-language ()
   (markdown-ts-appear-test--with-buffer "```\ncontent\n```\n"
     (should (equal (get-text-property (point-min) 'display) "╭─"))))
@@ -1180,9 +1300,12 @@
                   (should-not (get-char-property literal 'invisible))
                   (should
                    (equal (get-text-property last-marker 'display)
-                          (if (eq style 'connected)
-                              (concat (or marker ">") " │ ")
-                            marker)))
+                           (if (eq style 'connected)
+                               (concat (replace-regexp-in-string
+                                        ">" (or marker ">")
+                                        (buffer-substring-no-properties last-marker literal) t t)
+                                       "│ ")
+                             marker)))
                   (should-not (get-text-property literal 'line-prefix))
                   (should
                    (equal (get-text-property literal 'wrap-prefix)
