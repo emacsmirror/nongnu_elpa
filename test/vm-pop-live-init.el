@@ -102,15 +102,26 @@ message into a maildrop, and comes back over POP."
 (cl-defstruct (vm-pop-live-conn (:constructor vm-pop-live--make-conn))
   process buffer)
 
+(defun vm-pop-live--line-ready-p ()
+  "Return non-nil if the current buffer holds a complete line."
+  (save-excursion
+    (goto-char (point-min))
+    (re-search-forward "\r?\n" nil t)))
+
 (defun vm-pop-live--read-line (conn)
   "Return the next line from CONN, without its line ending."
   (with-current-buffer (vm-pop-live-conn-buffer conn)
-    (let ((deadline (+ vm-pop-live-timeout (float-time))))
-      (while (and (not (save-excursion
-			 (goto-char (point-min))
-			 (re-search-forward "\r?\n" nil t)))
+    (let ((deadline (+ vm-pop-live-timeout (float-time)))
+	  (process (vm-pop-live-conn-process conn)))
+      (while (and (not (vm-pop-live--line-ready-p))
 		  (< (float-time) deadline))
-	(accept-process-output (vm-pop-live-conn-process conn) 0 100))
+	(accept-process-output process 0 100)
+	;; A dead process answers at once, so without this the wait becomes a
+	;; spin until the deadline and reports silence for what is a closed
+	;; connection.  The second look is for a line delivered alongside the
+	;; close.
+	(unless (or (process-live-p process) (vm-pop-live--line-ready-p))
+	  (vm-test-connection-lost "POP" "awaiting a reply" nil)))
       (goto-char (point-min))
       (unless (re-search-forward "\r?\n" nil t)
 	(error "POP server said nothing in %s seconds" vm-pop-live-timeout))
@@ -149,12 +160,21 @@ message into a maildrop, and comes back over POP."
   (when (buffer-live-p (vm-pop-live-conn-buffer conn))
     (kill-buffer (vm-pop-live-conn-buffer conn))))
 
+(defun vm-pop-live--send (conn string)
+  "Send STRING to CONN followed by CRLF."
+  (let ((process (vm-pop-live-conn-process conn)))
+    (condition-case err
+	(process-send-string process (concat string "\r\n"))
+      (error
+       (unless (process-live-p process)
+	 ;; STRING is not named: a PASS carries the password.
+	 (vm-test-connection-lost "POP" "sending a command" err))
+       (signal (car err) (cdr err))))))
+
 (defun vm-pop-live-cmd (conn format &rest args)
   "Send a command to CONN and return its status line."
-  (let ((command (apply #'format format args)))
-    (process-send-string (vm-pop-live-conn-process conn)
-			 (concat command "\r\n"))
-    (vm-pop-live--read-line conn)))
+  (vm-pop-live--send conn (apply #'format format args))
+  (vm-pop-live--read-line conn))
 
 (defun vm-pop-live-cmd-ok (conn format &rest args)
   "Send a command to CONN and return its status line, insisting on +OK."
