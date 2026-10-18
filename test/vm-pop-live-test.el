@@ -57,6 +57,71 @@ state rather than a throwaway mailbox."
        (ignore-errors
 	 (vm-pop-live-purge-inbox imap-server ,(nth 2 spec) ,(car spec))))))
 
+;;; The harness without a server
+
+(defun vm-pop-live-test--closed-conn ()
+  "Return a conn whose connection is already gone, as a dropped one is.
+Built from a deleted subprocess rather than from a server, so this needs no
+configuration and runs everywhere."
+  (let ((process (start-process "vm-pop-live-test-closed" nil "cat")))
+    (set-process-query-on-exit-flag process nil)
+    (delete-process process)
+    (vm-pop-live--make-conn
+     :process process
+     :buffer (generate-new-buffer " *vm-pop-live-test-closed*"))))
+
+(ert-deftest vm-pop-live-test-a-closed-connection-explains-itself-on-send ()
+  "Sending on a dropped connection says what dropped it and what to do.
+The IMAP harness reported `connection broken by remote peer' and nothing
+else, which emacs-vm/vm#864 is about; POP sends over the same dovecot and
+said as little.  The fault has only ever been measured on IMAPS, and the
+message says which one it was measured on.
+
+The command is deliberately a PASS: the message must not carry it, since
+that is where the password is."
+  (let ((conn (vm-pop-live-test--closed-conn)))
+    (unwind-protect
+	(let ((text (vm-test-error-message-of
+		     (lambda ()
+		       (vm-pop-live-cmd conn "PASS %s" "the-password")))))
+	  (should (string-match-p "closed the connection" text))
+	  (should (string-match-p "emacs-vm/vm#864" text))
+	  (should (string-match-p "Run the test again" text))
+	  ;; the error that reported it is carried, not replaced
+	  (should (string-match-p "not running" text))
+	  (should-not (string-match-p "the-password" text)))
+      (kill-buffer (vm-pop-live-conn-buffer conn)))))
+
+(ert-deftest vm-pop-live-test-a-closed-connection-explains-itself-on-read ()
+  "Awaiting a line on a dropped connection explains rather than waiting out.
+A dead process answers `accept-process-output' at once, so that path used to
+spin until `vm-pop-live-timeout' and then report that the server said
+nothing, which is a closed connection described as silence.  The elapsed
+time is asserted because it is what tells the two apart."
+  (let ((conn (vm-pop-live-test--closed-conn))
+	(start (float-time)))
+    (unwind-protect
+	(let ((text (vm-test-error-message-of
+		     (lambda () (vm-pop-live--read-line conn)))))
+	  (should (string-match-p "closed the connection" text))
+	  (should (string-match-p "emacs-vm/vm#864" text))
+	  (should-not (string-match-p "said nothing" text))
+	  (should (< (- (float-time) start) vm-pop-live-timeout)))
+      (kill-buffer (vm-pop-live-conn-buffer conn)))))
+
+(ert-deftest vm-pop-live-test-a-live-connection-is-read-normally ()
+  "The close check does not disturb a connection that is working.
+The guard runs on every pass of the read loop, so it is the one thing that
+could make a good connection report a bad one."
+  (let* ((buffer (generate-new-buffer " *vm-pop-live-test-live*"))
+	 (process (start-process "vm-pop-live-test-live" buffer "cat"))
+	 (conn (vm-pop-live--make-conn :process process :buffer buffer)))
+    (set-process-query-on-exit-flag process nil)
+    (unwind-protect
+	(should (equal "+OK ready" (vm-pop-live-cmd conn "+OK ready")))
+      (delete-process process)
+      (kill-buffer buffer))))
+
 ;;; The harness itself
 
 (ert-deftest vm-pop-live-test-greeting-and-login ()

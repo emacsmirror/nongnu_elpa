@@ -92,6 +92,73 @@ thing that selects it."
     (should (string-prefix-p
              "imap-ssl:" (vm-imap-live-spec server '("u" . "p") "INBOX")))))
 
+(defun vm-imap-live-test--closed-conn ()
+  "Return a conn whose connection is already gone, as a dropped one is.
+Built from a deleted subprocess rather than from a server, so this needs no
+configuration and runs everywhere."
+  (let ((process (start-process "vm-imap-live-test-closed" nil "cat")))
+    (set-process-query-on-exit-flag process nil)
+    (delete-process process)
+    (vm-imap-live--make-conn
+     :process process
+     :buffer (generate-new-buffer " *vm-imap-live-test-closed*"))))
+
+(ert-deftest vm-imap-live-test-a-closed-connection-explains-itself-on-send ()
+  "Sending on a dropped connection says what dropped it and what to do.
+emacs-vm/vm#864: dovecot drops about 1% of IMAPS connections just after
+login, and the bare report of that was \"connection broken by remote peer\",
+which names neither the server nor the rerun that answers it.
+
+The command is deliberately a LOGIN: the message must not carry it, since
+that is where the password is."
+  (let ((conn (vm-imap-live-test--closed-conn)))
+    (unwind-protect
+        (let ((text (vm-test-error-message-of
+                     (lambda ()
+                       (vm-imap-live-cmd conn "LOGIN \"u\" \"%s\""
+                                         "the-password")))))
+          (should (string-match-p "closed the connection" text))
+          (should (string-match-p "emacs-vm/vm#864" text))
+          (should (string-match-p "Run the test again" text))
+          ;; the error that reported it is carried, not replaced
+          (should (string-match-p "not running" text))
+          (should-not (string-match-p "the-password" text)))
+      (kill-buffer (vm-imap-live-conn-buffer conn)))))
+
+(ert-deftest vm-imap-live-test-a-closed-connection-explains-itself-on-read ()
+  "Awaiting a reply on a dropped connection explains rather than times out.
+The drop can land while the harness is reading, and a dead process answers
+`accept-process-output' at once, so that path used to spin until
+`vm-imap-live-timeout' and report a timeout for a closed connection.  The
+elapsed time is asserted because it is what tells the two apart."
+  (let ((conn (vm-imap-live-test--closed-conn))
+        (start (float-time)))
+    (unwind-protect
+        (let ((text (vm-test-error-message-of
+                     (lambda ()
+                       (vm-imap-live--read-until conn "^never$")))))
+          (should (string-match-p "closed the connection" text))
+          (should (string-match-p "emacs-vm/vm#864" text))
+          (should-not (string-match-p "Timed out" text))
+          (should (< (- (float-time) start) vm-imap-live-timeout)))
+      (kill-buffer (vm-imap-live-conn-buffer conn)))))
+
+(ert-deftest vm-imap-live-test-a-live-connection-is-read-normally ()
+  "The close check does not disturb a connection that is working.
+The guard runs on every pass of the read loop, so it is the one thing that
+could make a good connection report a bad one."
+  (let* ((buffer (generate-new-buffer " *vm-imap-live-test-live*"))
+         (process (start-process "vm-imap-live-test-live" buffer "cat"))
+         (conn (vm-imap-live--make-conn :process process :buffer buffer)))
+    (set-process-query-on-exit-flag process nil)
+    (unwind-protect
+        (progn
+          (vm-imap-live--send conn "v1 OK done")
+          (should (string-match-p
+                   "v1 OK" (vm-imap-live--read-until conn "^v1 OK"))))
+      (delete-process process)
+      (kill-buffer buffer))))
+
 ;;; ------------------------------------------------------------------
 ;;; Tier 2 -- plain
 ;;; ------------------------------------------------------------------
