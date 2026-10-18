@@ -57,6 +57,30 @@ nothing ever wrote the variable."
           (should (eq 'during (default-value 'vm-test-init-test--scribble))))
       (setq-default vm-test-init-test--scribble nil))))
 
+(ert-deftest vm-test-init-test-a-password-cannot-be-asked-for ()
+  "REGRESSION: `read-passwd' is stubbed whether or not isolation is on.
+
+A batch Emacs reads a password prompt from standard input and waits for ever:
+no timer runs while it waits, so it is a hang rather than a failure and it
+takes the run with it.  The stub used to be inside the isolation, and
+`leak-report.el' turns the isolation off, so the leaks pass ran without it --
+a release check sat forty minutes on an IMAP password prompt, its last
+printed line being the name of the gate.
+
+Checked by looking at the function binding rather than by calling it: a test
+that called `read-passwd' with the stub gone would hang, which is the thing
+being prevented."
+  (dolist (isolated '(t nil))
+    (let ((vm-test-isolate-global-state isolated)
+          (seen nil))
+      ;; `read-passwd' is bound away first, because this test is itself run
+      ;; through the advice and would otherwise see the stub that its own
+      ;; isolation installed whatever the inner run did.
+      (cl-letf (((symbol-function 'read-passwd) #'ignore))
+        (vm-test-init-test--run
+         (lambda () (setq seen (symbol-function 'read-passwd)))))
+      (should (eq seen #'vm-test-no-reader-here)))))
+
 (ert-deftest vm-test-init-test-isolation-kills-leaked-buffers ()
   "A buffer a test leaves behind does not outlive it either.
 A folder buffer carries a folder's worth of buffer-local state and a name that

@@ -52,12 +52,14 @@ vm-load.el: @srcdir@/vm-load.el.in config.status
 Makefile:  @srcdir@/Makefile.in config.status
 	./config.status $@
 
-@srcdir@/configure: @srcdir@/configure.ac
-	cd @srcdir@ && autoconf
-	./config.status --recheck
-
-config.status: @srcdir@/configure
-	./config.status --recheck
+# No rule remakes `configure' or re-runs it.  Autoconf's usual pair here is
+# `configure: configure.ac' running autoconf, and `config.status: configure'
+# running ./config.status --recheck, so any make in a tree where configure.ac
+# is newer than configure quietly rebuilds the configuration underneath
+# whatever was being built -- including a checkout or a branch switch that
+# only changed configure.ac's timestamp.  Running autoconf and ./configure is
+# a thing to do on purpose; CLAUDE.md and dev/docs/dev-guide.org both say to
+# do it after changing configure.ac.
 
 install: install-pkg
 	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i install) || exit 1; done
