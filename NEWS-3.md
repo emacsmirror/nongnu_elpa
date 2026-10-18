@@ -6,7 +6,7 @@ since that version to see how you might be affected.
 Earlier releases are in NEWS-2.md, 8.0.0 through 8.2.0b1, and NEWS-1.md, 4.10
 through 7.19.  This is the newest file, so new entries go at the front of it.
 
-## VM 9.0.0 released
+## VM 9.0.0 released 2026-10-18
 
 Three changes a reader meets whatever they do: IMAP and POP no longer block
 Emacs, XEmacs support is gone, and `vm-pgg` is replaced by `vm-epg`.
