@@ -664,6 +664,46 @@ that has been deleted is the other way this rots."
     (should (equal nil dead))))
 
 
+(ert-deftest vm-build-test-no-rule-reruns-configure ()
+  "REGRESSION: no recipe runs `autoconf' or re-runs `configure'.
+
+Autoconf's usual maintainer rules are `configure: configure.ac' running
+autoconf and `config.status: configure' running `./config.status --recheck',
+and with them any make in a tree where configure.ac is newer than configure
+rebuilds the configuration underneath whatever was being built.  A checkout
+or a branch switch that only moves configure.ac's timestamp is enough.
+Running autoconf and ./configure is a thing to do on purpose."
+  (let ((offenders nil))
+    (dolist (file (vm-build-test--makefile-templates))
+      (setq offenders
+            (append offenders
+                    (vm-build-test--recipe-lines
+                     file "\\(\\bautoconf\\b\\|config\\.status[ \t]+--recheck\\)"))))
+    (should (equal offenders nil))))
+
+(ert-deftest vm-build-test-the-runner-gives-emacs-no-stdin ()
+  "REGRESSION: `test/test-runner' and `dev/tools/vm-release-check' close stdin.
+
+A batch Emacs reads a prompt from stdin, so a test that asks the reader
+something waits for an answer that is never coming: no timer runs while it
+waits, and both of these send a pass's output to a file, so the prompt is
+written where nobody is watching.  A release check sat for forty minutes on
+`IMAP password for someone@host [INBOX]: ' with its last printed line being
+the name of the gate.  At /dev/null the read ends at once and the test fails
+with a name on it.
+
+Checked by reading the scripts, which is weak but cheap: the alternative is
+a run of the thing itself, and the behaviour being pinned is one line of
+redirection in each."
+  (dolist (script '("test/test-runner" "dev/tools/vm-release-check"))
+    (let ((file (expand-file-name script vm-build-test--root)))
+      (should (file-exists-p file))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (should (re-search-forward "</dev/null\\|< */dev/null" nil t))))))
+
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here

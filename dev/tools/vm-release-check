@@ -76,12 +76,18 @@ note () {
     results="$results$1\t$2\n"
 }
 
+# Every gate runs with stdin at /dev/null.  A gate's output goes to a file,
+# so a prompt is written where nobody is watching and the run then waits for
+# an answer nobody knows it wants: a test asking for an IMAP password stopped
+# a release check dead for forty minutes with the last line printed being the
+# name of the gate.  At /dev/null the read ends at once and the gate fails
+# with the prompt in its log.
 run_gate () {
     gate_name=$1
     shift
     log="$log_dir/$(echo "$gate_name" | tr ' /' '--').log"
     printf '== %s ==\n' "$gate_name"
-    if "$@" >"$log" 2>&1; then
+    if "$@" >"$log" 2>&1 </dev/null; then
         note "$gate_name" "passed"
     else
         note "$gate_name" "FAILED  ($log)"
@@ -112,7 +118,7 @@ count_gate () {
     shift 3
     log="$log_dir/$(echo "$gate_name" | tr ' /' '--').log"
     printf '== %s ==\n' "$gate_name"
-    "$@" >"$log" 2>&1
+    "$@" >"$log" 2>&1 </dev/null
     now=$("$counter" "$log")
     if [ "$now" -eq "$was" ]; then
         note "$gate_name" "$now, as before"
