@@ -14,17 +14,17 @@ survives is code the suite does not exercise, whatever its coverage says.
 : ./sweep.py clean                  # remove the worktree
 
 A full sweep of 25 modules takes about an hour.  Results accumulate in
-=$TMPDIR/vm-mutation/results.jsonl=; delete it to start over, or set
-=VM_MUTATION_DIR= to work somewhere else.
+$TMPDIR/vm-mutation/results.jsonl; delete it to start over, or set
+VM_MUTATION_DIR to work somewhere else.
 
 * What it changes
 
 Mutations are made by parsing, never by editing text, so every mutant is a
 balanced program:
 
-- a =when=, =unless= or =if= condition replaced by t or nil, so the guard
+- a when, unless or if condition replaced by t or nil, so the guard
   stops guarding
-- a =setq=, =push=, =insert= or =delete-region= call replaced by nil, so the
+- a setq, push, insert or delete-region call replaced by nil, so the
   effect does not happen
 - an integer literal replaced by its successor
 
@@ -33,14 +33,14 @@ one whose tests are slow, so a sweep stays within an hour.
 
 * Reading the result
 
-Each mutation is judged by the test file that names the module: =lisp/vm-save.el=
-by =test/vm-save-test.el=.  So a survivor means that file did not notice; a
-neighbouring file might.  =verify= answers that by re-running survivors against
+Each mutation is judged by the test file that names the module: lisp/vm-save.el
+by test/vm-save-test.el.  So a survivor means that file did not notice; a
+neighbouring file might.  verify answers that by re-running survivors against
 the whole suite -- of the first seven sampled, six survived that too.
 
 Not every survivor is a gap worth filling:
 
-- =vm-menu=, =vm-window= and =vm-page= drive menubars and window layouts, which
+- vm-menu, vm-window and vm-page drive menubars and window layouts, which
   do not exist in batch, so they score low honestly
 - the integer mutations are mostly buffer sizes and timeouts where any value
   behaves the same; they are the weakest signal, at 13% caught against 25-29%
@@ -54,17 +54,17 @@ MIME boundary of an encapsulated digest.
 
 * Things that cost an afternoon
 
-- *It runs in a detached git worktree.*  A sweep killed mid-mutation leaves a
-  broken source file behind, and =make= will have compiled that mutant into a
-  =.elc= that outlives restoring the source.  A worktree keeps all of that away
+- It runs in a detached git worktree.  A sweep killed mid-mutation leaves a
+  broken source file behind, and make will have compiled that mutant into a
+  .elc that outlives restoring the source.  A worktree keeps all of that away
   from the tree you work in.
-- *One sweep at a time, under a lock, and every mutant read back before it is
-  judged.*  Three orphaned sweeps mutating the same files turned one hang into
+- One sweep at a time, under a lock, and every mutant read back before it is
+  judged.  Three orphaned sweeps mutating the same files turned one hang into
   fifty-eight and made a whole run's numbers meaningless.
-- *A short per-mutant timeout.*  Deleting =(setq x (cdr x))= inside a =while=
+- A short per-mutant timeout.  Deleting (setq x (cdr x)) inside a while
   loop hangs; that is an ordinary outcome, not a fault, and it should cost
   seconds rather than minutes.
-- *The worktree's =.elc= files are made newer than its sources.*  VM loads from
+- The worktree's .elc files are made newer than its sources.  VM loads from
   source when the source is newer, and a checkout is newer than everything, so
   without this every test run loads the whole of VM from source: two minutes
   instead of half a second.
@@ -74,7 +74,7 @@ MIME boundary of an encapsulated digest.
 The suite's own rule is that a test ships with the mutation it was verified
 against.  This is the same idea, applied to code that already has tests:
 
-1. =./sweep.py run vm-save= to see where that module stands
+1. ./sweep.py run vm-save to see where that module stands
 2. write tests for the functions the report names
 3. run it again -- the score says whether the tests got better, rather than
    whether there are more of them

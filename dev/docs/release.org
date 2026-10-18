@@ -1,26 +1,26 @@
 Releasing VM
 
-A checklist.  =dev/tools/vm-release-check= runs everything under "Gates"; the
+A checklist.  dev/tools/vm-release-check runs everything under "Gates"; the
 rest is by hand.
 
 * Gates
 
-- [ ] =dev/tools/vm-release-check=.  About forty minutes, most of it the three
-      test passes.  =--quick= leaves out the test passes and the clean build.
+- [ ] dev/tools/vm-release-check.  About forty minutes, most of it the three
+      test passes.  --quick leaves out the test passes and the clean build.
 - [ ] Anything the probe reports missing is coverage this release did not get:
       a server unconfigured, mail unsendable, an optional package absent.
 
 What it runs, if you want them one at a time:
 
-| gate | command |
-|------+---------|
-| version in all four files | =dev/tools/vm-set-version --check= |
-| reference appendix | =make -C info check-reference= |
-| compilation | =make byte-compile-lint native-compile-lint cross-file-lint= |
-| package-lint | =make package-lint= |
-| relint | =make relint-lint= |
-| tests | =cd test && ./test-runner=, then =--assert=, then =--leaks= |
-| clean build | =dev/tools/vm-build-from-clean= |
+| gate                      | command                                                    |
+|---------------------------+------------------------------------------------------------|
+| version in all four files | dev/tools/vm-set-version --check                           |
+| reference appendix        | make -C info check-reference                               |
+| compilation               | make byte-compile-lint native-compile-lint cross-file-lint |
+| package-lint              | make package-lint                                          |
+| relint                    | make relint-lint                                           |
+| tests                     | cd test && ./test-runner, then --assert, then --leaks      |
+| clean build               | dev/tools/vm-build-from-clean                              |
 
 - package-lint is never clean: it takes the package prefix from
   vm-autoloads.el and reports every vm- name in vm.el as wrongly prefixed, 71
@@ -32,16 +32,16 @@ What it runs, if you want them one at a time:
 
 * Manual testing
 
-The suite reads no real mailbox.  Every test stubs =mail-send= except the
+The suite reads no real mailbox.  Every test stubs mail-send except the
 sending pass.  emacs-vm/vm#607 is the live list; add anything the NEWS section
 for this release describes as changed behaviour.
 
-Sending, the first four covered by =./test-runner --send= when configured:
+Sending, the first four covered by ./test-runner --send when configured:
 
 - [ ] to yourself with an Fcc: copy filed, in the folder's own format,
       composition keeps its Fcc header
 - [ ] a line past 998 characters, read back in something that is not VM
-- [ ] a non-ASCII Subject, once with =vm-send-using-mime= nil and once on
+- [ ] a non-ASCII Subject, once with vm-send-using-mime nil and once on
 - [ ] an Fcc naming an IMAP maildrop, against a real account
 - [ ] an attachment, and a message with no body
 - [ ] signed and encrypted with vm-epg, and with an Fcc alongside
@@ -71,9 +71,9 @@ Anything found gets an issue of its own before the release goes out.
 
 * Version
 
-- [ ] =dev/tools/vm-set-version 9.0.0= writes all four places: configure.ac,
+- [ ] dev/tools/vm-set-version 9.0.0 writes all four places: configure.ac,
       lisp/vm.el, the NEWS-3.md heading, the manual's release list
-- [ ] =make -C info check-reference=, then commit
+- [ ] make -C info check-reference, then commit
 
 Never with sed.  lisp/ holds dozens of occurrences of the current version
 inside obsolescence markers, which say which release deprecated a name and
@@ -88,7 +88,7 @@ renamed.
 * Release
 
 - [ ] build in the fork first, then merge to make it official
-- [ ] =package-vc-install= from the local repo, everything committed:
+- [ ] package-vc-install from the local repo, everything committed:
 
       #+begin_src elisp
       (package-vc-install '(vm :url "file:///Users/markd/projs/emacs/vm/vm-markd"
@@ -96,16 +96,16 @@ renamed.
       #+end_src
 
       As of Emacs 30.2 it does not generate a correct description or commit.
-- [ ] commit and tag.  The tag is =9.0.0=, no prefix.  A branch is made only
+- [ ] commit and tag.  The tag is 9.0.0, no prefix.  A branch is made only
       if changes are needed relative to a tag
-- [ ] =package-vc-install= from the fork, =:branch "9.0.0"=
-- [ ] push, then the same from =https://gitlab.com/emacs-vm/vm.git=
+- [ ] package-vc-install from the fork, :branch "9.0.0"
+- [ ] push, then the same from https://gitlab.com/emacs-vm/vm.git
 - [ ] make the GitLab release from the tag
-- [ ] =dev/tools/vm-set-version 9.0.1snapshot= to open the next one
+- [ ] dev/tools/vm-set-version 9.0.1snapshot to open the next one
 
 * NonGNU ELPA
 
-- [ ] wait for =vm/main= to appear at https://elpa.nongnu.org/nongnu-devel/vm.html
+- [ ] wait for vm/main to appear at https://elpa.nongnu.org/nongnu-devel/vm.html
       and test installing from it.  About 12 hours.
 
       #+begin_src elisp
@@ -122,7 +122,7 @@ Most distributions still ship 8.2.0b from 2011: their new-version checks point
 at Launchpad, which VM left.  emacs-vm/vm#478 has what each watches.  Until
 that is corrected they learn of a release only by being told.
 
-Name the release number, never a snapshot.  =9.0.0snapshot= is not something
+Name the release number, never a snapshot.  9.0.0snapshot is not something
 anyone should ship.
 
 - [ ] Fedora: @goeran packages it and builds from git.  Tell him the tag exists
@@ -130,7 +130,7 @@ anyone should ship.
       Parrot, PureOS, Raspbian, Trisquel, Pardus and Deepin all rebuild Debian,
       so it is the only one of these worth a conversation
 - [ ] Gentoo gnu-emacs@gentoo.org, pkgsrc pkgsrc-users@NetBSD.org, openSUSE
-      (devel project =editors=, package =emacs-vm=): a version-bump bug each
+      (devel project editors, package emacs-vm): a version-bump bug each
 - [ ] Nix needs nothing, it follows NonGNU ELPA
 - [ ] a couple of weeks later, https://repology.org/project/emacs:vm/versions
       shows every distribution's version on one page: both the check that the
