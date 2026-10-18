@@ -457,6 +457,26 @@ code comments, commit messages, and issue and merge request text.
   to enforce.
 - **Do not write "shape".** Say "structure", "form", "layout", or name the thing.
   It is vague where "structure" is specific.
+- **No org emphasis markup in a `.org` file.** Never `=verbatim=`, never
+  `*bold*`. Write the name or the number plainly: emphasis is what sentence
+  order is for, and a fact that has to be marked up to be noticed is in the
+  wrong place in the sentence. Org tables, links, headings and `: example`
+  blocks are fine, as are src blocks.
+
+  Stripping it from an existing file is not a regexp job, and three things
+  make it worse than it looks:
+
+  - A table rule row, `|----+----|`, reads as strike-through, and the
+    slashes in a sentence about what "/" means read as italic. Unwrapping
+    those deletes the characters the sentence is about. Unwrap verbatim,
+    code and bold; leave italic, underline and strike-through alone.
+  - Org reads `=A=/=B=` as one verbatim rather than two, so unwrapping
+    leaves the inner delimiters behind; grep for `=/=` afterwards.
+  - Cells lose two characters each, so the tables need realigning after.
+
+  Use org's own parser, `org-element-parse-buffer`, which knows all of this
+  and knows that `=ssl = yes=` is one verbatim and that a run may wrap
+  across two lines.
 
 ## NEWS
 
