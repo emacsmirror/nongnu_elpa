@@ -495,6 +495,29 @@ files, `NEWS-1.md` for the releases up to 7.19, `NEWS-2.md` for 8.0.0 through
 and only the newest number moves. Start `NEWS-4.md` when `NEWS-3.md` grows
 unwieldy, and leave the older files alone.
 
+**NEWS is read by scanning, so write it to be scanned.** A reader opens it to
+find out what a release does to them, not to study it. The 9.0.0 section was
+113 entries in one ungrouped run, 9753 words, median nine lines each, and
+answering "what breaks for me" meant reading all of it.
+
+- **An entry is a bold lead sentence and at most one short paragraph.** The
+  lead says what changed, in the present tense, as a claim: "A message saved
+  into an IMAP mailbox keeps its labels". The paragraph says what it used to
+  do and what to set, and stops. The reasoning belongs in the commit message
+  and on the issue.
+- **Every entry names its issue**, `(emacs-vm/vm#828)`, which is where the
+  detail that was cut can be found.
+- **Group a release's entries under `###` headings**, by what a reader was
+  looking for: IMAP and POP, Sending mail, Folders and folder types, Removed,
+  and so on. One heading per topic that has more than a couple of entries.
+- **"Upgrading from <the last release>" comes first**, and is one line per
+  thing that stops working, with no detail: the `require` that now fails, the
+  option that is gone, the mode that has to be switched on. The entries below
+  carry the rest. This is the only part of NEWS some readers will read.
+- **Nothing in NEWS needs the reader to read it in full.** A code block
+  longer than a few lines, a second example, a paragraph of history: these
+  belong in the issue, which NEWS has already named.
+
 ## Architecture
 
 ### Generated Files
