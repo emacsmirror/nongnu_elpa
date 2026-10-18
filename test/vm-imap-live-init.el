@@ -36,7 +36,6 @@
 
 (require 'vm-test-init)
 (require 'cl-lib)
-(require 'subr-x)
 
 ;; Load these before anything binds their variables.  Under lexical binding a
 ;; `let' on a name that is not yet special creates a *lexical* binding, and
@@ -171,26 +170,6 @@ happened to the mail-sending tests."
       (vm-imap-live--read-until conn "^\\* \\(OK\\|PREAUTH\\)")
       conn)))
 
-(defun vm-imap-live--connection-lost (doing original)
-  "Signal that the server closed the connection while DOING.
-ORIGINAL is the error that reported the close, or nil where the close was
-noticed rather than signalled; its text is carried into this one so that
-nothing is lost by explaining it.
-
-DOING names the step and never the command: a LOGIN carries the password."
-  (error (concat "Live IMAP server closed the connection while %s%s.  "
-                 "dovecot drops about 1%% of IMAPS connections just after a "
-                 "successful login, which is the server rather than VM or "
-                 "this harness (emacs-vm/vm#864).  Run the test again.  "
-                 "Twice running is not that fault and wants looking at: "
-                 "check the server is up and its log for this connection")
-         doing
-         (if original
-             ;; trimmed: process-send-string's own message ends in a
-             ;; newline, which would break this one across two lines
-             (format " (%s)" (string-trim (error-message-string original)))
-           "")))
-
 (defun vm-imap-live--seen-p (start regexp)
   "Return non-nil if REGEXP matches in the current buffer at or after START."
   (save-excursion
@@ -213,7 +192,7 @@ DOING names the step and never the command: a LOGIN carries the password."
           ;; delivered alongside the close.
           (unless (or (process-live-p process)
                       (vm-imap-live--seen-p start regexp))
-            (vm-imap-live--connection-lost "awaiting a reply" nil))))
+            (vm-test-connection-lost "IMAP" "awaiting a reply" nil))))
       (buffer-substring-no-properties start (point-max)))))
 
 (defun vm-imap-live--send (conn string)
@@ -223,7 +202,7 @@ DOING names the step and never the command: a LOGIN carries the password."
         (process-send-string process (concat string "\r\n"))
       (error
        (unless (process-live-p process)
-         (vm-imap-live--connection-lost "sending a command" err))
+         (vm-test-connection-lost "IMAP" "sending a command" err))
        (signal (car err) (cdr err))))))
 
 (defun vm-imap-live-cmd (conn format &rest args)

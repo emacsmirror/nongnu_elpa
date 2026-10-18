@@ -103,14 +103,6 @@ configuration and runs everywhere."
      :process process
      :buffer (generate-new-buffer " *vm-imap-live-test-closed*"))))
 
-(defun vm-imap-live-test--message-of (thunk)
-  "Call THUNK and return the message of the error it signals.
-Signal if it returns normally, since every caller here expects an error."
-  (condition-case err
-      (progn (funcall thunk)
-             (error "Expected an error and got none"))
-    (error (error-message-string err))))
-
 (ert-deftest vm-imap-live-test-a-closed-connection-explains-itself-on-send ()
   "Sending on a dropped connection says what dropped it and what to do.
 emacs-vm/vm#864: dovecot drops about 1% of IMAPS connections just after
@@ -121,7 +113,7 @@ The command is deliberately a LOGIN: the message must not carry it, since
 that is where the password is."
   (let ((conn (vm-imap-live-test--closed-conn)))
     (unwind-protect
-        (let ((text (vm-imap-live-test--message-of
+        (let ((text (vm-test-error-message-of
                      (lambda ()
                        (vm-imap-live-cmd conn "LOGIN \"u\" \"%s\""
                                          "the-password")))))
@@ -142,7 +134,7 @@ elapsed time is asserted because it is what tells the two apart."
   (let ((conn (vm-imap-live-test--closed-conn))
         (start (float-time)))
     (unwind-protect
-        (let ((text (vm-imap-live-test--message-of
+        (let ((text (vm-test-error-message-of
                      (lambda ()
                        (vm-imap-live--read-until conn "^never$")))))
           (should (string-match-p "closed the connection" text))

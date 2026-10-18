@@ -25,6 +25,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'subr-x)
 
 ;;; Path setup
 
@@ -289,6 +290,46 @@ Point is positioned at the beginning of the buffer."
      (insert ,content)
      (goto-char (point-min))
      ,@body))
+
+;;; Error assertions
+
+(defun vm-test-error-message-of (thunk)
+  "Call THUNK and return the message of the error it signals.
+Signal if it returns normally, since every caller expects an error.  For
+asserting on what an error says rather than only that one was raised."
+  (condition-case err
+      (progn (funcall thunk)
+	     (error "Expected an error and got none"))
+    (error (error-message-string err))))
+
+;;; Live server connections
+
+(defun vm-test-connection-lost (protocol doing original)
+  "Signal that a live PROTOCOL server closed the connection while DOING.
+ORIGINAL is the error that reported the close, or nil where the close was
+noticed rather than signalled; its text is carried into this one so that
+nothing is lost by explaining it.
+
+DOING names the step and never the command: a LOGIN or a PASS carries the
+password.
+
+The measured instance is IMAPS, in emacs-vm/vm#864, and the message names it
+whichever protocol met the close: the same dovecot serves both, and a reader
+who has just lost a POP connection is better off with the one measurement
+there is than with none."
+  (error (concat "Live %s server closed the connection while %s%s.  "
+		 "That is the server rather than VM or this harness: "
+		 "dovecot drops about 1%% of IMAPS connections just after a "
+		 "successful login, measured in emacs-vm/vm#864.  "
+		 "Run the test again.  Twice running is not that fault and "
+		 "wants looking at: check the server is up and its log for "
+		 "this connection")
+	 protocol doing
+	 (if original
+	     ;; trimmed: process-send-string's own message ends in a
+	     ;; newline, which would break this one across two lines
+	     (format " (%s)" (string-trim (error-message-string original)))
+	   "")))
 
 ;;; Mock process infrastructure for POP/IMAP testing
 
