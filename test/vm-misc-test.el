@@ -12,6 +12,7 @@
 
 (require 'vm-test-init)
 (require 'vm-misc)
+(require 'cl-lib)
 
 ;;; vm-parse tests
 
@@ -1826,6 +1827,49 @@ With no width, a line longer than the column it would be wrapped to is long."
 `fill-column' bound to nil is an error of its own inside `vm-forward-paragraph'."
   (let ((filled (vm-misc-test--wrapped nil 40 nil)))
     (should (<= (vm-misc-test--longest-line filled) 40))))
+
+(defun vm-misc-test--source-form (file name)
+  "Return the `defun' form of NAME in FILE, read from the source.
+Read rather than taken from the symbol: the suite loads the byte-compiled
+file, where `match-end' and `match-beginning' are byte-code operations
+rather than calls."
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name (concat "../lisp/" file) vm-test-dir))
+    (goto-char (point-min))
+    (re-search-forward (concat "^(defun " (regexp-quote name) " "))
+    (goto-char (match-beginning 0))
+    (read (current-buffer))))
+
+(ert-deftest vm-misc-test-parse-asks-for-no-match-data-it-has-not-made ()
+  "REGRESSION: `vm-parse' reads match data only after a search of its own.
+
+It used to clear the match data and then ask `match-end' for it.  Emacs
+answers that question only where a search has succeeded, so on a build where
+clearing empties the registers rather than marking them unset, that first
+call signals \"No match data, because no search succeeded\" and takes with it
+whatever was parsing a maildrop.  Opening a folder did exactly that
+(emacs-vm/vm#912): the startup suggestion parses every maildrop in
+`vm-imap-account-alist' and `vm-spool-files'.
+
+Checked on the source form.  Stubbing the primitives is no good twice over:
+the compiled `vm-parse' does not consult a stub, since these are byte-code
+operations there, and redefining a subr makes Emacs build a native-
+compilation trampoline for it, which failed inside a suite run.  Emacs 31.1
+marks the registers unset and answers nil, so there is no build here on
+which the old code fails either."
+  (let* ((form (vm-misc-test--source-form "vm-misc.el" "vm-parse"))
+         (symbols (flatten-tree form))
+         (searched (seq-position symbols 'string-match))
+         (read-first (seq-min (delq nil
+                                    (list (seq-position symbols 'match-end)
+                                          (seq-position symbols
+                                                        'match-beginning))))))
+    ;; clearing it is the thing that made the question unanswerable
+    (should-not (memq 'store-match-data symbols))
+    (should searched)
+    (should (< searched read-first))))
+
 
 (provide 'vm-misc-test)
 

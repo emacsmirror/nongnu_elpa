@@ -259,11 +259,18 @@ The new version of the list, minus the deleted strings, is returned."
 This function is similar to a spring-split, but a bit more complex
   and flexible."
   (or matchn (setq matchn 1))
-  (let (list tem)
-    (store-match-data nil)
+  ;; The position is kept here rather than read back out of the match data.
+  ;; This used to clear the match data and then ask `match-end' for it, which
+  ;; is a question Emacs answers only where a search has succeeded: where
+  ;; clearing empties the registers rather than marking them unset, that
+  ;; first call signals "No match data, because no search succeeded" and
+  ;; takes with it whatever was parsing a maildrop (emacs-vm/vm#912).
+  (let ((start nil)			; nil until a search has succeeded
+	list tem)
     (while (and (not (eq matches 0))
-		(not (eq (match-end 0) (length string)))
-		(string-match regexp string (match-end 0)))
+		(not (eq start (length string)))
+		(string-match regexp string (or start 0)))
+      (setq start (match-end 0))
       (and (integerp matches) (setq matches (1- matches)))
       (if (not (consp matchn))
 	  (setq list (cons (substring string (match-beginning matchn)
@@ -276,9 +283,9 @@ This function is similar to a spring-split, but a bit more complex
 					  (match-end (car tem))) list)
 		    tem nil)
 	    (setq tem (cdr tem))))))
-   (if (and (integerp matches) (match-end 0)
-	    (not (eq (match-end 0) (length string))))
-       (setq list (cons (substring string (match-end 0) (length string))
+   (if (and (integerp matches) start
+	    (not (eq start (length string))))
+       (setq list (cons (substring string start (length string))
 			 list)))
    (nreverse list)))
 
