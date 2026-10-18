@@ -5374,6 +5374,65 @@ and `report', the text of the report buffer or nil where there was none."
            (kill-buffer "*VM folder check*"))
          ,@body))))
 
+(defun vm-folder-test--imap-message (number uid)
+  "A message numbered NUMBER carrying UID, or none where UID is nil."
+  (let ((message (vm-make-message)))
+    (vm-test-init-message-data message)
+    (vm-set-number-of message number)
+    (vm-set-imap-uid-of message uid)
+    message))
+
+(defmacro vm-folder-test--in-an-imap-folder (uids &rest body)
+  "Run BODY in a buffer that is an IMAP folder holding a message per UIDS.
+A nil in UIDS is a message carrying no UID."
+  (declare (indent 1) (debug t))
+  `(with-temp-buffer
+     (vm-test-init-folder-variables)
+     (setq vm-folder-access-method 'imap
+           vm-folder-access-data (make-vector vm-folder-imap-access-data-length
+                                              nil))
+     (aset vm-folder-access-data 2 "7")
+     (setq vm-message-list
+           (let ((n 0))
+             (mapcar (lambda (uid)
+                       (setq n (1+ n))
+                       (vm-folder-test--imap-message (number-to-string n) uid))
+                     ,uids)))
+     ,@body))
+
+(ert-deftest vm-folder-test-check-folder-names-a-message-with-no-uid ()
+  "A message in an IMAP folder that carries no UID is reported by number.
+
+Every message in a folder read from an IMAP mailbox came from the server
+under a UID.  One with none was left behind by a fetch that did not finish,
+before VM put each bunch into the folder in one piece: it has none of VM's
+data on it, so the next fetch brought that mail again and the folder holds it
+twice.  The fix for that stopped new ones being made and did nothing about
+one already in a cache, and nothing else tells a reader it is there: the
+folder is sound and the messages read correctly (emacs-vm/vm#914)."
+  (vm-folder-test--in-an-imap-folder '("1" nil "3" nil)
+    (let ((orphans (vm-check-folder-messages-with-no-uid)))
+      (should (equal '("2" "4") (mapcar #'vm-number-of orphans)))
+      (let ((advice (vm-check-folder-no-uid-advice orphans)))
+        (should (string-match-p "2 messages carry no IMAP UID, 2, 4" advice))
+        ;; which copy to delete is the question a reader has
+        (should (string-match-p "with no UID is the one to delete" advice))))))
+
+(ert-deftest vm-folder-test-check-folder-says-nothing-about-a-local-folder ()
+  "A folder read from a file has no UIDs to miss.
+`vm-folder-access-method' is nil there, so every message would answer the
+test and the check has to ask that first."
+  (vm-folder-test--in-an-imap-folder '(nil nil)
+    (setq vm-folder-access-method nil)
+    (should-not (vm-check-folder-messages-with-no-uid))))
+
+(ert-deftest vm-folder-test-check-folder-names-one-message-in-the-singular ()
+  "One such message reads as one, not as \"1 messages carries\"."
+  (vm-folder-test--in-an-imap-folder '("1" nil)
+    (let ((advice (vm-check-folder-no-uid-advice
+                   (vm-check-folder-messages-with-no-uid))))
+      (should (string-match-p "1 message carries no IMAP UID, 2" advice)))))
+
 (ert-deftest vm-folder-test-check-folder-passes-a-sound-folder ()
   "A folder whose lengths are right is one line in the echo area, no buffer.
 It has to be quiet when there is nothing to say, or nobody will run it."
