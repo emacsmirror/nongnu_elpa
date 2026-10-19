@@ -3,6 +3,9 @@
 <p align="center"><strong>Rendered while reading. Source when editing.</strong></p>
 
 <p align="center">
+<a href="https://elpa.nongnu.org/nongnu/markdown-ts-appear.html">
+  <img alt="NonGNU ELPA" src="https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Felpa.nongnu.org%2Fnongnu%2Fmarkdown-ts-appear.svg&amp;query=substring-after%28%2F%2F%2A%5Blocal-name%28%29%3D%27text%27%5D%5Blast%28%29%5D%2C%20%27markdown-ts-appear%20%27%29&amp;label=NonGNU%20ELPA&amp;style=for-the-badge&amp;logo=gnuemacs&amp;logoColor=white&amp;color=bb3955"/>
+</a>
 <a href="https://melpa.org/#/markdown-ts-appear">
   <img alt="MELPA" src="https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fmelpa.org%2Fpackages%2Fmarkdown-ts-appear-badge.svg&amp;query=%2F%2F%2A%5Blocal-name()%3D%27text%27%5D%5Blast()%5D&amp;label=MELPA&amp;style=for-the-badge&amp;logo=gnuemacs&amp;logoColor=white&amp;color=922793"/>
 </a>
@@ -35,14 +38,21 @@ labels, width-aware table views, and LaTeX and diagram previews.
 
 ## Installation
 
-`markdown-ts-appear` is available from [MELPA](https://melpa.org/#/markdown-ts-appear).
-After [configuring the archive](https://melpa.org/#/getting-started), use:
+`markdown-ts-appear` is available from
+**[NonGNU ELPA](https://elpa.nongnu.org/nongnu/markdown-ts-appear.html)**,
+which is included in Emacs's default package archives. No additional archive
+configuration is needed. Run `M-x package-refresh-contents`, then use:
 
 ```emacs-lisp
 (use-package markdown-ts-appear
   :ensure t
+  :pin nongnu
   :hook (markdown-ts-mode . markdown-ts-appear-mode))
 ```
+
+Development snapshots are also available from [MELPA](https://melpa.org/#/markdown-ts-appear).
+After [configuring MELPA](https://melpa.org/#/getting-started), omit `:pin nongnu`
+from the example above to allow installation from MELPA.
 
 Or install the latest Git revision:
 
