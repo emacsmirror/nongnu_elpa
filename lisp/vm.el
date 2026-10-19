@@ -6,7 +6,7 @@
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
 ;; Copyright (C) 2024-2026 The VM Developers
 ;;
-;; Version: 9.0.0
+;; Version: 9.0.1snapshot
 ;; Maintainer: viewmail-info@nongnu.org
 ;; URL: https://gitlab.com/emacs-vm/vm
 ;; Package-Requires: ((emacs "28.1") (vcard "0.2.2"))
