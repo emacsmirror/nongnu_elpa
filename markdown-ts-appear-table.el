@@ -40,6 +40,7 @@
 (require 'seq)
 (require 'subr-x)
 
+(declare-function image-size "image.c" (spec &optional pixels frame))
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--tracking-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--node-ancestor "markdown-ts-appear")
