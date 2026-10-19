@@ -842,6 +842,58 @@ When ACTIVE is non-nil, also require pending or ready membership permission."
          (eq (plist-get attempt :transport) (plist-get state :connection))
          (equal (plist-get attempt :session) (plist-get state :session-id)))))
 
+(defun jabber-muc--attempt-expired-p (jc attempt)
+  "Return non-nil when ATTEMPT merely expired on JC's current stream.
+Only a withdrawal keeps fencing room presence: a departure, a kick, a
+ban or a rejected entry.  An ordinary join deadline or send failure does
+not, because the server may still admit that join afterwards and its
+self-presence remains the authority on our membership.  A record from
+another transport or session keeps fencing: only a successful resume
+transfers that authority."
+  (let ((state (fsm-get-state-data jc)))
+    (and attempt
+         (eq (plist-get attempt :status) 'failed)
+         (eq (plist-get attempt :disposition) 'expired)
+         (eq (plist-get attempt :transport) (plist-get state :connection))
+         (equal (plist-get attempt :session) (plist-get state :session-id)))))
+
+(defun jabber-muc--live-attempt (jc group)
+  "Return the attempt record still governing GROUP presence on JC.
+Return nil when nothing governs it, so late presence takes the ordinary
+unleased path and `jabber-muc--adopt-membership' leases the admission.
+An expired ordinary join governs nothing (see
+`jabber-muc--attempt-expired-p'): XEP-0045 section 7.2 makes the room's
+self-presence the moment we are joined, with no client deadline, and
+both Dino and Gajim keep accepting room presence for a room they asked
+to enter and have not left."
+  (when-let* ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group)))
+    (unless (and (not (jabber-muc--attempt-current-p jc group attempt t))
+                 (jabber-muc--attempt-expired-p jc attempt))
+      attempt)))
+
+(defun jabber-muc--withdraw-attempt (jc room)
+  "Retire ROOM's expired attempt record on JC after a withdrawal.
+A departure, kick, ban or rejected entry withdraws the permission an
+expired deadline left open, so late self-presence cannot reopen it."
+  (when-let* ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) room)))
+    (when (eq (plist-get attempt :status) 'failed)
+      (jabber-muc--publish-attempt
+       jc room (plist-put (copy-sequence attempt) :disposition 'retired)))))
+
+(defun jabber-muc--adopt-membership (jc room nick)
+  "Lease ROOM on JC as NICK for a membership the server already granted.
+Every joined room owns a current lease: alias transitions, withdrawal
+fences, identity transfer across resumption and stream-management
+handoff all key off one.  A deadline ends the join request, so an
+unleased admission and an expiry that outlived its own request both
+adopt the membership instead of leaving the room leaseless."
+  (let ((state (fsm-get-state-data jc)))
+    (jabber-muc--publish-attempt
+     jc room (list :token (make-symbol "room") :nick nick
+                   :previous nil :status 'ready
+                   :transport (plist-get state :connection)
+                   :session (plist-get state :session-id)))))
+
 (defun jabber-muc--continuation (jc callback &optional room)
   "Fence CALLBACK by JC's stream and ROOM token, or autojoin generation."
   (let* ((state (fsm-get-state-data jc))
@@ -881,10 +933,20 @@ When ACTIVE is non-nil, also require pending or ready membership permission."
                                "Room join timed out"))
     attempt))
 
-(defun jabber-muc--fail-attempt (jc room attempt reason)
-  "Cancel ROOM work on JC only while ATTEMPT owns it, reporting REASON."
+(defun jabber-muc--fail-attempt (jc room attempt reason &optional disposition)
+  "Cancel ROOM work on JC only while ATTEMPT owns it, reporting REASON.
+DISPOSITION is `retired' when the caller knows the membership is gone:
+a departure, a kick, a ban or a rejected entry, all of which retire the
+room themselves.  It defaults to `expired', which ends this request
+only: retained stanzas still fail, but an established membership keeps
+its lease and a pending one stays admissible, because the server alone
+withdraws membership."
   (when (and (jabber-muc--attempt-current-p jc room attempt)
-             (memq (plist-get attempt :status) '(pending ready)))
+             ;; The published record is the authority: a captured pending
+             ;; object must never reopen or downgrade a terminal outcome.
+             (memq (plist-get (jabber-sm--room-attempt (fsm-get-state-data jc) room)
+                              :status)
+                   '(pending ready)))
     (when (timerp (plist-get attempt :timer))
       (cancel-timer (plist-get attempt :timer)))
     (let ((entries nil) (state (copy-sequence (fsm-get-state-data jc))))
@@ -894,10 +956,19 @@ When ACTIVE is non-nil, also require pending or ready membership permission."
                        (lambda (e) (equal room (jabber-sm--entry-room e))) queue)))
           (setq entries (append entries owned))
           (setq state (plist-put state slot (cl-set-difference queue owned :test #'eq)))))
+      (setq disposition (or disposition 'expired))
       (put jc :state-data state)
-      (jabber-muc--publish-attempt jc room
-                                   (plist-put (copy-sequence attempt) :status 'failed))
-      (jabber-muc--retire-room jc room)
+      (if (and (eq disposition 'expired) (jabber-muc-joined-p room jc))
+          ;; The request died, not the membership: keep the room leased
+          ;; under the nickname the server last confirmed.
+          (jabber-muc--adopt-membership jc room (jabber-muc-nickname room jc))
+        (jabber-muc--publish-attempt
+         jc room (plist-put (plist-put (copy-sequence attempt) :status 'failed)
+                            :disposition disposition))
+        ;; Only a withdrawal retires the room; a deadline must not discard
+        ;; the password and snapshot a late admission or reconnect needs.
+        (when (eq disposition 'retired)
+          (jabber-muc--retire-room jc room)))
       ;; All captured echoes are disposed before the first callback can retry.
       (when (fboundp 'jabber-omemo--move-echo)
         (mapc (lambda (e) (jabber-omemo--move-echo e nil)) entries))
@@ -939,8 +1010,12 @@ Preserve accepted occupants and snapshots, never outstanding query tokens."
       (unless (eq (plist-get old :status) 'pending)
         (when (timerp (plist-get attempt :timer))
           (cancel-timer (plist-get attempt :timer)))
+        ;; Carry the terminal disposition too: a resumed stream must not
+        ;; turn an expired ordinary join into a governing failed lease.
         (jabber-muc--publish-attempt
-         jc (car cell) (plist-put attempt :status (plist-get old :status)))))))
+         jc (car cell)
+         (plist-put (plist-put attempt :status (plist-get old :status))
+                    :disposition (plist-get old :disposition)))))))
 
 (defun jabber-muc--session-reset (jc)
   "Clear room state belonging to the lost logical session on JC."
@@ -1758,8 +1833,9 @@ JC is the Jabber connection."
   (let ((nick (jabber-muc-nickname group jc))
         (request (jabber-muc--reserve-intent jc group)))
     (jabber-muc--retire-room jc group)
+    (jabber-muc--withdraw-attempt jc group)
     (when-let* ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group)))
-      (jabber-muc--fail-attempt jc group attempt "Room left"))
+      (jabber-muc--fail-attempt jc group attempt "Room left" 'retired))
     (jabber-muc--with-intent request
       ;; Address the old membership even though it is already retired.
       (jabber-send-sexp jc
@@ -2153,7 +2229,7 @@ Rooms are added to the pending disco list for batched querying."
         (unless (or (jabber-sm--room-attempt (fsm-get-state-data jc) room)
                     (and (stringp nick) (not (string-empty-p nick))))
           (jabber-muc--fail-attempt jc room (jabber-muc--start-attempt jc room nil)
-                                    "Missing saved room nickname"))))
+                                    "Missing saved room nickname" 'retired))))
     (dolist (room-nick-password
              (gethash bare-jid jabber-muc--rooms-before-disconnect))
       (unless (funcall current-p) (throw 'superseded nil))
@@ -2474,7 +2550,7 @@ JC is the Jabber connection."
   "On JC, handle our own departure from GROUP.
 TYPE is the presence type (\"unavailable\" or \"error\").
 STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
-  (let* ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group))
+  (let* ((attempt (jabber-muc--live-attempt jc group))
          (leavingp t)
          (message (cond
                    ((string= type "error")
@@ -2536,8 +2612,9 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
           (let ((request (jabber-muc--reserve-intent jc group)))
             (jabber-muc--with-intent request
               (jabber-muc--retire-room jc group)
+              (jabber-muc--withdraw-attempt jc group)
               (when attempt
-                (jabber-muc--fail-attempt jc group attempt message))
+                (jabber-muc--fail-attempt jc group attempt message 'retired))
               (jabber-muc--check-intent request)
               (effects request)
               t))
@@ -2782,7 +2859,7 @@ Silently ignore; the user may lack permissions."
   "On JC, handle a participant entering or updating presence in GROUP.
 NICKNAME is the user.  _SYMBOL is unused.  STATUS-CODES,
 X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
-  (let* ((attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group))
+  (let* ((attempt (jabber-muc--live-attempt jc group))
          (our-nickname (if attempt (plist-get attempt :nick) our-nickname)))
   (when (or (not attempt) (jabber-muc--attempt-current-p jc group attempt t))
   (when (fboundp 'jabber-message-correct--muc-presence-enter)
@@ -2803,6 +2880,8 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
         (jabber-muc--identity-occupant jc group previous nil))
       (jabber-muc-add-groupchat group nickname jc)
       (puthash (jabber-muc--pending-key jc group) nickname jabber-pending-groupchats)
+      (unless attempt
+        (jabber-muc--adopt-membership jc group nickname))
       (when attempt
         (when (timerp (plist-get attempt :timer))
           (cancel-timer (plist-get attempt :timer)))
@@ -2908,7 +2987,7 @@ Use receiving connection JC to determine our remembered nickname."
 	 (group (plist-get p :group))
 	 (nickname (plist-get p :nickname))
 	 (symbol (plist-get p :symbol))
-         (attempt (jabber-sm--room-attempt (fsm-get-state-data jc) group))
+         (attempt (jabber-muc--live-attempt jc group))
          (our-nickname (if attempt (plist-get attempt :nick)
                          (or (jabber-muc-nickname group jc)
                              (plist-get p :our-nickname))))
@@ -2919,7 +2998,8 @@ Use receiving connection JC to determine our remembered nickname."
 	 (error-node (plist-get p :error-node))
 	 (status-codes (plist-get p :status-codes)))
     (cond
-     ;; Every incoming transition, not just available presence, needs permission.
+     ;; Every governed transition, not just available presence, needs
+     ;; permission.  An expired ordinary join governs nothing.
      ((and attempt (not (jabber-muc--attempt-current-p jc group attempt t))) nil)
      ;; Self 303 retires only the alias, not the membership or pending lease.
      ;; Foreign 303 must take the ordinary occupant-removal path even while

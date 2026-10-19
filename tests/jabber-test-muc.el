@@ -3067,14 +3067,22 @@ entry with JC=nil."
                                          jabber-muc--rooms-before-disconnect)))
               (drains nil))
           (jabber-muc-process-presence jc presence)
-          (should-not (jabber-muc-joined-p room jc))
-          (should (eq (plist-get (jabber-sm--room-attempt
-                                 (fsm-get-state-data jc) room) :status) 'failed))
-          (should-not (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
-          (should (equal participants jabber-muc-participants))
+          (if (eq outcome 'leave)
+              (progn
+                ;; Departure withdrew the permission; nothing reopens it.
+                (should-not (jabber-muc-joined-p room jc))
+                (should (eq (plist-get (jabber-sm--room-attempt
+                                        (fsm-get-state-data jc) room) :status)
+                            'failed))
+                (should-not (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
+                (should (equal participants jabber-muc-participants))
+                (should-not drains))
+            ;; Only the request expired: the room still admits us, and the
+            ;; admission is leased so later transitions keep working.
+            (should (jabber-muc-joined-p room jc))
+            (should (jabber-sm--room-ready-p (fsm-get-state-data jc) room)))
           (should (equal saved (gethash "self@example.org"
-                                        jabber-muc--rooms-before-disconnect)))
-          (should-not drains))
+                                        jabber-muc--rooms-before-disconnect))))
         (jabber-muc--send-join-presence jc room "self" nil nil)
         (should-not (eq (plist-get old :token)
                         (plist-get (jabber-sm--room-attempt
@@ -3088,11 +3096,13 @@ entry with JC=nil."
   (jabber-test-muc--retired-presence 'leave))
 
 (ert-deftest jabber-test-muc-recovery-late-presence-after-timeout ()
-  "Timeout retires permission until a new token explicitly retries."
+  "An expired deadline leaves the room admissible and leases the admission."
   (jabber-test-muc--retired-presence 'timeout))
 
 (ert-deftest jabber-test-muc-recovery-retired-nick-rejection ()
-  "Late modern or legacy nick errors cannot reopen a retired lease."
+  "Late modern or legacy nick errors cannot reopen a retired lease.
+An expired nickname handshake is not a withdrawal: the room keeps the
+membership and the nickname the server last confirmed."
   (dolist (outcome '(timeout leave))
     (dolist (error-node '((error ((type . "cancel"))
                                 (conflict ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))
@@ -3105,8 +3115,9 @@ entry with JC=nil."
           (jabber-muc--process-enter jc room "self" (jabber-jid-symbol room)
                                      '("110") nil nil nil "self")
           (jabber-muc-nick jc room "new")
-          (let ((old (jabber-sm--room-attempt (fsm-get-state-data jc) room)))
-            (if (eq outcome 'leave)
+          (let ((old (jabber-sm--room-attempt (fsm-get-state-data jc) room))
+                (left (eq outcome 'leave)))
+            (if left
                 (jabber-muc-leave jc room)
               (let ((timer (cl-find jabber-muc-autojoin-timeout timers :key #'car)))
                 (apply (cadr timer) (nth 2 timer))))
@@ -3118,20 +3129,27 @@ entry with JC=nil."
                 (jabber-muc-process-presence
                  jc `(presence ((from . ,(concat room "/new")) (type . "error"))
                                ,error-node))
-                (should (eq (plist-get (jabber-sm--room-attempt
-                                       (fsm-get-state-data jc) room) :status) 'failed))
+                (when left
+                  (should (eq (plist-get (jabber-sm--room-attempt
+                                          (fsm-get-state-data jc) room) :status)
+                              'failed)))
                 (jabber-muc-process-presence
                  jc `(presence ((from . ,(concat room "/self")))
                                (x ((xmlns . "http://jabber.org/protocol/muc#user"))
                                   ,@(mapcar (lambda (c) `(status ((code . ,c)))) codes))))
-                (should-not (jabber-muc-joined-p room jc))
-                (should-not (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
+                (if left
+                    (progn
+                      (should-not (jabber-muc-joined-p room jc))
+                      (should-not (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
+                      (should-not drains))
+                  (should (jabber-muc-joined-p room jc))
+                  (should (equal (jabber-muc-nickname room jc) "self"))
+                  (should (jabber-sm--room-ready-p (fsm-get-state-data jc) room)))
                 (should (equal saved (gethash "self@example.org"
                                               jabber-muc--rooms-before-disconnect)))
                 (jabber-sm--drain-pending jc (fsm-get-state-data jc))
                 (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))
                 (should-not sent)
-                (should-not drains)
                 (should (= failed 1))))
             (jabber-muc--send-join-presence jc room "self" nil nil)
             (should-not (eq (plist-get old :token)
@@ -3267,7 +3285,9 @@ entry with JC=nil."
         (should (= failed 0))))))
 
 (ert-deftest jabber-test-muc-recovery-only-room-timeout-once ()
-  "The last room's timeout detaches ownership before callbacks and fires once."
+  "The last room's timeout detaches ownership before callbacks and fires once.
+The room stays rejoinable: a deadline fails retained stanzas without
+discarding the saved nickname and password a reconnect needs."
   (jabber-test-muc-with-recovery
     (jabber-muc-autojoin jc)
     (let ((timer (cl-find jabber-muc-autojoin-timeout timers :key #'car)))
@@ -3278,7 +3298,8 @@ entry with JC=nil."
                             (should-not (plist-get (fsm-get-state-data jc) :sm-pending-queue))))
       (dotimes (_ 2) (apply (cadr timer) (nth 2 timer)))
       (should (= failed 1))
-      (should-not (gethash "self@example.org" jabber-muc--rooms-before-disconnect)))))
+      (should (equal (gethash "self@example.org" jabber-muc--rooms-before-disconnect)
+                     (list (list room "self" "synthetic-secret")))))))
 
 (ert-deftest jabber-test-muc-recovery-stale-timeout-and-send-failure ()
   "An old attempt cannot fail or release a new transport's room."
@@ -4527,7 +4548,9 @@ entry with JC=nil."
     (should-not sent)))
 
 (ert-deftest jabber-test-muc-recovery-retirement-survives-reset ()
-  "Terminal recovery decisions cannot reappear in the next saved-room join."
+  "Terminal recovery decisions cannot reappear in the next saved-room join.
+A timeout is not terminal: the room the server still grants keeps its
+saved nickname and password and is rejoined after the reset."
   (dolist (outcome '(timeout leave unavailable error nick-error))
     (jabber-test-muc-with-recovery
       (let ((other "saved@example.org"))
@@ -4559,16 +4582,24 @@ entry with JC=nil."
                                (status ((code . "110"))))))))
         (should (= failed (if (eq outcome 'nick-error) 0 1)))
         (jabber-muc--session-reset jc)
-        (should (equal (assoc other (gethash "self@example.org" jabber-muc--rooms-before-disconnect))
+        (should (equal (assoc other (gethash "self@example.org"
+                                             jabber-muc--rooms-before-disconnect))
                        (list other "saved" "saved-secret")))
-        (should (equal (assoc room (gethash "self@example.org" jabber-muc--rooms-before-disconnect))
-                       (when (eq outcome 'nick-error) (list room "self" "synthetic-secret"))))
+        (should (equal (assoc room (gethash "self@example.org"
+                                            jabber-muc--rooms-before-disconnect))
+                       (pcase outcome
+                         ('nick-error (list room "self" "synthetic-secret"))
+                         ('timeout (list room "self" "new-secret")))))
         (setq sent nil)
         (jabber-muc-autojoin jc)
         (should (eq (not (null (cl-find (concat room "/self") sent
                                       :key (lambda (s) (jabber-xml-get-attribute s 'to))
                                       :test #'equal)))
-                    (eq outcome 'nick-error)))))))
+                    (eq outcome 'nick-error)))
+        ;; A timeout keeps no recovery work, so the preserved room returns
+        ;; through ordinary autojoin instead of an immediate recovery join.
+        (should (eq (not (null (jabber-muc--autojoin-queued-p jc room)))
+                    (eq outcome 'timeout)))))))
 
 (ert-deftest jabber-test-muc-recovery-ready-other-303 ()
   "A drained recovery lease does not suppress another occupant's rename."
@@ -4991,6 +5022,204 @@ entry with JC=nil."
         (jabber-muc--fail-attempt jc room attempt "test failure"))
       (jabber-bookmarks2--maybe-join jc bookmark)
       (should (= (length sent) 2)))))
+
+(defun jabber-test-muc-expire-deadline (timers)
+  "Fire the captured join deadline in TIMERS, or fail when absent."
+  (let ((deadline (cl-find #'jabber-muc--fail-attempt timers
+                           :key (lambda (entry) (nth 2 entry)))))
+    (should deadline)
+    (apply (nth 2 deadline) (nth 3 deadline))))
+
+(ert-deftest jabber-test-muc-late-self-presence-after-deadline ()
+  "An expired join deadline cannot veto the server's later admission."
+  (jabber-test-muc-with-native-room
+    (let (timers)
+      (cl-letf (((symbol-function 'run-with-timer)
+                 (lambda (seconds repeat callback &rest args)
+                   (push (list seconds repeat callback args) timers)
+                   nil)))
+        (jabber-muc--send-join-presence jc room "nick" nil nil))
+      (should (= (length sent) 1))
+      (jabber-test-muc-expire-deadline timers)
+      (should-not (jabber-muc-joined-p room jc))
+      ;; The room answers after the deadline: the server did admit us.
+      (jabber-muc-process-presence
+       jc `(presence ((from . ,(concat room "/nick")))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                        (item ((affiliation . "member") (role . "participant")))
+                        (status ((code . "110"))))))
+      (should (jabber-muc-joined-p room jc))
+      (should (equal (jabber-muc-nickname room jc) "nick"))
+      (should (member room (jabber-muc-active-rooms)))
+      ;; The admission is leased, so later transitions and sends work.
+      (should (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
+      (should-not (jabber-sm--entry-blocked-p (fsm-get-state-data jc)
+                                              (list :retained-room room))))))
+
+(ert-deftest jabber-test-muc-late-admission-then-withdrawal ()
+  "A withdrawal after a late admission fences replayed room presence."
+  (dolist (withdrawal '(leave kick))
+    (jabber-test-muc-with-native-room
+      (jabber-test-muc-expire-attempt jc room)
+      (jabber-test-muc-native-201 jc room)
+      (should (jabber-muc-joined-p room jc))
+      (if (eq withdrawal 'leave)
+          (jabber-muc-leave jc room)
+        (jabber-muc-process-presence
+         jc `(presence ((from . ,(concat room "/nick")) (type . "unavailable"))
+                       (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                          (item ((role . "none")))
+                          (status ((code . "110")))
+                          (status ((code . "307")))))))
+      (should-not (jabber-muc-joined-p room jc))
+      (jabber-test-muc-native-201 jc room)
+      (should-not (jabber-muc-joined-p room jc)))))
+
+(ert-deftest jabber-test-muc-expired-nick-handshake-keeps-alias-transition ()
+  "An expired nickname deadline still completes the server's 303 rename."
+  (jabber-test-muc-with-native-room
+    (jabber-muc--send-join-presence jc room "nick" nil nil)
+    (jabber-test-muc-native-201 jc room)
+    (jabber-muc-nick jc room "newnick")
+    (jabber-muc--fail-attempt jc room
+                              (jabber-sm--room-attempt (fsm-get-state-data jc) room)
+                              "Room join timed out")
+    (should (jabber-muc-joined-p room jc))
+    (jabber-muc-process-presence
+     jc `(presence ((from . ,(concat room "/nick")) (type . "unavailable"))
+                   (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                      (item ((nick . "newnick")))
+                      (status ((code . "110")))
+                      (status ((code . "303"))))))
+    (jabber-muc-process-presence
+     jc `(presence ((from . ,(concat room "/newnick")))
+                   (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                      (item ((role . "participant")))
+                      (status ((code . "110"))))))
+    (should (jabber-muc-joined-p room jc))
+    (should (equal (jabber-muc-nickname room jc) "newnick"))))
+
+(ert-deftest jabber-test-muc-expired-deadline-keeps-reconnect-credential ()
+  "An expired deadline keeps the password a reconnect needs."
+  (jabber-test-muc-with-native-room
+    (jabber-muc--send-join-presence jc room "nick" "fixture-secret" nil)
+    (jabber-muc--fail-attempt jc room
+                              (jabber-sm--room-attempt (fsm-get-state-data jc) room)
+                              "Room join timed out")
+    (jabber-test-muc-native-201 jc room)
+    (should (jabber-muc-joined-p room jc))
+    (jabber-muc-connection-closed (jabber-connection-bare-jid jc))
+    (should (equal (assoc room (gethash (jabber-connection-bare-jid jc)
+                                        jabber-muc--rooms-before-disconnect))
+                   (list room "nick" "fixture-secret")))))
+
+(ert-deftest jabber-test-muc-deadline-keeps-established-membership ()
+  "A timed-out rejoin cannot drop membership the server never withdrew."
+  (jabber-test-muc-with-native-room
+    (jabber-test-muc-native-201 jc room)
+    (should (jabber-muc-joined-p room jc))
+    (let (timers)
+      (cl-letf (((symbol-function 'run-with-timer)
+                 (lambda (seconds repeat callback &rest args)
+                   (push (list seconds repeat callback args) timers)
+                   nil)))
+        (jabber-muc--send-join-presence jc room "nick" nil nil))
+      (jabber-test-muc-expire-deadline timers))
+    (should (jabber-muc-joined-p room jc))
+    (should (equal (jabber-muc-nickname room jc) "nick"))))
+
+(defun jabber-test-muc-expire-attempt (jc room)
+  "Expire ROOM's ordinary join deadline on JC without a reply."
+  (let ((attempt (jabber-muc--start-attempt jc room "nick")))
+    (puthash (jabber-muc--pending-key jc room) "nick" jabber-pending-groupchats)
+    (jabber-muc--fail-attempt jc room attempt "Room join timed out")
+    attempt))
+
+(ert-deftest jabber-test-muc-expired-deadline-then-withdrawal ()
+  "Every withdrawal retires the permission an expired deadline left open."
+  (dolist (withdrawal '(leave kick ban password-rejected))
+    (jabber-test-muc-with-native-room
+      (when (eq withdrawal 'leave)
+        (jabber-test-muc-native-201 jc room))
+      (jabber-test-muc-expire-attempt jc room)
+      (pcase withdrawal
+        ('leave (jabber-muc-leave jc room))
+        ('password-rejected
+         (jabber-muc-process-presence
+          jc `(presence ((from . ,(concat room "/nick")) (type . "error"))
+                        (error ((type . "auth") (code . "401"))
+                               (not-authorized
+                                ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas")))))))
+        (_
+         (jabber-muc-process-presence
+          jc `(presence ((from . ,(concat room "/nick")) (type . "unavailable"))
+                        (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                           (item ((role . "none")))
+                           (status ((code . "110")))
+                           (status ((code . ,(if (eq withdrawal 'kick)
+                                                 "307"
+                                               "301")))))))))
+      (should-not (jabber-muc-joined-p room jc))
+      ;; Late or forged self-presence cannot reopen a withdrawn room.
+      (jabber-test-muc-native-201 jc room)
+      (should-not (jabber-muc-joined-p room jc)))))
+
+(ert-deftest jabber-test-muc-retired-attempt-is-not-downgraded ()
+  "A captured pending attempt cannot reopen a terminal outcome."
+  (jabber-test-muc-with-native-room
+    (jabber-test-muc-native-201 jc room)
+    (let ((captured (jabber-muc--start-attempt jc room "nick")))
+      (jabber-muc-leave jc room)
+      ;; The send-failure callback still holds the pending attempt object.
+      (jabber-muc--fail-attempt jc room captured "send failed"))
+    (jabber-test-muc-native-201 jc room)
+    (should-not (jabber-muc-joined-p room jc))))
+
+(ert-deftest jabber-test-muc-expired-deadline-survives-sm-resume ()
+  "A resumed stream keeps admitting the room it never heard answer."
+  (jabber-test-muc-with-native-room
+    (jabber-test-muc-expire-attempt jc room)
+    (put jc :state-data
+         (plist-put (copy-sequence (fsm-get-state-data jc))
+                    :connection (make-symbol "resumed")))
+    (jabber-muc--resume-attempts jc)
+    (jabber-test-muc-native-201 jc room)
+    (should (jabber-muc-joined-p room jc))))
+
+(ert-deftest jabber-test-muc-expired-deadline-fences-foreign-stream ()
+  "An expired lease from another stream still fences room presence."
+  (jabber-test-muc-with-native-room
+    (jabber-test-muc-expire-attempt jc room)
+    (put jc :state-data
+         (plist-put (copy-sequence (fsm-get-state-data jc))
+                    :connection (make-symbol "other-stream")))
+    (jabber-test-muc-native-201 jc room)
+    (should-not (jabber-muc-joined-p room jc))))
+
+(ert-deftest jabber-test-muc-late-admission-transfers-identities-on-resume ()
+  "A late admission keeps its room identities across a successful resume."
+  (jabber-test-muc-with-native-room
+    (let ((jabber-muc--room-jids (make-hash-table :test #'equal)))
+      (jabber-test-muc-expire-attempt jc room)
+      (jabber-test-muc-native-201 jc room)
+      ;; An occupant carrying a real JID establishes the identity record.
+      (jabber-muc-process-presence
+       jc `(presence ((from . ,(concat room "/peer")))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                        (item ((jid . "peer@example.org/device")
+                               (affiliation . "member")
+                               (role . "participant"))))))
+      (should (gethash (list jc room) jabber-muc--room-jids))
+      (let ((transport (make-symbol "resumed")))
+        (put jc :state-data
+             (plist-put (copy-sequence (fsm-get-state-data jc))
+                        :connection transport))
+        (jabber-muc--resume-attempts jc)
+        (should (jabber-muc-joined-p room jc))
+        (should (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
+        (should (eq (plist-get (gethash (list jc room) jabber-muc--room-jids)
+                               :transport)
+                    transport))))))
 
 (provide 'jabber-test-muc)
 ;;; jabber-test-muc.el ends here
