@@ -9,6 +9,7 @@
 
 ;;; Code:
 (require 'seq)
+(require 'cl-lib)
 (require 'lisp-mnt)
 
 (declare-function latex-to-svg-for-markdown-mode "latex-to-svg-for-markdown")
@@ -18,10 +19,14 @@
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--tracking-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--update "markdown-ts-appear")
+(declare-function markdown-ts-appear-table--math-changed "markdown-ts-appear-table")
+(declare-function markdown-ts-appear-table--invalidate "markdown-ts-appear-table")
+(declare-function markdown-ts-appear-table--schedule-render "markdown-ts-appear-table")
 
 (defvar markdown-ts-appear-enable-math-preview)
 (defvar markdown-ts-appear--last-point)
 (defvar latex-to-svg-frontend-reveal)
+(defvar markdown-ts-appear-table--overlays)
 
 (defvar-local markdown-ts-appear-math--owned nil
   "Non-nil when appear enabled the Markdown math adaptor.")
@@ -112,6 +117,39 @@ while the old library is still loaded.  Return nil if its source is unavailable.
     (when-let* ((span (markdown-ts-appear-math--span-at (point))))
       (cons (nth 1 span) (nth 2 span)))))
 
+(defun markdown-ts-appear-math--table-spans (beg end)
+  "Return inline (BEG END IMAGE OVERLAY) records for a table between BEG and END.
+Use existing preview overlays; this never requests or compiles an image."
+  (when (and (bound-and-true-p latex-to-svg-frontend-mode)
+             (save-excursion (goto-char beg) (re-search-forward "[\\\\$]" end t)))
+    (cl-loop for (kind start finish) in (latex-to-svg-frontend-spans beg end)
+             when (and (eq kind 'inline) (<= beg start) (<= finish end))
+             collect
+             (let* ((overlay (seq-find
+                              (lambda (ov)
+                                (and (= start (overlay-start ov)) (= finish (overlay-end ov))
+                                     (eq (car-safe (overlay-get ov 'display)) 'image)))
+                              (overlays-at start)))
+                    (image (and overlay (overlay-get overlay 'display))))
+               (list start finish image overlay)))))
+
+(defun markdown-ts-appear-math--image-shown (overlay image)
+  "Notify the owning table when OVERLAY shows a new IMAGE."
+  (when-let* ((buffer (overlay-buffer overlay)))
+    (with-current-buffer buffer
+      (when (markdown-ts-appear--active-p)
+        (markdown-ts-appear-table--math-changed overlay image)))))
+
+(defun markdown-ts-appear-math--watch-images ()
+  "Observe image updates only while a buffer uses appear's math integration."
+  ;; The frontend has no public preview-change hook yet.  Keep this single
+  ;; notification adapter here; tables read only ordinary overlay displays.
+  (if (seq-some (lambda (buffer)
+                  (buffer-local-value 'markdown-ts-appear-math--saved-reveal buffer))
+                (buffer-list))
+      (advice-add 'latex-to-svg-frontend--show-image :after #'markdown-ts-appear-math--image-shown)
+    (advice-remove 'latex-to-svg-frontend--show-image #'markdown-ts-appear-math--image-shown)))
+
 (defun markdown-ts-appear-math--restore-reveal ()
   "Restore the previous reveal option if it is still owned by appear."
   (when markdown-ts-appear-math--saved-reveal
@@ -134,6 +172,10 @@ while the old library is still loaded.  Return nil if its source is unavailable.
         (setq-local latex-to-svg-frontend-reveal #'markdown-ts-appear-math--reveal-p))
     (markdown-ts-appear-math--restore-reveal)
     (setq markdown-ts-appear-math--owned nil))
+  (markdown-ts-appear-math--watch-images)
+  (when (and (markdown-ts-appear--active-p) markdown-ts-appear-table--overlays)
+    (markdown-ts-appear-table--invalidate (point-min) (point-max))
+    (markdown-ts-appear-table--schedule-render))
   (setq markdown-ts-appear--last-point nil)
   (when (markdown-ts-appear--tracking-p)
     (markdown-ts-appear--update)))
@@ -161,7 +203,8 @@ while the old library is still loaded.  Return nil if its source is unavailable.
   (when markdown-ts-appear-math--owned
     (setq markdown-ts-appear-math--owned nil)
     (latex-to-svg-for-markdown-mode -1))
-  (markdown-ts-appear-math--restore-reveal))
+  (markdown-ts-appear-math--restore-reveal)
+  (markdown-ts-appear-math--watch-images))
 
 (defun markdown-ts-appear-math--detach ()
   "Detach appear's math integration in an unsupported indirect clone.

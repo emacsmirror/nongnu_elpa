@@ -199,6 +199,8 @@ integration, so no extra configuration is needed if you use it.  Otherwise:
 - Math detection, rendering, numbering, references and caching belong to
   `latex-to-svg`. Appear coordinates source reveal and restores the previous
   reveal setting on disable; independently enabled adaptors stay running.
+  Wrapped table cells reuse its inline formula previews (`$...$` or `\(...\)`).
+  Pending or failed formulas keep their source; wide previews shrink to fit the column.
 - Diagrams render visible, unedited blocks through a shared queue, one job at a time.
   Identical diagrams share cached images; failed diagrams keep their source,
   with details available on hover.  Diagrams are only scaled down, preserving
