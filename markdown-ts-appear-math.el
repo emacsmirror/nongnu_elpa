@@ -1,11 +1,12 @@
-;;; markdown-ts-appear-math.el --- Coordinate latex-to-svg previews -*- lexical-binding: t; -*-
+;;; markdown-ts-appear-math.el --- Coordinate optional math previews -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Thysrael
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-;; The optional Markdown adaptor owns math detection, rendering and overlays.
-;; Appear supplies its reveal policy and restores the user's setup on teardown.
+;; MathJax and latex-to-svg own detection, rendering and preview overlays.
+;; Appear coordinates source reveal, fontification and table images, preserving
+;; independently enabled modes when its integration is detached.
 
 ;;; Code:
 (require 'seq)
@@ -32,6 +33,7 @@
 (defvar markdown-ts-appear--last-point)
 (defvar latex-to-svg-frontend-reveal)
 (defvar markdown-ts-appear-table--overlays)
+(defvar markdown-ts-appear-mathjax--fontifying-spans)
 
 (defvar-local markdown-ts-appear-math--owned nil
   "Non-nil when appear enabled the Markdown math adaptor.")
@@ -121,7 +123,8 @@ while the old library is still loaded.  Return nil if its source is unavailable.
                   (when (eq spans 'unknown)
                     (setq spans
                           (save-match-data (markdown-ts-appear-math--spans beg end))))
-                  spans))))
+                  spans)))
+         (markdown-ts-appear-mathjax--fontifying-spans markdown-ts-appear-math--fontifying-spans))
     (apply function beg end arguments)))
 
 (defun markdown-ts-appear-math--revealed-region ()
@@ -231,23 +234,21 @@ Use existing preview overlays; this never requests or compiles an image."
     markdown-ts-appear-math-renderer))
 
 (defun markdown-ts-appear-math--setup ()
-  "Attach the selected renderer without loading the other provider."
+  "Adopt an active renderer, or start the selected provider when enabled."
   (add-function :around (local 'font-lock-fontify-region-function)
                 #'markdown-ts-appear-math--fontify)
   (add-hook 'markdown-ts-appear-mathjax-mode-hook #'markdown-ts-appear-math--mathjax-sync nil t)
-  (if (or (and markdown-ts-appear-enable-math-preview
-               (eq (markdown-ts-appear-math--renderer) 'mathjax))
-          (bound-and-true-p markdown-ts-appear-mathjax-mode))
-      (when (or markdown-ts-appear-enable-math-preview
-                (bound-and-true-p markdown-ts-appear-mathjax-mode))
-        (require 'markdown-ts-appear-mathjax)
-        (add-hook 'markdown-ts-appear-mathjax-preview-functions
-                  #'markdown-ts-appear-math--image-shown nil t)
-        (unless (bound-and-true-p markdown-ts-appear-mathjax-mode)
-          (setq markdown-ts-appear-math--mathjax-owned t)
-          (markdown-ts-appear-mathjax-mode 1))
-        (markdown-ts-appear-math--mathjax-sync))
-    (markdown-ts-appear-math--latex-setup)))
+  (cond
+   ((bound-and-true-p markdown-ts-appear-mathjax-mode)
+    (markdown-ts-appear-math--mathjax-sync))
+   ((bound-and-true-p latex-to-svg-frontend-mode)
+    (markdown-ts-appear-math--latex-setup))
+   ((and markdown-ts-appear-enable-math-preview
+         (eq (markdown-ts-appear-math--renderer) 'mathjax))
+    (require 'markdown-ts-appear-mathjax)
+    (setq markdown-ts-appear-math--mathjax-owned t)
+    (markdown-ts-appear-mathjax-mode 1))
+   (t (markdown-ts-appear-math--latex-setup))))
 
 (defun markdown-ts-appear-math--teardown ()
   "Detach integration, stopping only an adaptor enabled by appear."
@@ -277,12 +278,7 @@ Use existing preview overlays; this never requests or compiles an image."
   (markdown-ts-appear-math--setup))
 
 (defun markdown-ts-appear-math--detach ()
-  "Detach appear's math integration in an unsupported indirect clone.
-The clone keeps the Markdown adaptor and its math previews, so it shows
-the math as the base buffer does: latex-to-svg 0.22.2 gives a clone its
-own previews and keeps them in step with the base buffer.  Appear's part
-is removed and the previous reveal option is restored, since appear no
-longer tracks point in the clone."
+  "Detach appear's integration, leaving the clone's own math mode active."
   ;; Not owned in the clone, so the teardown leaves the adaptor on.
   (setq markdown-ts-appear-math--owned nil
         markdown-ts-appear-math--mathjax-owned nil)

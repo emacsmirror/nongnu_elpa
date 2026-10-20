@@ -74,6 +74,7 @@ jobs:
                          '(\"melpa\" . \"https://melpa.org/packages/\") t)
             (package-refresh-contents)
             (package-install 'evil)
+            (package-install 'mathjax)
             (package-install 'latex-to-svg-for-markdown))"
 
       - uses: r-lib/actions/setup-tinytex@v2
@@ -86,7 +87,6 @@ jobs:
           tlmgr install standalone varwidth amsmath amsfonts xcolor dvisvgm
 
       - uses: actions/setup-node@v5
-        if: matrix.svg
         with:
           node-version: "lts/*"
 
@@ -109,6 +109,7 @@ jobs:
             markdown-ts-appear-compat.el \
             markdown-ts-appear-image.el \
             markdown-ts-appear-math.el \
+            markdown-ts-appear-mathjax.el \
             markdown-ts-appear-diagram.el \
             markdown-ts-appear-table.el \
             markdown-ts-appear.el
@@ -123,6 +124,7 @@ jobs:
                             \"markdown-ts-appear-compat.el\"
                             \"markdown-ts-appear-image.el\"
                             \"markdown-ts-appear-math.el\"
+                            \"markdown-ts-appear-mathjax.el\"
                             \"markdown-ts-appear-diagram.el\"
                             \"markdown-ts-appear-table.el\"))
               (find-file file)
@@ -133,16 +135,21 @@ jobs:
                 (princ (buffer-string)))
               (kill-emacs 1)))"
 
-      - name: Load wrapped tables without external packages
+      - name: Load wrapped tables and math extension without external packages
         run: |
           emacs --batch -Q -L . --eval '(progn
             (require (quote markdown-ts-appear))
+            (require (quote markdown-ts-appear-mathjax))
             (with-temp-buffer
-              (insert "| A | B |\n|---|---|\n| x | **text** |\n")
+              (insert "| A | B |\n|---|---|\n| $x$ | **text** |\n")
               (markdown-ts-mode)
               (markdown-ts-appear-mode 1)
               (unless (= 3 (length markdown-ts-appear-table--overlays))
                 (error "Wrapped tables did not render"))
+              (when (or (featurep (quote mathjax))
+                        (featurep (quote latex-to-svg-for-markdown))
+                        markdown-ts-appear-mathjax-mode)
+                (error "Disabled previews loaded an optional backend"))
               (markdown-ts-appear-mode -1)))'
 
       - name: Run tests
@@ -150,6 +157,7 @@ jobs:
         env:
           MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS: "1"
           MARKDOWN_TS_APPEAR_REQUIRE_LATEX_TO_SVG: "1"
+          MARKDOWN_TS_APPEAR_REQUIRE_MATHJAX: "1"
           MARKDOWN_TS_APPEAR_REQUIRE_MERMAID: ${{ matrix.svg }}
         run: |
           emacs --batch -Q -l test/run-tests.el

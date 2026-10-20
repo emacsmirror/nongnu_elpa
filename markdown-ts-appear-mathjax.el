@@ -14,8 +14,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'seq)
-(require 'svg)
-(require 'color)
+(require 'image)
 (require 'button)
 (require 'hl-line)
 (require 'markdown-ts-mode)
@@ -37,7 +36,9 @@
     (with-current-buffer buffer
       (when (and (bound-and-true-p markdown-ts-appear-mathjax-mode)
                  (not (local-variable-p option)))
-        (markdown-ts-appear-mathjax-refresh)))))
+        (if (eq option 'markdown-ts-appear-mathjax-macros)
+            (markdown-ts-appear-mathjax-refresh)
+          (markdown-ts-appear-mathjax--redisplay))))))
 
 (defcustom markdown-ts-appear-mathjax-edit-preview nil
   "Show source above a framed preview while editing display math.
@@ -91,12 +92,14 @@ IMAGE is nil on failure.  Consumers can reuse ordinary image display overlays.")
 
 (defvar markdown-ts-appear-mathjax--process nil)
 (defvar markdown-ts-appear-mathjax--cache (make-hash-table :test #'equal))
-(defvar markdown-ts-appear-mathjax--images (make-hash-table :test #'equal))
+(defvar markdown-ts-appear-mathjax--images (make-hash-table :test #'equal :weakness 'value))
 (defvar markdown-ts-appear-mathjax--pending (make-hash-table :test #'equal))
+(defvar markdown-ts-appear-mathjax--fontifying-spans nil
+  "Optional (BUFFER . FUNCTION) supplying spans shared with appear's fontifier.")
 (defvar-local markdown-ts-appear-mathjax--objects nil)
 (defvar-local markdown-ts-appear-mathjax--current nil)
 (defvar-local markdown-ts-appear-mathjax--timer nil)
-(defvar-local markdown-ts-appear-mathjax--scan-tick nil)
+(defvar-local markdown-ts-appear-mathjax--dirty nil)
 (defvar-local markdown-ts-appear-mathjax--managed nil)
 
 ;;; Worker and content cache
@@ -255,18 +258,21 @@ pending requests share a compile. Setup failures are not cached."
                      (when timer (cancel-timer timer))
                      (let ((callbacks (gethash key markdown-ts-appear-mathjax--pending)) result)
                        (remhash key markdown-ts-appear-mathjax--pending)
-                       (condition-case err
-                           (progn
-                             (setq result (if (alist-get 'error data)
-                                              (list :error (alist-get 'error data) :setup setup)
-                                            (markdown-ts-appear-mathjax--normalize (alist-get 'svg data) display)))
-                             (unless setup
-                               (make-directory directory t)
-                               (let ((coding-system-for-write 'utf-8-unix))
-                                 (with-temp-file (expand-file-name (concat key ".json") directory)
-                                   (insert (json-serialize result))))
-                               (puthash key result markdown-ts-appear-mathjax--cache)))
-                         (error (setq result (list :error (error-message-string err) :setup t))))
+                        (setq result
+                              (condition-case err
+                                  (if (alist-get 'error data)
+                                      (list :error (alist-get 'error data))
+                                    (markdown-ts-appear-mathjax--normalize (alist-get 'svg data) display))
+                                (error (setq setup t) (list :error (error-message-string err)))))
+                        (unless setup
+                          (puthash key result markdown-ts-appear-mathjax--cache)
+                          (condition-case err
+                              (progn
+                                (make-directory directory t)
+                                (let ((coding-system-for-write 'utf-8-unix))
+                                  (with-temp-file (expand-file-name (concat key ".json") directory)
+                                    (insert (json-serialize result)))))
+                            (file-error (message "MathJax cache: %s" (error-message-string err)))))
                        (dolist (ready callbacks)
                          (condition-case err (funcall ready result)
                            (error (message "MathJax callback: %s" (error-message-string err)))))))))
@@ -297,8 +303,8 @@ pending requests share a compile. Setup failures are not cached."
 
 (defun markdown-ts-appear-mathjax--code-end (position)
   "Return the end of a Markdown code block covering POSITION, or nil."
-  (when (treesit-parser-list nil 'markdown)
-    (let ((node (treesit-node-at position 'markdown)))
+  (when (treesit-parser-p treesit-primary-parser)
+    (let ((node (treesit-node-at position treesit-primary-parser)))
       (while (and node (not (member (treesit-node-type node) '("fenced_code_block" "indented_code_block"))))
         (setq node (treesit-node-parent node)))
       (and node (treesit-node-end node)))))
@@ -326,37 +332,37 @@ INLINE applies the dollar-closing whitespace/digit checks. Return its start."
               (throw 'found beg))))))))
 
 (defun markdown-ts-appear-mathjax--scan (beg end)
-  "Return (KIND BEG END BODY) records overlapping BEG..END."
+  "Return (KIND BEG END BODY-BEG BODY-END) records overlapping BEG..END."
   (save-match-data
-   (save-excursion
-    (let ((start (car (markdown-ts-appear-mathjax--block beg)))
-          (limit (cdr (markdown-ts-appear-mathjax--block end))) records)
-      (goto-char start)
-      (while (re-search-forward "`+\\|\\$\\$?\\|\\\\[([]\\|\\\\begin{\\([^}\n]+\\)}" limit t)
-        (let* ((open (match-string-no-properties 0)) (from (match-beginning 0))
-               (body-start (point)) (env (match-string-no-properties 1))
-               (code-end (markdown-ts-appear-mathjax--code-end from)))
-          (cond
-           (code-end (goto-char (min limit code-end)))
-           ((markdown-ts-appear-mathjax--escaped-p from))
-           ((eq (aref open 0) ?`)
-            (let ((bound (cdr (markdown-ts-appear-mathjax--block from))) close)
-              (while (and (not close) (re-search-forward "`+" bound t))
-                (when (= (- (match-end 0) (match-beginning 0)) (length open)) (setq close (point))))
-              (unless close (goto-char body-start))))
-           ((and env (not (member env markdown-ts-appear-mathjax--environments))))
-           ((and (equal open "$") (memq (char-after) '(nil ?\s ?\t ?\n))))
-           (t
-            (let* ((kind (cond (env 'environment) ((member open '("$$" "\\[")) 'display) (t 'inline)))
-                   (close (cond (env (concat "\\end{" env "}"))
-                                ((equal open "\\[") "\\]") ((equal open "\\(") "\\)") (t open)))
-                   (bound (min limit (cdr (markdown-ts-appear-mathjax--block from))))
-                   (to (markdown-ts-appear-mathjax--close close bound (equal open "$"))))
-              (if (not to) (goto-char body-start)
-                (when (and (< from end) (> (point) beg))
-                  (push (list kind from (point)
-                              (buffer-substring-no-properties (if env from body-start) (if env (point) to))) records))))))))
-      (nreverse records)))))
+    (save-excursion
+      (let ((start (car (markdown-ts-appear-mathjax--block beg)))
+            (limit (cdr (markdown-ts-appear-mathjax--block end))) bound records)
+        (goto-char start)
+        (while (re-search-forward "`+\\|\\$\\$?\\|\\\\[([]\\|\\\\begin{\\([^}\n]+\\)}" limit t)
+          (let* ((open (match-string-no-properties 0)) (from (match-beginning 0))
+                 (body-start (point)) (env (match-string-no-properties 1))
+                 (code-end (markdown-ts-appear-mathjax--code-end from)))
+            (when (or (not bound) (>= from bound))
+              (setq bound (min limit (cdr (markdown-ts-appear-mathjax--block from)))))
+            (cond
+             (code-end (goto-char (min limit code-end)))
+             ((markdown-ts-appear-mathjax--escaped-p from))
+             ((eq (aref open 0) ?`)
+              (let (close)
+                (while (and (not close) (re-search-forward "`+" bound t))
+                  (when (= (- (match-end 0) (match-beginning 0)) (length open)) (setq close (point))))
+                (unless close (goto-char body-start))))
+             ((and env (not (member env markdown-ts-appear-mathjax--environments))))
+             ((and (equal open "$") (memq (char-after) '(nil ?\s ?\t ?\n))))
+             (t
+              (let* ((kind (cond (env 'environment) ((member open '("$$" "\\[")) 'display) (t 'inline)))
+                     (close (cond (env (concat "\\end{" env "}"))
+                                  ((equal open "\\[") "\\]") ((equal open "\\(") "\\)") (t open)))
+                     (to (markdown-ts-appear-mathjax--close close bound (equal open "$"))))
+                (if (not to) (goto-char body-start)
+                  (when (and (< from end) (> (point) beg))
+                    (push (list kind from (point) (if env from body-start) (if env (point) to)) records))))))))
+        (nreverse records)))))
 
 (defun markdown-ts-appear-mathjax-spans (beg end)
   "Return (KIND BEG END) math spans overlapping BEG..END."
@@ -372,10 +378,13 @@ INLINE applies the dollar-closing whitespace/digit checks. Return its start."
   "Protect math source from Markdown hiding/emphasis up to LIMIT."
   (let ((beg (point)))
     (with-silent-modifications
-      (dolist (span (markdown-ts-appear-mathjax-spans beg limit))
+      (dolist (span (if (eq (car markdown-ts-appear-mathjax--fontifying-spans) (current-buffer))
+                       (funcall (cdr markdown-ts-appear-mathjax--fontifying-spans))
+                     (markdown-ts-appear-mathjax-spans beg limit)))
         (let ((start (max beg (nth 1 span))) (end (min limit (nth 2 span))))
-          (remove-text-properties start end '(invisible nil display nil))
-          (put-text-property start end 'face 'markdown-ts-latex)))))
+          (when (< start end)
+            (remove-text-properties start end '(invisible nil display nil))
+            (put-text-property start end 'face 'markdown-ts-latex))))))
   (goto-char limit)
   nil)
 
@@ -483,13 +492,15 @@ INLINE applies the dollar-closing whitespace/digit checks. Return its start."
                            (not (eq (overlay-get ov 'markdown-ts-appear-mathjax--kind) 'inline)) #'ready)))
           (ready entry))))))
 
-(defun markdown-ts-appear-mathjax--ensure (record)
-  "Create or update the preview for RECORD and return its overlay."
-  (pcase-let* ((`(,kind ,beg ,end ,body) record)
+(defun markdown-ts-appear-mathjax--ensure (record &optional existing)
+  "Update EXISTING or create a preview for RECORD, returning its overlay."
+  (pcase-let* ((`(,kind ,beg ,end ,body-beg ,body-end) record)
+               (body (buffer-substring-no-properties body-beg body-end))
                (source (buffer-substring-no-properties beg end))
                (key (markdown-ts-appear-mathjax--key body (not (eq kind 'inline))))
-               (ov (or (seq-find (lambda (ov) (and (overlay-buffer ov) (= (overlay-start ov) beg)))
-                                markdown-ts-appear-mathjax--objects)
+               (ov (or existing
+                       (seq-find (lambda (ov) (and (overlay-get ov 'markdown-ts-appear-mathjax)
+                                                   (= (overlay-start ov) beg))) (overlays-at beg))
                        (let ((new (make-overlay beg end nil t nil)))
                          (overlay-put new 'markdown-ts-appear-mathjax t)
                          (overlay-put new 'evaporate t)
@@ -506,7 +517,6 @@ INLINE applies the dollar-closing whitespace/digit checks. Return its start."
     (overlay-put ov 'markdown-ts-appear-mathjax--body body)
     (overlay-put ov 'markdown-ts-appear-mathjax--kind kind)
     (overlay-put ov 'markdown-ts-appear-mathjax--key key)
-    (overlay-put ov 'markdown-ts-appear-mathjax--incomplete nil)
     ov))
 
 (defun markdown-ts-appear-mathjax--delete (ov)
@@ -529,44 +539,78 @@ INLINE applies the dollar-closing whitespace/digit checks. Return its start."
     (overlay-put ov 'markdown-ts-appear-mathjax--entry nil)
     (markdown-ts-appear-mathjax--sync ov)))
 
-(defun markdown-ts-appear-mathjax-refresh (&optional recompile)
-  "Reconcile math previews in the current buffer.
-With prefix RECOMPILE, invalidate this buffer's cached formulas first."
-  (interactive "P")
-  (when markdown-ts-appear-mathjax-mode
+(defun markdown-ts-appear-mathjax--reconcile (&optional full recompile)
+  "Reconcile changed paragraphs, or the FULL buffer, optionally forcing RECOMPILE."
+  (when (and markdown-ts-appear-mathjax-mode (or full markdown-ts-appear-mathjax--dirty))
+    ;; Parse first so distant fence/container changes join the pending range.
+    (treesit-parser-root-node treesit-primary-parser)
     (when markdown-ts-appear-mathjax--timer (cancel-timer markdown-ts-appear-mathjax--timer))
     (setq markdown-ts-appear-mathjax--timer nil)
-    (let ((records (markdown-ts-appear-mathjax--scan (point-min) (point-max))) seen)
-      (dolist (record records)
-        (let* ((ov (markdown-ts-appear-mathjax--ensure record))
-               (key (overlay-get ov 'markdown-ts-appear-mathjax--key)))
-          (push ov seen)
-          (when recompile
-            (remhash key markdown-ts-appear-mathjax--cache)
-            (let ((file (expand-file-name (concat key ".json") markdown-ts-appear-mathjax-cache-directory)))
-              (when (file-exists-p file) (delete-file file)))
-            (clrhash markdown-ts-appear-mathjax--images)
-            (overlay-put ov 'markdown-ts-appear-mathjax--entry nil)
-            (overlay-put ov 'markdown-ts-appear-mathjax--pending nil))
-          (if-let* ((entry (overlay-get ov 'markdown-ts-appear-mathjax--entry)))
-              (overlay-put ov 'markdown-ts-appear-mathjax--image (markdown-ts-appear-mathjax--image ov entry))
-            (markdown-ts-appear-mathjax--request ov))
-          (markdown-ts-appear-mathjax--sync ov)))
+    (without-restriction
+      (let* ((dirty markdown-ts-appear-mathjax--dirty)
+             (beg (if full (point-min) (car (markdown-ts-appear-mathjax--block (car dirty)))))
+             (end (if full (point-max) (cdr (markdown-ts-appear-mathjax--block (cdr dirty)))))
+             (existing (make-hash-table :test #'eql)) objects)
+        (when dirty (set-marker (car dirty) nil) (set-marker (cdr dirty) nil))
+        (setq markdown-ts-appear-mathjax--dirty nil)
+        ;; A newly inserted blank line may split an old formula across paragraphs.
+        (dolist (ov (overlays-in beg end))
+          (when (overlay-get ov 'markdown-ts-appear-mathjax)
+            (setq beg (min beg (overlay-start ov)) end (max end (overlay-end ov)))))
+        (setq beg (car (markdown-ts-appear-mathjax--block beg))
+              end (cdr (markdown-ts-appear-mathjax--block end)))
+        (dolist (ov markdown-ts-appear-mathjax--objects)
+          (cond
+           ((not (overlay-buffer ov)) (markdown-ts-appear-mathjax--delete ov))
+           ((and (<= (overlay-start ov) end) (>= (overlay-end ov) beg))
+            (puthash (overlay-start ov) ov existing))
+           (t (push ov objects))))
+        (when recompile (clrhash markdown-ts-appear-mathjax--images))
+        (dolist (record (markdown-ts-appear-mathjax--scan beg end))
+          (let* ((ov (markdown-ts-appear-mathjax--ensure record (gethash (nth 1 record) existing)))
+                 (key (overlay-get ov 'markdown-ts-appear-mathjax--key)))
+            (remhash (nth 1 record) existing)
+            (push ov objects)
+            (when recompile
+              (remhash key markdown-ts-appear-mathjax--cache)
+              (let ((file (expand-file-name (concat key ".json") markdown-ts-appear-mathjax-cache-directory)))
+                (when (file-exists-p file) (delete-file file)))
+              (overlay-put ov 'markdown-ts-appear-mathjax--entry nil)
+              (overlay-put ov 'markdown-ts-appear-mathjax--pending nil))
+            (if-let* ((entry (overlay-get ov 'markdown-ts-appear-mathjax--entry)))
+                (overlay-put ov 'markdown-ts-appear-mathjax--image (markdown-ts-appear-mathjax--image ov entry))
+              (markdown-ts-appear-mathjax--request ov))
+            (markdown-ts-appear-mathjax--sync ov)))
+        (maphash (lambda (_ ov)
+                   (if (and (markdown-ts-appear-mathjax--editing-p ov)
+                            (overlay-get ov 'markdown-ts-appear-mathjax--modified))
+                       (push ov objects)
+                     (markdown-ts-appear-mathjax--delete ov))) existing)
+        (setq markdown-ts-appear-mathjax--objects (nreverse objects))))))
+
+(defun markdown-ts-appear-mathjax-refresh (&optional recompile)
+  "Reconcile all math previews in the current buffer.
+With prefix RECOMPILE, invalidate this buffer's cached formulas first."
+  (interactive "P")
+  (markdown-ts-appear-mathjax--reconcile t recompile))
+
+(defun markdown-ts-appear-mathjax--redisplay ()
+  "Update preview presentation without rescanning unchanged source."
+  (when markdown-ts-appear-mathjax-mode
+    (markdown-ts-appear-mathjax--reconcile)
+    (without-restriction
       (dolist (ov markdown-ts-appear-mathjax--objects)
-        (unless (memq ov seen)
-          (if (and (overlay-buffer ov) (markdown-ts-appear-mathjax--editing-p ov)
-                   (overlay-get ov 'markdown-ts-appear-mathjax--modified))
-              (progn (overlay-put ov 'markdown-ts-appear-mathjax--incomplete t) (push ov seen))
-            (markdown-ts-appear-mathjax--delete ov))))
-      (setq markdown-ts-appear-mathjax--objects seen
-            markdown-ts-appear-mathjax--scan-tick (buffer-chars-modified-tick)))))
+        (if-let* ((entry (overlay-get ov 'markdown-ts-appear-mathjax--entry)))
+            (overlay-put ov 'markdown-ts-appear-mathjax--image (markdown-ts-appear-mathjax--image ov entry))
+          (markdown-ts-appear-mathjax--request ov))
+        (markdown-ts-appear-mathjax--sync ov)))))
 
 (defun markdown-ts-appear-mathjax--post-command ()
   "Reveal at point and render the formula just left, without full-buffer scans."
   (when markdown-ts-appear-mathjax-mode
     (let ((old markdown-ts-appear-mathjax--current)
           (current (markdown-ts-appear-mathjax--at-point)))
-      (when (and (not current) (not (equal markdown-ts-appear-mathjax--scan-tick (buffer-chars-modified-tick))))
+      (when (and (not current) markdown-ts-appear-mathjax--dirty)
         (when-let* ((record (seq-find (lambda (record) (<= (nth 1 record) (point) (nth 2 record)))
                                      (markdown-ts-appear-mathjax--scan
                                       (max (point-min) (1- (point))) (min (point-max) (1+ (point)))))))
@@ -583,14 +627,27 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
           (markdown-ts-appear-mathjax--sync ov)))
       (setq markdown-ts-appear-mathjax--current current))))
 
-(defun markdown-ts-appear-mathjax--changed (&rest _)
-  "Debounce a reconciliation after source changes."
+(defun markdown-ts-appear-mathjax--changed (beg end &rest _)
+  "Queue source changes between BEG and END for idle reconciliation."
+  (setq beg (max (point-min) (1- beg)) end (min (point-max) (1+ end)))
+  (if (consp markdown-ts-appear-mathjax--dirty)
+      (progn
+        (set-marker (car markdown-ts-appear-mathjax--dirty) (min beg (car markdown-ts-appear-mathjax--dirty)))
+        (set-marker (cdr markdown-ts-appear-mathjax--dirty) (max end (cdr markdown-ts-appear-mathjax--dirty))))
+    (setq markdown-ts-appear-mathjax--dirty (cons (copy-marker beg) (copy-marker end t))))
   (when markdown-ts-appear-mathjax--timer (cancel-timer markdown-ts-appear-mathjax--timer))
   (let ((buffer (current-buffer)))
     (setq markdown-ts-appear-mathjax--timer
           (run-with-idle-timer markdown-ts-appear-mathjax-delay nil
                               (lambda () (when (buffer-live-p buffer)
-                                           (with-current-buffer buffer (markdown-ts-appear-mathjax-refresh))))))))
+                                            (with-current-buffer buffer (markdown-ts-appear-mathjax--reconcile))))))))
+
+(defun markdown-ts-appear-mathjax--syntax-changed (ranges _parser)
+  "Include RANGES changed by Markdown structure in the next reconciliation."
+  (when markdown-ts-appear-mathjax-mode
+    (without-restriction
+      (dolist (range ranges)
+        (markdown-ts-appear-mathjax--changed (car range) (cdr range))))))
 
 (defun markdown-ts-appear-mathjax--appearance (&rest _)
   "Refresh active buffers from cached SVG after theme or font changes."
@@ -598,12 +655,12 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
     (with-current-buffer buffer
       (when markdown-ts-appear-mathjax-mode
         (mapc #'markdown-ts-appear-mathjax--clear-panel markdown-ts-appear-mathjax--objects)
-        (markdown-ts-appear-mathjax-refresh)))))
+        (markdown-ts-appear-mathjax--redisplay)))))
 
 (defun markdown-ts-appear-mathjax--window (window)
   "Refresh a buffer newly displayed in WINDOW."
   (with-current-buffer (window-buffer window)
-    (when markdown-ts-appear-mathjax-mode (markdown-ts-appear-mathjax-refresh))))
+    (when markdown-ts-appear-mathjax-mode (markdown-ts-appear-mathjax--redisplay))))
 
 ;;; Optional source/preview frame
 
@@ -615,11 +672,6 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
                        markdown-ts-appear-mathjax--preview-body markdown-ts-appear-mathjax--status
                        markdown-ts-appear-mathjax--shown-image markdown-ts-appear-mathjax--rebuild))
       (overlay-put ov property nil))))
-
-(defun markdown-ts-appear-mathjax--preview-string (ov)
-  "Return OV's displayed editing preview."
-  (when-let* ((row (overlay-get ov 'markdown-ts-appear-mathjax--last-row)))
-    (overlay-get row 'after-string)))
 
 (defun markdown-ts-appear-mathjax--source-rows (ov)
   "Create OV's source edges only initially or after newline changes."
@@ -711,7 +763,7 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
 (defun markdown-ts-appear-mathjax--clone ()
   "Detach inherited preview state without deleting the base buffer's objects."
   (setq markdown-ts-appear-mathjax--objects nil markdown-ts-appear-mathjax--current nil
-        markdown-ts-appear-mathjax--timer nil markdown-ts-appear-mathjax--scan-tick nil)
+        markdown-ts-appear-mathjax--timer nil markdown-ts-appear-mathjax--dirty nil)
   (dolist (ov (overlays-in (point-min) (point-max)))
     (when (or (overlay-get ov 'markdown-ts-appear-mathjax) (overlay-get ov 'markdown-ts-appear-mathjax--row))
       (delete-overlay ov)))
@@ -736,7 +788,9 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
         (add-hook 'post-command-hook #'markdown-ts-appear-mathjax--post-command 90 t)
         (add-hook 'markdown-ts-appear--tracking-change-hook #'markdown-ts-appear-mathjax--post-command 90 t)
         (add-hook 'after-change-functions #'markdown-ts-appear-mathjax--changed 90 t)
-        (add-hook 'text-scale-mode-hook #'markdown-ts-appear-mathjax-refresh nil t)
+        (when (eq (treesit-parser-buffer treesit-primary-parser) (current-buffer))
+          (treesit-parser-add-notifier treesit-primary-parser #'markdown-ts-appear-mathjax--syntax-changed))
+        (add-hook 'text-scale-mode-hook #'markdown-ts-appear-mathjax--redisplay nil t)
         (add-hook 'window-buffer-change-functions #'markdown-ts-appear-mathjax--window nil t)
         (add-hook 'clone-indirect-buffer-hook #'markdown-ts-appear-mathjax--clone -90 t)
         (add-hook 'change-major-mode-hook #'markdown-ts-appear-mathjax--disable nil t)
@@ -749,7 +803,11 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
     (when markdown-ts-appear-mathjax--timer (cancel-timer markdown-ts-appear-mathjax--timer))
     (mapc #'markdown-ts-appear-mathjax--delete markdown-ts-appear-mathjax--objects)
     (setq markdown-ts-appear-mathjax--objects nil markdown-ts-appear-mathjax--current nil
-          markdown-ts-appear-mathjax--timer nil markdown-ts-appear-mathjax--scan-tick nil)
+          markdown-ts-appear-mathjax--timer nil)
+    (when (consp markdown-ts-appear-mathjax--dirty)
+      (set-marker (car markdown-ts-appear-mathjax--dirty) nil)
+      (set-marker (cdr markdown-ts-appear-mathjax--dirty) nil))
+    (setq markdown-ts-appear-mathjax--dirty nil)
     (font-lock-remove-keywords nil '((markdown-ts-appear-mathjax--fontify)))
     (dolist (property markdown-ts-appear-mathjax--managed)
       (setq font-lock-extra-managed-props (delq property font-lock-extra-managed-props)))
@@ -757,7 +815,10 @@ With prefix RECOMPILE, invalidate this buffer's cached formulas first."
     (remove-hook 'post-command-hook #'markdown-ts-appear-mathjax--post-command t)
     (remove-hook 'markdown-ts-appear--tracking-change-hook #'markdown-ts-appear-mathjax--post-command t)
     (remove-hook 'after-change-functions #'markdown-ts-appear-mathjax--changed t)
-    (remove-hook 'text-scale-mode-hook #'markdown-ts-appear-mathjax-refresh t)
+    (when (and (treesit-parser-p treesit-primary-parser)
+               (eq (treesit-parser-buffer treesit-primary-parser) (current-buffer)))
+      (treesit-parser-remove-notifier treesit-primary-parser #'markdown-ts-appear-mathjax--syntax-changed))
+    (remove-hook 'text-scale-mode-hook #'markdown-ts-appear-mathjax--redisplay t)
     (remove-hook 'window-buffer-change-functions #'markdown-ts-appear-mathjax--window t)
     (remove-hook 'clone-indirect-buffer-hook #'markdown-ts-appear-mathjax--clone t)
     (remove-hook 'change-major-mode-hook #'markdown-ts-appear-mathjax--disable t)
