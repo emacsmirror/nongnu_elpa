@@ -52,12 +52,22 @@
   :group 'markdown-ts)
 
 (defcustom markdown-ts-appear-enable-math-preview nil
-  "Whether to enable the optional latex-to-svg Markdown adaptor.
-Install `latex-to-svg-for-markdown' 0.22.2 or later.
-Its options select the engine, preamble and preview appearance.
-An independently enabled adaptor also follows appear's reveal policy.
+  "Whether to enable the selected optional math renderer.
+See `markdown-ts-appear-math-renderer'.  An independently enabled math mode
+also follows appear's reveal policy.
 Re-enable `markdown-ts-appear-mode' after changing this option."
   :type 'boolean)
+
+(defcustom markdown-ts-appear-math-renderer 'latex-to-svg
+  "Renderer enabled for optional math previews.
+`mathjax' uses the independent MathJax extension and Node.js, without TeX
+or latex-to-svg.  `latex-to-svg' uses its Markdown adaptor and its engine
+options (LaTeX, RaTeX or texres).  Set with Customize or `setopt' to switch
+active buffers to the selected renderer."
+  :type '(choice (const :tag "Independent MathJax" mathjax)
+                 (const :tag "latex-to-svg adaptor" latex-to-svg))
+  :initialize #'custom-initialize-default
+  :set #'markdown-ts-appear--set-render-option)
 
 (defcustom markdown-ts-appear-diagram-renderers nil
   "Alist mapping fenced-block language names to SVG rendering functions.
@@ -1262,6 +1272,8 @@ at most one following space or tab and are not clipped to START or LIMIT."
       (when (and (markdown-ts-appear--active-p)
                  (not (local-variable-p option)))
         (cond
+         ((eq option 'markdown-ts-appear-math-renderer)
+          (markdown-ts-appear-math--restart))
          ((eq option 'markdown-ts-appear-diagram-size)
           (markdown-ts-appear-diagram--refresh))
          ((eq option 'markdown-ts-appear-diagram-renderers)

@@ -16,6 +16,10 @@
 (declare-function latex-to-svg-frontend-span-at "latex-to-svg-frontend")
 (declare-function latex-to-svg-frontend-spans "latex-to-svg-frontend")
 (declare-function latex-to-svg-frontend-on-appearance-change "latex-to-svg-frontend")
+(declare-function latex-to-svg-frontend-mode "latex-to-svg-frontend")
+(declare-function markdown-ts-appear-mathjax-mode "markdown-ts-appear-mathjax")
+(declare-function markdown-ts-appear-mathjax-spans "markdown-ts-appear-mathjax")
+(declare-function markdown-ts-appear-mathjax-span-at "markdown-ts-appear-mathjax")
 (declare-function markdown-ts-appear--active-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--tracking-p "markdown-ts-appear")
 (declare-function markdown-ts-appear--update "markdown-ts-appear")
@@ -24,12 +28,15 @@
 (declare-function markdown-ts-appear-table--schedule-render "markdown-ts-appear-table")
 
 (defvar markdown-ts-appear-enable-math-preview)
+(defvar markdown-ts-appear-math-renderer)
 (defvar markdown-ts-appear--last-point)
 (defvar latex-to-svg-frontend-reveal)
 (defvar markdown-ts-appear-table--overlays)
 
 (defvar-local markdown-ts-appear-math--owned nil
   "Non-nil when appear enabled the Markdown math adaptor.")
+(defvar-local markdown-ts-appear-math--mathjax-owned nil
+  "Non-nil when appear enabled the independent MathJax mode.")
 (defvar-local markdown-ts-appear-math--saved-reveal nil
   "Previous (LOCAL-P VALUE) of the math source-reveal option.")
 
@@ -83,9 +90,18 @@ while the old library is still loaded.  Return nil if its source is unavailable.
 
 (defun markdown-ts-appear-math--span-at (position)
   "Return the external math span at POSITION, or nil."
-  (and (bound-and-true-p latex-to-svg-frontend-mode)
-       (fboundp 'latex-to-svg-frontend-span-at)
-       (latex-to-svg-frontend-span-at position)))
+  (if (bound-and-true-p markdown-ts-appear-mathjax-mode)
+      (markdown-ts-appear-mathjax-span-at position)
+    (and (bound-and-true-p latex-to-svg-frontend-mode)
+         (fboundp 'latex-to-svg-frontend-span-at)
+         (latex-to-svg-frontend-span-at position))))
+
+(defun markdown-ts-appear-math--spans (beg end)
+  "Return the active provider's spans between BEG and END."
+  (cond ((bound-and-true-p markdown-ts-appear-mathjax-mode)
+         (markdown-ts-appear-mathjax-spans beg end))
+        ((bound-and-true-p latex-to-svg-frontend-mode)
+         (latex-to-svg-frontend-spans beg end))))
 
 (defun markdown-ts-appear-math--contains-p (beg end)
   "Return non-nil when BEG..END is inside external math source."
@@ -104,14 +120,14 @@ while the old library is still loaded.  Return nil if its source is unavailable.
                 (lambda ()
                   (when (eq spans 'unknown)
                     (setq spans
-                          (when (bound-and-true-p latex-to-svg-frontend-mode)
-                            (save-match-data (latex-to-svg-frontend-spans beg end)))))
+                          (save-match-data (markdown-ts-appear-math--spans beg end))))
                   spans))))
     (apply function beg end arguments)))
 
 (defun markdown-ts-appear-math--revealed-region ()
   "Return math source bounds that table overlays must leave visible."
-  (when (and (bound-and-true-p latex-to-svg-frontend-mode)
+  (when (and (or (bound-and-true-p markdown-ts-appear-mathjax-mode)
+                 (bound-and-true-p latex-to-svg-frontend-mode))
              (or (bound-and-true-p isearch-mode)
                  (markdown-ts-appear-math--reveal-p nil)))
     (when-let* ((span (markdown-ts-appear-math--span-at (point))))
@@ -120,9 +136,10 @@ while the old library is still loaded.  Return nil if its source is unavailable.
 (defun markdown-ts-appear-math--table-spans (beg end)
   "Return inline (BEG END IMAGE OVERLAY) records for a table between BEG and END.
 Use existing preview overlays; this never requests or compiles an image."
-  (when (and (bound-and-true-p latex-to-svg-frontend-mode)
+  (when (and (or (bound-and-true-p markdown-ts-appear-mathjax-mode)
+                 (bound-and-true-p latex-to-svg-frontend-mode))
              (save-excursion (goto-char beg) (re-search-forward "[\\\\$]" end t)))
-    (cl-loop for (kind start finish) in (latex-to-svg-frontend-spans beg end)
+    (cl-loop for (kind start finish) in (markdown-ts-appear-math--spans beg end)
              when (and (eq kind 'inline) (<= beg start) (<= finish end))
              collect
              (let* ((overlay (seq-find
@@ -180,31 +197,75 @@ Use existing preview overlays; this never requests or compiles an image."
   (when (markdown-ts-appear--tracking-p)
     (markdown-ts-appear--update)))
 
-(defun markdown-ts-appear-math--setup ()
+(defun markdown-ts-appear-math--latex-setup ()
   "Attach the reveal policy and optionally enable latex-to-svg."
-  (add-function :around (local 'font-lock-fontify-region-function)
-                #'markdown-ts-appear-math--fontify)
   (add-hook 'latex-to-svg-frontend-mode-hook #'markdown-ts-appear-math--sync nil t)
   (cond
    ((bound-and-true-p latex-to-svg-frontend-mode)
     (markdown-ts-appear-math--sync))
    (markdown-ts-appear-enable-math-preview
     (unless (require 'latex-to-svg-for-markdown nil t)
-      (user-error "Since markdown-ts-appear 0.3.0, math previews use latex-to-svg instead of MathJax. Install latex-to-svg-for-markdown 0.22.2+ and a rendering engine"))
+      (user-error "Install latex-to-svg-for-markdown 0.22.2+ and a rendering engine for math previews"))
     (markdown-ts-appear-math--check-dependencies)
     (setq markdown-ts-appear-math--owned t)
     (latex-to-svg-for-markdown-mode 1))))
 
+(defun markdown-ts-appear-math--mathjax-sync ()
+  "Coordinate an independently toggled MathJax mode with appear."
+  (if (bound-and-true-p markdown-ts-appear-mathjax-mode)
+      (add-hook 'markdown-ts-appear-mathjax-preview-functions
+                #'markdown-ts-appear-math--image-shown nil t)
+    (remove-hook 'markdown-ts-appear-mathjax-preview-functions
+                 #'markdown-ts-appear-math--image-shown t)
+    (setq markdown-ts-appear-math--mathjax-owned nil))
+  (when (and (markdown-ts-appear--active-p) markdown-ts-appear-table--overlays)
+    (markdown-ts-appear-table--invalidate (point-min) (point-max))
+    (markdown-ts-appear-table--schedule-render)))
+
+(defun markdown-ts-appear-math--setup ()
+  "Attach the selected renderer without loading the other provider."
+  (add-function :around (local 'font-lock-fontify-region-function)
+                #'markdown-ts-appear-math--fontify)
+  (add-hook 'markdown-ts-appear-mathjax-mode-hook #'markdown-ts-appear-math--mathjax-sync nil t)
+  (if (or (eq markdown-ts-appear-math-renderer 'mathjax)
+          (bound-and-true-p markdown-ts-appear-mathjax-mode))
+      (when (or markdown-ts-appear-enable-math-preview
+                (bound-and-true-p markdown-ts-appear-mathjax-mode))
+        (require 'markdown-ts-appear-mathjax)
+        (add-hook 'markdown-ts-appear-mathjax-preview-functions
+                  #'markdown-ts-appear-math--image-shown nil t)
+        (unless (bound-and-true-p markdown-ts-appear-mathjax-mode)
+          (setq markdown-ts-appear-math--mathjax-owned t)
+          (markdown-ts-appear-mathjax-mode 1))
+        (markdown-ts-appear-math--mathjax-sync))
+    (markdown-ts-appear-math--latex-setup)))
+
 (defun markdown-ts-appear-math--teardown ()
   "Detach integration, stopping only an adaptor enabled by appear."
   (remove-function (local 'font-lock-fontify-region-function)
-                   #'markdown-ts-appear-math--fontify)
+                    #'markdown-ts-appear-math--fontify)
+  (remove-hook 'markdown-ts-appear-mathjax-mode-hook #'markdown-ts-appear-math--mathjax-sync t)
+  (remove-hook 'markdown-ts-appear-mathjax-preview-functions #'markdown-ts-appear-math--image-shown t)
+  (when markdown-ts-appear-math--mathjax-owned
+    (setq markdown-ts-appear-math--mathjax-owned nil)
+    (markdown-ts-appear-mathjax-mode -1))
   (remove-hook 'latex-to-svg-frontend-mode-hook #'markdown-ts-appear-math--sync t)
   (when markdown-ts-appear-math--owned
     (setq markdown-ts-appear-math--owned nil)
     (latex-to-svg-for-markdown-mode -1))
   (markdown-ts-appear-math--restore-reveal)
   (markdown-ts-appear-math--watch-images))
+
+(defun markdown-ts-appear-math--restart ()
+  "Switch an active appear buffer to its explicitly selected math renderer."
+  (markdown-ts-appear-math--teardown)
+  (when (bound-and-true-p markdown-ts-appear-mathjax-mode)
+    (markdown-ts-appear-mathjax-mode -1))
+  (when (bound-and-true-p latex-to-svg-for-markdown-mode)
+    (latex-to-svg-for-markdown-mode -1))
+  (when (bound-and-true-p latex-to-svg-frontend-mode)
+    (latex-to-svg-frontend-mode -1))
+  (markdown-ts-appear-math--setup))
 
 (defun markdown-ts-appear-math--detach ()
   "Detach appear's math integration in an unsupported indirect clone.
@@ -214,7 +275,8 @@ own previews and keeps them in step with the base buffer.  Appear's part
 is removed and the previous reveal option is restored, since appear no
 longer tracks point in the clone."
   ;; Not owned in the clone, so the teardown leaves the adaptor on.
-  (setq markdown-ts-appear-math--owned nil)
+  (setq markdown-ts-appear-math--owned nil
+        markdown-ts-appear-math--mathjax-owned nil)
   (markdown-ts-appear-math--teardown))
 
 (provide 'markdown-ts-appear-math)

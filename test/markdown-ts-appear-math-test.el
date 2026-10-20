@@ -92,7 +92,7 @@
                              (funcall original feature filename noerror)))))
                 (setq markdown-ts-appear-enable-math-preview t)
                 (let ((err (should-error (markdown-ts-appear-mode 1) :type 'user-error)))
-                  (should (string-match-p "0.3.0.*instead of MathJax"
+                  (should (string-match-p "Install latex-to-svg-for-markdown"
                                           (error-message-string err)))))))
         (markdown-ts-appear-mode -1)))))
 
