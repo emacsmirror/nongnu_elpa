@@ -29,8 +29,7 @@ labels, width-aware table views, and LaTeX and diagram previews.
 
 - Emacs 31.1+ with Tree-sitter support.
 - The `markdown` and `markdown-inline` grammars.
-- Math (optional): `latex-to-svg-for-markdown` from MELPA, SVG support, and a
-  [supported rendering engine](https://github.com/alberti42/latex-to-svg#engine).
+- Math (optional): SVG support and either backend described [below](#math).
 - Diagrams (optional): SVG image support and a registered renderer. The built-in
   Mermaid renderer uses [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli)
   (`mmdc`) with its browser runtime.
@@ -70,104 +69,19 @@ with SVG image support.
 
 ### Math
 
-Install the Markdown adaptor from MELPA, then enable previews:
+Math previews automatically use an available backend, preferring MathJax when
+both are installed. Their rendering differs slightly.
+
+- **MathJax**: GNU ELPA `mathjax` package and Node.js.
+- **latex-to-svg**: `latex-to-svg-for-markdown` 0.22.2+ from MELPA and a
+  [supported engine](https://github.com/alberti42/latex-to-svg#engine).
 
 ```emacs-lisp
-(use-package latex-to-svg-for-markdown
-  :ensure t
-  :defer t
-  :custom
-  (markdown-ts-appear-enable-math-preview t)
-  (latex-to-svg-frontend-center-display-math t))
+(setopt markdown-ts-appear-enable-math-preview t)
 ```
 
-Install the selected engine separately: LaTeX + dvisvgm (default), RaTeX, or
-texres + pdftocairo. See [upstream setup](https://github.com/alberti42/latex-to-svg#engine).
-Requires `latex-to-svg-for-markdown` 0.22.2 or later (on MELPA Stable).
-
-#### Experimental MathJax engine and editing preview
-
-This branch provides **`markdown-ts-appear-mathjax.el`**, an independent,
-single-file extension. The MathJax path does not load any `latex-to-svg` package.
-It can also run on its own with `M-x markdown-ts-appear-mathjax-mode` in a
-`markdown-ts-mode` buffer. Put the file on `load-path` and require
-`markdown-ts-appear-mathjax`, or use the provider setting below with this checkout.
-
-Install Node.js and the **GNU ELPA `mathjax` package** (`M-x package-install
-RET mathjax RET`). That package includes its JavaScript bundle: no TeX
-distribution, npm installation, browser, or network access at render time is
-needed. Then configure:
-
-```emacs-lisp
-(setopt markdown-ts-appear-enable-math-preview t
-        markdown-ts-appear-math-renderer 'mathjax)
-(require 'markdown-ts-appear-mathjax)
-(setopt markdown-ts-appear-mathjax-center-display t
-        markdown-ts-appear-mathjax-edit-preview nil
-        markdown-ts-appear-mathjax-delay 0.2)
-```
-
-`markdown-ts-appear-mathjax-edit-preview` selects the editing style:
-
-- `nil` (default): editing shows **only the source, without a frame or a lower
-  preview**. Leaving the formula or stopping source reveal renders it again.
-  With the Evil setup below, exiting insert state also restores rendering.
-- `t`: editing a standalone display formula shows **source above a centered
-  preview**, with a frame around both areas.
-
-Set `markdown-ts-appear-mathjax-edit-preview` to `t` to enable the second style,
-then run `M-x markdown-ts-appear-mathjax-refresh` in an existing buffer.
-
-With live editing previews enabled, a standalone `$$...$$`, `\[...\]`, or
-equation environment updates from the current source after a short pause.
-While typing or waiting,
-the previous preview stays in place until a new image is ready; hovering it
-identifies it as the previous preview. A failed render removes that image and
-shows the current source with its error state. Source and preview share an
-outer frame, with no title rows and only a thin separator between them.
-The source shading includes the closing delimiter line and trailing whitespace.
-The editing image has eight pixels of space above and below it. The cached
-image used by reading mode and inline tables is unchanged.
-Errors include a short diagnostic
-and a **Details** button for the full error/log. Pending work is not treated as
-an error. Leaving restores the usual preview.
-Inline math retains ordinary reveal behavior. See `examples/mathjax.md` for a
-sample. The optional frame still has incomplete right edges on soft-wrapped
-source lines and native vertical-motion limitations at decorated line ends.
-
-The frame uses lightweight source-line overlays and native faces, with relative
-stretch spaces to follow window width. Ordinary character edits reuse them;
-newline changes rebuild only the active formula's edges. It creates no
-decoration SVGs or additional render requests. Customize
-`markdown-ts-appear-mathjax-source` and `markdown-ts-appear-mathjax-preview`
-faces for the background and border.
-
-Switch back with `(setopt markdown-ts-appear-math-renderer 'latex-to-svg)`;
-only that path loads the LaTeX adaptor and its dependencies. Providers have
-separate caches; theme and size changes reuse the cached SVG. MathJax
-uses its supported TeX syntax, not LaTeX packages or the LaTeX preamble. Define
-MathJax macros with `markdown-ts-appear-mathjax-macros`. Manual `\tag{...}` is
-supported; document-wide automatic numbering and cross-formula `\ref`/`\eqref`
-are intentionally outside this extension's scope. There is no automatic
-fallback to TeX for MathJax failures.
-
-For an isolated interactive demo, run `emacs -Q -l test/try-mathjax.el` from
-this checkout. It defaults to plain source while editing. One shared Node
-worker stays alive for the session. Its embedded JavaScript reuses the bundled
-code and fonts, creating a
-fresh TeX input jax for each formula so macros and labels cannot leak across
-requests. Memory and disk caches reuse rendered SVGs.
-`M-x markdown-ts-appear-mathjax-stop` releases
-the worker; the next cache miss starts it again. A worker crash or timeout
-fails its outstanding requests, and later requests can start a new worker.
-
-Run the independent tests with:
-
-```sh
-emacs --batch -Q -l test/mathjax-standalone-init.el \
-  -l test/markdown-ts-appear-mathjax-independent-test.el \
-  -f ert-run-tests-batch-and-exit
-```
+For a live preview below display-math source, enable
+`markdown-ts-appear-mathjax-edit-preview` with the MathJax backend.
 
 ### Diagrams
 
@@ -217,7 +131,7 @@ faces.  See `C-h v` and `M-x describe-face` for full documentation.
 | `markdown-ts-appear-table-zebra-stripe` | `t` | Shade every second data row in `wrapped` tables. |
 | `markdown-ts-appear-table-wrap-resize-delay` | `0.2` | Seconds to debounce `wrapped` table resize rendering. |
 | `markdown-ts-appear-enable-math-preview` | `nil` | Enable the selected math provider. |
-| `markdown-ts-appear-math-renderer` | `latex-to-svg` | `latex-to-svg` or independent `mathjax`. |
+| `markdown-ts-appear-math-renderer` | `auto` | Prefer available MathJax; otherwise latex-to-svg. Can explicitly select `mathjax` or `latex-to-svg`. |
 | `markdown-ts-appear-mathjax-edit-preview` | `nil` | Plain source while editing; `t` enables the optional framed preview below it. |
 | `markdown-ts-appear-mathjax-delay` | `0.2` | Idle delay before reconciling edits; leaving a formula renders immediately. |
 | `markdown-ts-appear-mathjax-scale` | `1.0` | Image scale relative to the source font's x-height. |

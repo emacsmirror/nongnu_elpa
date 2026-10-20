@@ -58,13 +58,16 @@ also follows appear's reveal policy.
 Re-enable `markdown-ts-appear-mode' after changing this option."
   :type 'boolean)
 
-(defcustom markdown-ts-appear-math-renderer 'latex-to-svg
+(defcustom markdown-ts-appear-math-renderer 'auto
   "Renderer enabled for optional math previews.
+`auto' prefers MathJax when its package and Node.js are available,
+otherwise uses latex-to-svg.
 `mathjax' uses the independent MathJax extension and Node.js, without TeX
 or latex-to-svg.  `latex-to-svg' uses its Markdown adaptor and its engine
 options (LaTeX, RaTeX or texres).  Set with Customize or `setopt' to switch
 active buffers to the selected renderer."
-  :type '(choice (const :tag "Independent MathJax" mathjax)
+  :type '(choice (const :tag "Automatic (prefer MathJax)" auto)
+                 (const :tag "Independent MathJax" mathjax)
                  (const :tag "latex-to-svg adaptor" latex-to-svg))
   :initialize #'custom-initialize-default
   :set #'markdown-ts-appear--set-render-option)

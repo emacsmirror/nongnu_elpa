@@ -222,12 +222,21 @@ Use existing preview overlays; this never requests or compiles an image."
     (markdown-ts-appear-table--invalidate (point-min) (point-max))
     (markdown-ts-appear-table--schedule-render)))
 
+(defun markdown-ts-appear-math--renderer ()
+  "Return the selected renderer, resolving automatic availability checks."
+  (if (eq markdown-ts-appear-math-renderer 'auto)
+      (if (and (locate-library "mathjax") (executable-find "node"))
+          'mathjax
+        'latex-to-svg)
+    markdown-ts-appear-math-renderer))
+
 (defun markdown-ts-appear-math--setup ()
   "Attach the selected renderer without loading the other provider."
   (add-function :around (local 'font-lock-fontify-region-function)
                 #'markdown-ts-appear-math--fontify)
   (add-hook 'markdown-ts-appear-mathjax-mode-hook #'markdown-ts-appear-math--mathjax-sync nil t)
-  (if (or (eq markdown-ts-appear-math-renderer 'mathjax)
+  (if (or (and markdown-ts-appear-enable-math-preview
+               (eq (markdown-ts-appear-math--renderer) 'mathjax))
           (bound-and-true-p markdown-ts-appear-mathjax-mode))
       (when (or markdown-ts-appear-enable-math-preview
                 (bound-and-true-p markdown-ts-appear-mathjax-mode))

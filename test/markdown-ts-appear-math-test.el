@@ -33,6 +33,7 @@
      (let ((buffer (generate-new-buffer " *math-integration-test*"))
            (markdown-ts-inline-images nil)
            (markdown-ts-appear-enable-math-preview nil)
+           (markdown-ts-appear-math-renderer 'latex-to-svg)
            (markdown-ts-appear-table-style 'raw))
        (unwind-protect
            (with-current-buffer buffer
@@ -79,7 +80,8 @@
   (with-temp-buffer
     (insert "$x$\n")
     (markdown-ts-mode)
-    (let ((markdown-ts-appear-enable-math-preview nil))
+    (let ((markdown-ts-appear-enable-math-preview nil)
+          (markdown-ts-appear-math-renderer 'latex-to-svg))
       (unwind-protect
           (progn
             (markdown-ts-appear-mode 1)
@@ -426,6 +428,37 @@
               (should-error (markdown-ts-appear-mode 1) :type 'user-error))
             (should-not markdown-ts-appear-math--saved-reveal)
             (should (eq reveal latex-to-svg-frontend-reveal))))))))
+
+(ert-deftest markdown-ts-appear-math-test-auto-provider-selection ()
+  (dolist (case '((t t t mathjax) (t nil t mathjax)
+                  (nil t t latex-to-svg) (t t nil latex-to-svg)
+                  (nil nil nil latex-to-svg)))
+    (pcase-let ((`(,mathjax ,latex ,node ,expected) case))
+      (with-temp-buffer
+        (let ((markdown-ts-appear-math-renderer 'auto)
+              (markdown-ts-appear-enable-math-preview t)
+              selected)
+          (cl-letf (((symbol-function 'locate-library)
+                     (lambda (name &rest _)
+                       (pcase name ("mathjax" mathjax)
+                              ("latex-to-svg-for-markdown" latex))))
+                    ((symbol-function 'executable-find) (lambda (_) node))
+                    ((symbol-function 'require)
+                     (lambda (feature &rest _)
+                       (should (eq feature 'markdown-ts-appear-mathjax)) t))
+                    ((symbol-function 'markdown-ts-appear-mathjax-mode)
+                     (lambda (_) (setq selected 'mathjax)))
+                    ((symbol-function 'markdown-ts-appear-math--mathjax-sync) #'ignore)
+                    ((symbol-function 'markdown-ts-appear-math--latex-setup)
+                     (lambda () (setq selected 'latex-to-svg))))
+            (markdown-ts-appear-math--setup)
+            (should (eq selected expected))))))))
+
+(ert-deftest markdown-ts-appear-math-test-explicit-provider-skips-detection ()
+  (dolist (markdown-ts-appear-math-renderer '(mathjax latex-to-svg))
+    (cl-letf (((symbol-function 'locate-library)
+               (lambda (&rest _) (ert-fail "Explicit selection must not auto-detect"))))
+      (should (eq (markdown-ts-appear-math--renderer) markdown-ts-appear-math-renderer)))))
 
 (provide 'markdown-ts-appear-math-test)
 ;;; markdown-ts-appear-math-test.el ends here

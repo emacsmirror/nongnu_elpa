@@ -19,6 +19,7 @@
      (let ((buffer (generate-new-buffer " *table-math-test*"))
            (markdown-ts-inline-images nil)
            (markdown-ts-appear-enable-math-preview t)
+           (markdown-ts-appear-math-renderer 'latex-to-svg)
            (markdown-ts-appear-diagram-renderers nil))
        (unwind-protect
            (save-window-excursion
@@ -211,6 +212,7 @@
   (let ((buffer (generate-new-buffer " *table-math-gui*"))
         (image (create-image (image-property markdown-ts-appear-table-math-test--image :data) 'svg t :scale 1))
         (markdown-ts-appear-enable-math-preview t)
+        (markdown-ts-appear-math-renderer 'latex-to-svg)
         (markdown-ts-inline-images nil))
     (unwind-protect
         (save-window-excursion
