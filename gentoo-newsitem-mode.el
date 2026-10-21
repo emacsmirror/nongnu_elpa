@@ -52,20 +52,6 @@
      1 'font-lock-warning-face t))
   "Expressions to highlight in Gentoo newsitem mode.")
 
-(defvar gentoo-newsitem-format-list
-  '("1.0" "2.0")
-  "List of news item formats defined by GLEP 42.")
-
-;; suppress byte-compiler warning in XEmacs
-(defvar gentoo-newsitem-mode-menu)
-
-;;;###autoload
-(define-derived-mode gentoo-newsitem-mode text-mode "Newsitem"
-  "Major mode for Gentoo GLEP 42 news items."
-  (if (featurep 'xemacs)
-      (easy-menu-add gentoo-newsitem-mode-menu))
-  (setq fill-column 72))
-
 (defun gentoo-newsitem-search-header (regexp limit)
   "Like `re-search-forward' but restricted to the header.
 Search forward from point for regular expression REGEXP.
@@ -77,11 +63,25 @@ Buffer position LIMIT limits the search."
     (if (>= bound (point))
 	(re-search-forward regexp bound t))))
 
+;; suppress byte-compiler warning in XEmacs
+(defvar gentoo-newsitem-mode-menu)
+
+;;;###autoload
+(define-derived-mode gentoo-newsitem-mode text-mode "Newsitem"
+  "Major mode for Gentoo GLEP 42 news items."
+  (if (featurep 'xemacs)
+      (easy-menu-add gentoo-newsitem-mode-menu))
+  (setq fill-column 72))
+
 (defun gentoo-newsitem-add-font-lock ()
   "Add `gentoo-newsitem-mode' font-lock keywords for the current buffer."
   (font-lock-add-keywords nil gentoo-newsitem-font-lock-keywords))
 
 (add-hook 'gentoo-newsitem-mode-hook #'gentoo-newsitem-add-font-lock)
+
+(defvar gentoo-newsitem-format-list
+  '("1.0" "2.0")
+  "List of news item formats defined by GLEP 42.")
 
 (define-skeleton gentoo-newsitem-insert-skeleton
   "Insert a skeleton for a Gentoo GLEP 42 news item."
