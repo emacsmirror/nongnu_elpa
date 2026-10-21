@@ -44,6 +44,10 @@
 #define EXPORT
 #endif
 
+/* Declare before emacs-module.h, which declares it without EXPORT */
+struct emacs_runtime;
+EXPORT int emacs_module_init(struct emacs_runtime *runtime);
+
 #include <emacs-module.h>
 
 EXPORT int plugin_is_GPL_compatible;
