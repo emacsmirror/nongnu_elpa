@@ -49,14 +49,12 @@
   (unless cond (signal 'test-skipped nil)))
 
 (defmacro should (assertion)
-  (let ((args (ignore-errors
-		(destructuring-bind (s1 (s2 form) (s3 (err msg)))
-		    assertion
-		  (list (list s1 s2 s3) err msg form)))))
-    ;; handle (should (equal (should-error ...) '(error ...)))
-    (if (equal (car args) '(equal should-error quote))
-	`(Check-Error-Message ,@(cdr args))
-      `(Assert ,assertion))))
+  (or (ignore-errors
+	;; handle (should (equal (should-error ...) '(error ...)))
+	(destructuring-bind (s1 (s2 form) (s3 (err msg))) assertion
+	  (if (equal (list s1 s2 s3) '(equal should-error quote))
+	      `(Check-Error-Message ,err ,msg ,form))))
+      `(Assert ,assertion)))
 
 (defmacro should-not (assertion)
   `(Assert (not ,assertion)))

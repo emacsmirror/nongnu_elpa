@@ -1,5 +1,7 @@
 2026-10-21  Ulrich Müller  <ulm@gentoo.org>
 
+	* test/xemacs-test-wrapper.el (should): Simplify.
+
 	* ebuild-mode.el (ebuild-mode-add-font-lock): Fix initial
 	fontification in XEmacs.
 
