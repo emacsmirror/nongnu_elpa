@@ -450,7 +450,17 @@ of the elements."
 
 (defun ebuild-mode-add-font-lock ()
   "Add `ebuild-mode' font-lock keywords for the current buffer."
-  (font-lock-add-keywords nil ebuild-mode-font-lock-keywords))
+  (static-if (featurep 'xemacs)
+      ;; *** HACK ***  XEmacs calls font-lock-fontify-buffer from
+      ;; font-lock-add-keywords *before* adding the new keywords.
+      ;; Disable the fontification function while adding and call
+      ;; it explicitly afterwards.
+      (progn
+	(let ((font-lock-fontify-buffer-function #'ignore))
+	  (font-lock-add-keywords nil ebuild-mode-font-lock-keywords))
+	(and font-lock-mode font-lock-auto-fontify
+	     (font-lock-fontify-buffer)))
+    (font-lock-add-keywords nil ebuild-mode-font-lock-keywords)))
 
 (add-hook 'ebuild-mode-hook #'ebuild-mode-add-font-lock)
 

@@ -1,5 +1,8 @@
 2026-10-21  Ulrich Müller  <ulm@gentoo.org>
 
+	* ebuild-mode.el (ebuild-mode-add-font-lock): Fix initial
+	fontification in XEmacs.
+
 	* ebuild-mode.el (ebuild-mode-add-font-lock, ebuild-mode-hook):
 	* gentoo-newsitem-mode.el (gentoo-newsitem-add-font-lock)
 	(gentoo-newsitem-mode-hook):
