@@ -245,8 +245,9 @@ Takes its form from `window-configuration-to-register'.")
 
 (defvar-local mastodon-toot-quote-policy nil
   "The quote policy for the current toot.
-Value must be a symbol, and a member of `mastodon-profiles-quote-policy-types', i.e.
-public, followers, or nobody.")
+Value must be a string, and a member of
+`mastodon-profiles-quote-policy-types', i.e. public, followers, or
+nobody.")
 
 (defvar-local mastodon-toot-quote-id nil)
 
