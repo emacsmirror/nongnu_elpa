@@ -2143,7 +2143,8 @@ TOOT is the data for the quoting toot."
            (mastodon-tl--format-quote-non-display
             (format "Quote hidden, %s" state) nil :noprop))
           ((string= state "pending")
-           (mastodon-tl--format-quote-non-display "quote pending" .url))
+           ;; pending quotes have no data, so no URL:
+           (mastodon-tl--format-quote-non-display "quote pending" nil :noprop))
           (t
            (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri))
                  (nested-quote (alist-get 'quote quoted)))
