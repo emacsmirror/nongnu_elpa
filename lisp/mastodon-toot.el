@@ -934,8 +934,12 @@ to `emojify-user-emojis', and the emoji data is updated."
       "poll[options][]"
       (plist-get mastodon-toot-poll :options))
      `(("poll[expires_in]" .  ,(plist-get mastodon-toot-poll :expiry)))
-     `(("poll[multiple]" . ,(symbol-name (plist-get mastodon-toot-poll :multi))))
-     `(("poll[hide_totals]" . ,(symbol-name (plist-get mastodon-toot-poll :hide)))))))
+     `(("poll[multiple]" . ,(if (plist-get mastodon-toot-poll :multi)
+                                "true"
+                              "false")))
+     `(("poll[hide_totals]" . ,(if (plist-get mastodon-toot-poll :hide)
+                                   "true"
+                                 "false"))))))
 
 
 ;;; SEND TOOT FUNCTION
@@ -962,7 +966,7 @@ instance to edit a toot."
              ("sensitive" . ,(when mastodon-toot--content-nsfw
                                (symbol-name t)))
              ("spoiler_text" . ,mastodon-toot--content-warning)
-             ("quote_approval_policy" . ,mastodon-toot-quote-policy)
+             ("quote_approval_policy" . ,(symbol-name mastodon-toot-quote-policy))
              ("language" . ,mastodon-toot--language)
              ("quoted_status_id" . ,mastodon-toot-quote-id))
            ;; Pleroma instances can't handle null-valued

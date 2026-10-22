@@ -1794,19 +1794,21 @@ LENGTH is of the longest option, for formatting."
                          "\n")
               "\n"
               (propertize
-               (cond (.voters_count ; sometimes it is nil
-                      (format "%s %s | " .voters_count
-                              (if (= .voters_count 1) "person" "people")))
-                     (.vote_count
-                      (format "%s votes | " .vote_count))
-                     (t ""))
+               (concat
+                (cond (.voters_count ; sometimes it is nil
+                       (format "%s %s | " .voters_count
+                               (if (= .voters_count 1) "person" "people")))
+                      (.vote_count
+                       (format "%s votes | " .vote_count))
+                      (t ""))
+                (format "%s choice | "
+                        (if .multiple "multi" "single"))
+                (if (eq .expired :json-false)
+                    (if (eq .expires_at nil)
+                        ""
+                      (mastodon-tl--format-poll-expiry .expires_at))
+                  "Poll expired."))
                'face 'mastodon-toot-docs-face)
-              (let ((str (if (eq .expired :json-false)
-                             (if (eq .expires_at nil)
-                                 ""
-                               (mastodon-tl--format-poll-expiry .expires_at))
-                           "Poll expired.")))
-                (propertize str 'face 'mastodon-toot-docs-face))
               "\n"))))
 
 (defconst mastodon-tl--time-units
@@ -2141,7 +2143,8 @@ TOOT is the data for the quoting toot."
            (mastodon-tl--format-quote-non-display
             (format "Quote hidden, %s" state) nil :noprop))
           ((string= state "pending")
-           (mastodon-tl--format-quote-non-display "quote pending" .url))
+           ;; pending quotes have no data, so no URL:
+           (mastodon-tl--format-quote-non-display "quote pending" nil :noprop))
           (t
            (let ((quote-rendered (mastodon-tl-prop-quote rendered .uri))
                  (nested-quote (alist-get 'quote quoted)))
@@ -2157,7 +2160,9 @@ TOOT is the data for the quoting toot."
               ;; quoted text:
               (if foldable
                   (mastodon-tl--fold-body quote-rendered
-                               (mastodon-search--format-heading "click for full toot"))
+                               (mastodon-tl-prop-quote (mastodon-search--format-heading
+                                             "click for full toot")
+                                            .uri))
                 quote-rendered)
               (when nested-quote
                 (propertize
@@ -2305,10 +2310,16 @@ CW-EXPANDED means treat content warnings as unfolded."
            ""))
         'toot-body t) ;; includes newlines etc. for folding
        ;; post tags:
-       (let ((tags (alist-get 'tags toot)))
-         ;; FIXME: we also need to test here for normal body tags, and if
-         ;; so, don't go ahead:
-         (if tags (concat (mastodon-tl--base-tags tags body-tags)) ""))
+       (if-let* ((tags (alist-get 'tags toot))
+                 (rendered (mastodon-tl--base-tags tags body-tags)))
+           ;; FIXME: we also need to test here for normal body tags, and if
+           ;; so, don't go ahead:
+           (if (mastodon-tl--has-spoiler toot)
+               (propertize rendered
+                           'invisible t
+                           'mastodon-content-warning-body t)
+             rendered)
+         "")
        ;; byline:
        "\n"
        (if no-byline

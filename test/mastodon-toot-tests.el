@@ -233,3 +233,34 @@ mention string."
 ;;        (mock (mastodon-auth--user-acct) => "joebogus@example.space")
 ;;        (should (equal (mastodon-toot-pin-toot-toggle)
 ;;                       "You can only pin your own toots"))))))
+
+(ert-deftest mastodon-toot-poll-params ()
+  "Test that we prepare poll related parameters correctly.
+Whether using transient or not."
+  (let ((mastodon-toot-poll-use-transient nil)
+        (mastodon-toot-poll '( :options ("asdf" "qwer")
+                  :length 75 :expiry-readable "1 day" :expiry
+                  "86400" :multi t :hide nil)))
+    (should
+     (equal
+      (mastodon-toot--build-poll-params)
+      '(("poll[options][]" . "asdf")
+        ("poll[options][]" . "qwer")
+        ("poll[expires_in]" . "86400")
+        ("poll[multiple]" . "true")
+        ("poll[hide_totals]" . "false"))
+      )))
+  (let ((mastodon-toot-poll-use-transient t)
+        (mastodon-toot-poll '((four) (three) (two . "zxcv") (one . "asdf")
+                 (expiry . "259200") (hide . "true") (multi . "false"))))
+    (should
+     (equal
+      (mastodon-toot--build-poll-params)
+
+      '(("poll[options][]" . "asdf")
+        ("poll[options][]" . "zxcv")
+        ("poll[options][]")
+        ("poll[options][]")
+        ("poll[expires_in]" . "259200")
+        ("poll[multiple]" . "false")
+        ("poll[hide_totals]" . "true"))))))
