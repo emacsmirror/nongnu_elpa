@@ -245,8 +245,9 @@ Takes its form from `window-configuration-to-register'.")
 
 (defvar-local mastodon-toot-quote-policy nil
   "The quote policy for the current toot.
-Value must be a symbol, and a member of `mastodon-profiles-quote-policy-types', i.e.
-public, followers, or nobody.")
+Value must be a string, and a member of
+`mastodon-profiles-quote-policy-types', i.e. public, followers, or
+nobody.")
 
 (defvar-local mastodon-toot-quote-id nil)
 
@@ -966,7 +967,7 @@ instance to edit a toot."
              ("sensitive" . ,(when mastodon-toot--content-nsfw
                                (symbol-name t)))
              ("spoiler_text" . ,mastodon-toot--content-warning)
-             ("quote_approval_policy" . ,(symbol-name mastodon-toot-quote-policy))
+             ("quote_approval_policy" . ,mastodon-toot-quote-policy)
              ("language" . ,mastodon-toot--language)
              ("quoted_status_id" . ,mastodon-toot-quote-id))
            ;; Pleroma instances can't handle null-valued
@@ -1317,7 +1318,7 @@ With prefix ARG, read a visibility type in the minibuffer."
                    "unlisted")
                   ((string= mastodon-toot--visibility "unlisted")
                    ;; XXX: followers-only means no quoting:
-                   (progn (setq mastodon-toot-quote-policy 'nobody)
+                   (progn (setq mastodon-toot-quote-policy "nobody")
                           "private"))
                   ((string= mastodon-toot--visibility "private")
                    (progn

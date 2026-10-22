@@ -598,7 +598,7 @@ The endpoint only holds a few preferences. For others, see
       (goto-char (point-min)))))
 
 (defvar mastodon-profiles-quote-policy-types
-  '(public followers nobody))
+  '("public" "followers" "nobody"))
 
 (defun mastodon-profile-set-quote-policy ()
   "Prompt for a quote policy and set it in the user's preferences."
