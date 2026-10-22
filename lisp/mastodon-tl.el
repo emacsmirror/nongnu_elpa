@@ -2160,7 +2160,9 @@ TOOT is the data for the quoting toot."
               ;; quoted text:
               (if foldable
                   (mastodon-tl--fold-body quote-rendered
-                               (mastodon-search--format-heading "click for full toot"))
+                               (mastodon-tl-prop-quote (mastodon-search--format-heading
+                                             "click for full toot")
+                                            .uri))
                 quote-rendered)
               (when nested-quote
                 (propertize
