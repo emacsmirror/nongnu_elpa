@@ -2307,17 +2307,16 @@ CW-EXPANDED means treat content warnings as unfolded."
            ""))
         'toot-body t) ;; includes newlines etc. for folding
        ;; post tags:
-       (let ((tags (alist-get 'tags toot)))
-         ;; FIXME: we also need to test here for normal body tags, and if
-         ;; so, don't go ahead:
-         (if tags
-             (let ((rendered (mastodon-tl--base-tags tags body-tags)))
-               (if (mastodon-tl--has-spoiler toot)
-                   (propertize rendered
-                               'invisible t
-                               'mastodon-content-warning-body t)
-                 rendered))
-           ""))
+       (if-let* ((tags (alist-get 'tags toot))
+                 (rendered (mastodon-tl--base-tags tags body-tags)))
+           ;; FIXME: we also need to test here for normal body tags, and if
+           ;; so, don't go ahead:
+           (if (mastodon-tl--has-spoiler toot)
+               (propertize rendered
+                           'invisible t
+                           'mastodon-content-warning-body t)
+             rendered)
+         "")
        ;; byline:
        "\n"
        (if no-byline
