@@ -126,9 +126,7 @@
     "^# "))
 
 (defvar ebuild-mode-keywords-eclassdoc-warn
-  ;; @ECLASS-VARIABLE (with a hyphen) is deprecated:
-  ;; https://bugs.gentoo.org/835396
-  '(("@DEAD" "@DEPRECATED" "@ECLASS-VARIABLE")
+  '(("@DEAD" "@DEPRECATED")
     (1 'font-lock-warning-face t)
     "^# "))
 
@@ -465,6 +463,8 @@
      ;; llvm.org
      "llvm.org_set_globals" "llvm.org_src_unpack" "llvm.org_src_prepare"
      "get_lit_flags" "llvm_are_manpages_built" "llvm_install_manpages"
+     ;; locale-utils
+     "elocale_gen"
      ;; lua
      "lua_copy_sources" "lua_foreach_impl"
      ;; lua-single
