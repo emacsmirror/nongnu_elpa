@@ -1020,6 +1020,10 @@ The saved messages are flagged as `filed'."
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-display nil nil '(vm-save-message-to-imap-folder)
 	      '(vm-save-message-to-imap-folder))
+  ;; Before anything is sent: the save is done by the driver, and nothing can
+  ;; ask a question from inside a process filter (emacs-vm/vm#920).
+  (when (vm-interactive-p)
+    (vm-imap-confirm-new-folder folder))
   (unless count (setq count 1))
   (unless mlist
     (setq mlist (vm-select-operable-messages count (vm-interactive-p) "Save")))

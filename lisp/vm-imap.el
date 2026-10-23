@@ -1262,6 +1262,42 @@ that destroyed mail nobody asked it to (emacs-vm/vm#752)."
 (defvar vm-imap-account-folder-cache nil
   "Caches the list of all folders on an IMAP account.")
 
+(declare-function vm-imap-net-mailbox-names "vm-imap-net"
+		  (spec &optional selectable-only seconds))
+
+(defun vm-imap-mailbox-known-p (spec)
+  "Whether SPEC names a mailbox the account is known to hold.
+Three answers: t where the account holds it, nil where the account's folder
+list is known and does not, and `unknown' where VM cannot say: an account
+whose folder list is not cached and whose server will not answer, which is a
+maildrop VM has no password for.  Asking the server is the same
+one-connection wait that folder-name completion makes, and what it learns is
+cached for both."
+  (let* ((account (vm-imap-account-name-for-spec spec))
+	 (mailbox (nth 3 (vm-imap-parse-spec-to-list spec)))
+	 (known (cdr (assoc account vm-imap-account-folder-cache))))
+    (unless known
+      (setq known (vm-imap-net-mailbox-names spec))
+      (when known
+	(add-to-list 'vm-imap-account-folder-cache (cons account known))))
+    (cond ((null known) 'unknown)
+	  ((member mailbox known) t))))
+
+(defun vm-imap-confirm-new-folder (spec)
+  "Ask before saving into SPEC where the account has no such mailbox.
+Nothing is asked unless `vm-confirm-new-folders' is set, and nothing is asked
+about a mailbox the account already has or about an account VM cannot ask
+about.  Signals when the answer is no.
+
+Asked here rather than as the save runs: the save is done by the driver, and
+nothing can put a question from inside a process filter (emacs-vm/vm#920)."
+  (when (and vm-confirm-new-folders
+	     (null (vm-imap-mailbox-known-p spec)))
+    (unless (y-or-n-p (format "%s does not exist, save there anyway? "
+			      (or (vm-imap-folder-for-spec spec)
+				  (vm-safe-imapdrop-string spec))))
+      (error "Save aborted"))))
+
 (defun vm-imap-folder-completion-list (string predicate method)
   "Find completions for STRING as an IMAP folder name, satisfying
   PREDICATE.  The third argument METHOD is one of:
