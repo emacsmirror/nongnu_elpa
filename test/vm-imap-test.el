@@ -735,6 +735,77 @@ Body
       ;; `vm-imap-net-synchronize's own documented behaviour.
       (should (equal asked '(t nil))))))
 
+;;; Confirming a mailbox the account has not got (emacs-vm/vm#920)
+
+(defun vm-imap-test--spec (mailbox)
+  "A maildrop spec naming MAILBOX on the account called work."
+  (format "imap:imap.example.com:143:%s:login:me:*" mailbox))
+
+(defmacro vm-imap-test--with-account-holding (mailboxes &rest body)
+  "Run BODY with the account called work known to hold MAILBOXES.
+A nil MAILBOXES is an account whose folder list VM has not got."
+  (declare (indent 1) (debug t))
+  `(let ((vm-imap-account-alist
+          (list (list "imap:imap.example.com:143:inbox:login:me:*" "work")))
+         (vm-imap-account-folder-cache
+          (if ,mailboxes (list (cons "work" ,mailboxes)) nil)))
+     ;; the server is never reached in these: an account VM cannot ask about
+     ;; is the case the code has to be careful of, so it is the default here
+     (cl-letf (((symbol-function 'vm-imap-net-mailbox-names)
+                (lambda (&rest _) nil)))
+       ,@body)))
+
+(ert-deftest vm-imap-test-a-mailbox-the-account-has-is-not-asked-about ()
+  "Saving into a mailbox the account holds asks nothing, whatever the option."
+  (vm-imap-test--with-account-holding (list "INBOX" "Archive")
+    (let ((vm-confirm-new-folders t))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (error "asked about a mailbox that exists"))))
+        (should-not (vm-imap-confirm-new-folder (vm-imap-test--spec "Archive")))))))
+
+(ert-deftest vm-imap-test-a-mailbox-the-account-has-not-is-asked-about ()
+  "REGRESSION: `vm-confirm-new-folders' reaches the IMAP save too.
+
+It was consulted in one place, the local-file path in `vm-save.el', which
+tests `file-exists-p'.  No IMAP code named it, so saving to a name the
+server had not got created it silently (emacs-vm/vm#920).  Asked before the
+save starts, since nothing can ask from inside the driver."
+  (vm-imap-test--with-account-holding (list "INBOX" "Archive")
+    (let ((vm-confirm-new-folders t)
+          (asked nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (prompt) (setq asked prompt) nil)))
+        (should-error (vm-imap-confirm-new-folder (vm-imap-test--spec "Sent"))
+                      :type 'error))
+      (should (string-match-p "does not exist, save there anyway" asked)))))
+
+(ert-deftest vm-imap-test-a-yes-lets-the-save-go-on ()
+  "Answering yes returns, and the save that follows makes the mailbox."
+  (vm-imap-test--with-account-holding (list "INBOX")
+    (let ((vm-confirm-new-folders t))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (should-not (vm-imap-confirm-new-folder (vm-imap-test--spec "Sent")))))))
+
+(ert-deftest vm-imap-test-nothing-is-asked-with-the-option-off ()
+  "The default is off, and off means the old behaviour exactly."
+  (vm-imap-test--with-account-holding (list "INBOX")
+    (let ((vm-confirm-new-folders nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (error "asked with the option off"))))
+        (should-not (vm-imap-confirm-new-folder (vm-imap-test--spec "Sent")))))))
+
+(ert-deftest vm-imap-test-an-account-vm-cannot-ask-about-is-not-asked-about ()
+  "An account whose folder list VM has not got asks nothing.
+`vm-imap-net-mailbox-names' answers nil both for a server that says it holds
+nothing and for a maildrop VM has no password for, and the two cannot be
+told apart.  Asking would mean a question before every save to such an
+account, so VM says nothing instead."
+  (vm-imap-test--with-account-holding nil
+    (let ((vm-confirm-new-folders t))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (error "asked about an unknown account"))))
+        (should-not (vm-imap-confirm-new-folder (vm-imap-test--spec "Sent")))))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here
