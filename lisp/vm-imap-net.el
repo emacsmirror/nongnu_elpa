@@ -2824,22 +2824,31 @@ Nil means nothing was sent, VM having no password for the maildrop yet."
 (defvar vm-imap-account-folder-cache)
 (declare-function vm-delete "vm-misc" (predicate list &optional reverse))
 
+(defun vm-imap-net-forget-folder-cache (spec)
+  "Forget what SPEC's account was last known to hold.
+`vm-imap-account-folder-cache' is what folder-name completion answers from,
+and it is filled once per account.  Anything that makes a mailbox, or
+unmakes one, has to say so or completion goes on describing the account as
+it was: a folder saved into for the first time was not offered afterwards
+until `vm-list-imap-folders' was run by hand (emacs-vm/vm#920)."
+  (let ((account (vm-imap-account-name-for-spec spec)))
+    (setq vm-imap-account-folder-cache
+	  (vm-delete (lambda (entry) (equal (car entry) account))
+		     vm-imap-account-folder-cache))))
+
 (defun vm-imap-net-mailbox-command (spec command purpose said)
   "Send COMMAND to SPEC without waiting, and say SAID when it lands.
 
 What the mailbox commands share: the account's folder cache is forgotten when
 the server has done it, since it is that answer and not the asking that makes
 the cache wrong.  Answers whether the command is on its way."
-  (let ((account (vm-imap-account-name-for-spec spec)))
-    (vm-imap-net-run-command
-     spec command purpose t
-     (lambda (result)
-       (if (vm-net-error-p result)
-	   (vm-net-warn 0 "%s failed: %s" purpose (error-message-string result))
-	 (setq vm-imap-account-folder-cache
-	       (vm-delete (lambda (entry) (equal (car entry) account))
-			  vm-imap-account-folder-cache))
-	 (vm-net-inform 5 "%s" said))))))
+  (vm-imap-net-run-command
+   spec command purpose t
+   (lambda (result)
+     (if (vm-net-error-p result)
+	 (vm-net-warn 0 "%s failed: %s" purpose (error-message-string result))
+       (vm-imap-net-forget-folder-cache spec)
+       (vm-net-inform 5 "%s" said)))))
 
 ;;; Expunging on the server
 
@@ -3465,6 +3474,13 @@ saying it was saved."
 		  (vm-set-deleted-flag message t)))
 	      (when (and vm-delete-after-saving (not vm-folder-read-only))
 		(vm-delete-message count messages))
+	      ;; The save sends its own CREATE, so the mailbox may be one the
+	      ;; account did not have when completion last asked
+	      ;; (emacs-vm/vm#920).  Which of the two it was cannot be told
+	      ;; from here: CREATE of a mailbox that exists answers NO and is
+	      ;; tolerated (emacs-vm/vm#690), so the cache is forgotten either
+	      ;; way and the next completion asks again.
+	      (vm-imap-net-forget-folder-cache target)
 	      (setq vm-last-save-imap-folder target)
 	      (vm-update-summary-and-mode-line)
 	      (vm-net-inform 5 "%d message%s saved to %s" result

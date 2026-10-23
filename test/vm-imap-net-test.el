@@ -3444,6 +3444,39 @@ UIDVALIDITY both nil against a mailbox validity of 1778127965
       ;; nor is it one the server has lost: that already asked for a UID
       (should-not (memq orphan (vm-imap-net-messages-not-on-the-server))))))
 
+(ert-deftest vm-imap-net-test-a-save-forgets-what-the-account-held ()
+  "REGRESSION: saving into a mailbox forgets the account's folder list.
+
+`vm-imap-account-folder-cache' is what folder-name completion answers from,
+filled once per account.  The explicit mailbox commands forget the entry
+when the server has obeyed, but a save sends its own CREATE before the
+APPEND and used to leave the cache alone, so a folder saved into for the
+first time was not offered by completion until `vm-list-imap-folders' was
+run by hand (emacs-vm/vm#920)."
+  (let ((vm-imap-account-folder-cache
+         (list (cons "work" (list "INBOX" "Archive"))
+               (cons "home" (list "INBOX"))))
+        (vm-imap-account-alist
+         (list (list "imap:imap.example.com:143:inbox:login:me:*" "work"))))
+    (vm-imap-net-forget-folder-cache
+     "imap:imap.example.com:143:Sent:login:me:*")
+    ;; the account that was saved into is asked again
+    (should-not (assoc "work" vm-imap-account-folder-cache))
+    ;; and no other account is disturbed
+    (should (equal (list "INBOX")
+                   (cdr (assoc "home" vm-imap-account-folder-cache))))))
+
+(ert-deftest vm-imap-net-test-forgetting-an-unknown-account-is-harmless ()
+  "A spec whose account is not in `vm-imap-account-alist' leaves the cache alone.
+`vm-imap-account-name-for-spec' answers nil there, and nil must not match an
+entry."
+  (let ((vm-imap-account-folder-cache (list (cons "work" (list "INBOX"))))
+        (vm-imap-account-alist nil))
+    (vm-imap-net-forget-folder-cache
+     "imap:imap.example.com:143:Sent:login:me:*")
+    (should (equal (list "INBOX")
+                   (cdr (assoc "work" vm-imap-account-folder-cache))))))
+
 (ert-deftest vm-imap-net-test-the-held-uid-table-follows-an-append ()
   "A message appended to the folder is held, and the table is not built again.
 

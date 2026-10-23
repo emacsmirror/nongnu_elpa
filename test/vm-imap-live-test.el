@@ -1602,6 +1602,56 @@ tell the two apart."
           (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
         (vm-imap-live-close conn)))))
 
+(ert-deftest vm-imap-live-test-a-save-forgets-the-accounts-folder-list ()
+  "REGRESSION: a save into a mailbox the account did not have refreshes
+completion.
+
+`vm-imap-account-folder-cache' is filled once per account and is what
+folder-name completion answers from.  The save sends its own CREATE, and it
+used to leave the cache alone, so a folder saved into for the first time was
+not offered until `vm-list-imap-folders' was run by hand (emacs-vm/vm#920).
+
+Against a real server because the CREATE and the APPEND are what the fix
+hangs off: the cache is forgotten when the server has taken the message, not
+when the command was typed."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let* ((server (vm-imap-live-server "plain"))
+         (account (car (plist-get server :accounts)))
+         (conn (vm-imap-live--open server))
+         (mailbox nil)
+         (spec nil)
+         (vm-imap-server-timeout vm-imap-live-timeout)
+         (vm-imap-passwords vm-imap-passwords)
+         (vm-kept-imap-buffers vm-kept-imap-buffers)
+         (vm-imap-keep-trace-buffer nil)
+         (vm-delete-after-saving nil)
+         (vm-imap-account-folder-cache vm-imap-account-folder-cache)
+         (vm-imap-account-alist vm-imap-account-alist))
+    (unwind-protect
+        (progn
+          (vm-imap-live-login conn server account)
+          (vm-imap-live-namespace conn)
+          ;; a name the account has not got: the save is what makes it
+          (setq mailbox (vm-imap-live-mailbox-name conn))
+          (setq spec (vm-imap-live-spec server account mailbox))
+          (setq vm-imap-account-alist
+                (list (list (vm-imapdrop-sans-password-and-mailbox spec)
+                            "live")))
+          ;; as completion leaves it: a list of what the account held before
+          (setq vm-imap-account-folder-cache (list (cons "live" (list "INBOX"))))
+          (vm-imap-live-test--with-a-file-folder ("saved into a new mailbox")
+            (vm-save-message-to-imap-folder spec 1)
+            (vm-imap-net-wait nil 30))
+          ;; the message arrived
+          (should (equal (vm-imap-live-test--select-count conn mailbox) 1))
+          ;; and completion will ask the server again rather than answer from
+          ;; a list made before the mailbox existed
+          (should-not (assoc "live" vm-imap-account-folder-cache)))
+      (when mailbox
+        (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox)))
+      (vm-imap-live-close conn))))
+
 (ert-deftest vm-imap-live-test-a-saved-to-mailbox-can-be-inside-a-directory ()
   "REGRESSION: saving to a mailbox in a directory that VM has to create works.
 Issue #691.  Against a real server because it is the server that refuses
