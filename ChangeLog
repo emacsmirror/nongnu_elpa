@@ -1,5 +1,7 @@
 2026-10-23  Ulrich Müller  <ulm@gentoo.org>
 
+	* Version 1.89 released.
+
 	* ebuild-mode-keywords.el (ebuild-mode-keywords-eclassdoc-warn):
 	Remove long-obsolete @ECLASS-VARIABLE.
 	(ebuild-mode-keywords-eclass): Regenerated.
