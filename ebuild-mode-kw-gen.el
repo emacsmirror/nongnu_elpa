@@ -3,7 +3,7 @@
 ;; Copyright 2026 Gentoo Authors
 
 ;; Author: Ulrich Müller <ulm@gentoo.org>
-;; Maintainer: <emacs@gentoo.org>
+;; Maintainer: Gentoo Emacs project <emacs@gentoo.org>
 ;; Keywords: maint
 
 ;; This file is free software: you can redistribute it and/or modify

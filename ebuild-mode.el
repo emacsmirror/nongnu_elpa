@@ -6,7 +6,7 @@
 ;;	Diego Pettenò <flameeyes@gentoo.org>
 ;;	Christian Faulhammer <fauli@gentoo.org>
 ;;	Ulrich Müller <ulm@gentoo.org>
-;; Maintainer: <emacs@gentoo.org>
+;; Maintainer: Gentoo Emacs project <emacs@gentoo.org>
 ;; Version: 1.89
 ;; Package-Requires: ((emacs "26.3"))
 ;; Keywords: languages, processes
