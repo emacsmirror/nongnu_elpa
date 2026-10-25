@@ -395,6 +395,14 @@ Logs are redirected to stdout.  To use, invoke Emacs like this:
 
 (defun httpd--handle-request (proc request)
   "Handle REQUEST from client PROC."
+  ;; Requests are dispatched from timers, which can fire while another
+  ;; response is still being sent from its `httpd-buffer'.  Use a fresh
+  ;; buffer, such that `httpd--ensure-buffer' does not reuse that buffer.
+  (with-temp-buffer
+    (httpd--handle-request-1 proc request)))
+
+(defun httpd--handle-request-1 (proc request)
+  "Handle REQUEST from client PROC in the current buffer."
   (condition-case err
       (let* ((_ (run-hook-wrapped
                  'httpd-filter-functions

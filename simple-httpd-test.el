@@ -163,4 +163,43 @@
     (cl-loop for (in . out) in tests
              do (should (equal (httpd-escape-html in) out)))))
 
+(ert-deftest httpd-reentrant-request-test ()
+  "A request handled while another response is being sent is independent.
+Requests are dispatched from timers, and Emacs can run timers while
+`process-send-region' waits to write a large body.  The second request
+must not reuse the first response's buffer."
+  (let ((httpd-root (make-temp-file "httpd-test" t))
+        (httpd-serve-files t)
+        (httpd-log-buffer nil)
+        (client-a (make-symbol "client-a"))
+        (client-b (make-symbol "client-b"))
+        (nested nil))
+    (unwind-protect
+        (progn
+          (with-temp-file (expand-file-name "a.txt" httpd-root) (insert "first"))
+          (with-temp-file (expand-file-name "b.txt" httpd-root) (insert "second"))
+          (httpd--flet ((process-get (proc prop) (get proc prop))
+                        (process-put (proc prop val) (put proc prop val))
+                        (process-contact (_proc &rest _))
+                        (delete-process (_proc))
+                        (httpd--pop-request (_proc))
+                        (process-send-string (proc str)
+                          (put proc 'out (concat (get proc 'out) str)))
+                        (process-send-region (proc start end)
+                          (put proc 'out (concat (get proc 'out)
+                                                 (buffer-substring start end)))
+                          (unless nested
+                            (setq nested t)
+                            (httpd--handle-request
+                             client-b '(("GET" "/b.txt" "HTTP/1.1"))))))
+            (httpd--handle-request client-a '(("GET" "/a.txt" "HTTP/1.1"))))
+          (should nested)
+          (pcase-dolist (`(,client . ,body) `((,client-a . "first")
+                                               (,client-b . "second")))
+            (with-temp-buffer
+              (insert (or (get client 'out) ""))
+              (should (equal (car (httpd-parse)) '("HTTP/1.1" "200" "OK")))
+              (should (equal (buffer-substring (point) (point-max)) body)))))
+      (delete-directory httpd-root t))))
+
 ;;; simple-httpd-test.el ends here
