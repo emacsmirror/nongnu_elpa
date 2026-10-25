@@ -1,5 +1,8 @@
 2026-10-25  Ulrich Müller  <ulm@gentoo.org>
 
+	* devbook-mode.el (devbook-prettify-symbols-alist): New variable.
+	(devbook-mode): Support prettify-symbols-mode.
+
 	* test/devbook-mode-tests.el (devbook-mode-test-set-schema):
 	Call should-error with :type keyword.
 

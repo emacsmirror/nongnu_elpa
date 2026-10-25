@@ -155,6 +155,14 @@ Return the schema file name, or nil if no schema was found."
   (unless noninteractive (rng-what-schema))
   rng-current-schema-file-name)
 
+(defvar devbook-prettify-symbols-alist
+  '(("&lt;" . ?<)
+    ("&gt;" . ?>)
+    ("&amp;" . ?&)
+    ("&apos;" . ?\')
+    ("&quot;" . ?\"))
+  "String/character pairs for `prettify-symbols-mode'.")
+
 (defvar devbook-child-indent-alist
   ;; The style guide says no indentation, except inside <tr>,
   ;; <ul>, <ol> and <dl>, where it must be 2 spaces.
@@ -200,6 +208,10 @@ between the element name and its first attribute."
   (set (make-local-variable 'nxml-child-indent) 0)
   (set (make-local-variable 'indent-line-function) #'devbook-indent-line)
   (add-hook 'fill-nobreak-predicate #'devbook-fill-tag-nobreak-p nil t)
+  (set (make-local-variable 'prettify-symbols-alist)
+       devbook-prettify-symbols-alist)
+  (set (make-local-variable 'prettify-symbols-compose-predicate)
+       (lambda (_start _end _match) t))
   (unless rng-current-schema-file-name
     (devbook-set-schema t)))
 
