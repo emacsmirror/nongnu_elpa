@@ -9,7 +9,7 @@ else
     USER_OPT=--user="$(id -u):$(id -g)"
 fi
 
-for version in 30 29 28 27 26 25
+for version in 31 30 29 28 27 26 25
 do
     rm -f *.elc test/*.elc
     rm -f *-autoloads.el
