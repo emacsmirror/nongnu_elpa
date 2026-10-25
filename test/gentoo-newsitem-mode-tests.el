@@ -28,6 +28,13 @@
     (defalias 'cl-letf  #'letf)
     (defalias 'cl-letf* #'letf*)))
 
+(defmacro gentoo-newsitem-test-run-silently (&rest body)
+  (if (boundp 'inhibit-message)
+      `(let ((inhibit-message t)) ,@body)
+    `(cl-letf (((symbol-function 'append-message) #'ignore)
+	       ((symbol-function 'clear-message) #'ignore))
+       ,@body)))
+
 (ert-deftest gentoo-newsitem-test-font-lock ()
   (with-temp-buffer
     (gentoo-newsitem-mode)
@@ -37,6 +44,13 @@
 	    "Author: outside header\n")
     (if (fboundp 'font-lock-ensure)
 	(font-lock-ensure)
+      (when (featurep 'xemacs)
+	;; Depending on how keywords are set, XEmacs Font Lock mode
+	;; may refuse to activate in batch mode (apparently a feature?).
+	;; So, pretend that we are interactive.
+	(cl-letf (((symbol-function 'noninteractive) #'ignore))
+	  (gentoo-newsitem-test-run-silently
+	   (font-lock-mode 1))))
       (font-lock-fontify-region (point-min) (point-max)))
     (goto-char (point-min))
     (search-forward "Author")

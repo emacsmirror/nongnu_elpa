@@ -71,13 +71,9 @@ Buffer position LIMIT limits the search."
   "Major mode for Gentoo GLEP 42 news items."
   (if (featurep 'xemacs)
       (easy-menu-add gentoo-newsitem-mode-menu))
-  (setq fill-column 72))
-
-(defun gentoo-newsitem-add-font-lock ()
-  "Add `gentoo-newsitem-mode' font-lock keywords for the current buffer."
-  (font-lock-add-keywords nil gentoo-newsitem-font-lock-keywords))
-
-(add-hook 'gentoo-newsitem-mode-hook #'gentoo-newsitem-add-font-lock)
+  (setq fill-column 72)
+  (set (make-local-variable 'font-lock-defaults)
+       '(gentoo-newsitem-font-lock-keywords t)))
 
 (defvar gentoo-newsitem-format-list
   '("1.0" "2.0")

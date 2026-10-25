@@ -1,3 +1,13 @@
+2026-10-25  Ulrich Müller  <ulm@gentoo.org>
+
+	* gentoo-newsitem-mode.el (gentoo-newsitem-mode): Set
+	font-lock-defaults, rather than calling font-lock-add-keywords
+	in the mode hook.  Suggested by Stefan Monnier.
+	(gentoo-newsitem-add-font-lock): Remove.
+	* test/gentoo-newsitem-mode-tests.el
+	(gentoo-newsitem-test-run-silently): Restore.
+	(gentoo-newsitem-test-font-lock): Fix XEmacs test failure.
+
 2026-10-23  Ulrich Müller  <ulm@gentoo.org>
 
 	* Version 1.89 released.
