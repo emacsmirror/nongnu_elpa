@@ -1,5 +1,8 @@
 2026-10-25  Ulrich Müller  <ulm@gentoo.org>
 
+	* test/devbook-mode-tests.el (devbook-mode-test-set-schema):
+	Call should-error with :type keyword.
+
 	* gentoo-newsitem-mode.el (gentoo-newsitem-mode): Set
 	font-lock-defaults, rather than calling font-lock-add-keywords
 	in the mode hook.  Suggested by Stefan Monnier.

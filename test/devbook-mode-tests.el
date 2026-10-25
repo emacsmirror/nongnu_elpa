@@ -40,9 +40,8 @@
     (let ((buffer-file-name "/home/larry/devmanual/quickstart/text.xml"))
       (should (equal (devbook-set-schema) rncfile))
       (setq rncschema "foo = element foo { empty }\n") ; bad schema
-      (should (equal
-	       (car (should-error (devbook-set-schema)))
-	       'rng-c-incorrect-schema)))
+      (should-error (devbook-set-schema)
+		    :type 'rng-c-incorrect-schema))
     (let ((buffer-file-name "/home/larry/elsewhere/text.xml"))
       (should-not (devbook-set-schema)))))
 
