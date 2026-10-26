@@ -395,14 +395,6 @@ Logs are redirected to stdout.  To use, invoke Emacs like this:
 
 (defun httpd--handle-request (proc request)
   "Handle REQUEST from client PROC."
-  ;; Requests are dispatched from timers, which can fire while another
-  ;; response is still being sent from its `httpd-buffer'.  Use a fresh
-  ;; buffer, such that `httpd--ensure-buffer' does not reuse that buffer.
-  (with-temp-buffer
-    (httpd--handle-request-1 proc request)))
-
-(defun httpd--handle-request-1 (proc request)
-  "Handle REQUEST from client PROC in the current buffer."
   (condition-case err
       (let* ((_ (run-hook-wrapped
                  'httpd-filter-functions
@@ -537,19 +529,27 @@ If `httpd-log-buffer' is nil, ITEM may not be evaluated."
 Return `httpd-current-proc' if PROC is t."
   (if (eq t proc) httpd-current-proc proc))
 
-(defmacro httpd--ensure-buffer (&rest body)
-  "Ensure that BODY is executed in a temporary httpd buffer.
-Reuse the current buffer if it is a temporary httpd buffer."
-  (declare (indent 0) (debug t))
-  (cl-with-gensyms (temp)
-    `(let (,temp)
+(defvar-local httpd--buffer-proc nil
+  "Buffer-local variable holding the client process that owns the buffer.")
+
+(defmacro httpd--ensure-buffer (proc &rest body)
+  "Ensure that BODY is executed in a temporary httpd buffer for PROC.
+Reuse the current buffer if it is a temporary httpd buffer for the same
+client.  Timers, such as those dispatching requests, can run while a
+response is sent, and must not pick up that response's buffer.  If PROC
+is t use the `httpd-current-proc' as the process."
+  (declare (indent 1) (debug t))
+  (cl-with-gensyms (temp resolved)
+    `(let ((,resolved (httpd--resolve-proc ,proc)) ,temp)
        (with-current-buffer
-           (if (eq major-mode 'httpd-buffer)
+           (if (and (eq major-mode 'httpd-buffer)
+                    (eq httpd--buffer-proc ,resolved))
                (current-buffer)
              (setq ,temp (generate-new-buffer " *httpd-temp*" t)))
          (unwind-protect
              (progn
-               (setq major-mode 'httpd-buffer)
+               (setq major-mode 'httpd-buffer
+                     httpd--buffer-proc ,resolved)
                ,@body)
            (when (buffer-live-p ,temp)
              (kill-buffer ,temp)))))))
@@ -562,7 +562,7 @@ indicating the specified MIME type.  Additionally, `standard-output' is
 set to this output buffer and `httpd-current-proc' is set to PROC."
   (declare (indent defun))
   (cl-once-only (proc)
-    `(httpd--ensure-buffer
+    `(httpd--ensure-buffer ,proc
        (let ((standard-output (current-buffer))
              (httpd-current-proc ,proc))
          ,@body)
@@ -904,14 +904,14 @@ Extra headers can be sent by supplying them like keywords, i.e.
   "Redirect the client to PATH (default 301).
 If PROC is t use the `httpd-current-proc' as the process."
   (httpd-log `(redirect ,path))
-  (httpd--ensure-buffer
+  (httpd--ensure-buffer proc
     (httpd-send-header proc "text/plain" (or code 301) :Location path)))
 
 (defun httpd-send-file (proc path &optional req)
   "Serve file at PATH to the given client PROC.
 REQ is the request.  If PROC is t use the `httpd-current-proc' as the
 process."
-  (httpd--ensure-buffer
+  (httpd--ensure-buffer proc
     (let ((etag (httpd-etag path)))
       (if (not (equal (cadr (assoc "If-None-Match" req)) etag))
           (let ((mime (httpd-get-mime (file-name-extension path)))
@@ -934,7 +934,7 @@ the `httpd-current-proc' as the process."
   (if (string-suffix-p "/" uri-path)
       (let ((title (concat "Directory listing for "
                            (httpd-escape-html uri-path))))
-        (httpd--ensure-buffer
+        (httpd--ensure-buffer proc
           (httpd-log `(directory ,path))
           (insert "<!DOCTYPE html>\n"
                   "<html>\n<head><title>" title "</title></head>\n"
@@ -963,7 +963,7 @@ the `httpd-current-proc' as the process."
 The INFO object is optionally inserted into page.  If PROC is t use the
 `httpd-current-proc' as the process."
   (httpd-log `(error ,status ,info))
-  (httpd--ensure-buffer
+  (httpd--ensure-buffer proc
     (let ((contents
            (if (or info httpd-show-backtrace-when-error)
                (with-temp-buffer

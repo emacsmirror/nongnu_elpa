@@ -202,4 +202,36 @@ must not reuse the first response's buffer."
               (should (equal (buffer-substring (point) (point-max)) body)))))
       (delete-directory httpd-root t))))
 
+(ert-deftest httpd-reentrant-with-buffer-test ()
+  "A deferred response sent during another response gets its own buffer.
+This is the `httpd-discard-buffer' pattern: a timer that responds later
+may fire while another client's response is being sent."
+  (let ((httpd-log-buffer nil)
+        (client-a (make-symbol "client-a"))
+        (client-b (make-symbol "client-b"))
+        (nested nil))
+    (put client-a :request-active '(("GET" "/a" "HTTP/1.1")))
+    (put client-b :request-active '(("GET" "/b" "HTTP/1.1")))
+    (httpd--flet ((process-get (proc prop) (get proc prop))
+                  (process-put (proc prop val) (put proc prop val))
+                  (httpd--pop-request (_proc))
+                  (process-send-string (proc str)
+                    (put proc 'out (concat (get proc 'out) str)))
+                  (process-send-region (proc start end)
+                    (put proc 'out (concat (get proc 'out)
+                                           (buffer-substring start end)))
+                    (unless nested
+                      (setq nested t)
+                      (httpd-with-buffer client-b "text/plain"
+                        (insert "second")))))
+      (httpd-with-buffer client-a "text/plain"
+        (insert "first")))
+    (should nested)
+    (pcase-dolist (`(,client . ,body) `((,client-a . "first")
+                                         (,client-b . "second")))
+      (with-temp-buffer
+        (insert (or (get client 'out) ""))
+        (should (equal (car (httpd-parse)) '("HTTP/1.1" "200" "OK")))
+        (should (equal (buffer-substring (point) (point-max)) body))))))
+
 ;;; simple-httpd-test.el ends here
