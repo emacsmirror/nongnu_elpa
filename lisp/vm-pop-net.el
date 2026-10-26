@@ -66,6 +66,15 @@ It was not read at all until 2026, so an apop maildrop was served with USER
 and PASS and its password went over the wire in clear (emacs-vm/vm#823).")
 (make-variable-buffer-local 'vm-pop-net-auth)
 
+(defvar vm-pop-net-password-key nil
+  "The maildrop this session's password belongs to, without its password.
+What `vm-pop-passwords' is keyed by, kept so that a password the server has
+accepted can be remembered under it.  Buffer-local to the session's process
+buffer.")
+(make-variable-buffer-local 'vm-pop-net-password-key)
+
+(defvar vm-pop-passwords)
+
 (define-error 'vm-pop-net-error "POP error")
 
 (defun vm-pop-net-init ()
@@ -170,6 +179,22 @@ brackets at the end of its greeting, and that is what the digest is taken
 over."
   (car (vm-parse greeting "[^<]+\\(<[^>]+>\\)")))
 
+(defun vm-pop-net-remember-password (password)
+  "Remember PASSWORD for this session's maildrop, the server having taken it.
+
+After the login and not before: an entry in `vm-pop-passwords' is what the
+next session looks the password up in, and a wrong one there is a login that
+fails without anybody being asked anything.
+
+Nothing wrote that list between the blocking implementation going and
+emacs-vm/vm#922, so every session asked again: twice per `vm-get-new-mail',
+one for the fetch and one for the expunge after it."
+  (let ((key vm-pop-net-password-key))
+    (when (and key (stringp password) (not (equal password ""))
+	       (not (equal password "*"))
+	       (not (assoc key vm-pop-passwords)))
+      (setq vm-pop-passwords (cons (list key password) vm-pop-passwords)))))
+
 (iter-defun vm-pop-net-authenticate (user password &optional greeting)
   "Log in as USER with PASSWORD.
 
@@ -190,6 +215,9 @@ wire in clear, which is the thing APOP was asked for to avoid."
 		  (vm-pop-md5 (concat timestamp password))))))
     (iter-yield-from (vm-pop-net-command (format "USER %s" user)))
     (iter-yield-from (vm-pop-net-command (format "PASS %s" password))))
+  ;; here and not earlier: a response that is not +OK signals, so reaching
+  ;; this is the server having accepted the password
+  (vm-pop-net-remember-password password)
   t)
 
 (iter-defun vm-pop-net-stat ()
@@ -330,7 +358,6 @@ has no TLS and answers `:type \\='tls' with \"Unsupported connection type\"."
     (set-process-query-on-exit-flag process nil)
     process))
 
-(defvar vm-pop-passwords)
 (defvar vm-pop-ok-to-ask)
 
 (declare-function vm-auth-source-password "vm-misc" (hosts port user))
@@ -430,6 +457,7 @@ output.  A maildrop whose password VM has not been told signals
       (with-current-buffer buffer
 	(buffer-disable-undo)
 	(vm-pop-net-init)
+	(setq vm-pop-net-password-key (vm-popdrop-sans-password source))
 	(setq vm-pop-net-auth auth))
       (setf (vm-net-session-buffer session) buffer)
       ;; as for IMAP: the buffer goes with a connection that was never made
@@ -838,9 +866,17 @@ again."
 			(get (car result) 'error-conditions))
 		   (vm-net-warn 0 "%s: deleting on the server failed: %s" name
 			    (error-message-string result))
-		 (vm-net-inform 5 "%s: %d message%s deleted on the server"
-			    name (length result)
-			    (if (= (length result) 1) "" "s")))))
+		 ;; the answer is a plist and not a list of UIDs: counting it
+		 ;; said four messages deleted whatever had been, that being
+		 ;; the length of (:deleted ... :gone ...) (emacs-vm/vm#922)
+		 (let ((deleted (plist-get result :deleted))
+		       (gone (plist-get result :gone)))
+		   (vm-net-inform 5 "%s: %d message%s deleted on the server%s"
+				  name (length deleted)
+				  (if (= (length deleted) 1) "" "s")
+				  (if gone
+				      (format ", %d already gone" (length gone))
+				    ""))))))
       (vm-net-warn 0 "%s: fetched mail is still on the server: %s" name
 	       "VM has no password for the maildrop"))))
 
