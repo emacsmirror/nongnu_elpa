@@ -1642,6 +1642,88 @@ a reader who is told it is there.  The IMAP side says the same
       (should (string-match-p "vm-pop-max-message-size" (car about)))
       (should (string-match-p "bytes" (car about))))))
 
+;;; Remembering a password the server took (emacs-vm/vm#922)
+
+(ert-deftest vm-pop-net-test-a-password-the-server-took-is-asked-for-once ()
+  "A password the server has accepted is remembered, and the next session
+does not ask for it again.
+
+Nothing wrote `vm-pop-passwords' between the blocking implementation going
+and emacs-vm/vm#922, so every session asked: two questions for every
+`vm-get-new-mail', one for the fetch and one for the expunge after it, where
+VM had asked once per Emacs session since 5.35."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
+                                                    vm-pop-net-test--bob))
+    (let* ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+           ;; "*" is the maildrop that makes VM find the password rather than
+           ;; read it out of the spec, which is the one that gets asked about
+           (spec (format "pop:127.0.0.1:%d:pass:%s:*"
+                         (vm-pop-mock-port mock) (vm-pop-mock-user mock)))
+           (vm-pop-server-timeout 60)
+           (vm-pop-passwords nil)
+           ;; the reader's own ~/.authinfo must not answer for the server
+           (auth-sources nil)
+           (asked 0))
+      (unwind-protect
+          (cl-letf (((symbol-function 'read-passwd)
+                     (lambda (&rest _)
+                       (setq asked (1+ asked))
+                       (vm-pop-mock-password mock))))
+            (with-current-buffer folder
+              (setq vm-folder-access-method 'pop)
+              (setq vm-folder-access-data (make-vector 10 nil))
+              (vm-set-folder-pop-maildrop-spec spec)
+              (dolist (uidl '("uid1" "uid2"))
+                (setq vm-pop-messages-to-expunge (list uidl))
+                (should (eq (vm-pop-net-send-changes) t))
+                (vm-pop-net-test--wait-until
+                 (lambda () (not (vm-pop-net-busy-p))) 10 "the deletions"))
+              ;; both sessions got through, so both had a password
+              (should (equal (sort (copy-sequence (vm-pop-mock-deleted mock))
+                                   #'<)
+                             '(1 2)))
+              (should (equal asked 1))
+              (should (assoc (vm-popdrop-sans-password spec)
+                             vm-pop-passwords))))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
+(ert-deftest vm-pop-net-test-the-deletion-report-counts-what-was-deleted ()
+  "The report after a fetch counts the messages deleted.
+
+What the expunge answers is (:deleted UIDLS :gone UIDLS), and the report
+took the length of that plist: four messages deleted however many there had
+been, which is what a reader of one message saw (emacs-vm/vm#922)."
+  (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+        (answer nil)
+        (said nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-pop-net-expunge-maildrop)
+                   (lambda (_source _uidls callback)
+                     (funcall callback answer)
+                     t))
+                  ((symbol-function 'vm-net-inform)
+                   (lambda (_level &rest args)
+                     (push (apply #'format args) said))))
+          (setq answer (list :deleted '("uid1") :gone nil))
+          (vm-pop-net-delete-fetched folder "pop:127.0.0.1:110:pass:user:*"
+                                     '("uid1"))
+          (should (equal (length said) 1))
+          (should (string-match-p "1 message deleted on the server\\'"
+                                  (car said)))
+          ;; and what the server no longer had is said apart from it, as the
+          ;; other two reports of the same answer do
+          (setq said nil)
+          (setq answer (list :deleted '("uid1" "uid2") :gone '("uid3")))
+          (vm-pop-net-delete-fetched folder "pop:127.0.0.1:110:pass:user:*"
+                                     '("uid1" "uid2" "uid3"))
+          (should (string-match-p "2 messages deleted on the server,"
+                                  (car said)))
+          (should (string-match-p "1 already gone\\'" (car said))))
+      (when (buffer-live-p folder)
+        (kill-buffer folder)))))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here
