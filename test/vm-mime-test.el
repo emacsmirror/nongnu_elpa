@@ -284,6 +284,16 @@ chemical/x-xyz on Fedora, which ships one (emacs-vm/vm#907)."
   "Test vm-mime-scrub-description returns string."
   (should (stringp (vm-mime-scrub-description "hello world"))))
 
+(ert-deftest vm-mime-test-scrub-description-keeps-what-is-not-latin-1 ()
+  "A description keeps its characters, whatever they are.
+
+The work buffer was unibyte, so every character was converted to bytes as it
+was inserted: Latin-1 survived, a snowman was dropped and three Japanese
+characters came back as two bytes and a comma (emacs-vm/vm#923)."
+  (dolist (text '("L\303\266nebesked" "snowman \342\230\203" "\346\227\245\346\234\254\350\252\236"))
+    (let ((text (decode-coding-string text 'utf-8)))
+      (should (equal (vm-mime-scrub-description text) text)))))
+
 ;;; vm-mime-B-encode-region / B-decode-region tests
 
 (ert-deftest vm-mime-test-b-encode-decode-roundtrip ()
@@ -5952,6 +5962,64 @@ ones.  A long run of three-octet characters is where this shows."
     (should (> (length (vm-mime-test--encoded-words value)) 1))
     (should (equal (vm-mime-test--decode-as-rfc2047 value) text))))
 
+
+(ert-deftest vm-mime-test-a-non-ascii-description-is-encoded ()
+  "A Content-Description outside US-ASCII goes out as RFC 2047 encoded words.
+
+It was written into the header as it stood.  `vm-mime-encode-headers' runs
+before the MIME encoding and covers the headers a composition is written
+with, so nothing encoded this one, and the send then failed in Emacs\='s own
+`mail-encode-header' with \"Symbol\='s value as variable is void:
+message-posting-charset\" (emacs-vm/vm#923)."
+  (let ((file (expand-file-name "non-ascii-desc.txt" temporary-file-directory))
+        (description (decode-coding-string "L\303\266nebesked" 'utf-8)))
+    (unwind-protect
+        (progn
+          (write-region "Nothing but this file.\n" nil file nil 'quiet)
+          (vm-mime-test--composing
+            (goto-char (point-max))
+            ;; an attachment on its own becomes the body, so its headers are
+            ;; the message\='s own and are what the send encodes
+            (vm-attach-file file "text/plain" nil description)
+            (vm-mime-encode-composition)
+            (let* ((delim (save-excursion
+                            (goto-char (point-min))
+                            (re-search-forward
+                             (concat "^" (regexp-quote mail-header-separator)
+                                     "$"))
+                            (match-beginning 0)))
+                   (header (buffer-substring-no-properties (point-min) delim)))
+              ;; nothing outside US-ASCII is left in the header
+              (should-not (string-match-p "[^\000-\177]" header))
+              (should (string-match "^Content-Description: \\(.*\\)$" header))
+              (let ((value (match-string 1 header)))
+                (should (string-prefix-p "=?" value))
+                (should (equal (vm-decode-mime-encoded-words-in-string value)
+                               description))))))
+      (ignore-errors (delete-file file)))))
+
+(ert-deftest vm-mime-test-a-non-ascii-description-on-a-part-is-encoded ()
+  "The same for a part of a multipart message, which `mail-encode-header'
+never sees: a raw byte in a part header is not something a reader has to
+make sense of (emacs-vm/vm#923)."
+  (let ((file (expand-file-name "non-ascii-part.txt" temporary-file-directory))
+        (description (decode-coding-string "L\303\266nebesked" 'utf-8)))
+    (unwind-protect
+        (progn
+          (write-region "Nothing but this file.\n" nil file nil 'quiet)
+          (vm-mime-test--composing
+            (goto-char (point-max))
+            (insert "Text of my own, which makes it multipart.\n")
+            (vm-attach-file file "text/plain" nil description)
+            (vm-mime-encode-composition)
+            (let ((encoded (buffer-string)))
+              (should (string-match-p "Content-Type: multipart/mixed" encoded))
+              (should (string-match "^Content-Description: \\(=\\?.*\\)$"
+                                    encoded))
+              (should (equal (vm-decode-mime-encoded-words-in-string
+                              (match-string 1 encoded))
+                             description)))))
+      (ignore-errors (delete-file file)))))
 
 (provide 'vm-mime-test)
 
