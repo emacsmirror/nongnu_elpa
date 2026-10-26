@@ -275,14 +275,22 @@ chemical/x-xyz on Fedora, which ships one (emacs-vm/vm#907)."
     (should (string-match "\n\t "
                           (vm-mime-type-with-params "text/plain" '("charset=utf-8"))))))
 
+
 ;;; vm-mime-scrub-description tests
-;; Note: vm-mime-scrub-description has a bug where it doesn't move point
-;; to beginning before searching, so whitespace collapsing doesn't work.
-;; Testing basic pass-through behavior only.
 
 (ert-deftest vm-mime-test-scrub-description-passthrough ()
   "Test vm-mime-scrub-description returns string."
   (should (stringp (vm-mime-scrub-description "hello world"))))
+
+(ert-deftest vm-mime-test-scrub-description-collapses-whitespace ()
+  "A description comes back as one line, its runs of whitespace one space.
+
+Nothing was collapsed until emacs-vm/vm#924: `insert\=' left point at the end
+of the buffer and the search that followed started there."
+  (should (equal (vm-mime-scrub-description "a  b\tc") "a b c"))
+  (should (equal (vm-mime-scrub-description "one\ntwo") "one two"))
+  (should (equal (vm-mime-scrub-description "crlf\r\nhere") "crlf here"))
+  (should (equal (vm-mime-scrub-description "plain") "plain")))
 
 (ert-deftest vm-mime-test-scrub-description-keeps-what-is-not-latin-1 ()
   "A description keeps its characters, whatever they are.
@@ -6019,6 +6027,27 @@ make sense of (emacs-vm/vm#923)."
               (should (equal (vm-decode-mime-encoded-words-in-string
                               (match-string 1 encoded))
                              description)))))
+      (ignore-errors (delete-file file)))))
+
+(ert-deftest vm-mime-test-a-newline-in-a-description-is-not-a-header ()
+  "What follows a newline in a description does not become a header.
+
+`vm-mime-scrub-description\=' collapses the whitespace so a description is one
+line; until emacs-vm/vm#924 it collapsed nothing, and the text after the
+newline was written into the headers as one of them."
+  (let ((file (expand-file-name "newline-desc.txt" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (write-region "Nothing but this file.\n" nil file nil 'quiet)
+          (vm-mime-test--composing
+            (goto-char (point-max))
+            (vm-attach-file file "text/plain" nil "payslip\nX-Injected: yes")
+            (vm-mime-encode-composition)
+            (let ((encoded (buffer-string)))
+              (should-not (string-match-p "^X-Injected:" encoded))
+              (should (string-match-p
+                       "^Content-Description: payslip X-Injected: yes$"
+                       encoded)))))
       (ignore-errors (delete-file file)))))
 
 (provide 'vm-mime-test)
