@@ -234,4 +234,27 @@ may fire while another client's response is being sent."
         (should (equal (car (httpd-parse)) '("HTTP/1.1" "200" "OK")))
         (should (equal (buffer-substring (point) (point-max)) body))))))
 
+(ert-deftest httpd-pipelined-request-test ()
+  "A pipelined request is not dispatched while a response is being sent.
+The filter can run while `process-send-region' waits, and the next
+request's response must not start before the current one is complete."
+  (let ((client (make-symbol "client"))
+        (dispatched nil)
+        (during-send nil))
+    (put client :request-active '(("GET" "/a" "HTTP/1.1")))
+    (put client :request-queue (list '(("GET" "/b" "HTTP/1.1"))))
+    (httpd--flet ((process-get (proc prop) (get proc prop))
+                  (process-put (proc prop val) (put proc prop val))
+                  (process-send-string (_proc _str))
+                  (process-send-region (proc _start _end)
+                    (httpd--pop-request proc)
+                    (setq during-send dispatched))
+                  (run-at-time (_time _repeat _fun _proc request)
+                    (push request dispatched)))
+      (with-temp-buffer
+        (insert "content")
+        (httpd-send-header client "text/plain" 200)))
+    (should-not during-send)
+    (should (equal dispatched '((("GET" "/b" "HTTP/1.1")))))))
+
 ;;; simple-httpd-test.el ends here

@@ -892,10 +892,12 @@ Extra headers can be sent by supplying them like keywords, i.e.
                         ,@(cl-loop for (header value) on header-keys by #'cddr collect
                                    (format "%s: %s\r\n" (httpd--stringify header) value))
                         "\r\n")))
-    (process-put proc :request-active nil)
     (process-send-string proc (apply #'concat header-list))
     (unless (or (= (point-min) (point-max)) (equal "HEAD" (caar request)))
       (process-send-region proc (point-min) (point-max)))
+    ;; Sending may run the filter, so keep the request active until the
+    ;; response is complete, or the next one could begin before it.
+    (process-put proc :request-active nil)
     (if close
         (delete-process proc)
       (httpd--pop-request proc))))
