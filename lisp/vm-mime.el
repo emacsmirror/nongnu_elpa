@@ -5270,11 +5270,18 @@ file with the name should be overwritten."
       (vm-extent-property extent 'vm-mime-layout)))))
 
 (defun vm-mime-scrub-description (string)
+  "STRING as a Content-Description, its runs of whitespace collapsed.
+
+A multibyte buffer, so that the text survives.  A unibyte one converted
+every character to bytes as it was inserted, which held for Latin-1 and lost
+the rest: a snowman was dropped and three Japanese characters came back as
+two bytes and a comma.  What is kept here is text, and the charset it is
+sent in is chosen when it is encoded (emacs-vm/vm#923)."
   (let ((work-buffer nil))
       (save-excursion
        (unwind-protect
 	   (progn
-	     (setq work-buffer (vm-make-work-buffer))
+	     (setq work-buffer (vm-make-multibyte-work-buffer))
 	     (set-buffer work-buffer)
 	     (insert string)
 	     (while (re-search-forward "[ \t\n]+" nil t)
@@ -6774,6 +6781,26 @@ are what makes it safe, and nothing needs encoding."
 	(vm-substring-no-properties string 0)
 	'vm-mime-encode-words)))
 
+(defun vm-mime-encode-description (description)
+  "DESCRIPTION as the body of a Content-Description header.
+The words carrying anything outside US-ASCII become RFC 2047 encoded words.
+A header cannot hold those characters as they stand: a raw byte in a part
+header is not something a reader has to make sense of, and one in the
+message header fails the send, Emacs meeting it in `mail-encode-header' and
+stopping with \"Symbol's value as variable is void: message-posting-charset\"
+(emacs-vm/vm#923).
+
+`vm-mime-encode-headers' does this for the headers a composition is written
+with, and runs before the MIME encoding, which is where these are written.
+
+The space in front is what `vm-mime-encode-words' looks for:
+`vm-mime-encode-headers-words-regexp' wants a delimiter before the first
+word of a run, and without one the first word is left as it stands."
+  (let ((encoded (vm-mime-encode-words-in-string (concat " " description))))
+    (if (string-prefix-p " " encoded)
+	(substring encoded 1)
+      encoded)))
+
 (defconst vm-mime-address-special-regexp "[]()<>@,;:\\\"[]"
   "A regexp matching one of the specials of RFC 5322 section 3.2.3.
 A run of text to be encoded in an address header stops at each of them and
@@ -7318,7 +7345,8 @@ and the appropriate content-type and boundary markup information is added."
 		    (vm-mime-type-with-params type params)
 		    "\n")
 	    (when description
-	      (insert "Content-Description: " description "\n"))
+	      (insert "Content-Description: "
+		      (vm-mime-encode-description description) "\n"))
 	    (when disposition
 	      (insert "Content-Disposition: "
 		      (vm-mime-type-with-params 
@@ -7410,7 +7438,8 @@ and the appropriate content-type and boundary markup information is added."
 		     (car disposition) (cdr disposition))
 		    "\n"))
 	  (when description
-	    (insert "Content-Description: " description "\n"))
+	    (insert "Content-Description: "
+		    (vm-mime-encode-description description) "\n"))
 	  (insert "Content-Transfer-Encoding: " encoding "\n")))
       ;; If necessary do smime signing and encrypting. This is the last
       ;; task since it operates on the entirety of the message, including
@@ -7525,7 +7554,8 @@ WHOLE-MESSAGE is true then nil is returned."
 	(insert "Content-Type: text/plain; charset=" charset
 		(if flowed "; format=flowed" "") "\n"))
       (when description
-	(insert "Content-Description: " description "\n"))
+	(insert "Content-Description: "
+		(vm-mime-encode-description description) "\n"))
       (insert "Content-Transfer-Encoding: " encoding "\n\n")
       (widen)
       (cons marker encoding))))
