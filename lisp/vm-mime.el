@@ -5283,7 +5283,13 @@ sent in is chosen when it is encoded (emacs-vm/vm#923)."
 	     (setq work-buffer (vm-make-multibyte-work-buffer))
 	     (set-buffer work-buffer)
 	     (insert string)
-	     (while (re-search-forward "[ \t\n]+" nil t)
+	     ;; from the start, and not from where the insert left point:
+	     ;; the search found nothing from there, so nothing was ever
+	     ;; collapsed and a description holding a newline went into the
+	     ;; header as it stood, what followed it becoming a header of
+	     ;; its own (emacs-vm/vm#924)
+	     (goto-char (point-min))
+	     (while (re-search-forward "[ \t\n\r\f]+" nil t)
 	       (replace-match " "))
 	     (buffer-string))
 	 (and work-buffer (kill-buffer work-buffer))))))
