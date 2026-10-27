@@ -190,14 +190,28 @@ the reporter hit; it costs 25 seconds against 4."
         (dotimes (_ 3) (garbage-collect)))
       ;; Still intact afterwards.  Asserting on OUT-OF-ORDER also keeps it
       ;; live across the collections rather than dead before the first one.
-      (should (= n (length out-of-order)))
-      (should (eq (car out-of-order) (car (last vm-message-list))))
-      (should (= n (length vm-message-list)))
-      (should (vm-su-subject (car (last vm-message-list))))
-      ;; And the reverse links still describe the list.
-      (should (null (vm-reverse-link-of (car vm-message-list))))
-      (should (eq (car (vm-reverse-link-of (nth 1 vm-message-list)))
-                  (car vm-message-list))))))
+      ;;
+      ;; Each answer is reduced to t or nil before `should' sees it, and no
+      ;; message or link reaches one.  ert keeps the evaluated arguments of
+      ;; every `should' in the test's result for as long as the process runs,
+      ;; and a reverse link is a cons of the message list, so recording one
+      ;; held all `vm-large-folder-test-gc-size' messages live for the rest of
+      ;; the suite: 380 MB that no later collection could take back, and every
+      ;; collection after this test cost 13 seconds instead of 0.03
+      ;; (emacs-vm/vm#921).
+      (let ((same-message (eq (car out-of-order) (car (last vm-message-list))))
+            (subject (vm-su-subject (car (last vm-message-list))))
+            (root-has-no-link (null (vm-reverse-link-of (car vm-message-list))))
+            (second-links-back
+             (eq (car (vm-reverse-link-of (nth 1 vm-message-list)))
+                 (car vm-message-list))))
+        (should (= n (length out-of-order)))
+        (should (= n (length vm-message-list)))
+        (should same-message)
+        (should (stringp subject))
+        ;; And the reverse links still describe the list.
+        (should root-has-no-link)
+        (should second-links-back)))))
 
 (provide 'vm-large-folder-test)
 
