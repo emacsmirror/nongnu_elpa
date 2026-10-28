@@ -28,7 +28,8 @@
   "Run the suite and exit with its status, printing graphical-session results."
   (let ((code 1))
     (condition-case err
-        (let ((stats (ert-run-tests-batch t)))
+        (let ((stats (ert-run-tests-batch
+                      (or (getenv "MARKDOWN_TS_APPEAR_TEST_SELECTOR") t))))
           (setq code (if (zerop (ert-stats-completed-unexpected stats)) 0 1)))
       (error (message "Test runner failed: %s" (error-message-string err))))
     (unless noninteractive

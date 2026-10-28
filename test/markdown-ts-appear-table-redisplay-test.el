@@ -217,6 +217,52 @@ Have the PTY driver capture the actual native-text cursor instead."
             (markdown-ts-appear-mode -1)))
       (set-face-attribute 'markdown-ts-table nil :background background))))
 
+(ert-deftest markdown-ts-appear-table-redisplay-contained-background ()
+  (skip-unless (not noninteractive))
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (insert "| A | B |\n|---|---|\n| x | abcd efgh ijkl mnop qrst uvwx |\n| z | w |\n\nafter\n")
+      (markdown-ts-mode)
+      (setq-local face-remapping-alist
+                  '((markdown-ts-appear-table
+                     (:background "#123456" :extend t) markdown-ts-appear-table)))
+      (goto-char (point-max))
+      (markdown-ts-appear-mode 1)
+      (markdown-ts-appear-stop)
+      (unwind-protect
+          (cl-letf (((symbol-function 'markdown-ts-appear-table--window-width)
+                     (lambda (_) 18)))
+            (font-lock-ensure)
+            (markdown-ts-appear-table--render)
+            (let ((lines (apply #'+ (mapcar
+                                    (lambda (row)
+                                      (cl-count ?\n (markdown-ts-appear-table--layout-display
+                                                     (markdown-ts-appear-table--layout row))))
+                                    markdown-ts-appear-table--overlays))))
+              (should (> lines 4))
+              ;; Change the buffer background without rebuilding display strings.
+              (dolist (color '("#abcdef" "#fedcba"))
+                (setf (alist-get 'default face-remapping-alist)
+                      `((:background ,color) default))
+                (dolist (token '(nil "abcd" "ijkl" "uvwx"))
+                  (goto-char (if token (point-min) (point-max)))
+                  (when token (search-forward token) (backward-char 2))
+                  (markdown-ts-appear-table--post-command)
+                  (set-window-start (selected-window) (point-min))
+                  (redraw-display)
+                  (redisplay t)
+                  (dotimes (line lines)
+                    (dolist (sample `((0 . "#123456") (80 . ,color)))
+                      (pcase-let ((`(,red ,green ,blue) (color-values (cdr sample))))
+                        (send-string-to-terminal
+                         (format "\e]777;background;%d;%d;2;%d;%d;%d\a"
+                                 (+ line (nth 1 (window-inside-edges)))
+                                 (+ (car sample) (car (window-inside-edges)))
+                                 (/ red 257) (/ green 257) (/ blue 257)))
+                        (cl-incf markdown-ts-appear-table-redisplay--checks))))))))
+        (markdown-ts-appear-mode -1)))))
+
 (ert-deftest markdown-ts-appear-table-redisplay-stable-faces ()
   (skip-unless (not noninteractive))
   (require 'evil)

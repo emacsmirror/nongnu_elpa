@@ -167,6 +167,19 @@ jobs:
           python3 -B -m unittest discover -s test -p 'test_*.py'
           python3 test/table-redisplay.py
 
+      - name: Check graphical table line heights
+        if: matrix.svg
+        timeout-minutes: 3
+        env:
+          MARKDOWN_TS_APPEAR_REQUIRE_GRAMMARS: "1"
+          MARKDOWN_TS_APPEAR_TEST_SELECTOR: "table-test-gui-"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth fonts-dejavu-core
+          xvfb-run -a emacs -Q \
+            --eval '(unless (display-graphic-p) (error "Graphical frame is unavailable"))' \
+            -l test/run-tests.el
+
       # Retain the upstream asynchronous regressions reported in #7.
       - name: Check upstream math preview lifecycle
         run: |

@@ -242,6 +242,52 @@
                   (should-not (seq-some #'overlay-buffer overlays))))
             (set-face-attribute face nil :height height)))))))
 
+(ert-deftest markdown-ts-appear-table-test-gui-mixed-pitch-line-height ()
+  (skip-unless (display-graphic-p))
+  (markdown-ts-appear-table-test--with-buffer
+      "| A | B |\n|---|---|\n| x | abcd efgh ijkl mnop qrst uvwx |\n\nafter\n" 18
+    (save-window-excursion
+      (switch-to-buffer (current-buffer))
+      (setq-local face-remapping-alist
+                  '((default (:inherit variable-pitch :height 240) default)
+                    (markdown-ts-appear-table
+                     (:inherit fixed-pitch :height 120 :background "#123456")
+                     markdown-ts-appear-table)
+                    (markdown-ts-appear-table-header
+                     (:weight normal) markdown-ts-appear-table-header)))
+      (let* ((remapping face-remapping-alist)
+             (height
+              (save-window-excursion
+                (with-temp-buffer
+                  (switch-to-buffer (current-buffer))
+                  (setq-local face-remapping-alist remapping)
+                  (insert (propertize "│ x │\n" 'face '(markdown-ts-appear-table default))
+                          "body\n")
+                  (goto-char (point-min))
+                  (redisplay t)
+                  (let ((table (car (window-line-height 0)))
+                        (body (car (window-line-height 1))))
+                    (should (< table body))
+                    table)))))
+        (cl-letf (((symbol-function 'markdown-ts-appear-table--window-width)
+                   (lambda (_) 18)))
+          (markdown-ts-appear-stop)
+          (markdown-ts-appear-table--render)
+          (let ((lines (apply #'+ (mapcar
+                                  (lambda (row)
+                                    (cl-count ?\n (markdown-ts-appear-table-test--display row)))
+                                  (markdown-ts-appear-table-test--overlays)))))
+            (should (> lines 3))
+            ;; Exercise a replacement string, then both sides of a cursor line.
+            (dolist (token '(nil "abcd" "ijkl" "uvwx"))
+              (goto-char (if token (point-min) (point-max)))
+              (when token (search-forward token) (backward-char 2))
+              (markdown-ts-appear-table--post-command)
+              (set-window-start (selected-window) (point-min))
+              (redisplay t)
+              (dotimes (line lines)
+                (should (= height (car (window-line-height line))))))))))))
+
 (ert-deftest markdown-ts-appear-table-test-header-borders-and-literal-glyphs ()
   (let ((source "  | H│ | Title |\n  |---|---|\n  | x | plain |\n  | z│ | shaded words that wrap |\n"))
     (markdown-ts-appear-table-test--with-buffer source 24

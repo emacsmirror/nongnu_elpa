@@ -67,6 +67,35 @@ class CursorStreamTest(unittest.TestCase):
         self.assertEqual(cursor.checks, 1)
         self.assertIsNone(cursor.forbidden_sgr)
 
+    def test_background_cells_and_erasures_survive_chunking(self):
+        stream = (
+            "\x1b[48;2;18;52;86m\x1b[2J\x1b[2;3H中"
+            "\x1b[1;38;2;0;49;40;48;2;171;205;239m\x1b[K"
+            "\x1b]777;background;1;2;2;18;52;86\a"
+            "\x1b]777;background;1;3;2;18;52;86\a"
+            "\x1b]777;background;1;80;2;171;205;239\a"
+            "\x1b[48;5;42m\x1b[1K"
+            "\x1b]777;background;1;0;5;42\a"
+            "\x1b[104m\x1b[2K\x1b]777;background;1;80;5;12\a"
+            "\x1b[0m\x1b[J"
+        )
+        for split in range(len(stream) + 1):
+            with self.subTest(split=split):
+                cursor = Cursor()
+                cursor.feed(stream[:split])
+                cursor.feed(stream[split:])
+                self.assertEqual(cursor.errors, [])
+                self.assertEqual(cursor.checks, 5)
+                self.assertIsNone(cursor.backgrounds[1, 80])
+                self.assertEqual(cursor.backgrounds[0, 0], (2, 18, 52, 86))
+
+    def test_background_checkpoint_detects_extension_past_table(self):
+        cursor = Cursor()
+        cursor.feed("\x1b[48;2;18;52;86m\x1b[2K"
+                    "\x1b]777;background;0;80;2;171;205;239\a")
+        self.assertEqual(cursor.errors, [(1, "background", (0, 80),
+                                          (2, 171, 205, 239), (2, 18, 52, 86))])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,6 +30,37 @@ class Cursor:
         self.watch = None
         self.paints = 0
         self.forbidden_sgr = None
+        self.background = None
+        self.backgrounds = {}
+
+    def sgr(self, params):
+        """Track background colors, consuming foreground color arguments too."""
+        position = 0
+        while position < len(params):
+            code = params[position]
+            if code in (0, 49):
+                self.background = None
+            elif 40 <= code <= 47 or 100 <= code <= 107:
+                self.background = (5, code - (40 if code < 100 else 92))
+            elif code in (38, 48) and position + 1 < len(params):
+                mode = params[position + 1]
+                count = {2: 3, 5: 1}.get(mode, 0)
+                color = tuple(params[position + 1:position + 2 + count])
+                if code == 48:
+                    self.background = color
+                position += 1 + count
+            position += 1
+
+    def erase(self, command, mode):
+        """Apply erase-line/display to the driver's 40 by 120 terminal."""
+        start, end = (self.row * 120, (self.row + 1) * 120) if command == "K" else (0, 40 * 120)
+        cursor = self.row * 120 + self.col
+        if mode == 0:
+            start = cursor
+        elif mode == 1:
+            end = cursor + 1
+        for cell in range(start, end):
+            self.backgrounds[divmod(cell, 120)] = self.background
 
     def feed(self, text):
         data = self.pending + text
@@ -61,11 +92,14 @@ class Cursor:
                         self.col = n - 1
                     elif command == "r":
                         self.row = self.col = 0
-                    elif command in "JK" and self.watch:
-                        if command == "J" or self.watch[0] <= self.row < self.watch[1]:
+                    elif command in "JK":
+                        if self.watch and (command == "J" or self.watch[0] <= self.row < self.watch[1]):
                             self.paints += 1
-                    elif command == "m" and raw == self.forbidden_sgr:
-                        self.errors.append((self.checks, "unexpected background", raw))
+                        self.erase(command, params[0] if params else 0)
+                    elif command == "m":
+                        if raw == self.forbidden_sgr:
+                            self.errors.append((self.checks, "unexpected background", raw))
+                        self.sgr(params or [0])
                     position = match.end()
                     continue
                 if data.startswith("\x1b]", position):
@@ -97,6 +131,13 @@ class Cursor:
                     elif payload == "777;end-forbid-sgr":
                         self.checks += 1
                         self.forbidden_sgr = None
+                    elif payload.startswith("777;background;"):
+                        row, col, *expected = map(int, payload.split(";")[2:])
+                        self.checks += 1
+                        actual = self.backgrounds.get((row, col))
+                        if actual != tuple(expected):
+                            self.errors.append((self.checks, "background", (row, col),
+                                                tuple(expected), actual))
                     elif payload.startswith("777;done;"):
                         self.expected_checks = int(payload.split(";")[2])
                     position = end + 1
@@ -122,7 +163,10 @@ class Cursor:
             elif char >= " " and not unicodedata.combining(char):
                 if self.watch and self.watch[0] <= self.row < self.watch[1]:
                     self.paints += 1
-                self.col += 2 if unicodedata.east_asian_width(char) in "WF" else 1
+                width = 2 if unicodedata.east_asian_width(char) in "WF" else 1
+                for col in range(self.col, self.col + width):
+                    self.backgrounds[self.row, col] = self.background
+                self.col += width
         # Only an incomplete escape sequence survives to the next input batch.
         self.pending = data[position:]
 
@@ -146,7 +190,7 @@ def main():
 
     process = subprocess.Popen(command, cwd=root, stdin=slave, stdout=slave, stderr=slave,
                                preexec_fn=controlling_terminal,
-                               env={**os.environ, "TERM": "xterm-256color"})
+                               env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"})
     os.close(slave)
     cursor = Cursor()
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
