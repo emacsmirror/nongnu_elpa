@@ -23,6 +23,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(defvar evil-mode-buffers)
 
 (add-to-list 'load-path
              (file-name-directory
@@ -571,6 +572,44 @@
     (markdown-ts-appear-start)
     (should (memq #'markdown-ts-appear--update post-command-hook))
     (should markdown-ts-appear--region)))
+
+(ert-deftest markdown-ts-appear-test-manual-start-evil-state-transitions ()
+  (skip-unless (require 'evil nil t))
+  (let ((markdown-ts-appear-auto-start nil)
+        (evil-mode-buffers nil)
+        (markdown-ts-appear-mode-hook
+         (list (lambda ()
+                 (if markdown-ts-appear-mode
+                     (progn
+                       (add-hook 'evil-insert-state-entry-hook #'markdown-ts-appear-start nil t)
+                       (add-hook 'evil-insert-state-exit-hook #'markdown-ts-appear-stop nil t)
+                       (when (eq evil-state 'insert) (markdown-ts-appear-start)))
+                   (remove-hook 'evil-insert-state-entry-hook #'markdown-ts-appear-start t)
+                   (remove-hook 'evil-insert-state-exit-hook #'markdown-ts-appear-stop t))))))
+    (dolist (initial '(normal insert))
+      (markdown-ts-appear-test--with-buffer "A *word* here\n"
+        (save-window-excursion
+          (switch-to-buffer (current-buffer))
+          (markdown-ts-appear-mode -1)
+          (evil-local-mode 1)
+          (evil-change-state initial)
+          (goto-char 5)
+          (markdown-ts-appear-mode 1)
+          (should (eq (not (null (markdown-ts-appear--tracking-p)))
+                      (eq initial 'insert)))
+          (evil-normal-state)
+          (dotimes (_ 2)
+            (run-hooks 'post-command-hook)
+            (font-lock-ensure)
+            (should-not markdown-ts-appear--region)
+            (should (get-text-property 3 'invisible))
+            (evil-insert-state)
+            (should markdown-ts-appear--region)
+            (should-not (get-text-property 3 'invisible))
+            (evil-normal-state))
+          (markdown-ts-appear-mode -1)
+          (should-not (memq #'markdown-ts-appear-start evil-insert-state-entry-hook))
+          (should-not (memq #'markdown-ts-appear-stop evil-insert-state-exit-hook)))))))
 
 (ert-deftest markdown-ts-appear-test-enable-is-idempotent ()
   (dolist (markdown-ts-appear-test--decorations '(nil t))
