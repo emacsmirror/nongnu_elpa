@@ -36,6 +36,8 @@
   come from our occupant JID and are still honoured.
 - Stop announcing "has left the chatroom" on join for members who were never
   in the room; Prosody lists absent members with reserved nicknames that way.
+- Run interpreted lambdas added to stanza handler chains on Emacs 29;
+  dispatch no longer mistakes them for prioritized entries.
 
 * [0.15.0]
 #+date: 2026-10-02
