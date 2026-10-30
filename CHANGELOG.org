@@ -33,6 +33,8 @@
   presence from the bare room JID, which lists absent affiliated members, no
   longer counts as our own departure; the room's own departure notices still
   come from our occupant JID and are still honoured.
+- Stop announcing "has left the chatroom" on join for members who were never
+  in the room; Prosody lists absent members with reserved nicknames that way.
 
 * [0.15.0]
 #+date: 2026-10-02

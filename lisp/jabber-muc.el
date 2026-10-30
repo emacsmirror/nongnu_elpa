@@ -2637,8 +2637,11 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
   "Handle another participant leaving GROUP.
 JC is the connection.
 NICKNAME is the departing user.  STATUS-CODES, ITEM, ACTOR and REASON
-come from the stanza."
-  (let* ((plist (jabber-muc-participant-plist group nickname))
+come from the stanza.  Announce nothing for a NICKNAME that was never
+an occupant: Prosody lists absent affiliated members with reserved
+nicknames as unavailable presence."
+  (let* ((present (assoc nickname (cdr (assoc group jabber-muc-participants))))
+         (plist (cdr present))
          (jid (plist-get plist 'jid))
          (name (concat nickname
                        (when jid
@@ -2650,7 +2653,7 @@ come from the stanza."
        jc (concat group "/" nickname)))
     (jabber-muc--identity-occupant jc group nickname nil)
     (jabber-muc-remove-participant group nickname)
-    (when-let* ((buffer (jabber-muc-find-buffer group jc)))
+    (when-let* ((buffer (and present (jabber-muc-find-buffer group jc))))
       (with-current-buffer buffer
         (jabber-chat-buffer-with-scrolltobottom
           (when (and (fboundp 'jabber-chatstates--muc-remove-nick)

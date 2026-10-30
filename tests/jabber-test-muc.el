@@ -3134,6 +3134,26 @@ our own self-presence during a join and later on affiliation changes."
                         (status ((code . "110"))))))
       (should-not (jabber-muc-joined-p room jc)))))
 
+(ert-deftest jabber-test-muc-absent-member-is-not-announced ()
+  "Unavailable presence for a nickname never seen in the room is silent.
+Prosody lists absent members with reserved nicknames this way."
+  (let ((room "room@example.org")
+        (jabber-muc-participants
+         (list (list "room@example.org" (list "alice" 'role "participant"))))
+        notices)
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                 (lambda (&rest _) (current-buffer)))
+                ((symbol-function 'jabber-chat-ewoc-enter)
+                 (lambda (data) (push (cadr data) notices)))
+                ((symbol-function 'jabber-maybe-print-rare-time) #'ignore)
+                ((symbol-function 'jabber-muc--identity-occupant) #'ignore))
+        (jabber-muc--process-other-leave 'jc room "absent" nil nil nil nil)
+        (should-not notices)
+        (jabber-muc--process-other-leave 'jc room "alice" nil nil nil nil)
+        (should (equal notices '("alice has left the chatroom")))
+        (should-not (jabber-muc-participant-plist room "alice"))))))
+
 (ert-deftest jabber-test-muc-recovery-retired-nick-rejection ()
   "Late modern or legacy nick errors cannot reopen a retired lease.
 An expired nickname handshake is not a withdrawal: the room keeps the
