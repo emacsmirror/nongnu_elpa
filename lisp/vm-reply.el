@@ -683,15 +683,26 @@ folder, that message is marked as having been replied to."
   (vm-keep-some-buffers buffer 'vm-kept-mail-buffers vm-keep-sent-messages))
 
 (defun vm-check-recipient-format ()
+  "Signal an error where a recipient header has a comma left out.
+Only a header running over more than one line can show one, and the break
+is then either two addresses the author did not separate or a fold, which
+RFC 5322 section 2.2.3 puts inside a single address.  The addresses say
+which: `vm-single-address-p' tests one.
+
+VM folds a long header itself, in `vm-mime-encode-headers', so a draft
+postponed and continued comes back here already folded."
   (save-excursion
     (goto-char (point-min))
     (while (vm-match-header)
       (if (not (vm-match-header "To:\\|Resent-To:\\|Cc:\\|Resent-Cc:"))
 	  (goto-char (vm-matched-header-end))
 	(goto-char (vm-matched-header-contents-start))
-	(if (re-search-forward "[^, \t][ \t]*\n[ \t\n]+[^ \t\n]"
-			       (vm-matched-header-contents-end)
-			       t)
+	(if (and (re-search-forward "[^, \t][ \t]*\n[ \t\n]+[^ \t\n]"
+				    (vm-matched-header-contents-end)
+				    t)
+		 (not (seq-every-p #'vm-single-address-p
+				   (vm-parse-addresses
+				    (vm-matched-header-contents)))))
 	    (error "missing trailing comma in `%s' header" (vm-matched-header-name)))
 	(goto-char (vm-matched-header-end))))))
 
@@ -2820,6 +2831,20 @@ still in its encoded form is removed by matching."
       (setq previous stripped)
       (setq stripped (vm-replace-in-string stripped "([^()]*)" "")))
     stripped))
+
+(defun vm-single-address-p (address)
+  "Whether ADDRESS holds one address rather than two run together.
+One address is an addr-spec, a phrase with an angle address after it, or a
+single token naming a local user or an alias.  Two of them with only
+whitespace between is a comma the author left out.
+
+Quoted strings, comments and encoded words are not read, any of which may
+hold whitespace, an at sign or an angle bracket that says nothing about how
+many addresses there are; `vm-mail-check-recipients-strip' removes them."
+  (let ((bare (string-trim (vm-mail-check-recipients-strip address))))
+    (if (string-search "<" bare)
+	(and (string-match "\\`[^<>]*<[^<>]*>\\'" bare) t)
+      (not (string-match "[^ \t\n][ \t\n]+[^ \t\n]" bare)))))
 
 (defun vm-mail-check-recipients ()
   "Check if the recipients are specified correctly.

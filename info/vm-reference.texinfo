@@ -8434,10 +8434,14 @@ nil, @code{vm-folder-directory} is used for this purpose.
 
 @defopt vm-mail-check-recipient-format
 @vindex vm-mail-check-recipient-format
-Non-nil value causes @code{vm-mail-send} to check multi-line recipient
-headers of outbound mail for lines that don’t end with a
-comma.  If such a line is found, an error is signaled and the
-mail is not sent.
+Non-nil value causes @code{vm-mail-send} to check a recipient header of
+outbound mail that runs over more than one line for a comma left out
+between two addresses.  If one is found, an error is signaled and the mail
+is not sent.
+
+A line break that falls inside a single address is a fold, which RFC 5322
+section 2.2.3 allows and which VM makes itself in a header too long for one
+line, and is not reported.
 
 Default value: @code{t}
 @end defopt
