@@ -3417,6 +3417,66 @@ set the other."
         (should (vm-forwarded-flag first))
         (should-not (vm-replied-flag first))))))
 
+;;; A recipient header folded over two lines, issue #925
+
+(defconst vm-reply-test--long-recipient
+  "To: emacs-vm / vm <incoming+7-610veffdtgdjtklfqdbh1o7yo-1h7y9o@incoming.gitlab.com>\n"
+  "One address, 83 characters with the header name, so VM folds it.")
+
+(ert-deftest vm-reply-test-check-recipient-format-allows-a-fold ()
+  "A line break inside one address is a fold and not a missing comma.
+RFC 5322 section 2.2.3 makes it legal and VM writes it itself, so refusing
+it left a postponed draft that could not be sent at all."
+  (vm-reply-test-with-headers
+      "To: emacs-vm / vm\n <incoming+7-610veffdtgdjtklfqdbh1o7yo-1h7y9o@incoming.gitlab.com>\n"
+    (should (null (vm-check-recipient-format))))
+  (vm-reply-test-with-headers
+      "CC: \"Doe, John\"\n <john@example.com>\n"
+    (should (null (vm-check-recipient-format))))
+  (vm-reply-test-with-headers
+      "To: john@example.com\n (John Doe)\n"
+    (should (null (vm-check-recipient-format)))))
+
+(ert-deftest vm-reply-test-check-recipient-format-allows-the-fold-vm-makes ()
+  "What `vm-mime-encode-headers' folds, `vm-check-recipient-format' accepts.
+Postponing a composition encodes its headers, so a draft continued and sent
+arrives at the check already folded: the two have to agree or nothing goes
+out."
+  (vm-reply-test-with-headers vm-reply-test--long-recipient
+    (vm-mime-encode-headers)
+    (goto-char (point-min))
+    (should (re-search-forward "^ <incoming" nil t))
+    (should (null (vm-check-recipient-format)))))
+
+(ert-deftest vm-reply-test-check-recipient-format-catches-a-missing-comma ()
+  "A line break between two addresses is still refused."
+  (vm-reply-test-with-headers
+      "To: first@example.com\n second@example.org\n"
+    (should-error (vm-check-recipient-format) :type 'error))
+  (vm-reply-test-with-headers
+      "To: John <first@example.com>\n Jane <second@example.org>\n"
+    (should-error (vm-check-recipient-format) :type 'error))
+  ;; aliases, which carry no "@" to count
+  (vm-reply-test-with-headers
+      "To: alias-one\n alias-two\n"
+    (should-error (vm-check-recipient-format) :type 'error))
+  ;; and one good address does not excuse the one after it
+  (vm-reply-test-with-headers
+      "To: first@example.com,\n second@example.org\n third@example.net\n"
+    (should-error (vm-check-recipient-format) :type 'error)))
+
+(ert-deftest vm-reply-test-single-address-p ()
+  "The test that tells a fold from a comma left out."
+  (should (vm-single-address-p "emacs-vm / vm <a@example.com>"))
+  (should (vm-single-address-p "a@example.com"))
+  (should (vm-single-address-p "a@example.com (John Doe)"))
+  (should (vm-single-address-p "\"Doe, John\" <a@example.com>"))
+  (should (vm-single-address-p "=?utf-8?Q?a@b?= <c@example.com>"))
+  (should (vm-single-address-p "alias"))
+  (should-not (vm-single-address-p "a@example.com b@example.org"))
+  (should-not (vm-single-address-p "John <a@example.com> Jane <b@example.org>"))
+  (should-not (vm-single-address-p "alias-one alias-two")))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

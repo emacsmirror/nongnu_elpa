@@ -5633,10 +5633,14 @@ data to XBM data."
   "Non-nil if the uncompface command accepts a -X argument.")
 
 (defcustom vm-mail-check-recipient-format 't
-  "Non-nil value causes `vm-mail-send' to check multi-line recipient
-headers of outbound mail for lines that don't end with a
-comma.  If such a line is found, an error is signaled and the
-mail is not sent."
+  "Non-nil value causes `vm-mail-send' to check a recipient header of
+outbound mail that runs over more than one line for a comma left out
+between two addresses.  If one is found, an error is signaled and the mail
+is not sent.
+
+A line break that falls inside a single address is a fold, which RFC 5322
+section 2.2.3 allows and which VM makes itself in a header too long for one
+line, and is not reported."
   :group 'vm-compose
   :type 'boolean)
 
