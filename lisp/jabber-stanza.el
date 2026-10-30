@@ -178,7 +178,9 @@ it with each error or quit condition; it may signal to stop dispatch."
                      ('presence jabber-presence-chain)
                      ('message jabber-message-chain))))
     (dolist (entry handlers)
-      (let ((handler (if (consp entry) (cdr entry) entry)))
+      ;; Interpreted closures are conses before Emacs 30; only a
+      ;; numeric car marks a (DEPTH . HANDLER) entry.
+      (let ((handler (if (numberp (car-safe entry)) (cdr entry) entry)))
         (condition-case err
             (funcall handler jc xml-data)
           ((debug error quit)

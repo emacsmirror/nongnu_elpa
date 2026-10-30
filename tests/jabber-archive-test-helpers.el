@@ -18,6 +18,17 @@
 (require 'jabber-message-reply)
 (require 'jabber-reactions)
 
+(defun jabber-test-archive--contain-errors (dispatch &rest args)
+  "Call DISPATCH with ARGS without entering the debugger on contained errors."
+  (let ((debug-on-error nil))
+    (apply dispatch args)))
+
+;; Stanza dispatch contains handler errors with a `debug' condition.
+;; ERT before Emacs 30 runs tests with `debug-on-error' and fails on any
+;; debugger entry, so injected faults that dispatch contains would fail.
+(when (< emacs-major-version 30)
+  (advice-add 'jabber-process-input :around #'jabber-test-archive--contain-errors))
+
 (defun jabber-test-mam--native-connection (&optional username)
   "Return a disposable established native FSM for USERNAME, defaulting to me."
   (let ((jc (make-symbol "mam-native")))

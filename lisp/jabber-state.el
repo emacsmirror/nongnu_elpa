@@ -51,8 +51,8 @@
 Lower depths run first.  Bare function entries from older versions are
 accepted when checking for an existing handler."
   (let ((entry (cons (or depth 0) handler))
-        (entry-depth (lambda (item) (if (consp item) (car item) 0)))
-        (entry-function (lambda (item) (if (consp item) (cdr item) item))))
+        (entry-depth (lambda (item) (if (numberp (car-safe item)) (car item) 0)))
+        (entry-function (lambda (item) (if (numberp (car-safe item)) (cdr item) item))))
     (unless (cl-find handler (symbol-value chain-var) :key entry-function)
       (set chain-var
            (sort (cons entry (symbol-value chain-var))

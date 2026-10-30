@@ -438,5 +438,21 @@
           (should (< (abs (- (float-time (jabber-parse-time stamp)) expected))
                      0.000001)))))))
 
+(defvar jabber-test-util--chain-seen nil)
+
+(ert-deftest jabber-test-util-chain-accepts-list-functions ()
+  "A bare list-form function in a chain is called whole.
+Interpreted closures are such conses before Emacs 30."
+  (let ((handler '(lambda (_jc xml) (setq jabber-test-util--chain-seen xml)))
+        (jabber-message-chain nil)
+        (jabber-test-util--chain-seen nil))
+    (jabber-chain-add 'jabber-message-chain #'ignore 5)
+    (push handler jabber-message-chain)
+    ;; A legacy bare entry is recognised as already present.
+    (jabber-chain-add 'jabber-message-chain handler)
+    (should (= 2 (length jabber-message-chain)))
+    (jabber-process-input 'jc '(message ((id . "m"))))
+    (should (equal jabber-test-util--chain-seen '(message ((id . "m")))))))
+
 (provide 'jabber-test-util)
 ;;; jabber-test-util.el ends here
