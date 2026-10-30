@@ -3001,6 +3001,10 @@ Use receiving connection JC to determine our remembered nickname."
      ;; Every governed transition, not just available presence, needs
      ;; permission.  An expired ordinary join governs nothing.
      ((and attempt (not (jabber-muc--attempt-current-p jc group attempt t))) nil)
+     ;; The bare room JID is never an occupant.  Prosody lists absent
+     ;; affiliated members to admins and owners as unavailable presence
+     ;; from it; our own departure always comes from our occupant JID.
+     ((and (null nickname) (not (equal type "error"))) nil)
      ;; Self 303 retires only the alias, not the membership or pending lease.
      ;; Foreign 303 must take the ordinary occupant-removal path even while
      ;; our own nickname change is pending.  Never adopt its target nickname.

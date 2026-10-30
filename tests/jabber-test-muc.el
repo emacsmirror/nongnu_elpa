@@ -3099,6 +3099,41 @@ entry with JC=nil."
   "An expired deadline leaves the room admissible and leases the admission."
   (jabber-test-muc--retired-presence 'timeout))
 
+(ert-deftest jabber-test-muc-bare-room-presence-is-not-departure ()
+  "Non-error presence from the bare room JID never ends our membership.
+Prosody lists absent affiliated members to admins this way, before
+our own self-presence during a join and later on affiliation changes."
+  (jabber-test-muc-with-recovery
+    (cl-flet ((bare (type)
+                (jabber-muc-process-presence
+                 jc `(presence ((from . ,room) ,@(when type `((type . ,type))))
+                               (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                                  (item ((affiliation . "member") (role . "none")
+                                         (jid . "absent@example.org"))))))))
+      (jabber-muc-autojoin jc)
+      (bare "unavailable")
+      (should (eq (plist-get (jabber-sm--room-attempt
+                              (fsm-get-state-data jc) room) :status)
+                  'pending))
+      (jabber-muc-process-presence
+       jc `(presence ((from . ,(concat room "/self")))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                        (item ((affiliation . "admin") (role . "moderator")))
+                        (status ((code . "110"))))))
+      (should (jabber-muc-joined-p room jc))
+      (let ((participants (copy-tree jabber-muc-participants)))
+        (dolist (type '("unavailable" nil))
+          (bare type)
+          (should (jabber-muc-joined-p room jc))
+          (should (jabber-sm--room-ready-p (fsm-get-state-data jc) room))
+          (should (equal participants jabber-muc-participants))))
+      (jabber-muc-process-presence
+       jc `(presence ((from . ,(concat room "/self")) (type . "unavailable"))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                        (item ((affiliation . "admin") (role . "none")))
+                        (status ((code . "110"))))))
+      (should-not (jabber-muc-joined-p room jc)))))
+
 (ert-deftest jabber-test-muc-recovery-retired-nick-rejection ()
   "Late modern or legacy nick errors cannot reopen a retired lease.
 An expired nickname handshake is not a withdrawal: the room keeps the

@@ -29,6 +29,10 @@
   of holding one open across archive page requests, so a failed page no
   longer rolls back unrelated live messages or OMEMO state, and a retry
   decrypts from the restored state (#87).
+- Stay in rooms where we are an admin or owner on Prosody.  Its unavailable
+  presence from the bare room JID, which lists absent affiliated members, no
+  longer counts as our own departure; the room's own departure notices still
+  come from our occupant JID and are still honoured.
 
 * [0.15.0]
 #+date: 2026-10-02
