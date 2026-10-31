@@ -4270,7 +4270,8 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
                                'face 'fj-name-face)
                    ts))
           ("assignees"
-           (fj-format-assignee format-str .user.username assignee ts))
+           (fj-format-assignee format-str .user.username assignee
+                             ts .removed_assignee))
           ("change_target_branch"
            (fj-format-change-target format-str .user.username
                                     .old_ref .new_ref))
@@ -4296,16 +4297,19 @@ review. TS is a timeline timestamp."
         (reviewer (propertize reviewer 'face 'fj-name-face)))
     (format format-str user reviewer ts)))
 
-(defun fj-format-assignee (format-str user assignee ts)
+(defun fj-format-assignee (format-str user assignee ts &optional removed)
   "Format an assignee timeline item.
 FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
 assigned to. TS is a timeline timestamp."
   (let ((user (propertize user 'face 'fj-name-face))
         (assignee (propertize assignee 'face 'fj-name-face)))
     ;; "%s %sassigned this%s %s":
-    (if (string= user assignee)
-        (format format-str user "self-" "" ts)
-      (format format-str user "" (concat "to " assignee) ts))))
+    (cond ((eq removed t)
+           (format format-str user "un" "" ts))
+          ((string= user assignee)
+           (format format-str user "self-" "" ts))
+          (_
+           (format format-str user "" (concat "to " assignee) ts)))))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
