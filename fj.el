@@ -3649,11 +3649,6 @@ may be in item title or body."
               ;; `completion-table-dynamic' seems to enforce the "basic"
               ;; completion style, which doesn't work for us, so we have to
               ;; roll our own:
-              ;; (completion-table-dynamic
-              ;;  (lambda (str)
-              ;;    (when (length> str 2)
-              ;;      (fj-issue-dynamic str)))
-              ;;  :switch)))
               (if prefix
                   #'fj-issues-dynamic-fun-title
                 #'fj-issues-dynamic-fun)))
