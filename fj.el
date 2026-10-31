@@ -2988,7 +2988,7 @@ Else make a POST request to the server."
     ;; line-prefix doesn't work, as indentation, which occurs after this
     ;; function returns, removes it:
     (add-text-properties start ;; ours
-                         (save-excursion (previous-line) (point))
+                         (save-excursion (forward-line -1) (point))
                          '(face font-lock-comment-face))
     (shr-ensure-paragraph)
     (shr-mark-fill start)))
