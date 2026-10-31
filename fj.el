@@ -1659,6 +1659,12 @@ Reads a string of \"OWNER/REPO\", slash-separated."
          (split (split-string owner-repo "/")))
     (fj-list-issues-do (nth 1 split) (nth 0 split))))
 
+(defun fj-jump-to-own-repo ()
+  "Jump to issues listing of one of your own repos."
+  (interactive)
+  (let ((repo (fj-read-user-repo '(4))))
+    (fj-list-issues-do repo fj-user)))
+
 ;;; PULL REQUESTS
 ;; TODO: owner args not `fj-user'
 
