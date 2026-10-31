@@ -1356,8 +1356,8 @@ The default sort value is \"latest\"."
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
   ;; default sort = latest.
   "Return issues for REPO by OWNER.
-STATE is for issue status, a string of \"open\", \"closed\" or \"all\".
-TYPE is item type: a string of \"issue\", \"pull\" or \"all\".
+STATE is for issue status, must be member of `fj-items-states'.
+TYPE is item type: must be member of `fj-items-types'.
 QUERY is a search term to filter by.
 Optionally limit results to LABELS or MILESTONES, which are
 comma-separated lists.
@@ -1385,8 +1385,8 @@ SORT should be a member of `fj-issues-sort'."
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
 Either QUERY or OWNER must be provided.
-STATE is \"open\" or \"closed\".
-TYPE is \"issues\" or \"pulls\".
+STATE is for issue status, must be member of `fj-items-states'.
+TYPE is item type: must be member of `fj-items-types'.
 Optionally filter results for those you have CREATED, been ASSIGNED to,
 or MENTIONED in.
 STATE defaults to open.
