@@ -3331,7 +3331,8 @@ range for insertion."
                  #'fj-insert-permalink-code-cb `(,beg ,end ,marker ,ext))))))))))
 
 (defun fj-insert-permalink-code-cb (_status beg end marker ext)
-  "Insert get code range from BEG to END and insert at MARKER."
+  "Insert get code range from BEG to END and insert at MARKER.
+EXT is the file extension."
   (let* ((raw (fj-resp-str (current-buffer)))
          (str (with-temp-buffer
                 (insert raw)
@@ -3987,7 +3988,7 @@ Alternatively, call OP on them instead."
          (fj-view-reload))))))
 
 (defun fj-item-view-goto-item-by-number (index)
-  "Read an item number and jump to it, from timline."
+  "Read an item number INDEX and jump to it, from timline."
   (interactive "sItem number (no #): ")
   (fj-with-item-view
    (fj-destructure-buf-spec (owner repo)
@@ -4314,7 +4315,8 @@ review. TS is a timeline timestamp."
 (defun fj-format-assignee (format-str user assignee ts &optional removed)
   "Format an assignee timeline item.
 FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
-assigned to. TS is a timeline timestamp."
+assigned to. TS is a timeline timestamp.
+If REMOVED, format an unassigned string."
   (let ((user (propertize user 'face 'fj-name-face))
         (assignee (propertize assignee 'face 'fj-name-face)))
     ;; "%s %sassigned this%s %s":
@@ -5091,7 +5093,7 @@ Works in repo listings, issue listings, and item views."
      (fj-issue-label-remove repo owner number))))
 
 (defun fj-tl-goto-item-by-number (index)
-  "Read an item number and jump to it, from tabulated listing."
+  "Read an item number INDEX and jump to it, from tabulated listing."
   (interactive "sItem number (no #): ")
   (fj-with-item-tl
    (fj-destructure-buf-spec (owner repo)
