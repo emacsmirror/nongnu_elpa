@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.5") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.48
+;; Version: 0.49
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -558,7 +558,7 @@ If we fail, return `fj-user'."
     (fj--get-tl-col 1))
    (t
     (or ;; try to fetch owner from item at point's repo data:
-     ;; perhaps we are viewing issues from `fj-list-search-items'
+     ;; perhaps we are viewing issues from `fj--list-search-items'
      ;; (ie fj-owned-issues-tl-mode)
      (map-nested-elt (fj--property 'fj-item-data)
                      '(repository owner))
@@ -1356,8 +1356,8 @@ The default sort value is \"latest\"."
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
   ;; default sort = latest.
   "Return issues for REPO by OWNER.
-STATE is for issue status, a string of \"open\", \"closed\" or \"all\".
-TYPE is item type: a string of \"issue\", \"pull\" or \"all\".
+STATE is for issue status, must be member of `fj-items-states'.
+TYPE is item type: must be member of `fj-items-types'.
 QUERY is a search term to filter by.
 Optionally limit results to LABELS or MILESTONES, which are
 comma-separated lists.
@@ -1385,8 +1385,8 @@ SORT should be a member of `fj-issues-sort'."
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
 Either QUERY or OWNER must be provided.
-STATE is \"open\" or \"closed\".
-TYPE is \"issues\" or \"pulls\".
+STATE is for issue status, must be member of `fj-items-states'.
+TYPE is item type: must be member of `fj-items-types'.
 Optionally filter results for those you have CREATED, been ASSIGNED to,
 or MENTIONED in.
 STATE defaults to open.
@@ -1417,7 +1417,7 @@ MILESTONES and LABELS are comma-separated lists."
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-search-items
+  (fj--list-search-items
    query state "pulls" created assigned mentioned fj-user))
 
 ;;;###autoload
@@ -1427,7 +1427,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-search-items
+  (fj--list-search-items
    query state "issues" created assigned mentioned fj-user))
 
 (defun fj-next-plist-state (plist old new &optional newval)
@@ -1455,7 +1455,7 @@ in, or assigned to."
   (interactive)
   (fj-destructure-buf-spec (_viewfun viewargs)
     (let ((newargs (fj-cycle-viewargs viewargs)))
-      (apply #'fj-list-search-items (fj-plist-values newargs)))))
+      (apply #'fj--list-search-items (fj-plist-values newargs)))))
 
 (defun fj-list-authored-issues ()
   "Return issues authored by `fj-user', in any repo."
@@ -1472,7 +1472,7 @@ in, or assigned to."
   "List issues created by `fj-user'.
 QUERY, STATE, TYPE, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
-  (fj-list-search-items query state type "true" assigned mentioned))
+  (fj--list-search-items query state type "true" assigned mentioned))
 
 (defun fj-cycle-str (created assigned mentioned owner)
   "Return whichever of CREATED ASSIGNED MENTIONED OWNER is non-nil.
@@ -1485,8 +1485,8 @@ Return the variable name as a string."
                 (mentioned "mentioned")
                 (owner "owned"))))
 
-(defun fj-list-search-items (&optional query state type
-                                     created assigned mentioned owner page)
+(defun fj--list-search-items (&optional query state type
+                                      created assigned mentioned owner page)
   "List items of TYPE in repos owned by `fj-user'.
 QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED, OWNER, and PAGE are
 all for `fj-issues-search'."
@@ -1515,7 +1515,7 @@ all for `fj-issues-search'."
       (setq fj-buffer-spec
             `( :owner ,owner
                :url ,(concat fj-host "/issues") ;; FIXME: url params
-               :viewfun fj-list-search-items
+               :viewfun fj--list-search-items
                :viewargs ( :query ,query :state ,state :type ,type
                            :created ,created :assigned ,assigned
                            :mentioned ,mentioned :owner ,owner
@@ -1572,6 +1572,13 @@ CLOSED, DUE-DATE, REF."
        (fj-issue-success-maybe-upload resp repo user)
        (message "Issue created!")))))
 
+(defun fj-item-view-add-assignee (assignee)
+  "Add ASSIGNEE to item being viewed."
+  (interactive "sAssign: ")
+  (fj-with-item-view
+   (fj-destructure-buf-spec (repo owner item)
+     (fj-issue-patch repo owner item nil nil nil assignee))))
+
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
           due_date milestone ref unset_due_date updated_at)
@@ -1580,6 +1587,7 @@ With PARAMS.
 OWNER is the repo owner.
 Return response buffer."
   ;; PATCH /repos/{owner}/{repo}/issues/{index}
+  ;; FIXME: assignee deprecated for assignees
   (let* ((params (fedi-opt-params
                   title body state assignee assignees due_date
                   milestone ref unset_due_date updated_at))
@@ -1650,6 +1658,12 @@ Reads a string of \"OWNER/REPO\", slash-separated."
                                       fj-favourite-repos))
          (split (split-string owner-repo "/")))
     (fj-list-issues-do (nth 1 split) (nth 0 split))))
+
+(defun fj-jump-to-own-repo ()
+  "Jump to issues listing of one of your own repos."
+  (interactive)
+  (let ((repo (fj-read-user-repo '(4))))
+    (fj-list-issues-do repo fj-user)))
 
 ;;; PULL REQUESTS
 ;; TODO: owner args not `fj-user'
@@ -2350,7 +2364,7 @@ Optionally specify REPO and OWNER."
   "C-c C-c"  #'fj-cycle-state
   "C-c C-s"  #'fj-cycle-type
   "o"        #'fj-item-reopen
-  "s"        #'fj-list-issues-search
+  "s"        #'fj-list-search-items
   "B"        #'fj-tl-browse-entry
   "u"        #'fj-repo-copy-clone-url
   "L"        #'fj-repo-commit-log
@@ -2718,12 +2732,34 @@ PREV-MODE is the major mode active in the previous buffer."
         (t                             ; new buf
          (switch-to-buffer-other-window (current-buffer)))))
 
-(defun fj-list-issues-search (query &optional state type)
+(defun fj-list-search-items ()
+  "Call item search function depending on our view.
+If viewing pulls, search pulls, else search issues."
+  (interactive)
+  (fj-with-item-tl
+   (let* ((type (plist-get (fj--get-buffer-spec :viewargs) :type))
+          (query (read-string (format "Search %s in repo: " type))))
+     (funcall-interactively
+      (if (string= type "pulls")
+          #'fj-list-search-pulls
+        #'fj-list-search-issues)
+      query))))
+
+(defun fj-list-search-issues (query &optional state)
   "Search current repo issues for QUERY.
-STATE and TYPE as for `fj-list-issues-do'."
+STATE as for `fj-list-issues-do'."
   (interactive "sSearch issues in repo: ")
-  (let ((owner (fj--get-buffer-spec :owner)))
-    (fj-list-issues-do nil owner (or state "all") type query)))
+  (fj-with-item-tl
+   (let ((owner (fj--get-buffer-spec :owner)))
+     (fj-list-issues-do nil owner (or state "all") nil query))))
+
+(defun fj-list-search-pulls (query &optional state)
+  "Search current repo PRs for QUERY.
+STATE as for `fj-list-issues-do'."
+  (interactive "sSearch pulls in repo: ")
+  (fj-with-item-tl
+   (let ((owner (fj--get-buffer-spec :owner)))
+     (fj-list-issues-do nil owner (or state "all") "pulls" query))))
 
 (defun fj-list-issues-closed (&optional repo owner type)
   "Display closed ISSUES for REPO by OWNER in tabulated list view.
@@ -2743,6 +2779,7 @@ TYPE is the item type."
   '("open" "closed" "all"))
 
 (defvar fj-items-types
+  ;; FIXME: API doesn't offer "all"?
   '("issues" "pulls" "all"))
 
 (defun fj-next-item-var (current var)
@@ -2940,9 +2977,25 @@ Else make a POST request to the server."
       ;; Mark this as an element we can TAB to.
       (put-text-property start (1+ start) 'shr-tab-stop t))))
 
+(defun fj-shr-tag-blockquote (dom)
+  "Render blockquote tag DOM."
+  ;; hacked off `shr-tag-blockquote'
+  (shr-ensure-paragraph)
+  (let ((start (point))
+	(shr-indentation (+ shr-indentation
+			    (* 4 shr-table-separator-pixel-width))))
+    (shr-generic dom)
+    ;; line-prefix doesn't work, as indentation, which occurs after this
+    ;; function returns, removes it:
+    (add-text-properties start ;; ours
+                         (save-excursion (forward-line -1) (point))
+                         '(face font-lock-comment-face))
+    (shr-ensure-paragraph)
+    (shr-mark-fill start)))
+
 (defun fj-form-checkbox (dom)
   "Render checkbox DOM."
-  ;; hacked off eww-form-checkbox
+  ;; hacked off `eww-form-checkbox'
   (let ((start (point)))
     (if (dom-attr dom 'checked)
 	(insert eww-form-checkbox-selected-symbol)
@@ -2978,7 +3031,8 @@ Optionally start from POINT."
                 (shr-discard-aria-hidden t) ; for pandoc md image output
                 (shr-external-rendering-functions
                  (append shr-external-rendering-functions
-                         '((input . fj-tag-input))))
+                         '((input . fj-tag-input)
+                           (blockquote . fj-shr-tag-blockquote))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
@@ -3060,7 +3114,7 @@ Adds tab-stop, keymap, and type."
   "o" #'fj-item-reopen
   "K" #'fj-item-delete
   "t" #'fj-item-edit-title
-  "s" #'fj-list-issues-search
+  "s" #'fj-list-search-issues
   "D" #'fj-view-pull-diff
   "L" #'fj-repo-commit-log
   "l" #'fj-item-label-add
@@ -3277,7 +3331,8 @@ range for insertion."
                  #'fj-insert-permalink-code-cb `(,beg ,end ,marker ,ext))))))))))
 
 (defun fj-insert-permalink-code-cb (_status beg end marker ext)
-  "Insert get code range from BEG to END and insert at MARKER."
+  "Insert get code range from BEG to END and insert at MARKER.
+EXT is the file extension."
   (let* ((raw (fj-resp-str (current-buffer)))
          (str (with-temp-buffer
                 (insert raw)
@@ -3649,11 +3704,6 @@ may be in item title or body."
               ;; `completion-table-dynamic' seems to enforce the "basic"
               ;; completion style, which doesn't work for us, so we have to
               ;; roll our own:
-              ;; (completion-table-dynamic
-              ;;  (lambda (str)
-              ;;    (when (length> str 2)
-              ;;      (fj-issue-dynamic str)))
-              ;;  :switch)))
               (if prefix
                   #'fj-issues-dynamic-fun-title
                 #'fj-issues-dynamic-fun)))
@@ -3936,6 +3986,13 @@ Alternatively, call OP on them instead."
        (when (yes-or-no-p "Delete comment?")
          (fj-delete endpoint)
          (fj-view-reload))))))
+
+(defun fj-item-view-goto-item-by-number (index)
+  "Read an item number INDEX and jump to it, from timline."
+  (interactive "sItem number (no #): ")
+  (fj-with-item-view
+   (fj-destructure-buf-spec (owner repo)
+     (fj-item-view repo owner index))))
 
 ;;; PR VIEWS
 
@@ -4228,7 +4285,8 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
                                'face 'fj-name-face)
                    ts))
           ("assignees"
-           (fj-format-assignee format-str .user.username assignee ts))
+           (fj-format-assignee format-str .user.username assignee
+                             ts .removed_assignee))
           ("change_target_branch"
            (fj-format-change-target format-str .user.username
                                     .old_ref .new_ref))
@@ -4254,16 +4312,20 @@ review. TS is a timeline timestamp."
         (reviewer (propertize reviewer 'face 'fj-name-face)))
     (format format-str user reviewer ts)))
 
-(defun fj-format-assignee (format-str user assignee ts)
+(defun fj-format-assignee (format-str user assignee ts &optional removed)
   "Format an assignee timeline item.
 FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
-assigned to. TS is a timeline timestamp."
+assigned to. TS is a timeline timestamp.
+If REMOVED, format an unassigned string."
   (let ((user (propertize user 'face 'fj-name-face))
         (assignee (propertize assignee 'face 'fj-name-face)))
     ;; "%s %sassigned this%s %s":
-    (if (string= user assignee)
-        (format format-str user "self-" "" ts)
-      (format format-str user "" (concat "to " assignee) ts))))
+    (cond ((eq removed t)
+           (format format-str user "un" "" ts))
+          ((string= user assignee)
+           (format format-str user "self-" "" ts))
+          (t
+           (format format-str user "" (concat "to " assignee) ts)))))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
@@ -5030,6 +5092,13 @@ Works in repo listings, issue listings, and item views."
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-remove repo owner number))))
 
+(defun fj-tl-goto-item-by-number (index)
+  "Read an item number INDEX and jump to it, from tabulated listing."
+  (interactive "sItem number (no #): ")
+  (fj-with-item-tl
+   (fj-destructure-buf-spec (owner repo)
+     (fj-item-view repo owner index))))
+
 ;;; GENERIC ITEM ACTION COMMANDS
 
 (defun fj-item-mode-dispatch (item-view-fun tl-mode-fun)
@@ -5089,6 +5158,12 @@ Works in repo listings, issue listings, and item views."
   (interactive)
   (fj-item-mode-dispatch #'fj-issue-label-remove
                          #'fj-issues-tl-label-remove))
+
+(defun fj-item-goto-by-number ()
+  "Jump to item by its number, from the item at point or being viewed."
+  (interactive)
+  (fj-item-mode-dispatch #'fj-item-view-goto-item-by-number
+                       #'fj-tl-goto-item-by-number))
 
 ;;; COMPOSING
 
@@ -5456,7 +5531,7 @@ SORT should be a member of `fj-search-users-sort'."
   ;; FIXME: move to `fj-generic-map' when item views are ready:
   "." #'fj-next-page
   "," #'fj-prev-page
-  "s" #'fj-list-issues-search)
+  "s" #'fj-list-search-issues)
 
 (define-derived-mode fj-notifications-mode special-mode "fj-notifs"
   "Major mode for viewing notifications."
@@ -5860,7 +5935,7 @@ Used for a mouse-click EVENT on a link."
 (defvar-keymap fj-commits-mode-map
   :doc "Keymap for `fj-commits-mode'."
   :parent fj-generic-map
-  "s" #'fj-list-issues-search
+  "s" #'fj-list-search-issues
   "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-commits-mode special-mode "fj-commits"
@@ -5976,7 +6051,7 @@ PAGE and LIMIT as always."
   :parent fj-generic-map
   "." #'fj-next-page
   "," #'fj-prev-page
-  "s" #'fj-list-issues-search
+  "s" #'fj-list-search-issues
   "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-users-mode special-mode "fj-users"
