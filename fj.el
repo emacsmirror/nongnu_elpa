@@ -2737,7 +2737,7 @@ STATE as for `fj-list-issues-do'."
   (interactive "sSearch issues in repo: ")
   (fj-with-item-tl
    (let ((owner (fj--get-buffer-spec :owner)))
-     (fj-list-issues-do nil owner (or state "all") type query))))
+     (fj-list-issues-do nil owner (or state "all") nil query))))
 
 (defun fj-list-search-pulls (query &optional state)
   "Search current repo PRs for QUERY.
