@@ -879,7 +879,7 @@ it, delete it or leave it, and showed you its headers to decide by.
 This is about a maildrop, fetched into a local folder, which cannot go back to
 the server for a body later.  In an @acronym{IMAP} folder an oversize message
 is retrieved as its headers alone where @code{vm-enable-external-messages}
-includes @code{imap}, and its body is fetched when you read it.
+is set for that mailbox, and its body is fetched when you read it.
 
 @cindex expunging, @acronym{IMAP} messages
 @cindex compacting, @acronym{IMAP} servers
@@ -2503,6 +2503,26 @@ working configuration looks like this:
 (setq vm-enable-external-messages '(imap))
 (setq vm-imap-max-message-size 50000)   ; bytes; 0 for every message
 @end example
+
+@cindex external messages, one mailbox
+Both options also take a setting per mailbox in place of one for every
+@acronym{IMAP} folder.  The value is then an alist whose keys are regexps,
+matched whole against the folder name in the form @samp{account:mailbox}
+where the account is the name it has in @code{vm-imap-account-alist}, and
+whose key @code{t} stands for every folder the regexps do not name:
+
+@example
+(setq vm-enable-external-messages
+      '(("work:Archive/.*" imap)))
+(setq vm-imap-max-message-size
+      '(("work:Archive/.*" . 50000) (t . 1000000)))
+@end example
+
+That keeps the bodies of a large archive mailbox on the server while the
+mailbox you read every day is fetched whole.  Scope both options or neither:
+a message is external only when it is over the limit as well, so a per
+mailbox @code{vm-enable-external-messages} with one
+@code{vm-imap-max-message-size} for every folder says nothing new.
 
 Note when trying this out that visiting a folder previews its current message,
 and previewing an external message fetches it.  So the message you are looking

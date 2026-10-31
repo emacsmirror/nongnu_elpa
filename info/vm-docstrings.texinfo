@@ -1121,20 +1121,35 @@ Default value: @code{quoted-printable}
 @macro vmdocvmenableexternalmessages
 @defopt vm-enable-external-messages
 @vindex vm-enable-external-messages
-Non-nil value should be a list of contexts in which VM may
-use message bodies stored externally.  External messages are
-those stored in external sources such as the file system or
-remote mail servers.  In some cases, VM is able to work with
-minimal header information of the messages, without loading the
-entire message bodies into the folder buffers.
+The contexts in which VM may use message bodies stored externally.
+An external message is one whose body stays where it is, on a remote mail
+server, VM holding its headers alone and fetching the body when the message
+is viewed.  This gives a faster start-up and a smaller Emacs, at the cost of
+a short delay when a message is read.
 
-This allows faster start-up times and smaller memory images of
-Emacs sessions, at the cost of short delays when messages are
-viewed.
+IMAP folders are the only context there is, named @code{imap}.  The value is one
+of:
 
-As of version 8.2.0, this facility is only available for IMAP
-folders (context name @code{imap}).  Messages larger than
-@code{vm-imap-max-message-size} are treated as external messages.
+- nil, the default, which leaves nothing external.
+
+- t, or the list (imap), for every IMAP folder.
+
+- An alist, which a cons for its first element says it is, naming the
+  contexts mailbox by mailbox:
+
+    (("work:Archive/.*" imap))
+
+@example
+  A key is a regexp matched whole against the folder name in the form
+  account:mailbox, the account being the name it has in
+  ‘vm-imap-account-alist’.  The key t stands for every folder the regexps do
+  not name, and belongs last.  A maildrop whose account is not in that alist
+  has no such name and takes the t entry.
+
+@end example
+A message is external only when it is also over the size
+@code{vm-imap-max-message-size} gives for its mailbox, so that option has to be
+set as well.
 @end defopt
 
 @end macro
@@ -3776,12 +3791,22 @@ Default value: @code{1}
 @vindex vm-imap-max-message-size
 The largest IMAP message VM retrieves.
 
-Nil, the default, means no limit.  A message larger than this is handled as
-follows:
+Nil, the default, means no limit.  A number is a size in bytes, for every
+mailbox.  An alist, which a cons for its first element says it is, gives one
+mailbox by mailbox:
+
+   (("work:Archive/.*" . 50000) (t . 1000000))
+
+A key is a regexp matched whole against the folder name in the form
+account:mailbox, as @code{vm-enable-external-messages} takes, or t for every
+mailbox the regexps do not name.
+
+A message larger than the limit is handled as follows:
 
 - In an IMAP folder, it is retrieved as its headers alone where
-@code{vm-enable-external-messages} includes @code{imap}, and its body is fetched from
-the server when the message is read.  Otherwise it is retrieved whole.
+@code{vm-enable-external-messages} says so for that mailbox, and its body is
+fetched from the server when the message is read.  Otherwise it is retrieved
+whole.
 
 - From a maildrop, into a local folder, it is left on the server and VM says
 how large it was and what the limit is.  A local folder cannot go back to the

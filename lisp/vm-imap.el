@@ -242,6 +242,46 @@ format account:mailbox."
 	(setq alist (cdr alist))))
     nil)))
 
+(defun vm-imap-setting-for-folder (setting spec)
+  "The part of SETTING that applies to the IMAP folder whose maildrop is SPEC.
+SETTING is the value of an option that is either one setting for every IMAP
+folder or an alist of them, which is what a cons for its first element says.
+
+A key of the alist is a regexp, matched whole against the folder name in the
+form account:mailbox that `vm-imap-folder-for-spec' gives, or t, which stands
+for every folder the regexps do not name.  The first key that matches is the
+one that counts, so t belongs last.  A maildrop whose account is not in
+`vm-imap-account-alist' has no such name and takes the t entry."
+  (if (not (consp (car-safe setting)))
+      setting
+    (let ((name (and spec (vm-imap-folder-for-spec spec))))
+      (cdr (or (and name (seq-find (lambda (entry)
+				     (vm-imap-folder-name-matches (car entry)
+								  name))
+				   setting))
+	       (assq t setting))))))
+
+(defun vm-imap-folder-name-matches (key name)
+  "Whether KEY, a key of an alist option, names the IMAP folder NAME.
+Anchored at both ends, so a key that is a plain account:mailbox matches that
+folder and no other.  The key t matches nothing here: it is the fallback, and
+`vm-imap-setting-for-folder' takes it only when no regexp matched."
+  (and (stringp key)
+       (string-match-p (concat "\\`\\(?:" key "\\)\\'") name)))
+
+(defun vm-imap-external-messages-p (spec)
+  "Whether a message of the IMAP folder whose maildrop is SPEC may be external.
+`vm-enable-external-messages' says so, for every IMAP folder or for this one."
+  (let ((setting (vm-imap-setting-for-folder vm-enable-external-messages spec)))
+    (and (or (eq setting t) (memq 'imap setting)) t)))
+
+(defun vm-imap-message-size-limit (spec)
+  "The largest message VM retrieves whole from the IMAP mailbox of SPEC.
+`vm-imap-max-message-size' says so, for every mailbox or for this one.  Nil is
+no limit, and is also what a value that names no size for this mailbox means."
+  (let ((limit (vm-imap-setting-for-folder vm-imap-max-message-size spec)))
+    (and (integerp limit) limit)))
+
 ;;;###autoload
 ;;;###autoload
 (defun vm-imap-spec-for-account (account)

@@ -4322,6 +4322,38 @@ says what came (emacs-vm/vm#825)."
                         said)))
     (should (vm-imap-net-wait nil 90))))
 
+;;; The size limit, scoped to one mailbox, issue #926
+
+(ert-deftest vm-imap-net-test-too-large-takes-the-limit-of-its-maildrop ()
+  "`vm-imap-net-too-large' asks `vm-imap-max-message-size' about this maildrop.
+A maildrop is fetched into a local folder, which cannot go back to the server
+for a body, so an oversize message is left where it is rather than made
+external.  Which messages those are is still the mailbox's own limit."
+  (let* ((vm-imap-account-alist
+          '(("imap:mail.example.invalid:143:*:login:alice:*" "work")))
+         (archive "imap:mail.example.invalid:143:Archive/2024:login:alice:*")
+         (inbox "imap:mail.example.invalid:143:INBOX:login:alice:*")
+         ;; (SEQUENCE-NUMBER UID SIZE), which is what message data holds
+         (data '((1 "11" "100") (2 "22" "100000")))
+         (wanted '((1 . "11") (2 . "22")))
+         (vm-imap-max-message-size '(("work:Archive/.*" . 50000)
+                                     (t . 1000000))))
+    (let ((sifted (vm-imap-net-too-large data wanted archive)))
+      (should (equal (nth 0 sifted) '((1 . "11"))))
+      (should (equal (nth 1 sifted) '((2 . "22"))))
+      (should (equal (nth 2 sifted) '(100000))))
+    ;; the same two messages are both small enough for the other mailbox
+    (let ((sifted (vm-imap-net-too-large data wanted inbox)))
+      (should (equal (nth 0 sifted) wanted))
+      (should (null (nth 1 sifted))))
+    ;; and a plain number is still one limit for every maildrop
+    (let ((vm-imap-max-message-size 50000))
+      (should (equal (nth 1 (vm-imap-net-too-large data wanted inbox))
+                     '((2 . "22")))))
+    (let ((vm-imap-max-message-size nil))
+      (should (equal (nth 0 (vm-imap-net-too-large data wanted archive))
+                     wanted)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

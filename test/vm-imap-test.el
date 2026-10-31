@@ -806,6 +806,100 @@ account, so VM says nothing instead."
                  (lambda (&rest _) (error "asked about an unknown account"))))
         (should-not (vm-imap-confirm-new-folder (vm-imap-test--spec "Sent")))))))
 
+;;; External messages, scoped to one mailbox, issue #926
+
+(defconst vm-imap-test--work-inbox
+  "imap:mail.example.com:143:INBOX:login:user:secret"
+  "A maildrop of the account the tests below call work.")
+
+(defconst vm-imap-test--work-archive
+  "imap:mail.example.com:143:Archive/2024:login:user:secret"
+  "Another mailbox of the same account, so the two differ only by mailbox.")
+
+(defmacro vm-imap-test--with-work-account (&rest body)
+  "Run BODY with the two maildrops above belonging to the account work."
+  (declare (indent 0))
+  `(let ((vm-imap-account-alist
+          '(("imap:mail.example.com:143:*:login:user:*" "work"))))
+     ,@body))
+
+(ert-deftest vm-imap-test-setting-for-folder-takes-a-plain-value-whole ()
+  "A value that is not an alist is the setting for every mailbox."
+  (vm-imap-test--with-work-account
+    (should (equal (vm-imap-setting-for-folder '(imap) vm-imap-test--work-inbox)
+                   '(imap)))
+    (should (eq (vm-imap-setting-for-folder t vm-imap-test--work-inbox) t))
+    (should (null (vm-imap-setting-for-folder nil vm-imap-test--work-inbox)))
+    (should (equal (vm-imap-setting-for-folder 50000 vm-imap-test--work-inbox)
+                   50000))))
+
+(ert-deftest vm-imap-test-setting-for-folder-matches-the-mailbox ()
+  "An alist key is a regexp on account:mailbox, and the first match wins."
+  (vm-imap-test--with-work-account
+    (let ((setting '(("work:Archive/.*" imap) (t))))
+      (should (equal (vm-imap-setting-for-folder
+                      setting vm-imap-test--work-archive)
+                     '(imap)))
+      (should (null (vm-imap-setting-for-folder
+                     setting vm-imap-test--work-inbox))))))
+
+(ert-deftest vm-imap-test-setting-for-folder-anchors-the-key ()
+  "A key matches the whole name, so one mailbox is not another's prefix."
+  (vm-imap-test--with-work-account
+    (let ((setting '(("work:Archive" imap))))
+      (should (null (vm-imap-setting-for-folder
+                     setting vm-imap-test--work-archive))))))
+
+(ert-deftest vm-imap-test-setting-for-folder-falls-back-to-t ()
+  "The key t answers for a mailbox no regexp named, and for an unknown account."
+  (vm-imap-test--with-work-account
+    (let ((setting '(("work:Archive/.*" . 50000) (t . 1000000))))
+      (should (equal (vm-imap-setting-for-folder
+                      setting vm-imap-test--work-inbox)
+                     1000000))
+      ;; an account that is not in `vm-imap-account-alist' has no
+      ;; account:mailbox name at all
+      (should (equal (vm-imap-setting-for-folder
+                      setting "imap:other.example.com:143:INBOX:login:me:*")
+                     1000000))))
+  (vm-imap-test--with-work-account
+    (should (null (vm-imap-setting-for-folder
+                   '(("work:Archive/.*" imap)) vm-imap-test--work-inbox)))))
+
+(ert-deftest vm-imap-test-external-messages-are-scoped-to-a-mailbox ()
+  "`vm-enable-external-messages' answers per mailbox when it is an alist."
+  (vm-imap-test--with-work-account
+    (let ((vm-enable-external-messages '(("work:Archive/.*" imap))))
+      (should (vm-imap-external-messages-p vm-imap-test--work-archive))
+      (should-not (vm-imap-external-messages-p vm-imap-test--work-inbox)))
+    ;; and the forms that were the whole of it before still mean what they did
+    (let ((vm-enable-external-messages '(imap)))
+      (should (vm-imap-external-messages-p vm-imap-test--work-inbox)))
+    (let ((vm-enable-external-messages t))
+      (should (vm-imap-external-messages-p vm-imap-test--work-inbox)))
+    (let ((vm-enable-external-messages nil))
+      (should-not (vm-imap-external-messages-p vm-imap-test--work-inbox)))))
+
+(ert-deftest vm-imap-test-the-size-limit-is-scoped-to-a-mailbox ()
+  "`vm-imap-max-message-size' answers per mailbox when it is an alist.
+Both options have to be scoped together: nothing is external until a message
+is over the limit, so a per-mailbox flag with one global limit says nothing."
+  (vm-imap-test--with-work-account
+    (let ((vm-imap-max-message-size '(("work:Archive/.*" . 50000)
+                                      (t . 1000000))))
+      (should (equal (vm-imap-message-size-limit vm-imap-test--work-archive)
+                     50000))
+      (should (equal (vm-imap-message-size-limit vm-imap-test--work-inbox)
+                     1000000)))
+    (let ((vm-imap-max-message-size 50000))
+      (should (equal (vm-imap-message-size-limit vm-imap-test--work-inbox)
+                     50000)))
+    (let ((vm-imap-max-message-size nil))
+      (should (null (vm-imap-message-size-limit vm-imap-test--work-inbox))))
+    ;; a mailbox the alist does not name has no limit
+    (let ((vm-imap-max-message-size '(("work:Archive/.*" . 50000))))
+      (should (null (vm-imap-message-size-limit vm-imap-test--work-inbox))))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here

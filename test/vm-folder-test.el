@@ -6961,6 +6961,35 @@ turns up would file rubbish as mail."
       (should (eq (vm-buffer-holds-one-message-p) (cdr case))))))
 
 
+;;; External messages, scoped to one mailbox, issue #926
+
+(ert-deftest vm-folder-test-external-messages-are-scoped-to-the-mailbox ()
+  "`vm-message-can-be-external' asks about the mailbox the message came from.
+Not about the current buffer: `vm-discard-real-message-body' asks this before
+it selects the folder the message is in, so a reply read from the current
+buffer is the answer for whatever the reader was looking at."
+  (let ((vm-imap-account-alist
+         '(("imap:mail.example.invalid:143:*:login:alice:*" "work"))))
+    (vm-test-with-folder (vm-folder-test--message "one")
+      (let ((m (vm-folder-test--make-external (car vm-message-list))))
+        (setq vm-folder-access-method 'imap
+              vm-folder-access-data
+              (make-vector vm-folder-imap-access-data-length nil))
+        (vm-set-folder-imap-maildrop-spec
+         "imap:mail.example.invalid:143:Archive/2024:login:alice:*")
+        (let ((vm-enable-external-messages '(("work:Archive/.*" imap))))
+          (should (vm-message-can-be-external m))
+          (with-temp-buffer
+            (should (vm-message-can-be-external m))))
+        ;; another mailbox of the same account is not this one
+        (let ((vm-enable-external-messages '(("work:INBOX" imap))))
+          (should-not (vm-message-can-be-external m)))
+        ;; and the global forms still answer for every mailbox
+        (let ((vm-enable-external-messages '(imap)))
+          (should (vm-message-can-be-external m)))
+        (let ((vm-enable-external-messages nil))
+          (should-not (vm-message-can-be-external m)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

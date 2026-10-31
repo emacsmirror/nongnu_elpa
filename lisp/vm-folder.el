@@ -60,6 +60,7 @@
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
 (declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
+(declare-function vm-imap-external-messages-p "vm-imap" (spec))
 
 ;; vm-virtual.el functions - cyclic dependency
 (declare-function vm-virtual-quit "vm-virtual" (&optional no-expunge no-change))
@@ -7360,11 +7361,14 @@ argument GARBAGE."
 (add-hook 'after-revert-hook #'vm-after-revert-buffer-hook) ;FIXME: Buffer-local!
 
 (defun vm-message-can-be-external (m)
-  "Check if the message M can be used in external (headers-only) mode."
+  "Check if the message M can be used in external (headers-only) mode.
+`vm-enable-external-messages' answers for the mailbox M came from, which is
+the one its own folder is visiting.  Read there and not in the current
+buffer: `vm-discard-real-message-body' asks this before it selects the folder
+M is in, so the current buffer is whatever the caller was looking at."
   (and (eq (vm-message-access-method-of m) 'imap)
-       (or (eq vm-enable-external-messages t)
-	   (memq 'imap vm-enable-external-messages))
-       ))
+       (with-current-buffer (vm-buffer-of m)
+	 (vm-imap-external-messages-p (vm-folder-imap-maildrop-spec)))))
 
 ;;;###autoload
 (defun vm-load-message (&optional count)

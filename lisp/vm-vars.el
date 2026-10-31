@@ -274,22 +274,41 @@ A nil value means VM should not read or write index files."
                  (const :tag "Do not use index file" nil)))
 
 (defcustom vm-enable-external-messages nil
-  "*Non-nil value should be a list of contexts in which VM may
-use message bodies stored externally.  External messages are
-those stored in external sources such as the file system or
-remote mail servers.  In some cases, VM is able to work with
-minimal header information of the messages, without loading the
-entire message bodies into the folder buffers.
+  "*The contexts in which VM may use message bodies stored externally.
+An external message is one whose body stays where it is, on a remote mail
+server, VM holding its headers alone and fetching the body when the message
+is viewed.  This gives a faster start-up and a smaller Emacs, at the cost of
+a short delay when a message is read.
 
-This allows faster start-up times and smaller memory images of
-Emacs sessions, at the cost of short delays when messages are
-viewed.
+IMAP folders are the only context there is, named `imap'.  The value is one
+of:
 
-As of version 8.2.0, this facility is only available for IMAP
-folders (context name `imap').  Messages larger than
-`vm-imap-max-message-size' are treated as external messages."
+- nil, the default, which leaves nothing external.
+
+- t, or the list (imap), for every IMAP folder.
+
+- An alist, which a cons for its first element says it is, naming the
+  contexts mailbox by mailbox:
+
+    ((\"work:Archive/.*\" imap))
+
+  A key is a regexp matched whole against the folder name in the form
+  account:mailbox, the account being the name it has in
+  `vm-imap-account-alist'.  The key t stands for every folder the regexps do
+  not name, and belongs last.  A maildrop whose account is not in that alist
+  has no such name and takes the t entry.
+
+A message is external only when it is also over the size
+`vm-imap-max-message-size' gives for its mailbox, so that option has to be
+set as well."
   :group 'vm-external
-  :type '(repeat (choice (const imap))))
+  :type '(choice (const :tag "Nowhere" nil)
+		 (const :tag "Every IMAP folder" t)
+		 (repeat :tag "Contexts" (const imap))
+		 (alist :tag "By mailbox"
+			:key-type (choice (regexp :tag "account:mailbox")
+					  (const :tag "Every other mailbox" t))
+			:value-type (repeat (const imap)))))
 
 
 (defcustom vm-spool-files nil
@@ -605,12 +624,22 @@ timing out.  It can be set to nil to never time out."
 (defcustom vm-imap-max-message-size nil
   "*The largest IMAP message VM retrieves.
 
-Nil, the default, means no limit.  A message larger than this is handled as
-follows:
+Nil, the default, means no limit.  A number is a size in bytes, for every
+mailbox.  An alist, which a cons for its first element says it is, gives one
+mailbox by mailbox:
+
+   ((\"work:Archive/.*\" . 50000) (t . 1000000))
+
+A key is a regexp matched whole against the folder name in the form
+account:mailbox, as `vm-enable-external-messages' takes, or t for every
+mailbox the regexps do not name.
+
+A message larger than the limit is handled as follows:
 
 - In an IMAP folder, it is retrieved as its headers alone where
-`vm-enable-external-messages' includes `imap', and its body is fetched from
-the server when the message is read.  Otherwise it is retrieved whole.
+`vm-enable-external-messages' says so for that mailbox, and its body is
+fetched from the server when the message is read.  Otherwise it is retrieved
+whole.
 
 - From a maildrop, into a local folder, it is left on the server and VM says
 how large it was and what the limit is.  A local folder cannot go back to the
@@ -618,7 +647,11 @@ server for a body later, so headers alone would leave a message that could
 never be read.  Raise the limit and the next `vm-get-new-mail' brings it in."
   :group 'vm-imap
   :type '(choice (const :tag "Unlimited" nil)
-                 (integer :tag "Bytes")))
+                 (integer :tag "Bytes")
+		 (alist :tag "By mailbox"
+			:key-type (choice (regexp :tag "account:mailbox")
+					  (const :tag "Every other mailbox" t))
+			:value-type (integer :tag "Bytes"))))
 
 (defcustom vm-imap-expunge-after-retrieving nil
   "*Non-nil value means that, when an IMAP mailbox is used as a
