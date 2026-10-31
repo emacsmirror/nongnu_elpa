@@ -1572,6 +1572,13 @@ CLOSED, DUE-DATE, REF."
        (fj-issue-success-maybe-upload resp repo user)
        (message "Issue created!")))))
 
+(defun fj-item-view-add-assignee (assignee)
+  "Add ASSIGNEE to item being viewed."
+  (interactive "sAssign: ")
+  (fj-with-item-view
+   (fj-destructure-buf-spec (repo owner item)
+     (fj-issue-patch repo owner item nil nil nil assignee))))
+
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
           due_date milestone ref unset_due_date updated_at)
@@ -1580,6 +1587,7 @@ With PARAMS.
 OWNER is the repo owner.
 Return response buffer."
   ;; PATCH /repos/{owner}/{repo}/issues/{index}
+  ;; FIXME: assignee deprecated for assignees
   (let* ((params (fedi-opt-params
                   title body state assignee assignees due_date
                   milestone ref unset_due_date updated_at))
