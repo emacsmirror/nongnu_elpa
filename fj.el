@@ -2743,6 +2743,7 @@ TYPE is the item type."
   '("open" "closed" "all"))
 
 (defvar fj-items-types
+  ;; FIXME: API doesn't offer "all"?
   '("issues" "pulls" "all"))
 
 (defun fj-next-item-var (current var)
