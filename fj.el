@@ -558,7 +558,7 @@ If we fail, return `fj-user'."
     (fj--get-tl-col 1))
    (t
     (or ;; try to fetch owner from item at point's repo data:
-     ;; perhaps we are viewing issues from `fj-list-search-items'
+     ;; perhaps we are viewing issues from `fj--list-search-items'
      ;; (ie fj-owned-issues-tl-mode)
      (map-nested-elt (fj--property 'fj-item-data)
                      '(repository owner))
@@ -1417,7 +1417,7 @@ MILESTONES and LABELS are comma-separated lists."
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-search-items
+  (fj--list-search-items
    query state "pulls" created assigned mentioned fj-user))
 
 ;;;###autoload
@@ -1427,7 +1427,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-search-items
+  (fj--list-search-items
    query state "issues" created assigned mentioned fj-user))
 
 (defun fj-next-plist-state (plist old new &optional newval)
@@ -1455,7 +1455,7 @@ in, or assigned to."
   (interactive)
   (fj-destructure-buf-spec (_viewfun viewargs)
     (let ((newargs (fj-cycle-viewargs viewargs)))
-      (apply #'fj-list-search-items (fj-plist-values newargs)))))
+      (apply #'fj--list-search-items (fj-plist-values newargs)))))
 
 (defun fj-list-authored-issues ()
   "Return issues authored by `fj-user', in any repo."
@@ -1472,7 +1472,7 @@ in, or assigned to."
   "List issues created by `fj-user'.
 QUERY, STATE, TYPE, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
-  (fj-list-search-items query state type "true" assigned mentioned))
+  (fj--list-search-items query state type "true" assigned mentioned))
 
 (defun fj-cycle-str (created assigned mentioned owner)
   "Return whichever of CREATED ASSIGNED MENTIONED OWNER is non-nil.
@@ -1485,8 +1485,8 @@ Return the variable name as a string."
                 (mentioned "mentioned")
                 (owner "owned"))))
 
-(defun fj-list-search-items (&optional query state type
-                                     created assigned mentioned owner page)
+(defun fj--list-search-items (&optional query state type
+                                      created assigned mentioned owner page)
   "List items of TYPE in repos owned by `fj-user'.
 QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED, OWNER, and PAGE are
 all for `fj-issues-search'."
@@ -1515,7 +1515,7 @@ all for `fj-issues-search'."
       (setq fj-buffer-spec
             `( :owner ,owner
                :url ,(concat fj-host "/issues") ;; FIXME: url params
-               :viewfun fj-list-search-items
+               :viewfun fj--list-search-items
                :viewargs ( :query ,query :state ,state :type ,type
                            :created ,created :assigned ,assigned
                            :mentioned ,mentioned :owner ,owner
