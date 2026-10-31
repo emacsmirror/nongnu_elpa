@@ -2963,9 +2963,25 @@ Else make a POST request to the server."
       ;; Mark this as an element we can TAB to.
       (put-text-property start (1+ start) 'shr-tab-stop t))))
 
+(defun fj-shr-tag-blockquote (dom)
+  "Render blockquote tag DOM."
+  ;; hacked off `shr-tag-blockquote'
+  (shr-ensure-paragraph)
+  (let ((start (point))
+	(shr-indentation (+ shr-indentation
+			    (* 4 shr-table-separator-pixel-width))))
+    (shr-generic dom)
+    ;; line-prefix doesn't work, as indentation, which occurs after this
+    ;; function returns, removes it:
+    (add-text-properties start ;; ours
+                         (save-excursion (previous-line) (point))
+                         '(face font-lock-comment-face))
+    (shr-ensure-paragraph)
+    (shr-mark-fill start)))
+
 (defun fj-form-checkbox (dom)
   "Render checkbox DOM."
-  ;; hacked off eww-form-checkbox
+  ;; hacked off `eww-form-checkbox'
   (let ((start (point)))
     (if (dom-attr dom 'checked)
 	(insert eww-form-checkbox-selected-symbol)
@@ -3001,7 +3017,8 @@ Optionally start from POINT."
                 (shr-discard-aria-hidden t) ; for pandoc md image output
                 (shr-external-rendering-functions
                  (append shr-external-rendering-functions
-                         '((input . fj-tag-input))))
+                         '((input . fj-tag-input)
+                           (blockquote . fj-shr-tag-blockquote))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
