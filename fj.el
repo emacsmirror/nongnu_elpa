@@ -4322,7 +4322,7 @@ assigned to. TS is a timeline timestamp."
            (format format-str user "un" "" ts))
           ((string= user assignee)
            (format format-str user "self-" "" ts))
-          (_
+          (t
            (format format-str user "" (concat "to " assignee) ts)))))
 
 (defun fj-get-html-link-desc (str)
