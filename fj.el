@@ -3932,6 +3932,13 @@ Alternatively, call OP on them instead."
          (fj-delete endpoint)
          (fj-view-reload))))))
 
+(defun fj-item-view-goto-item-by-number (index)
+  "Read an item number and jump to it, from timline."
+  (interactive "sItem number (no #): ")
+  (fj-with-item-view
+   (fj-destructure-buf-spec (owner repo)
+     (fj-item-view repo owner index))))
+
 ;;; PR VIEWS
 
 (defun fj-view-commit-diff (&optional sha)
@@ -5025,6 +5032,13 @@ Works in repo listings, issue listings, and item views."
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-remove repo owner number))))
 
+(defun fj-tl-goto-item-by-number (index)
+  "Read an item number and jump to it, from tabulated listing."
+  (interactive "sItem number (no #): ")
+  (fj-with-item-tl
+   (fj-destructure-buf-spec (owner repo)
+     (fj-item-view repo owner index))))
+
 ;;; GENERIC ITEM ACTION COMMANDS
 
 (defun fj-item-mode-dispatch (item-view-fun tl-mode-fun)
@@ -5084,6 +5098,12 @@ Works in repo listings, issue listings, and item views."
   (interactive)
   (fj-item-mode-dispatch #'fj-issue-label-remove
                          #'fj-issues-tl-label-remove))
+
+(defun fj-item-goto-by-number ()
+  "Jump to item by its number, from the item at point or being viewed."
+  (interactive)
+  (fj-item-mode-dispatch #'fj-item-view-goto-item-by-number
+                       #'fj-tl-goto-item-by-number))
 
 ;;; COMPOSING
 
