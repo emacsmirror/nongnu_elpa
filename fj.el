@@ -2350,7 +2350,7 @@ Optionally specify REPO and OWNER."
   "C-c C-c"  #'fj-cycle-state
   "C-c C-s"  #'fj-cycle-type
   "o"        #'fj-item-reopen
-  "s"        #'fj-list-issues-search
+  "s"        #'fj-list-search-items
   "B"        #'fj-tl-browse-entry
   "u"        #'fj-repo-copy-clone-url
   "L"        #'fj-repo-commit-log
@@ -2718,12 +2718,34 @@ PREV-MODE is the major mode active in the previous buffer."
         (t                             ; new buf
          (switch-to-buffer-other-window (current-buffer)))))
 
-(defun fj-list-issues-search (query &optional state type)
+(defun fj-list-search-items ()
+  "Call item search function depending on our view.
+If viewing pulls, search pulls, else search issues."
+  (interactive)
+  (fj-with-item-tl
+   (let* ((type (plist-get (fj--get-buffer-spec :viewargs) :type))
+          (query (read-string (format "Search %s in repo: " type))))
+     (funcall-interactively
+      (if (string= type "pulls")
+          #'fj-list-search-pulls
+        #'fj-list-search-issues)
+      query))))
+
+(defun fj-list-search-issues (query &optional state)
   "Search current repo issues for QUERY.
-STATE and TYPE as for `fj-list-issues-do'."
+STATE as for `fj-list-issues-do'."
   (interactive "sSearch issues in repo: ")
-  (let ((owner (fj--get-buffer-spec :owner)))
-    (fj-list-issues-do nil owner (or state "all") type query)))
+  (fj-with-item-tl
+   (let ((owner (fj--get-buffer-spec :owner)))
+     (fj-list-issues-do nil owner (or state "all") type query))))
+
+(defun fj-list-search-pulls (query &optional state)
+  "Search current repo PRs for QUERY.
+STATE as for `fj-list-issues-do'."
+  (interactive "sSearch pulls in repo: ")
+  (fj-with-item-tl
+   (let ((owner (fj--get-buffer-spec :owner)))
+     (fj-list-issues-do nil owner (or state "all") "pulls" query))))
 
 (defun fj-list-issues-closed (&optional repo owner type)
   "Display closed ISSUES for REPO by OWNER in tabulated list view.
@@ -3061,7 +3083,7 @@ Adds tab-stop, keymap, and type."
   "o" #'fj-item-reopen
   "K" #'fj-item-delete
   "t" #'fj-item-edit-title
-  "s" #'fj-list-issues-search
+  "s" #'fj-list-search-issues
   "D" #'fj-view-pull-diff
   "L" #'fj-repo-commit-log
   "l" #'fj-item-label-add
@@ -5472,7 +5494,7 @@ SORT should be a member of `fj-search-users-sort'."
   ;; FIXME: move to `fj-generic-map' when item views are ready:
   "." #'fj-next-page
   "," #'fj-prev-page
-  "s" #'fj-list-issues-search)
+  "s" #'fj-list-search-issues)
 
 (define-derived-mode fj-notifications-mode special-mode "fj-notifs"
   "Major mode for viewing notifications."
@@ -5876,7 +5898,7 @@ Used for a mouse-click EVENT on a link."
 (defvar-keymap fj-commits-mode-map
   :doc "Keymap for `fj-commits-mode'."
   :parent fj-generic-map
-  "s" #'fj-list-issues-search
+  "s" #'fj-list-search-issues
   "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-commits-mode special-mode "fj-commits"
@@ -5992,7 +6014,7 @@ PAGE and LIMIT as always."
   :parent fj-generic-map
   "." #'fj-next-page
   "," #'fj-prev-page
-  "s" #'fj-list-issues-search
+  "s" #'fj-list-search-issues
   "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-users-mode special-mode "fj-users"
