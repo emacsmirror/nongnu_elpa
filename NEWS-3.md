@@ -6,7 +6,17 @@ since that version to see how you might be affected.
 Earlier releases are in NEWS-2.md, 8.0.0 through 8.2.0b1, and NEWS-1.md, 4.10
 through 7.19.  This is the newest file, so new entries go at the front of it.
 
-## VM 9.0.1 released
+## VM 9.0.1 unreleased
+
+### IMAP and POP
+
+  * **External messages can be switched on for one IMAP mailbox**
+    (emacs-vm/vm#926).  `vm-enable-external-messages` and
+    `vm-imap-max-message-size` each also take an alist keyed by a regexp on
+    the folder name `account:mailbox`, with `t` for the rest.  The older
+    values, a list of contexts and a number, still mean every IMAP folder.
+    Scope both options or neither: nothing is external until it is over the
+    limit as well.
 
 ## VM 9.0.0 released 2026-10-18
 
