@@ -33,6 +33,10 @@
 ;;                   what a real interrupted download looks like
 ;;   :lie-about-size report a wrong octet count in LIST and STAT
 ;;   :slow-greeting  wait before greeting, for timeout tests
+;;   :xoauth2        TOKEN; serve AUTH XOAUTH2 and take that token.  Any other
+;;                   is refused the way a real server refuses one, on a
+;;                   continuation line that waits for a line back before the
+;;                   -ERR
 ;;
 ;; The server records every command it received, so a test can assert on what
 ;; VM actually sent -- that a DELE really was withheld, say -- rather than on
@@ -50,6 +54,9 @@
   (log nil)
   ;; faults
   no-uidl refuse drop-on silent-on truncate-retr lie-about-size slow-greeting
+  ;; XOAUTH2: the token taken, and whether a refusal is waiting for the line
+  ;; that lets it become an -ERR
+  xoauth2 xoauth2-refused
   ;; per-connection state, this server serves one client at a time
   authenticated)
 
@@ -110,6 +117,33 @@ the terminating dot is sent."
 			       line "\r\n")))
   (vm-pop-mock--send process ".\r\n"))
 
+(defconst vm-pop-mock-xoauth2-refusal
+  "{\"status\":\"401\",\"schemes\":\"bearer\",\"scope\":\"https://mail.google.com/\"}"
+  "What a server sends on the continuation line when it refuses a token.")
+
+(defun vm-pop-mock--auth (mock process words)
+  "Answer an AUTH command, WORDS being the line split up.
+Only XOAUTH2, which is the whole of SASL this serves.  A token the mock does
+not hold is refused the way a real server refuses one: the reason on a
+continuation line, and the -ERR only after the client has sent a line of its
+own."
+  (let* ((mechanism (upcase (or (nth 1 words) "")))
+	 (given (ignore-errors (base64-decode-string (or (nth 2 words) ""))))
+	 (want (format "user=%s\1auth=Bearer %s\1\1"
+		       (vm-pop-mock-user mock) (vm-pop-mock-xoauth2 mock))))
+    (cond
+     ((or (not (equal mechanism "XOAUTH2")) (not (vm-pop-mock-xoauth2 mock)))
+      (vm-pop-mock--send process "-ERR unsupported mechanism\r\n"))
+     ((equal given want)
+      (setf (vm-pop-mock-authenticated mock) t)
+      (vm-pop-mock--send process "+OK logged in\r\n"))
+     (t
+      (vm-pop-mock--log mock (format "!! XOAUTH2 wanted %S, got %S" want given))
+      (setf (vm-pop-mock-xoauth2-refused mock) t)
+      (vm-pop-mock--send
+       process (format "+ %s\r\n"
+		       (base64-encode-string vm-pop-mock-xoauth2-refusal t)))))))
+
 (defun vm-pop-mock--handle (mock process line)
   "Answer the single command LINE from PROCESS against MOCK."
   (vm-pop-mock--log mock line)
@@ -119,6 +153,11 @@ the terminating dot is sent."
 	 (n (and arg (string-match-p "\\`[0-9]+\\'" arg)
 		 (string-to-number arg))))
     (cond
+     ;; The line a refused token is waiting for, before anything reads a verb
+     ;; off the front of it: it carries none.
+     ((vm-pop-mock-xoauth2-refused mock)
+      (setf (vm-pop-mock-xoauth2-refused mock) nil)
+      (vm-pop-mock--send process "-ERR authentication failed\r\n"))
      ;; Faults first: they are about the server, not the protocol.
      ((and (vm-pop-mock-drop-on mock)
 	   (string-match-p (vm-pop-mock-drop-on mock) line))
@@ -139,6 +178,8 @@ the terminating dot is sent."
 	  (progn (setf (vm-pop-mock-authenticated mock) t)
 		 (vm-pop-mock--send process "+OK logged in\r\n"))
 	(vm-pop-mock--send process "-ERR bad password\r\n")))
+     ((equal verb "AUTH")
+      (vm-pop-mock--auth mock process words))
      ((equal verb "APOP")
       ;; The digest is over the greeting timestamp and the password; check it
       ;; rather than wave it through, so a test can tell APOP was really done.
@@ -300,7 +341,8 @@ about the live process."
 
 (cl-defun vm-pop-mock-start (&key (user "vmtest") (password "secret")
 				  messages no-uidl refuse drop-on silent-on
-				  truncate-retr lie-about-size slow-greeting)
+				  truncate-retr lie-about-size slow-greeting
+				  xoauth2)
   "Start a mock POP3 server on a local port and return it.
 MESSAGES is the maildrop: a list of strings, each a whole RFC 5322 message.
 The keywords after it are the faults described in the commentary above.
@@ -312,7 +354,8 @@ The keywords after it are the faults described in the commentary above.
 		:silent-on silent-on
 		:truncate-retr truncate-retr
 		:lie-about-size lie-about-size
-		:slow-greeting slow-greeting))
+		:slow-greeting slow-greeting
+		:xoauth2 xoauth2))
 	 (server (make-network-process
 		  :name "vm-pop-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t

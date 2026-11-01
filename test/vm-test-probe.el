@@ -81,14 +81,14 @@ load path is the sort of thing a failure turns on."
                          (directory-files vm-test-optional-dir t
                                           "\\`[^.]"))))))
 
-(defconst vm-test-probe-optional-regexp "bbdb\\|w3m\\|vcard"
+(defconst vm-test-probe-optional-regexp "bbdb\\|w3m\\|vcard\\|oauth2"
   "What a test file mentions if it has anything to do with an optional package.
 Plainly, not as a symbol: a file that only names one in a comment costs a few
 seconds in that pass, and a rule that depends on the syntax table for whether
 `vm-w3m' counts is a rule nobody can predict.")
 
 (defun vm-test-probe-optional-test-files ()
-  "The test files that name BBDB, emacs-w3m or vcard.
+  "The test files that name BBDB, emacs-w3m, vcard or oauth2.
 The pass that runs without those packages runs these, not the whole suite:
 nothing else can tell whether one is installed.  Found by looking rather than
 listed here, so a new test file that uses one is picked up."

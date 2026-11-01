@@ -71,8 +71,8 @@ has test/vm-live-config.el.  The mock tests always run either way.")
 
 (defconst vm-test-optional-environment-variable "VM_TEST_OPTIONAL"
   "Environment variable saying whether VM\\='s optional companions are in play.
-Set it to 0, no or off to run as a machine without BBDB, emacs-w3m and vcard
-does, on one where `make optional-packages\\=' has installed them.")
+Set it to 0, no or off to run as a machine without BBDB, emacs-w3m, vcard and
+oauth2 does, on one where `make optional-packages\\=' has installed them.")
 
 (defun vm-test-environment-refuses-p (variable)
   "Whether VARIABLE, an environment variable, says no."
@@ -97,7 +97,7 @@ the suite as an ordinary checkout runs it."
 
 (defvar vm-test-optional-dir
   (expand-file-name "opt/elpa" vm-test-dir)
-  "Where `make optional-packages' installs BBDB, emacs-w3m and vcard.
+  "Where `make optional-packages' installs BBDB, emacs-w3m, vcard and oauth2.
 Absent unless that has been run; the tests that need one skip without it.")
 
 (defun vm-test-optional-load-path ()
@@ -115,7 +115,7 @@ Unless VM_TEST_OPTIONAL says not to: see `vm-test-optional-wanted-p'."
 ;; Emacs and keeps buffers and variables, so whichever test required one first
 ;; was reported as leaking them.  `bbdb-initialize' is *not* called -- that is
 ;; what hooks BBDB into VM, and it would change every other test's world.
-(dolist (feature '(bbdb bbdb-com vcard))
+(dolist (feature '(bbdb bbdb-com vcard oauth2))
   (require feature nil t))
 
 ;; ...and the test directory itself, so a test file can `require' a helper

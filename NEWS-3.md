@@ -10,6 +10,16 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ### IMAP and POP
 
+  * **IMAP and POP accounts can authenticate with OAuth2**
+    (emacs-vm/vm#915).  Write `xoauth2` in the maildrop's authentication
+    field and `*` for the password.  VM speaks the XOAUTH2 mechanism and
+    asks `auth-source` for the access token each time it opens a session;
+    it acquires no token and ships no client credentials.  Install
+    `auth-source-xoauth2-plugin` from GNU ELPA, point a helper such as
+    `oauth2ms` at your `auth-source`, or run `M-x vm-oauth2-authorize` for
+    the first authorization.  This is what a Google Workspace or Office 365
+    tenant with app passwords switched off needs.
+
   * **External messages can be switched on for one IMAP mailbox**
     (emacs-vm/vm#926).  `vm-enable-external-messages` and
     `vm-imap-max-message-size` each also take an alist keyed by a regexp on

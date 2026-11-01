@@ -381,13 +381,16 @@ SPOOLNAME can also be a POP maildrop.
 
     AUTH is the authentication method used to convince the server you
     should have access to the maildrop.  Acceptable values are
-    \"pass\" and \"apop\".  For \"pass\", the PASSWORD is sent to
-    the server with the POP PASS command.  For \"apop\", an MD5 digest
-    of the PASSWORD appended to the server timestamp will be sent to
-    the server with the APOP command.  In order to use \"apop\" you
-    will have to set the value of `vm-pop-md5-program' appropriately to
-    point at the program that will generate the MD5 digest that VM
-    needs.
+    \"pass\", \"apop\" and \"xoauth2\".  For \"pass\", the
+    PASSWORD is sent to the server with the POP PASS command.  For
+    \"apop\", an MD5 digest of the PASSWORD appended to the server
+    timestamp will be sent to the server with the APOP command.  In
+    order to use \"apop\" you will have to set the value of
+    `vm-pop-md5-program' appropriately to point at the program that
+    will generate the MD5 digest that VM needs.  \"xoauth2\" sends an
+    OAuth2 access token instead of a password; write \"*\" for the
+    PASSWORD and see the IMAP description below, which says where VM
+    looks for the token.
 
 SPOOLNAME can also be an IMAP maildrop.
 
@@ -424,10 +427,10 @@ SPOOLNAME can also be an IMAP maildrop.
 
     AUTH is the authentication method used to convince the server
     you should have access to the maildrop.  Acceptable values
-    are \"preauth\", \"login\" and \"cram-md5\".  \"preauth\"
-    causes VM to skip the authentication stage of the protocol
-    with the assumption that the session was authenticated in some
-    external way.  \"login\", tells VM to use the IMAP LOGIN
+    are \"preauth\", \"login\", \"cram-md5\" and \"xoauth2\".
+    \"preauth\" causes VM to skip the authentication stage of the
+    protocol with the assumption that the session was authenticated
+    in some external way.  \"login\", tells VM to use the IMAP LOGIN
     command for authentication, which sends your username and
     password in cleartext to the server.  \"cram-md5\" is a
     challenge response system that convinces the server of your
@@ -435,16 +438,27 @@ SPOOLNAME can also be an IMAP maildrop.
     Not all servers support \"cram-md5\"; if you're not sure, ask
     your mail administrator or just try it.
 
+    \"xoauth2\" sends an OAuth2 access token rather than a password,
+    which is what Google Workspace and Office 365 want of a tenant
+    with app passwords switched off.  VM acquires no token and stores
+    none: it asks auth-source for one each time it opens a session,
+    where `auth-source-xoauth2-plugin', a helper such as oauth2ms or
+    mutt_oauth2.py, or `vm-oauth2-authorize' will have put it.  Write
+    \"*\" for the PASSWORD; nobody is prompted, nobody being able to
+    type a bearer token.  Offered only where the server advertises
+    AUTH=XOAUTH2.
+
     USER is the user name used with authentication methods that
-    require such an identifier.  \"login\" and \"cram-md5\"
-    use it currently.
+    require such an identifier.  \"login\", \"cram-md5\" and
+    \"xoauth2\" use it currently.
 
     PASSWORD is the secret shared by you and the server for
     authentication purposes.  If the PASSWORD is \"*\", VM
     will prompt you for the password the first time you try to
     retrieve mail from maildrop.  If the password is valid, VM
     will not ask you for the password again during this Emacs
-    session.
+    session.  A token is never remembered that way: it lives about
+    an hour, so VM asks auth-source again for every session.
 
 CRASHBOX is the temporary file that VM uses to store mail in
 transit between the SPOOLNAME and the INBOX.  If the system

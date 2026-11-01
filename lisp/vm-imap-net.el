@@ -311,6 +311,22 @@ being waited for, which is what `vm-imap-response-matches\\=' reads out of
   (setq vm-imap-current-tag
 	(format "vm%d" (setq vm-imap-net-tag (1+ vm-imap-net-tag)))))
 
+(defun vm-imap-net-redact (command)
+  "COMMAND with whatever credential it carries left out, for the trace.
+`vm-imap-submit-bug-report' sends the session trace, so anything echoed into
+the process buffer leaves with it.  LOGIN carries the password.  AUTHENTICATE
+carries the SASL initial response, which for XOAUTH2 is a bearer token good
+for about an hour and was echoed in full until emacs-vm/vm#915.  The
+mechanism name stays: a report is read to find out which one was tried."
+  (let ((case-fold-search t))
+    (cond ((string-match "\\`LOGIN" command)
+	   "LOGIN <parameters omitted>")
+	  ((string-match "\\`AUTHENTICATE +[^ ]+" command)
+	   (if (= (match-end 0) (length command))
+	       command
+	     (concat (match-string 0 command) " <initial response omitted>")))
+	  (t command))))
+
 (defun vm-imap-net-send (command &optional tag)
   "Send COMMAND, tagged, and note where its answer begins.
 Answers with the tag it used.  The command is echoed into the process buffer
@@ -319,12 +335,7 @@ a transcript -- with a LOGIN's arguments left out of it."
   (let ((process (get-buffer-process (current-buffer)))
 	(tag (or tag (vm-imap-net-next-tag))))
     (goto-char (point-max))
-    (insert-before-markers
-     tag " "
-     (if (let ((case-fold-search t)) (string-match "\\`LOGIN" command))
-	 "LOGIN <parameters omitted>"
-       command)
-     "\r\n")
+    (insert-before-markers tag " " (vm-imap-net-redact command) "\r\n")
     (setq vm-imap-net-read-point (point))
     (process-send-string process (format "%s %s\r\n" tag command))
     tag))
@@ -490,6 +501,47 @@ accented one (emacs-vm/vm#772)."
 	  (setq done t))))
     (ignore tag))
   (vm-imap-net-remember-password password)
+  (iter-yield-from (vm-imap-net-capabilities)))
+
+(iter-defun vm-imap-net-authenticate-xoauth2 (user token sasl-ir)
+  "Log in as USER with the access TOKEN, and answer what the server can do.
+
+SASL-IR says the server advertised SASL-IR (RFC 4959) and will take the
+response on the AUTHENTICATE line itself.  Without it the response goes
+after the empty challenge the server sends first, which is the only form
+RFC 3501 has.
+
+A refused token does not arrive as a plain NO.  The server sends a
+continuation line holding base64 JSON saying why, and waits for a line from
+the client before it will send the tagged NO: an empty one is what gets the
+error out of it.  A client that answers nothing here waits for a tag that is
+not coming.
+
+The token is not remembered.  The other two mechanisms call
+`vm-imap-net-remember-password', and an access token lives about an hour, so
+an entry in `vm-imap-passwords' would log the next session in with a dead
+credential and fail without anybody being asked anything."
+  (let ((response (vm-net-xoauth2-response user token))
+	(done nil)
+	line)
+    (if sasl-ir
+	(vm-imap-net-send (format "AUTHENTICATE XOAUTH2 %s" response))
+      (vm-imap-net-send "AUTHENTICATE XOAUTH2")
+      (setq line (vm-imap-net-verify-response
+		  (vm-imap-net-read-a-response) "AUTHENTICATE XOAUTH2"))
+      (unless (vm-imap-response-matches line '+)
+	(vm-imap-protocol-error "Don't understand AUTHENTICATE response"))
+      (vm-imap-net-send-line response))
+    (while (not done)
+      (setq line (vm-imap-net-verify-response
+		  (vm-imap-net-read-a-response) "AUTHENTICATE XOAUTH2"))
+      (cond ((vm-imap-response-matches line '+)
+	     ;; the token was refused, and this is the server saying why.
+	     ;; The empty line is what lets it send the tagged NO, which
+	     ;; `vm-imap-net-verify-response' turns into the error.
+	     (vm-imap-net-send-line ""))
+	    ((vm-imap-response-matches line 'VM 'OK)
+	     (setq done t)))))
   (iter-yield-from (vm-imap-net-capabilities)))
 
 (iter-defun vm-imap-net-login (user password)
@@ -765,6 +817,25 @@ the driver runs."
   (run-hook-with-args-until-success 'vm-imap-session-preauth-hook
 				    host port mailbox user password))
 
+(defun vm-imap-net-access-token (source user host port)
+  "The XOAUTH2 access token for SOURCE as USER, from auth-source, or nil.
+
+Asked for afresh each session.  Not `vm-imap-net-known-password', which reads
+`vm-imap-passwords' first: a token lives about an hour, so one remembered
+there is a session that fails later with nobody left to ask.
+
+Nobody is prompted either.  `vm-imap-get-password' loops on `read-passwd'
+until it is given something and nobody types a bearer token by hand, so a
+maildrop with no token behaves as one with no password.
+`vm-oauth2-authorize' is what gets a token.
+
+A secret that auth-source hands back as a function is called, which is how
+`auth-source-xoauth2-plugin' delivers a freshly refreshed one."
+  (let ((token (vm-auth-source-password
+		(list (vm-imap-account-name-for-spec source) host)
+		port user)))
+    (and (stringp token) (not (equal token "")) token)))
+
 (defun vm-imap-net-known-password (source user host port)
   "The password VM already holds for SOURCE, or nil.
 
@@ -848,9 +919,10 @@ from inside a filter."
 		     "  The types are imap, imap-ssl and imap-ssh;"
 		     " M-x vm-check-configuration checks every maildrop")
 	     protocol))
-    (unless (member auth '("login" "cram-md5" "preauth"))
+    (unless (member auth '("login" "cram-md5" "xoauth2" "preauth"))
       (error (concat "%s is not an IMAP authentication VM knows."
-		     "  Write login, cram-md5 or preauth in the maildrop")
+		     "  Write login, cram-md5, xoauth2 or preauth in the"
+		     " maildrop")
 	     (or auth "no authentication")))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
@@ -860,33 +932,42 @@ from inside a filter."
       ;; the reader, which is what the blocking path did and the only reason
       ;; it was reached at all.
       (setq password
-	    (or (vm-imap-net-known-password source user host port)
-		(and may-ask
-		     ;; `vm-imap-ok-to-ask' is nil unless something has bound
-		     ;; it, and nothing binds it on the way here: requiring it
-		     ;; meant the question was never put and the blocking path
-		     ;; asked instead
-		     (let ((vm-imap-ok-to-ask t))
-		       (vm-net-inform 6 "%s: asking for a password, VM has none"
-				  (or (vm-imap-account-name-for-spec source)
-				      (vm-safe-imapdrop-string source)))
-		       (condition-case nil
-			   (vm-imap-get-password
-			    (or (vm-imap-folder-for-spec source)
-				(vm-safe-imapdrop-string source))
-			    (vm-imapdrop-sans-password-and-mailbox source)
-			    user host port t "reading mail")
-			 (error nil))))))
+	    (if (equal auth "xoauth2")
+		;; not `vm-imap-net-known-password', which reads the cache
+		;; first, and not the asking below either
+		(vm-imap-net-access-token source user host port)
+	      (or (vm-imap-net-known-password source user host port)
+		  (and may-ask
+		       ;; `vm-imap-ok-to-ask' is nil unless something has
+		       ;; bound it, and nothing binds it on the way here:
+		       ;; requiring it meant the question was never put and
+		       ;; the blocking path asked instead
+		       (let ((vm-imap-ok-to-ask t))
+			 (vm-net-inform 6
+					"%s: asking for a password, VM has none"
+					(or (vm-imap-account-name-for-spec source)
+					    (vm-safe-imapdrop-string source)))
+			 (condition-case nil
+			     (vm-imap-get-password
+			      (or (vm-imap-folder-for-spec source)
+				  (vm-safe-imapdrop-string source))
+			      (vm-imapdrop-sans-password-and-mailbox source)
+			      user host port t "reading mail")
+			   (error nil)))))))
       (unless (and (stringp password) (not (equal password "")))
 	;; the keys and not the passwords: a maildrop that VM will not check
 	;; because it has no password is either one that was never remembered
 	;; or one remembered under a key the check does not look under, and
 	;; the log is the only place that difference shows
-	(vm-inform 10 "%s: no password held under %s; VM holds %s" name
-		   (vm-imapdrop-sans-password-and-mailbox source)
-		   (if vm-imap-passwords
-		       (mapconcat #'car vm-imap-passwords ", ")
-		     "none"))
+	(if (equal auth "xoauth2")
+	    (vm-inform 10 (concat "%s: auth-source has no XOAUTH2 token for"
+				  " %s at %s; M-x vm-oauth2-authorize gets one")
+		       name user host)
+	  (vm-inform 10 "%s: no password held under %s; VM holds %s" name
+		     (vm-imapdrop-sans-password-and-mailbox source)
+		     (if vm-imap-passwords
+			 (mapconcat #'car vm-imap-passwords ", ")
+		       "none")))
 	(signal 'vm-imap-net-no-password (list source))))
     (let* ((buffer (vm-imap-net-session-buffer name))
 	   (session (vm-net-session :name name
@@ -961,6 +1042,19 @@ with: the connection arrived authenticated."
 	  ((equal vm-imap-net-auth "cram-md5")
 	   (iter-yield-from (vm-imap-net-capabilities))
 	   (iter-yield-from (vm-imap-net-authenticate-cram-md5 user password)))
+	  ((equal vm-imap-net-auth "xoauth2")
+	   (let* ((said (iter-yield-from (vm-imap-net-capabilities)))
+		  (offered (nth 1 said)))
+	     (unless (memq 'XOAUTH2 offered)
+	       (vm-imap-normal-error
+		(concat "server does not offer XOAUTH2, only %s."
+			"  Write another authentication in the maildrop")
+		(if offered
+		    (mapconcat #'symbol-name offered ", ")
+		  "the ones it does not advertise")))
+	     (iter-yield-from
+	      (vm-imap-net-authenticate-xoauth2
+	       user password (and (memq 'SASL-IR (car said)) t)))))
 	  (t
 	   (iter-yield-from (vm-imap-net-capabilities))
 	   (iter-yield-from (vm-imap-net-login user password))))))

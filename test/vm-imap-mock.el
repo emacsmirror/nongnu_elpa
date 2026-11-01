@@ -54,6 +54,12 @@
 ;;                    protocol's own flags, which is what Gmail does
 ;;   :capabilities    replace the advertised capability list outright
 ;;   :cram-md5        advertise AUTH=CRAM-MD5 and serve AUTHENTICATE
+;;   :xoauth2         TOKEN; advertise AUTH=XOAUTH2 and SASL-IR, and take that
+;;                    token.  Any other is refused the way a real server
+;;                    refuses one, on a continuation line that waits for a
+;;                    line back before the tagged NO
+;;   :no-sasl-ir      leave SASL-IR out, so the response goes after a
+;;                    challenge rather than on the AUTHENTICATE line
 ;;
 ;; The server records every command it received, so a test can assert on what
 ;; VM actually sent -- that an expunge really was withheld, say -- rather than
@@ -78,7 +84,11 @@
   extra-fetch-items unsolicited-flags drops-keywords
   authenticated
   ;; CRAM-MD5: the challenge sent, kept so that the response can be checked
-  cram-md5 challenge)
+  cram-md5 challenge
+  ;; XOAUTH2: the token taken, and a (TAG . KIND) waiting for an untagged
+  ;; line -- `response' for one asked for, `refused' for the empty line that
+  ;; lets a refusal become a tagged NO
+  xoauth2 no-sasl-ir xoauth2-pending)
 
 (cl-defstruct (vm-imap-mock-message (:constructor vm-imap-mock--message-make))
   uid text (flags nil) (expunged nil))
@@ -194,9 +204,13 @@ knows about and VM does not."
 	     (if (vm-imap-mock-no-uidplus mock)
 		 (remove "UIDPLUS" vm-imap-mock-default-capabilities)
 	       vm-imap-mock-default-capabilities))))
-    (if (vm-imap-mock-cram-md5 mock)
-	(append capabilities '("AUTH=CRAM-MD5"))
-      capabilities)))
+    (when (vm-imap-mock-cram-md5 mock)
+      (setq capabilities (append capabilities '("AUTH=CRAM-MD5"))))
+    (when (vm-imap-mock-xoauth2 mock)
+      (setq capabilities (append capabilities '("AUTH=XOAUTH2")))
+      (unless (vm-imap-mock-no-sasl-ir mock)
+	(setq capabilities (append capabilities '("SASL-IR")))))
+    capabilities))
 
 ;;; Answering
 
@@ -591,6 +605,41 @@ challenge keyed by the password, in lower case hexadecimal."
       (vm-imap-mock--send
        process (format "%s NO authentication failed\r\n" tag)))))
 
+(defconst vm-imap-mock-xoauth2-refusal
+  "{\"status\":\"401\",\"schemes\":\"bearer\",\"scope\":\"https://mail.google.com/\"}"
+  "What a server sends on the continuation line when it refuses a token.
+Google's wording; the client is not expected to read it, only to answer
+with a line so that the tagged NO can follow.")
+
+(defun vm-imap-mock--xoauth2-answer (mock process tag line)
+  "Check LINE, an XOAUTH2 SASL response to TAG, and answer the client.
+The response is the base64 of user=U^Aauth=Bearer T^A^A.  A token the mock
+does not hold is refused the way a real server refuses one: the reason on a
+continuation line, and the tagged NO only after the client has sent a line
+of its own."
+  (let* ((given (ignore-errors (base64-decode-string line)))
+	 (want (format "user=%s\1auth=Bearer %s\1\1"
+		       (vm-imap-mock-user mock) (vm-imap-mock-xoauth2 mock))))
+    (if (equal given want)
+	(progn (setf (vm-imap-mock-authenticated mock) t)
+	       (vm-imap-mock--send
+		process (format "%s OK AUTHENTICATE completed\r\n" tag)))
+      (vm-imap-mock--log mock (format "!! XOAUTH2 wanted %S, got %S" want given))
+      (setf (vm-imap-mock-xoauth2-pending mock) (cons tag 'refused))
+      (vm-imap-mock--send
+       process (format "+ %s\r\n"
+		       (base64-encode-string vm-imap-mock-xoauth2-refusal t))))))
+
+(defun vm-imap-mock--xoauth2-pending (mock process line)
+  "Answer LINE, the untagged line MOCK was waiting for."
+  (let ((tag (car (vm-imap-mock-xoauth2-pending mock)))
+	(kind (cdr (vm-imap-mock-xoauth2-pending mock))))
+    (setf (vm-imap-mock-xoauth2-pending mock) nil)
+    (if (eq kind 'refused)
+	(vm-imap-mock--send
+	 process (format "%s NO authentication failed\r\n" tag))
+      (vm-imap-mock--xoauth2-answer mock process tag line))))
+
 (defun vm-imap-mock--handle (mock process line)
   "Answer LINE, one command from PROCESS."
   (vm-imap-mock--log mock line)
@@ -599,6 +648,8 @@ challenge keyed by the password, in lower case hexadecimal."
    ;; anything tries to read one off the front of it
    ((vm-imap-mock-challenge mock)
     (vm-imap-mock--cram-md5-answer mock process line))
+   ((vm-imap-mock-xoauth2-pending mock)
+    (vm-imap-mock--xoauth2-pending mock process line))
    ((string-match "\\`\\([^ ]+\\) +\\(.*\\)\\'" line)
       (let ((tag (match-string 1 line))
 	    (rest (match-string 2 line)))
@@ -609,6 +660,19 @@ challenge keyed by the password, in lower case hexadecimal."
 	     process (format "* CAPABILITY %s\r\n%s OK CAPABILITY completed\r\n"
 			     (mapconcat #'identity (vm-imap-mock--capabilities mock) " ")
 			     tag)))
+	   ((string-match "\\`AUTHENTICATE +XOAUTH2\\(?: +\\(.*\\)\\)?\\'" rest)
+	    (let ((given (match-string 1 rest)))
+	      (cond
+	       ((not (vm-imap-mock-xoauth2 mock))
+		(vm-imap-mock--send
+		 process (format "%s NO AUTHENTICATE not supported\r\n" tag)))
+	       (given
+		(vm-imap-mock--xoauth2-answer mock process tag given))
+	       (t
+		;; no initial response: RFC 3501 has the client send it after
+		;; an empty challenge
+		(setf (vm-imap-mock-xoauth2-pending mock) (cons tag 'response))
+		(vm-imap-mock--send process "+ \r\n")))))
 	   ((string-match-p "\\`AUTHENTICATE +CRAM-MD5\\'" rest)
 	    (if (not (vm-imap-mock-cram-md5 mock))
 		(vm-imap-mock--send
@@ -735,7 +799,8 @@ not ask about the live process."
 				   lie-about-size slow-greeting no-uidplus
 				   capabilities preauth reorder-fetch
 				   drop-after-fetch extra-fetch-items
-				   unsolicited-flags drops-keywords cram-md5)
+				   unsolicited-flags drops-keywords cram-md5
+				   xoauth2 no-sasl-ir)
   "Start a mock IMAP server on a local port and return it.
 MESSAGES is what MAILBOX holds: a list of strings, each a whole RFC 5322
 message, or of (TEXT . FLAGS).  The keywords after it are the faults
@@ -756,7 +821,9 @@ point VM at, and `vm-imap-mock-spec' builds the maildrop."
 		:extra-fetch-items extra-fetch-items
 		:unsolicited-flags unsolicited-flags
 		:drops-keywords drops-keywords
-		:cram-md5 cram-md5))
+		:cram-md5 cram-md5
+		:xoauth2 xoauth2
+		:no-sasl-ir no-sasl-ir))
 	 (server (make-network-process
 		  :name "vm-imap-mock" :server t :service t
 		  :host 'local :family 'ipv4 :coding 'binary :noquery t

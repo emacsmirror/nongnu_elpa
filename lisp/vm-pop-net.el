@@ -194,29 +194,61 @@ one for the fetch and one for the expunge after it."
 	       (not (assoc key vm-pop-passwords)))
       (setq vm-pop-passwords (cons (list key password) vm-pop-passwords)))))
 
+(iter-defun vm-pop-net-authenticate-xoauth2 (user token)
+  "Log in as USER with the access TOKEN.
+
+RFC 5034 puts SASL under AUTH, and Google\\='s XOAUTH2 goes on the AUTH line
+itself rather than after a challenge.
+
+A refused token does not arrive as a plain -ERR.  The server sends a
+continuation line, a plus and base64 JSON saying why, and waits for a line
+from the client before it will send the -ERR: an empty one is what gets the
+error out of it.  `vm-pop-net-read-response' cannot be used for this, having
+nowhere to put a response that is neither +OK nor -ERR.
+
+The token is not remembered, for the reason
+`vm-imap-net-authenticate-xoauth2' gives: it lives about an hour, and an
+entry in `vm-pop-passwords' would outlast it."
+  (vm-pop-net-send (format "AUTH XOAUTH2 %s"
+			   (vm-net-xoauth2-response user token)))
+  (let ((line (iter-yield-from (vm-pop-net-read-line))))
+    (when (string-prefix-p "+ " line)
+      (vm-pop-net-send "")
+      (setq line (iter-yield-from (vm-pop-net-read-line))))
+    (cond ((string-prefix-p "+OK" line) t)
+	  ((string-prefix-p "-ERR" line)
+	   (signal 'vm-pop-net-error (list (string-trim line))))
+	  (t (signal 'vm-pop-net-error
+		     (list (format "unrecognized response: %s"
+				   (string-trim line))))))))
+
 (iter-defun vm-pop-net-authenticate (user password &optional greeting)
   "Log in as USER with PASSWORD.
 
-APOP where the maildrop asked for it, USER and PASS otherwise.  GREETING is
-what the server said, which is where the APOP timestamp comes from.
+APOP or XOAUTH2 where the maildrop asked for one, USER and PASS otherwise.
+With XOAUTH2 the PASSWORD is an access token.  GREETING is what the server
+said, which is where the APOP timestamp comes from.
 
 A maildrop asking for APOP against a server that offers no timestamp is an
 error rather than a quiet fall back to PASS: the password would go over the
 wire in clear, which is the thing APOP was asked for to avoid."
-  (if (equal vm-pop-net-auth "apop")
-      (let ((timestamp (vm-pop-net-timestamp (or greeting ""))))
-	(unless timestamp
-	  (signal 'vm-pop-net-error
-		  (list "server offers no APOP timestamp")))
-	(iter-yield-from
-	 (vm-pop-net-command
-	  (format "APOP %s %s" user
-		  (vm-pop-md5 (concat timestamp password))))))
-    (iter-yield-from (vm-pop-net-command (format "USER %s" user)))
-    (iter-yield-from (vm-pop-net-command (format "PASS %s" password))))
-  ;; here and not earlier: a response that is not +OK signals, so reaching
-  ;; this is the server having accepted the password
-  (vm-pop-net-remember-password password)
+  (if (equal vm-pop-net-auth "xoauth2")
+      (iter-yield-from (vm-pop-net-authenticate-xoauth2 user password))
+    (if (equal vm-pop-net-auth "apop")
+	(let ((timestamp (vm-pop-net-timestamp (or greeting ""))))
+	  (unless timestamp
+	    (signal 'vm-pop-net-error
+		    (list "server offers no APOP timestamp")))
+	  (iter-yield-from
+	   (vm-pop-net-command
+	    (format "APOP %s %s" user
+		    (vm-pop-md5 (concat timestamp password))))))
+      (iter-yield-from (vm-pop-net-command (format "USER %s" user)))
+      (iter-yield-from (vm-pop-net-command (format "PASS %s" password))))
+    ;; here and not earlier: a response that is not +OK signals, so reaching
+    ;; this is the server having accepted the password.  Not for a token,
+    ;; which outlives nothing and must be asked for again next session.
+    (vm-pop-net-remember-password password))
   t)
 
 (iter-defun vm-pop-net-stat ()
@@ -363,6 +395,15 @@ has no TLS and answers `:type \\='tls' with \"Unsupported connection type\"."
 (declare-function vm-pop-get-password "vm-pop"
 		  (popdrop source user host port ask-password))
 
+(defun vm-pop-net-access-token (source user host port)
+  "The XOAUTH2 access token for SOURCE as USER, from auth-source, or nil.
+Asked for afresh each session and never prompted for, as
+`vm-imap-net-access-token' explains."
+  (let ((token (vm-auth-source-password
+		(list (vm-pop-find-name-for-spec source) host)
+		port user)))
+    (and (stringp token) (not (equal token "")) token)))
+
 (defun vm-pop-net-known-password (source user host port)
   "The password VM already holds for SOURCE, or nil.
 Its own cache first, then auth-source.  Nothing is written back, and only a
@@ -409,7 +450,7 @@ output.  A maildrop whose password VM has not been told signals
 	     protocol))
     ;; Ignoring this field is what made an `apop' maildrop authenticate with
     ;; USER and PASS, sending the password in clear (emacs-vm/vm#823).
-    (unless (member auth '("pass" "apop"))
+    (unless (member auth '("pass" "apop" "xoauth2"))
       (if (equal auth "rpop")
 	  (error (concat "rpop is no longer supported: it relied on a"
 			 " privileged source port and sent the password"
@@ -417,8 +458,8 @@ output.  A maildrop whose password VM has not been told signals
 			 " maildrop instead; see Spool Files in the VM"
 			 " manual"))
 	(error (concat "%s is not a POP authentication VM knows."
-		       "  Write pass, or apop where the server offers a"
-		       " timestamp")
+		       "  Write pass, apop where the server offers a"
+		       " timestamp, or xoauth2 where it offers that")
 	       (or auth "no authentication"))))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
@@ -426,28 +467,37 @@ output.  A maildrop whose password VM has not been told signals
       ;; "*" means VM is to find the password rather than read it out of the
       ;; maildrop.  VM may already know it; failing that, a command may ask
       ;; the reader.
-      (setq password (or (vm-pop-net-known-password source user host port)
-			 (and may-ask
-			      ;; as for IMAP: nothing binds `vm-pop-ok-to-ask'
-			      ;; on the way here, so requiring it meant the
-			      ;; question was never put
-			      (let ((vm-pop-ok-to-ask t))
-				(condition-case nil
-				    (vm-pop-get-password
-				     (or (vm-pop-find-name-for-spec source)
-					 (vm-safe-popdrop-string source))
-				     (vm-popdrop-sans-password source)
-				     user host port t)
-				  (error nil))))))
+      (setq password
+	    (if (equal auth "xoauth2")
+		;; neither the cache nor the asking below: see
+		;; `vm-pop-net-access-token'
+		(vm-pop-net-access-token source user host port)
+	      (or (vm-pop-net-known-password source user host port)
+		  (and may-ask
+		       ;; as for IMAP: nothing binds `vm-pop-ok-to-ask'
+		       ;; on the way here, so requiring it meant the
+		       ;; question was never put
+		       (let ((vm-pop-ok-to-ask t))
+			 (condition-case nil
+			     (vm-pop-get-password
+			      (or (vm-pop-find-name-for-spec source)
+				  (vm-safe-popdrop-string source))
+			      (vm-popdrop-sans-password source)
+			      user host port t)
+			   (error nil)))))))
       (unless (and (stringp password) (not (equal password "")))
 	;; the keys and not the passwords, as for IMAP: what this distinguishes
 	;; is a password never remembered from one remembered under a key the
 	;; check does not look under
-	(vm-inform 10 "%s: no password held under %s; VM holds %s" name
-		   (vm-popdrop-sans-password source)
-		   (if vm-pop-passwords
-		       (mapconcat #'car vm-pop-passwords ", ")
-		     "none"))
+	(if (equal auth "xoauth2")
+	    (vm-inform 10 (concat "%s: auth-source has no XOAUTH2 token for"
+				  " %s at %s; M-x vm-oauth2-authorize gets one")
+		       name user host)
+	  (vm-inform 10 "%s: no password held under %s; VM holds %s" name
+		     (vm-popdrop-sans-password source)
+		     (if vm-pop-passwords
+			 (mapconcat #'car vm-pop-passwords ", ")
+		       "none")))
 	(signal 'vm-pop-net-no-password
 		(list "password not remembered" source))))
     (let* ((buffer (generate-new-buffer (format " *%s*" name)))

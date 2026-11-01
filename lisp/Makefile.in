@@ -34,6 +34,7 @@ SOURCES += vm-misc.el
 SOURCES += vm-net.el
 SOURCES += vm-motion.el
 SOURCES += vm-mouse.el
+SOURCES += vm-oauth2.el
 SOURCES += vm-page.el
 SOURCES += vm-org.el
 SOURCES += vm-pcrisis.el
