@@ -861,32 +861,79 @@ runs PROGRAM under `make-process' and waits with `accept-process-output',
 which leaves Emacs able to see the C-g; it kills PROGRAM when it does and
 says that the message may have gone out anyway.
 
+PROGRAM reads the message from a file of its own, as it does under
+`call-process-region': see `vm-write-region-to-temp-file' for why it is not
+written down a pipe.
+
 The arguments are `call-process-region's and so is the value: the exit
 status of PROGRAM, or the signal that killed it.  DISPLAY is ignored, output
 being inserted as it arrives whatever it says.  A BUFFER of 0 and the
 two-element BUFFER that sends standard error to a file both go to
 `vm-call-process-region-original', the first having no wait to interrupt and
-the second no counterpart here."
-  (if (or (eq buffer 0) (consp buffer))
-      (apply (or vm-call-process-region-original #'call-process-region)
-	     start end program delete buffer display args)
-    (let ((input (buffer-substring-no-properties start end))
-	  (process (vm-start-process-on-input
-		    program args (if (eq buffer t) (current-buffer) buffer))))
-      (when delete
-	(delete-region start end))
-      (unwind-protect
-	  (condition-case nil
-	      (progn
-		(vm-send-input-to-process process input)
-		(vm-wait-for-process process)
-		(vm-process-exit-value process))
-	    (quit (vm-abandon-send process program)))
-	(when (process-live-p process)
-	  (delete-process process))))))
+the second no counterpart here, and so does a machine with no POSIX shell to
+redirect the input with."
+  (let ((shell (vm-shell-for-input)))
+    (if (or (eq buffer 0) (consp buffer) (null shell))
+	(apply (or vm-call-process-region-original #'call-process-region)
+	       start end program delete buffer display args)
+      (let ((input (vm-write-region-to-temp-file start end)))
+	(unwind-protect
+	    (let ((process (vm-start-process-reading-file
+			    shell program args input
+			    (if (eq buffer t) (current-buffer) buffer))))
+	      (when delete
+		(delete-region start end))
+	      (unwind-protect
+		  (condition-case nil
+		      (progn
+			(vm-wait-for-process process)
+			(vm-process-exit-value process))
+		    (quit (vm-abandon-send process program)))
+		(when (process-live-p process)
+		  (delete-process process))))
+	  (delete-file input))))))
 
-(defun vm-start-process-on-input (program args buffer)
-  "Start PROGRAM with ARGS, ready to be sent its standard input.
+(defun vm-shell-for-input ()
+  "A shell that can give a program its standard input from a file, or nil.
+The redirection is written in the POSIX shell language, so a machine with no
+`sh' has none and the send falls back to `call-process-region', which stops
+Emacs for the length of it but is otherwise right.
+
+The standard place is looked at before `exec-path', which a user is free to
+have pared down to nothing that matters here."
+  (if (file-executable-p "/bin/sh")
+      "/bin/sh"
+    (executable-find "sh")))
+
+(defun vm-write-region-to-temp-file (start end)
+  "Write the region to a file of its own, and answer the file's name.
+A file is how the program is given the message, and not a pipe: a pipe whose
+reader has gone raises SIGPIPE on the next write, which kills Emacs outright
+with nothing printed and which no `condition-case' can see.  A mailer that
+refuses the message and exits is a reader that has gone, so a send down a
+pipe can take the whole of Emacs with it (emacs-vm/vm#921), which is what
+`call-process-region' avoids by handing over a file.  `make-temp-file' makes
+one nobody else can read.
+
+The encoding is `coding-system-for-write', which the senders bind to the
+coding system the message was chosen for.  Where nothing has bound it this
+takes what the process machinery would have taken, rather than let
+`write-region' ask which to use in the middle of a send."
+  (let ((file (make-temp-file "vm-send"))
+	(coding-system-for-write
+	 (or coding-system-for-write
+	     (cdr-safe default-process-coding-system)
+	     'utf-8-unix)))
+    (write-region start end file nil 0)
+    file))
+
+(defun vm-start-process-reading-file (shell program args file buffer)
+  "Start PROGRAM with ARGS, its standard input the contents of FILE.
+SHELL does the redirection, and `exec' leaves PROGRAM itself in the process
+Emacs holds: the process to kill after a C-g is the mailer, not a shell
+waiting for it.  The arguments go to the shell as arguments and never
+through its parser, so nothing in them is read as shell syntax.
+
 Its output is inserted before point in BUFFER, which is where
 `call-process-region' puts it rather than at the end where a process filter
 would; BUFFER nil discards it.  The sentinel is set because the default one
@@ -897,7 +944,12 @@ writes a line of its own into the process buffer, which
 	(process nil))
     (setq process (make-process
 		   :name (file-name-nondirectory program)
-		   :command (cons program args)
+		   :command (append
+			     (list shell "-c"
+				   (format "exec \"$0\" \"$@\" < %s"
+					   (shell-quote-argument file))
+				   program)
+			     args)
 		   :connection-type 'pipe
 		   :noquery t
 		   :filter (and out (lambda (_process text)
@@ -906,37 +958,6 @@ writes a line of its own into the process buffer, which
     (set-process-sentinel process
 			  (lambda (p event) (process-put p 'vm-death event)))
     process))
-
-(defun vm-send-input-to-process (process input)
-  "Give PROCESS its standard input, INPUT, a piece at a time.
-A mailer that refuses the message and exits before it has read all of it
-leaves nothing to write to.  `call-process-region' never meets that, having
-handed the program a file to read; writing to a pipe that has gone is an
-error, and in a batch Emacs a SIGPIPE that kills it outright.  So this stops
-as soon as the program has, and the exit status of the program is what
-answers the send, which is what answered it before."
-  (let ((start 0)
-	(end (length input))
-	(sending t))
-    (while (and sending (< start end))
-      (let ((stop (min end (+ start 8192))))
-	(if (vm-write-to-process process (substring input start stop))
-	    (setq start stop)
-	  (setq sending nil)))
-      ;; reaps a program that has exited, so the next turn stops
-      (accept-process-output process 0))
-    (vm-write-to-process process nil)))
-
-(defun vm-write-to-process (process text)
-  "Write TEXT to PROCESS, or close its standard input where TEXT is nil.
-Answers nil where the program has stopped reading, which is not an error
-here: see `vm-send-input-to-process'."
-  (condition-case nil
-      (progn (if text
-		 (process-send-string process text)
-	       (process-send-eof process))
-	     t)
-    (error nil)))
 
 (defun vm-wait-for-process (process)
   "Wait for PROCESS to finish, leaving Emacs able to see a C-g.

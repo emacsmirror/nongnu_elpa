@@ -3156,18 +3156,90 @@ because nothing else in Emacs runs during the wait this is replacing."
                             (process-list)))))
 
 (ert-deftest vm-reply-test-a-mailer-that-quits-early-is-not-fatal ()
-  "The exit status answers a program that stopped reading the message.
-The input goes down a pipe where `call-process-region' hands the program a
-file, so a mailer that refuses the message and exits leaves VM writing to
-something that is not there.  Writing anyway is an error, and in a batch
-Emacs a SIGPIPE that kills it outright, which is worse than the send
-failing.  More than a pipeful, or the program would have read it all before
-exiting and there would be nothing to meet."
+  "REGRESSION: a program that stops reading the message does not kill Emacs.
+Writing to a pipe whose reader has gone raises SIGPIPE, which Emacs does
+not catch: the process dies where it stands, printing nothing at all and
+exiting 141.  A mailer that refuses the message and exits is such a reader,
+and a send that wrote down a pipe took the whole of Emacs with it
+(emacs-vm/vm#921).  The message is handed over in a file instead, so there
+is no pipe to break.
+
+The program here closes its standard input and stays alive, which is the
+same thing to the writer and happens every time rather than when the
+scheduler allows: an Emacs without the fix does not fail this test, it
+dies, and ert reports nothing because there is nothing left to report
+with.  More than a pipeful, so that a write is certainly attempted."
+  (with-temp-buffer
+    (insert (make-string 400000 ?x))
+    (should (equal 7 (vm-call-process-region-interruptibly
+                      (point-min) (point-max) "sh" nil nil nil
+                      "-c" "exec 0<&-; sleep 0.2; exit 7")))))
+
+(ert-deftest vm-reply-test-a-mailer-that-exits-at-once-is-not-fatal ()
+  "The same where the program is gone before Emacs has written anything.
+This is the race the builders lost: the program exits while Emacs is still
+being scheduled, and whether the write finds a pipe or a process Emacs has
+already buried decided whether Emacs lived.  It no longer writes either
+way, so the exit status is all there is to answer."
   (with-temp-buffer
     (insert (make-string 400000 ?x))
     (should (equal 7 (vm-call-process-region-interruptibly
                       (point-min) (point-max) "sh" nil nil nil
                       "-c" "exit 7")))))
+
+(ert-deftest vm-reply-test-the-message-is-handed-over-in-a-file ()
+  "The program is started reading a file, not a pipe Emacs writes.
+The redirection is the whole of the fix, so it is read off the command the
+process was started with.  The arguments go to the shell as arguments, so a
+program or an argument holding shell syntax is PROGRAM and an argument
+still."
+  (let ((file (make-temp-file "vm-send-check"))
+        (process nil))
+    (unwind-protect
+        (progn
+          (setq process (vm-start-process-reading-file
+                         (vm-shell-for-input) "sh" (list "-c" "exit 0; $(x)")
+                         file nil))
+          (let ((command (process-command process)))
+            (should (equal (nth 1 command) "-c"))
+            (should (string-match-p "exec \"\\$0\" \"\\$@\" <"
+                                    (nth 2 command)))
+            (should (string-match-p (regexp-quote file) (nth 2 command)))
+            ;; the program and its arguments follow the script, untouched
+            (should (equal (nthcdr 3 command) '("sh" "-c" "exit 0; $(x)")))))
+      (when process (delete-process process))
+      (delete-file file))))
+
+(ert-deftest vm-reply-test-the-input-file-does-not-outlive-the-send ()
+  "The message is written to a file, and the file goes when the send ends.
+It holds the message, so leaving it in a directory everyone can write in is
+leaving the mail there.  The name is taken from the writer rather than by
+looking at what is in that directory afterwards, which is a race with every
+other thing on the machine."
+  (let ((file nil)
+        (write (symbol-function 'vm-write-region-to-temp-file)))
+    (cl-letf (((symbol-function 'vm-write-region-to-temp-file)
+               (lambda (&rest args) (setq file (apply write args)))))
+      (with-temp-buffer
+        (insert "the message\n")
+        (should (equal 0 (vm-call-process-region-interruptibly
+                          (point-min) (point-max) "cat" nil nil nil)))))
+    (should file)
+    (should-not (file-exists-p file))))
+
+(ert-deftest vm-reply-test-the-input-file-is-private ()
+  "The file holding the message is readable by its owner and nobody else."
+  (let ((file nil))
+    (with-temp-buffer
+      (insert "secret\n")
+      (setq file (vm-write-region-to-temp-file (point-min) (point-max))))
+    (unwind-protect
+        (progn
+          (should (equal "secret\n"
+                         (with-temp-buffer (insert-file-contents file)
+                                           (buffer-string))))
+          (should (zerop (logand (file-modes file) #o077))))
+      (delete-file file))))
 
 (ert-deftest vm-reply-test-a-long-message-is-handed-over-whole ()
   "A message bigger than a pipeful reaches the program entire.

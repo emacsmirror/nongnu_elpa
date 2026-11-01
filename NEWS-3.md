@@ -211,7 +211,9 @@ What stops working.  Each is covered below.
     (emacs-vm/vm#842).  A sender running a program waited in
     `call-process-region`, which stops the whole of Emacs, so the `C-g` was
     never seen.  Interrupting unsends nothing: look at what arrived before
-    sending again.
+    sending again.  The message is handed to the program in a file, which
+    takes a shell to redirect, so a machine with no `sh` sends as it always
+    did and cannot be interrupted.
 
   * **A composition carries a `From` header** (emacs-vm/vm#832).  VM read
     `mail-setup-with-from` nowhere, so the copy an `Fcc` or `IMAP-FCC` files,
