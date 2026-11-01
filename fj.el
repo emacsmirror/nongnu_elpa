@@ -1592,9 +1592,9 @@ Assignees is a list."
   (let* ((params
           (fedi-opt-params title body state assignee
                            (assignees :list assignees)
-                           (due-date :alias due_date) milestone ref
-                           (unset-due-date :alias unset_due_date)
-                           (updated-at :alias updated_at)))
+                           (due-date :alias "due_date") milestone ref
+                           (unset-due-date :alias "unset_due_date")
+                           (updated-at :alias "updated_at")))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-patch endpoint params :json)))
 
