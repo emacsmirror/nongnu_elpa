@@ -172,6 +172,89 @@ tests are checked where a live run would otherwise cover for them."
   (should-not (vm-test-init-test--live-wanted "mock"))
   (should-not (vm-test-init-test--live-wanted "MOCK")))
 
+;;; A scratch directory of the pass's own, issue #929
+
+(defun vm-test-init-test--scratch-dir-with (value)
+  "The `vm-test-scratch-dir' a fresh Emacs takes with VM_TEST_SCRATCH VALUE.
+A child, because the variable is worked out when `vm-test-init.el' loads and
+this Emacs loaded it long ago.  VALUE nil leaves the variable unset."
+  (let ((emacs (expand-file-name invocation-name invocation-directory))
+        (init (expand-file-name "vm-test-init.el" vm-test-dir))
+        (process-environment
+         (if value
+             (cons (concat "VM_TEST_SCRATCH=" value) process-environment)
+           (let ((env nil))
+             (dolist (entry process-environment (nreverse env))
+               (unless (string-prefix-p "VM_TEST_SCRATCH=" entry)
+                 (push entry env)))))))
+    (with-temp-buffer
+      (call-process emacs nil t nil "-Q" "--batch"
+                    "-L" vm-test-lisp-dir "-L" vm-test-dir
+                    "-l" init
+                    "--eval" "(princ vm-test-scratch-dir)")
+      ;; The last line: loading VM says things of its own on the way past,
+      ;; "Loading vm-version-conf..." among them.
+      (car (last (split-string (buffer-string) "\n" t "[ \t\r]+"))))))
+
+(ert-deftest vm-test-init-test-the-scratch-directory-is-the-passs-own ()
+  "VM_TEST_SCRATCH says where VM writes during a pass, under test/.
+The runner gives each pass one of its own so that two passes running at once
+cannot write the same IMAP cache file: `vm-imap-make-filename-for-spec' names
+it after the MD5 of the maildrop and nothing else, so one maildrop is one
+file whoever visits it."
+  ;; a name of its own under test/, which is what the runner gives a pass
+  (let ((relative "scratch/vm-test-init-test"))
+    (unwind-protect
+        (should (equal (vm-test-init-test--scratch-dir-with relative)
+                       (file-name-as-directory
+                        (expand-file-name relative vm-test-dir))))
+      (delete-directory (expand-file-name relative vm-test-dir) t)))
+  ;; an absolute name is taken as it stands
+  (let ((absolute (make-temp-file "vm-test-init-test-scratch" t)))
+    (unwind-protect
+        (should (equal (vm-test-init-test--scratch-dir-with absolute)
+                       (file-name-as-directory absolute)))
+      (delete-directory absolute t)))
+  ;; unset, the name it has always had
+  (should (equal (vm-test-init-test--scratch-dir-with nil)
+                 (file-name-as-directory
+                  (expand-file-name "scratch" vm-test-dir)))))
+
+;;; The suite split over several Emacsen, issue #930
+
+(defun vm-test-init-test--files-for (spec files)
+  "Those of FILES that VM_TEST_SHARD SPEC asks for."
+  (let ((process-environment
+         (cons (concat "VM_TEST_SHARD=" spec) process-environment)))
+    (vm-test-files-for-shard files)))
+
+(ert-deftest vm-test-init-test-the-shards-cover-every-file-once ()
+  "Each file goes to exactly one shard, dealt out one at a time.
+Not cut into blocks: the time is in a handful of files and neighbours in the
+sorted list tend to be alike, so blocks would gather the slow ones together."
+  (let ((files '("a" "b" "c" "d" "e" "f" "g")))
+    (should (equal (vm-test-init-test--files-for "1/3" files) '("a" "d" "g")))
+    (should (equal (vm-test-init-test--files-for "2/3" files) '("b" "e")))
+    (should (equal (vm-test-init-test--files-for "3/3" files) '("c" "f")))
+    (should (equal (sort (append (vm-test-init-test--files-for "1/3" files)
+                                 (vm-test-init-test--files-for "2/3" files)
+                                 (vm-test-init-test--files-for "3/3" files))
+                         #'string<)
+                   files))
+    ;; one shard, or none asked for, is the whole list
+    (should (equal (vm-test-init-test--files-for "1/1" files) files))
+    (should (equal (vm-test-init-test--files-for "" files) files))))
+
+(ert-deftest vm-test-init-test-a-shard-that-cannot-be-read-is-an-error ()
+  "A VM_TEST_SHARD that is not INDEX/COUNT stops the run.
+Silently running the whole suite instead would put every test in every shard
+and look only slow, which is the kind of failure nobody goes looking for."
+  (should-error (vm-test-init-test--files-for "1-3" '("a")))
+  (should-error (vm-test-init-test--files-for "two/3" '("a")))
+  (should-error (vm-test-init-test--files-for "0/3" '("a")))
+  (should-error (vm-test-init-test--files-for "4/3" '("a")))
+  (should-error (vm-test-init-test--files-for "1/0" '("a"))))
+
 (provide 'vm-test-init-test)
 
 ;;; vm-test-init-test.el ends here
