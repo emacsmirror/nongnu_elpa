@@ -1615,11 +1615,10 @@ Optionally also patch ASSIGNEE (deprecated param)."
   "Add an assignee to item being viewed or at point in tabulated listing.
 Prompt for an assigne with completion."
   (interactive)
-  (let* ((assignees (fj-assignees-candidates))
-         ;; FIXME: use `completing-read-multiple':
-         (assignee (completing-read "Assign to item: "
-                                    assignees nil :match))
-         (resp (fj--patch-assignees (list assignee))))
+  (let* ((cands (fj-assignees-candidates))
+         (assignees (completing-read-multiple "Assign to item [TAB for multiple]: "
+                                              cands nil :match))
+         (resp (fj--patch-assignees assignees)))
     (fedi-http--triage
      resp
      (lambda (resp)
