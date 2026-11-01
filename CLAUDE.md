@@ -99,6 +99,45 @@ Every pass runs whichever fails, and the summary at the end names each one.
 alone; `--skip-live`, `--skip-send`, `--verbose` and `--no-build` modify a
 run.
 
+**The send pass runs beside the others, not after them.** It is almost all
+spent waiting for mail to be delivered, so it is started first and waited for
+last. Nothing it touches is shared: it reaches one server, the one
+`:verify-server` names, that no other pass uses, and the live IMAP tests work
+in throwaway mailboxes called `vmtest<pid>-<n>` that are never INBOX. Its
+output is held and printed when it is waited for, since two passes writing to
+the terminal at once interleave.
+
+**Its messages all go out before any of them is awaited.** Each test used to
+send its own and then wait for it, so four tests cost four deliveries; they
+cost one between them now. `vm-send-live-messages` is a table of tag against
+the function that sends that message, and the first test to ask
+`vm-send-live-sent` for one sends them all. Two things follow. The record is
+in `vm-test-isolation-exceptions`, or the per-test isolation would wind it
+back and every test would dispatch again. And the sweep that takes the mail
+out of the mailbox runs once, on `kill-emacs-hook`, rather than after each
+test, which with everything already sent would take the other messages too.
+
+**The suite is split over several Emacsen**, four by default, `VM_TEST_JOBS`
+otherwise, and 1 runs it whole in one, which is what you want when a failure
+has to be read in order. `VM_TEST_SHARD` is `1/4` and
+`vm-test-files-for-shard` deals the files out one at a time rather than
+cutting them into blocks: the time is in a handful of files and neighbours in
+the sorted list tend to be alike, the four `vm-imap-*-test.el` among them, so
+blocks would gather the slow ones together. A `VM_TEST_SHARD` that cannot be
+read is an error, since running the whole suite in every shard would look
+only slow.
+
+Together those took a default run from about 670 seconds to 150.
+`vm-large-folder-test.el` is 79 seconds in three tests and is the floor for
+any further splitting.
+
+**Each pass gets its own scratch directory**, `test/scratch/<pass>`, named by
+`VM_TEST_SCRATCH`. That directory is `vm-imap-folder-cache-directory`, and
+`vm-imap-make-filename-for-spec` names a cache file after the MD5 of the
+maildrop and nothing else, so one maildrop is one file whoever visits it and
+two passes at once would write the same one. `make clean` removes `scratch`
+whole.
+
 **Two coverage reports, and they answer different questions.** `--coverage`
 advises every `vm-` function and says which were called, so a function of
 forty lines entered once counts as covered. `--forms-coverage` instruments

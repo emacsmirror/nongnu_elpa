@@ -42,10 +42,16 @@
   "Directory containing test fixtures.")
 
 (defvar vm-test-scratch-dir
-  (file-name-as-directory (expand-file-name "scratch" vm-test-dir))
+  (file-name-as-directory
+   (expand-file-name (or (getenv "VM_TEST_SCRATCH") "scratch") vm-test-dir))
   "Directory for files the tests make VM write of its own accord.
 In the tree, so that `make clean' removes it and a developer can see what was
 left behind; a run leaves nothing anywhere else.
+
+VM_TEST_SCRATCH names it, relative to test/ unless it is absolute.  The
+runner gives each pass one of its own, since two passes running at once would
+otherwise write the same cache file: the name below is the MD5 of the
+maildrop and nothing else, so one maildrop is one file whoever visits it.
 
 The IMAP cache is why this exists.  `vm-imap-make-filename-for-spec' names a
 cache file after the MD5 of the maildrop, in `vm-imap-folder-cache-directory'
@@ -764,6 +770,10 @@ is how issue #559 was diagnosed.")
     vm-message-id-number
     vm-imap-live--mailbox-counter
     vm-pop-live--id-counter
+    ;; What the send pass has already put in the mail: wound back, each test
+    ;; would send every message again and the four deliveries they exist to
+    ;; avoid would come back.
+    vm-send-live--sent
     ;; The isolation's own bookkeeping.
     vm-test--isolated-variables
     vm-test--isolated-variables-features)
@@ -905,10 +915,45 @@ test-send\', which loads that file itself.")
 (defun vm-test-discover-test-files ()
   "Return list of test files in `vm-test-dir'.
 Files match pattern vm-*-test.el, excluding vm-test-init.el and the files in
-`vm-test-excluded-files\'."
-  (sort (seq-remove (lambda (f) (member f vm-test-excluded-files))
-                    (directory-files vm-test-dir nil "^vm-.*-test\\.el$"))
-        #'string<))
+`vm-test-excluded-files\'.  Where VM_TEST_SHARD says so, only this shard's
+share of them."
+  (vm-test-files-for-shard
+   (sort (seq-remove (lambda (f) (member f vm-test-excluded-files))
+                     (directory-files vm-test-dir nil "^vm-.*-test\\.el$"))
+         #'string<)))
+
+(defun vm-test-shard ()
+  "This Emacs's share of the test files, as (INDEX . COUNT), or nil for all.
+VM_TEST_SHARD says it, as \"1/4\" for the first of four.  The runner sets it;
+anything it cannot read as that is an error rather than a silent whole run,
+since a typo would otherwise run every test in every shard and look only
+slow."
+  (let ((spec (getenv "VM_TEST_SHARD")))
+    (cond ((or (null spec) (string-empty-p spec)) nil)
+          ((not (string-match "\\`\\([0-9]+\\)/\\([0-9]+\\)\\'" spec))
+           (error "VM_TEST_SHARD is %S, which is not INDEX/COUNT" spec))
+          (t (let ((index (string-to-number (match-string 1 spec)))
+                   (count (string-to-number (match-string 2 spec))))
+               (unless (and (> count 0) (>= index 1) (<= index count))
+                 (error "VM_TEST_SHARD is %S; INDEX must be 1 to COUNT" spec))
+               (cons index count))))))
+
+(defun vm-test-files-for-shard (files)
+  "Those of FILES this shard is to load, or all of them outside a shard.
+Dealt out one at a time rather than cut into consecutive blocks.  The time is
+in a handful of files and neighbours in this sorted list tend to be alike,
+the vm-imap-*-test.el run being four of them, so blocks would put the slow
+ones together."
+  (let ((shard (vm-test-shard)))
+    (if (null shard)
+        files
+      (let ((index (car shard))
+            (count (cdr shard))
+            (n -1))
+        (seq-filter (lambda (_file)
+                      (setq n (1+ n))
+                      (= (% n count) (1- index)))
+                    files)))))
 
 (defvar vm-test-instrumented nil
   "Whether this Emacs is running the `--forms-coverage' pass.

@@ -275,13 +275,24 @@ would give \"INBOX.\" and \".\"."
 
 (defvar vm-imap-live--mailbox-counter 0)
 
+(defun vm-imap-live-mailbox-stamp ()
+  "Return the microsecond clock, for a name no later run will ask for again."
+  (format-time-string "%s%6N"))
+
 (defun vm-imap-live-mailbox-name (conn)
   "Return a fresh throwaway mailbox name on CONN, under vmtest.
-Never INBOX.  The pid keeps concurrent runs from colliding."
+Never INBOX.  The name carries the microsecond clock, the pid and a counter.
+
+The clock is what makes it unique.  This was the pid and the counter alone,
+and a pid is unique only among running processes: every killed run leaves
+its mailboxes behind, and a later run that draws the same pid asks for a
+name one of them already has and gets ALREADYEXISTS.  2398 of them had
+collected on the test account before this was found (#933).  The stamp also
+says how old a leftover is, which is what a sweep needs."
   (let ((prefix (or (vm-imap-live-conn-prefix conn) ""))
         (sep (or (vm-imap-live-conn-separator conn) "/")))
-    (format "%svmtest%s%d-%d" prefix sep (emacs-pid)
-            (cl-incf vm-imap-live--mailbox-counter))))
+    (format "%svmtest%s%s-%d-%d" prefix sep (vm-imap-live-mailbox-stamp)
+            (emacs-pid) (cl-incf vm-imap-live--mailbox-counter))))
 
 (defun vm-imap-live-append (conn mailbox message &optional flags)
   "APPEND MESSAGE to MAILBOX on CONN, with optional FLAGS string.

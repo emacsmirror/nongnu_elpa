@@ -222,17 +222,74 @@ afterwards, found by its marker header rather than by guessing."
                                  (car (plist-get server :accounts)))
              (vm-imap-live-cmd-ok ,conn "SELECT \"%s\"" ,mailbox)
              ,@body)
-         ;; take out whatever this run put in, whether or not the test passed
-         (ignore-errors
-           (vm-imap-live-cmd-ok ,conn "SELECT \"%s\"" ,mailbox)
-           (let ((text (vm-imap-live-cmd-ok
-                        ,conn "SEARCH HEADER %s \"%d\""
-                        vm-send-live-tag (emacs-pid))))
-             (when (string-match "\\* SEARCH \\([0-9 ]+\\)" text)
-               (dolist (n (nreverse (split-string (match-string 1 text))))
-                 (vm-imap-live-cmd-ok ,conn "STORE %s +FLAGS (\\Deleted)" n))
-               (vm-imap-live-cmd-ok ,conn "EXPUNGE"))))
+         ;; What this run put in comes out in `vm-send-live-sweep\=', once at
+         ;; the end.  Not here: every message is sent before the first test
+         ;; awaits one, so a sweep after each test would take the others.
          (vm-imap-live-close ,conn)))))
+
+;;; Sending every message before awaiting any
+
+(defvar vm-send-live-messages nil
+  "Alist of (TAG . FUNCTION) naming the messages a run sends.
+FUNCTION composes and sends one and answers a plist describing it, which
+`vm-send-live-sent\=' hands to the test that asked for TAG.  A `:dir\=' in that
+plist is a directory the sweep removes.  The test file fills this in.")
+
+(defvar vm-send-live--sent nil
+  "What `vm-send-live-sent\=' has dispatched this run, or nil before it has.")
+
+(defun vm-send-live-sent (tag)
+  "The plist describing the message TAG names, sending every message first.
+Delivery takes a minute or two and the tests awaited one message each, so
+four messages sent one at a time cost four deliveries where four sent at once
+cost one.  The first test to ask sends them all and the rest find theirs
+already on its way.
+
+The record survives from one test to the next because `vm-send-live--sent\=' is
+in `vm-test-isolation-exceptions\='; without that each test would dispatch
+again and the saving would be undone."
+  (unless vm-send-live--sent
+    (add-hook 'kill-emacs-hook #'vm-send-live-sweep)
+    (setq vm-send-live--sent
+          (mapcar (lambda (cell) (cons (car cell) (funcall (cdr cell))))
+                  vm-send-live-messages)))
+  (or (cdr (assq tag vm-send-live--sent))
+      (error "Nothing called %s was sent; vm-send-live-messages names %S"
+             tag (mapcar #'car vm-send-live-messages))))
+
+(defun vm-send-live-sweep ()
+  "Take this run\='s messages out of the verifying mailbox, and its files off disk.
+Once, at the end.  On `kill-emacs-hook\=', so it runs whether the tests passed,
+failed or stopped, and these put real mail in a real mailbox."
+  (let ((sent vm-send-live--sent))
+    (when sent
+      (setq vm-send-live--sent nil)
+      (dolist (record sent)
+        (let ((dir (plist-get (cdr record) :dir)))
+          (when (and dir (file-directory-p dir))
+            (delete-directory dir t))))
+      (ignore-errors
+        (let* ((server (vm-imap-live-server
+                        (vm-send-live-config :verify-server)))
+               (mailbox (vm-send-live-config :verify-mailbox "INBOX"))
+               (conn (vm-imap-live--open server)))
+          (unwind-protect
+              (progn
+                (vm-imap-live-login conn server
+                                    (car (plist-get server :accounts)))
+                (vm-send-live-delete-marked conn mailbox))
+            (vm-imap-live-close conn)))))))
+
+(defun vm-send-live-delete-marked (conn mailbox)
+  "Delete every message in MAILBOX on CONN that this run sent.
+Found by the marker header and the pid, rather than by guessing."
+  (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)
+  (let ((text (vm-imap-live-cmd-ok conn "SEARCH HEADER %s \"%d\""
+                                   vm-send-live-tag (emacs-pid))))
+    (when (string-match "\\* SEARCH \\([0-9 ]+\\)" text)
+      (dolist (n (nreverse (split-string (match-string 1 text))))
+        (vm-imap-live-cmd-ok conn "STORE %s +FLAGS (\\Deleted)" n))
+      (vm-imap-live-cmd-ok conn "EXPUNGE"))))
 
 (provide 'vm-send-live-init)
 
