@@ -183,7 +183,15 @@ the reporter hit; it costs 25 seconds against 4."
     ;; built here.  What the collector walks is the message list, one link per
     ;; message, so length is what matters and thread structure is beside the point.
     (vm-large-folder-test--with-folder (file n 10)
-      (vm-visit-folder file)
+      ;; No summary.  This test is about what the collector walks, and it
+      ;; reaches the messages out of order through OUT-OF-ORDER below rather
+      ;; than through a summary.  Building one for this many messages costs
+      ;; 51 seconds against 0.22 for the visit itself, and it is quadratic:
+      ;; 1.7 s at 10000 messages, 5.3 at 20000, 51 at 50000.  That cost is
+      ;; emacs-vm/vm#373 and is measured there; paying it here bought
+      ;; nothing.
+      (let ((vm-startup-with-summary nil))
+        (vm-visit-folder file))
       (should (= n (length vm-message-list)))
       (setq out-of-order (reverse vm-message-list))
       (vm-large-folder-test--timed "3 x garbage-collect"
