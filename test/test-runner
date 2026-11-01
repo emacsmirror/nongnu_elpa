@@ -131,6 +131,10 @@ emacs_run () {
     # What the pass asked for, so the log shows it rather than leaving the
     # reader to work it out from the number of skips.
     echo "   VM_TEST_LIVE=$emacs_run_live VM_TEST_OPTIONAL=$emacs_run_optional"
+    # Its own scratch directory, set by `run_pass'.  Two passes running at
+    # once would otherwise write the same IMAP cache file: it is named after
+    # the MD5 of the maildrop and nothing else.
+    emacs_run_scratch=${scratch_dir:-scratch}
     # stdin is /dev/null, so a test that asks the reader something fails
     # instead of waiting for an answer that is never coming.  A batch Emacs
     # reads a prompt from stdin: at a terminal that is a silent hang, with no
@@ -140,12 +144,14 @@ emacs_run () {
     if [ "$verbose" = yes ]; then
         env VM_TEST_LIVE="$emacs_run_live" \
             VM_TEST_OPTIONAL="$emacs_run_optional" \
+            VM_TEST_SCRATCH="$emacs_run_scratch" \
             "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" \
             --eval '(setq ert-batch-print-level 5)' \
             --eval '(setq ert-batch-print-length 10)' "$@" </dev/null
     else
         env VM_TEST_LIVE="$emacs_run_live" \
             VM_TEST_OPTIONAL="$emacs_run_optional" \
+            VM_TEST_SCRATCH="$emacs_run_scratch" \
             "$emacs_prog" -batch -Q -L "$root/lisp" -L "$root/test" "$@" \
             </dev/null
     fi
@@ -272,6 +278,11 @@ record () {
 run_pass () {
     name=$1
     shift
+    # Named after the pass, so a run that fails leaves its files where the
+    # reader can tell which pass wrote them.  `make clean' removes scratch
+    # whole, so the subdirectories need no cleaning of their own.
+    scratch_dir=scratch/$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '-' \
+                              | sed 's/-*$//')
     echo
     echo "== $name =="
     if "$@"; then
@@ -331,6 +342,49 @@ pass_send () {
         emacs_run 1 1 -l "$root/test/run-send-tests.el"
 }
 
+# The send pass is the longest of a default run and almost all of it is spent
+# waiting for mail to be delivered, so it runs beside the others rather than
+# after them.  Nothing it touches is shared: it reaches one server,
+# ucsc-mirror, that no other pass names, where the live IMAP tests name plain,
+# tls and gmail and work in throwaway mailboxes that are never INBOX.
+#
+# In a subshell, so the scratch directory it sets cannot leak into the passes
+# running in this one.  Its output goes to a file and is printed when it is
+# waited for, since two passes writing to the terminal at once interleave.
+send_log=
+send_pid=
+
+start_send () {
+    send_log=$(mktemp "${TMPDIR:-/tmp}/vm-send-pass.XXXXXX") || return 1
+    (
+        scratch_dir=scratch/sending-real-mail
+        emacs_run 1 1 -l "$root/test/run-send-tests.el"
+    ) >"$send_log" 2>&1 &
+    send_pid=$!
+}
+
+finish_send () {
+    # Not started means `start_send' could not make its log file, which is a
+    # pass that did not run and must not read as one that passed.
+    if [ -z "$send_pid" ]; then
+        record "sending real mail to $send_to: could not be started"
+        status=1
+        return 0
+    fi
+    echo
+    echo "== sending real mail to $send_to =="
+    if wait "$send_pid"; then
+        cat "$send_log"
+        record "sending real mail to $send_to: passed"
+    else
+        cat "$send_log"
+        record "sending real mail to $send_to: FAILED"
+        status=1
+    fi
+    rm -f "$send_log"
+    send_pid=
+}
+
 pass_assert () {
     run_pass "suite with VM's assertions checked" \
         emacs_run "$live" 1 \
@@ -387,6 +441,11 @@ if [ -n "$chosen" ]; then
         fi
     fi
 else
+    # Started first and waited for last: it overlaps everything below.
+    if [ "$skip_send" = no ] && [ "$send_configured" = yes ]; then
+        start_send
+    fi
+
     pass_build
     pass_suite
 
@@ -405,7 +464,7 @@ else
     if [ "$skip_send" = yes ]; then
         record "sending: not run, asked not to"
     elif [ "$send_configured" = yes ]; then
-        pass_send
+        finish_send
     else
         record "sending: not run, no vm-send-test-config"
     fi

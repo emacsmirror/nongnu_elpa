@@ -42,10 +42,16 @@
   "Directory containing test fixtures.")
 
 (defvar vm-test-scratch-dir
-  (file-name-as-directory (expand-file-name "scratch" vm-test-dir))
+  (file-name-as-directory
+   (expand-file-name (or (getenv "VM_TEST_SCRATCH") "scratch") vm-test-dir))
   "Directory for files the tests make VM write of its own accord.
 In the tree, so that `make clean' removes it and a developer can see what was
 left behind; a run leaves nothing anywhere else.
+
+VM_TEST_SCRATCH names it, relative to test/ unless it is absolute.  The
+runner gives each pass one of its own, since two passes running at once would
+otherwise write the same cache file: the name below is the MD5 of the
+maildrop and nothing else, so one maildrop is one file whoever visits it.
 
 The IMAP cache is why this exists.  `vm-imap-make-filename-for-spec' names a
 cache file after the MD5 of the maildrop, in `vm-imap-folder-cache-directory'

@@ -172,6 +172,54 @@ tests are checked where a live run would otherwise cover for them."
   (should-not (vm-test-init-test--live-wanted "mock"))
   (should-not (vm-test-init-test--live-wanted "MOCK")))
 
+;;; A scratch directory of the pass's own, issue #929
+
+(defun vm-test-init-test--scratch-dir-with (value)
+  "The `vm-test-scratch-dir' a fresh Emacs takes with VM_TEST_SCRATCH VALUE.
+A child, because the variable is worked out when `vm-test-init.el' loads and
+this Emacs loaded it long ago.  VALUE nil leaves the variable unset."
+  (let ((emacs (expand-file-name invocation-name invocation-directory))
+        (init (expand-file-name "vm-test-init.el" vm-test-dir))
+        (process-environment
+         (if value
+             (cons (concat "VM_TEST_SCRATCH=" value) process-environment)
+           (let ((env nil))
+             (dolist (entry process-environment (nreverse env))
+               (unless (string-prefix-p "VM_TEST_SCRATCH=" entry)
+                 (push entry env)))))))
+    (with-temp-buffer
+      (call-process emacs nil t nil "-Q" "--batch"
+                    "-L" vm-test-lisp-dir "-L" vm-test-dir
+                    "-l" init
+                    "--eval" "(princ vm-test-scratch-dir)")
+      ;; The last line: loading VM says things of its own on the way past,
+      ;; "Loading vm-version-conf..." among them.
+      (car (last (split-string (buffer-string) "\n" t "[ \t\r]+"))))))
+
+(ert-deftest vm-test-init-test-the-scratch-directory-is-the-passs-own ()
+  "VM_TEST_SCRATCH says where VM writes during a pass, under test/.
+The runner gives each pass one of its own so that two passes running at once
+cannot write the same IMAP cache file: `vm-imap-make-filename-for-spec' names
+it after the MD5 of the maildrop and nothing else, so one maildrop is one
+file whoever visits it."
+  ;; a name of its own under test/, which is what the runner gives a pass
+  (let ((relative "scratch/vm-test-init-test"))
+    (unwind-protect
+        (should (equal (vm-test-init-test--scratch-dir-with relative)
+                       (file-name-as-directory
+                        (expand-file-name relative vm-test-dir))))
+      (delete-directory (expand-file-name relative vm-test-dir) t)))
+  ;; an absolute name is taken as it stands
+  (let ((absolute (make-temp-file "vm-test-init-test-scratch" t)))
+    (unwind-protect
+        (should (equal (vm-test-init-test--scratch-dir-with absolute)
+                       (file-name-as-directory absolute)))
+      (delete-directory absolute t)))
+  ;; unset, the name it has always had
+  (should (equal (vm-test-init-test--scratch-dir-with nil)
+                 (file-name-as-directory
+                  (expand-file-name "scratch" vm-test-dir)))))
+
 (provide 'vm-test-init-test)
 
 ;;; vm-test-init-test.el ends here
