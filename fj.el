@@ -666,6 +666,20 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
        (user-error "Not in an item TL?")
      ,@body))
 
+(defmacro fj-with-item-view-or-tl (&rest body)
+  "Execute BODY if we are in an item view or item TL.
+Makes REPO, OWNER, and ITEM variables available in body."
+  (declare (debug t))
+  `(if (eq major-mode 'fj-item-view-mode)
+       (fj-with-item-view
+        (fj-destructure-buf-spec (repo owner item)
+          ,@body))
+     (fj-with-item-tl
+      (fj-destructure-buf-spec (repo owner)
+        (let* ((entry (tabulated-list-get-entry))
+               (item (car (seq-first entry))))
+          ,@body)))))
+
 (defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
@@ -1594,17 +1608,9 @@ Relies on buf-spec for owner/repo data."
 (defun fj--patch-assignees (assignees &optional assignee)
   "Patch issue ASSIGNEES, a list, in item view or items tabulated listing.
 Optionally also patch ASSIGNEE (deprecated param)."
-  (if (eq major-mode 'fj-item-view-mode)
-      (fj-with-item-view
-       (fj-destructure-buf-spec (repo owner item)
-         (fj-issue-patch repo owner item nil nil nil
-                       assignee assignees)))
-    (fj-with-item-tl
-     (fj-destructure-buf-spec (repo owner)
-       (let* ((entry (tabulated-list-get-entry))
-              (number (car (seq-first entry))))
-         (fj-issue-patch repo owner number nil nil nil
-                       assignee assignees))))))
+  (fj-with-item-view-or-tl
+   (fj-issue-patch repo owner item nil nil nil
+                 assignee assignees)))
 
 (defun fj-item-add-assignee ()
   "Add an assignee to item being viewed or at point in tabulated listing.
