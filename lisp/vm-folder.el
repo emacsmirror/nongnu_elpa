@@ -4604,21 +4604,32 @@ Refuses on a virtual folder, which has no file of its own."
   (vm-error-if-virtual-folder)
   (vm-write-file-to nil))
 
+(defun vm-write-file-read-name ()
+  "Read the name `vm-write-file\\=' is to write this folder to.
+What `write-file\\=' reads for itself, read here instead so that the directory
+can be made before `default-file-modes\\=' is narrowed to the folder bits."
+  (if buffer-file-name
+      (read-file-name "Write file: " nil nil nil nil)
+    (read-file-name "Write file: " default-directory
+		    (expand-file-name (file-name-nondirectory (buffer-name))
+				      default-directory)
+		    nil nil)))
+
 (defun vm-write-file-to (file)
   "Write this folder to FILE, or to a name asked for when FILE is nil.
 What `vm-write-file\' does once it has a name, so that a caller which has
 worked one out -- `vm-change-folder-type\', naming a folder for the type it
 now holds -- gets the same treatment as a reader who typed one."
-  (let ((old-buffer-name (buffer-name))
-	(oldmodebits (and (fboundp 'default-file-modes)
-			  (default-file-modes))))
+  (let* ((old-buffer-name (buffer-name))
+	 (name (or file (vm-write-file-read-name)))
+	 (oldmodebits (and (fboundp 'default-file-modes)
+			   (default-file-modes))))
+    (vm-make-folder-directory name)
     (unwind-protect
 	(save-excursion
 	  (and oldmodebits (set-default-file-modes
 			    vm-default-folder-permission-bits))
-	  (if file
-	      (write-file file)
-	    (call-interactively 'write-file)))
+	  (write-file name (null file)))
       (and oldmodebits (set-default-file-modes oldmodebits)))
     (if (not (equal (buffer-name) old-buffer-name))
 	(progn
@@ -4728,6 +4739,7 @@ folder."
 		 (vm-stuff-message-order))
 	    (vm-inform 7 "%s: Stuffing folder data... done" (buffer-name)))
 	  (vm-inform 5 "%s: Saving folder..." (buffer-name))
+	  (vm-make-folder-directory buffer-file-name)
 	  (let ((vm-inhibit-write-file-hook t)
 		(oldmodebits (and (fboundp 'default-file-modes)
 				  (default-file-modes))))

@@ -1170,6 +1170,31 @@ answered that and this not."
 	  (setq o-list (cdr o-list))))
       o)))
 
+(defun vm-folder-directory-permission-bits ()
+  "`vm-default-folder-permission-bits\\=' as the modes of a directory of folders.
+A directory is searched where a file is read, so each read bit of the folder
+bits gets the search bit beside it: 600 gives 700, and 640 gives 750."
+  (let ((bits vm-default-folder-permission-bits))
+    (logior bits (ash (logand bits (vm-octal 444)) -2))))
+
+(defun vm-make-folder-directory (file)
+  "Create the directory FILE is to be written in, asking, where there is none.
+Call this before `vm-default-folder-permission-bits\\=' goes into
+`default-file-modes\\=', which is what Emacs makes a directory with, having no
+default modes of its own for one.  A directory made with the bits of a folder
+has no search bit: nothing can be read back out of it, and the very save that
+created it fails with \"Directory ... write-protected\".
+
+Asks the question `basic-save-buffer\\=' would have asked, so that a name typed
+by mistake does not quietly become a directory."
+  (let ((dir (and file (file-name-directory file))))
+    (unless (or (null dir) (file-exists-p dir))
+      (unless (y-or-n-p (format "Directory %s does not exist; create it? " dir))
+	(error "Not writing %s: create %s first, or write the folder elsewhere"
+	       file dir))
+      (make-directory dir t)
+      (set-file-modes dir (vm-folder-directory-permission-bits)))))
+
 (defun vm-make-tempfile (&optional filename-suffix proposed-filename)
   (let ((modes (default-file-modes))
 	(file (vm-make-tempfile-name filename-suffix proposed-filename)))
