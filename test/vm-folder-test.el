@@ -6961,6 +6961,45 @@ turns up would file rubbish as mail."
       (should (eq (vm-buffer-holds-one-message-p) (cdr case))))))
 
 
+;;; A folder written into a directory that is not there, issue #927
+
+(ert-deftest vm-folder-test-write-file-makes-a-searchable-directory ()
+  "`vm-write-file' into a directory that is not there makes one VM can read.
+The folder bits go into `default-file-modes' for the write, and Emacs makes a
+directory with those, having no default modes of its own for one.  600 on a
+directory leaves out the search bit, so the save that created it failed with
+\"Directory ... write-protected\" and left the directory behind unusable."
+  (vm-folder-test--with-writable-folder (_file target)
+    (let ((nested (expand-file-name "imap-cache/elsewhere"
+                                    (file-name-directory target))))
+      (cl-letf (((symbol-function 'read-file-name) (lambda (&rest _) nested))
+                ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-write-file))
+      (should (file-exists-p nested))
+      (should (equal (file-modes (file-name-directory nested)) #o700))
+      (should (equal (file-modes nested) #o600))
+      (should (directory-files (file-name-directory nested)))
+      (should (string-match-p "a message with headers worth hiding"
+                              (with-temp-buffer (insert-file-contents nested)
+                                                (buffer-string)))))))
+
+(ert-deftest vm-folder-test-save-folder-makes-a-searchable-directory ()
+  "`vm-save-folder' makes the directory of a folder whose directory is gone.
+What an IMAP cache folder meets the first time it is saved, where
+`vm-imap-folder-cache-directory' names a directory nobody has created."
+  (vm-folder-test--with-writable-folder (_file target)
+    (let ((nested (expand-file-name "imap-cache/cache" (file-name-directory target))))
+      (set-visited-file-name nested)
+      (set-buffer-modified-p t)
+      (cl-letf (((symbol-function 'vm-display) #'ignore)
+                ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-save-folder))
+      (should (equal (file-modes (file-name-directory nested)) #o700))
+      (should (equal (file-modes nested) #o600))
+      (should (string-match-p "a message with headers worth hiding"
+                              (with-temp-buffer (insert-file-contents nested)
+                                                (buffer-string)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
