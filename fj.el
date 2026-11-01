@@ -1568,7 +1568,6 @@ MILESTONE is a cons of title string and ID.
 ASSIGNEES are who its assigned to.
 CLOSED, DUE-DATE, REF."
   ;; POST /repos/{owner}/{repo}/issues
-  ;; assignee (deprecated) assignees closed due_date milestone ref
   (let* ((url (format "repos/%s/%s/issues" user repo))
          (milestone (cdr milestone))
          (params (append
@@ -1576,9 +1575,9 @@ CLOSED, DUE-DATE, REF."
                     ("title" . ,title)
                     ("labels" . ,(cl-loop for x in labels
                                           collect (cdr x))))
-                  (fedi-opt-params assignees closed
+                  (fedi-opt-params (assignees :list assignees)
                                    (due-date :alias "due_date")
-                                   milestone ref)))
+                                   closed milestone ref)))
          (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
