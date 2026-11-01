@@ -1888,6 +1888,40 @@ Needs both servers; skips without either."
           (vm-imap-live-cmd gmail-conn "DELETE \"%s\"" destination)))
       (vm-imap-live-close gmail-conn))))
 
+(ert-deftest vm-imap-live-test-a-later-run-does-not-ask-for-a-used-mailbox-name ()
+  "REGRESSION: two runs with the same pid ask for different mailbox names.
+Issue #933.  The name was the pid and a counter, and a counter starts at
+zero in every run, so a run that drew a leaked run\='s pid asked for the name
+that run\='s first mailbox already had and CREATE answered ALREADYEXISTS.
+
+The clock is stubbed rather than waited for: a run is what has to differ,
+and two calls a microsecond apart would prove nothing about two runs."
+  (let ((conn (vm-imap-live--make-conn :prefix "" :separator "/"))
+        (clock nil)
+        (names nil))
+    (cl-letf (((symbol-function 'vm-imap-live-mailbox-stamp)
+               (lambda () clock)))
+      (dolist (stamp '("1000000000000000" "1000000000000001"))
+        (setq clock stamp)
+        ;; a fresh run, with the counter back at zero and the pid unchanged
+        (let ((vm-imap-live--mailbox-counter 0))
+          (push (vm-imap-live-mailbox-name conn) names))))
+    (should (equal (length names) 2))
+    (should-not (equal (car names) (cadr names)))))
+
+(ert-deftest vm-imap-live-test-the-mailbox-stamp-is-a-microsecond-clock ()
+  "The stamp is the clock to the microsecond, which is what keeps it unique.
+Seconds alone would repeat within a run, and a run that leaked could be
+re-run inside the same second."
+  (let* ((before (format-time-string "%s"))
+         (stamp (vm-imap-live-mailbox-stamp))
+         (after (format-time-string "%s")))
+    (should (string-match-p "\\`[0-9]\\{16,\\}\\'" stamp))
+    ;; the leading digits are seconds since the epoch, not something else.
+    ;; Two readings, so a second turning over between them proves nothing.
+    (should (member (substring stamp 0 (- (length stamp) 6))
+                    (list before after)))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
