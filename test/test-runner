@@ -297,12 +297,74 @@ run_pass () {
 live=1
 [ "$skip_live" = yes ] && live=0
 
-pass_suite () {
+# How many Emacsen the suite is split over.  VM_TEST_JOBS says otherwise, and
+# 1 runs it whole in one, which is what the other passes do and what a reader
+# wants when a failure has to be read in order.
+suite_jobs=${VM_TEST_JOBS:-4}
+
+suite_name () {
     if [ "$skip_live" = yes ]; then
-        run_pass "suite (live servers skipped)" \
-            emacs_run "$live" 1 -l "$root/test/run-tests.el"
+        echo "suite (live servers skipped)"
     else
-        run_pass "suite" emacs_run "$live" 1 -l "$root/test/run-tests.el"
+        echo "suite"
+    fi
+}
+
+pass_suite () {
+    if [ "$suite_jobs" -gt 1 ]; then
+        pass_suite_sharded
+    else
+        run_pass "$(suite_name)" emacs_run "$live" 1 -l "$root/test/run-tests.el"
+    fi
+}
+
+# The suite is 3400 tests in one Emacs and most of the time is in a handful
+# of files, so it is split over several, each loading its own share.  The
+# shares are dealt out a file at a time rather than cut into blocks; see
+# `vm-test-files-for-shard'.
+#
+# Each shard is a subshell with its own scratch directory, and its output is
+# held and printed in order afterwards, since several writing to the terminal
+# at once interleave.
+pass_suite_sharded () {
+    suite_shard_name=$(suite_name)
+    echo
+    echo "== $suite_shard_name, $suite_jobs shards =="
+    suite_dir=$(mktemp -d "${TMPDIR:-/tmp}/vm-suite-shards.XXXXXX") || {
+        record "$suite_shard_name: could not be started"
+        status=1
+        return 0
+    }
+    suite_shard=1
+    while [ "$suite_shard" -le "$suite_jobs" ]; do
+        (
+            scratch_dir=scratch/suite-$suite_shard
+            VM_TEST_SHARD="$suite_shard/$suite_jobs"
+            export VM_TEST_SHARD
+            emacs_run "$live" 1 -l "$root/test/run-tests.el"
+        ) >"$suite_dir/$suite_shard.log" 2>&1 &
+        echo $! >"$suite_dir/$suite_shard.pid"
+        suite_shard=$((suite_shard + 1))
+    done
+    suite_failed=
+    suite_shard=1
+    while [ "$suite_shard" -le "$suite_jobs" ]; do
+        wait "$(cat "$suite_dir/$suite_shard.pid")" \
+            || suite_failed="$suite_failed $suite_shard"
+        suite_shard=$((suite_shard + 1))
+    done
+    suite_shard=1
+    while [ "$suite_shard" -le "$suite_jobs" ]; do
+        echo "-- shard $suite_shard of $suite_jobs --"
+        cat "$suite_dir/$suite_shard.log"
+        suite_shard=$((suite_shard + 1))
+    done
+    rm -rf "$suite_dir"
+    if [ -n "$suite_failed" ]; then
+        record "$suite_shard_name: FAILED in shard$suite_failed"
+        status=1
+    else
+        record "$suite_shard_name, $suite_jobs shards: passed"
     fi
 }
 

@@ -220,6 +220,41 @@ file whoever visits it."
                  (file-name-as-directory
                   (expand-file-name "scratch" vm-test-dir)))))
 
+;;; The suite split over several Emacsen, issue #930
+
+(defun vm-test-init-test--files-for (spec files)
+  "Those of FILES that VM_TEST_SHARD SPEC asks for."
+  (let ((process-environment
+         (cons (concat "VM_TEST_SHARD=" spec) process-environment)))
+    (vm-test-files-for-shard files)))
+
+(ert-deftest vm-test-init-test-the-shards-cover-every-file-once ()
+  "Each file goes to exactly one shard, dealt out one at a time.
+Not cut into blocks: the time is in a handful of files and neighbours in the
+sorted list tend to be alike, so blocks would gather the slow ones together."
+  (let ((files '("a" "b" "c" "d" "e" "f" "g")))
+    (should (equal (vm-test-init-test--files-for "1/3" files) '("a" "d" "g")))
+    (should (equal (vm-test-init-test--files-for "2/3" files) '("b" "e")))
+    (should (equal (vm-test-init-test--files-for "3/3" files) '("c" "f")))
+    (should (equal (sort (append (vm-test-init-test--files-for "1/3" files)
+                                 (vm-test-init-test--files-for "2/3" files)
+                                 (vm-test-init-test--files-for "3/3" files))
+                         #'string<)
+                   files))
+    ;; one shard, or none asked for, is the whole list
+    (should (equal (vm-test-init-test--files-for "1/1" files) files))
+    (should (equal (vm-test-init-test--files-for "" files) files))))
+
+(ert-deftest vm-test-init-test-a-shard-that-cannot-be-read-is-an-error ()
+  "A VM_TEST_SHARD that is not INDEX/COUNT stops the run.
+Silently running the whole suite instead would put every test in every shard
+and look only slow, which is the kind of failure nobody goes looking for."
+  (should-error (vm-test-init-test--files-for "1-3" '("a")))
+  (should-error (vm-test-init-test--files-for "two/3" '("a")))
+  (should-error (vm-test-init-test--files-for "0/3" '("a")))
+  (should-error (vm-test-init-test--files-for "4/3" '("a")))
+  (should-error (vm-test-init-test--files-for "1/0" '("a"))))
+
 (provide 'vm-test-init-test)
 
 ;;; vm-test-init-test.el ends here
