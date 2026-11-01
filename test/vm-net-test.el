@@ -774,21 +774,30 @@ Issue #473.  The answer to the next read is often already in the buffer -- a
 server sending six thousand responses to one FETCH fills it faster than they
 are parsed -- and the resume loop ran to the end of them without returning.
 Measured on a mailbox of 6438: 0.67 seconds of Emacs stopped in one filter
-call.  It now hands back after `vm-net--slice' and asks to be called again."
+call.  It now hands back after `vm-net--slice' and asks to be called again.
+
+Counted in slices rather than in seconds (#932).  This asserted that the
+first call returned inside four slices, and failed whenever a garbage
+collection landed in that window -- which is decided by what every earlier
+test in the same Emacs allocated, and says nothing about the driver."
   (vm-net-test--with-server (port #'vm-net-test--echo-once)
     (let* ((process (vm-net-test--connect port))
            (session (vm-net-session :process process :name "test"
                                     :finished #'ignore))
-           (start (float-time))
-           (first-slice nil))
-      (vm-net-start session (vm-net-test--many-steps 4000))
-      (setq first-slice (- (float-time) start))
-      ;; the first run gave Emacs its turn back rather than finishing
-      (should (vm-net-session-live-p session))
-      (should (< first-slice (* 4 vm-net--slice)))
-      ;; and the work still finishes, from the timer it left behind
-      (should (eq (vm-net-test--wait session 30) 'done))
-      (should (equal (vm-net-session-value session) 4000)))))
+           (resume (symbol-function 'vm-net--resume))
+           (slices 0))
+      (cl-letf (((symbol-function 'vm-net--resume)
+                 (lambda (&rest args)
+                   (setq slices (1+ slices))
+                   (apply resume args))))
+        (vm-net-start session (vm-net-test--many-steps 4000))
+        ;; the first run gave Emacs its turn back rather than finishing
+        (should (vm-net-session-live-p session))
+        ;; and the work still finishes, from the timer it left behind
+        (should (eq (vm-net-test--wait session 30) 'done)))
+      (should (equal (vm-net-session-value session) 4000))
+      ;; it took more than the one call to get there
+      (should (> slices 1)))))
 
 (ert-deftest vm-net-test-work-that-fits-in-a-slice-is-not-cut-up ()
   "A short run finishes in the one call, with no timer and no waiting."
