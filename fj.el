@@ -1581,18 +1581,22 @@ CLOSED, DUE-DATE, REF."
 
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
-          due_date milestone ref unset_due_date updated_at)
+          due-date milestone ref unset-due-date updated-at)
   "PATCH/Edit ISSUE in REPO.
 With PARAMS.
 OWNER is the repo owner.
-Return response buffer."
+Return response buffer.
+Assignees is a list."
   ;; PATCH /repos/{owner}/{repo}/issues/{index}
-  ;; FIXME: assignee deprecated for assignees
-  (let* ((params (fedi-opt-params
-                  title body state assignee assignees due_date
-                  milestone ref unset_due_date updated_at))
+  ;; NB: assignee deprecated for assignees
+  (let* ((params
+          (fedi-opt-params title body state assignee
+                           (assignees :list assignees)
+                           (due-date :alias due_date) milestone ref
+                           (unset-due-date :alias unset_due_date)
+                           (updated-at :alias updated_at)))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
-    (fj-patch endpoint params)))
+    (fj-patch endpoint params :json)))
 
 (defun fj-issue-edit (&optional repo owner id title new-body)
   "Edit comment with ID in REPO.
