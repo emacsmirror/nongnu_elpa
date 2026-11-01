@@ -309,6 +309,22 @@ reason -- there is nothing there to read the answer out of."
 		  (funcall request)))
 	(vm-net--resume session nil)))))
 
+(defun vm-net-xoauth2-response (user token)
+  "The XOAUTH2 SASL response for USER and TOKEN, base64 encoded.
+The string the mechanism asks for is user=USER^Aauth=Bearer TOKEN^A^A, where
+^A is a control-A.  Google defined it and Microsoft took it unchanged, and it
+is what `nnimap' and `smtpmail' send as well.  One line, as a SASL response
+has to be, and the octets of the UTF-8 rather than the characters: a user
+name is not always ASCII and `base64-encode-string' refuses a multibyte
+string rather than guessing at one.
+
+Here rather than beside either driver: IMAP sends it after AUTHENTICATE and
+POP after AUTH, and the string is the same."
+  (base64-encode-string
+   (encode-coding-string (format "user=%s\1auth=Bearer %s\1\1" user token)
+			 'utf-8)
+   t))
+
 (defconst vm-net--slice 0.05
   "How long `vm-net--resume' may work before it hands Emacs back.
 Twenty turns a second, which is enough that typing and redisplay do not
