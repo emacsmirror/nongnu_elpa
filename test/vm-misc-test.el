@@ -1871,6 +1871,40 @@ which the old code fails either."
     (should (< searched read-first))))
 
 
+;;; Directory modes for a directory of folders, issue #927
+
+(ert-deftest vm-misc-test-folder-directory-permission-bits ()
+  "Each read bit of the folder bits gets the search bit beside it."
+  (should (equal (let ((vm-default-folder-permission-bits #o600))
+                   (vm-folder-directory-permission-bits))
+                 #o700))
+  (should (equal (let ((vm-default-folder-permission-bits #o640))
+                   (vm-folder-directory-permission-bits))
+                 #o750))
+  (should (equal (let ((vm-default-folder-permission-bits #o644))
+                   (vm-folder-directory-permission-bits))
+                 #o755)))
+
+(ert-deftest vm-misc-test-make-folder-directory-sets-the-search-bit ()
+  "`vm-make-folder-directory' makes a directory that can be searched.
+It leaves an existing directory alone, and asks nothing of a name with no
+directory part."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-folder-dir" t))))
+    (unwind-protect
+        (let ((vm-default-folder-permission-bits #o600)
+              (made (expand-file-name "cache/folder" dir)))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+            (vm-make-folder-directory made))
+          (should (equal (file-modes (file-name-directory made)) #o700))
+          (set-file-modes (file-name-directory made) #o755)
+          (vm-make-folder-directory made)
+          (should (equal (file-modes (file-name-directory made)) #o755))
+          (should-not (vm-make-folder-directory "folder"))
+          (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+            (should-error (vm-make-folder-directory
+                           (expand-file-name "refused/folder" dir)))))
+      (delete-directory dir t))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

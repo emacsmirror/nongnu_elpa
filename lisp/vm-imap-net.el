@@ -1014,8 +1014,8 @@ with: the connection arrived authenticated."
 (defvar vm-buffers-needing-display-update)
 (defvar vm-modification-counter)
 (defvar vm-arrived-message-hook)
-(defvar vm-imap-max-message-size)
-(defvar vm-enable-external-messages)
+(declare-function vm-imap-external-messages-p "vm-imap" (spec))
+(declare-function vm-imap-message-size-limit "vm-imap" (spec))
 
 (defun vm-imap-net-install-message-data (data count)
   "Put DATA, from `vm-imap-net-message-data\\=', into the folder's own tables.
@@ -1114,9 +1114,9 @@ visiting an IMAP folder brought in no messages."
   (ignore data count)
   (let* ((sync (vm-imap-net-as-folder
 		(vm-imap-get-synchronization-data (if full-retrieve 'full t))))
-	 (headers-only (or (eq vm-enable-external-messages t)
-			   (memq 'imap vm-enable-external-messages)))
-	 (limit (or vm-imap-max-message-size most-positive-fixnum))
+	 (spec (vm-folder-imap-maildrop-spec))
+	 (headers-only (vm-imap-external-messages-p spec))
+	 (limit (or (vm-imap-message-size-limit spec) most-positive-fixnum))
 	 (retrieve-list
 	  (mapcar (lambda (pair)
 		    (let ((size (string-to-number
@@ -3513,8 +3513,9 @@ of (SEQUENCE-NUMBER . UID), oldest first."
 	  (push (cons number uid) wanted))))
     (nreverse wanted)))
 
-(defun vm-imap-net-too-large (data wanted)
-  "Those of WANTED whose message DATA says is over `vm-imap-max-message-size'.
+(defun vm-imap-net-too-large (data wanted source)
+  "Those of WANTED whose message DATA says is over the limit for SOURCE.
+`vm-imap-max-message-size' sets it, for every mailbox or for this one.
 Answers (KEEP SKIPPED SIZES): the entries to fetch, the entries not to, and
 the size of each skipped one in the same order.  Nil for the limit keeps
 everything.
@@ -3526,16 +3527,17 @@ in a local folder.  The blocking path asked the reader about each one instead,
 where a reader was there to ask; nothing can be asked from inside a process
 filter, and a question per message on a maildrop of any size is not what a
 fetch should be."
-  (if (not (integerp vm-imap-max-message-size))
-      (list wanted nil nil)
-    (let ((keep nil) (skipped nil) (sizes nil))
-      (dolist (entry wanted)
-	(let ((size (string-to-number
-		     (or (nth 2 (assq (car entry) data)) "0"))))
-	  (if (> size vm-imap-max-message-size)
-	      (progn (push entry skipped) (push size sizes))
-	    (push entry keep))))
-      (list (nreverse keep) (nreverse skipped) (nreverse sizes)))))
+  (let ((limit (vm-imap-message-size-limit source)))
+    (if (null limit)
+	(list wanted nil nil)
+      (let ((keep nil) (skipped nil) (sizes nil))
+	(dolist (entry wanted)
+	  (let ((size (string-to-number
+		       (or (nth 2 (assq (car entry) data)) "0"))))
+	    (if (> size limit)
+		(progn (push entry skipped) (push size sizes))
+	      (push entry keep))))
+	(list (nreverse keep) (nreverse skipped) (nreverse sizes))))))
 
 (defun vm-imap-net-say-what-was-too-large (source skipped sizes)
   "Say that SKIPPED were left on SOURCE's server for being SIZES bytes.
@@ -3546,7 +3548,7 @@ fetch by hand or to raise the limit for."
 			   " vm-imap-max-message-size (%d): %s")
 		 (vm-safe-imapdrop-string source)
 		 (length skipped) (if (cdr skipped) "s" "")
-		 vm-imap-max-message-size
+		 (vm-imap-message-size-limit source)
 		 (mapconcat (lambda (size) (format "%d bytes" size))
 			    sizes ", "))))
 
@@ -3621,7 +3623,8 @@ and nothing is displayed."
 			 nil
 		       (iter-yield-from (vm-imap-net-message-data 1 count))))
 	       (sifted (vm-imap-net-too-large
-			data (vm-imap-net-unretrieved data source retrieved)))
+			data (vm-imap-net-unretrieved data source retrieved)
+			source))
 	       (wanted (nth 0 sifted))
 	       (work (generate-new-buffer " *vm-imap-crash*"))
 	       (written 0)

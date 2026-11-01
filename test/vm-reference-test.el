@@ -547,7 +547,8 @@ yet, where the other three carry the suffix the tree is built with."
                        "lisp/vm.el" "^;; Version: *\\([^ \t\n]+\\)" 'first))
                 (cons "NEWS-3.md"
                       (vm-reference-test--version-in
-                       "NEWS-3.md" "^## VM \\([^ \t\n]+\\) released" 'first))
+                       "NEWS-3.md" "^## VM \\([^ \t\n]+\\) \\(?:un\\)?released"
+                       'first))
                 (cons "info/vm.texinfo"
                       (vm-reference-test--version-in
                        "info/vm.texinfo"
@@ -563,6 +564,22 @@ yet, where the other three carry the suffix the tree is built with."
     ;; Named and not counted: `(equal 1 2)' is what ert prints for a count,
     ;; and it leaves the reader to open four files to find out which one.
     (should (equal nil (vm-reference-test--version-odd-ones-out numbers)))))
+
+(ert-deftest vm-reference-test-the-newest-news-section-says-whether-it-shipped ()
+  "The newest NEWS heading says `unreleased' while the tree is a snapshot.
+It said `released' from the moment the section was opened, so a reader
+scanning NEWS could not tell the entries waiting for a release from the ones
+that have had one.  Dating it is `dev/tools/vm-set-version''s last step, and
+the heading carries the date from then on."
+  (let ((version (vm-reference-test--version-in
+                  "configure.ac" "^AC_INIT(\\[VM\\],\\[\\([^]]+\\)\\]" 'first))
+        (heading (vm-reference-test--version-in
+                  "NEWS-3.md" "^\\(## VM .*\\)$" 'first)))
+    (should version)
+    (should heading)
+    (if (string-match-p "snapshot\\'" version)
+        (should (string-suffix-p " unreleased" heading))
+      (should (string-match-p " released [0-9][0-9][0-9][0-9]-" heading)))))
 
 (ert-deftest vm-reference-test-the-manual-names-the-option-that-is-current ()
   "Where the manual indexes a renamed option, it names the current one too.
