@@ -1572,12 +1572,70 @@ CLOSED, DUE-DATE, REF."
        (fj-issue-success-maybe-upload resp repo user)
        (message "Issue created!")))))
 
-(defun fj-item-view-add-assignee (assignee)
-  "Add ASSIGNEE to item being viewed."
-  (interactive "sAssign: ")
-  (fj-with-item-view
-   (fj-destructure-buf-spec (repo owner item)
-     (fj-issue-patch repo owner item nil nil nil assignee))))
+(defun fj-get-repo-assignees (repo owner)
+  "Return asignee candidates data for REPO by OWNER."
+  ;; GET /repos/{owner}/{repo}/assignees
+  ;; https://codeberg.org/api/swagger#/repository/repoGetAssignees
+  (let ((endpoint (format "/repos/%s/%s/assignees" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-assignees-candidates ()
+  "Return assignees' names for the current view.
+Relies on buf-spec for owner/repo data."
+  (fj-destructure-buf-spec (repo owner)
+    (let ((data (fj-get-repo-assignees repo owner)))
+      (mapcar (lambda (x)
+                (let-alist x
+                  (if (not (string-empty-p .login_name))
+                      .login_name
+                    .login)))
+              data))))
+
+(defun fj--patch-assignees (assignees &optional assignee)
+  "Patch issue ASSIGNEES, a list, in item view or items tabulated listing.
+Optionally also patch ASSIGNEE (deprecated param)."
+  (if (eq major-mode 'fj-item-view-mode)
+      (fj-with-item-view
+       (fj-destructure-buf-spec (repo owner item)
+         (fj-issue-patch repo owner item nil nil nil
+                       assignee assignees)))
+    (fj-with-item-tl
+     (fj-destructure-buf-spec (repo owner)
+       (let* ((entry (tabulated-list-get-entry))
+              (number (car (seq-first entry))))
+         (fj-issue-patch repo owner number nil nil nil
+                       assignee assignees))))))
+
+(defun fj-item-add-assignee ()
+  "Add an assignee to item being viewed or at point in tabulated listing.
+Prompt for an assigne with completion."
+  (interactive)
+  (let* ((assignees (fj-assignees-candidates))
+         ;; FIXME: use `completing-read-multiple':
+         (assignee (completing-read "Assign to item: "
+                                    assignees nil :match))
+         (resp (fj--patch-assignees (list assignee))))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (let-alist (fj-resp-json resp)
+         (message (format "#%s assigned to %s!"
+                          .number .assignee.login)))))))
+
+(defun fj-item-clear-assignees ()
+  "Remove assignees from item being viewed or at point in tabulated listing."
+  (interactive)
+  (when (y-or-n-p "Clear item assignees?")
+    (let ((resp (fj--patch-assignees '() "")))
+      (fedi-http--triage
+       resp
+       (lambda (resp)
+         (let-alist (fj-resp-json resp)
+           (if (or (not (eq :null .assignee))
+                   (not (eq :null .assignees)))
+               (message "Clearing assignees failed!")
+             (message (format "Assignees cleared from %s!"
+                              .number)))))))))
 
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
@@ -2375,6 +2433,8 @@ Optionally specify REPO and OWNER."
   "j"        #'imenu
   "J"        #'fj-jump-to-item
   "l"        #'fj-item-label-add
+  "a"        #'fj-item-add-assignee
+  "A"        #'fj-item-clear-assignees
   ;; TODO: conflicts with fj-user-settings-transient:
   ;; "U"        #'fj-copy-pr-url
   )
@@ -3124,7 +3184,9 @@ Adds tab-stop, keymap, and type."
   "l" #'fj-item-label-add
   "M" #'fj-merge-pull
   "r" #'fj-add-reaction
-  ">" #'fj-item-view-more)
+  ">" #'fj-item-view-more
+  "a" #'fj-item-add-assignee
+  "A" #'fj-item-clear-assignees)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
