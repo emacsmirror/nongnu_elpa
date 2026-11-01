@@ -2518,6 +2518,12 @@ whose key @code{t} stands for every folder the regexps do not name:
       '(("work:Archive/.*" . 50000) (t . 1000000)))
 @end example
 
+An option with no @code{t} entry leaves the mailboxes its regexps do not
+name as nil leaves them: nothing external, and no limit.  That is why
+@code{vm-enable-external-messages} above needs no @code{t} and
+@code{vm-imap-max-message-size} does, a limit on every other mailbox being
+the point of the second one.
+
 That keeps the bodies of a large archive mailbox on the server while the
 mailbox you read every day is fetched whole.  Scope both options or neither:
 a message is external only when it is over the limit as well, so a per

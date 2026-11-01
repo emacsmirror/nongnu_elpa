@@ -296,7 +296,8 @@ of:
   account:mailbox, the account being the name it has in
   `vm-imap-account-alist'.  The key t stands for every folder the regexps do
   not name, and belongs last.  A maildrop whose account is not in that alist
-  has no such name and takes the t entry.
+  has no such name and takes the t entry.  Leave t out and those folders have
+  nothing external, which is what nil gives them.
 
 A message is external only when it is also over the size
 `vm-imap-max-message-size' gives for its mailbox, so that option has to be
@@ -632,7 +633,8 @@ mailbox by mailbox:
 
 A key is a regexp matched whole against the folder name in the form
 account:mailbox, as `vm-enable-external-messages' takes, or t for every
-mailbox the regexps do not name.
+mailbox the regexps do not name.  Leave t out and those mailboxes have no
+limit, which is what nil gives them.
 
 A message larger than the limit is handled as follows:
 
