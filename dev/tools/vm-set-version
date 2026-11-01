@@ -5,7 +5,7 @@ Four files do, and `dev/docs/release.org' lists them:
 
     configure.ac      AC_INIT([VM],[VERSION],...)
     lisp/vm.el        ;; Version: VERSION
-    NEWS-3.md         ## VM VERSION released [DATE]
+    NEWS-3.md         ## VM VERSION unreleased, or released DATE
     info/vm.texinfo   @item Version VERSION, ...
 
 A plain `sed' cannot do this.  lisp/ holds dozens of occurrences of the
@@ -26,7 +26,7 @@ two take different forms, and the two steps release.org asks for are:
     vm-set-version 9.0.1snapshot   open the next one
       configure.ac      9.0.1snapshot
       lisp/vm.el        9.0.1snapshot
-      NEWS-3.md         ## VM 9.0.1 released        (new, above the last)
+      NEWS-3.md         ## VM 9.0.1 unreleased      (new, above the last)
       info/vm.texinfo   @item Version 9.0.1snapshot, from git   (new, below)
 
 NEWS and the manual are histories: an entry for a version already there is
@@ -87,9 +87,9 @@ def vm_el_line(version, _date):
 
 
 def news_line(version, date):
-    """The NEWS heading: dated once the version is released, bare until then."""
+    """The NEWS heading: dated once released, unreleased until then."""
     if is_snapshot(version):
-        return f"## VM {base_version(version)} released"
+        return f"## VM {base_version(version)} unreleased"
     return f"## VM {base_version(version)} released {date.isoformat()}"
 
 
@@ -143,7 +143,8 @@ def version_sites(root):
         Site("lisp/vm.el", root / "lisp" / "vm.el",
              r"^;; Version: *(\S+)", vm_el_line),
         Site("NEWS-3.md", root / "NEWS-3.md",
-             r"^## VM (\S+) released.*$", news_line, which="first", add="before"),
+             r"^## VM (\S+) (?:un)?released.*$", news_line,
+             which="first", add="before"),
         Site("info/vm.texinfo", root / "info" / "vm.texinfo",
              r"^@item Version (\S+?),(?: released| from git).*$", manual_line,
              which="last", add="after"),
