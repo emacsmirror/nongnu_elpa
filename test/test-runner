@@ -326,6 +326,18 @@ pass_suite () {
 # Each shard is a subshell with its own scratch directory, and its output is
 # held and printed in order afterwards, since several writing to the terminal
 # at once interleave.
+# What to say about a shard that did not exit 0.  A signal is worth naming:
+# an Emacs killed by one prints nothing whatever, so the status is the only
+# thing that says what happened to it, and SIGPIPE (13) is one VM has put it
+# in the way of before now (emacs-vm/vm#921).
+how_it_ended () {
+    if [ "$1" -gt 128 ]; then
+        echo " (killed by signal $(($1 - 128)))"
+    else
+        echo " (exit $1)"
+    fi
+}
+
 pass_suite_sharded () {
     suite_shard_name=$(suite_name)
     echo
@@ -349,8 +361,12 @@ pass_suite_sharded () {
     suite_failed=
     suite_shard=1
     while [ "$suite_shard" -le "$suite_jobs" ]; do
-        wait "$(cat "$suite_dir/$suite_shard.pid")" \
-            || suite_failed="$suite_failed $suite_shard"
+        if wait "$(cat "$suite_dir/$suite_shard.pid")"; then
+            :
+        else
+            suite_status=$?
+            suite_failed="$suite_failed $suite_shard$(how_it_ended $suite_status)"
+        fi
         suite_shard=$((suite_shard + 1))
     done
     suite_shard=1
