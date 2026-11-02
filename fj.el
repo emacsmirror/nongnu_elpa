@@ -4062,6 +4062,7 @@ Alternatively, call OP on them instead."
 
 (defun fj-item-view-comment-delete ()
   "Delete comment at point."
+  (interactive)
   (fj-with-own-comment
    (fj-destructure-buf-spec (repo owner)
      (let* ((id (fj--property 'fj-comment-id))
