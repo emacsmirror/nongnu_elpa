@@ -278,8 +278,10 @@ performance."
 (defface fj-item-author-face
   `((t :inherit magit-diff-hunk-heading
        :underline t
-       :foreground
-       ,(face-attribute 'font-lock-function-name-face :foreground)
+       ;; :foreground
+       ;; FIXME: this doesn't work unless we explicitly eval it, but blue
+       ;; on brown in my theme is also hard to read, maybe drop it
+       ;; ,(face-attribute 'font-lock-function-name-face :foreground)
        :weight bold))
   "Face for item authors.")
 
