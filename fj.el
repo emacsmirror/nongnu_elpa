@@ -114,6 +114,8 @@ etc."
 
 (defvar-local fj-compose-upload nil)
 
+(defvar-local fj-compose-assignees nil)
+
 ;; instance vars
 
 (defvar fj-commit-status-types
@@ -1592,17 +1594,24 @@ CLOSED, DUE-DATE, REF."
   (let ((endpoint (format "/repos/%s/%s/assignees" owner repo)))
     (fj-get endpoint)))
 
-(defun fj-assignees-candidates ()
+(defun fj-assignees-candidates (&optional compose)
   "Return assignees' names for the current view.
 Relies on buf-spec for owner/repo data."
-  (fj-destructure-buf-spec (repo owner)
-    (let ((data (fj-get-repo-assignees repo owner)))
-      (mapcar (lambda (x)
-                (let-alist x
-                  (if (not (string-empty-p .login_name))
-                      .login_name
-                    .login)))
-              data))))
+  (if compose
+      (fj--assignees-candidates-parse fj-compose-repo fj-compose-repo-owner)
+    (fj-destructure-buf-spec (repo owner)
+      (fj--assignees-candidates-parse repo owner))))
+
+(defun fj--assignees-candidates-parse (repo owner)
+  "Fetch and parse assignees data for REPO by OWNER.
+Return a list of names, either .login_name or .login."
+  (let ((data (fj-get-repo-assignees repo owner)))
+    (mapcar (lambda (x)
+              (let-alist x
+                (if (not (string-empty-p .login_name))
+                    .login_name
+                  .login)))
+            data)))
 
 (defun fj--patch-assignees (assignees &optional assignee)
   "Patch issue ASSIGNEES, a list, in item view or items tabulated listing.
@@ -5284,7 +5293,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "C-c C-S-M" #'fj-compose-remove-milestone
   "C-c C-S-L" #'fj-compose-remove-labels
   "C-c C-u"   #'fj-compose-read-upload
-  "C-c C-S-U" #'fj-compose-remove-upload)
+  "C-c C-S-U" #'fj-compose-remove-upload
+  "C-c C-e"   #'fj-compose-read-assignees
+  "C-c C-S-E" #'fj-compose-remove-assignees)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -5356,6 +5367,18 @@ Return a cons of title and ID."
           (assoc choice alist #'string=))
     (fedi-post--update-status-fields)))
 
+(defun fj-compose-read-assignees ()
+  "Read multiple assignees in the compose buffer.
+return a list of strings, assignee names."
+  (interactive)
+  (let* ((cands (fj-assignees-candidates :compose))
+         (assignees (completing-read-multiple
+                     "Assignees [TAB for multiple]: "
+                     cands nil :match)))
+    (setq fj-compose-assignees
+          (append fj-compose-assignees assignees))
+    (fedi-post--update-status-fields)))
+
 (defun fj-compose-remove-variable (var)
   "Set VAR to nil if it is non-nil.
 Update status fields."
@@ -5378,6 +5401,11 @@ Update status fields."
   "Remove attachment file from item being composed."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-upload))
+
+(defun fj-compose-remove-assignees ()
+  "Remove assignees from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-assignees))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
@@ -5422,6 +5450,10 @@ Inject INIT-TEXT into the buffer, for editing."
        ((name     . "upload")
         (prop     . compose-upload)
         (item-var . fj-compose-upload)
+        (face     . fj-post-title-face))
+       ((name     . "assignees")
+        (prop     . compose-assignees)
+        (item-var . fj-compose-assignees)
         (face     . fj-post-title-face)))
      init-text quote
      "fj-" fj-compose-autocomplete)
@@ -5464,16 +5496,17 @@ With PREFIX, also close issue if sending a comment."
                                         body))
                 ('edit-issue
                  (fj-issue-edit repo
-                              fj-compose-repo-owner
-                              fj-compose-issue-number
-                              fj-compose-issue-title
-                              body))
+                                fj-compose-repo-owner
+                                fj-compose-issue-number
+                                fj-compose-issue-title
+                                body))
                 (_ ; new issue
                  (fj-issue-post repo
                                 fj-compose-repo-owner
                                 fj-compose-issue-title body
                                 fj-compose-issue-labels
-                                nil nil nil
+                                fj-compose-assignees
+                                nil nil
                                 fj-compose-milestone)))))
         (when response
           (with-current-buffer buf
