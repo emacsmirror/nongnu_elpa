@@ -3561,6 +3561,13 @@ RELOAD mean we reloaded."
              "")
            (when .milestone
              (concat "\nMilestone: " .milestone.title "\n"))
+           (when .assignees
+             (concat "\nAssignees: "
+                     (mapconcat
+                      (lambda (x)
+                        (alist-get 'login x))
+                      .assignees)
+                     "\n"))
            (if .labels
                (fj-render-labels .labels)
              "")
