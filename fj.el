@@ -5407,7 +5407,7 @@ Inject INIT-TEXT into the buffer, for editing."
         (prop     . compose-repo-owner)
         (item-var . fj-compose-repo-owner)
         (face     . link))
-       ((name     . ,(if (eq type 'comment) "issue ""title"))
+       ((name     . ,(if (eq type 'comment) "issue" "title"))
         (prop     . compose-title)
         (item-var . fj-compose-issue-title)
         (face     . fj-post-title-face))
