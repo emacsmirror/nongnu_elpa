@@ -1574,10 +1574,9 @@ CLOSED, DUE-DATE, REF."
          (milestone (cdr milestone))
          (params (append
                   `(("body" . ,body)
-                    ("title" . ,title)
-                    ("labels" . ,(cl-loop for x in labels
-                                          collect (cdr x))))
+                    ("title" . ,title))
                   (fedi-opt-params (assignees :list assignees)
+                                   (labels :list (mapcar #'cdr labels))
                                    (due-date :alias "due_date")
                                    closed milestone ref)))
          (resp (fj-post url params :json)))
