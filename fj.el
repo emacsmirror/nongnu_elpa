@@ -314,6 +314,10 @@ Not used for items that are links.")
   '((t :inherit font-lock-comment-face :weight bold))
   "Face for post title in compose buffer.")
 
+(defface fj-shr-code
+  '((t :inherit (highlight shr-code)))
+  "Face for verbatim text.")
+
 ;;; AUTH / TOKENS
 
 (defun fj-create-token ()
@@ -3070,6 +3074,11 @@ Else make a POST request to the server."
     (shr-ensure-paragraph)
     (shr-mark-fill start)))
 
+(defun fj-shr-tag-code (dom)
+  "Render code/verbatim tag DOM."
+  (let ((shr-current-font 'fj-shr-code))
+    (shr-generic dom)))
+
 (defun fj-form-checkbox (dom)
   "Render checkbox DOM."
   ;; hacked off `eww-form-checkbox'
@@ -3109,7 +3118,8 @@ Optionally start from POINT."
                 (shr-external-rendering-functions
                  (append shr-external-rendering-functions
                          '((input . fj-tag-input)
-                           (blockquote . fj-shr-tag-blockquote))))
+                           (blockquote . fj-shr-tag-blockquote)
+                           (code . fj-shr-tag-code))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
