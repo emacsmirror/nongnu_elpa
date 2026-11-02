@@ -3554,7 +3554,10 @@ RELOAD mean we reloaded."
          ;; (forge has: state, status, milestone, labels, marks, assignees):
          (propertize
           (concat
-           "State: " .state
+           "State: "
+           (propertize .state
+                       'face
+                       (if (string= "closed" .state) 'error 'success))
            (when (string= "closed" .state)
              (concat " " (fedi--relative-time-description
                           (date-to-time .closed_at))))
@@ -3564,7 +3567,8 @@ RELOAD mean we reloaded."
              (concat "\nAssignees: "
                      (mapconcat
                       (lambda (x)
-                        (alist-get 'login x))
+                        (propertize (alist-get 'login x)
+                                    'face 'fj-user-face))
                       .assignees)
                      "\n"))
            (when .labels
