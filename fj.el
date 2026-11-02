@@ -4407,7 +4407,7 @@ If REMOVED, format an unassigned string."
           ((string= user assignee)
            (format format-str user "self-" "" ts))
           (t
-           (format format-str user "" (concat "to " assignee) ts)))))
+           (format format-str user "" (concat " to " assignee) ts)))))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
