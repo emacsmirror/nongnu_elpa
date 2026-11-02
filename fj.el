@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.5") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.50
+;; Version: 0.51
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -113,6 +113,8 @@ etc."
 (defvar-local fj-compose-milestone nil)
 
 (defvar-local fj-compose-upload nil)
+
+(defvar-local fj-compose-assignees nil)
 
 ;; instance vars
 
@@ -665,6 +667,20 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   `(if (not (equal major-mode 'fj-issue-tl-mode))
        (user-error "Not in an item TL?")
      ,@body))
+
+(defmacro fj-with-item-view-or-tl (&rest body)
+  "Execute BODY if we are in an item view or item TL.
+Makes REPO, OWNER, and ITEM variables available in body."
+  (declare (debug t))
+  `(if (eq major-mode 'fj-item-view-mode)
+       (fj-with-item-view
+        (fj-destructure-buf-spec (repo owner item)
+          ,@body))
+     (fj-with-item-tl
+      (fj-destructure-buf-spec (repo owner)
+        (let* ((entry (tabulated-list-get-entry))
+               (item (car (seq-first entry))))
+          ,@body)))))
 
 (defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
@@ -1554,17 +1570,15 @@ MILESTONE is a cons of title string and ID.
 ASSIGNEES are who its assigned to.
 CLOSED, DUE-DATE, REF."
   ;; POST /repos/{owner}/{repo}/issues
-  ;; assignee (deprecated) assignees closed due_date milestone ref
   (let* ((url (format "repos/%s/%s/issues" user repo))
          (milestone (cdr milestone))
          (params (append
                   `(("body" . ,body)
-                    ("title" . ,title)
-                    ("labels" . ,(cl-loop for x in labels
-                                          collect (cdr x))))
-                  (fedi-opt-params assignees closed
+                    ("title" . ,title))
+                  (fedi-opt-params (assignees :list assignees)
+                                   (labels :list (mapcar #'cdr labels))
                                    (due-date :alias "due_date")
-                                   milestone ref)))
+                                   closed milestone ref)))
          (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
@@ -1579,63 +1593,62 @@ CLOSED, DUE-DATE, REF."
   (let ((endpoint (format "/repos/%s/%s/assignees" owner repo)))
     (fj-get endpoint)))
 
-(defun fj-assignees-candidates ()
+(defun fj-assignees-candidates (&optional compose)
   "Return assignees' names for the current view.
 Relies on buf-spec for owner/repo data."
-  (fj-destructure-buf-spec (repo owner)
-    (let ((data (fj-get-repo-assignees repo owner)))
-      (mapcar (lambda (x)
-                (let-alist x
-                  (if (not (string-empty-p .login_name))
-                      .login_name
-                    .login)))
-              data))))
+  (if compose
+      (fj--assignees-candidates-parse fj-compose-repo fj-compose-repo-owner)
+    (fj-destructure-buf-spec (repo owner)
+      (fj--assignees-candidates-parse repo owner))))
+
+(defun fj--assignees-candidates-parse (repo owner)
+  "Fetch and parse assignees data for REPO by OWNER.
+Return a list of names, either .login_name or .login."
+  (let ((data (fj-get-repo-assignees repo owner)))
+    (mapcar (lambda (x)
+              (let-alist x
+                (if (not (string-empty-p .login_name))
+                    .login_name
+                  .login)))
+            data)))
 
 (defun fj--patch-assignees (assignees &optional assignee)
   "Patch issue ASSIGNEES, a list, in item view or items tabulated listing.
 Optionally also patch ASSIGNEE (deprecated param)."
-  (if (eq major-mode 'fj-item-view-mode)
-      (fj-with-item-view
-       (fj-destructure-buf-spec (repo owner item)
-         (fj-issue-patch repo owner item nil nil nil
-                       assignee assignees)))
-    (fj-with-item-tl
-     (fj-destructure-buf-spec (repo owner)
-       (let* ((entry (tabulated-list-get-entry))
-              (number (car (seq-first entry))))
-         (fj-issue-patch repo owner number nil nil nil
-                       assignee assignees))))))
+  (fj-issue-patch repo owner item nil nil nil
+                  assignee assignees))
 
 (defun fj-item-add-assignee ()
   "Add an assignee to item being viewed or at point in tabulated listing.
 Prompt for an assigne with completion."
   (interactive)
-  (let* ((assignees (fj-assignees-candidates))
-         ;; FIXME: use `completing-read-multiple':
-         (assignee (completing-read "Assign to item: "
-                                    assignees nil :match))
-         (resp (fj--patch-assignees (list assignee))))
-    (fedi-http--triage
-     resp
-     (lambda (resp)
-       (let-alist (fj-resp-json resp)
-         (message (format "#%s assigned to %s!"
-                          .number .assignee.login)))))))
+  (fj-with-item-view-or-tl
+   (let* ((cands (fj-assignees-candidates))
+          (assignees (completing-read-multiple "Assign to item [TAB for multiple]: "
+                                               cands nil :match))
+          (resp (fj--patch-assignees assignees)))
+     (fedi-http--triage
+      resp
+      (lambda (resp)
+        (let-alist (fj-resp-json resp)
+          (message (format "#%s assigned to %s!"
+                           .number .assignee.login))))))))
 
 (defun fj-item-clear-assignees ()
   "Remove assignees from item being viewed or at point in tabulated listing."
   (interactive)
-  (when (y-or-n-p "Clear item assignees?")
-    (let ((resp (fj--patch-assignees '() "")))
-      (fedi-http--triage
-       resp
-       (lambda (resp)
-         (let-alist (fj-resp-json resp)
-           (if (or (not (eq :null .assignee))
-                   (not (eq :null .assignees)))
-               (message "Clearing assignees failed!")
-             (message (format "Assignees cleared from %s!"
-                              .number)))))))))
+  (fj-with-item-view-or-tl
+   (when (y-or-n-p "Clear item assignees?")
+     (let ((resp (fj--patch-assignees '() "")))
+       (fedi-http--triage
+        resp
+        (lambda (resp)
+          (let-alist (fj-resp-json resp)
+            (if (or (not (eq :null .assignee))
+                    (not (eq :null .assignees)))
+                (message "Clearing assignees failed!")
+              (message (format "Assignees cleared from %s!"
+                               .number))))))))))
 
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
@@ -3542,31 +3555,35 @@ RELOAD mean we reloaded."
          (propertize
           (concat
            "State: " .state
-           (if (string= "closed" .state)
-               (concat " " (fedi--relative-time-description
-                            (date-to-time .closed_at)))
-             "")
+           (when (string= "closed" .state)
+             (concat " " (fedi--relative-time-description
+                          (date-to-time .closed_at))))
            (when .milestone
              (concat "\nMilestone: " .milestone.title "\n"))
-           (if .labels
-               (fj-render-labels .labels)
-             "")
+           (when .assignees
+             (concat "\nAssignees: "
+                     (mapconcat
+                      (lambda (x)
+                        (alist-get 'login x))
+                      .assignees)
+                     "\n"))
+           (when .labels
+             (fj-render-labels .labels))
            ;; PR stuff:
-           (if pull-p
-               (format
-                (if (eq :json-false .merged)
-                    "\n%s wants to merge from %s into %s"
-                  "\n%s merged from %s into %s")
-                (propertize .user.username
-                            'face 'fj-name-face)
-                ;; FIXME: make links work! data doesn't have branch URLs
-                ;; and gitnex doesn't linkify them
-                ;; webUI uses $fork-repo/src/branch/$name:
-                (propertize
-                 (format "%s:%s".head.repo.full_name .head.label)
-                 'face 'fj-name-face)
-                (propertize .base.label 'face 'fj-name-face))
-             "")
+           (when pull-p
+             (format
+              (if (eq :json-false .merged)
+                  "\n%s wants to merge from %s into %s"
+                "\n%s merged from %s into %s")
+              (propertize .user.username
+                          'face 'fj-name-face)
+              ;; FIXME: make links work! data doesn't have branch URLs
+              ;; and gitnex doesn't linkify them
+              ;; webUI uses $fork-repo/src/branch/$name:
+              (propertize
+               (format "%s:%s".head.repo.full_name .head.label)
+               'face 'fj-name-face)
+              (propertize .base.label 'face 'fj-name-face)))
            "\n\n"
            ;; item byline:
            ;; FIXME: :extend t doesn't work here whatever i do
@@ -4045,6 +4062,7 @@ Alternatively, call OP on them instead."
 
 (defun fj-item-view-comment-delete ()
   "Delete comment at point."
+  (interactive)
   (fj-with-own-comment
    (fj-destructure-buf-spec (repo owner)
      (let* ((id (fj--property 'fj-comment-id))
@@ -4391,7 +4409,7 @@ If REMOVED, format an unassigned string."
           ((string= user assignee)
            (format format-str user "self-" "" ts))
           (t
-           (format format-str user "" (concat "to " assignee) ts)))))
+           (format format-str user "" (concat " to " assignee) ts)))))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
@@ -5280,7 +5298,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "C-c C-S-M" #'fj-compose-remove-milestone
   "C-c C-S-L" #'fj-compose-remove-labels
   "C-c C-u"   #'fj-compose-read-upload
-  "C-c C-S-U" #'fj-compose-remove-upload)
+  "C-c C-S-U" #'fj-compose-remove-upload
+  "C-c C-e"   #'fj-compose-read-assignees
+  "C-c C-S-E" #'fj-compose-remove-assignees)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -5352,6 +5372,18 @@ Return a cons of title and ID."
           (assoc choice alist #'string=))
     (fedi-post--update-status-fields)))
 
+(defun fj-compose-read-assignees ()
+  "Read multiple assignees in the compose buffer.
+return a list of strings, assignee names."
+  (interactive)
+  (let* ((cands (fj-assignees-candidates :compose))
+         (assignees (completing-read-multiple
+                     "Assignees [TAB for multiple]: "
+                     cands nil :match)))
+    (setq fj-compose-assignees
+          (append fj-compose-assignees assignees))
+    (fedi-post--update-status-fields)))
+
 (defun fj-compose-remove-variable (var)
   "Set VAR to nil if it is non-nil.
 Update status fields."
@@ -5374,6 +5406,11 @@ Update status fields."
   "Remove attachment file from item being composed."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-upload))
+
+(defun fj-compose-remove-assignees ()
+  "Remove assignees from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-assignees))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
@@ -5403,7 +5440,7 @@ Inject INIT-TEXT into the buffer, for editing."
         (prop     . compose-repo-owner)
         (item-var . fj-compose-repo-owner)
         (face     . link))
-       ((name     . ,(if (eq type 'comment) "issue ""title"))
+       ((name     . ,(if (eq type 'comment) "issue" "title"))
         (prop     . compose-title)
         (item-var . fj-compose-issue-title)
         (face     . fj-post-title-face))
@@ -5418,6 +5455,10 @@ Inject INIT-TEXT into the buffer, for editing."
        ((name     . "upload")
         (prop     . compose-upload)
         (item-var . fj-compose-upload)
+        (face     . fj-post-title-face))
+       ((name     . "assignees")
+        (prop     . compose-assignees)
+        (item-var . fj-compose-assignees)
         (face     . fj-post-title-face)))
      init-text quote
      "fj-" fj-compose-autocomplete)
@@ -5460,16 +5501,17 @@ With PREFIX, also close issue if sending a comment."
                                         body))
                 ('edit-issue
                  (fj-issue-edit repo
-                              fj-compose-repo-owner
-                              fj-compose-issue-number
-                              fj-compose-issue-title
-                              body))
+                                fj-compose-repo-owner
+                                fj-compose-issue-number
+                                fj-compose-issue-title
+                                body))
                 (_ ; new issue
                  (fj-issue-post repo
                                 fj-compose-repo-owner
                                 fj-compose-issue-title body
                                 fj-compose-issue-labels
-                                nil nil nil
+                                fj-compose-assignees
+                                nil nil
                                 fj-compose-milestone)))))
         (when response
           (with-current-buffer buf
