@@ -193,13 +193,34 @@ A lookup Emacs has taken the answer to leaves nothing to cancel, and the
 status leaves `connect' only when it has.  So a connecting process is handed
 to its sentinel and deleted when it settles rather than now.  Nothing reads
 it meanwhile: the filter is taken off, and so is the session, which is what
-`vm-net--sessions' walks the process list for."
+`vm-net--sessions' walks the process list for.  So is the buffer, since
+killing a buffer deletes the processes that are in it."
   (when (process-live-p process)
     (if (not (eq (process-status process) 'connect))
 	(delete-process process)
       (process-put process 'vm-net-session nil)
       (set-process-filter process #'ignore)
+      (set-process-buffer process nil)
       (set-process-sentinel process #'vm-net--close-when-settled))))
+
+(defun vm-net-release-connecting-processes ()
+  "Take a connection still being made off the buffer about to be killed.
+
+On `kill-buffer-hook'.  `kill-buffer' deletes the processes of the buffer it
+kills, and it does that in C, where no call site of VM's can get in front of
+it: the deletion is the `delete-process' that spins on a connection whose
+name lookup has not finished, which `vm-net-close-process' says more about.
+A buffer with no process on it leaves `kill-buffer' nothing to delete.
+
+Every connection being made in the buffer, not only VM's.  What this does to
+one is what `kill-buffer' was about to do anyway, a moment later and without
+the hang."
+  (dolist (process (process-list))
+    (when (and (eq (process-buffer process) (current-buffer))
+	       (eq (process-status process) 'connect))
+      (vm-net-close-process process))))
+
+(add-hook 'kill-buffer-hook #'vm-net-release-connecting-processes)
 
 (defvar vm-verbal-time)
 

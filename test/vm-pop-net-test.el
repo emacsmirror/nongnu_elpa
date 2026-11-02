@@ -981,11 +981,18 @@ this now has."
       ;; and nothing of VM's is still talking to the server: the mock's own
       ;; process is the only one left.  Case matters here, VM's session is
       ;; "POP fetch" and the mock is "vm-pop-mock"
-      (let ((case-fold-search nil))
-        (should (equal nil (seq-filter
-                            (lambda (process)
-                              (string-match-p "POP" (process-name process)))
-                            (process-list))))))))
+      (let* ((case-fold-search nil)
+             (sessions (lambda ()
+                         (seq-filter
+                          (lambda (process)
+                            (string-match-p "POP" (process-name process)))
+                          (process-list))))
+             (deadline (+ (float-time) 10)))
+        ;; one that was still being connected goes when it settles rather
+        ;; than where it stands, which is `vm-net-close-process'
+        (while (and (funcall sessions) (< (float-time) deadline))
+          (accept-process-output nil 0.05))
+        (should (equal nil (funcall sessions)))))))
 
 (ert-deftest vm-pop-net-test-fetching-passes-over-a-message-too-big ()
   "`vm-pop-max-message-size' is asked before RETR, not after: the size comes

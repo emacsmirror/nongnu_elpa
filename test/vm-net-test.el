@@ -868,6 +868,33 @@ no lookup outstanding, so it is deleted where it stands."
           (should-not (process-live-p process)))
       (when (process-live-p process) (delete-process process)))))
 
+(ert-deftest vm-net-test-killing-a-buffer-leaves-a-connection-being-made-alone ()
+  "Killing a buffer does not delete a connection still being made in it.
+
+`kill-buffer' deletes the processes of the buffer it kills, and does it in C
+after the hooks have run, so there is no call site to put
+`vm-net-close-process' at: that deletion is the one that spins.
+`vm-net-release-connecting-processes' takes the connection off the buffer
+first, on `kill-buffer-hook', which leaves `kill-buffer' nothing to delete."
+  (let* ((port (vm-net-free-port))
+         (buffer (generate-new-buffer " *vm-net-test-killed*"))
+         (process (make-network-process
+                   :name "vm-net-test-killed" :host "127.0.0.1"
+                   :service port :buffer buffer :nowait t :noquery t)))
+    (unwind-protect
+        (progn
+          (should (eq (process-status process) 'connect))
+          (kill-buffer buffer)
+          (should (process-live-p process))
+          (should-not (process-buffer process))
+          ;; and it still goes, once it has settled
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (process-live-p process) (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should-not (process-live-p process)))
+      (when (process-live-p process) (delete-process process))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here
