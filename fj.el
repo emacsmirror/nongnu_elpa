@@ -3554,10 +3554,9 @@ RELOAD mean we reloaded."
          (propertize
           (concat
            "State: " .state
-           (if (string= "closed" .state)
-               (concat " " (fedi--relative-time-description
-                            (date-to-time .closed_at)))
-             "")
+           (when (string= "closed" .state)
+             (concat " " (fedi--relative-time-description
+                          (date-to-time .closed_at))))
            (when .milestone
              (concat "\nMilestone: " .milestone.title "\n"))
            (when .assignees
@@ -3567,25 +3566,23 @@ RELOAD mean we reloaded."
                         (alist-get 'login x))
                       .assignees)
                      "\n"))
-           (if .labels
-               (fj-render-labels .labels)
-             "")
+           (when .labels
+             (fj-render-labels .labels))
            ;; PR stuff:
-           (if pull-p
-               (format
-                (if (eq :json-false .merged)
-                    "\n%s wants to merge from %s into %s"
-                  "\n%s merged from %s into %s")
-                (propertize .user.username
-                            'face 'fj-name-face)
-                ;; FIXME: make links work! data doesn't have branch URLs
-                ;; and gitnex doesn't linkify them
-                ;; webUI uses $fork-repo/src/branch/$name:
-                (propertize
-                 (format "%s:%s".head.repo.full_name .head.label)
-                 'face 'fj-name-face)
-                (propertize .base.label 'face 'fj-name-face))
-             "")
+           (when pull-p
+             (format
+              (if (eq :json-false .merged)
+                  "\n%s wants to merge from %s into %s"
+                "\n%s merged from %s into %s")
+              (propertize .user.username
+                          'face 'fj-name-face)
+              ;; FIXME: make links work! data doesn't have branch URLs
+              ;; and gitnex doesn't linkify them
+              ;; webUI uses $fork-repo/src/branch/$name:
+              (propertize
+               (format "%s:%s".head.repo.full_name .head.label)
+               'face 'fj-name-face)
+              (propertize .base.label 'face 'fj-name-face)))
            "\n\n"
            ;; item byline:
            ;; FIXME: :extend t doesn't work here whatever i do
