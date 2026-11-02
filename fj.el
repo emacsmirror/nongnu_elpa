@@ -1615,39 +1615,40 @@ Return a list of names, either .login_name or .login."
 (defun fj--patch-assignees (assignees &optional assignee)
   "Patch issue ASSIGNEES, a list, in item view or items tabulated listing.
 Optionally also patch ASSIGNEE (deprecated param)."
-  (fj-with-item-view-or-tl
-   (fj-issue-patch repo owner item nil nil nil
-                 assignee assignees)))
+  (fj-issue-patch repo owner item nil nil nil
+                  assignee assignees))
 
 (defun fj-item-add-assignee ()
   "Add an assignee to item being viewed or at point in tabulated listing.
 Prompt for an assigne with completion."
   (interactive)
-  (let* ((cands (fj-assignees-candidates))
-         (assignees (completing-read-multiple "Assign to item [TAB for multiple]: "
-                                              cands nil :match))
-         (resp (fj--patch-assignees assignees)))
-    (fedi-http--triage
-     resp
-     (lambda (resp)
-       (let-alist (fj-resp-json resp)
-         (message (format "#%s assigned to %s!"
-                          .number .assignee.login)))))))
+  (fj-with-item-view-or-tl
+   (let* ((cands (fj-assignees-candidates))
+          (assignees (completing-read-multiple "Assign to item [TAB for multiple]: "
+                                               cands nil :match))
+          (resp (fj--patch-assignees assignees)))
+     (fedi-http--triage
+      resp
+      (lambda (resp)
+        (let-alist (fj-resp-json resp)
+          (message (format "#%s assigned to %s!"
+                           .number .assignee.login))))))))
 
 (defun fj-item-clear-assignees ()
   "Remove assignees from item being viewed or at point in tabulated listing."
   (interactive)
-  (when (y-or-n-p "Clear item assignees?")
-    (let ((resp (fj--patch-assignees '() "")))
-      (fedi-http--triage
-       resp
-       (lambda (resp)
-         (let-alist (fj-resp-json resp)
-           (if (or (not (eq :null .assignee))
-                   (not (eq :null .assignees)))
-               (message "Clearing assignees failed!")
-             (message (format "Assignees cleared from %s!"
-                              .number)))))))))
+  (fj-with-item-view-or-tl
+   (when (y-or-n-p "Clear item assignees?")
+     (let ((resp (fj--patch-assignees '() "")))
+       (fedi-http--triage
+        resp
+        (lambda (resp)
+          (let-alist (fj-resp-json resp)
+            (if (or (not (eq :null .assignee))
+                    (not (eq :null .assignees)))
+                (message "Clearing assignees failed!")
+              (message (format "Assignees cleared from %s!"
+                               .number))))))))))
 
 (defun fj-issue-patch
     (repo owner issue &optional title body state assignee assignees
