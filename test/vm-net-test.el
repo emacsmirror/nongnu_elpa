@@ -406,7 +406,14 @@ load of a build it is.  So nothing here counts asks."
     (let ((probe (gethash port vm-net--probes)))
       (vm-net-forget-probe port)
       (should-not (gethash port vm-net--probes))
-      (when (processp probe) (should-not (process-live-p probe))))))
+      ;; one still connecting is left to its sentinel rather than deleted
+      ;; where it stands, deleting it there being the call that spins: see
+      ;; `vm-net-close-process'.  It goes as soon as it has settled.
+      (when (processp probe)
+        (let ((deadline (+ (float-time) 10)))
+          (while (and (process-live-p probe) (< (float-time) deadline))
+            (accept-process-output nil 0.05)))
+        (should-not (process-live-p probe))))))
 
 
 (ert-deftest vm-net-test-a-tunnel-leaves-no-probe-behind ()
@@ -817,6 +824,49 @@ the slice is then free to hand Emacs a turn first."
   (should (funcall (vm-net-request-now)))
   (with-temp-buffer
     (should (funcall (vm-net-request-now)))))
+
+;;; Closing a connection that is still being made
+
+(ert-deftest vm-net-test-a-connection-still-being-made-is-closed-when-it-settles ()
+  "`vm-net-close-process' leaves a connection alone until its lookup is done.
+
+`delete-process' on a connection made with :nowait whose name lookup has not
+finished spins: Emacs cancels the lookup and then waits for it, and glibc
+answers a lookup that finished in between with EAI_ALLDONE, which Emacs reads
+as \"not yet\" for ever.  A whole test run was found burning a core there.
+The status leaves `connect' only once Emacs has taken the answer to the
+lookup, so that is what is waited for."
+  (let* ((port (vm-net-free-port))
+         (process (make-network-process
+                   :name "vm-net-test-connecting" :host "127.0.0.1"
+                   :service port :nowait t :noquery t)))
+    (unwind-protect
+        (progn
+          (should (eq (process-status process) 'connect))
+          (vm-net-close-process process)
+          ;; still here: deleting it now is the call that spins
+          (should (process-live-p process))
+          ;; and reading nothing while it is
+          (should (eq (process-filter process) #'ignore))
+          ;; nothing is listening on the port, so it fails and goes
+          (let ((deadline (+ (float-time) 10)))
+            (while (and (process-live-p process) (< (float-time) deadline))
+              (accept-process-output nil 0.05)))
+          (should-not (process-live-p process))
+          (should-not (memq process (process-list))))
+      (when (process-live-p process) (delete-process process)))))
+
+(ert-deftest vm-net-test-a-connection-already-made-is-closed-at-once ()
+  "Nothing is deferred for a process that is not still connecting: there is
+no lookup outstanding, so it is deleted where it stands."
+  (let ((process (start-process "vm-net-test-open" nil "cat")))
+    (set-process-query-on-exit-flag process nil)
+    (unwind-protect
+        (progn
+          (should-not (eq (process-status process) 'connect))
+          (vm-net-close-process process)
+          (should-not (process-live-p process)))
+      (when (process-live-p process) (delete-process process)))))
 
 (provide 'vm-net-test)
 

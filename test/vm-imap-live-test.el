@@ -291,7 +291,7 @@ of the whole exercise: everything above only proves the harness works."
             ;; it logged in and the server answered a command
             (should (eq (vm-net-session-state session) 'done)))
         (let ((process (vm-net-session-process session)))
-          (when (process-live-p process) (delete-process process)))
+          (vm-net-close-process process))
         (let ((buffer (vm-net-session-buffer session)))
           (when (buffer-live-p buffer)
             (with-current-buffer buffer (set-buffer-modified-p nil))

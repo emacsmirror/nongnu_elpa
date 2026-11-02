@@ -50,7 +50,7 @@ two race and the test sometimes sees the process being torn down instead."
     (let ((deadline (+ (float-time) (or wait timeout 5))))
       (while (and (vm-net-session-live-p session) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
-    (when (process-live-p process) (delete-process process))
+    (vm-net-close-process process)
     (when (buffer-live-p buffer) (kill-buffer buffer))
     session))
 
@@ -202,7 +202,7 @@ this writes only what the server said."
                 (should-not (string-match-p "PASS" transcript))
                 ;; and it is a transcript of something: the server answered
                 (should (string-match-p "\\+OK" transcript)))))
-        (when (process-live-p process) (delete-process process))
+        (vm-net-close-process process)
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest vm-pop-net-test-a-refused-login-fails-the-session ()
@@ -268,7 +268,7 @@ the user's deletes, silently."
             (vm-net-abandon session)
             (accept-process-output nil 0.2)
             (should (vm-pop-mock-received-p mock "\\`QUIT")))
-        (when (process-live-p process) (delete-process process))
+        (vm-net-close-process process)
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 ;;; Checking for mail, over a maildrop specification
@@ -867,7 +867,7 @@ waits for the connect, which is what `:nowait' is for."
                 (accept-process-output nil 0.05)))
             (should (eq (vm-net-session-state session) 'done))
             (should (equal (car (vm-net-session-value session)) 1)))
-        (when (process-live-p process) (delete-process process))
+        (vm-net-close-process process)
         (let ((buffer (vm-net-session-buffer session)))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
@@ -1337,7 +1337,7 @@ whole server timeout with \"did not start listening on port\"."
           (should (eq (vm-net-session-state session) 'done))
           (should (equal (vm-net-session-value session) '(2 . 640))))
       (let ((process (vm-net-session-process session)))
-        (when (process-live-p process) (delete-process process)))
+        (vm-net-close-process process))
       (let ((buffer (vm-net-session-buffer session)))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
@@ -1400,7 +1400,7 @@ any other does."
             (should (eq (vm-net-session-state session) 'done))
             (should (equal (car (vm-net-session-value session)) 1)))
         (let ((process (vm-net-session-process session)))
-          (when (process-live-p process) (delete-process process)))
+          (vm-net-close-process process))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 
@@ -1540,7 +1540,7 @@ Ignoring the field is what made the apop downgrade possible."
         (should opened)
         (let* ((session (nth 0 opened))
                (process (vm-net-session-process session)))
-          (when (process-live-p process) (delete-process process))
+          (vm-net-close-process process)
           (when (buffer-live-p (vm-net-session-buffer session))
             (kill-buffer (vm-net-session-buffer session))))))))
 
@@ -1777,7 +1777,7 @@ It lives about an hour, where the entry would not."
            (session (nth 0 opened)))
       (should opened)
       (let ((process (vm-net-session-process session)))
-        (when (process-live-p process) (delete-process process))
+        (vm-net-close-process process)
         (when (buffer-live-p (vm-net-session-buffer session))
           (kill-buffer (vm-net-session-buffer session)))))))
 

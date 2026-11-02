@@ -53,7 +53,7 @@ TIMEOUT is the session's own, WAIT how long this waits for it to finish."
     (let ((deadline (+ (float-time) (or wait timeout 5))))
       (while (and (vm-net-session-live-p session) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
-    (when (process-live-p process) (delete-process process))
+    (vm-net-close-process process)
     session))
 
 (defmacro vm-imap-net-test--with-session (spec &rest body)
@@ -1787,7 +1787,7 @@ when a session is stopped part way."
       (vm-net-abandon session)
       (should cleaned)
       (should-not (vm-net-session-live-p session))
-      (when (process-live-p process) (delete-process process)))))
+      (vm-net-close-process process))))
 
 (iter-defun vm-imap-net-test--with-cleanup (note)
   "Wait for something that never comes, and call NOTE on the way out."
@@ -2331,7 +2331,7 @@ for."
             (should (memq 'IMAP4REV1 (car (vm-net-session-value session))))
             (should-not (vm-imap-mock-received-p mock "LOGIN")))
         (let ((process (vm-net-session-process session)))
-          (when (process-live-p process) (delete-process process)))))))
+          (vm-net-close-process process))))))
 
 (defvar vm-imap-net-test--stunnel-script
   (concat "printf '* OK ready\\r\\n'\n"
@@ -2382,7 +2382,7 @@ server to talk to."
               ;; and still without waiting for the connection
               (should (nth 4 asked)))
           (let ((process (vm-net-session-process session)))
-            (when (process-live-p process) (delete-process process)))
+            (vm-net-close-process process))
           (let ((buffer (vm-net-session-buffer session)))
             (when (buffer-live-p buffer) (kill-buffer buffer))))))))
 
@@ -2422,7 +2422,7 @@ output, which is what the blocking path has always used it for."
           (should (eq (vm-net-session-state session) 'done))
           (should (memq 'IMAP4REV1 (car (vm-net-session-value session)))))
       (let ((process (vm-net-session-process session)))
-        (when (process-live-p process) (delete-process process)))
+        (vm-net-close-process process))
       (let ((buffer (vm-net-session-buffer session)))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
@@ -2490,7 +2490,7 @@ any other does: the tunnel is only how the connection is made."
             (should (memq 'IMAP4REV1 (car (vm-net-session-value session))))
             (should (vm-imap-mock-received-p mock "LOGIN")))
         (let ((process (vm-net-session-process session)))
-          (when (process-live-p process) (delete-process process)))))))
+          (vm-net-close-process process))))))
 
 
 ;;; More of what only happens because nothing waits
@@ -2618,7 +2618,7 @@ it, which is what makes those forms run."
                     (< (float-time) deadline))
           (accept-process-output nil 0.05)))
       (should (vm-imap-mock-received-p mock "LOGOUT"))
-      (when (process-live-p process) (delete-process process)))))
+      (vm-net-close-process process))))
 
 (defun vm-imap-net-test--bunch-buffers ()
   "The bunch-collecting buffers left alive."
@@ -2648,7 +2648,7 @@ thing that can fail, so a refused UIDVALIDITY leaked one every time."
           (accept-process-output nil 0.05)))
       (vm-net-abandon session)
       (should-not (vm-imap-net-test--bunch-buffers))
-      (when (process-live-p process) (delete-process process)))))
+      (vm-net-close-process process))))
 
 (ert-deftest vm-imap-net-test-waiting-answers-nil-when-it-runs-out ()
   "`vm-imap-net-wait' says whether the session finished.  A caller that has
@@ -2738,7 +2738,7 @@ is not written down back to the blocking path."
             (accept-process-output nil 0.05)))
         (should (eq (vm-net-session-state session) 'done))
         (let ((process (vm-net-session-process session)))
-          (when (process-live-p process) (delete-process process)))))))
+          (vm-net-close-process process))))))
 
 
 ;;; The check on a maildrop, which is what the timer asks
@@ -2868,7 +2868,7 @@ never prompted."
       (should (eq (vm-net-session-state session) 'done))
       (should (equal (car (cdr (assoc key vm-imap-passwords))) "secret"))
       (let ((process (vm-net-session-process session)))
-        (when (process-live-p process) (delete-process process))))))
+        (vm-net-close-process process)))))
 
 (ert-deftest vm-imap-net-test-a-refused-password-is-not-remembered ()
   "A login the server refuses leaves the cache alone: an entry there would
@@ -2890,7 +2890,7 @@ ask."
       (should (eq (vm-net-session-state session) 'failed))
       (should (null vm-imap-passwords))
       (let ((process (vm-net-session-process session)))
-        (when (process-live-p process) (delete-process process))))))
+        (vm-net-close-process process)))))
 
 (ert-deftest vm-imap-net-test-a-useless-cached-password-is-not-a-password ()
   "A cache entry that is empty, a `*', or not a string at all is nothing to
@@ -2973,7 +2973,7 @@ way and stopped Emacs for as long as it took."
           (should (equal asked 1))
           (should (equal (nth 3 opened) "secret"))
           (let ((process (vm-net-session-process session)))
-            (when (process-live-p process) (delete-process process))))))))
+            (vm-net-close-process process)))))))
 
 (ert-deftest vm-imap-net-test-a-timer-never-asks-for-a-password ()
   "The check runs on a timer, and a question from a timer arrives while
@@ -3012,7 +3012,7 @@ showed, each one saying \"password not remembered\"."
           (should (equal asked 1))
           (should (equal (nth 3 opened) "secret"))
           (let ((process (vm-net-session-process session)))
-            (when (process-live-p process) (delete-process process))))))))
+            (vm-net-close-process process)))))))
 
 
 ;;; An empty mailbox
@@ -3133,7 +3133,7 @@ password that was never remembered, the other one that was thrown away."
                 (accept-process-output nil 0.05)))
             (should (eq (vm-net-session-state session) 'done))
             (let ((process (vm-net-session-process session)))
-              (when (process-live-p process) (delete-process process)))
+              (vm-net-close-process process))
             (when (buffer-live-p buffer) (kill-buffer buffer)))))
       ;; asked once, for two logins
       (should (equal asked 1)))))
@@ -3765,7 +3765,7 @@ signal is what sent the work to the blocking path."
                    "cram-md5 test" nil)))
       (should opened)
       (let ((process (vm-net-session-process (nth 0 opened))))
-        (when (process-live-p process) (delete-process process))
+        (vm-net-close-process process)
         (when (buffer-live-p (vm-net-session-buffer (nth 0 opened)))
           (kill-buffer (vm-net-session-buffer (nth 0 opened)))))))
   ;; an auth VM does not know is an error the reader sees, naming what to
@@ -4481,7 +4481,7 @@ manual had nothing else to try."
                    "xoauth2 test" nil)))
       (should opened)
       (let ((process (vm-net-session-process (nth 0 opened))))
-        (when (process-live-p process) (delete-process process))
+        (vm-net-close-process process)
         (when (buffer-live-p (vm-net-session-buffer (nth 0 opened)))
           (kill-buffer (vm-net-session-buffer (nth 0 opened)))))))
   (vm-imap-mock-with (mock)

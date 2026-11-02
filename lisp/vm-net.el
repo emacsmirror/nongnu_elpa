@@ -169,6 +169,38 @@ a generator waiting for input that cannot arrive."
 			  (string-trim event))))
       (vm-net-abandon session))))
 
+(defun vm-net--close-when-settled (process _event)
+  "Delete PROCESS once its connection has been made or refused.
+What `vm-net-close-process' leaves behind.  By then Emacs has taken the answer
+to the name lookup, so there is nothing left for it to cancel and wait for."
+  (unless (eq (process-status process) 'connect)
+    (delete-process process)))
+
+(defun vm-net-close-process (process)
+  "Close PROCESS, which may still be connecting.
+
+Not `delete-process', which spins on a connection made with :nowait whose
+name lookup has not finished.  Emacs asks glibc to cancel the lookup and then
+waits for it to end; glibc answers a lookup that finished in between with
+EAI_ALLDONE, Emacs reads every non-zero answer as \"not yet\" and asks again
+for ever (Emacs 30.2 `src/process.c', in `delete_process').  A batch Emacs
+in the test suite was found burning a core in that loop, and a reader would
+see Emacs stop and never start again.  The window is the microseconds between
+the two calls, so it takes a loaded machine to hit, and it needs glibc:
+macOS has no `getaddrinfo_a' and compiles the whole thing out.
+
+A lookup Emacs has taken the answer to leaves nothing to cancel, and the
+status leaves `connect' only when it has.  So a connecting process is handed
+to its sentinel and deleted when it settles rather than now.  Nothing reads
+it meanwhile: the filter is taken off, and so is the session, which is what
+`vm-net--sessions' walks the process list for."
+  (when (process-live-p process)
+    (if (not (eq (process-status process) 'connect))
+	(delete-process process)
+      (process-put process 'vm-net-session nil)
+      (set-process-filter process #'ignore)
+      (set-process-sentinel process #'vm-net--close-when-settled))))
+
 (defvar vm-verbal-time)
 
 (defun vm-net-warn (level &rest args)
@@ -702,7 +734,7 @@ A probe outlives the poll that started it, so the wait has to take the last
 one away with it: a connection left open to a port keeps whatever is on the
 other end of it busy, and a port on this machine is handed out again."
   (let ((probe (gethash port vm-net--probes)))
-    (when (processp probe) (delete-process probe))
+    (when (processp probe) (vm-net-close-process probe))
     (remhash port vm-net--probes)))
 
 (defun vm-net-tunnel (session program arguments port seconds ready)
