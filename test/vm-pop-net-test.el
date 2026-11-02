@@ -1531,8 +1531,9 @@ Ignoring the field is what made the apop downgrade possible."
                             (vm-pop-mock-spec mock "kerberos_v4")
                             "unknown auth" nil)))))
       (should (string-match-p "kerberos_v4" message))
-      (should (string-match-p "pass, or apop" message)))
-    ;; and the two it does serve are opened
+      (should (string-match-p "pass, apop" message))
+      (should (string-match-p "xoauth2" message)))
+    ;; and the ones it does serve are opened
     (dolist (auth '("pass" "apop"))
       (let ((opened (vm-pop-net-open (vm-pop-mock-spec mock auth)
                                      "auth test" nil)))
@@ -1723,6 +1724,62 @@ been, which is what a reader of one message saw (emacs-vm/vm#922)."
           (should (string-match-p "1 already gone\\'" (car said))))
       (when (buffer-live-p folder)
         (kill-buffer folder)))))
+
+;;; XOAUTH2 (emacs-vm/vm#915)
+
+(ert-deftest vm-pop-net-test-a-session-authenticates-with-xoauth2 ()
+  "REGRESSION: the driver logs in with XOAUTH2.
+RFC 5034 puts SASL under AUTH, and the token goes on the AUTH line itself.
+The mock checks the whole SASL string, so a malformed one fails here."
+  (vm-pop-net-test--with-mock (mock :xoauth2 "ya29.token")
+    (let ((session (vm-pop-net-test--run
+                    mock (vm-pop-net-test--login (vm-pop-mock-user mock)
+                                                 "ya29.token" "xoauth2"))))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (vm-pop-mock-received-p mock "\\`AUTH XOAUTH2 "))
+      (should (vm-pop-mock-authenticated mock))
+      ;; and nothing went in clear
+      (should-not (vm-pop-mock-received-p mock "\\`PASS ")))))
+
+(ert-deftest vm-pop-net-test-a-refused-xoauth2-token-ends-the-session ()
+  "REGRESSION: a refused token does not hang the session.
+The server answers a bad token with a continuation line and sends no -ERR
+until the client has sent a line of its own.  A client that does not reply
+waits for a response that is not coming."
+  (vm-pop-net-test--with-mock (mock :xoauth2 "good")
+    (let ((session (vm-pop-net-test--run
+                    mock (vm-pop-net-test--login (vm-pop-mock-user mock)
+                                                 "stale" "xoauth2"))))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (vm-net-session-error session))
+      (should-not (vm-pop-mock-authenticated mock)))))
+
+(ert-deftest vm-pop-net-test-an-xoauth2-token-is-not-remembered ()
+  "REGRESSION: a token does not go into `vm-pop-passwords'.
+It lives about an hour, where the entry would not."
+  (vm-pop-net-test--with-mock (mock :xoauth2 "ya29.token")
+    (let ((vm-pop-passwords nil))
+      (with-current-buffer (generate-new-buffer " *vm-pop-net-key*")
+        (vm-pop-net-test--run
+         mock (vm-pop-net-test--login (vm-pop-mock-user mock)
+                                      "ya29.token" "xoauth2"))
+        (kill-buffer))
+      (should-not vm-pop-passwords))))
+
+(ert-deftest vm-pop-net-test-an-xoauth2-maildrop-is-accepted ()
+  "`vm-pop-net-open' takes xoauth2 in the auth field."
+  (vm-pop-mock-with (mock :xoauth2 "ya29.token")
+    (let* ((vm-pop-passwords nil)
+           (opened (vm-pop-net-open
+                    (format "pop:127.0.0.1:%d:xoauth2:vmtest:ya29.token"
+                            (vm-pop-mock-port mock))
+                    "xoauth2 test" nil))
+           (session (nth 0 opened)))
+      (should opened)
+      (let ((process (vm-net-session-process session)))
+        (when (process-live-p process) (delete-process process))
+        (when (buffer-live-p (vm-net-session-buffer session))
+          (kill-buffer (vm-net-session-buffer session)))))))
 
 (provide 'vm-pop-net-test)
 

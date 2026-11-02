@@ -7,7 +7,8 @@
 ;;; Commentary:
 
 ;; VM integrates with packages it does not require: BBDB for addresses,
-;; emacs-w3m for HTML, vcard for business cards.  Those code paths are the
+;; emacs-w3m for HTML, vcard for business cards, oauth2 for authorizing an
+;; account for XOAUTH2.  Those code paths are the
 ;; least tested in VM, because a machine without the package cannot run them
 ;; at all -- the whole test suite prints "Could not load feature bbdb" and
 ;; carries on.
@@ -27,6 +28,7 @@
 (defvar vm-optional-packages
   '((bbdb . "gnu")                      ; addresses; VM's biggest integration
     (vcard . "gnu")                     ; vm-vcard.el
+    (oauth2 . "gnu")                    ; vm-oauth2.el, for XOAUTH2
     (w3m . "melpa"))                    ; emacs-w3m; not on GNU or nonGNU ELPA
   "Packages to install, and the archive each comes from.")
 

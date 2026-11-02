@@ -1851,7 +1851,8 @@ maildrops because @acronym{POP} does not support multiple mailboxes.
 @vindex vm-pop-md5-program
 @var{AUTH} is the authentication method used to convince the
 server you should have access to the mailbox.  Acceptable
-values for @acronym{POP} are @samp{pass} and @samp{apop}.  For
+values for @acronym{POP} are @samp{pass}, @samp{apop} and
+@samp{xoauth2}.  For
 @samp{pass}, the @var{PASSWORD} is sent to the server with
 the @acronym{POP} PASS command.  For @samp{apop}, an
 MD5 digest of the @var{PASSWORD} appended to the server
@@ -1859,12 +1860,15 @@ time-stamp will be sent to the server with the @acronym{APOP} command.
 If Emacs does not have built in MD5 support, you will have
 to set the value of @code{vm-pop-md5-program} appropriately
 to point at the program that will generate the MD5 digest
-that VM needs.
+that VM needs.  @samp{xoauth2} sends an OAuth2 access token rather than
+a password; it is described with @acronym{IMAP} below, and works the same
+way.
 
 @cindex CRAM-MD5
 @vindex vm-imap-session-preauth-hook
 Acceptable values of @var{AUTH} for @acronym{IMAP}
-are @samp{"preauth"}, @samp{"cram-md5"}, and @samp{"login"}.
+are @samp{"preauth"}, @samp{"cram-md5"}, @samp{"xoauth2"} and
+@samp{"login"}.
 @samp{"preauth"} causes VM to skip the authentication stage of
 the protocol with the assumption that the session was
 authenticated in some way external to VM.  The hook
@@ -1879,9 +1883,36 @@ administrator or just try it.  The other value, @samp{"login"},
 tells VM to use the @acronym{IMAP} LOGIN command for authentication, which
 sends your user name and password in clear text to the server.
 
+@cindex XOAUTH2
+@cindex OAuth2
+@findex vm-oauth2-authorize
+@samp{"xoauth2"} sends an OAuth2 access token rather than a password,
+which is what a Google Workspace or Office 365 tenant with app passwords
+switched off requires.  VM speaks the mechanism and nothing more: it
+acquires no token, refreshes none, stores none and ships no client
+credentials.  It asks @code{auth-source} for a token each time it opens a
+session, so anything that answers an @code{auth-source} lookup with one
+will do.  Three arrangements are in use: the
+@file{auth-source-xoauth2-plugin} package from GNU ELPA, which answers a
+lookup with a freshly refreshed token; a helper program such as
+@command{oauth2ms} or @command{mutt_oauth2.py} writing one where
+@code{auth-source} reads; and @kbd{M-x vm-oauth2-authorize}, which runs
+the first authorization with the @file{oauth2} package.  Write @samp{*}
+for the @var{PASSWORD}.  You are never prompted for a token, nobody being
+able to type one, and VM does not remember one between sessions: an access
+token lives about an hour, so a remembered one would be a session that
+failed with nothing left to ask.  VM offers the mechanism only where the
+server advertises @samp{AUTH=XOAUTH2}.
+
+A fourth arrangement needs no OAuth2 in VM at all.  A local gateway such as
+@uref{https://davmail.sourceforge.net/, DavMail} holds the tokens and
+speaks ordinary @acronym{IMAP} to VM, so an @samp{imap} maildrop pointed at
+@code{localhost} with @samp{"login"} works unchanged.  That covers Exchange
+and Office 365 and not Gmail.
+
 @var{USER} is the user name used in authentication methods that
-require such an identifier.  @samp{"login"} and @samp{"cram-md5"}
-use it currently.
+require such an identifier.  @samp{"login"}, @samp{"cram-md5"} and
+@samp{"xoauth2"} use it currently.
 
 @var{PASSWORD} is the
 secret shared by you and the server for authentication purposes.  How

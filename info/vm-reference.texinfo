@@ -47,6 +47,7 @@ what was so.
 * Reference for Mouse::
 * Reference for Moving about::
 * Reference for New mail notification::
+* Reference for Oauth2::
 * Reference for Other settings::
 * Reference for POP::
 * Reference for Personality Crisis::
@@ -2217,13 +2218,16 @@ SPOOLNAME can also be a POP maildrop.
 
     AUTH is the authentication method used to convince the server you
     should have access to the maildrop.  Acceptable values are
-    "pass" and "apop".  For "pass", the PASSWORD is sent to
-    the server with the POP PASS command.  For "apop", an MD5 digest
-    of the PASSWORD appended to the server timestamp will be sent to
-    the server with the APOP command.  In order to use "apop" you
-    will have to set the value of ‘vm-pop-md5-program’ appropriately to
-    point at the program that will generate the MD5 digest that VM
-    needs.
+    "pass", "apop" and "xoauth2".  For "pass", the
+    PASSWORD is sent to the server with the POP PASS command.  For
+    "apop", an MD5 digest of the PASSWORD appended to the server
+    timestamp will be sent to the server with the APOP command.  In
+    order to use "apop" you will have to set the value of
+    ‘vm-pop-md5-program’ appropriately to point at the program that
+    will generate the MD5 digest that VM needs.  "xoauth2" sends an
+    OAuth2 access token instead of a password; write "*" for the
+    PASSWORD and see the IMAP description below, which says where VM
+    looks for the token.
 
 @end example
 SPOOLNAME can also be an IMAP maildrop.
@@ -2262,10 +2266,10 @@ SPOOLNAME can also be an IMAP maildrop.
 
     AUTH is the authentication method used to convince the server
     you should have access to the maildrop.  Acceptable values
-    are "preauth", "login" and "cram-md5".  "preauth"
-    causes VM to skip the authentication stage of the protocol
-    with the assumption that the session was authenticated in some
-    external way.  "login", tells VM to use the IMAP LOGIN
+    are "preauth", "login", "cram-md5" and "xoauth2".
+    "preauth" causes VM to skip the authentication stage of the
+    protocol with the assumption that the session was authenticated
+    in some external way.  "login", tells VM to use the IMAP LOGIN
     command for authentication, which sends your username and
     password in cleartext to the server.  "cram-md5" is a
     challenge response system that convinces the server of your
@@ -2273,16 +2277,27 @@ SPOOLNAME can also be an IMAP maildrop.
     Not all servers support "cram-md5"; if you’re not sure, ask
     your mail administrator or just try it.
 
+    "xoauth2" sends an OAuth2 access token rather than a password,
+    which is what Google Workspace and Office 365 want of a tenant
+    with app passwords switched off.  VM acquires no token and stores
+    none: it asks auth-source for one each time it opens a session,
+    where ‘auth-source-xoauth2-plugin’, a helper such as oauth2ms or
+    mutt_oauth2.py, or ‘vm-oauth2-authorize’ will have put it.  Write
+    "*" for the PASSWORD; nobody is prompted, nobody being able to
+    type a bearer token.  Offered only where the server advertises
+    AUTH=XOAUTH2.
+
     USER is the user name used with authentication methods that
-    require such an identifier.  "login" and "cram-md5"
-    use it currently.
+    require such an identifier.  "login", "cram-md5" and
+    "xoauth2" use it currently.
 
     PASSWORD is the secret shared by you and the server for
     authentication purposes.  If the PASSWORD is "*", VM
     will prompt you for the password the first time you try to
     retrieve mail from maildrop.  If the password is valid, VM
     will not ask you for the password again during this Emacs
-    session.
+    session.  A token is never remembered that way: it lives about
+    an hour, so VM asks auth-source again for every session.
 
 @end example
 CRASHBOX is the temporary file that VM uses to store mail in
@@ -6105,7 +6120,7 @@ comparisons.
 Move backward to the nearest new or unread message, if there is one.
 @end deffn
 
-@node Reference for New mail notification, Reference for Other settings, Reference for Moving about, Reference
+@node Reference for New mail notification, Reference for Oauth2, Reference for Moving about, Reference
 @appendixsec New mail notification
 @cindex New mail notification
 
@@ -6281,7 +6296,106 @@ Nothing stops you calling one.
 Not documented.
 @end deffn
 
-@node Reference for Other settings, Reference for POP, Reference for New mail notification, Reference
+@node Reference for Oauth2, Reference for Other settings, Reference for New mail notification, Reference
+@appendixsec Oauth2
+@cindex Oauth2
+
+@appendixsubsec Commands
+
+@deffn Command vm-oauth2-authorize account provider
+@findex vm-oauth2-authorize
+Authorize ACCOUNT with PROVIDER and keep the token oauth2.el gives back.
+
+ACCOUNT is the mail address the token is for, which is what the maildrop's
+user field names and what auth-source is asked under.  PROVIDER is a key of
+@code{vm-oauth2-providers}.
+
+This asks a question and opens a browser, so it is a command and runs
+nowhere else.  Nothing can be asked from inside a process filter, which is
+where a session runs, so the first authorization of an account happens here
+and the sessions afterwards only read what it stored.
+
+The token goes in oauth2.el's own store, @code{oauth2-token-file}, encrypted by
+plstore.  VM keeps no store of its own: writing the same one is what makes
+an account set up here work with everything else that reads it.
+@end deffn
+
+@appendixsubsec User options
+
+@defopt vm-oauth2-client-id
+@vindex vm-oauth2-client-id
+The client id VM authorizes with, from your own registration.
+
+VM ships none.  A client id and secret compiled into a program that readers
+install are public by definition, and a provider makes each reader register
+anyway: with Google it is a Desktop application under a project of your own,
+with Microsoft an app registration in your tenant.
+
+nil, and @code{vm-oauth2-authorize} says so rather than failing at the provider.
+@end defopt
+
+@defopt vm-oauth2-client-secret
+@vindex vm-oauth2-client-secret
+The client secret that goes with @code{vm-oauth2-client-id}, or nil.
+Not a secret in the ordinary sense for an installed application, the
+provider having no way to keep one on a reader’s machine, which is why the
+authorization code and PKCE exist.  Microsoft wants one and Google issues
+one; a client registered without one leaves this nil.
+@end defopt
+
+@defopt vm-oauth2-providers
+@vindex vm-oauth2-providers
+Where VM asks for an access token, by provider name.
+
+Each entry is (NAME :auth-url URL :token-url URL :scope SCOPE).  The two
+built in are the endpoints Google and Microsoft publish, with the scope that
+covers reading mail and nothing else: Google has one for all of IMAP, POP
+and SMTP, Microsoft one per protocol.  No credentials are here, those being
+the reader’s own: see @code{vm-oauth2-client-id}.
+
+A provider not listed is added here.  The names are what
+@code{vm-oauth2-authorize} completes on.
+
+Default value:
+@example
+(("google" :auth-url "https://accounts.google.com/o/oauth2/auth"
+  :token-url "https://oauth2.googleapis.com/token" :scope
+  "https://mail.google.com/")
+ ("microsoft" :auth-url
+  "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+  :token-url
+  "https://login.microsoftonline.com/common/oauth2/v2.0/token" :scope
+  "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/POP.AccessAsUser.All"))
+@end example
+@end defopt
+
+@defopt vm-oauth2-redirect-uri
+@vindex vm-oauth2-redirect-uri
+Where the provider sends the authorization code, or nil for oauth2.el’s own.
+
+oauth2.el defaults to "urn:ietf:wg:oauth:2.0:oob", which hands the code to
+the reader to paste.  Google stopped accepting that in January 2023 and
+answers @code{invalid_request}, so a Google account needs something else here and
+it has to be one the registration lists.  A Desktop client registered with
+Google may use a loopback address, "http://127.0.0.1:PORT"; nothing in VM
+or in oauth2.el listens on one, so the code has to be read out of the
+browser’s address bar and pasted anyway.
+
+Set to whatever your own registration says.
+@end defopt
+
+@defopt vm-oauth2-use-pkce
+@vindex vm-oauth2-use-pkce
+Whether to use PKCE (RFC 7636) in the authorization.
+Proof Key for Code Exchange: the client sends a digest of a secret it made
+up and then the secret itself, so a code intercepted on its way back is of
+no use without it.  Providers want it for installed applications, where the
+client secret cannot be kept.
+
+Default value: @code{t}
+@end defopt
+
+@node Reference for Other settings, Reference for POP, Reference for Oauth2, Reference
 @appendixsec Other settings
 @cindex Other settings
 

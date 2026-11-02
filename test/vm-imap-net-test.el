@@ -3777,7 +3777,7 @@ signal is what sent the work to the blocking path."
                             (vm-imap-mock-spec mock "INBOX" "kerberos_v4")
                             "unknown auth" nil)))))
       (should (string-match-p "kerberos_v4" message))
-      (should (string-match-p "login, cram-md5 or preauth" message)))))
+      (should (string-match-p "login, cram-md5, xoauth2 or preauth" message)))))
 
 ;;; The message size limit, on the driver (emacs-vm/vm#822)
 ;;
@@ -4353,6 +4353,144 @@ external.  Which messages those are is still the mailbox's own limit."
     (let ((vm-imap-max-message-size nil))
       (should (equal (nth 0 (vm-imap-net-too-large data wanted archive))
                      wanted)))))
+
+;;; XOAUTH2 (emacs-vm/vm#915)
+;;
+;; VM had no OAuth2 at all: `vm-imap-net-open' refused any authentication but
+;; login, cram-md5 and preauth, which left out every Workspace and Office 365
+;; tenant with app passwords switched off.
+
+(iter-defun vm-imap-net-test--login-xoauth2 (user token)
+  "Greet and log in with XOAUTH2, through the dispatch production uses.
+`vm-imap-net-auth' is buffer-local to the session buffer and set by
+`vm-imap-net-open', which this harness does not go through."
+  (setq vm-imap-net-auth "xoauth2")
+  (iter-yield-from (vm-imap-net-open-session user token)))
+
+(ert-deftest vm-net-test-the-xoauth2-response-is-the-sasl-string ()
+  "The bytes the mechanism asks for, base64 of user=U^Aauth=Bearer T^A^A.
+Pinned because every server reads it and nothing in VM would notice a
+separator going astray: the login would simply fail."
+  (should (equal (base64-decode-string
+                  (vm-net-xoauth2-response "someone@example.com" "tok"))
+                 "user=someone@example.com\1auth=Bearer tok\1\1"))
+  ;; one line: a SASL response that wrapped would be two commands
+  (should-not (string-match-p "\n" (vm-net-xoauth2-response "u" "tok")))
+  ;; the octets of the UTF-8, not the characters
+  (should (equal (base64-decode-string (vm-net-xoauth2-response "ol\303\251" "t"))
+                 "user=ol\303\251\1auth=Bearer t\1\1")))
+
+(ert-deftest vm-imap-net-test-a-session-authenticates-with-xoauth2 ()
+  "REGRESSION: the driver logs in with XOAUTH2.
+The token rides on the AUTHENTICATE line, which is what SASL-IR (RFC 4959)
+allows and every server offering XOAUTH2 advertises.  The mock checks the
+whole SASL string, so a malformed one fails here rather than merely a
+missing one."
+  (vm-imap-net-test--with-session (mock :xoauth2 "ya29.token")
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--login-xoauth2
+                          "vmtest" "ya29.token"))))
+      (should (eq (vm-net-session-state session) 'done))
+      ;; the capabilities come back, which happens only after the server has
+      ;; accepted the authentication
+      (should (memq 'IMAP4REV1 (car (vm-net-session-value session))))
+      (should (vm-imap-mock-received-p mock "AUTHENTICATE XOAUTH2 "))
+      (should (vm-imap-mock-authenticated mock)))))
+
+(ert-deftest vm-imap-net-test-xoauth2-waits-for-a-challenge-without-sasl-ir ()
+  "A server with no SASL-IR gets the response on a line of its own.
+RFC 3501 has only that form, the initial response being RFC 4959's addition,
+so a server advertising XOAUTH2 and not SASL-IR has to be answered this way."
+  (vm-imap-net-test--with-session (mock :xoauth2 "ya29.token" :no-sasl-ir t)
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--login-xoauth2
+                          "vmtest" "ya29.token"))))
+      (should (eq (vm-net-session-state session) 'done))
+      (should (vm-imap-mock-authenticated mock))
+      ;; the bare command, with the token on the next line
+      (should (vm-imap-mock-received-p mock "AUTHENTICATE XOAUTH2\\'")))))
+
+(ert-deftest vm-imap-net-test-a-refused-xoauth2-token-ends-the-session ()
+  "REGRESSION: a refused token does not hang the session.
+The server answers a bad token with a continuation line holding base64 JSON
+and sends no tagged response until the client has sent a line of its own.  A
+client that does not reply waits for a tag that is not coming, which is a
+fetch that never finishes and no error to show for it."
+  (vm-imap-net-test--with-session (mock :xoauth2 "good")
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--login-xoauth2 "vmtest" "stale"))))
+      ;; it ended, and ended as a failure rather than running out the wait
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (vm-net-session-error session))
+      (should-not (vm-imap-mock-authenticated mock)))))
+
+(ert-deftest vm-imap-net-test-the-xoauth2-token-is-not-echoed-into-the-buffer ()
+  "REGRESSION: the bearer token is not written to the transcript.
+The session buffer is what `vm-imap-submit-bug-report' sends, and the token
+reaches the whole mailbox for about an hour.  `vm-imap-net-send' redacted a
+LOGIN and nothing else."
+  (vm-imap-net-test--with-session (mock :xoauth2 "ya29.secret-token")
+    (vm-imap-net-test--run
+     mock (vm-imap-net-test--login-xoauth2 "vmtest" "ya29.secret-token"))
+    (with-current-buffer vm-imap-net-test--buffer
+      (let ((transcript (buffer-string)))
+        ;; the mechanism stays, so a report says which one was tried
+        (should (string-match-p "AUTHENTICATE XOAUTH2" transcript))
+        (should (string-match-p "initial response omitted" transcript))
+        (should-not (string-match-p "ya29.secret-token" transcript))
+        (should-not (string-match-p
+                     (regexp-quote (vm-net-xoauth2-response
+                                    "vmtest" "ya29.secret-token"))
+                     transcript))))))
+
+(ert-deftest vm-imap-net-test-an-xoauth2-token-is-not-remembered ()
+  "REGRESSION: a token does not go into `vm-imap-passwords'.
+It lives about an hour, so an entry there is the next session logging in
+with a dead credential and failing with nobody left to ask.  The other two
+mechanisms remember on purpose."
+  (vm-imap-net-test--with-session (mock :xoauth2 "ya29.token")
+    (let ((vm-imap-passwords nil))
+      (with-current-buffer (generate-new-buffer " *vm-imap-net-key*")
+        (vm-imap-net-test--run
+         mock (vm-imap-net-test--login-xoauth2 "vmtest" "ya29.token"))
+        (kill-buffer))
+      (should-not vm-imap-passwords))))
+
+(ert-deftest vm-imap-net-test-xoauth2-is-refused-where-it-is-not-offered ()
+  "A server that does not advertise XOAUTH2 is told so, and names what it has.
+Better than the server's own BAD, which says nothing about what to write in
+the maildrop instead."
+  (vm-imap-net-test--with-session (mock)
+    (let ((session (vm-imap-net-test--run
+                    mock (vm-imap-net-test--login-xoauth2 "vmtest" "tok"))))
+      (should (eq (vm-net-session-state session) 'failed))
+      (should (string-match-p
+               "does not offer XOAUTH2"
+               (error-message-string (vm-net-session-error session))))
+      (should-not (vm-imap-mock-authenticated mock)))))
+
+(ert-deftest vm-imap-net-test-an-xoauth2-maildrop-is-accepted ()
+  "`vm-imap-net-open' takes xoauth2 in the auth field, and says so when asked.
+The refusal named login, cram-md5 and preauth, and a reader following the
+manual had nothing else to try."
+  (vm-imap-mock-with (mock :xoauth2 "ya29.token")
+    (let ((vm-imap-passwords nil)
+          (opened (vm-imap-net-open
+                   (format "imap:127.0.0.1:%d:INBOX:xoauth2:vmtest:ya29.token"
+                           (vm-imap-mock-port mock))
+                   "xoauth2 test" nil)))
+      (should opened)
+      (let ((process (vm-net-session-process (nth 0 opened))))
+        (when (process-live-p process) (delete-process process))
+        (when (buffer-live-p (vm-net-session-buffer (nth 0 opened)))
+          (kill-buffer (vm-net-session-buffer (nth 0 opened)))))))
+  (vm-imap-mock-with (mock)
+    (let* ((text-quoting-style 'grave)
+           (message (cadr (should-error
+                           (vm-imap-net-open
+                            (vm-imap-mock-spec mock "INBOX" "digest-md5")
+                            "bad auth" nil)))))
+      (should (string-match-p "xoauth2" message)))))
 
 (provide 'vm-imap-net-test)
 
