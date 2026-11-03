@@ -4040,7 +4040,9 @@ Alternatively, call OP on them instead."
      (fj-view-reload))))
 
 (defun fj-item-view-comment ()
-  "Comment on the item currently being viewed."
+  "Comment on the item currently being viewed.
+If there is an active region, treat it as text to be quoted in the
+comment."
   (fj-destructure-buf-spec (item repo owner title)
     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
     (setq fj-compose-repo repo
@@ -5212,7 +5214,9 @@ Works in repo listings, issue listings, and item views."
     (_ (user-error "No item?"))))
 
 (defun fj-item-comment ()
-  "Comment on the item at point or being viewed."
+  "Comment on the item at point or being viewed.
+If there is an active region, treat it as text to be quoted in the
+comment."
   (interactive)
   (fj-item-mode-dispatch #'fj-item-view-comment
                          #'fj-issues-tl-comment))
@@ -5433,7 +5437,8 @@ Update status fields."
 EDIT means we are editing.
 MODE is the fj.el minor mode to enable in the compose buffer.
 TYPE is a symbol of what we are composing, it may be issue or comment.
-Inject INIT-TEXT into the buffer, for editing."
+Inject INIT-TEXT into the buffer, for editing.
+If there is an active region, treat it as text to be quoted."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
   (let ((quote (when (region-active-p)
