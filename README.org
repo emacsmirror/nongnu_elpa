@@ -14,6 +14,7 @@ See the [[https://xmpp.org/software/jabber-el/][xmpp.org page]] for the full lis
 
 + Source:
   + [[https://git.thanosapollo.org/emacs-jabber/about/][git.thanosapollo.org]]
+  + [[https://github.com/thanosapollo/emacs-jabber][GitHub]] (mirror)
 
 * Requirements
 
