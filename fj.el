@@ -3675,7 +3675,7 @@ Adds PROPS to the link's properties."
      assets "\n")
     'fj-item-body t)))
 
-(defun fj-item-view (&optional repo owner number type page limit)
+(defun fj-item-view (&optional repo owner number type page limit target)
   "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window.
 TYPE is :pull or :list (default).
@@ -3699,7 +3699,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
         ;; otherwise render first page of timeline:
-        (fj-item-view-more* page)))))
+        (fj-item-view-more* page target)))))
 
 ;; JUMP TO ITEM:
 
@@ -3863,7 +3863,7 @@ button in it, which has the text property type of more."
             (fj-item-view-more*))
         (user-error "No more items to load")))))
 
-(defun fj-item-view-more* (&optional init-page)
+(defun fj-item-view-more* (&optional init-page target)
   "Append more timeline items to the current view, asynchronously.
 Interactively, INIT-PAGE is nil.
 INIT-PAGE is used in `fj-render-item' on first load of a view and when
@@ -3872,9 +3872,10 @@ reloading a paginated view."
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
      repo owner number (or init-page (fj-inc-or-2 page)) limit
-     #'fj-item-view-more-cb (current-buffer) (point-max) init-page)))
+     #'fj-item-view-more-cb (current-buffer) (point-max) init-page nil target)))
 
-(defun fj-item-view-more-cb (response buf point &optional init-page end-page)
+(defun fj-item-view-more-cb (response buf point
+                                    &optional init-page end-page target)
   "Callback function to append more timeline items to current view.
 RESPONSE is the response buffer, BUF is the buffer to add to, POINT is
 where it was prior to updating.
@@ -3972,7 +3973,9 @@ END-PAGE should be a string of the highest page number to paginate to."
                   ;; render code ranges:
                   (fj-render-linked-source-code async-point)))
               ;; if view still has more items, add a "more" link:
-              (fj-issue-timeline-more-link-mayb)))))))))
+              (fj-issue-timeline-more-link-mayb))))))
+      ;; jump to target maybe:
+      (when target (fj-jump-to-target target)))))
 
 (defun fj-render-bodies-final-load-maybe ()
   "Call `fj-render-item-bodies' if our first item is not rendered.
@@ -5947,9 +5950,11 @@ Used for hitting RET on a given link."
 
 (defun fj-shr-link-follow (item)
   "Load an shr.el link ITEM.
-If it looks like a link to an item, load it."
+If it looks like a link to an item, load it.
+If ITEM has a target (anchor) component, move to it."
   (fj-destructure-buf-spec (repo owner)
-    ;; "https://codeberg.org/guix/guix/pulls/7383"
+    ;; https://codeberg.org/guix/guix/pulls/7383
+    ;; https://codeberg.org/martianh/fj.el/issues/343#issuecomment-27091947
     ;; we might have a link to user/org, to repo, to item...
     (let* ((item
             ;; rel links have no item, so we need to hedge here else we
@@ -5970,7 +5975,8 @@ If it looks like a link to an item, load it."
                             (string-trim-left
                              (url-filename parsed) "/")
                             "/"))
-               (last (car (last file-split))))
+               (last (car (last file-split)))
+               (target (url-target parsed))) ;; "issuecomment-27091947"
           (if (string-empty-p last) ;; https://codeberg.org!
               (shr-browse-url)
             (pcase (length file-split)
@@ -5989,10 +5995,24 @@ If it looks like a link to an item, load it."
                    (_ (shr-browse-url))))
               (_ (pcase (car (last file-split 2))
                    ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
-                    (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last
+                                nil nil nil target))
                    ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
-                    (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last
+                                :pull nil nil target))
                    (_ (shr-browse-url)))))))))))
+
+(defun fj-jump-to-target (target)
+  "Move to TARGET in item view.
+TARGET is a string as returned by `url-target' on a parsed URL, e.g.
+issuecomment-$id."
+  (let ((id (car (last (split-string target "-"))))
+        match)
+    (goto-char (point-min))
+    (when (setq match (text-property-search-forward
+                       'fj-comment-id (string-to-number id) t))
+      (goto-char (prop-match-beginning match))
+      (recenter-top-bottom 2))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
