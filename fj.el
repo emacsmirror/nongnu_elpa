@@ -3100,6 +3100,14 @@ Else make a POST request to the server."
     (shr-ensure-paragraph)
     (shr-mark-fill start)))
 
+(defun fj-shr-tag-pre (dom)
+  "DOM."
+  (let ((shr-folding-mode 'none)
+	(shr-current-font 'fj-shr-pre))
+    (shr-ensure-newline)
+    (shr-generic dom)
+    (shr-ensure-newline)))
+
 (defun fj-shr-tag-code (dom)
   "Render code/verbatim tag DOM."
   (let ((shr-current-font 'fj-shr-code))
@@ -5345,7 +5353,9 @@ comment."
 (defun fj-match-next-issue (limit)
   "A font-lock match function for issue references.
 LIMIT is for `re-search-forward''s bound argument."
-  (re-search-forward "#[[:digit:]]+" limit :no-error))
+  (re-search-forward fj-repo-tag-regex
+                     ;; "#[[:digit:]]+"
+                     limit :no-error))
 
 (defun fj-add-font-lock-keywords ()
   "Add a font-lock keyword to highlight #123 as issue ref."
