@@ -2958,7 +2958,7 @@ for forming a URL.")
       (group-n 1 ; = owner/repo#item
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
                 "A-Z" "a-z" "0-9")) ;; before slash (owner)
-        "/" ;; one slash
+        (opt "/") ;; one slash
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
                 "." "A-Z" "a-z" "0-9")) ;; after slash (repo)
         (group-n 2 (or ?# ?!) ;; # or !
