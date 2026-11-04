@@ -3070,9 +3070,9 @@ Else make a POST request to the server."
     (shr-generic dom)
     ;; line-prefix doesn't work, as indentation, which occurs after this
     ;; function returns, removes it:
-    (add-text-properties start ;; ours
-                         (save-excursion (forward-line -1) (point))
-                         '(face font-lock-comment-face))
+    (add-face-text-property start ;; ours
+                            (save-excursion (forward-line -1) (point))
+                            'font-lock-comment-face)
     (shr-ensure-paragraph)
     (shr-mark-fill start)))
 
