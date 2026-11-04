@@ -409,17 +409,16 @@ descriptions."
          (prefix (or prefix (string-remove-suffix "-mode"
                                                   (symbol-name mode))))
          (kbinds (fedi-post--get-mode-kbinds mode-map))
-         (longest-kbind (fedi-post--formatted-kbinds-longest
-                         (fedi-post--format-kbinds kbinds prefix))))
+         (kbinds-format (fedi-post--format-kbinds kbinds prefix))
+         (longest-kbind (fedi-post--formatted-kbinds-longest kbinds-format)))
     (concat
      (fedi-post-comment
       (format
        " %s %s here. The following keybindings are available:"
        (if edit "Edit your" "Compose a new") type))
      (mapconcat #'identity
-                (fedi-post--formatted-kbinds-pairs
-                 (fedi-post--format-kbinds kbinds prefix)
-                 longest-kbind)
+                (fedi-post--formatted-kbinds-pairs kbinds-format
+                                          longest-kbind)
                 nil))))
 
 (defun fedi-post--concat-fields (fields)
