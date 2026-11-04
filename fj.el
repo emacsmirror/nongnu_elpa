@@ -6031,7 +6031,7 @@ issuecomment-$id."
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
-  (pcase-let* ((`(,owner ,repo ,item) (split-string item "[/#]")))
+  (pcase-let* ((`(,owner ,repo ,item) (split-string item "[/#!]")))
     (fj-item-view repo owner item)))
 
 (defun fj-browse-team (item)
