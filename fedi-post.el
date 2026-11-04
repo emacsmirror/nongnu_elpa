@@ -645,7 +645,15 @@ BUF-PREFIX is a string to prepend to the buffer name."
          (inhibit-read-only t)
          (previous-window-config (list (current-window-configuration)
                                        (point-marker))))
-    (switch-to-buffer-other-window buffer)
+    (pop-to-buffer buffer)
+    (when (and buffer-exists
+               (not (string-empty-p (fedi-post--remove-docs))))
+      (if (not (y-or-n-p "Item being composed. Discard and proceed?"))
+          (user-error "Aborting")
+        (setq-local after-change-functions nil)
+        (erase-buffer)
+        (setq fedi-post--kbinds-pairs nil)
+        (setq buffer-exists nil))) ;; act as tho new compose buf
     ;; `markdown-mode' here breaks any existing docs display:
     (if major
         (unless (eq major major-mode)
