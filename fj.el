@@ -1389,12 +1389,14 @@ SORT should be a member of `fj-issues-sort'."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
+         (labels (mapconcat #'identity labels ","))
          (params
           (append `(("limit" . ,(or limit (fj-default-limit)))
                     ("sort" . ,(or sort fj-issues-sort-default)))
                   (fedi-opt-params state type
                                    (query :alias "q")
-                                   labels milestones
+                                   labels
+                                   milestones
                                    page limit))))
     (condition-case err
         (fj-get endpoint params)
@@ -2213,22 +2215,23 @@ Not sure what the server actually accepts.")
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue)))
     (fj-get url)))
 
-(defun fj-issue-read-label (&optional repo owner issue id)
-  "Read a label in the minibuffer and return it.
+(defun fj-issue-read-labels (&optional repo owner issue id)
+  "Read some labels in the minibuffer and return them.
 Label is for ISSUE in REPO by OWNER.
-Return its name, or if ID, return a cons of its name and id."
+If ID, return alist of names and ids, else return plain list of names."
   (let* ((labels (fj-repo-get-labels repo owner))
-         ;; (pairs (fj--map-alist-to-cons labels 'name 'id))
          (pairs (fj-propertize-label-names labels))
-         (choice
-          (if issue
-              (completing-read
-               (format "Add label to #%s: " issue)
-               pairs)
-            (completing-read "Label: " pairs))))
+         (choices
+          (completing-read-multiple
+           (if issue
+               (format "Add label to #%s (TAB for multi): " issue)
+             "Label: ")
+           pairs)))
     (if id
-        (assoc choice pairs #'string=)
-      choice)))
+        (mapcar (lambda (x)
+                  (assoc x pairs #'string=))
+                choices)
+      choices)))
 
 (defun fj-propertize-label-names (json)
   "Propertize all labels in label data JSON.
@@ -2250,7 +2253,7 @@ Return an alist, with each cons being (name . id)"
               ;; FIXME: in label data for an issue, desc is empty
               'help-echo desc))
 
-(defun fj-issue-label-add (&optional repo owner issue)
+(defun fj-issue-labels-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
   ;; POST "repos/%s/%s/issues/%s/labels"
   (let* ((repo (fj-read-user-repo repo))
@@ -2262,16 +2265,16 @@ Return an alist, with each cons being (name . id)"
          (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
                         'id)) ;; we post IDs to avoid duplicating:
-         (choice (fj-issue-read-label repo owner issue :id))
-         (id (cdr choice))
-         (params `(("labels" . ,(cl-pushnew id issue-labels
-                                            :test #'equal))))
+         (choices (fj-issue-read-labels repo owner issue :id))
+         (ids (mapcar #'cdr choices))
+         (params `(("labels" . ,(remove-duplicates
+                                 (append ids issue-labels)))))
          (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
      (lambda (_resp)
        (fj-view-reload)
-       (message "Label %s added to #%s!" (car choice) issue)))))
+       (message "Label(s) %s added to #%s!" (mapcar #'car choices) issue)))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
@@ -2727,9 +2730,8 @@ STATE, TYPE, QUERY, and LABELS are for `fj-list-issues-do'."
 STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (interactive)
   (fj-with-item-tl
-   ;; FIXME: labels list is CSV, so we should do that here and send on:
-   (let* ((label (fj-issue-read-label)))
-     (fj-list-issues-do repo owner state type query label))))
+   (let* ((labels (fj-issue-read-labels)))
+     (fj-list-issues-do repo owner state type query labels))))
 
 (defvar fj-repo-data nil) ;; for transients for now
 
@@ -5214,7 +5216,7 @@ Works in repo listings, issue listings, and item views."
    (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--repo-col-or-buf-spec)))
-     (fj-issue-label-add repo owner number))))
+     (fj-issue-labels-add repo owner number))))
 
 (defun fj-issues-tl-label-remove ()
   "Remove label from issue from tabulated issues listing."
@@ -5285,8 +5287,8 @@ comment."
 (defun fj-item-label-add ()
   "Add label to the item at point or being viewed."
   (interactive)
-  (fj-item-mode-dispatch #'fj-issue-label-add
-                         #'fj-issues-tl-label-add))
+  (fj-item-mode-dispatch #'fj-issue-labels-add
+                       #'fj-issues-tl-label-add))
 
 (defun fj-item-label-remove ()
   "Remove label from the item at point or being viewed."
@@ -5405,10 +5407,11 @@ LIMIT is for `re-search-forward''s bound argument."
   (interactive)
   ;; we store conses of (name . id), then fedi.el
   ;; displays names in the compose docs but submits the id.
-  (cl-pushnew (fj-issue-read-label fj-compose-repo
-                                   fj-compose-repo-owner nil :id)
-              fj-compose-issue-labels
-              :test #'equal)
+  (setq fj-compose-issue-labels
+        (cl-remove-duplicates
+         (append (fj-issue-read-labels fj-compose-repo
+                                     fj-compose-repo-owner nil :id)
+                 fj-compose-issue-labels)))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-milestone ()
