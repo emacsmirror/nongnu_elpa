@@ -5205,12 +5205,13 @@ Works in repo listings, issue listings, and item views."
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-remove repo owner number))))
 
-(defun fj-tl-goto-item-by-number (index)
+(defun fj-tl-goto-item-by-number ()
   "Read an item number INDEX and jump to it, from tabulated listing."
-  (interactive "sItem number (no #): ")
-  (fj-with-item-tl
-   (fj-destructure-buf-spec (owner repo)
-     (fj-item-view repo owner index))))
+  (interactive)
+  (let ((index (read-string "Item number (no #): ")))
+    (fj-with-item-tl
+     (fj-destructure-buf-spec (owner repo)
+       (fj-item-view repo owner index)))))
 
 ;;; GENERIC ITEM ACTION COMMANDS
 
