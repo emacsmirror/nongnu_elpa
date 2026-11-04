@@ -2302,6 +2302,27 @@ Return an alist, with each cons being (name . id)"
            (let ((label (fj-propertize-label choice color)))
              (message "Label %s removed from #%s!" label issue))))))))
 
+(defun fj-issue-label-remove-all (&optional repo owner issue)
+  "Remove all labels from ISSUE in REPO by OWNER."
+  ;; DELETE /repos/{owner}/{repo}/issues/{index}/labels
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue
+                    (fj--get-buffer-spec :item)
+                    (fj-read-repo-issue repo)))
+         (owner (or owner (fj--repo-owner)))
+         (issue-labels (fj-issue-get-labels repo owner issue)))
+    (if (not issue-labels)
+        (user-error "No labels to remove")
+      (when (y-or-n-p (format "Remove all labels for issue %s?" issue))
+        (let* ((url (format "repos/%s/%s/issues/%s/labels"
+                            owner repo issue))
+               (resp (fj-delete url)))
+          (fedi-http--triage
+           resp
+           (lambda (_)
+             (fj-view-reload)
+             (message "Labels removed from #%s!" issue))))))))
+
 (defun fj-repo-create-label (&optional repo owner)
   "Create a new label for REPO by OWNER."
   ;; POST /repos/{owner}/{repo}/labels
@@ -5226,6 +5247,14 @@ Works in repo listings, issue listings, and item views."
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-remove repo owner number))))
 
+(defun fj-issues-tl-labels-remove-all ()
+  "Remove all labels from issue from tabulated issues listing."
+  (fj-with-entry
+   (let* ((number (fj--get-tl-col 0))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--repo-col-or-buf-spec)))
+     (fj-issue-label-remove-all repo owner number))))
+
 (defun fj-tl-goto-item-by-number ()
   "Read an item number INDEX and jump to it, from tabulated listing."
   (interactive)
@@ -5295,6 +5324,12 @@ comment."
   (interactive)
   (fj-item-mode-dispatch #'fj-issue-label-remove
                          #'fj-issues-tl-label-remove))
+
+(defun fj-item-labels-remove-all ()
+  "Remove all labels from the item at point or being viewed."
+  (interactive)
+  (fj-item-mode-dispatch #'fj-issue-label-remove-all
+                       #'fj-issues-tl-labels-remove-all))
 
 (defun fj-item-goto-by-number ()
   "Jump to item by its number, from the item at point or being viewed."
