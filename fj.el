@@ -25,7 +25,7 @@
 ;;; Commentary:
 
 ;; A client for Forgejo instances. Forgejo is a self-hostable software
-;; forge. See <https://foregejo.org>.
+;; forge. See <https://forgejo.org>.
 
 ;; The client is based on tabulated listings for issues, PRs, repos,
 ;; users, etc., and attempts to implement a fairly rich interface for item
@@ -162,7 +162,7 @@ etc."
 (defcustom fj-token-use-auth-source t
   "Whether to use an auth-source file.
 If non-nil, use an auth-source file such as ~/.authinfo.gpg for the user
-authorization token of the foregejo instance.
+authorization token of the forgejo instance.
 If set to nil, you need to set `fj-token' to your user token."
   :type 'boolean)
 
@@ -2712,7 +2712,7 @@ The default sort value follows `fj-issues-sort-default'."
 TYPE is item type, a member of `fj-items-types'.
 STATE is a member of `fj-items-states'.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
-fetch owner/repo from git config and check if it might have a foregejo
+fetch owner/repo from git config and check if it might have a forgejo
 remote.
 If we are not in a repo, call `fj-list-issues-do' without using
 git config."
@@ -4227,7 +4227,7 @@ ENDPOINT is the API endpoint to hit."
                       (map-nested-elt data '(base label))))
             (branch-str (if branch (concat " " branch) ""))
             ;; FIXME: If not mergeable, then must do manual merge. but if
-            ;; manual/local merge gets done and pushed, does foregejo
+            ;; manual/local merge gets done and pushed, does forgejo
             ;; update the status of mergeable? if so we can user-error on
             ;; not merbeable, else we have to y-or-n-p only, but also only
             ;; allow merge-type to be manually-merged
@@ -4658,7 +4658,7 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
 
 (defvar fj-search-modes
   '("source" "fork" "mirror" "collaborative")
-  "Types of repositories in foregejo search.")
+  "Types of repositories in forgejo search.")
 
 (defvar fj-search-sorts
   '("alpha" "created" "updated" "size" "git_size" "lfs_size" "stars"
