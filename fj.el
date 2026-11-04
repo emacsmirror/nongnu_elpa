@@ -2963,7 +2963,8 @@ for forming a URL.")
                 "." "A-Z" "a-z" "0-9")) ;; after slash (repo)
         (group-n 2 (or ?# ?!) ;; # or !
                  (group-n 3
-                   (one-or-more (any "A-Z" "a-z" "0-9")))))
+                   (one-or-more (any ;; "A-Z" "a-z"
+                                     "0-9")))))
       (| "'" word-boundary)) ; boundary or possessive
   "Regex for a repo-prefixed tag.
 Group 1 is owner/repo#item, group 2 is #item, group 3 is item.")
