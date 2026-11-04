@@ -4047,12 +4047,20 @@ Alternatively, call OP on them instead."
 If there is an active region, treat it as text to be quoted in the
 comment."
   (fj-destructure-buf-spec (item repo owner title)
-    (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
-    (setq fj-compose-repo repo
-          fj-compose-issue-title title
-          fj-compose-repo-owner owner
-          fj-compose-issue-number item)
-    (fedi-post--update-status-fields)))
+    (let* ((quote-text (when (region-active-p)
+                         (buffer-substring (region-beginning)
+                                           (region-end))))
+           (reply-str (when quote-text
+                        (fj--reply-str (fj--property 'fj-comment-author)
+                                     repo owner item
+                                     (fj--property 'fj-comment-id)))))
+      (fj-issue-compose nil 'fj-compose-comment-mode 'comment
+                      reply-str quote-text)
+      (setq fj-compose-repo repo
+            fj-compose-issue-title title
+            fj-compose-repo-owner owner
+            fj-compose-issue-number item)
+      (fedi-post--update-status-fields))))
 
 (defun fj-item-view-edit-comment ()
   "Edit the comment at point."
@@ -5435,65 +5443,71 @@ Update status fields."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-assignees))
 
-(defun fj-issue-compose (&optional edit mode type init-text)
+(defun fj--reply-str (username repo owner item comment-id)
+  "Format a reply string.
+For comment by USERNAME in REPO by OWNER under ITEM with COMMENT-ID."
+  (let ((user-link (format "[@%s](%s/@%s)" username fj-host username))
+        (comment-link (format "[#%s (comment)](%s/%s/%s/issues/%s#issuecomment-%s)"
+                              item fj-host owner repo item comment-id)))
+    (concat user-link " wrote in "
+            comment-link ":\n")))
+
+(defun fj-issue-compose (&optional edit mode type init-text quote-text)
   "Compose a new post.
 EDIT means we are editing.
 MODE is the fj.el minor mode to enable in the compose buffer.
 TYPE is a symbol of what we are composing, it may be issue or comment.
 Inject INIT-TEXT into the buffer, for editing.
-If there is an active region, treat it as text to be quoted."
+QUOTE-TEXT is text to be quoted."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
-  (let ((quote (when (region-active-p)
-                 (buffer-substring (region-beginning)
-                                   (region-end)))))
-    (fedi-post--compose-buffer
-     edit
-     #'markdown-mode
-     (or mode #'fj-compose-mode)
-     (when mode "fj-compose")
-     (or type 'issue)
-     (list #'fj-compose-mentions-capf)
-     ;; #'fj-compose-issues-capf
-     ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-     `(((name     . "repo")
-        (prop     . compose-repo)
-        (item-var . fj-compose-repo)
-        (face     . link))
-       ((name     . "owner")
-        (prop     . compose-repo-owner)
-        (item-var . fj-compose-repo-owner)
-        (face     . link))
-       ((name     . ,(if (eq type 'comment) "issue" "title"))
-        (prop     . compose-title)
-        (item-var . fj-compose-issue-title)
-        (face     . fj-post-title-face))
-       ((name     . "labels")
-        (prop     . compose-labels)
-        (item-var . fj-compose-issue-labels)
-        (face     . fj-post-title-face))
-       ((name     . "milestone")
-        (prop     . compose-milestone)
-        (item-var . fj-compose-milestone)
-        (face     . fj-post-title-face))
-       ((name     . "upload")
-        (prop     . compose-upload)
-        (item-var . fj-compose-upload)
-        (face     . fj-post-title-face))
-       ((name     . "assignees")
-        (prop     . compose-assignees)
-        (item-var . fj-compose-assignees)
-        (face     . fj-post-title-face)))
-     init-text quote
-     "fj-" fj-compose-autocomplete)
-    (setq fj-compose-item-type
-          (if edit
-              (if (eq type 'comment)
-                  'edit-comment
-                'edit-issue)
+  (fedi-post--compose-buffer
+   edit
+   #'markdown-mode
+   (or mode #'fj-compose-mode)
+   (when mode "fj-compose")
+   (or type 'issue)
+   (list #'fj-compose-mentions-capf)
+   ;; #'fj-compose-issues-capf
+   ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
+   `(((name     . "repo")
+      (prop     . compose-repo)
+      (item-var . fj-compose-repo)
+      (face     . link))
+     ((name     . "owner")
+      (prop     . compose-repo-owner)
+      (item-var . fj-compose-repo-owner)
+      (face     . link))
+     ((name     . ,(if (eq type 'comment) "issue" "title"))
+      (prop     . compose-title)
+      (item-var . fj-compose-issue-title)
+      (face     . fj-post-title-face))
+     ((name     . "labels")
+      (prop     . compose-labels)
+      (item-var . fj-compose-issue-labels)
+      (face     . fj-post-title-face))
+     ((name     . "milestone")
+      (prop     . compose-milestone)
+      (item-var . fj-compose-milestone)
+      (face     . fj-post-title-face))
+     ((name     . "upload")
+      (prop     . compose-upload)
+      (item-var . fj-compose-upload)
+      (face     . fj-post-title-face))
+     ((name     . "assignees")
+      (prop     . compose-assignees)
+      (item-var . fj-compose-assignees)
+      (face     . fj-post-title-face)))
+   init-text quote-text
+   "fj-" fj-compose-autocomplete)
+  (setq fj-compose-item-type
+        (if edit
             (if (eq type 'comment)
-                'new-comment
-              'new-issue)))))
+                'edit-comment
+              'edit-issue)
+          (if (eq type 'comment)
+              'new-comment
+            'new-issue))))
 
 (defun fj-compose-send (&optional prefix)
   "Submit the issue or comment to your Forgejo instance.
