@@ -2938,7 +2938,7 @@ for forming a URL.")
         "/" ;; one slash
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
                 "." "A-Z" "a-z" "0-9")) ;; after slash (repo)
-        (group-n 2 ?#
+        (group-n 2 (or ?# ?!) ;; # or !
                  (group-n 3
                    (one-or-more (any "A-Z" "a-z" "0-9")))))
       (| "'" word-boundary)) ; boundary or possessive
