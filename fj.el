@@ -4042,14 +4042,33 @@ Alternatively, call OP on them instead."
      (fj-issue-edit-title repo owner item)
      (fj-view-reload))))
 
+(defun fj-format-quote-text (str)
+  "Wrap any text with `fj-shr-code' property in backticks."
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (switch-to-buffer (current-buffer))
+    (let (match)
+      (while (setq match
+                   (text-property-search-forward 'face 'fj-shr-code t))
+        (save-excursion
+          (goto-char (prop-match-beginning match))
+          (insert "`"))
+        (save-excursion
+          (goto-char (prop-match-end match))
+          (forward-char)
+          (insert "`"))))
+    (buffer-string)))
+
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed.
 If there is an active region, treat it as text to be quoted in the
 comment."
   (fj-destructure-buf-spec (item repo owner title)
     (let* ((quote-text (when (region-active-p)
-                         (buffer-substring (region-beginning)
-                                           (region-end))))
+                         (fj-format-quote-text
+                          (buffer-substring (region-beginning)
+                                            (region-end)))))
            (reply-str (when quote-text
                         (fj--reply-str (fj--property 'fj-comment-author)
                                      repo owner item
