@@ -56,6 +56,18 @@ INPUT is the destructuring usage.  OUTPUT-PATTERN is what to match."
   (should (loopy--member-p '(1 2 3) 2 :test #'=))
   (should (loopy--member-p '((1) (2) (3)) '(2) :test #'= :key #'car)))
 
+(ert-deftest loopy--pcase-let*-strict ()
+  (should (equal (list 1 2 3 4 5)
+                 (eval (quote (loopy--pcase-let*-strict ((`(,a ,b) (list 1 2))
+                                                         (`[,c ,d] (vector 3 4))
+                                                         (e 5))
+                                (list a b c d e)))
+                       t)))
+
+  (should-error (eval (quote (loopy--pcase-let*-strict ((`(,a) (list 1 2)))
+                               (list a)))
+                      t)))
+
 ;;; Destructuring
 
 (ert-deftest destructure-with ()

@@ -296,28 +296,29 @@ Type is one of `list' or `array'."
   "Get the spec of `&key' VAR-FORM as (KEY VAR DEFAULT SUPPLIED)."
   (declare (important-return-value t)
            (ftype (function ((or sequence symbol)) cons)))
-  (pcase-let (((or (or (seq (seq key var) default supplied)
-                       (seq (seq key var) default)
-                       (seq (seq key var)))
-                   (and (or (seq var default supplied)
-                            (seq var default)
-                            (seq var)
-                            (and (pred symbolp)
-                                 var))
-                        ;; Strip a leading underscore, since it
-                        ;; only means that this argument is
-                        ;; unused, but shouldn't affect the
-                        ;; key's name (bug#12367).
-                        (let key (if (seqp var)
-                                     (signal 'loopy-&key-key-from-sequence
-                                             (list var-form))
-                                   (intern
-                                    (format ":%s"
-                                            (let ((name (symbol-name var)))
-                                              (if (eq ?_ (aref name 0))
-                                                  (substring name 1)
-                                                name))))))))
-               var-form))
+  (loopy--pcase-let*-strict
+      (((or (or (seq (seq key var) default supplied)
+                (seq (seq key var) default)
+                (seq (seq key var)))
+            (and (or (seq var default supplied)
+                     (seq var default)
+                     (seq var)
+                     (and (pred symbolp)
+                          var))
+                 ;; Strip a leading underscore, since it
+                 ;; only means that this argument is
+                 ;; unused, but shouldn't affect the
+                 ;; key's name (bug#12367).
+                 (let key (if (seqp var)
+                              (signal 'loopy-&key-key-from-sequence
+                                      (list var-form))
+                            (intern
+                             (format ":%s"
+                                     (let ((name (symbol-name var)))
+                                       (if (eq ?_ (aref name 0))
+                                           (substring name 1)
+                                         name))))))))
+        var-form))
     (unless var
       (signal 'loopy-&key-var-malformed
               (list var-form)))
@@ -327,18 +328,19 @@ Type is one of `list' or `array'."
   "Get the spec of `&map' VAR-FORM as (KEY VAR DEFAULT SUPPLIED)."
   (declare (important-return-value t)
            (ftype (function ((or sequence symbol)) cons)))
-  (pcase-let (((or (seq key var default supplied)
-                   (seq key var default)
-                   (seq key var)
-                   (and (or (seq var)
-                            (and (pred symbolp)
-                                 var))
-                        (let key
-                          (if (seqp var-form)
-                              (signal 'loopy-&map-key-from-sequence
-                                      (list var-form))
-                            `(quote ,var)))))
-               var-form))
+  (loopy--pcase-let*-strict
+      (((or (seq key var default supplied)
+            (seq key var default)
+            (seq key var)
+            (and (or (seq var)
+                     (and (pred symbolp)
+                          var))
+                 (let key
+                   (if (seqp var-form)
+                       (signal 'loopy-&map-key-from-sequence
+                               (list var-form))
+                     `(quote ,var)))))
+        var-form))
     (unless var
       (signal 'loopy-&map-var-malformed
               (list var-form)))
@@ -348,11 +350,11 @@ Type is one of `list' or `array'."
   "Get the spec of `&aux' VAR-FORM as (VAR VAL)."
   (declare (important-return-value t)
            (ftype (function ((or sequence symbol)) cons)))
-  (pcase-let (((or (seq var val)
-                   (seq var)
-                   (and (pred symbolp)
-                        var))
-               var-form))
+  (loopy--pcase-let*-strict (((or (seq var val)
+                                  (seq var)
+                                  (and (pred symbolp)
+                                       var))
+                              var-form))
     (unless var
       (signal 'loopy-&aux-malformed-var (list var-form)))
     (list var val)))
@@ -367,23 +369,23 @@ Type is one of `list' or `array'."
                               (dolist (val2 (loopy--get-var-list val))
                                 (cl-pushnew val2 result :test #'eq))
                             (cl-pushnew val result)))
-                (opt-fn (val) (seq-let [var _ supplied _]
-                                  (loopy--get-&optional-spec val)
+                (opt-fn (val) (loopy--pcase-let*-strict
+                                  (`(,var ,_ ,supplied ,_) (loopy--get-&optional-spec val))
                                 (fn var)
                                 (when supplied
                                   (fn supplied))))
-                (key-fn (val) (seq-let [_ var _ supplied]
-                                  (loopy--get-&key-spec val)
+                (key-fn (val) (loopy--pcase-let*-strict
+                                  (`(,_ ,var ,_ ,supplied) (loopy--get-&key-spec val))
                                 (fn var)
                                 (when supplied
                                   (fn supplied))))
-                (map-fn (val) (seq-let [_ var _ supplied]
-                                  (loopy--get-&map-spec val)
+                (map-fn (val) (loopy--pcase-let*-strict
+                                  (`(,_ ,var ,_ ,supplied) (loopy--get-&map-spec val))
                                 (fn var)
                                 (when supplied
                                   (fn supplied))))
-                (aux-fn (val) (seq-let [var _]
-                                  (loopy--get-&map-spec val)
+                (aux-fn (val) (loopy--pcase-let*-strict
+                                  (`(,var ,_) (loopy--get-&map-spec val))
                                 (fn var))))
       (map-do (lambda (k v)
                 (when v
@@ -466,9 +468,9 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                    (app cdr-safe ,(loopy--pcase-pat-positional-list-pattern
                                    (cdr pos-vars) opt-vars
                                    rest-var map-or-key-vars))))
-   (opt-vars (pcase-let* ((`(,var ,default ,supplied ,_length)
-                           (loopy--get-&optional-spec (car opt-vars)))
-                          (var2 (loopy--get-var-pattern var)))
+   (opt-vars (loopy--pcase-let*-strict ((`(,var ,default ,supplied ,_length)
+                                         (loopy--get-&optional-spec (car opt-vars)))
+                                        (var2 (loopy--get-var-pattern var)))
                `(and (pred listp)
                      (app car-safe (or (and (pred null)
                                             ,@(when supplied
@@ -531,9 +533,9 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                                        ,@(cl-loop
                                           for spec-idx2 from 0 to spec-idx-high
                                           for arr-idx from pat-idx-low
-                                          append (pcase-let* ((`(,var2 ,_ ,supplied2 ,len2)
-                                                               (aref opt-var-specs spec-idx2))
-                                                              (var3 (loopy--get-var-pattern var2)))
+                                          append (loopy--pcase-let*-strict ((`(,var2 ,_ ,supplied2 ,len2)
+                                                                             (aref opt-var-specs spec-idx2))
+                                                                            (var3 (loopy--get-var-pattern var2)))
                                                    (if (= len2 3)
                                                        `((app ,(loopy--pcase-flip 'aref arr-idx)
                                                               ,var3)
@@ -545,9 +547,9 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                                        ,@(cl-loop
                                           for spec-idx2 from (1+ spec-idx-high) to spec-idx-max
                                           for arr-idx from pat-idx-low
-                                          append (pcase-let* ((`(,var2 ,default2 ,supplied2 ,len2)
-                                                               (aref opt-var-specs spec-idx2))
-                                                              (var3 (loopy--get-var-pattern var2)))
+                                          append (loopy--pcase-let*-strict ((`(,var2 ,default2 ,supplied2 ,len2)
+                                                                             (aref opt-var-specs spec-idx2))
+                                                                            (var3 (loopy--get-var-pattern var2)))
                                                    (pcase-exhaustive len2
                                                      (3 `((let ,var3 ,default2)
                                                           (let ,supplied2 nil)))
@@ -558,8 +560,8 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                                                       ))))))
                       ;; A pattern for when nothing matches.
                       (and ,@(cl-loop for spec across opt-var-specs
-                                      append (pcase-let* ((`(,var2 ,default2 ,supplied2 ,len2) spec)
-                                                          (var3 (loopy--get-var-pattern var2)))
+                                      append (loopy--pcase-let*-strict ((`(,var2 ,default2 ,supplied2 ,len2) spec)
+                                                                        (var3 (loopy--get-var-pattern var2)))
                                                (pcase-exhaustive len2
                                                  (3
                                                   `((let ,var3 ,default2)
@@ -663,8 +665,8 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                                      ,@(cl-loop
                                         for spec-idx2 from 0 to spec-idx-high
                                         for arr-idx from pat-idx-low
-                                        append (pcase-let* ((`(,var2 ,_ ,supplied2) (aref opt-var-specs spec-idx2))
-                                                            (var3 (loopy--get-var-pattern var2)))
+                                        append (loopy--pcase-let*-strict ((`(,var2 ,_ ,supplied2 ,_) (aref opt-var-specs spec-idx2))
+                                                                          (var3 (loopy--get-var-pattern var2)))
                                                  (if supplied2
                                                      `((app ,(loopy--pcase-flip 'seq-elt arr-idx)
                                                             ,var3)
@@ -676,9 +678,9 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                                      ,@(cl-loop
                                         for spec-idx2 from (1+ spec-idx-high) to spec-idx-max
                                         for arr-idx from pat-idx-low
-                                        append (pcase-let* ((`(,var2 ,default2 ,supplied2 ,len2)
-                                                             (aref opt-var-specs spec-idx2))
-                                                            (var3 (loopy--get-var-pattern var2)))
+                                        append (loopy--pcase-let*-strict ((`(,var2 ,default2 ,supplied2 ,len2)
+                                                                           (aref opt-var-specs spec-idx2))
+                                                                          (var3 (loopy--get-var-pattern var2)))
                                                  (pcase-exhaustive len2
                                                    (3 `((let ,var3 ,default2)
                                                         (let ,supplied2 nil)))
@@ -689,8 +691,8 @@ MAP-OR-KEY-VARS is whether there are map or key variables."
                                                     ))))))
                     ;; A pattern for when nothing matches.
                     (and ,@(cl-loop for spec across opt-var-specs
-                                    append (pcase-let* ((`(,var2 ,default2 ,supplied2 ,_len2) spec)
-                                                        (var3 (loopy--get-var-pattern var2)))
+                                    append (loopy--pcase-let*-strict ((`(,var2 ,default2 ,supplied2 ,_len2) spec)
+                                                                      (var3 (loopy--get-var-pattern var2)))
                                              `(,@(when supplied2
                                                    `((let ,supplied2 nil)))
                                                (let ,var3 ,default2)
@@ -719,15 +721,15 @@ whether `&allow-other-keys' was used."
   ;; then we can use simpler patterns since we don't need to store the
   ;; value of the key.
   (cl-flet ((get-var-data (var-form)
-              (pcase-let ((`(,key ,var ,default ,supplied)
-                           (loopy--get-&key-spec var-form)))
+              (loopy--pcase-let*-strict ((`(,key ,var ,default ,supplied)
+                                          (loopy--get-&key-spec var-form)))
                 (list key (loopy--get-var-pattern var)
                       default supplied))))
     (if allow-other-keys
         `(and ,@(mapcar (lambda (var-form)
-                          (pcase-let ((`(,key ,var ,default ,supplied) (get-var-data var-form))
-                                      (key-found (gensym "key-found"))
-                                      (plist (gensym "plist")))
+                          (loopy--pcase-let*-strict ((`(,key ,var ,default ,supplied) (get-var-data var-form))
+                                                     (key-found (gensym "key-found"))
+                                                     (plist (gensym "plist")))
                             (cond (supplied
                                    `(app (lambda (,plist)
                                            (let ((,key-found (plist-member ,plist ,key)))
@@ -805,8 +807,8 @@ whether `&allow-other-keys' was used."
   (let ((mapsym (gensym "map")))
     `(and (pred mapp)
           ,@(mapcar (lambda (var-form)
-                      (pcase-let ((`(,key ,var ,default ,supplied)
-                                   (loopy--get-&map-spec var-form)))
+                      (loopy--pcase-let*-strict ((`(,key ,var ,default ,supplied)
+                                                  (loopy--get-&map-spec var-form)))
                         (unless var
                           (signal 'loopy-&map-var-malformed (list var-form)))
                         (setq var (loopy--get-var-pattern var))
@@ -1010,10 +1012,10 @@ Returns a list of two elements:
         ;; hiding any needed variable values when binding the found variables to
         ;; `nil'.
         (let ((capture-var (gensym "loopy--with-capture")))
-          (pcase-let ((`(,setter ,found-vars)
-                       (loopy--pcase-destructure-basic-setter
-                        var capture-var
-                        :error error)))
+          (loopy--pcase-let*-strict
+              ((`(,setter ,found-vars) (loopy--pcase-destructure-basic-setter
+                                        var capture-var
+                                        :error error)))
             (cl-callf cl-union all-vars found-vars :test #'eq)
             (push `(,setter
                     (,capture-var ,val)

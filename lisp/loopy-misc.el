@@ -302,6 +302,29 @@
               'loopy-error)
 
 
+;;;; `pcase-let*-strict' compatibility
+
+(defmacro loopy--pcase-let*-strict-1 (pairs &rest body)
+  "Alternative implementation for `pcase-let*-strict' if it does not exist."
+  (declare (indent 1) (debug pcase-let*))
+  (cl-reduce (cl-function (lambda (body (pat val))
+                            (if (symbolp pat)
+                                `(pcase-let ((,pat ,val))
+                                   ,body)
+                              `(pcase ,val
+                                 (,pat ,body)
+                                 (fail (error "Pattern does not match value: %S %S"
+                                              (quote ,pat)
+                                              fail))))))
+             (reverse pairs)
+             :initial-value (macroexp-progn body)))
+
+(defalias 'loopy--pcase-let*-strict
+  (if (fboundp 'pcase-let*-strict)
+      'pcase-let*-strict
+    'loopy--pcase-let*-strict-1))
+
+
 ;;;; List Processing
 
 (defmacro loopy--plist-bind (bindings plist &rest body)

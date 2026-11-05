@@ -670,7 +670,7 @@ macro `loopy' itself."
       (loopy--iteration-vars
        (loopy--validate-binding instruction-value)
        ;; Don't want to accidentally rebind variables to `nil'.
-       (pcase-let ((`(,var ,new-val) instruction-value))
+       (loopy--pcase-let*-strict ((`(,var ,new-val) instruction-value))
          (pcase var
            ((pred loopy--with-bound-p) nil)
            ((app loopy--command-bound-p `(,place . ,old-val))
@@ -683,7 +683,7 @@ macro `loopy' itself."
        ;; Don't want to accidentally rebind variables to `nil'
        ;; or to accidentally mis-use commands that need
        ;; different initial values.
-       (pcase-let ((`(,var ,new-val) instruction-value))
+       (loopy--pcase-let*-strict ((`(,var ,new-val) instruction-value))
          (pcase var
            ((pred loopy--with-bound-p) nil)
            ((and (app loopy--command-bound-p `(,place . ,old-val))
