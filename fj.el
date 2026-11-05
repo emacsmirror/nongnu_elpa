@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (compat "31") (fedi "0.5") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.51
+;; Version: 0.52
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -25,7 +25,7 @@
 ;;; Commentary:
 
 ;; A client for Forgejo instances. Forgejo is a self-hostable software
-;; forge. See <https://foregejo.org>.
+;; forge. See <https://forgejo.org>.
 
 ;; The client is based on tabulated listings for issues, PRs, repos,
 ;; users, etc., and attempts to implement a fairly rich interface for item
@@ -162,7 +162,7 @@ etc."
 (defcustom fj-token-use-auth-source t
   "Whether to use an auth-source file.
 If non-nil, use an auth-source file such as ~/.authinfo.gpg for the user
-authorization token of the foregejo instance.
+authorization token of the forgejo instance.
 If set to nil, you need to set `fj-token' to your user token."
   :type 'boolean)
 
@@ -278,8 +278,10 @@ performance."
 (defface fj-item-author-face
   `((t :inherit magit-diff-hunk-heading
        :underline t
-       :foreground
-       ,(face-attribute 'font-lock-function-name-face :foreground)
+       ;; :foreground
+       ;; FIXME: this doesn't work unless we explicitly eval it, but blue
+       ;; on brown in my theme is also hard to read, maybe drop it
+       ;; ,(face-attribute 'font-lock-function-name-face :foreground)
        :weight bold))
   "Face for item authors.")
 
@@ -313,6 +315,10 @@ Not used for items that are links.")
 (defface fj-post-title-face
   '((t :inherit font-lock-comment-face :weight bold))
   "Face for post title in compose buffer.")
+
+(defface fj-shr-code
+  '((t :inherit (highlight shr-code)))
+  "Face for verbatim text.")
 
 ;;; AUTH / TOKENS
 
@@ -1383,12 +1389,14 @@ SORT should be a member of `fj-issues-sort'."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
+         (labels (mapconcat #'identity labels ","))
          (params
           (append `(("limit" . ,(or limit (fj-default-limit)))
                     ("sort" . ,(or sort fj-issues-sort-default)))
                   (fedi-opt-params state type
                                    (query :alias "q")
-                                   labels milestones
+                                   labels
+                                   milestones
                                    page limit))))
     (condition-case err
         (fj-get endpoint params)
@@ -2207,22 +2215,23 @@ Not sure what the server actually accepts.")
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue)))
     (fj-get url)))
 
-(defun fj-issue-read-label (&optional repo owner issue id)
-  "Read a label in the minibuffer and return it.
+(defun fj-issue-read-labels (&optional repo owner issue id)
+  "Read some labels in the minibuffer and return them.
 Label is for ISSUE in REPO by OWNER.
-Return its name, or if ID, return a cons of its name and id."
+If ID, return alist of names and ids, else return plain list of names."
   (let* ((labels (fj-repo-get-labels repo owner))
-         ;; (pairs (fj--map-alist-to-cons labels 'name 'id))
          (pairs (fj-propertize-label-names labels))
-         (choice
-          (if issue
-              (completing-read
-               (format "Add label to #%s: " issue)
-               pairs)
-            (completing-read "Label: " pairs))))
+         (choices
+          (completing-read-multiple
+           (if issue
+               (format "Add label to #%s (TAB for multi): " issue)
+             "Label: ")
+           pairs)))
     (if id
-        (assoc choice pairs #'string=)
-      choice)))
+        (mapcar (lambda (x)
+                  (assoc x pairs #'string=))
+                choices)
+      choices)))
 
 (defun fj-propertize-label-names (json)
   "Propertize all labels in label data JSON.
@@ -2244,7 +2253,7 @@ Return an alist, with each cons being (name . id)"
               ;; FIXME: in label data for an issue, desc is empty
               'help-echo desc))
 
-(defun fj-issue-label-add (&optional repo owner issue)
+(defun fj-issue-labels-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
   ;; POST "repos/%s/%s/issues/%s/labels"
   (let* ((repo (fj-read-user-repo repo))
@@ -2256,16 +2265,16 @@ Return an alist, with each cons being (name . id)"
          (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
                         'id)) ;; we post IDs to avoid duplicating:
-         (choice (fj-issue-read-label repo owner issue :id))
-         (id (cdr choice))
-         (params `(("labels" . ,(cl-pushnew id issue-labels
-                                            :test #'equal))))
+         (choices (fj-issue-read-labels repo owner issue :id))
+         (ids (mapcar #'cdr choices))
+         (params `(("labels" . ,(cl-remove-duplicates
+                                 (append ids issue-labels)))))
          (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
      (lambda (_resp)
        (fj-view-reload)
-       (message "Label %s added to #%s!" (car choice) issue)))))
+       (message "Label(s) %s added to #%s!" (mapcar #'car choices) issue)))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
@@ -2292,6 +2301,27 @@ Return an alist, with each cons being (name . id)"
            (fj-view-reload)
            (let ((label (fj-propertize-label choice color)))
              (message "Label %s removed from #%s!" label issue))))))))
+
+(defun fj-issue-label-remove-all (&optional repo owner issue)
+  "Remove all labels from ISSUE in REPO by OWNER."
+  ;; DELETE /repos/{owner}/{repo}/issues/{index}/labels
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue
+                    (fj--get-buffer-spec :item)
+                    (fj-read-repo-issue repo)))
+         (owner (or owner (fj--repo-owner)))
+         (issue-labels (fj-issue-get-labels repo owner issue)))
+    (if (not issue-labels)
+        (user-error "No labels to remove")
+      (when (y-or-n-p (format "Remove all labels for issue %s?" issue))
+        (let* ((url (format "repos/%s/%s/issues/%s/labels"
+                            owner repo issue))
+               (resp (fj-delete url)))
+          (fedi-http--triage
+           resp
+           (lambda (_)
+             (fj-view-reload)
+             (message "Labels removed from #%s!" issue))))))))
 
 (defun fj-repo-create-label (&optional repo owner)
   "Create a new label for REPO by OWNER."
@@ -2682,7 +2712,7 @@ The default sort value follows `fj-issues-sort-default'."
 TYPE is item type, a member of `fj-items-types'.
 STATE is a member of `fj-items-states'.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
-fetch owner/repo from git config and check if it might have a foregejo
+fetch owner/repo from git config and check if it might have a forgejo
 remote.
 If we are not in a repo, call `fj-list-issues-do' without using
 git config."
@@ -2721,9 +2751,8 @@ STATE, TYPE, QUERY, and LABELS are for `fj-list-issues-do'."
 STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (interactive)
   (fj-with-item-tl
-   ;; FIXME: labels list is CSV, so we should do that here and send on:
-   (let* ((label (fj-issue-read-label)))
-     (fj-list-issues-do repo owner state type query label))))
+   (let* ((labels (fj-issue-read-labels)))
+     (fj-list-issues-do repo owner state type query labels))))
 
 (defvar fj-repo-data nil) ;; for transients for now
 
@@ -2912,10 +2941,10 @@ TYPE is the item type."
          ?@
          (group-n 2 ; = repo/tem only
            (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                   "A-Z" "a-z" "0-9")) ;; before slash (repo)
+                   alnum)) ;;"A-Z" "a-z" "0-9")) ;; before slash (repo)
            "/" ;; one slash
            (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                   "A-Z" "a-z" "0-9"))))) ;; after slash (team)
+                   alnum))))) ;;"A-Z" "a-z" "0-9"))))) ;; after slash (team)
       ;; i struggled to get full stops working here (in fedi.el) but
       ;; perhaps they aren't needed, as they are not included in handles
       ;; above?
@@ -2928,16 +2957,30 @@ for forming a URL.")
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
       (group-n 1 ; = owner/repo#item
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                "A-Z" "a-z" "0-9")) ;; before slash (owner)
-        "/" ;; one slash
+                alnum)) ;;"A-Z" "a-z" "0-9")) ;; before slash (owner)
+        (opt "/") ;; one slash
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                "." "A-Z" "a-z" "0-9")) ;; after slash (repo)
-        (group-n 2 ?#
+                "." alnum)) ;;"A-Z" "a-z" "0-9")) ;; after slash (repo)
+        (group-n 2 (or ?# ?!) ;; # or !
                  (group-n 3
-                   (one-or-more (any "A-Z" "a-z" "0-9")))))
+                   (1+ (any ;; "A-Z" "a-z"
+                        digit)))))
       (| "'" word-boundary)) ; boundary or possessive
   "Regex for a repo-prefixed tag.
 Group 1 is owner/repo#item, group 2 is #item, group 3 is item.")
+
+(defvar fj-commit-link-regex
+  (rx
+   (group-n 1 ;; entire URL
+     "https://"
+     (1+ (not (any " " ?\n ?\t ?,)))
+     "/" (1+ (not (any " " ?\n ?\t ?,)))
+     "/" (1+ (not (any " " ?\n ?\t ?,)))
+     "/commit/"
+     (group-n 2 ;; commit
+       (1+ (any alnum)))))
+  "Regex for a commit URL.
+Group 1 is the full URL, group 2 is the commit hash.")
 
 (defun fj-mdize-plain-urls ()
   "Markdown-ize any plain string URLs found in current buffer."
@@ -3064,11 +3107,24 @@ Else make a POST request to the server."
     (shr-generic dom)
     ;; line-prefix doesn't work, as indentation, which occurs after this
     ;; function returns, removes it:
-    (add-text-properties start ;; ours
-                         (save-excursion (forward-line -1) (point))
-                         '(face font-lock-comment-face))
+    (add-face-text-property start ;; ours
+                            (save-excursion (forward-line -1) (point))
+                            'font-lock-comment-face)
     (shr-ensure-paragraph)
     (shr-mark-fill start)))
+
+(defun fj-shr-tag-pre (dom)
+  "DOM."
+  (let ((shr-folding-mode 'none)
+	(shr-current-font 'fj-shr-pre))
+    (shr-ensure-newline)
+    (shr-generic dom)
+    (shr-ensure-newline)))
+
+(defun fj-shr-tag-code (dom)
+  "Render code/verbatim tag DOM."
+  (let ((shr-current-font 'fj-shr-code))
+    (shr-generic dom)))
 
 (defun fj-form-checkbox (dom)
   "Render checkbox DOM."
@@ -3109,7 +3165,8 @@ Optionally start from POINT."
                 (shr-external-rendering-functions
                  (append shr-external-rendering-functions
                          '((input . fj-tag-input)
-                           (blockquote . fj-shr-tag-blockquote))))
+                           (blockquote . fj-shr-tag-blockquote)
+                           (code . fj-shr-tag-code))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
@@ -3164,9 +3221,34 @@ Optionally start from POINT."
       ;; (fedi-propertize-items markdown-regex-link-inline 'shr
       ;;                        fj-link-keymap 1 1 nil nil
       ;;                        '(fj-tab-stop t))
-
       ;; some shr items don't match (any) url-regex, e.g. rel links:
-      (fj-propertize-shr-items))))
+      (fj-propertize-shr-items)
+      (fj-propertize-commit-links))))
+
+(defun fj-propertize-commit-links ()
+  "Propertize any URLs to single commits in buffer."
+  (save-excursion
+    (save-match-data
+      (goto-char (point-min))
+      ;; ideally we'd work errors out, but we don't want to ruin
+      ;; our caller, which might make a page load fail:
+      (ignore-errors
+        (while (re-search-forward fj-commit-link-regex)
+          (let* ((hash (buffer-substring-no-properties
+                        (match-beginning 2)
+                        (match-end 2)))
+                 (beg (match-beginning 1))
+                 (end (match-end 1))
+                 (item-str (buffer-substring-no-properties beg end))
+                 (hash-str
+                  (propertize (seq-take hash 10) ;; as per web UI
+                              'face '(highlight shr-link))))
+            (add-text-properties
+             beg end
+             (fedi-link-props 'highlight item-str hash 'commit item-str
+                              fj-link-keymap))
+            (add-text-properties
+             beg end `(display ,hash-str))))))))
 
 (defun fj-propertize-shr-items ()
   "Add text properties to shr items in buffer.
@@ -3554,7 +3636,10 @@ RELOAD mean we reloaded."
          ;; (forge has: state, status, milestone, labels, marks, assignees):
          (propertize
           (concat
-           "State: " .state
+           "State: "
+           (propertize .state
+                       'face
+                       (if (string= "closed" .state) 'error 'success))
            (when (string= "closed" .state)
              (concat " " (fedi--relative-time-description
                           (date-to-time .closed_at))))
@@ -3564,7 +3649,8 @@ RELOAD mean we reloaded."
              (concat "\nAssignees: "
                      (mapconcat
                       (lambda (x)
-                        (alist-get 'login x))
+                        (propertize (alist-get 'login x)
+                                    'face 'fj-user-face))
                       .assignees)
                      "\n"))
            (when .labels
@@ -3659,7 +3745,7 @@ Adds PROPS to the link's properties."
      assets "\n")
     'fj-item-body t)))
 
-(defun fj-item-view (&optional repo owner number type page limit)
+(defun fj-item-view (&optional repo owner number type page limit target)
   "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window.
 TYPE is :pull or :list (default).
@@ -3683,7 +3769,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
         ;; otherwise render first page of timeline:
-        (fj-item-view-more* page)))))
+        (fj-item-view-more* page target)))))
 
 ;; JUMP TO ITEM:
 
@@ -3847,7 +3933,7 @@ button in it, which has the text property type of more."
             (fj-item-view-more*))
         (user-error "No more items to load")))))
 
-(defun fj-item-view-more* (&optional init-page)
+(defun fj-item-view-more* (&optional init-page target)
   "Append more timeline items to the current view, asynchronously.
 Interactively, INIT-PAGE is nil.
 INIT-PAGE is used in `fj-render-item' on first load of a view and when
@@ -3856,9 +3942,10 @@ reloading a paginated view."
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
      repo owner number (or init-page (fj-inc-or-2 page)) limit
-     #'fj-item-view-more-cb (current-buffer) (point-max) init-page)))
+     #'fj-item-view-more-cb (current-buffer) (point-max) init-page nil target)))
 
-(defun fj-item-view-more-cb (response buf point &optional init-page end-page)
+(defun fj-item-view-more-cb (response buf point
+                                    &optional init-page end-page target)
   "Callback function to append more timeline items to current view.
 RESPONSE is the response buffer, BUF is the buffer to add to, POINT is
 where it was prior to updating.
@@ -3956,7 +4043,9 @@ END-PAGE should be a string of the highest page number to paginate to."
                   ;; render code ranges:
                   (fj-render-linked-source-code async-point)))
               ;; if view still has more items, add a "more" link:
-              (fj-issue-timeline-more-link-mayb)))))))))
+              (fj-issue-timeline-more-link-mayb))))))
+      ;; jump to target maybe:
+      (when target (fj-jump-to-target target)))))
 
 (defun fj-render-bodies-final-load-maybe ()
   "Call `fj-render-item-bodies' if our first item is not rendered.
@@ -4023,15 +4112,44 @@ Alternatively, call OP on them instead."
      (fj-issue-edit-title repo owner item)
      (fj-view-reload))))
 
+(defun fj-format-quote-text (str)
+  "Wrap any text with `fj-shr-code' property in backticks."
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (switch-to-buffer (current-buffer))
+    (let (match)
+      (while (setq match
+                   (text-property-search-forward 'face 'fj-shr-code t))
+        (save-excursion
+          (goto-char (prop-match-beginning match))
+          (insert "`"))
+        (save-excursion
+          (goto-char (prop-match-end match))
+          (forward-char)
+          (insert "`"))))
+    (buffer-string)))
+
 (defun fj-item-view-comment ()
-  "Comment on the item currently being viewed."
+  "Comment on the item currently being viewed.
+If there is an active region, treat it as text to be quoted in the
+comment."
   (fj-destructure-buf-spec (item repo owner title)
-    (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
-    (setq fj-compose-repo repo
-          fj-compose-issue-title title
-          fj-compose-repo-owner owner
-          fj-compose-issue-number item)
-    (fedi-post--update-status-fields)))
+    (let* ((quote-text (when (region-active-p)
+                         (fj-format-quote-text
+                          (buffer-substring (region-beginning)
+                                            (region-end)))))
+           (reply-str (when quote-text
+                        (fj--reply-str (fj--property 'fj-comment-author)
+                                     repo owner item
+                                     (fj--property 'fj-comment-id)))))
+      (fj-issue-compose nil 'fj-compose-comment-mode 'comment
+                      reply-str quote-text)
+      (setq fj-compose-repo repo
+            fj-compose-issue-title title
+            fj-compose-repo-owner owner
+            fj-compose-issue-number item)
+      (fedi-post--update-status-fields))))
 
 (defun fj-item-view-edit-comment ()
   "Edit the comment at point."
@@ -4080,9 +4198,9 @@ Alternatively, call OP on them instead."
 
 ;;; PR VIEWS
 
-(defun fj-view-commit-diff (&optional sha)
+(defun fj-view-commit-diff (&optional sha url)
   "View a diff of a commit at point.
-Optionally, provide the commit's SHA."
+Optionally, provide the commit's SHA and URL."
   (interactive)
   (fj-destructure-buf-spec (repo owner item)
     (let* ((sha (or sha
@@ -4090,7 +4208,7 @@ Optionally, provide the commit's SHA."
                     item)) ;; item view? FIXME: remove?
            (endpoint (format "repos/%s/%s/git/commits/%s.diff"
                              owner repo sha)))
-      (fj-view-item-diff endpoint))))
+      (fj-view-item-diff endpoint repo owner url))))
 
 (defun fj-view-pull-diff ()
   "View a diff of the entire current PR."
@@ -4099,11 +4217,13 @@ Optionally, provide the commit's SHA."
    (fj-destructure-buf-spec (repo owner item)
      (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
                               owner repo item)))
-       (fj-view-item-diff endpoint)))))
+       (fj-view-item-diff endpoint repo owner)))))
 
-(defun fj-view-item-diff (endpoint)
+(defun fj-view-item-diff (endpoint &optional repo owner url)
   "View a diff of an item, commit or pull diff.
-ENDPOINT is the API endpoint to hit."
+In REPO by OWNER.
+ENDPOINT is the API endpoint to hit.
+Optionally also provide the commit URL."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
     (fedi-http--triage
@@ -4119,7 +4239,10 @@ ENDPOINT is the API endpoint to hit."
          (switch-to-buffer-other-window (current-buffer))
          ;; FIXME: make this work like special-mode, easy bindings and
          ;; read-only:
-         (diff-mode))))))
+         (diff-mode)
+         (keymap-local-set "b" #'fj-browse-view) ;; requires url in buf-spec
+         (setq fj-buffer-spec
+               `(:url ,url :repo ,repo :owner ,owner)))))))
 
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
@@ -4147,7 +4270,7 @@ ENDPOINT is the API endpoint to hit."
                       (map-nested-elt data '(base label))))
             (branch-str (if branch (concat " " branch) ""))
             ;; FIXME: If not mergeable, then must do manual merge. but if
-            ;; manual/local merge gets done and pushed, does foregejo
+            ;; manual/local merge gets done and pushed, does forgejo
             ;; update the status of mergeable? if so we can user-error on
             ;; not merbeable, else we have to y-or-n-p only, but also only
             ;; allow merge-type to be manually-merged
@@ -4578,7 +4701,7 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
 
 (defvar fj-search-modes
   '("source" "fork" "mirror" "collaborative")
-  "Types of repositories in foregejo search.")
+  "Types of repositories in forgejo search.")
 
 (defvar fj-search-sorts
   '("alpha" "created" "updated" "size" "git_size" "lfs_size" "stars"
@@ -5166,7 +5289,7 @@ Works in repo listings, issue listings, and item views."
    (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--repo-col-or-buf-spec)))
-     (fj-issue-label-add repo owner number))))
+     (fj-issue-labels-add repo owner number))))
 
 (defun fj-issues-tl-label-remove ()
   "Remove label from issue from tabulated issues listing."
@@ -5176,12 +5299,21 @@ Works in repo listings, issue listings, and item views."
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-remove repo owner number))))
 
-(defun fj-tl-goto-item-by-number (index)
+(defun fj-issues-tl-labels-remove-all ()
+  "Remove all labels from issue from tabulated issues listing."
+  (fj-with-entry
+   (let* ((number (fj--get-tl-col 0))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--repo-col-or-buf-spec)))
+     (fj-issue-label-remove-all repo owner number))))
+
+(defun fj-tl-goto-item-by-number ()
   "Read an item number INDEX and jump to it, from tabulated listing."
-  (interactive "sItem number (no #): ")
-  (fj-with-item-tl
-   (fj-destructure-buf-spec (owner repo)
-     (fj-item-view repo owner index))))
+  (interactive)
+  (let ((index (read-string "Item number (no #): ")))
+    (fj-with-item-tl
+     (fj-destructure-buf-spec (owner repo)
+       (fj-item-view repo owner index)))))
 
 ;;; GENERIC ITEM ACTION COMMANDS
 
@@ -5196,7 +5328,9 @@ Works in repo listings, issue listings, and item views."
     (_ (user-error "No item?"))))
 
 (defun fj-item-comment ()
-  "Comment on the item at point or being viewed."
+  "Comment on the item at point or being viewed.
+If there is an active region, treat it as text to be quoted in the
+comment."
   (interactive)
   (fj-item-mode-dispatch #'fj-item-view-comment
                          #'fj-issues-tl-comment))
@@ -5234,14 +5368,20 @@ Works in repo listings, issue listings, and item views."
 (defun fj-item-label-add ()
   "Add label to the item at point or being viewed."
   (interactive)
-  (fj-item-mode-dispatch #'fj-issue-label-add
-                         #'fj-issues-tl-label-add))
+  (fj-item-mode-dispatch #'fj-issue-labels-add
+                       #'fj-issues-tl-label-add))
 
 (defun fj-item-label-remove ()
   "Remove label from the item at point or being viewed."
   (interactive)
   (fj-item-mode-dispatch #'fj-issue-label-remove
                          #'fj-issues-tl-label-remove))
+
+(defun fj-item-labels-remove-all ()
+  "Remove all labels from the item at point or being viewed."
+  (interactive)
+  (fj-item-mode-dispatch #'fj-issue-label-remove-all
+                       #'fj-issues-tl-labels-remove-all))
 
 (defun fj-item-goto-by-number ()
   "Jump to item by its number, from the item at point or being viewed."
@@ -5256,7 +5396,9 @@ Works in repo listings, issue listings, and item views."
 (defun fj-match-next-issue (limit)
   "A font-lock match function for issue references.
 LIMIT is for `re-search-forward''s bound argument."
-  (re-search-forward "#[[:digit:]]+" limit :no-error))
+  (re-search-forward fj-repo-tag-regex
+                     ;; "#[[:digit:]]+"
+                     limit :no-error))
 
 (defun fj-add-font-lock-keywords ()
   "Add a font-lock keyword to highlight #123 as issue ref."
@@ -5354,10 +5496,11 @@ LIMIT is for `re-search-forward''s bound argument."
   (interactive)
   ;; we store conses of (name . id), then fedi.el
   ;; displays names in the compose docs but submits the id.
-  (cl-pushnew (fj-issue-read-label fj-compose-repo
-                                   fj-compose-repo-owner nil :id)
-              fj-compose-issue-labels
-              :test #'equal)
+  (setq fj-compose-issue-labels
+        (cl-remove-duplicates
+         (append (fj-issue-read-labels fj-compose-repo
+                                     fj-compose-repo-owner nil :id)
+                 fj-compose-issue-labels)))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-milestone ()
@@ -5412,64 +5555,71 @@ Update status fields."
   (interactive)
   (fj-compose-remove-variable 'fj-compose-assignees))
 
-(defun fj-issue-compose (&optional edit mode type init-text)
+(defun fj--reply-str (username repo owner item comment-id)
+  "Format a reply string.
+For comment by USERNAME in REPO by OWNER under ITEM with COMMENT-ID."
+  (let ((user-link (format "[@%s](%s/@%s)" username fj-host username))
+        (comment-link (format "[#%s (comment)](%s/%s/%s/issues/%s#issuecomment-%s)"
+                              item fj-host owner repo item comment-id)))
+    (concat user-link " wrote in "
+            comment-link ":\n")))
+
+(defun fj-issue-compose (&optional edit mode type init-text quote-text)
   "Compose a new post.
 EDIT means we are editing.
 MODE is the fj.el minor mode to enable in the compose buffer.
 TYPE is a symbol of what we are composing, it may be issue or comment.
-Inject INIT-TEXT into the buffer, for editing."
+Inject INIT-TEXT into the buffer, for editing.
+QUOTE-TEXT is text to be quoted."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
-  (let ((quote (when (region-active-p)
-                 (buffer-substring (region-beginning)
-                                   (region-end)))))
-    (fedi-post--compose-buffer
-     edit
-     #'markdown-mode
-     (or mode #'fj-compose-mode)
-     (when mode "fj-compose")
-     (or type 'issue)
-     (list #'fj-compose-mentions-capf)
-     ;; #'fj-compose-issues-capf
-     ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-     `(((name     . "repo")
-        (prop     . compose-repo)
-        (item-var . fj-compose-repo)
-        (face     . link))
-       ((name     . "owner")
-        (prop     . compose-repo-owner)
-        (item-var . fj-compose-repo-owner)
-        (face     . link))
-       ((name     . ,(if (eq type 'comment) "issue" "title"))
-        (prop     . compose-title)
-        (item-var . fj-compose-issue-title)
-        (face     . fj-post-title-face))
-       ((name     . "labels")
-        (prop     . compose-labels)
-        (item-var . fj-compose-issue-labels)
-        (face     . fj-post-title-face))
-       ((name     . "milestone")
-        (prop     . compose-milestone)
-        (item-var . fj-compose-milestone)
-        (face     . fj-post-title-face))
-       ((name     . "upload")
-        (prop     . compose-upload)
-        (item-var . fj-compose-upload)
-        (face     . fj-post-title-face))
-       ((name     . "assignees")
-        (prop     . compose-assignees)
-        (item-var . fj-compose-assignees)
-        (face     . fj-post-title-face)))
-     init-text quote
-     "fj-" fj-compose-autocomplete)
-    (setq fj-compose-item-type
-          (if edit
-              (if (eq type 'comment)
-                  'edit-comment
-                'edit-issue)
+  (fedi-post--compose-buffer
+   edit
+   #'markdown-mode
+   (or mode #'fj-compose-mode)
+   (when mode "fj-compose")
+   (or type 'issue)
+   (list #'fj-compose-mentions-capf)
+   ;; #'fj-compose-issues-capf
+   ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
+   `(((name     . "repo")
+      (prop     . compose-repo)
+      (item-var . fj-compose-repo)
+      (face     . link))
+     ((name     . "owner")
+      (prop     . compose-repo-owner)
+      (item-var . fj-compose-repo-owner)
+      (face     . link))
+     ((name     . ,(if (eq type 'comment) "issue" "title"))
+      (prop     . compose-title)
+      (item-var . fj-compose-issue-title)
+      (face     . fj-post-title-face))
+     ((name     . "labels")
+      (prop     . compose-labels)
+      (item-var . fj-compose-issue-labels)
+      (face     . fj-post-title-face))
+     ((name     . "milestone")
+      (prop     . compose-milestone)
+      (item-var . fj-compose-milestone)
+      (face     . fj-post-title-face))
+     ((name     . "upload")
+      (prop     . compose-upload)
+      (item-var . fj-compose-upload)
+      (face     . fj-post-title-face))
+     ((name     . "assignees")
+      (prop     . compose-assignees)
+      (item-var . fj-compose-assignees)
+      (face     . fj-post-title-face)))
+   init-text quote-text
+   "fj-" fj-compose-autocomplete)
+  (setq fj-compose-item-type
+        (if edit
             (if (eq type 'comment)
-                'new-comment
-              'new-issue)))))
+                'edit-comment
+              'edit-issue)
+          (if (eq type 'comment)
+              'new-comment
+            'new-issue))))
 
 (defun fj-compose-send (&optional prefix)
   "Submit the issue or comment to your Forgejo instance.
@@ -5907,7 +6057,7 @@ Used for hitting RET on a given link."
         ('team (fj-browse-team item))
         ('repo-tag (fj-repo-tag-follow item))
         ((or  'commit 'commit-ref)
-         (fj-view-commit-diff item))
+         (fj-view-commit-diff item (fedi--property 'shr-url)))
         ('issue-ref
          (fj-issue-ref-follow item))
         ('notif
@@ -5926,9 +6076,11 @@ Used for hitting RET on a given link."
 
 (defun fj-shr-link-follow (item)
   "Load an shr.el link ITEM.
-If it looks like a link to an item, load it."
+If it looks like a link to an item, load it.
+If ITEM has a target (anchor) component, move to it."
   (fj-destructure-buf-spec (repo owner)
-    ;; "https://codeberg.org/guix/guix/pulls/7383"
+    ;; https://codeberg.org/guix/guix/pulls/7383
+    ;; https://codeberg.org/martianh/fj.el/issues/343#issuecomment-27091947
     ;; we might have a link to user/org, to repo, to item...
     (let* ((item
             ;; rel links have no item, so we need to hedge here else we
@@ -5949,7 +6101,8 @@ If it looks like a link to an item, load it."
                             (string-trim-left
                              (url-filename parsed) "/")
                             "/"))
-               (last (car (last file-split))))
+               (last (car (last file-split)))
+               (target (url-target parsed))) ;; "issuecomment-27091947"
           (if (string-empty-p last) ;; https://codeberg.org!
               (shr-browse-url)
             (pcase (length file-split)
@@ -5968,14 +6121,28 @@ If it looks like a link to an item, load it."
                    (_ (shr-browse-url))))
               (_ (pcase (car (last file-split 2))
                    ("issues" ;; https://codeberg.org/martianh/fj.el/issues/206
-                    (fj-item-view (cadr owner-repo) (car owner-repo) last))
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last
+                                nil nil nil target))
                    ("pulls" ;; https://codeberg.org/martianh/mastodon.el/pulls/702
-                    (fj-item-view (cadr owner-repo) (car owner-repo) last :pull))
+                    (fj-item-view (cadr owner-repo) (car owner-repo) last
+                                :pull nil nil target))
                    (_ (shr-browse-url)))))))))))
+
+(defun fj-jump-to-target (target)
+  "Move to TARGET in item view.
+TARGET is a string as returned by `url-target' on a parsed URL, e.g.
+issuecomment-$id."
+  (let ((id (car (last (split-string target "-"))))
+        match)
+    (goto-char (point-min))
+    (when (setq match (text-property-search-forward
+                       'fj-comment-id (string-to-number id) t))
+      (goto-char (prop-match-beginning match))
+      (recenter-top-bottom 2))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
-  (pcase-let* ((`(,owner ,repo ,item) (split-string item "[/#]")))
+  (pcase-let* ((`(,owner ,repo ,item) (split-string item "[/#!]")))
     (fj-item-view repo owner item)))
 
 (defun fj-browse-team (item)
