@@ -1,3 +1,8 @@
+#+title: fj.el: A Forgejo client
+#+export_file_name: fj
+#+TEXINFO_DIR_CATEGORY: Emacs
+#+TEXINFO_DIR_TITLE: fj: (fj).
+#+TEXINFO_DIR_DESC: A client for Forgejo instances (such as Codeberg).
 
 @@html: <a href="https://elpa.nongnu.org/nongnu/fj.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/fj.svg"></a> <img src="https://img.shields.io/liberapay/patrons/martianh.svg?logo=liberapay">@@
 

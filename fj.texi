@@ -1,0 +1,847 @@
+\input texinfo    @c -*- texinfo -*-
+@c %**start of header
+@setfilename fj.info
+@settitle fj.el: A Forgejo client
+@documentencoding UTF-8
+@documentlanguage en
+@c %**end of header
+
+@dircategory Emacs
+@direntry
+* fj: (fj).             A client for Forgejo instances (such as Codeberg).
+@end direntry
+
+@finalout
+@titlepage
+@end titlepage
+
+@ifnottex
+@node Top
+@top fj.el: A Forgejo client
+@end ifnottex
+
+@menu
+* fj.el: fjel. 
+* install::
+* getting started::
+* repositories::
+* features::
+* dependencies::
+* limitations::
+* contributions::
+* supporting @samp{fj.el}: supporting @samp{fjel}. 
+* screenshots::
+* commands index::
+* variables index::
+
+@detailmenu
+--- The Detailed Node Listing ---
+
+getting started
+
+* authentication::
+* basic views::
+
+features
+
+* repos and repo listings::
+* rich create/edit issue/comment interface::
+* issues/PRs as listings::
+* viewing issues/PRs::
+* notifications::
+* user/repo settings::
+* other features::
+
+other features
+
+* create remote links from local source files::
+* syntax highlighting for code blocks::
+
+limitations
+
+* performance::
+* general design::
+
+@end detailmenu
+@end menu
+
+@node fjel
+@unnumbered fj.el
+
+This repo contains some basic functions for interacting with a Forgejo instance (such as @uref{https://codeberg.org, codeberg.org}) from within Emacs.
+
+It doesn't interact with @samp{forge} / @samp{magit}@comma{} which don't implement Gitea/Forgejo support for now (though this will likely change@comma{} see @uref{https://github.com/magit/forge/discussions/771}). Nor does it attempt to follow their wonderful design.
+
+It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
+
+@node install
+@unnumbered install
+
+@samp{fj.el} is available in @uref{https://elpa.nongnu.org/, ELPA}.
+
+You can also just pull it from the repo with use-package/straight@comma{} such as:
+
+@lisp
+(use-package fj
+  :straight (:type git :host codeberg "martianh/fj.el")
+  :config
+  (setq fj-user "martianh"))
+@end lisp
+
+@node getting started
+@unnumbered getting started
+
+@menu
+* authentication::
+* basic views::
+@end menu
+
+@node authentication
+@unnumberedsec authentication
+
+To get going@comma{} first set @samp{fj-host}@comma{} and @samp{fj-user}.
+
+To authorize your account@comma{} call @samp{fj-create-token}@comma{} which will prompt you for your password@comma{} create an API access token@comma{} and copy it to your kill ring. Alternatively you can obtain an access token from your profile settings on your Forgejo instance (in user settings@comma{} under ``applications'').
+
+Once you have your token@comma{} call @samp{fj-token} (or any interactive function such as @samp{fj-list-issues}). You will be prompted for your access token@comma{} and when you enter it@comma{} @samp{fj.el} will also offer to save it in your auth-sources file (@samp{~/.authinfo.gpg} or similar; see variable @samp{auth-sources}). Once saved@comma{} you should be good to go.
+
+Alternatively@comma{} you can set @samp{fj-token-use-auth-source} to @samp{nil} and simply set @samp{fj-token} to your token (unencrypted option).
+
+Finally@comma{} if you were previously using the unencrypted @samp{fj-token} method and want to use auth sources@comma{} simply remove the code that sets @samp{fj-token} in your init config@comma{} and follow the steps above.
+
+If you run into any auth issues@comma{} feel free to open an issue or contact me.
+
+@node basic views
+@unnumberedsec basic views
+
+Once you are authenticated@comma{} try @samp{fj-list-own-repos} to view your repos@comma{} or @samp{fj-list-issues} to view issues of the current repo@comma{} or with completing-read of a repo if no repo is found.
+
+If you are already viewing a repo and want to force the prompt to choose another@comma{} call @samp{fj-list-issues} with a prefix arg (@samp{C-u}).
+
+You can also call @samp{fj-list-own-issues} to view all issues across your repos@comma{} and @samp{fj-watched-repos} to see your watched repos.
+
+To use a different instance for a given repo@comma{} set @samp{fj-host}@comma{}  @samp{fj-user}@comma{} and @samp{fj-token} in your @samp{.dir-locals.el} file.
+
+@node repositories
+@unnumbered repositories
+
+Current repository detection should work partially automatically. If you find you are still being asked for the repo when calling a command from inside a repo with a Forgejo remote@comma{} check to make sure the local root directory matches the name of the Forgejo repo!
+
+@node features
+@unnumbered features
+
+Forgejo's API is vast. Currently @samp{fj.el} just implements a few basic things:
+
+@menu
+* repos and repo listings::
+* rich create/edit issue/comment interface::
+* issues/PRs as listings::
+* viewing issues/PRs::
+* notifications::
+* user/repo settings::
+* other features::
+@end menu
+
+@node repos and repo listings
+@unnumberedsec repos and repo listings
+
+@itemize
+@item
+create new (remote) repo
+@item
+delete a repo
+@end itemize
+
+
+@itemize
+@item
+search and list instance repos
+@item
+list a user's repos
+@item
+fork a repo
+@item
+star a repo
+@item
+watch a repo
+@item
+copy clone URL of repo
+@item
+view a repo's readme
+@item
+view a repo's commit log
+@item
+list repo's stargazers
+@item
+list repo's watchers
+@end itemize
+
+@node rich create/edit issue/comment interface
+@unnumberedsec rich create/edit issue/comment interface
+
+@node issues/PRs as listings
+@unnumberedsec issues/PRs as listings
+
+@itemize
+@item
+list repo issues and PRs
+@item
+list issues in any repo you own
+@item
+list issues you have authored in any repo
+@item
+cycle between issues/PRs/all
+@item
+cycle between open/closed/all issues/PRs
+@item
+sort issues/PRs (serverside)
+@item
+quick jump to any issue/PR or repo in a listing with @samp{imenu}.
+@item
+search in repo issues/PRs
+@end itemize
+
+
+@itemize
+@item
+act on an issue/PR from the listing (edit@comma{} edit title@comma{} comment@comma{} close@comma{} reopen@comma{} delete@comma{} add label)
+@end itemize
+
+@node viewing issues/PRs
+@unnumberedsec viewing issues/PRs
+
+@itemize
+@item
+view issue/PR discussion
+@item
+act on issue/PR (as above@comma{} plus reply or delete comment)
+@item
+jump to mentioned user@comma{} issue or commit.
+@item
+display all issue/PR timeline items (references@comma{} commits@comma{} merges@comma{} close/reopen@comma{} edit@comma{} etc.)
+@item
+display diff of any commit
+@item
+display diff of entire PR
+@item
+PR review discussion
+@item
+PR review diffs
+@item
+merge PR
+@item
+browse URL of view or entry at point
+@item
+add reactions to item at point
+@item
+add labels to item.
+@end itemize
+
+@node notifications
+@unnumberedsec notifications
+
+@itemize
+@item
+view your notifications
+@item
+jump to relevant item
+@item
+toggle between viewing unread and all notifications
+@end itemize
+
+@node user/repo settings
+@unnumberedsec user/repo settings
+
+@itemize
+@item
+update repo settings transient menu
+@item
+update user settings transient menu
+@end itemize
+
+
+@itemize
+@item
+view followers
+@item
+view users followed
+@end itemize
+
+@node other features
+@unnumberedsec other features
+
+@menu
+* create remote links from local source files::
+* syntax highlighting for code blocks::
+@end menu
+
+@node create remote links from local source files
+@unnumberedsubsec create remote links from local source files
+
+If you want to insert a link to a line in your source files@comma{} consider using @uref{https://github.com/sshaw/git-link}.
+
+@node syntax highlighting for code blocks
+@unnumberedsubsec syntax highlighting for code blocks
+
+If you want verbatim code blocks in comments to have syntax highlighting@comma{}
+consider installing
+@uref{https://github.com/xuchunyang/shr-tag-pre-highlight.el}. @samp{fj-.el} uses @samp{shr}
+for rendering@comma{} and @samp{shr-tag-pre-highlight} adds syntax highlighting support
+to @samp{shr}. You may also need to customize @samp{shr-tag-pre-highlight-lang-modes} to
+ensure the languages you want will work.
+
+@node dependencies
+@unnumbered dependencies
+
+@itemize
+@item
+@samp{magit-post}@comma{} @samp{magit-process} (for obtaining current repo)
+@item
+@uref{https://codeberg.org/martianh/fedi.el, fedi.el}
+@item
+@samp{markdown-mode}
+@item
+@uref{https://codeberg.org/martianh/tp.el, tp.el}
+@end itemize
+
+@node limitations
+@unnumbered limitations
+
+@menu
+* performance::
+* general design::
+@end menu
+
+@node performance
+@unnumberedsec performance
+
+Unfortunately @samp{fj.el} is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async@comma{} and the rendering of HTML in item bodies was recently overhauled@comma{} but the performance is still terrible. This leads me to believe it is actually to do with the Forgejo API (as for example@comma{} my abominable old rendering code worked for 100+ items with Lemmy@comma{} but couldn't do 30 items in a timely manner with Forgejo.)
+
+There is a defcustom@comma{} @samp{fj-timeline-default-items}@comma{} with a default value of 15@comma{} meaning we load 15 timeline elements by default. If you find the performance is no problem on longer items@comma{} you can increase this value. (The default apart from this setting would be 30.)
+
+@node general design
+@unnumberedsec general design
+
+@samp{fj.el} started out as a tiny package around my general use-case: working with repos I own and that have few if any collaborators and only one remote. Working with other repos was added later@comma{} and some workflows and commands still need adjusting in this regard. If you find @samp{fj.el} generates a lot of friction with your workflow@comma{} feel free to let me know. (It's not easy hacking in the vague direction what I imagine other people's workflows to be.)
+
+@node contributions
+@unnumbered contributions
+
+Contributions are welcome@comma{} as is feedback about your needs.
+
+Please PR into branch @samp{dev} (@samp{main} is for releases)@comma{} and let me know if you're hacking on something.
+
+Currently the project has just evolved organically out of my own needs (and my own libraries)@comma{} which are likely different to yours.
+
+@node supporting @samp{fjel}
+@unnumbered supporting @samp{fj.el}
+
+If you'd like to support continued development of @samp{fj.el}@comma{} I accept
+donations via paypal: @uref{https://paypal.me/martianh, paypal.me/martianh}. 
+
+I also accept support via liberapay:
+
+
+
+If you would prefer a different payment method@comma{} please write to me at
+<mousebot @{at@} disroot.org> and I can provide IBAN or other bank account
+details.
+
+I don't have a tech worker's income@comma{} so even a small tip would help out.
+
+@node screenshots
+@unnumbered screenshots
+
+User repos listing:
+
+@image{Screenshot-user,,,,png}
+
+Issue view followed by repo issues listing:
+
+@image{Screenshot-issues,,,,png}
+
+Repo search listing:
+
+@image{Screenshot-search,,,,png}
+
+Repo settings transient (current setting on the server underlined@comma{} current user choice in green):
+
+@image{Screenshot-transient,,,,png}
+
+Syntax highlighting (optional dependency):
+
+@image{screenshot-syntax-highlight,,,,png}
+
+Diffs (as commits and PRs):
+
+@image{screenshot-diff,,,,png}
+
+@node commands index
+@unnumbered commands index
+
+@multitable {aaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Binding
+@tab Command
+@tab Description
+@item 
+@tab fj-add-issue-to-milestone
+@tab Add issue at point or in current view to milestone.
+@item r
+@tab fj-add-reaction
+@tab Add reaction to issue@comma{} PR or comment at point.
+@item 
+@tab fj-browse-commit
+@tab Browse commit with SHA in REPO by OWNER@.
+@item b
+@tab fj-browse-view
+@tab Browse URL of view at point.
+@item 
+@tab fj-commits-mode
+@tab Major mode for viewing repo commits.
+@item C-c C-k
+@tab fj-compose-cancel
+@tab Kill new-post buffer/window. Does not POST content.
+@item 
+@tab fj-compose-comment-mode
+@tab Minor mode for composing comments.
+@item 
+@tab fj-compose-mode
+@tab Minor mode for composing issues.
+@item C-c C-e
+@tab fj-compose-read-assignees
+@tab Read multiple assignees in the compose buffer.
+@item C-c C-l
+@tab fj-compose-read-labels
+@tab Read a label in the issue compose buffer.
+@item C-c RET
+@tab fj-compose-read-milestone
+@tab Read an existing milestone in the compose buffer.
+@item C-c C-o
+@tab fj-compose-read-owner
+@tab Read a repo owner.
+@item C-c C-r
+@tab fj-compose-read-repo
+@tab Read a repo for composing a issue or comment.
+@item C-c C-t
+@tab fj-compose-read-title
+@tab Read an issue title.
+@item C-c C-u
+@tab fj-compose-read-upload
+@tab Read a file to upload.
+@item C-c C-S-e
+@tab fj-compose-remove-assignees
+@tab Remove assignees from item being composed.
+@item C-c C-S-l
+@tab fj-compose-remove-labels
+@tab Remove labels from item being composed.
+@item C-c S-RET
+@tab fj-compose-remove-milestone
+@tab Remove milestone from item being composed.
+@item C-c C-S-u
+@tab fj-compose-remove-upload
+@tab Remove attachment file from item being composed.
+@item C-c C-c
+@tab fj-compose-send
+@tab Submit the issue or comment to your Forgejo instance.
+@item C
+@tab fj-copy-item-url
+@tab Copy URL of current item@comma{} either issue or PR@.
+@item 
+@tab fj-copy-pr-url
+@tab Copy upstream Pull Request URL with branch name.
+@item c
+@tab fj-create-issue
+@tab Create issue in current repo or repo at point in tabulated listing.
+@item 
+@tab fj-create-milestone
+@tab Create a milestone for REPO by OWNER@.
+@item 
+@tab fj-create-token
+@tab Create an access token for `fj-user' on `fj-host'.
+@item C-c C-d
+@tab fj-cycle-sort-or-relation
+@tab Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'.
+@item C-c C-c
+@tab fj-cycle-state
+@tab Cycle item state listing of open@comma{} closed@comma{} and all.
+@item C-c C-s
+@tab fj-cycle-type
+@tab Cycle item type listing of issues@comma{} pulls@comma{} and all.
+@item 
+@tab fj-delete-attachment
+@tab Delete attachment at point.
+@item 
+@tab fj-delete-repo
+@tab Delete repo at point@comma{} if you are its owner.
+@item 
+@tab fj-delete-repo-tag
+@tab Prompt for a repo tag and delete it on the server.
+@item <return>
+@tab fj-do-link-action
+@tab Do the action of the link at POS@.
+@item <mouse-2>
+@tab fj-do-link-action-mouse
+@tab Do the action of the link at point.
+@item 
+@tab fj-fetch-pull-as-branch
+@tab From a PR view@comma{} fetch it as a new git branch using magit.
+@item 
+@tab fj-fork-repo
+@tab Fork repo entry at point.
+@item 
+@tab fj-fork-to-parent
+@tab From a repo TL listing@comma{} jump to the parent repo.
+@item 
+@tab fj-get-pull-commits
+@tab Return the data for the commits of the current pull.
+@item 
+@tab fj-inspect-item-data
+@tab Browse the JSON data of item at point.
+@item 
+@tab fj-issue-compose
+@tab Compose a new post.
+@item 
+@tab fj-issue-get-labels
+@tab Get labels on ISSUE in REPO by OWNER@.
+@item 
+@tab fj-issue-tl-mode
+@tab Major mode for browsing a tabulated list of issues.
+@item v
+@tab fj-issues-tl-view
+@tab View current issue from tabulated issues listing.
+@item a
+@tab fj-item-add-assignee
+@tab Add an assignee to item being viewed or at point in tabulated listing.
+@item A
+@tab fj-item-clear-assignees
+@tab Remove assignees from item being viewed or at point in tabulated listing.
+@item k
+@tab fj-item-close
+@tab Close the item at point or being viewed.
+@item c@comma{} C
+@tab fj-item-comment
+@tab Comment on the item at point or being viewed.
+@item K
+@tab fj-item-delete
+@tab Delete the item at point or being viewed.
+@item e
+@tab fj-item-edit
+@tab Edit the item at point or being viewed.
+@item t
+@tab fj-item-edit-title
+@tab Edit the title of the item at point or being viewed.
+@item 
+@tab fj-item-goto-by-number
+@tab Jump to item by its number@comma{} from the item at point or being viewed.
+@item l
+@tab fj-item-label-add
+@tab Add label to the item at point or being viewed.
+@item 
+@tab fj-item-label-remove
+@tab Remove label from the item at point or being viewed.
+@item 
+@tab fj-item-labels-remove-all
+@tab Remove all labels from the item at point or being viewed.
+@item n
+@tab fj-item-next
+@tab Go to next item or notification.
+@item p
+@tab fj-item-prev
+@tab Goto previous item or notification.
+@item o
+@tab fj-item-reopen
+@tab Reopen the item at point or being viewed.
+@item 
+@tab fj-item-view
+@tab View item NUMBER from REPO of OWNER@.
+@item 
+@tab fj-item-view-comment-delete
+@tab Delete comment at point.
+@item 
+@tab fj-item-view-goto-item-by-number
+@tab Read an item number INDEX and jump to it@comma{} from timline.
+@item 
+@tab fj-item-view-mode
+@tab Major mode for viewing items.
+@item >
+@tab fj-item-view-more
+@tab Load more items to the timeline@comma{} if it has more items.
+@item J
+@tab fj-jump-to-item
+@tab Prompt for a query and load matching issue or PR from current repo.
+@item 
+@tab fj-jump-to-own-repo
+@tab Jump to issues listing of one of your own repos.
+@item 
+@tab fj-jump-to-repo
+@tab Jump to repo issues listing.
+@item C-M-q
+@tab fj-kill-all-buffers
+@tab Kill all fj buffers.
+@item 
+@tab fj-list-authored-issues
+@tab Return issues authored by `fj-user'@comma{} in any repo.
+@item 
+@tab fj-list-authored-pulls
+@tab Return pulls authored by `fj-user'@comma{} in any repo.
+@item I
+@tab fj-list-issues
+@tab List issues for current REPO with default sorting.
+@item 
+@tab fj-list-issues-+-pulls
+@tab List issues and pulls for REPO by OWNER@comma{} filtered by STATE@.
+@item 
+@tab fj-list-issues-all
+@tab Display all ISSUES for REPO by OWNER in tabulated list view.
+@item 
+@tab fj-list-issues-by-label
+@tab List issues in REPO by OWNER@comma{} filtering by label.
+@item 
+@tab fj-list-issues-by-milestone
+@tab List issues in REPO by OWNER@comma{} filtering by milestone.
+@item 
+@tab fj-list-issues-closed
+@tab Display closed ISSUES for REPO by OWNER in tabulated list view.
+@item 
+@tab fj-list-issues-sort
+@tab Reload current issues listing@comma{} prompting for a sort type.
+@item W
+@tab fj-list-own-issues
+@tab List issues in repos owned by `fj-user'.
+@item 
+@tab fj-list-own-pulls
+@tab List pulls in repos owned by `fj-user'.
+@item O
+@tab fj-list-own-repos
+@tab List repos for `fj-user'.
+@item C-c C-c
+@tab fj-list-own-repos-read
+@tab List repos for `fj-user'@comma{} prompting for an order type.
+@item P
+@tab fj-list-pulls
+@tab List pulls for REPO by OWNER@comma{} filtered by STATE@.
+@item 
+@tab fj-list-repos
+@tab List repos for `fj-user' extended by `fj-extra-repos'.
+@item C-c C-c
+@tab fj-list-repos-sort
+@tab Reload current repos listing@comma{} prompting for a sort type.
+@item s
+@tab fj-list-search-issues
+@tab Search current repo issues for QUERY@.
+@item s
+@tab fj-list-search-items
+@tab Call item search function depending on our view.
+@item 
+@tab fj-list-search-pulls
+@tab Search current repo PRs for QUERY@.
+@item 
+@tab fj-list-user-repos
+@tab View repos of current entry user from tabulated repos listing.
+@item 
+@tab fj-mark-notification-read
+@tab Mark notification at point as read.
+@item 
+@tab fj-mark-notification-unread
+@tab Mark notification at point as unread.
+@item 
+@tab fj-mark-notifs-read
+@tab Mark all notifications read.
+@item M
+@tab fj-merge-pull
+@tab Merge pull request of current view or at point.
+@item .
+@tab fj-next-page
+@tab Load the next page of the current view.
+@item <tab>
+@tab fj-next-tab-item
+@tab Jump to next tab item.
+@item 
+@tab fj-notifications-mode
+@tab Major mode for viewing notifications.
+@item C-c C-s
+@tab fj-notifications-subject-cycle
+@tab Cycle notifications by `fj-notifications-subject-types'.
+@item C-c C-c
+@tab fj-notifications-unread-toggle
+@tab Switch between showing all notifications@comma{} and only showing unread.
+@item 
+@tab fj-own-items-cycle-relation
+@tab Cycle the relation for own issues view.
+@item 
+@tab fj-owned-issues-tl-mode
+@tab Major mode for browsing a tabulated list of issues.
+@item @comma{}
+@tab fj-prev-page
+@tab Load the previous page.
+@item <backtab>
+@tab fj-prev-tab-item
+@tab Jump to prev tab item.
+@item 
+@tab fj-pull-req-comment
+@tab Add comment to PULL in REPO@.
+@item 
+@tab fj-remove-reaction
+@tab Remove a reaction from issue@comma{} PR or comment at point.
+@item L
+@tab fj-repo-commit-log
+@tab Render log of commits for REPO by OWNER@.
+@item u@comma{} L
+@tab fj-repo-copy-clone-url
+@tab Add the clone_url of repo at point to the kill ring.
+@item 
+@tab fj-repo-create
+@tab Create a new repo.
+@item 
+@tab fj-repo-create-label
+@tab Create a new label for REPO by OWNER@.
+@item 
+@tab fj-repo-delete-label
+@tab Delete a label for REPO by OWNER@.
+@item 
+@tab fj-repo-get-labels
+@tab Return labels JSON for REPO by OWNER@.
+@item RET
+@tab fj-repo-list-issues
+@tab View issues of current repo from tabulated repos listing.
+@item M-RET
+@tab fj-repo-list-pulls
+@tab View issues of current repo from tabulated repos listing.
+@item r
+@tab fj-repo-readme
+@tab Display readme file of current repo.
+@item s@comma{} S
+@tab fj-repo-search
+@tab Search repos for QUERY@comma{} and display a tabulated list of results.
+@item 
+@tab fj-repo-search-topic
+@tab Search repo topics for QUERY@comma{} and display a tabulated list.
+@item 
+@tab fj-repo-stargazers
+@tab Render stargazers for REPO by OWNER@.
+@item 
+@tab fj-repo-tl-mode
+@tab Mode for displaying a tabulated list of repo search results.
+@item R
+@tab fj-repo-update-settings
+@tab A transient for setting current repo settings.
+@item 
+@tab fj-repo-watchers
+@tab Render watchers for REPO by OWNER@.
+@item *
+@tab fj-star-repo
+@tab Star or UNSTAR current repo from tabulated user repos listing.
+@item 
+@tab fj-stargazers-completing
+@tab Prompt for a repo stargazer@comma{} and view their repos.
+@item 
+@tab fj-starred-repos
+@tab List your starred repos.
+@item B
+@tab fj-tl-browse-entry
+@tab Browse URL of tabulated list entry at point.
+@item 
+@tab fj-tl-goto-item-by-number
+@tab Read an item number INDEX and jump to it@comma{} from tabulated listing.
+@item 
+@tab fj-token
+@tab Fetch user access token from auth source@comma{} or try to add one.
+@item 
+@tab fj-unstar-repo
+@tab Unstar current repo from tabulated user repos listing.
+@item 
+@tab fj-unwatch-repo
+@tab Watch repo at point or in current view.
+@item 
+@tab fj-update-repo
+@tab Update current repo settings.
+@item 
+@tab fj-update-topics
+@tab Update repo topics on the server.
+@item 
+@tab fj-update-user-settings
+@tab Update current user settings on the server.
+@item 
+@tab fj-user-followers
+@tab View users who follow USER or `fj-user'.
+@item 
+@tab fj-user-following
+@tab View users that USER or `fj-user' is following.
+@item 
+@tab fj-user-repo-tl-mode
+@tab Mode for displaying a tabulated list of user repos.
+@item 
+@tab fj-user-repos
+@tab View a tabulated list of respos for USER@.
+@item U
+@tab fj-user-update-settings
+@tab A transient for setting current user settings.
+@item 
+@tab fj-users-mode
+@tab Major mode for viewing users.
+@item 
+@tab fj-view-commit-diff
+@tab View a diff of a commit at point.
+@item N
+@tab fj-view-notifications
+@tab View notifications for `fj-user'.
+@item 
+@tab fj-view-notifications-all
+@tab View all notifications for `fj-user'.
+@item D
+@tab fj-view-pull-diff
+@tab View a diff of the entire current PR@.
+@item g
+@tab fj-view-reload
+@tab Try to reload the current view based on its major-mode.
+@item 
+@tab fj-watch-repo
+@tab Watch repo at point or in current view.
+@item 
+@tab fj-watched-repos
+@tab List your watched repos.
+@end multitable
+
+@node variables index
+@unnumbered variables index
+
+@multitable {aaaaaaaaaaaaaaaaaaaaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@headitem Custom variable
+@tab Description
+@item fj-compose-autocomplete
+@tab Whether to enable autocompletion in compose buffers.
+@item fj-compose-comment-mode-hook
+@tab Hook run after entering or leaving `fj-compose-comment-mode'.
+@item fj-compose-mode-hook
+@tab Hook run after entering or leaving `fj-compose-mode'.
+@item fj-extra-repos
+@tab A list of favourite repos@comma{} in the form ``owner/repo'' or ``org/repo''.
+@item fj-favourite-repos
+@tab A list of favourite repos@comma{} in the form ``owner/repo'' or ``org/repo''.
+@item fj-host
+@tab The forgejo host of the instance to use.
+@item fj-inspect-profile-requests
+@tab Whether to profile requests info.
+@item fj-issues-sort-default
+@tab Default sort parameter for repo issues listing.
+@item fj-list-repo-langs
+@tab Whether to display a language column in repo listings.
+@item fj-own-repos-default-order
+@tab The default order parameter for `fj-list-own-repos'.
+@item fj-prefer-browse-url
+@tab Whether to use `browse-url' instead of `browse-url-generic'.
+@item fj-show-commit-msg-in-pulls
+@tab Whether to display commit messages for commits in PR timelines.
+@item fj-timeline-default-items
+@tab The default number of timeline items to load.
+@item fj-token-use-auth-source
+@tab Whether to use an auth-source file.
+@item fj-use-emojify
+@tab Whether to enable `emojify-mode' in item views.
+@item fj-use-markdown-binary
+@tab Whether to use a local markdown binary to render markdown.
+@item fj-user
+@tab The username to use at `fj-host'.
+@end multitable
+
+@bye
