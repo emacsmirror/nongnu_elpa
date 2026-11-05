@@ -1223,6 +1223,8 @@ that wants the `label' of a folder should not have to know its structure."
 This Emacs has VM loaded already, and the machine running the suite may have
 BBDB installed, so neither question can be asked here."
   (let ((form '(progn
+                 ;; or the child reads the last build rather than this tree
+                 (setq load-prefer-newer t)
                  (require 'vm-misc)
                  (defvar vm-avirtual-test--asked nil)
                  (advice-add 'vm-load-features :before
