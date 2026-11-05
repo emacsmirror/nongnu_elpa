@@ -14,14 +14,25 @@ ORG_EVAL2 = --funcall org-texinfo-export-to-info
 
 CASK ?= cask
 
+CLIFF = $$(git-cliff -l)
+CLIFF_U = $$(git-cliff -u)
+CAT = $$(cat changelog.md)
+
+CLIFF_CAT = $(CLIFF)$(CAT)
 ## ################################################################
 
-.PHONY: infoclean tests
+.PHONY: infoclean tests changes
 
 info: $(PKG).info dir
 
 infoclean:
 	rm -f $(PKG).org $(PKG).texi $(PKG).info dir
+
+changes:
+	echo "$(CLIFF)\n\n$(CAT)" > changelog.md && pandoc -i changelog.md -o changelog.org
+
+changes-unreleased:
+	echo "$(CLIFF_U)\n\n$(CAT)" > changelog.md && pandoc -i changelog.md -o changelog.org
 
 ## ################################################################
 
