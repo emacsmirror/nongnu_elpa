@@ -4198,9 +4198,9 @@ comment."
 
 ;;; PR VIEWS
 
-(defun fj-view-commit-diff (&optional sha)
+(defun fj-view-commit-diff (&optional sha url)
   "View a diff of a commit at point.
-Optionally, provide the commit's SHA."
+Optionally, provide the commit's SHA and URL."
   (interactive)
   (fj-destructure-buf-spec (repo owner item)
     (let* ((sha (or sha
@@ -4208,7 +4208,7 @@ Optionally, provide the commit's SHA."
                     item)) ;; item view? FIXME: remove?
            (endpoint (format "repos/%s/%s/git/commits/%s.diff"
                              owner repo sha)))
-      (fj-view-item-diff endpoint))))
+      (fj-view-item-diff endpoint repo owner url))))
 
 (defun fj-view-pull-diff ()
   "View a diff of the entire current PR."
@@ -4217,11 +4217,13 @@ Optionally, provide the commit's SHA."
    (fj-destructure-buf-spec (repo owner item)
      (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
                               owner repo item)))
-       (fj-view-item-diff endpoint)))))
+       (fj-view-item-diff endpoint repo owner)))))
 
-(defun fj-view-item-diff (endpoint)
+(defun fj-view-item-diff (endpoint &optional repo owner url)
   "View a diff of an item, commit or pull diff.
-ENDPOINT is the API endpoint to hit."
+In REPO by OWNER.
+ENDPOINT is the API endpoint to hit.
+Optionally also provide the commit URL."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
     (fedi-http--triage
@@ -4237,7 +4239,10 @@ ENDPOINT is the API endpoint to hit."
          (switch-to-buffer-other-window (current-buffer))
          ;; FIXME: make this work like special-mode, easy bindings and
          ;; read-only:
-         (diff-mode))))))
+         (diff-mode)
+         (keymap-local-set "b" #'fj-browse-view) ;; requires url in buf-spec
+         (setq fj-buffer-spec
+               `(:url ,url :repo ,repo :owner ,owner)))))))
 
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
@@ -6052,7 +6057,7 @@ Used for hitting RET on a given link."
         ('team (fj-browse-team item))
         ('repo-tag (fj-repo-tag-follow item))
         ((or  'commit 'commit-ref)
-         (fj-view-commit-diff item))
+         (fj-view-commit-diff item (fedi--property 'shr-url)))
         ('issue-ref
          (fj-issue-ref-follow item))
         ('notif
