@@ -2267,7 +2267,7 @@ Return an alist, with each cons being (name . id)"
                         'id)) ;; we post IDs to avoid duplicating:
          (choices (fj-issue-read-labels repo owner issue :id))
          (ids (mapcar #'cdr choices))
-         (params `(("labels" . ,(remove-duplicates
+         (params `(("labels" . ,(cl-remove-duplicates
                                  (append ids issue-labels)))))
          (resp (fj-post url params :json)))
     (fedi-http--triage
