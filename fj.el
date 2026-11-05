@@ -2941,10 +2941,10 @@ TYPE is the item type."
          ?@
          (group-n 2 ; = repo/tem only
            (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                   "A-Z" "a-z" "0-9")) ;; before slash (repo)
+                   alnum)) ;;"A-Z" "a-z" "0-9")) ;; before slash (repo)
            "/" ;; one slash
            (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                   "A-Z" "a-z" "0-9"))))) ;; after slash (team)
+                   alnum))))) ;;"A-Z" "a-z" "0-9"))))) ;; after slash (team)
       ;; i struggled to get full stops working here (in fedi.el) but
       ;; perhaps they aren't needed, as they are not included in handles
       ;; above?
@@ -2957,14 +2957,14 @@ for forming a URL.")
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
       (group-n 1 ; = owner/repo#item
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                "A-Z" "a-z" "0-9")) ;; before slash (owner)
+                alnum)) ;;"A-Z" "a-z" "0-9")) ;; before slash (owner)
         (opt "/") ;; one slash
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                "." "A-Z" "a-z" "0-9")) ;; after slash (repo)
+                "." alnum)) ;;"A-Z" "a-z" "0-9")) ;; after slash (repo)
         (group-n 2 (or ?# ?!) ;; # or !
                  (group-n 3
-                   (one-or-more (any ;; "A-Z" "a-z"
-                                     "0-9")))))
+                   (1+ (any ;; "A-Z" "a-z"
+                        digit)))))
       (| "'" word-boundary)) ; boundary or possessive
   "Regex for a repo-prefixed tag.
 Group 1 is owner/repo#item, group 2 is #item, group 3 is item.")
