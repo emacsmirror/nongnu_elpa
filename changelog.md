@@ -1,3 +1,16 @@
+## [0.53] - 2026-11-05
+
+### 📚 Documentation
+
+- Changelog
+
+### ⚙️ Miscellaneous Tasks
+
+- Add dir-locals.
+- Cliff.toml -- comment ad hoc filters.
+- Makefile, info build/clean, add info files. FIX #355
+
+
 ## [0.52] - 2026-11-05
 
 ### 🚀 Features
