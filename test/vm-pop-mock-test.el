@@ -216,7 +216,7 @@ small response arrives in one piece (emacs-vm/vm#626)."
 	      (converse "STAT" "\\`\\+OK 1 ")
 	      (converse "RSET" "\\`\\+OK")
 	      (converse "STAT" "\\`\\+OK 2 ")))
-	(when (process-live-p process) (delete-process process))))))
+	(vm-net-close-process process)))))
 
 (ert-deftest vm-pop-mock-test-a-client-without-a-filter-loses-what-arrives ()
   "The trap behind issue #626, demonstrated on two clients side by side.
@@ -266,7 +266,7 @@ ever started buffering for a filterless process."
                 (accept-process-output process 0 50)))
             (should (string-prefix-p "+OK"
                                      (vm-pop-mock-test--received process))))
-        (when (process-live-p process) (delete-process process))))))
+        (vm-net-close-process process)))))
 
 ;;; A server that goes quiet (emacs-vm/vm#639)
 
