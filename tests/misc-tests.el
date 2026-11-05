@@ -228,7 +228,7 @@ The valid keys are:
 \(fn BASE-NAME &key DOC NAME VAL BAR RESULT PAT DO TESTS)"
   (declare (indent 1))
   (cl-labels ((loopy--dpt-internal-expander (plist)
-                (if-let ((tests (plist-get plist :tests)))
+                (if-let* ((tests (plist-get plist :tests)))
                     (cons 'progn
                           (mapcar (let ((new-plist `( :tests nil ,@plist)))
                                     (lambda (elt)
@@ -1205,7 +1205,7 @@ The valid keys are:
 \(fn BASE-NAME &key DOC NAME VAL BAR RESULT PAT DO TESTS)"
   (declare (indent 1))
   (cl-labels ((loopy--dpt-internal-expander (plist)
-                (if-let ((tests (plist-get plist :tests)))
+                (if-let* ((tests (plist-get plist :tests)))
                     (cons 'progn
                           (mapcar (let ((new-plist `( :tests nil ,@plist)))
                                     (lambda (elt)

@@ -6175,7 +6175,7 @@ main body@comma{} so the definition of the parsing function is quite simple.
   ;; (https://elpa.gnu.org/packages/compat.html)@comma{} on which Loopy depends.
   (let ((family-name-var (gensym "family-name")))
     `((loopy--main-body
-       (if-let ((@comma{}family-name-var @comma{}family-name))
+       (if-let* ((@comma{}family-name-var @comma{}family-name))
            (message "Hello@comma{} %s %s" @comma{}personal-name @comma{}family-name-var)
          (message "Hello@comma{} %s" @comma{}personal-name))))))
 @end lisp
@@ -6213,7 +6213,7 @@ you can see that it expands to do what we want@comma{} as expected.
   (cl-block nil
     (while (consp list-166)
       (setq name (car list-166))
-      (if-let ((family-name900 (cadr name)))
+      (if-let* ((family-name900 (cadr name)))
           (message "Hello@comma{} %s %s"
                    (car name)
                    family-name900)

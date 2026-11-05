@@ -5583,7 +5583,7 @@ main body, so the definition of the parsing function is quite simple.
     ;; (https://elpa.gnu.org/packages/compat.html), on which Loopy depends.
     (let ((family-name-var (gensym "family-name")))
       `((loopy--main-body
-         (if-let ((,family-name-var ,family-name))
+         (if-let* ((,family-name-var ,family-name))
              (message "Hello, %s %s" ,personal-name ,family-name-var)
            (message "Hello, %s" ,personal-name))))))
 #+END_SRC
@@ -5621,7 +5621,7 @@ you can see that it expands to do what we want, as expected.
     (cl-block nil
       (while (consp list-166)
         (setq name (car list-166))
-        (if-let ((family-name900 (cadr name)))
+        (if-let* ((family-name900 (cadr name)))
             (message "Hello, %s %s"
                      (car name)
                      family-name900)
