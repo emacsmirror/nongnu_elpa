@@ -4259,9 +4259,11 @@ session is titled, after that title -- so chats stay filterable with
   (hermes-chat--new-buffer profile nil instance))
 
 (defun hermes-chat--new-command (title)
-  "Handle /new with TITLE, preserving a canonical Bot Chat relationship."
+  "Handle /new with TITLE, preserving a canonical Bot Chat relationship.
+An ordinary chat opens its successor under the same profile and backend."
   (if (not hermes-chat--bot-chat-root)
-      (hermes-chat--new-buffer nil title)
+      (hermes-chat--new-buffer hermes-chat--profile title hermes-instance
+                               hermes-chat--pinned-url)
     (let* ((buffer (current-buffer))
            (root hermes-chat--bot-chat-root)
            (lifetime hermes-chat--lifecycle-generation)

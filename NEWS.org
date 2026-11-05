@@ -21,6 +21,8 @@ Incompatible changes:
 
 New features and fixes:
 
+- =/new= in an ordinary chat keeps that chat's profile and backend
+  instead of opening under the dashboard default profile.
 - The chat header's work count follows the Hermes TUI: =🤖 N= counts
   running and queued workers and =⚙ M= running background processes, with
   no trailing =?=.  Each chat keeps the last successful roster read; hiding

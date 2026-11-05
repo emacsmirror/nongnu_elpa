@@ -219,6 +219,21 @@
           (should (equal scratch '("alpha" "" ("fixture" . "http://fixture.invalid")
                                   "http://fixture.invalid"))))))))
 
+;; Regression: /new in an ordinary chat opened under the dashboard default
+;; profile instead of the chat's own profile.
+(ert-deftest hermes-chat-new-keeps-ordinary-chat-profile ()
+  "Ordinary /new keeps the chat's profile, instance and pinned backend."
+  (dolist (pin '(nil "http://pinned.invalid"))
+    (hermes-test-with-chat-buffer
+      (setq hermes-chat--profile "alpha" hermes-chat--pinned-url pin
+            hermes-instance '("fixture" . "http://fixture.invalid"))
+      (let (created)
+        (cl-letf (((symbol-function 'hermes-chat--new-buffer)
+                   (lambda (&rest args) (setq created args))))
+          (hermes-chat--handle-slash-content "/new later"))
+        (should (equal created `("alpha" "later" ("fixture" . "http://fixture.invalid")
+                                 ,pin)))))))
+
 (ert-deftest hermes-bot-chat-routines-are-read-only-scoped-cron ()
   "Routines use the existing cron browser with exact profile/backend GETs only."
   (dolist (profile '("alpha" "beta"))
