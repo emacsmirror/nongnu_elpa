@@ -1,9 +1,5 @@
 ## [0.53] - 2026-11-05
 
-### 📚 Documentation
-
-- Changelog
-
 ### ⚙️ Miscellaneous Tasks
 
 - Add dir-locals.
