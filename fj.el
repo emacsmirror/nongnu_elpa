@@ -2969,6 +2969,19 @@ for forming a URL.")
   "Regex for a repo-prefixed tag.
 Group 1 is owner/repo#item, group 2 is #item, group 3 is item.")
 
+(defvar fj-commit-link-regex
+  (rx
+   (group-n 1 ;; entire URL
+     "https://"
+     (1+ (not (any " " ?\n ?\t ?,)))
+     "/" (1+ (not (any " " ?\n ?\t ?,)))
+     "/" (1+ (not (any " " ?\n ?\t ?,)))
+     "/commit/"
+     (group-n 2 ;; commit
+       (1+ (any alnum)))))
+  "Regex for a commit URL.
+Group 1 is the full URL, group 2 is the commit hash.")
+
 (defun fj-mdize-plain-urls ()
   "Markdown-ize any plain string URLs found in current buffer."
   ;; FIXME: this doesn't rly work with ```verbatim``` in md
@@ -3208,9 +3221,34 @@ Optionally start from POINT."
       ;; (fedi-propertize-items markdown-regex-link-inline 'shr
       ;;                        fj-link-keymap 1 1 nil nil
       ;;                        '(fj-tab-stop t))
-
       ;; some shr items don't match (any) url-regex, e.g. rel links:
-      (fj-propertize-shr-items))))
+      (fj-propertize-shr-items)
+      (fj-propertize-commit-links))))
+
+(defun fj-propertize-commit-links ()
+  "Propertize any URLs to single commits in buffer."
+  (save-excursion
+    (save-match-data
+      (goto-char (point-min))
+      ;; ideally we'd work errors out, but we don't want to ruin
+      ;; our caller, which might make a page load fail:
+      (ignore-errors
+        (while (re-search-forward fj-commit-link-regex)
+          (let* ((hash (buffer-substring-no-properties
+                        (match-beginning 2)
+                        (match-end 2)))
+                 (beg (match-beginning 1))
+                 (end (match-end 1))
+                 (item-str (buffer-substring-no-properties beg end))
+                 (hash-str
+                  (propertize (seq-take hash 10) ;; as per web UI
+                              'face '(highlight shr-link))))
+            (add-text-properties
+             beg end
+             (fedi-link-props 'highlight item-str hash 'commit item-str
+                              fj-link-keymap))
+            (add-text-properties
+             beg end `(display ,hash-str))))))))
 
 (defun fj-propertize-shr-items ()
   "Add text properties to shr items in buffer.
