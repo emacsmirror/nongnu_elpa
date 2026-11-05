@@ -2511,6 +2511,33 @@ does not come out as wide as the window the message was read in."
 	((null vm-html-fill-column) vm-html-default-column)
 	(t vm-html-fill-column)))
 
+(defun vm-mime-run-html-converter (start end program args)
+  "Replace the HTML between START and END with what PROGRAM makes of it.
+PROGRAM reads the region on its standard input and is run with ARGS, each
+one an argument of its own.  It signals when the converter fails, leaving
+the caller to report the failure rather than present what came out.
+
+Not `shell-command-on-region', which this replaced for two reasons.  It
+leaves the mark active over the text it put there, so under
+`transient-mark-mode' the whole rendered body was displayed in the
+`region' face until the reader pressed C-g (emacs-vm/vm#935).  And it
+runs a shell command line built by the caller, where the charset the w3m
+converter is told comes from the message's own Content-Type header."
+  (let ((errors (make-temp-file "vm-html-"))
+	(status nil))
+    (unwind-protect
+	(progn
+	  (goto-char start)
+	  (setq status (apply #'call-process-region start end program
+			      t (list t errors) nil args))
+	  (unless (eq status 0)
+	    (error "%s exited with %s: %s" program status
+		   (string-trim
+		    (with-temp-buffer
+		      (insert-file-contents errors)
+		      (buffer-string))))))
+      (delete-file errors))))
+
 (defun vm-mime-display-internal-w3m-text/html (start end layout)
   (let* ((charset (or (vm-mime-get-parameter layout "charset") "us-ascii"))
 	 (coding-system (coding-system-from-name charset)))
@@ -2519,18 +2546,16 @@ does not come out as wide as the window the message was read in."
     (let ((default-process-coding-system 
 	    (if coding-system (cons coding-system coding-system)
 	      default-process-coding-system)))
-      (shell-command-on-region
-       start (1- end)
-       (format "%s -dump -cols %d -T text/html -I %s -O %s"
-	       vm-w3m-program (vm-mime-html-columns) charset charset)
-       nil t))))
+      (vm-mime-run-html-converter
+       start (1- end) vm-w3m-program
+       (list "-dump" "-cols" (number-to-string (vm-mime-html-columns))
+	     "-T" "text/html" "-I" charset "-O" charset)))))
   
 (defun vm-mime-display-internal-lynx-text/html (start end _layout)
-  (shell-command-on-region 
-   start (1- end)
-   (format "%s -force_html -dump -pseudo_inlines -stdin -width=%d"
-	   vm-lynx-program (vm-mime-html-columns))
-   nil t))
+  (vm-mime-run-html-converter
+   start (1- end) vm-lynx-program
+   (list "-force_html" "-dump" "-pseudo_inlines" "-stdin"
+	 (format "-width=%d" (vm-mime-html-columns)))))
 
 (defun vm-mime-display-internal-shr-text/html (start end _layout)
   "Render the HTML between START and END with shr, which Emacs ships.
