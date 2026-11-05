@@ -136,8 +136,14 @@
 (eval-and-compile
   (require 'vm-misc)
   (require 'regexp-opt)
-  (require 'time-date)
-  (vm-load-features-silent-when-compiling '(bbdb bbdb-autoloads bbdb-com)))
+  (require 'time-date))
+
+;; BBDB is not loaded here.  Every session loads this file, vm-summary.el
+;; requiring vm-summary-faces.el which requires this one, so a preload of an
+;; optional package warned six times at startup on a machine without it
+;; (emacs-vm/vm#937).  The functions that need BBDB require it themselves, and
+;; the compiler is told about its names by the `declare-function' forms beside
+;; them.
 
 (defconst vm-bbdb-address-headers
   '((authors "From:" "Resent-From:" "Reply-To:" "Sender:")
@@ -1380,6 +1386,7 @@ corresponding BBDB-VM-VIRTUAL element of the `vm-virtual-folder-alist'.
 The element gets added to the `element-name' sublist of the
 `vm-virtual-folder-alist'."
   (interactive)
+  (require 'bbdb)
   (let (notes-field  email-regexp folder selector)
     (dolist (record (bbdb-records))
       (setq notes-field (bbdb-record-xfields record))
@@ -1439,6 +1446,7 @@ add/modify the corresponding VM-VIRTUAL element of the
 The element gets added to the `element-name' sublist of the
 `vm-virtual-folder-alist'."
   (interactive)
+  (require 'bbdb)
   (let (notes-field email-regexp mail-aliases folder selector)
     (dolist (record (bbdb-records))
       (setq notes-field (bbdb-record-xfields record))

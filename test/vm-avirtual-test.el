@@ -1218,6 +1218,41 @@ that wants the `label' of a folder should not have to know its structure."
     (should (equal (vm-virtual-find-selector spec 'author) '(author "alice")))
     (should-not (vm-virtual-find-selector spec 'recipient))))
 
+(defun vm-avirtual-test--optional-features-a-session-loads ()
+  "The optional feature lists a plain load of VM asks for, from a child Emacs.
+This Emacs has VM loaded already, and the machine running the suite may have
+BBDB installed, so neither question can be asked here."
+  (let ((form '(progn
+                 (require 'vm-misc)
+                 (defvar vm-avirtual-test--asked nil)
+                 (advice-add 'vm-load-features :before
+                             (lambda (features &optional _silent)
+                               (push features vm-avirtual-test--asked)))
+                 (require 'vm)
+                 (prin1 (nreverse vm-avirtual-test--asked)))))
+    (with-temp-buffer
+      (let ((status (call-process
+                     (expand-file-name invocation-name invocation-directory)
+                     nil t nil "-batch" "-Q" "-L" vm-test-lisp-dir
+                     "--eval" (prin1-to-string form))))
+        (should (equal status 0))
+        (goto-char (point-max))
+        (backward-sexp)
+        (read (current-buffer))))))
+
+(ert-deftest vm-avirtual-test-starting-vm-loads-no-optional-package ()
+  "Loading VM asks for no optional package, so a machine without one is quiet.
+`vm-load-features' warns twice per feature it cannot load, and said
+\"Related functions may not work correctly!\" about BBDB in every session of
+an Emacs that had never heard of it (emacs-vm/vm#937).  The warning belongs to
+whoever asked for the feature, and nothing at startup does: this file is
+loaded by vm-summary-faces.el, which vm-summary.el requires.
+
+The warning itself cannot be seen from here.  `vm-load-feature' is silent in a
+batch Emacs, which is what a test runs in, so the check is on the load being
+attempted at all."
+  (should (equal nil (vm-avirtual-test--optional-features-a-session-loads))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
