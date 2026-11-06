@@ -199,7 +199,9 @@ This function uses `geiser-chicken-init-file' if it exists."
 
 (defun geiser-chicken--import-command (module)
   "Format a sexp to use MODULE."
-  (geiser-chicken--module-cmd module "(use %s)"))
+  (let* ((version (geiser-chicken--version (geiser-chicken--binary)))
+         (keyword (if (version< version "5.0.0") "use" "import")))
+    (geiser-chicken--module-cmd module (format "(%s %%s)" keyword))))
 
 (defun geiser-chicken--enter-command (module)
   "Format a REPL command to enter MODULE."
