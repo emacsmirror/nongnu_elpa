@@ -195,6 +195,27 @@ decides between an existing cache and the name a new one gets."
     (setq spec (mapconcat (function identity) comps ":"))
     spec ))
 
+(defun vm-imap-canonical-spec (spec)
+  "SPEC normalized, with INBOX spelled the way RFC 3501 spells it.
+Two specs name the same mailbox when this answers the same string for both.
+IMAP treats that one mailbox name case-insensitively (RFC 3501 5.1) and
+every other name as case-sensitive, so it is the only name to fold.
+
+A folder whose `vm-primary-inbox' spells the mailbox `inbox' records that
+spelling in its X-VM-IMAP-Retrieved header, while completion offers the
+INBOX the server lists.  Compared with `equal', the two did not match and
+`vm-prune-imap-retrieved-list' answered \"No messages to be pruned\" with
+tens of thousands of stale entries in front of it (emacs-vm/vm#936).
+
+Separate from `vm-imap-normalize-spec' because a folder's cache file is
+named after the MD5 of what that returns: folding a name there would send a
+folder already cached under another spelling to a new and empty cache."
+  (let ((comps (vm-imap-parse-spec-to-list (vm-imap-normalize-spec spec))))
+    (when (and (nth 3 comps)
+               (string= (downcase (nth 3 comps)) "inbox"))
+      (setcar (nthcdr 3 comps) "INBOX"))
+    (vm-imap-encode-list-to-spec comps)))
+
 ;;;###autoload
 (defun vm-imap-account-name-for-spec (spec)
   "Returns the IMAP account name for maildrop specification SPEC, by
@@ -545,13 +566,43 @@ the answer arrives rather than only when it was waited for."
 	     (and (equal (nth 1 tuple) uid-validity)
 		  (intern-soft (car tuple) there)))))
     (setq pruned-count (- retrieved-count (length vm-imap-retrieved-messages)))
-    (if (= pruned-count 0)
-	(vm-inform 5 "No messages to be pruned")
-      (vm-mark-folder-modified-p)
-      (vm-update-summary-and-mode-line)
-      (vm-inform 5 "%d message%s pruned"
-		 pruned-count (if (= pruned-count 1) "" "s")))
+    (cond ((> pruned-count 0)
+	   (vm-mark-folder-modified-p)
+	   (vm-update-summary-and-mode-line)
+	   (vm-inform 5 "%d message%s pruned"
+		      pruned-count (if (= pruned-count 1) "" "s")))
+	  ((null vm-imap-retrieved-messages)
+	   (vm-inform 5 "Nothing has been retrieved into this folder"))
+	  ((vm-imap-retrieval-entries-p imapdrop)
+	   (vm-inform 5 "No messages to be pruned"))
+	  (t
+	   ;; Saying there is nothing to prune would be the same answer as
+	   ;; for a mailbox whose entries are all still on the server, and
+	   ;; the reader has no way to tell the two apart.
+	   (vm-warn 0 2 "Nothing in this folder came from %s.  Its entries name %s"
+		    (vm-safe-imapdrop-string imapdrop)
+		    (mapconcat #'identity (vm-imap-retrieved-maildrops) ", "))))
     pruned-count))
+
+(defun vm-imap-retrieval-entries-p (imapdrop)
+  "Whether any X-VM-IMAP-Retrieved entry of this folder came from IMAPDROP."
+  (let ((canonical (vm-imap-canonical-spec imapdrop))
+	(list vm-imap-retrieved-messages)
+	(found nil))
+    (while (and list (not found))
+      (setq found (equal canonical (vm-imap-canonical-spec (nth 2 (car list))))
+	    list (cdr list)))
+    found))
+
+(defun vm-imap-retrieved-maildrops ()
+  "The maildrops this folder's X-VM-IMAP-Retrieved entries name, once each.
+Printable, as `vm-safe-imapdrop-string' makes them: the entries hold the
+password."
+  (let (maildrops)
+    (dolist (entry vm-imap-retrieved-messages (nreverse maildrops))
+      (let ((maildrop (vm-safe-imapdrop-string (nth 2 entry))))
+	(unless (member maildrop maildrops)
+	  (push maildrop maildrops))))))
 
 (defun vm-imap-prune-retrieval-entries (source retrieved pred)
   "Prune RETRIEVED (a copy of `vm-imap-retrieved-messages') by
@@ -559,10 +610,10 @@ keeping only those messages from SOURCE that satisfy PRED.
 SOURCE must be an IMAP maildrop spec without password info.  
                                                    USR, 2011-04-06"
   (let ((list retrieved)
+	(canonical (vm-imap-canonical-spec source))
 	(prev nil))
-    (setq source (vm-imap-normalize-spec source))
     (while list
-      (if (and (equal source (vm-imap-normalize-spec (nth 2 (car list))))
+      (if (and (equal canonical (vm-imap-canonical-spec (nth 2 (car list))))
 	       (not (apply pred (car list) nil)))
 	  (if prev
 	      (setcdr prev (cdr list))

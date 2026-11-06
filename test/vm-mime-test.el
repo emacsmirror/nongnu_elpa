@@ -2945,21 +2945,112 @@ Issue #387, driven through `vm-mime-display-external-generic' and an elisp
   "Each external converter is passed the width, not left to choose one.
 lynx wrapped at 72 columns and w3m at its own default, whatever the text
 was wanted for."
-  (let (command)
-    (cl-letf (((symbol-function 'shell-command-on-region)
-               (lambda (_start _end cmd &rest _) (setq command cmd))))
+  (let (arguments)
+    (cl-letf (((symbol-function 'vm-mime-run-html-converter)
+               (lambda (_start _end _program args) (setq arguments args))))
       (with-temp-buffer
         (insert "<p>text</p>\n")
         (let ((vm-html-fill-column 80))
           (vm-mime-display-internal-lynx-text/html (point-min) (point-max) nil)
-          (should (string-match-p "-width=80\\'" command))
+          (should (member "-width=80" arguments))
           (vm-mime-display-internal-w3m-text/html
            (point-min) (point-max) (make-vector 20 nil))
-          (should (string-match-p "-cols 80" command)))
+          (should (equal (cadr (member "-cols" arguments)) "80")))
         (let ((vm-html-fill-column nil))
           (vm-mime-display-internal-lynx-text/html (point-min) (point-max) nil)
-          (should (string-match-p (format "-width=%d\\'" vm-html-default-column)
-                                  command)))))))
+          (should (member (format "-width=%d" vm-html-default-column)
+                          arguments)))))))
+
+;;; Running the converter (#935)
+
+(defun vm-mime-test--stub-converter (dir script)
+  "A stand-in for lynx or w3m in DIR, whose shell body is SCRIPT.
+Neither program need be installed for the tests that use one, and what they
+ask about is the arguments it was given and the state it was left in."
+  (let ((program (expand-file-name "convert" dir)))
+    (with-temp-buffer
+      (insert "#!/bin/sh\n" script)
+      (write-region (point-min) (point-max) program nil 'quiet))
+    (set-file-modes program #o700)
+    program))
+
+(defun vm-mime-test--copying-converter (dir)
+  "A converter in DIR that records its arguments and copies its input."
+  (vm-mime-test--stub-converter
+   dir (concat "for arg in \"$@\"; do printf '%s\\n' \"$arg\"; done > "
+               (shell-quote-argument (expand-file-name "args" dir)) "\n"
+               "exec cat\n")))
+
+(defun vm-mime-test--converter-arguments (dir)
+  "The arguments the converter in DIR was last given, one per element."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "args" dir))
+    (split-string (buffer-string) "\n" t)))
+
+(defmacro vm-mime-test--with-a-converter (dir &rest body)
+  "Run BODY with DIR bound to a directory for a stub converter, then remove it."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let ((,dir (file-name-as-directory (make-temp-file "vm-html" t))))
+     (unwind-protect (progn ,@body)
+       (delete-directory ,dir t))))
+
+(ert-deftest vm-mime-test-a-converted-html-body-leaves-the-mark-alone ()
+  "REGRESSION: a converted HTML body is not left as the active region.
+`shell-command-on-region' with REPLACE pushes the mark and exchanges point
+and mark, and `exchange-point-and-mark' called from Lisp activates the mark
+under `transient-mark-mode'.  The rendered body was therefore displayed in
+the `region' face until the reader pressed C-g, and came back with the next
+HTML message (emacs-vm/vm#935)."
+  (vm-mime-test--with-a-converter dir
+    (let* ((program (vm-mime-test--copying-converter dir))
+           (vm-lynx-program program)
+           (vm-w3m-program program)
+           (transient-mark-mode t))
+      (dolist (handler '(vm-mime-display-internal-lynx-text/html
+                         vm-mime-display-internal-w3m-text/html))
+        (with-temp-buffer
+          ;; the placeholder character the dispatcher keeps past the end
+          (insert "<p>text</p>\nz")
+          (funcall handler (point-min) (point-max) (vector '("text/html")))
+          (should-not mark-active)
+          (should-not (region-active-p))
+          (should (string-match-p "text" (buffer-string))))))))
+
+(ert-deftest vm-mime-test-a-charset-parameter-is-not-run-as-a-command ()
+  "REGRESSION: the charset reaches w3m as an argument, not through a shell.
+It was interpolated into a shell command line, and a Content-Type parameter
+is whatever the sender wrote: `vm-mime-get-parameter' hands back a quoted
+charset with its spaces and semicolons intact (emacs-vm/vm#935)."
+  (vm-mime-test--with-a-converter dir
+    (let* ((program (vm-mime-test--copying-converter dir))
+           (vm-w3m-program program)
+           (token (expand-file-name "ran" dir))
+           (charset (format "us-ascii; touch %s" token))
+           (layout (vector (list "text/html" (concat "charset=" charset)))))
+      (with-temp-buffer
+        (insert "<p>text</p>\nz")
+        (vm-mime-display-internal-w3m-text/html
+         (point-min) (point-max) layout))
+      (should-not (file-exists-p token))
+      (should (member charset (vm-mime-test--converter-arguments dir))))))
+
+(ert-deftest vm-mime-test-a-failing-html-converter-is-reported ()
+  "A converter that fails signals, naming itself and what it said.
+`shell-command-on-region' looked at neither the exit status nor the standard
+error, so a converter that refused the part replaced it with nothing and the
+reader was told nothing.  The caller turns the signal into the display error
+the part carries."
+  (vm-mime-test--with-a-converter dir
+    (let ((vm-lynx-program
+           (vm-mime-test--stub-converter
+            dir "echo 'cannot read it' >&2\nexit 3\n")))
+      (with-temp-buffer
+        (insert "<p>text</p>\nz")
+        (let ((error-data
+               (should-error (vm-mime-display-internal-lynx-text/html
+                              (point-min) (point-max) nil))))
+          (should (string-match-p "cannot read it"
+                                  (error-message-string error-data))))))))
 
 (ert-deftest vm-mime-test-html-is-broken-at-the-width-asked-for ()
   "A converted HTML paragraph comes out at the width VM asked for.

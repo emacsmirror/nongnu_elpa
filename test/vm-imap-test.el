@@ -900,6 +900,113 @@ is over the limit, so a per-mailbox flag with one global limit says nothing."
     (let ((vm-imap-max-message-size '(("work:Archive/.*" . 50000))))
       (should (null (vm-imap-message-size-limit vm-imap-test--work-inbox))))))
 
+
+;;; Pruning the retrieved list (#936)
+
+(defconst vm-imap-test--inbox-lower
+  "imap-ssl:mail.example.com:993:inbox:login:user:secret"
+  "An inbox spec spelling the mailbox as a user may well have typed it.")
+
+(defconst vm-imap-test--inbox-upper
+  "imap-ssl:mail.example.com:993:INBOX:login:user:*"
+  "The same mailbox, spelled as the server lists it and completion offers it.")
+
+(ert-deftest vm-imap-test-inbox-is-one-mailbox-however-it-is-spelled ()
+  "INBOX is case-insensitive and every other mailbox name is not.
+RFC 3501 5.1 says so of that one name."
+  (should (equal (vm-imap-canonical-spec vm-imap-test--inbox-lower)
+                 (vm-imap-canonical-spec vm-imap-test--inbox-upper)))
+  (should (equal (vm-imap-canonical-spec
+                  "imap:mail.example.com:143:Inbox:login:user:secret")
+                 (vm-imap-canonical-spec vm-imap-test--inbox-upper)))
+  (should-not (equal (vm-imap-canonical-spec
+                      "imap:mail.example.com:143:Archive:login:user:*")
+                     (vm-imap-canonical-spec
+                      "imap:mail.example.com:143:archive:login:user:*")))
+  ;; the rest of the spec still has to agree
+  (should-not (equal (vm-imap-canonical-spec vm-imap-test--inbox-upper)
+                     (vm-imap-canonical-spec
+                      "imap-ssl:other.example.com:993:INBOX:login:user:*"))))
+
+(defun vm-imap-test--retrieved-entries (spec &rest uids)
+  "An X-VM-IMAP-Retrieved list recording UIDS as read from SPEC."
+  (mapcar (lambda (uid) (list uid "1" spec)) uids))
+
+(ert-deftest vm-imap-test-pruning-reaches-an-inbox-spelled-in-another-case ()
+  "REGRESSION: an entry recorded from `inbox' is pruned by INBOX.
+The spelling in the header is the one `vm-primary-inbox' used and the
+spelling typed is the one completion offers.  Compared with `equal' the two
+never matched, and the command reported nothing to prune with 44425 stale
+entries in front of it (emacs-vm/vm#936)."
+  (let ((entries (vm-imap-test--retrieved-entries
+                  vm-imap-test--inbox-lower "101" "102")))
+    (should (equal (vm-imap-prune-retrieval-entries
+                    vm-imap-test--inbox-upper entries (lambda (_tuple) nil))
+                   nil)))
+  ;; what the mailbox still holds stays, whichever case it was recorded in
+  (let ((entries (vm-imap-test--retrieved-entries
+                  vm-imap-test--inbox-lower "101" "102")))
+    (should (equal (length (vm-imap-prune-retrieval-entries
+                            vm-imap-test--inbox-upper entries
+                            (lambda (tuple) (equal (car tuple) "101"))))
+                   1)))
+  ;; and a mailbox that is not INBOX is matched by its own spelling only
+  (let ((entries (vm-imap-test--retrieved-entries
+                  "imap:mail.example.com:143:Archive:login:user:*" "101")))
+    (should (equal (length (vm-imap-prune-retrieval-entries
+                            "imap:mail.example.com:143:archive:login:user:*"
+                            entries (lambda (_tuple) nil)))
+                   1))))
+
+(defun vm-imap-test--prune-report (imapdrop entries uids)
+  "What `vm-imap-prune-retrieved-with' says about pruning IMAPDROP.
+ENTRIES stand in for this folder\\='s X-VM-IMAP-Retrieved header and UIDS for
+what the mailbox answered that it still holds."
+  (let ((vm-imap-retrieved-messages entries)
+        (said nil))
+    (cl-letf (((symbol-function 'vm-inform)
+               (lambda (_level &rest args) (setq said (apply #'format args))))
+              ((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args)
+                 (setq said (apply #'format args))))
+              ((symbol-function 'vm-mark-folder-modified-p) #'ignore)
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+      (vm-imap-prune-retrieved-with "1" uids imapdrop))
+    said))
+
+(ert-deftest vm-imap-test-pruning-says-when-no-entry-names-the-mailbox ()
+  "A mailbox nothing was read from is reported as that, not as nothing to do.
+\"No messages to be pruned\" is also the answer for a mailbox whose entries
+are all still on the server, so the reader cannot tell a spec that matches
+nothing from a header that is already clean.  That is what made the case
+difference in emacs-vm/vm#936 cost a day: the command did nothing and said
+what it says when there is nothing to do."
+  (let ((report (vm-imap-test--prune-report
+                 "imap-ssl:mail.example.com:993:Archive:login:user:*"
+                 (vm-imap-test--retrieved-entries
+                  vm-imap-test--inbox-lower "101")
+                 '("101"))))
+    (should (string-match-p "Archive" report))
+    (should (string-match-p "inbox" report)))
+  ;; the old answer is still the answer where the entries are current
+  (should (equal (vm-imap-test--prune-report
+                  vm-imap-test--inbox-upper
+                  (vm-imap-test--retrieved-entries
+                   vm-imap-test--inbox-lower "101")
+                  '("101"))
+                 "No messages to be pruned"))
+  ;; and a folder with no entries at all is neither of those
+  (should (string-match-p
+           "Nothing has been retrieved"
+           (vm-imap-test--prune-report vm-imap-test--inbox-upper nil '("101"))))
+  ;; what it says when it did prune is unchanged
+  (should (equal (vm-imap-test--prune-report
+                  vm-imap-test--inbox-upper
+                  (vm-imap-test--retrieved-entries
+                   vm-imap-test--inbox-lower "101" "102")
+                  nil)
+                 "2 messages pruned")))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here
