@@ -1,3 +1,9 @@
+2026-11-06  Ulrich Müller  <ulm@gentoo.org>
+
+	* test/xemacs-test-wrapper.el (ert-deftest): Call Skip-Test-Unless
+	for skipped tests.
+	(skip-unless): Change to macro.
+
 2026-10-25  Ulrich Müller  <ulm@gentoo.org>
 
 	* devbook-mode.el (devbook-prettify-symbols-alist): New variable.

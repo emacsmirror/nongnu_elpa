@@ -37,16 +37,21 @@
 (define-error 'test-skipped "Test skipped")
 
 (defmacro ert-deftest (name _args &rest body)
-  `(condition-case nil
+  `(condition-case err
        ;; XEmacs 21.5.35 displays random info-level warnings,
        ;; e.g. for "format" called with too many arguments.
        ;; Increase the minimum level to silence them.
        (let ((log-warning-minimum-level 'notice))
 	 ,@body)
-     (test-skipped (message "SKIP: %s" ',name))))
+     (test-skipped
+      (Skip-Test-Unless nil
+			(let ((print-readably t))
+			  (prin1-to-string (cdr err))) ; reason
+			(prin1-to-string ',name)       ; description
+			nil))))
 
-(defun skip-unless (cond)
-  (unless cond (signal 'test-skipped nil)))
+(defmacro skip-unless (cond)
+  `(unless ,cond (signal 'test-skipped '(not ,cond))))
 
 (defmacro should (assertion)
   (or (ignore-errors
