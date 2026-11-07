@@ -4701,6 +4701,43 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
                           owner repo item-id review-id)))
     (fj-get endpoint)))
 
+(defun fj-request-reviews ()
+  "Request reviewers for the current PR."
+  ;; POST /repos/{owner}/{repo}/pulls/{index}/requested_reviewers
+  (interactive)
+  (fj-with-pull
+   (fj-destructure-buf-spec (owner repo item)
+     (let* ((endpoint (format "/repos/%s/%s/pulls/%s/requested_reviewers"
+                              owner repo item))
+            (reviewers-data (fj-get-repo-reviewers owner repo))
+            (reviewers (completing-read-multiple
+                        "Reviewers [TAB for more]: "
+                        (mapcar (lambda (x)
+                                  (alist-get 'login x))
+                                reviewers-data)))
+            (params (append
+                     (fedi-opt-params
+                      (reviewers :list reviewers)
+                      ;; (team-reviewers :alias "team_reviewers"
+                      ;;                 :list team-reviewers)
+                      )))
+            (resp (fj-post endpoint params :json)))
+       (fedi-http--triage
+        resp
+        (lambda (_resp)
+          (message (format "Review requested from: %s"
+                           (mapconcat
+                            #'identity
+                            (append reviewers) ;team-reviewers)
+                            " ")))))))))
+
+(defun fj-get-repo-reviewers (owner repo)
+  "Return users that can be added to review requests for REPO by OWNER."
+  ;; GET /repos/{owner}/{repo}/reviewers
+  (let ((endpoint (format "/repos/%s/%s/reviewers"
+                          owner repo)))
+    (fj-get endpoint)))
+
 ;;; SEARCH
 
 (defvar fj-search-modes
