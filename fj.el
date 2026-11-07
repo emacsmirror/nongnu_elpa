@@ -1603,7 +1603,9 @@ CLOSED, DUE-DATE, REF."
 
 (defun fj-assignees-candidates (&optional compose)
   "Return assignees' names for the current view.
-Relies on buf-spec for owner/repo data."
+Relies on buf-spec for owner/repo data.
+COMPOSE means we are in a compose buffer, so use its variables.
+Else we us `fj-buffer-spec'."
   (if compose
       (fj--assignees-candidates-parse fj-compose-repo fj-compose-repo-owner)
     (fj-destructure-buf-spec (repo owner)
@@ -3937,7 +3939,8 @@ button in it, which has the text property type of more."
   "Append more timeline items to the current view, asynchronously.
 Interactively, INIT-PAGE is nil.
 INIT-PAGE is used in `fj-render-item' on first load of a view and when
-reloading a paginated view."
+reloading a paginated view.
+TARGET is an item to jump to after load."
   (cl-destructuring-bind (&key repo owner number _reload _type page limit)
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
@@ -3950,7 +3953,8 @@ reloading a paginated view."
 RESPONSE is the response buffer, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs.
-END-PAGE should be a string of the highest page number to paginate to."
+END-PAGE should be a string of the highest page number to paginate to.
+TARGET is an item to jump to after load."
   (let* ((headers (cdr response))
          (json (car response))
          (total-count (alist-get "x-total-count" headers
@@ -4113,7 +4117,7 @@ Alternatively, call OP on them instead."
      (fj-view-reload))))
 
 (defun fj-format-quote-text (str)
-  "Wrap any text with `fj-shr-code' property in backticks."
+  "Wrap STR with `fj-shr-code' property in backticks."
   (with-temp-buffer
     (insert str)
     (goto-char (point-min))
