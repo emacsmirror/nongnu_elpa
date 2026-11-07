@@ -3550,10 +3550,21 @@ RENDER-FUN is the function to render DATA with."
         (if data
             (insert
              (concat (funcall render-fun data)))
-          (delete-line)))
+          (delete-line))
+        ;; insert ext prop for whole comment:
+        (when data
+          (fj-propertize-comment-reactions data)))
       ;; delete markers for this match:
       (set-marker marker-start nil)
       (set-marker marker-end nil))))
+
+(defun fj-propertize-comment-reactions (data)
+  "Propertize comment with reactions DATA."
+  (let (match)
+    (when (setq match (text-property-search-backward 'fj-comment))
+      (add-text-properties (prop-match-beginning match)
+                           (prop-match-end match)
+                           `(fj-reactions ,data)))))
 
 (defun fj-format-comment-header (username author owner edited ts)
   "Format a comment header line.
