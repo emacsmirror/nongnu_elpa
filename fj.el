@@ -4348,7 +4348,7 @@ Optionally also provide the commit URL."
     ("delete_branch" . "%s deleted branch %s %s")
     ("review" . "%s %s %s")
     ;; FIXME: add a request for changes review? not just approval?
-    ("review_request" . "%s requested review from %s %s")
+    ("review_request" . "%s %s from %s %s")
     ("milestone" . "%s added milestone %s %s")
     ("assignees" . "%s %sassigned this%s %s")
     ("change_target_branch" . "%s changed target branch from %s to %s")))
@@ -4500,7 +4500,7 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
           ("review"
            (fj-format-review item ts format-str user))
           ("review_request"
-           (fj-format-review-request format-str user assignee ts))
+           (fj-format-review-request format-str user assignee ts item))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -4527,13 +4527,17 @@ is new branch."
           (propertize old 'face 'fj-name-face)
           (propertize new 'face 'fj-name-face)))
 
-(defun fj-format-review-request (format-str user reviewer ts)
+(defun fj-format-review-request (format-str user reviewer ts item)
   "Format an review request timeline item.
 FORMAT-STR is the base string. USER is the agent, REVIEWER is the one to
 review. TS is a timeline timestamp."
   (let ((user (propertize user 'face 'fj-name-face))
-        (reviewer (propertize reviewer 'face 'fj-name-face)))
-    (format format-str user reviewer ts)))
+        (reviewer (propertize reviewer 'face 'fj-name-face))
+        (removed (alist-get 'removed_assignee item)))
+    (if (eq t removed)
+        (format format-str user "removed review request"
+                reviewer ts)
+      (format format-str user "requested review" reviewer ts))))
 
 (defun fj-format-assignee (format-str user assignee ts &optional removed)
   "Format an assignee timeline item.
@@ -4749,6 +4753,39 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/reviewers"
                           owner repo)))
     (fj-get endpoint)))
+
+(defun fj-remove-request-reviewers ()
+  "Remove reviewer requests for the current PR."
+  ;; DELETE /repos/{owner}/{repo}/pulls/{index}/requested_reviewers
+  (interactive)
+  (fj-with-pull
+   (fj-destructure-buf-spec (owner repo item)
+     (let* ((endpoint (format "repos/%s/%s/pulls/%s/requested_reviewers"
+                              owner repo item))
+            (reviewers-data (save-excursion
+                              (goto-char (point-min))
+                              (alist-get 'requested_reviewers
+                                         (fedi--property 'fj-item-data))))
+            (reviewers (completing-read-multiple
+                        "Remove reviewers [TAB for more]: "
+                        (mapcar (lambda (x)
+                                  (alist-get 'login x))
+                                reviewers-data)))
+            (params (append
+                     (fedi-opt-params
+                      (reviewers :list reviewers)
+                      ;; (team-reviewers :alias "team_reviewers"
+                      ;;                 :list team-reviewers)
+                      )))
+            (resp (fj-delete endpoint params :json)))
+       (fedi-http--triage
+        resp
+        (lambda (_resp)
+          (message (format "Review request removed for: %s!"
+                           (mapconcat
+                            #'identity
+                            (append reviewers) ;team-reviewers)
+                            " ")))))))))
 
 ;;; SEARCH
 
