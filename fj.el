@@ -53,6 +53,7 @@
 (require 'markdown-mode)
 (require 'shr)
 (require 'mm-url)
+(require 'thingatpt)
 (require 'compat)
 
 (require 'fj-transient)
@@ -6221,6 +6222,18 @@ If ITEM has a target (anchor) component, move to it."
                     (fj-item-view (cadr owner-repo) (car owner-repo) last
                                 :pull nil nil target))
                    (_ (shr-browse-url)))))))))))
+
+(defun fj-url-lookup (&optional url)
+  "Try to load URL in fj.el, else `shr-browse-url'.
+URL can be url at point, provided as an argument, or failing that, read
+in the minibuffer.
+See `fj-shr-link-follow' for more details."
+  (interactive)
+  (let ((url (or url
+                 (fj--property 'shr-url)
+                 (thing-at-point-url-at-point)
+                 (read-string "Lookup URL: "))))
+    (fj-shr-link-follow url)))
 
 (defun fj-jump-to-target (target)
   "Move to TARGET in item view.
