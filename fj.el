@@ -4155,10 +4155,14 @@ comment."
                          (fj-format-quote-text
                           (buffer-substring (region-beginning)
                                             (region-end)))))
-           (reply-str (when quote-text
-                        (fj--reply-str (fj--property 'fj-comment-author)
-                                     repo owner item
-                                     (fj--property 'fj-comment-id)))))
+           (reply-str
+            (when quote-text
+              (fj--reply-str
+               (or (fj--property 'fj-comment-author)
+                   (map-nested-elt (fj--property 'fj-item-data)
+                                   '(user login)))
+               repo owner item
+               (fj--property 'fj-comment-id)))))
       (fj-issue-compose nil 'fj-compose-comment-mode 'comment
                       reply-str quote-text)
       (setq fj-compose-repo repo
