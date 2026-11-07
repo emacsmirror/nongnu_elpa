@@ -1622,11 +1622,12 @@ Return a list of names, either .login_name or .login."
                   .login)))
             data)))
 
-(defun fj--patch-assignees (assignees &optional assignee)
+(defun fj--patch-assignees (assignees owner repo item &optional assignee)
   "Patch issue ASSIGNEES, a list, in item view or items tabulated listing.
+Do so for ITEM in REPO by OWNER.
 Optionally also patch ASSIGNEE (deprecated param)."
   (fj-issue-patch repo owner item nil nil nil
-                  assignee assignees))
+                assignee assignees))
 
 (defun fj-item-add-assignee ()
   "Add an assignee to item being viewed or at point in tabulated listing.
@@ -1636,7 +1637,7 @@ Prompt for an assigne with completion."
    (let* ((cands (fj-assignees-candidates))
           (assignees (completing-read-multiple "Assign to item [TAB for multiple]: "
                                                cands nil :match))
-          (resp (fj--patch-assignees assignees)))
+          (resp (fj--patch-assignees assignees owner repo item)))
      (fedi-http--triage
       resp
       (lambda (resp)
@@ -1649,7 +1650,7 @@ Prompt for an assigne with completion."
   (interactive)
   (fj-with-item-view-or-tl
    (when (y-or-n-p "Clear item assignees?")
-     (let ((resp (fj--patch-assignees '() "")))
+     (let ((resp (fj--patch-assignees '() owner repo item "")))
        (fedi-http--triage
         resp
         (lambda (resp)
