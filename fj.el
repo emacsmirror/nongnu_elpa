@@ -4719,7 +4719,7 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
   (interactive)
   (fj-with-pull
    (fj-destructure-buf-spec (owner repo item)
-     (let* ((endpoint (format "/repos/%s/%s/pulls/%s/requested_reviewers"
+     (let* ((endpoint (format "repos/%s/%s/pulls/%s/requested_reviewers"
                               owner repo item))
             (reviewers-data (fj-get-repo-reviewers owner repo))
             (reviewers (completing-read-multiple
@@ -4746,7 +4746,7 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
 (defun fj-get-repo-reviewers (owner repo)
   "Return users that can be added to review requests for REPO by OWNER."
   ;; GET /repos/{owner}/{repo}/reviewers
-  (let ((endpoint (format "/repos/%s/%s/reviewers"
+  (let ((endpoint (format "repos/%s/%s/reviewers"
                           owner repo)))
     (fj-get endpoint)))
 
