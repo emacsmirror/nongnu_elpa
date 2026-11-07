@@ -4535,7 +4535,8 @@ is new branch."
 (defun fj-format-review-request (format-str user reviewer ts item)
   "Format an review request timeline item.
 FORMAT-STR is the base string. USER is the agent, REVIEWER is the one to
-review. TS is a timeline timestamp."
+review. TS is a timeline timestamp.
+ITEM is the full data, used to check if request removed."
   (let ((user (propertize user 'face 'fj-name-face))
         (reviewer (propertize reviewer 'face 'fj-name-face))
         (removed (alist-get 'removed_assignee item)))
