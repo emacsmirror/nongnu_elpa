@@ -4713,7 +4713,7 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
                           owner repo item-id review-id)))
     (fj-get endpoint)))
 
-(defun fj-request-reviews ()
+(defun fj-request-reviewers ()
   "Request reviewers for the current PR."
   ;; POST /repos/{owner}/{repo}/pulls/{index}/requested_reviewers
   (interactive)
@@ -4737,7 +4737,7 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
        (fedi-http--triage
         resp
         (lambda (_resp)
-          (message (format "Review requested from: %s"
+          (message (format "Review requested from: %s!"
                            (mapconcat
                             #'identity
                             (append reviewers) ;team-reviewers)
