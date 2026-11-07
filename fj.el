@@ -4750,6 +4750,39 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
                           owner repo)))
     (fj-get endpoint)))
 
+(defun fj-remove-request-reviewers ()
+  "Remove reviewer requests for the current PR."
+  ;; DELETE /repos/{owner}/{repo}/pulls/{index}/requested_reviewers
+  (interactive)
+  (fj-with-pull
+   (fj-destructure-buf-spec (owner repo item)
+     (let* ((endpoint (format "repos/%s/%s/pulls/%s/requested_reviewers"
+                              owner repo item))
+            (reviewers-data (save-excursion
+                              (goto-char (point-min))
+                              (alist-get 'requested_reviewers
+                                         (fedi--property 'fj-item-data))))
+            (reviewers (completing-read-multiple
+                        "Remove reviewers [TAB for more]: "
+                        (mapcar (lambda (x)
+                                  (alist-get 'login x))
+                                reviewers-data)))
+            (params (append
+                     (fedi-opt-params
+                      (reviewers :list reviewers)
+                      ;; (team-reviewers :alias "team_reviewers"
+                      ;;                 :list team-reviewers)
+                      )))
+            (resp (fj-delete endpoint params :json)))
+       (fedi-http--triage
+        resp
+        (lambda (_resp)
+          (message (format "Review request removed for: %s!"
+                           (mapconcat
+                            #'identity
+                            (append reviewers) ;team-reviewers)
+                            " ")))))))))
+
 ;;; SEARCH
 
 (defvar fj-search-modes
