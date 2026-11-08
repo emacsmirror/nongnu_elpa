@@ -191,6 +191,103 @@ is what a reader chasing a stale code saw: a cheerful message and no mail."
       (should-not (cl-some (lambda (said) (string-match-p "authorized" said))
                            informed)))))
 
+(ert-deftest vm-oauth2-test-the-redirect-brings-the-code ()
+  "The listener takes the code out of the request the browser makes.
+A provider answers an authorization by redirecting the browser, so the code
+arrives as an ordinary GET on a loopback port rather than being read off a
+page and pasted."
+  (let ((vm-oauth2--code nil)
+        (vm-oauth2--refusal nil)
+        (server nil)
+        (browser nil)
+        (answer ""))
+    (unwind-protect
+        (progn
+          (setq server (vm-oauth2--listen))
+          (should (string-match-p "\\`http://127\\.0\\.0\\.1:[0-9]+/\\'"
+                                  (vm-oauth2--redirect-uri server)))
+          (setq browser (make-network-process
+                         :name "vm-oauth2-test-browser" :host 'local
+                         :service (process-contact server :service)
+                         :noquery t :coding 'binary
+                         :filter (lambda (_process text)
+                                   (setq answer (concat answer text)))))
+          (process-send-string
+           browser (concat "GET /?code=4%2F0Abc-def&scope=https%3A%2F%2Fmail"
+                           " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
+          (should (equal (vm-oauth2--wait-for-the-code 5) "4/0Abc-def"))
+          ;; and the browser was answered, rather than left to show its own
+          ;; failure to connect
+          (should (string-match-p "\\`HTTP/1\\.1 200 " answer))
+          (should (string-match-p "VM has the code" answer)))
+      (when browser (ignore-errors (delete-process browser)))
+      (when server (ignore-errors (delete-process server))))))
+
+(ert-deftest vm-oauth2-test-a-refusal-on-the-redirect-is-not-a-code ()
+  "A provider that refuses says so on the redirect, and that is an error.
+The browser arrives either way; what it carries is `error=' rather than
+`code=', and waiting for a code that is not coming would be the whole
+timeout spent on an answer VM already has."
+  (let ((vm-oauth2--code nil)
+        (vm-oauth2--refusal nil)
+        (server nil)
+        (browser nil))
+    (unwind-protect
+        (progn
+          (setq server (vm-oauth2--listen))
+          (setq browser (make-network-process
+                         :name "vm-oauth2-test-browser" :host 'local
+                         :service (process-contact server :service)
+                         :noquery t :coding 'binary))
+          (process-send-string
+           browser "GET /?error=access_denied HTTP/1.1\r\n\r\n")
+          (let ((message (cadr (should-error (vm-oauth2--wait-for-the-code 5)))))
+            (should (string-match-p "access_denied" message))))
+      (when browser (ignore-errors (delete-process browser)))
+      (when server (ignore-errors (delete-process server))))))
+
+(ert-deftest vm-oauth2-test-the-authorization-takes-the-code-off-the-redirect ()
+  "REGRESSION: nothing is pasted where the browser can reach VM.
+
+oauth2.el opens the browser and then reads the code with `read-string'.
+VM answers that out of the redirect, so the reader clicks Allow and is done;
+before this, every authorization ended with a browser error page and a code
+to copy out of its address bar."
+  (let ((vm-oauth2-client-id "id")
+        (vm-oauth2-client-secret "secret")
+        (vm-oauth2-redirect-timeout 5)
+        (asked nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-oauth2-require) #'ignore)
+                  ((symbol-function 'vm-oauth2-show-url) #'ignore)
+                  ((symbol-function 'vm-inform) #'ignore)
+                  ((symbol-function 'oauth2-token-p) #'ignore)
+                  ;; stands for oauth2.el: it opens the browser, which comes
+                  ;; back to the redirect, and then it reads the code
+                  ((symbol-function 'oauth2-auth-and-store)
+                   (lambda (_auth _token _scope _id _secret
+                            &optional redirect &rest _)
+                     (let ((browser (make-network-process
+                                     :name "vm-oauth2-test-browser"
+                                     :host 'local :noquery t :coding 'binary
+                                     :service
+                                     (and (string-match ":\\([0-9]+\\)/"
+                                                        redirect)
+                                          (string-to-number
+                                           (match-string 1 redirect))))))
+                       (unwind-protect
+                           (progn
+                             (process-send-string
+                              browser
+                              "GET /?code=from-the-redirect HTTP/1.1\r\n\r\n")
+                             (setq asked t)
+                             (read-string "Enter the code: "))
+                         (ignore-errors (delete-process browser)))))))
+          (should (equal (vm-oauth2-authorize "a@b.c" "google")
+                         "from-the-redirect"))
+          (should asked))
+      (when (get-buffer "*VM OAuth2*") (kill-buffer "*VM OAuth2*")))))
+
 (provide 'vm-oauth2-test)
 
 ;;; vm-oauth2-test.el ends here
