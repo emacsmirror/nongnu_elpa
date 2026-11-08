@@ -75,6 +75,9 @@
 		  (auth-url token-url scope client-id client-secret
 			    &optional redirect-uri state user-name host-name
 			    use-pkce))
+(declare-function oauth2-token-p "ext:oauth2" (object))
+(declare-function oauth2-token-access-token "ext:oauth2" (token))
+(declare-function oauth2-token-access-response "ext:oauth2" (token))
 
 (defgroup vm-oauth2 nil
   "Authorizing a mail account for XOAUTH2."
@@ -266,6 +269,22 @@ an account set up here work with everything else that reads it."
 		 nil account nil vm-oauth2-use-pkce)))
     (unless token
       (error "%s gave no token for %s" provider account))
+    ;; oauth2.el answers with a token structure whether the provider gave a
+    ;; token or refused to: the refusal is in the response it kept, the access
+    ;; token is nil, and nothing signals.  Said here, or VM reports an
+    ;; authorization that did not happen and the session afterwards finds no
+    ;; token with nothing anywhere to say why.
+    (when (and (oauth2-token-p token)
+	       (null (oauth2-token-access-token token)))
+      (let* ((response (oauth2-token-access-response token))
+	     (code (cdr (assq 'error response)))
+	     (said (or (cdr (assq 'error_description response)) code)))
+	(error "%s would not authorize %s%s%s" provider account
+	       (if said (format ": %s" said) "")
+	       (if (equal code "invalid_grant")
+		   (concat ".  A code is good once, for a few minutes, and"
+			   " only to the link that asked for it")
+		 ""))))
     (vm-inform 5 "%s is authorized; write xoauth2 in its maildrop" account)
     token))
 

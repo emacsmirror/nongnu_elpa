@@ -156,6 +156,41 @@ oauth2.el asks to be opened has to reach the reader's browser exactly once."
                                    (car opened))))
       (when (get-buffer "*VM OAuth2*") (kill-buffer "*VM OAuth2*")))))
 
+(ert-deftest vm-oauth2-test-a-refused-authorization-is-reported ()
+  "REGRESSION: a provider that refuses is an error, not a success message.
+
+oauth2.el answers with a token structure either way.  A refusal leaves the
+access token nil and the provider's words in the response it kept, and
+signals nothing, so VM said the account was authorized, nothing was stored,
+and the next session found no token with nothing anywhere to say why.  That
+is what a reader chasing a stale code saw: a cheerful message and no mail."
+  (let ((vm-oauth2-client-id "id")
+        (vm-oauth2-client-secret "secret")
+        (informed nil))
+    (cl-letf (((symbol-function 'vm-oauth2-require) #'ignore)
+              ((symbol-function 'vm-oauth2-show-url) #'ignore)
+              ((symbol-function 'vm-inform)
+               (lambda (_level format &rest args)
+                 (push (apply #'format format args) informed)))
+              ;; what oauth2.el hands back when the provider says no
+              ((symbol-function 'oauth2-token-p) (lambda (_) t))
+              ((symbol-function 'oauth2-token-access-token) #'ignore)
+              ((symbol-function 'oauth2-token-access-response)
+               (lambda (_) '((error . "invalid_grant")
+                             (error_description . "Bad Request"))))
+              ((symbol-function 'oauth2-auth-and-store)
+               (lambda (&rest _) 'refused)))
+      (let ((message (cadr (should-error
+                            (vm-oauth2-authorize "a@b.c" "google")))))
+        (should (string-match-p "google" message))
+        (should (string-match-p "a@b.c" message))
+        ;; what the provider said, and what to do about that one
+        (should (string-match-p "Bad Request" message))
+        (should (string-match-p "good once" message)))
+      ;; and it did not say the account was authorized
+      (should-not (cl-some (lambda (said) (string-match-p "authorized" said))
+                           informed)))))
+
 (provide 'vm-oauth2-test)
 
 ;;; vm-oauth2-test.el ends here
