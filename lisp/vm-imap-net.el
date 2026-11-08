@@ -399,8 +399,8 @@ order."
 	(setq done t)))
     (nreverse lines)))
 
-(defun vm-imap-net-logout ()
-  "Say LOGOUT, without waiting to be answered.
+(defun vm-imap-net-logout (session)
+  "Say LOGOUT on SESSION's connection, without waiting to be answered.
 A server counts its connections -- dovecot's `mail_max_userip_connections'
 -- and a client that drops them without a word leaves it to time them out.
 Nothing waits for the answer: the session is over either way, and this runs
@@ -408,12 +408,25 @@ where a session is being unwound.
 
 In an `unwind-protect', so it is said whether the session ran to the end
 or was abandoned, which is the reason the driver closes a generator rather
-than dropping it."
-  (let ((process (get-buffer-process (current-buffer))))
-    (when (process-live-p process)
-      (ignore-errors
-	(process-send-string process
-			     (format "%s LOGOUT\r\n" (vm-imap-net-next-tag)))))))
+than dropping it.
+
+SESSION, rather than whatever connection the current buffer happens to hold.
+A generator that is dropped without being closed is closed by the finalizer
+`generator.el' gives it, which runs from inside whatever Emacs was doing when
+the garbage collector got to it -- and what Emacs was doing was usually
+feeding another session, in that session's own process buffer.  The LOGOUT
+then went down that connection, whose server answered BYE and closed it, and
+the folder that owned it reported the server as having disconnected in the
+middle of a command (emacs-vm/vm#939)."
+  (let* ((process (vm-net-session-process session))
+	 (buffer (and (process-live-p process) (process-buffer process))))
+    (when (buffer-live-p buffer)
+      ;; the tag counter is buffer-local to the connection's own buffer
+      (with-current-buffer buffer
+	(ignore-errors
+	  (process-send-string process
+			       (format "%s LOGOUT\r\n"
+				       (vm-imap-net-next-tag))))))))
 
 ;;; The start of a session
 
@@ -1569,7 +1582,7 @@ the choice is taken and the label says which messages it was taken for."
   (dolist (message stale-list)
     (vm-add-or-delete-message-labels "stale" (list message) 'all)))
 
-(iter-defun vm-imap-net-get-new-mail (folder mailbox user password
+(iter-defun vm-imap-net-get-new-mail (session folder mailbox user password
 					     &optional attributes all-flags
 					     full-retrieve)
   "Fetch what FOLDER has not got from MAILBOX, and answer with how many.
@@ -1730,7 +1743,7 @@ over.  Two prefix arguments to `vm-get-new-mail' ask for it."
     		(with-current-buffer folder
     		  (vm-imap-net-note-expunged uids))))
 	    retrieved)))
-      (vm-imap-net-logout)
+      (vm-imap-net-logout session)
       (when (buffer-live-p holding) (kill-buffer holding)))))
 
 ;;; Flags, and what the server would not take
@@ -2271,7 +2284,7 @@ in any order (issue #185)."
 	    (vm-imap-cleanup-region (vm-text-of message) (point-max))
 	    (vm-settle-message-body message modified)))))))
 
-(iter-defun vm-imap-net-load (folder mailbox user password uids)
+(iter-defun vm-imap-net-load (session folder mailbox user password uids)
   "Log in, select MAILBOX, and fetch the bodies of UIDS into FOLDER."
   (unwind-protect
       (progn
@@ -2279,7 +2292,7 @@ in any order (issue #185)."
     	       (body-peek (and (memq 'IMAP4REV1 (car capabilities)) t)))
 	  (iter-yield-from (vm-imap-net-select mailbox))
 	  (iter-yield-from (vm-imap-net-fetch-bodies folder uids body-peek))))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-load-bodies (messages callback)
   "Fetch the bodies of MESSAGES, which are the current folder's, and tell
@@ -2320,7 +2333,7 @@ timer has nobody to ask."
     ;; the folder's one session slot: what `vm-imap-net-busy-p' reports and
     ;; what a caller that has to have the bodies waits on
     (vm-imap-net-take-session session
-		  (vm-imap-net-load folder (nth 1 opened) (nth 2 opened)
+		  (vm-imap-net-load session folder (nth 1 opened) (nth 2 opened)
 				    (nth 3 opened) uids))
     session))
 
@@ -2477,7 +2490,7 @@ was dropped from the APPEND (emacs-vm/vm#889)."
       (nth 5 (iter-yield-from (vm-imap-net-select mailbox 'examine)))
     (vm-imap-normal-error nil)))
 
-(iter-defun vm-imap-net-save (user password mailbox messages)
+(iter-defun vm-imap-net-save (session user password mailbox messages)
   "Log in and APPEND each of MESSAGES to MAILBOX, and answer with how many.
 The mailbox is created if the server does not have it, its refusal to create
 one it already has being no reason to stop.
@@ -2518,7 +2531,7 @@ the flag, so what the destination takes is asked before anything is sent
 			 (mapconcat #'identity
 				    (delete-dups (nreverse dropped)) ", ")))
 	  saved))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-save-messages (source mailbox messages callback)
   "Save MESSAGES into MAILBOX on SOURCE, and tell CALLBACK how many went.
@@ -2545,7 +2558,7 @@ open."
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))))
     (vm-imap-net-take-session session
-		  (vm-imap-net-save (nth 2 opened) (nth 3 opened)
+		  (vm-imap-net-save session (nth 2 opened) (nth 3 opened)
 				    mailbox copies))
     session))
 
@@ -2579,7 +2592,7 @@ copy is what did not arrive."
 			      (vm-net-session-error finished)))
 		  (vm-net-inform 6 "Filed in %s on %s" mailbox name))))
 	(vm-net-start session
-		      (vm-imap-net-save (nth 2 opened) (nth 3 opened) mailbox
+		      (vm-imap-net-save session (nth 2 opened) (nth 3 opened) mailbox
 					(list (cons text flags))))
 	(vm-net-inform 6 "Filing in %s on %s without waiting" mailbox name)
 	t)
@@ -2637,7 +2650,7 @@ for: a server refuses STATUS on a name it has just listed often enough."
 	    (setq counts (list (or messages 0) (or recent 0)))))))
     counts))
 
-(iter-defun vm-imap-net-list-session (user password)
+(iter-defun vm-imap-net-list-session (session user password)
   "Log in and answer with (MAILBOX MESSAGES RECENT) for every mailbox."
   (unwind-protect
       (progn
@@ -2651,7 +2664,7 @@ for: a server refuses STATUS on a name it has just listed often enough."
 	      (setq done (1+ done))
 	      (vm-net-inform 6 "%d of %d mailboxes asked about" done (length names))))
 	  (nreverse listed)))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-list-folders (spec callback)
   "Ask SPEC's server what mailboxes it has, and tell CALLBACK.
@@ -2673,11 +2686,11 @@ frozen."
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
-		      (vm-imap-net-list-session (nth 2 opened) (nth 3 opened)))
+		      (vm-imap-net-list-session session (nth 2 opened) (nth 3 opened)))
 	t)
     (vm-imap-net-no-password nil)))
 
-(iter-defun vm-imap-net-uids-session (user password mailbox)
+(iter-defun vm-imap-net-uids-session (session user password mailbox)
   "Log in, EXAMINE MAILBOX, and answer with (UID-VALIDITY UIDS).
 Examined and not selected: asking what a mailbox holds is not a reason to
 mark anything seen."
@@ -2691,7 +2704,7 @@ mark anything seen."
 			 nil
 		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
 	  (list validity (mapcar #'cadr data))))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-mailbox-uids (source callback)
   "Ask SOURCE which messages it holds, and tell CALLBACK (UID-VALIDITY UIDS).
@@ -2712,12 +2725,12 @@ remembers against what the mailbox still has."
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
-		      (vm-imap-net-uids-session (nth 2 opened) (nth 3 opened)
+		      (vm-imap-net-uids-session session (nth 2 opened) (nth 3 opened)
 						(nth 1 opened)))
 	t)
     (vm-imap-net-no-password nil)))
 
-(iter-defun vm-imap-net-maildrop-expunge-session (user password mailbox uids)
+(iter-defun vm-imap-net-maildrop-expunge-session (session user password mailbox uids)
   "Log in, select MAILBOX and delete the messages with UIDS.
 
 Answers (UID-VALIDITY DELETED GONE): the UIDs this session expunged, and the
@@ -2752,7 +2765,7 @@ nothing was there to delete."
 	      (when wanted
 		(iter-yield-from (vm-imap-net-expunge wanted)))
 	      (list validity wanted gone)))))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-expunge-maildrop (source uids callback)
   "Delete the messages with UIDS from the maildrop SOURCE, without waiting.
@@ -2771,7 +2784,7 @@ whether it started."
 				      (vm-net-session-value finished)))))
 	(vm-imap-net-take-session session
 		      (vm-imap-net-maildrop-expunge-session
-		       (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
+		       session (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
 	t)
     (vm-imap-net-no-password nil)))
 
@@ -2829,13 +2842,13 @@ to be rewritten while another is being answered for."
 		  (funcall step (cdr rest) (cons name trouble) nil))))))))
     (and groups (funcall step groups nil t))))
 
-(iter-defun vm-imap-net-names-session (user password selectable-only)
+(iter-defun vm-imap-net-names-session (session user password selectable-only)
   "Log in and answer with the account's mailbox names."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
 	(iter-yield-from (vm-imap-net-mailbox-list selectable-only)))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-mailbox-names (spec &optional selectable-only seconds)
   "The mailbox names of SPEC's account, or nil if the driver cannot ask.
@@ -2873,12 +2886,12 @@ Answers whether the asking started."
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
-		      (vm-imap-net-names-session (nth 2 opened) (nth 3 opened)
+		      (vm-imap-net-names-session session (nth 2 opened) (nth 3 opened)
 						 selectable-only))
 	t)
     (vm-imap-net-no-password nil)))
 
-(iter-defun vm-imap-net-one-command-session (user password command purpose)
+(iter-defun vm-imap-net-one-command-session (session user password command purpose)
   "Log in, send COMMAND, and answer with what the server said.
 PURPOSE names the command in an error message, as elsewhere here."
   (unwind-protect
@@ -2886,7 +2899,7 @@ PURPOSE names the command in an error message, as elsewhere here."
 	(iter-yield-from (vm-imap-net-open-session user password))
 	(iter-yield-from (vm-imap-net-command command purpose))
 	t)
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-run-command (spec command purpose &optional may-ask done)
   "Send COMMAND to SPEC's server without waiting, and answer whether it did.
@@ -2910,7 +2923,7 @@ Nil means nothing was sent, VM having no password for the maildrop yet."
 		  (funcall done (or (vm-net-session-error finished) t)))))
 	(vm-net-start session
 		      (vm-imap-net-one-command-session
-		       (nth 2 opened) (nth 3 opened) command purpose))
+		       session (nth 2 opened) (nth 3 opened) command purpose))
 	t)
     (vm-imap-net-no-password nil)))
 
@@ -2996,14 +3009,14 @@ folder ends up in a different state depending on which path did the work."
    (max 0 (- (or (vm-folder-imap-mailbox-count) 0) (length uids))))
   (vm-mark-folder-modified-p))
 
-(iter-defun vm-imap-net-save-attributes-session (folder user password mailbox)
+(iter-defun vm-imap-net-save-attributes-session (session folder user password mailbox)
   "Log in, select MAILBOX, and send FOLDER's changed flags."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
 	(iter-yield-from (vm-imap-net-select mailbox))
 	(iter-yield-from (vm-imap-net-save-flags folder)))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-save-attributes ()
   "Start sending this folder's changed flags to the server.
@@ -3036,13 +3049,13 @@ messages is what the queue exists to prevent."
 				      (buffer-name folder)))))))
 	     (vm-imap-net-take-session session
 			   (vm-imap-net-save-attributes-session
-			    folder (nth 2 opened) (nth 3 opened) (nth 1 opened)))
+			    session folder (nth 2 opened) (nth 3 opened) (nth 1 opened)))
 	     t)
 	 (vm-imap-net-no-password
 	  (vm-imap-net-say-no-password folder reason)
 	  nil))))))
 
-(iter-defun vm-imap-net-send-changes-session (folder user password mailbox uids)
+(iter-defun vm-imap-net-send-changes-session (session folder user password mailbox uids)
   "Log in, select MAILBOX, send FOLDER's changed flags and expunge UIDS.
 The two in one session, and in that order: a message whose flags have changed
 and which is also being deleted should go up with the flags it had."
@@ -3053,7 +3066,7 @@ and which is also being deleted should go up with the flags it had."
 	(iter-yield-from (vm-imap-net-save-flags folder))
 	(when uids
 	  (iter-yield-from (vm-imap-net-expunge uids))))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-send-changes ()
   "Start sending what this folder owes its server, and answer with whether it
@@ -3103,7 +3116,7 @@ keep their modification flags and go up next time."
 			    (vm-net-inform 6 "%s: changes sent to the server" name)))))
 	     (vm-imap-net-take-session session
 			   (vm-imap-net-send-changes-session
-			    folder (nth 2 opened) (nth 3 opened) (nth 1 opened)
+			    session folder (nth 2 opened) (nth 3 opened) (nth 1 opened)
 			    uids))
 	     (vm-net-inform 6 "%s: sending this folder's changes without waiting"
 			(buffer-name folder))
@@ -3112,14 +3125,14 @@ keep their modification flags and go up next time."
 	  (vm-imap-net-say-no-password folder reason)
 	  nil))))))
 
-(iter-defun vm-imap-net-expunge-session (user password mailbox uids)
+(iter-defun vm-imap-net-expunge-session (session user password mailbox uids)
   "Log in, select MAILBOX, and expunge UIDS from it."
   (unwind-protect
       (progn
 	(iter-yield-from (vm-imap-net-open-session user password))
 	(iter-yield-from (vm-imap-net-select mailbox))
 	(iter-yield-from (vm-imap-net-expunge uids)))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-expunge-remote-messages ()
   "Start expunging on the server what this folder has expunged locally.
@@ -3162,7 +3175,7 @@ done when that one ends and the answer is `later'."
 					(if (= (length uids) 1) "" "s")))))))
 	       (vm-imap-net-take-session session
 			     (vm-imap-net-expunge-session
-			      (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
+			      session (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
 	       t)
 	   (vm-imap-net-no-password
 	    (vm-imap-net-say-no-password folder reason)
@@ -3199,7 +3212,7 @@ nothing else to try: nobody can be asked for one from inside a filter."
     ;; else opens a second connection while this one writes -- taken before it
     ;; is started, so a second one is refused rather than reported
     (vm-imap-net-take-session session
-			      (vm-imap-net-get-new-mail folder (nth 1 opened)
+			      (vm-imap-net-get-new-mail session folder (nth 1 opened)
 							(nth 2 opened)
 							(nth 3 opened)
 							nil nil
@@ -3298,7 +3311,7 @@ says a reader is there to be asked for a password."
 			     (vm-net-inform 5 "%s: synchronised" name))))))))
 	     (vm-imap-net-take-session session
 			   (vm-imap-net-get-new-mail
-			    folder (nth 1 opened) (nth 2 opened) (nth 3 opened)
+			    session folder (nth 1 opened) (nth 2 opened) (nth 3 opened)
 			    'attributes full))
 	     (vm-net-inform 6 "%s: synchronising without waiting" name)
 	     t)
@@ -3425,7 +3438,7 @@ in the copy, and a save that says nothing about that is issue #38."
 			 " are not in it.  Save again once"
 			 " `vm-imap-synchronize' stores them."))))
 
-(iter-defun vm-imap-net-copy-session (folder user password mailbox target
+(iter-defun vm-imap-net-copy-session (session folder user password mailbox target
 					     uids messages)
   "Log in, select MAILBOX, send FOLDER's pending flags, and copy UIDS to TARGET.
 The flags go first because UID COPY copies what the server holds: a change
@@ -3442,7 +3455,7 @@ MESSAGES is what to check that against afterwards."
 	  (ignore error-data))
 	(vm-imap-net-warn-about-stale-flags folder messages)
 	(iter-yield-from (vm-imap-net-copy target uids)))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-copy-messages (target messages callback)
   "Copy MESSAGES, which are the current folder's, into the TARGET mailbox.
@@ -3470,7 +3483,7 @@ CALLBACK how many were copied, or the error that stopped it."
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))))
     (vm-imap-net-take-session session
-		  (vm-imap-net-copy-session folder (nth 2 opened) (nth 3 opened)
+		  (vm-imap-net-copy-session session folder (nth 2 opened) (nth 3 opened)
 					    (nth 1 opened) target uids messages))
     session))
 
@@ -3687,7 +3700,7 @@ it reads back as no type at all."
       (write-region (point-min) (point-max) crash-box t 'quiet))
     (erase-buffer)))
 
-(iter-defun vm-imap-net-move (folder source mailbox user password crash-box
+(iter-defun vm-imap-net-move (session folder source mailbox user password crash-box
 				     folder-type retrieved delete)
   "Fetch what RETRIEVED does not have from MAILBOX into CRASH-BOX.
 Answers with how many messages were written.  DELETE says to delete them from
@@ -3753,7 +3766,7 @@ and nothing is displayed."
 		  (iter-yield-from (vm-imap-net-expunge uids))))
 	    (when (buffer-live-p work) (kill-buffer work)))
 	  written))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-note-retrieved (uids uid-validity source)
   "Remember UIDS, valid under UID-VALIDITY, as fetched from SOURCE.
@@ -3835,7 +3848,7 @@ Signals `vm-imap-net-no-password' where VM has no password yet."
 		  (funcall callback (or error-data
 					(vm-net-session-value finished))))))))
     (vm-imap-net-take-session session
-		  (vm-imap-net-move folder source (nth 1 opened) (nth 2 opened)
+		  (vm-imap-net-move session folder source (nth 1 opened) (nth 2 opened)
 				    (nth 3 opened) crash-box folder-type
 				    retrieved delete))
     session))
@@ -3846,7 +3859,7 @@ Signals `vm-imap-net-no-password' where VM has no password yet."
 (declare-function vm-folder-imap-recent-count "vm-folder" ())
 (defvar vm-spooled-mail-waiting)
 
-(iter-defun vm-imap-net-check (folder mailbox user password)
+(iter-defun vm-imap-net-check (session folder mailbox user password)
   "Say whether MAILBOX holds mail FOLDER has not got.
 Answers the number of messages to be fetched.  The same comparison the fetch
 itself makes -- the UIDs the server has against the UIDs the folder has --
@@ -3875,7 +3888,7 @@ happened with nobody watching (emacs-vm/vm#892)."
 			(iter-yield-from (vm-imap-net-message-data 1 count)))))
 	    (with-current-buffer folder
 	      (length (nth 0 (vm-imap-net-plan data count)))))))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-folder-check-mail ()
   "Start asking whether this IMAP folder has new mail, and answer with
@@ -3915,7 +3928,7 @@ say what arrived anyway."
 			    (vm-net-inform 6 "%s: %s" (buffer-name folder)
 				       (if waiting "new mail" "no new mail"))))))))
 	    (vm-imap-net-take-session session
-			  (vm-imap-net-check folder (nth 1 opened) (nth 2 opened)
+			  (vm-imap-net-check session folder (nth 1 opened) (nth 2 opened)
 					     (nth 3 opened)))
 	    (vm-net-inform 6 "%s: checking the server without waiting"
 		       (buffer-name folder))
@@ -3946,7 +3959,7 @@ reader, and both would want the blocking path to ask a question."
 	     t))
     (error nil)))
 
-(iter-defun vm-imap-net-unretrieved-count (mailbox user password source retrieved)
+(iter-defun vm-imap-net-unretrieved-count (session mailbox user password source retrieved)
   "How many messages MAILBOX holds that RETRIEVED does not have.
 The maildrop is examined rather than selected: a check is not a reason to
 mark anything seen."
@@ -3959,7 +3972,7 @@ mark anything seen."
 			 nil
 		       (iter-yield-from (vm-imap-net-message-data 1 count)))))
 	  (length (vm-imap-net-unretrieved data source retrieved))))
-    (vm-imap-net-logout)))
+    (vm-imap-net-logout session)))
 
 (defun vm-imap-net-check-mail (source callback)
   "Ask SOURCE whether it has mail VM has not retrieved, and tell CALLBACK.
@@ -3985,7 +3998,7 @@ Nothing waits: this returns as soon as the connection is started."
 			 (and count (> count 0)))))))
     (vm-net-start session
 		  (vm-imap-net-unretrieved-count
-		   (nth 1 opened) (nth 2 opened) (nth 3 opened)
+		   session (nth 1 opened) (nth 2 opened) (nth 3 opened)
 		   source retrieved))
     session))
 

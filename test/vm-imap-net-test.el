@@ -2605,7 +2605,8 @@ it, which is what makes those forms run."
                      :buffer buffer :noquery t :coding 'binary))
            (session (vm-net-session :process process :name "imap" :timeout 10)))
       (setq vm-imap-net-test--buffer buffer)
-      (vm-net-start session (vm-imap-net-get-new-mail (current-buffer) "INBOX"
+      (vm-net-start session (vm-imap-net-get-new-mail session (current-buffer)
+                                                      "INBOX"
                                                       "vmtest" "secret"))
       ;; let it get as far as being logged in
       (let ((deadline (+ (float-time) 5)))
@@ -2640,7 +2641,8 @@ thing that can fail, so a refused UIDVALIDITY leaked one every time."
            (session (vm-net-session :process process :name "imap" :timeout 10)))
       (setq vm-imap-net-test--buffer buffer)
       (should-not (vm-imap-net-test--bunch-buffers))
-      (vm-net-start session (vm-imap-net-get-new-mail (current-buffer) "INBOX"
+      (vm-net-start session (vm-imap-net-get-new-mail session (current-buffer)
+                                                      "INBOX"
                                                       "vmtest" "secret"))
       (let ((deadline (+ (float-time) 5)))
         (while (and (not (vm-imap-mock-received-p mock "SELECT"))
@@ -3827,12 +3829,22 @@ The driver warns with `vm-net-warn', which goes through `vm-warn'."
        ,@body)
      (nreverse said)))
 
+(defun vm-imap-net-test--logout ()
+  "Say LOGOUT on the connection in the current buffer.
+`vm-imap-net-logout' is given the session, which a generator written for a
+test does not have: it is built before `vm-imap-net-test--run' makes one.
+These run in their own process buffer either way."
+  (let ((process (get-buffer-process (current-buffer))))
+    (when (process-live-p process)
+      (process-send-string process
+                           (format "%s LOGOUT\r\n" (vm-imap-net-next-tag))))))
+
 (iter-defun vm-imap-net-test--store-flags (sign uid flags)
   "Log in, select INBOX and store FLAGS on UID, answering what was accepted."
   (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
   (iter-yield-from (vm-imap-net-select "INBOX"))
   (let ((accepted (iter-yield-from (vm-imap-net-store-flags sign uid flags))))
-    (vm-imap-net-logout)
+    (vm-imap-net-test--logout)
     accepted))
 
 (ert-deftest vm-imap-net-test-a-discarded-keyword-is-reported ()
@@ -3879,7 +3891,7 @@ messages carrying the same label would otherwise complain a thousand times."
   (iter-yield-from (vm-imap-net-select "INBOX"))
   (iter-yield-from (vm-imap-net-store-flags "+" "1" '("important")))
   (iter-yield-from (vm-imap-net-store-flags "+" "2" '("important")))
-  (vm-imap-net-logout))
+  (vm-imap-net-test--logout))
 
 (ert-deftest vm-imap-net-test-only-a-keyword-store-asks-for-the-flags-back ()
   "The protocol's own flags are stored with `.SILENT', so the ordinary
@@ -4072,7 +4084,7 @@ a message written without its body."
   "Log in and select MAILBOX, and answer what SELECT said."
   (iter-yield-from (vm-imap-net-open-session "vmtest" "secret"))
   (prog1 (iter-yield-from (vm-imap-net-select mailbox))
-    (vm-imap-net-logout)))
+    (vm-imap-net-test--logout)))
 
 (ert-deftest vm-imap-net-test-a-refused-select-stops-the-session ()
   "A SELECT the server answers NO stops the session with an error rather than
@@ -4491,6 +4503,53 @@ manual had nothing else to try."
                             (vm-imap-mock-spec mock "INBOX" "digest-md5")
                             "bad auth" nil)))))
       (should (string-match-p "xoauth2" message)))))
+
+(ert-deftest vm-imap-net-test-an-unwinding-session-logs-out-of-its-own-connection ()
+  "The LOGOUT a session says as it is unwound goes down that session's own
+connection, whatever buffer it is closed from.
+
+A generator dropped without being closed is closed by the finalizer
+generator.el gives it, at a garbage collection, inside whatever Emacs was
+doing at the time -- which is usually feeding another session, in that
+session's own process buffer.  Taken from the current buffer, the LOGOUT went
+down the other folder's connection, whose server answered BYE and closed it,
+and that folder reported the server as having disconnected in the middle of a
+command (emacs-vm/vm#939)."
+  (vm-imap-mock-with (ours :messages (list vm-imap-net-test--alice))
+    (vm-imap-mock-with (theirs :messages (list vm-imap-net-test--alice))
+      (let* ((our-buffer (vm-imap-net-session-buffer "ours"))
+             (their-buffer (vm-imap-net-session-buffer "theirs"))
+             (our-process (make-network-process
+                           :name "vm-imap-net-test-ours" :host 'local
+                           :service (vm-imap-mock-port ours)
+                           :buffer our-buffer :noquery t :coding 'binary))
+             (their-process (make-network-process
+                             :name "vm-imap-net-test-theirs" :host 'local
+                             :service (vm-imap-mock-port theirs)
+                             :buffer their-buffer :noquery t :coding 'binary))
+             (session (vm-net-session :process our-process :name "ours"
+                                      :timeout 10)))
+        (unwind-protect
+            (progn
+              (vm-net-start session
+                            (vm-imap-net-list-session session "vmtest" "secret"))
+              ;; suspended at the greeting it has not been given yet, so the
+              ;; cleanup has a live connection of its own to say LOGOUT on
+              (should (vm-net-session-live-p session))
+              ;; closed where the finalizer of a dropped generator closes it:
+              ;; in another session's process buffer
+              (with-current-buffer their-buffer
+                (iter-close (vm-net-session-iterator session)))
+              (let ((deadline (+ (float-time) 5)))
+                (while (and (not (vm-imap-mock-received-p ours "LOGOUT"))
+                            (< (float-time) deadline))
+                  (accept-process-output nil 0.05)))
+              (should (vm-imap-mock-received-p ours "LOGOUT"))
+              (should-not (vm-imap-mock-received-p theirs "LOGOUT")))
+          (vm-net-close-process our-process)
+          (vm-net-close-process their-process)
+          (when (buffer-live-p our-buffer) (kill-buffer our-buffer))
+          (when (buffer-live-p their-buffer) (kill-buffer their-buffer)))))))
 
 (provide 'vm-imap-net-test)
 
