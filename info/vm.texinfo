@@ -1743,215 +1743,246 @@ settled on.
 
 @cindex primary inbox
 @cindex maildrop specification
-@vindex vm-primary-inbox
-VM supports accessing remote mailboxes on mail servers via the Post
-Office Protocol (@acronym{POP}) and the Internet Message Access Protocol (@acronym{IMAP}).
-Instead of a local file name, you can set the @code{vm-primary-inbox} to
-a string that tells VM how to access a server mailbox. Called a
-@dfn{maildrop specification}, the string is of one of the
-following formats:
-
-@example
-``pop:@var{HOST}:@var{PORT}:@var{AUTH}:@var{USER}:@var{PASSWORD}''
-``imap:@var{HOST}:@var{PORT}:@var{MAILBOX}:@var{AUTH}:@var{USER}:@var{PASSWORD}''
-@end example
-
-@noindent Remote mailboxes accessed by VM in this fashion are referred
-to as @dfn{server folders} (and @dfn{@acronym{POP} folders} or @dfn{@acronym{IMAP}
-folders}, more specifically).
-
 @cindex cache folders
-VM retrieves mail from the server folders into internal Emacs buffers
-for its normal operation.  It also saves copies of the folders on the
-local file system for speed of operation.  These are referred to as
-@dfn{cache folders}.  However, the @emph{only}
-permanent copies of the folders are on the mail server.  This should
-be contrasted with using server mailboxes as spool files (@pxref{@acronym{POP}
-Spool Files} and @pxref{@acronym{IMAP} Spool Files}), where the permanent
-folders are on the @emph{local} file system and only the incoming mail
-is held on the servers.
+@vindex vm-primary-inbox
+VM reads mailboxes held on a mail server over the Post Office Protocol
+(@acronym{POP}) and the Internet Message Access Protocol (@acronym{IMAP}).
+Such a mailbox is a @dfn{server folder}, and it is named by a @dfn{maildrop
+specification} rather than by a file name: set @code{vm-primary-inbox} to one
+of those strings and your mail comes from the server.
 
-Server folders have the advantage that they can be transparently
-accessed from multiple locations on the internet.  However, you must
-ensure that you have access to enough storage on the mail server to
-store all your email.
+VM keeps a copy of a server folder on the local disk, its @dfn{cache folder},
+so that reading it is quick.  The permanent copy is the one on the server and
+the cache is only a copy.  That is the other way round from using a server
+mailbox as a spool file (@pxref{@acronym{POP} Spool Files} and
+@pxref{@acronym{IMAP} Spool Files}), where the folder on the local disk is
+the permanent one and the server holds only the incoming mail.
+
+A server folder can be read from anywhere, which is the point of one.  The
+price is that all the mail you keep has to fit in whatever space the server
+gives you.
 
 @anchor{maildrop specification}
 @unnumberedsubsec Maildrop specification
-The format of a @acronym{POP} or @acronym{IMAP} maildrop specification is as
-follows:
+
+A maildrop specification says which server, which mailbox on it, and how to
+log in.  The fields are separated by colons:
 
 @example
-``pop:@var{HOST}:@var{PORT}:@var{AUTH}:@var{USER}:@var{PASSWORD}''
-``imap:@var{HOST}:@var{PORT}:@var{MAILBOX}:@var{AUTH}:@var{USER}:@var{PASSWORD}''
+pop:@var{HOST}:@var{PORT}:@var{AUTH}:@var{USER}:@var{PASSWORD}
+imap:@var{HOST}:@var{PORT}:@var{MAILBOX}:@var{AUTH}:@var{USER}:@var{PASSWORD}
 @end example
 
-@noindent Replace @samp{pop} in the example with @samp{pop-ssl} to
-have VM speak @acronym{POP} over an @acronym{SSL} connection.  Use
-@samp{pop-ssh} to use @acronym{POP} over an SSH connection.  Similarly,
-replace @samp{imap} with @samp{imap-ssl} or @samp{imap-ssh}, as needed.
+@table @var
+@item HOST
+The mail server's host name.
 
-@cindex @acronym{SSL}
-@cindex @acronym{TLS}        
-@dfn{@acronym{SSL}} refers to a protocol called @dfn{secure sockets layer},
-which allows you to securely communicate with a mail server using encryption
-technology.  A newer version of the same protocol is called
-@dfn{@acronym{TLS}} (@dfn{transport layer security}).  We refer to both of
-them as ``@acronym{SSL}'' in this manual.
-
-@cindex stunnel
-@vindex vm-stunnel-program
-@vindex vm-stunnel-program-additional-configuration-file
-For @acronym{SSL}, Emacs makes the connection itself where it was built with
-GnuTLS, and VM runs the @command{stunnel} program where it was not.  That is
-what @code{vm-stunnel-program} says: its default is @code{nil}, meaning
-Emacs's own, on an Emacs with GnuTLS, and @samp{"stunnel"} on one without,
-which works if that program is in your command search path.  An Emacs without
-GnuTLS on a machine without stunnel cannot reach a server that requires
-@acronym{SSL} at all.  Depending on the version of
-@samp{stunnel} program you are using, you may need to define a configuration
-file for @samp{stunnel}.  If you need it, you should set the variable
-@code{vm-stunnel-program-additional-configuration-file} to the location of
-the configuration file.  (Consult the doc string of the variable and the
-manual of the @samp{stunnel} program 
-to find out what to put in the configuration file.)
-
-@cindex SSH
-@vindex vm-ssh-program
-@vindex vm-ssh-remote-command
-For SSH, you must have the @command{ssh} program installed and the variable
-@code{vm-ssh-program} must name it in order for @acronym{POP}/@acronym{IMAP}
-over SSH to work.  When VM makes the SSH connection it must run a command on
-the remote server so that the SSH session is maintained long enough for the
-@acronym{POP}/@acronym{IMAP} connection to be established.  By default that
-command is @samp{"echo ready; sleep 15"}, but you can specify another
-command by setting @code{vm-ssh-remote-command}.  Whatever command you use
-must produce some output and hold the connection open long enough for VM to
-establish a port-forwarded connection to the mail server.  (SSH must be able
-to authenticate without a password, which means you must be using .shosts
-authentication or RSA.)
-
-@var{HOST} is the host name of the mail server.  
-
+@item PORT
 @cindex port, TCP
-@var{PORT} is the TCP port number to connect to.  The normal port
-numbers are:
-@multitable @columnfractions 0.20 0.80
-@item 110 @tab for @acronym{POP}
-@item 995 @tab for @acronym{POP} over @acronym{SSL}
-@item 143 @tab for @acronym{IMAP}
-@item 993 @tab for @acronym{IMAP} over @acronym{SSL}
-@end multitable
+The @acronym{TCP} port to connect to: 110 for @acronym{POP}, 995 for
+@acronym{POP} over @acronym{SSL}, 143 for @acronym{IMAP}, 993 for
+@acronym{IMAP} over @acronym{SSL}.
 
-@var{MAILBOX} is the name of the mailbox on the @acronym{IMAP} server.  This
-should be @samp{"inbox"}, to access your default @acronym{IMAP} mailbox on
-the server.  No @var{MAILBOX} component is needed for @acronym{POP}
-maildrops because @acronym{POP} does not support multiple mailboxes.
+@item MAILBOX
+The mailbox on the @acronym{IMAP} server, @samp{inbox} for the one your mail
+arrives in.  A @acronym{POP} maildrop has no such field, @acronym{POP}
+offering one mailbox and no way to name it.
 
+@item AUTH
+How VM proves who you are.  @xref{authentication}.
+
+@item USER
+Your login name on the server.
+
+@item PASSWORD
+Your password, or @samp{*} to be asked for it.  @xref{passwords}.
+@end table
+
+@noindent
+The first field is the protocol, and it also says how the connection is made.
+@samp{pop} and @samp{imap} are in clear; @samp{pop-ssl} and @samp{imap-ssl}
+are encrypted (@pxref{encrypted connections}); @samp{pop-ssh} and
+@samp{imap-ssh} go through a tunnel (@pxref{over SSH}).
+
+@unnumberedsubsec Examples
+
+@example
+imap-ssl:imap.example.com:993:inbox:login:jane:*
+imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
+imap-ssl:outlook.office365.com:993:inbox:xoauth2:jane@@example.com:*
+imap-ssl:imap.example.com:993:Archive:login:jane:*
+pop-ssl:pop.example.com:995:pass:jane:*
+imap:localhost:1143:inbox:login:jane:*
+@end example
+
+@noindent
+The last of them is a server on this machine: a local @acronym{IMAP} server,
+or a gateway such as DavMail holding the credentials for you
+(@pxref{OAuth2}).
+
+@anchor{authentication}
+@unnumberedsubsec Authentication
+
+Which methods work is the server's choice rather than yours.  If you do not
+know which it wants, ask whoever runs it, or try.
+
+@table @samp
+@item pass
+@acronym{POP}.  The password goes to the server with the @acronym{POP} PASS
+command, in clear, so use it over @acronym{SSL}.
+
+@item apop
 @vindex vm-pop-md5-program
-@var{AUTH} is the authentication method used to convince the
-server you should have access to the mailbox.  Acceptable
-values for @acronym{POP} are @samp{pass}, @samp{apop} and
-@samp{xoauth2}.  For
-@samp{pass}, the @var{PASSWORD} is sent to the server with
-the @acronym{POP} PASS command.  For @samp{apop}, an
-MD5 digest of the @var{PASSWORD} appended to the server
-time-stamp will be sent to the server with the @acronym{APOP} command.
-If Emacs does not have built in MD5 support, you will have
-to set the value of @code{vm-pop-md5-program} appropriately
-to point at the program that will generate the MD5 digest
-that VM needs.  @samp{xoauth2} sends an OAuth2 access token rather than
-a password; it is described with @acronym{IMAP} below, and works the same
-way.
+@acronym{POP}.  An @acronym{MD5} digest of the password and the server's time
+stamp goes instead of the password itself.  Where Emacs has no @acronym{MD5}
+of its own, @code{vm-pop-md5-program} names a program that computes the
+digest.
 
+@item login
+@acronym{IMAP}.  The user name and password go with the @acronym{IMAP} LOGIN
+command, in clear, so use it over @acronym{SSL}.
+
+@item cram-md5
 @cindex CRAM-MD5
+@acronym{IMAP}.  Challenge and response as RFC 2195 describes it, so the
+password itself never crosses the net.  Not every server offers it.
+
+@item preauth
 @vindex vm-imap-session-preauth-hook
-Acceptable values of @var{AUTH} for @acronym{IMAP}
-are @samp{"preauth"}, @samp{"cram-md5"}, @samp{"xoauth2"} and
-@samp{"login"}.
-@samp{"preauth"} causes VM to skip the authentication stage of
-the protocol with the assumption that the session was
-authenticated in some way external to VM.  The hook
-@code{vm-imap-session-preauth-hook} is run, and it is expected to
-return a process connected to an authenticated @acronym{IMAP} session.
-@samp{"cram-md5} tells VM to use the CRAM-MD5 authentication
-method as specified in RFC 2195.  The advantage of this method
-over the @samp{"login"} method is that it avoids sending your
-password over the net unencrypted.  Not all @acronym{IMAP} servers support
-@samp{"cram-md5"}; if you're not sure, ask your mail
-administrator or just try it.  The other value, @samp{"login"},
-tells VM to use the @acronym{IMAP} LOGIN command for authentication, which
-sends your user name and password in clear text to the server.
+@acronym{IMAP}.  VM does not authenticate at all: the connection is expected
+to arrive authenticated, having been made by something else.
+@code{vm-imap-session-preauth-hook} is run and must answer with a process
+connected to an authenticated session.
+
+@item xoauth2
+@acronym{POP} and @acronym{IMAP}.  An OAuth2 access token in place of a
+password.  @xref{OAuth2}.
+@end table
+
+@anchor{OAuth2}
+@unnumberedsubsec OAuth2
 
 @cindex XOAUTH2
 @cindex OAuth2
 @findex vm-oauth2-authorize
-@samp{"xoauth2"} sends an OAuth2 access token rather than a password,
-which is what a Google Workspace or Office 365 tenant with app passwords
-switched off requires.  VM speaks the mechanism and nothing more: it
-acquires no token, refreshes none, stores none and ships no client
-credentials.  It asks @code{auth-source} for a token each time it opens a
-session, so anything that answers an @code{auth-source} lookup with one
-will do.  Three arrangements are in use: the
-@file{auth-source-xoauth2-plugin} package from GNU ELPA, which answers a
-lookup with a freshly refreshed token; a helper program such as
-@command{oauth2ms} or @command{mutt_oauth2.py} writing one where
-@code{auth-source} reads; and @kbd{M-x vm-oauth2-authorize}, which runs
-the first authorization with the @file{oauth2} package.  Write @samp{*}
-for the @var{PASSWORD}.  You are never prompted for a token, nobody being
-able to type one, and VM does not remember one between sessions: an access
-token lives about an hour, so a remembered one would be a session that
-failed with nothing left to ask.  VM offers the mechanism only where the
+An @samp{xoauth2} maildrop sends an OAuth2 access token where a password
+would go, which is what a Google Workspace or Office 365 tenant with app
+passwords switched off requires:
+
+@example
+imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
+@end example
+
+VM speaks the mechanism and nothing more: it acquires no token, refreshes
+none, stores none and ships no client credentials.  It asks
+@code{auth-source} for a token each time it opens a session, so anything that
+answers an @code{auth-source} lookup with one will do.  Three arrangements
+are in use:
+
+@itemize @bullet
+@item
+the @file{auth-source-xoauth2-plugin} package from GNU ELPA, which answers a
+lookup with a freshly refreshed token;
+
+@item
+a helper program such as @command{oauth2ms} or @command{mutt_oauth2.py},
+writing a token where @code{auth-source} reads it;
+
+@item
+@kbd{M-x vm-oauth2-authorize}, which runs the first authorization with the
+@file{oauth2} package.
+@end itemize
+
+@noindent
+The @var{PASSWORD} field is @samp{*}.  You are never prompted for a token,
+nobody being able to type one, and VM does not remember one between sessions:
+an access token lives about an hour, so a remembered one would be a session
+that failed with nothing left to ask.  VM offers the mechanism only where the
 server advertises @samp{AUTH=XOAUTH2}.
 
+@cindex DavMail
 A fourth arrangement needs no OAuth2 in VM at all.  A local gateway such as
-@uref{https://davmail.sourceforge.net/, DavMail} holds the tokens and
-speaks ordinary @acronym{IMAP} to VM, so an @samp{imap} maildrop pointed at
-@code{localhost} with @samp{"login"} works unchanged.  That covers Exchange
-and Office 365 and not Gmail.
+@uref{https://davmail.sourceforge.net/, DavMail} holds the tokens and speaks
+ordinary @acronym{IMAP} to VM, so a maildrop pointed at @code{localhost} with
+@samp{login} works unchanged:
 
-@var{USER} is the user name used in authentication methods that
-require such an identifier.  @samp{"login"}, @samp{"cram-md5"} and
-@samp{"xoauth2"} use it currently.
+@example
+imap:localhost:1143:inbox:login:jane:*
+@end example
 
-@var{PASSWORD} is the
-secret shared by you and the server for authentication purposes.  How
-it is used depends on the value of the @var{AUTH} parameter.  If the
-@var{PASSWORD} is @samp{*}, VM will prompt you for the password the
-first time you try to retrieve mail from the mailbox.  If the password
-is valid, VM will not ask you for the password again during this Emacs
-session.
+@noindent
+That covers Exchange and Office 365, and not Gmail.
+
+@anchor{encrypted connections}
+@unnumberedsubsec Encrypted connections
+
+@cindex @acronym{SSL}
+@cindex @acronym{TLS}
+A @samp{pop-ssl} or @samp{imap-ssl} maildrop is read over an encrypted
+connection.  The protocol was called @dfn{secure sockets layer}
+(@acronym{SSL}), its newer version is @dfn{transport layer security}
+(@acronym{TLS}), and this manual calls both of them @acronym{SSL}.
+
+@cindex stunnel
+@vindex vm-stunnel-program
+@vindex vm-stunnel-program-additional-configuration-file
+An Emacs built with GnuTLS makes the connection itself, and on one built
+without it VM runs the @command{stunnel} program instead.  That is what
+@code{vm-stunnel-program} chooses: its default @code{nil} means Emacs's own
+where there is GnuTLS and @samp{stunnel} where there is not, which works if
+that program is in your command search path.  An Emacs without GnuTLS on a
+machine without stunnel cannot reach a server that requires @acronym{SSL} at
+all.  Some versions of stunnel want a configuration file of their own;
+@code{vm-stunnel-program-additional-configuration-file} names it, and that
+variable's own documentation, with the stunnel manual, says what goes in it.
+
+@anchor{over SSH}
+@unnumberedsubsec Over @acronym{SSH}
+
+@cindex SSH
+@vindex vm-ssh-program
+@vindex vm-ssh-remote-command
+A @samp{pop-ssh} or @samp{imap-ssh} maildrop is reached through a port
+forwarded over @acronym{SSH}.  @code{vm-ssh-program} names the
+@command{ssh} program, and it has to authenticate without asking you
+anything, which means a key or @file{.shosts} rather than a password.
+
+VM runs a command on the far end to hold the session open while the mail
+connection is made.  That command is @samp{echo ready; sleep 15} unless
+@code{vm-ssh-remote-command} says otherwise, and whatever you put there must
+print something and stay alive long enough for the forwarded connection to
+come up.
+
+@anchor{passwords}
+@unnumberedsubsec Passwords
+
+@cindex passwords, storing
+A @var{PASSWORD} of @samp{*} makes VM ask you for the password the first time
+it needs it and remember it for the rest of the Emacs session.  Writing the
+password into the maildrop itself works too, and leaves it in clear in
+whichever file the maildrop is written in.
 
 @cindex EasyPG
 @cindex epa-file library
 @cindex auth-source library
 @cindex authinfo
-@cindex passwords, storing
-If your environment has the @dfn{EasyPG} utility and your version of Emacs
-supports it, i.e., has the @samp{epa-file} and @samp{auth-source} libraries,
-then you can store password information in a file such as
-@file{.authinfo.gpg}.  The @samp{EasyPG} protocol allows you to store
-this information in an encrypted form so that it cannot be read by third
-parties.  Each line in the @file{.authinfo.gpg} file should be of the
-form
+VM looks the password up through @code{auth-source} before asking you for it,
+so a line in a file such as @file{~/.authinfo.gpg} answers for it:
 
 @example
-machine HOST login USER password PASSWORD port PORT
+machine @var{HOST} login @var{USER} password @var{PASSWORD} port @var{PORT}
 @end example
 
-@noindent where HOST, USER, PASSWORD and PORT are as detailed above.
-Ensure that the variable @code{auth-sources} is customized to refer to
-your authinfo file.  
+@noindent
+@var{HOST}, @var{USER}, @var{PASSWORD} and @var{PORT} are the maildrop's.
+The @samp{epa-file} library encrypts that file, so the password is not left
+lying in the clear, and @code{auth-sources} says which files are read.
 @xref{Help for users,, Help for users, auth , Emacs auth-source}.
-Then VM will read passwords from the file and you
-don't need to type them in when accessing mail servers.
 
-If you have multiple login accounts on the same HOST then VM will only
-use the first login listed in the authinfo file.  To allow for multiple
-login's, the HOST entry in the authinfo line can be replaced by an
-account name as defined internally in VM.  These account names are
-defined via the variables @code{vm-pop-folder-alist} and
-@code{vm-imap-account-alist}, described below.
+Only the first line for a given machine is used, so two accounts on one
+server need something besides the host name to tell them apart.  Put the VM
+account name there instead, as @code{vm-pop-folder-alist} and
+@code{vm-imap-account-alist} define it; both are described below.
 
 @anchor{troubleshooting mail servers}
 @unnumberedsubsec Troubleshooting mail servers
@@ -9186,7 +9217,7 @@ Server}, for the whole of it.
 @acronym{SMTP} on @code{localhost}, so VM needs no change and no token of its
 own.  That is the answer for a tenant with app passwords switched off, and it
 does not cover Gmail.  VM speaks XOAUTH2 as well, where you have somewhere to
-get a token from.  @xref{maildrop specification}.
+get a token from.  @xref{OAuth2}.
 
 @unnumberedsubsec Securing the connection
 
