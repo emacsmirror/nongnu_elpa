@@ -3112,7 +3112,8 @@ because the hook runs as each one is sent rather than as it is begun.
 
 This is the part an external program such as @command{msmtp} does for you,
 by reading the @code{From} header and choosing an account from its own
-configuration.
+configuration.  @xref{Outside programs}, for what that costs and how it is
+set up.
 
 @subheading Interrupting a send
 
@@ -9081,6 +9082,163 @@ yours does.  Set @code{smtpmail-stream-type} to @code{starttls} and
 @code{starttls} refuses to send where the server does not offer the upgrade.
 @code{nil}, the default, takes the upgrade where it is offered and sends in
 plain text where it is not.
+
+@anchor{Outside programs}
+@unnumberedsec Programs VM works with
+
+@cindex external programs
+@cindex outside programs
+@cindex integration with other programs
+Several of a mail reader's jobs are not VM's, and VM leaves them to programs
+outside Emacs.  This is the directory of them: what VM does not do, which
+program does it, and the smallest arrangement that works.  Each of those
+programs has documentation of its own, which is where its options are.
+
+@unnumberedsubsec Sending
+
+@vindex send-mail-function
+Emacs sends, through @code{smtpmail}, and that needs nothing installed.
+@xref{Sending setup}, for the settings, and for sending each of your
+addresses through its own server.
+
+@cindex msmtp
+@cindex sendmail
+@vindex sendmail-program
+@vindex mail-envelope-from
+@vindex mail-specify-envelope-from
+An outside sender earns its place where the account has to be chosen from the
+@code{From} header, or where one configuration has to serve other mail
+programs as well.  @uref{https://marlam.de/msmtp/, msmtp} is the usual one.
+Emacs hands the message to it:
+
+@lisp
+(setq send-mail-function 'sendmail-send-it
+      sendmail-program "/usr/local/bin/msmtp"
+      mail-specify-envelope-from t
+      mail-envelope-from 'header)
+@end lisp
+
+@noindent
+The last two pass the @code{From} address as the envelope sender, and
+@command{msmtp} chooses the account whose own @code{from} matches it, so one
+configuration covers every address you send from.  Give the absolute path:
+an Emacs started from a desktop session does not have your shell's
+@env{PATH}.
+
+@vindex vm-check-bcc-removal
+Settle what happens to a @code{Bcc} before trusting any of this.
+@code{sendmail-send-it} leaves the header in the message it hands over and
+relies on the program to take it out, so VM asks before sending such a
+message.  @command{msmtp} does take it out, under its own
+@code{remove_bcc_headers}, which defaults to removing; set
+@code{vm-check-bcc-removal} to @code{nil} once you have confirmed that in
+your own configuration.  @xref{Sending Options}.
+
+@unnumberedsubsec Getting mail in
+
+@cindex Maildir
+@cindex mbox
+VM reads mbox folders and Babyl, and no Maildir (@pxref{Folder types}).
+That is what decides which of these tools fits where.
+
+@itemize
+@item
+@b{VM fetches @acronym{POP} and @acronym{IMAP} itself}, so neither needs an
+outside program.  @xref{Local Folders}, for a server mailbox used as a spool,
+and @ref{@acronym{POP} and @acronym{IMAP} Folders} for one read in place.
+
+@item
+@b{@command{movemail} takes mail out of a local spool file}, and is the one
+Emacs came with.  @xref{Local Folders}.
+
+@item
+@b{@command{procmail}, @command{maildrop} and @command{slocal} sort incoming
+mail} into spool files before VM sees it, run from @file{~/.forward} or
+@file{~/.qmail}.
+
+@item
+@b{@command{fetchmail} and @command{getmail} bring mail down from a server}
+for something else to deliver.  Have them write an mbox, or deliver through a
+local agent that does, since a Maildir is not a folder VM can open.
+
+@item
+@b{@command{mbsync} and @command{offlineimap} mirror a remote mailbox} into a
+Maildir, which VM cannot read directly.  They are used with a local
+@acronym{IMAP} server in front of the store, which is the arrangement below.
+@end itemize
+
+@unnumberedsubsec A server on your own machine
+
+@cindex dovecot
+A local @acronym{IMAP} server, @code{dovecot} being the usual one, answers
+two different problems with one arrangement: a remote server too slow to work
+against, and a store in a format VM does not read.  Served over
+@acronym{IMAP}, a Maildir is a mailbox like any other.  @xref{IMAP Cache
+Server}, for the whole of it.
+
+@unnumberedsubsec Authentication VM does not speak
+
+@cindex DavMail
+@cindex Exchange
+@cindex Office 365
+@uref{https://davmail.sourceforge.net/, DavMail} fronts Exchange and Office
+365: it holds the OAuth2 tokens itself and offers ordinary @acronym{IMAP} and
+@acronym{SMTP} on @code{localhost}, so VM needs no change and no token of its
+own.  That is the answer for a tenant with app passwords switched off, and it
+does not cover Gmail.  VM speaks XOAUTH2 as well, where you have somewhere to
+get a token from.  @xref{maildrop specification}.
+
+@unnumberedsubsec Securing the connection
+
+@vindex vm-stunnel-program
+@vindex vm-ssh-program
+Emacs does @acronym{TLS} itself on any build with @acronym{GnuTLS}, which is
+most of them; @command{stunnel} is for a build without it.  @command{ssh}
+carries @acronym{POP} and @acronym{IMAP} through a tunnel where the maildrop
+says @samp{pop-ssh} or @samp{imap-ssh}.  @xref{maildrop specification}.
+@command{gpg} signs and encrypts, through Emacs's EasyPG@.  @xref{Reading
+Secure @acronym{MIME}}, and @ref{Sending Secure @acronym{MIME}}.
+
+@unnumberedsubsec Displaying what arrives
+
+@itemize
+@item
+@b{@acronym{HTML}} is rendered by @command{w3m}, driven from inside Emacs or
+run outside it, by @command{lynx}, or by Emacs's own @code{shr}, which needs
+nothing installed.  @xref{Internal display}.
+
+@item
+@b{Any other type} can be handed to a program of your choosing through
+@code{vm-mime-external-content-types-alist}.  @xref{External display}.
+
+@item
+@b{Images} are scaled, rotated and converted by ImageMagick.
+@xref{Displaying images}.
+
+@item
+@cindex X-Face
+@vindex vm-display-xfaces
+@vindex vm-uncompface-program
+@vindex vm-icontopbm-program
+@b{An @code{X-Face} header} is decoded by @command{uncompface}, with
+@command{icontopbm} after it where the @command{uncompface} you have does not
+take @option{-X}.  Set @code{vm-display-xfaces} to @code{t} to see them.
+@end itemize
+
+@unnumberedsubsec Searching
+
+@cindex grepmail
+@findex vm-grepmail
+@vindex vm-grepmail-command
+@vindex vm-grep-program
+VM searches inside Emacs: virtual folders over the folders you have open
+(@pxref{Virtual Folders}), and @kbd{M-x vm-grepmail} over folder files
+through the @command{grepmail} program, which answers without opening them.
+VM sends no @acronym{IMAP} @code{SEARCH}, so a search of a server folder sees
+what has been fetched and no more.  Separately, @code{vm-grep-program} names
+the @command{grep} that counts the messages in a folder file, which is how VM
+says a spool has mail waiting, and how many drafts are postponed, without
+opening either.
 
 @unnumberedsec Org links to messages
 @cindex Org mode
