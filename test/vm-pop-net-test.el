@@ -38,6 +38,15 @@ CR CR LF and every line comes back with a stray CR (emacs-vm/vm#822).")
 TIMEOUT is the session's own, WAIT how long this waits for it to finish --
 longer than TIMEOUT where the point is to see the session time out, or the
 two race and the test sometimes sees the process being torn down instead."
+  (vm-pop-net-test--run-with-session mock (lambda (_session) iterator)
+                                     timeout wait))
+
+(defun vm-pop-net-test--run-with-session (mock make &optional timeout wait)
+  "Run the generator MAKE answers against MOCK, and answer with the session.
+MAKE is called with the session, for a generator that is given it:
+`vm-pop-net-session' says QUIT on its own connection and not on whichever
+one the current buffer holds.  TIMEOUT and WAIT are as for
+`vm-pop-net-test--run'."
   (let* ((buffer (generate-new-buffer " *vm-pop-net-test*"))
          (process (make-network-process
                    :name "vm-pop-net-test" :host 'local
@@ -46,7 +55,7 @@ two race and the test sometimes sees the process being torn down instead."
          (session (vm-net-session :process process :name "pop"
                                   :timeout (or timeout 5))))
     (with-current-buffer buffer (vm-pop-net-init))
-    (vm-net-start session iterator)
+    (vm-net-start session (funcall make session))
     (let ((deadline (+ (float-time) (or wait timeout 5))))
       (while (and (vm-net-session-live-p session) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
@@ -66,9 +75,11 @@ two race and the test sometimes sees the process being torn down instead."
 resumed in the filter when its line arrived."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
                                                     vm-pop-net-test--bob))
-    (let ((session (vm-pop-net-test--run
-                    mock (vm-pop-net-session (vm-pop-mock-user mock)
-                                             (vm-pop-mock-password mock)))))
+    (let ((session (vm-pop-net-test--run-with-session
+                    mock (lambda (session)
+                           (vm-pop-net-session session
+                                               (vm-pop-mock-user mock)
+                                               (vm-pop-mock-password mock))))))
       (should (eq (vm-net-session-state session) 'done))
       (should (equal (car (vm-net-session-value session)) 2))
       (should (vm-pop-mock-received-p mock "\\`USER "))
@@ -209,9 +220,11 @@ this writes only what the server said."
   "A -ERR to PASS ends the session with what the server said, rather than
 nil for the caller to interpret."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
-    (let ((session (vm-pop-net-test--run
-                    mock (vm-pop-net-session (vm-pop-mock-user mock)
-                                             "the wrong password"))))
+    (let ((session (vm-pop-net-test--run-with-session
+                    mock (lambda (session)
+                           (vm-pop-net-session session
+                                               (vm-pop-mock-user mock)
+                                               "the wrong password")))))
       (should (eq (vm-net-session-state session) 'failed))
       (should (eq (car (vm-net-session-error session)) 'vm-pop-net-error))
       (should (string-match-p "-ERR"
@@ -223,9 +236,11 @@ Emacs: the session's timeout ends it.  That is the hang this whole exercise
 is about, and here it is a test that finishes in a fifth of a second."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
                                     :silent-on "STAT")
-    (let ((session (vm-pop-net-test--run
-                    mock (vm-pop-net-session (vm-pop-mock-user mock)
-                                             (vm-pop-mock-password mock))
+    (let ((session (vm-pop-net-test--run-with-session
+                    mock (lambda (session)
+                           (vm-pop-net-session session
+                                               (vm-pop-mock-user mock)
+                                               (vm-pop-mock-password mock)))
                     0.4 3)))
       (should (eq (vm-net-session-state session) 'failed))
       (should (string-match-p "timed out"
@@ -237,9 +252,11 @@ is about, and here it is a test that finishes in a fifth of a second."
 that cannot arrive."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
                                     :drop-on "STAT")
-    (let ((session (vm-pop-net-test--run
-                    mock (vm-pop-net-session (vm-pop-mock-user mock)
-                                             (vm-pop-mock-password mock))
+    (let ((session (vm-pop-net-test--run-with-session
+                    mock (lambda (session)
+                           (vm-pop-net-session session
+                                               (vm-pop-mock-user mock)
+                                               (vm-pop-mock-password mock)))
                     1)))
       (should-not (eq (vm-net-session-state session) 'done)))))
 
@@ -261,6 +278,7 @@ the user's deletes, silently."
           (progn
             (with-current-buffer buffer (vm-pop-net-init))
             (vm-net-start session (vm-pop-net-session
+                                   session
                                    (vm-pop-mock-user mock)
                                    (vm-pop-mock-password mock)))
             ;; let it get as far as waiting for the server
@@ -859,7 +877,7 @@ waits for the connect, which is what `:nowait' is for."
       (unwind-protect
           (progn
             (should (memq (process-status process) '(connect open run)))
-            (vm-net-start session (vm-pop-net-session (nth 1 opened)
+            (vm-net-start session (vm-pop-net-session session (nth 1 opened)
                                                       (nth 2 opened)))
             (let ((deadline (+ (float-time) 20)))
               (while (and (vm-net-session-live-p session)
@@ -1335,7 +1353,7 @@ whole server timeout with \"did not start listening on port\"."
           (should (processp process))
           (should (eq (process-type process) 'real))
           (should-not (member "-d" (process-command process)))
-          (vm-net-start session (vm-pop-net-session (nth 1 opened)
+          (vm-net-start session (vm-pop-net-session session (nth 1 opened)
                                                     (nth 2 opened)))
           (let ((deadline (+ (float-time) 10)))
             (while (and (vm-net-session-live-p session)
@@ -1391,7 +1409,7 @@ any other does."
       (setf (vm-net-session-buffer session) buffer)
       (unwind-protect
           (progn
-            (vm-net-start session (vm-pop-net-session "vmtest" "secret"))
+            (vm-net-start session (vm-pop-net-session session "vmtest" "secret"))
             (should-not (vm-net-session-request session))
             (vm-net-tunnel session "sleep" (list "30") port 5
                            (lambda (tunnel)
@@ -1787,6 +1805,54 @@ It lives about an hour, where the entry would not."
         (vm-net-close-process process)
         (when (buffer-live-p (vm-net-session-buffer session))
           (kill-buffer (vm-net-session-buffer session)))))))
+
+(ert-deftest vm-pop-net-test-an-unwinding-session-quits-its-own-connection ()
+  "The QUIT a session says as it is unwound goes down that session's own
+connection, whatever buffer it is closed from.
+
+A generator dropped without being closed is closed by the finalizer
+generator.el gives it, at a garbage collection, inside whatever Emacs was
+doing at the time -- which is usually feeding another session, in that
+session's own process buffer.  Taken from the current buffer, the QUIT went
+down the other folder's connection, and QUIT is what makes a POP server act
+on the deletions of the session it ends (emacs-vm/vm#939)."
+  (vm-pop-mock-with (ours :messages (list vm-pop-net-test--alice))
+    (vm-pop-mock-with (theirs :messages (list vm-pop-net-test--alice))
+      (let* ((our-buffer (generate-new-buffer " *vm-pop-net-test-ours*"))
+             (their-buffer (generate-new-buffer " *vm-pop-net-test-theirs*"))
+             (our-process (make-network-process
+                           :name "vm-pop-net-test-ours" :host 'local
+                           :service (vm-pop-mock-port ours)
+                           :buffer our-buffer :noquery t :coding 'binary))
+             (their-process (make-network-process
+                             :name "vm-pop-net-test-theirs" :host 'local
+                             :service (vm-pop-mock-port theirs)
+                             :buffer their-buffer :noquery t :coding 'binary))
+             (session (vm-net-session :process our-process :name "ours"
+                                      :timeout 10)))
+        (with-current-buffer our-buffer (vm-pop-net-init))
+        (with-current-buffer their-buffer (vm-pop-net-init))
+        (unwind-protect
+            (progn
+              (vm-net-start session
+                            (vm-pop-net-session session "vmtest" "secret"))
+              ;; suspended at the greeting it has not been given yet, so the
+              ;; cleanup has a live connection of its own to say QUIT on
+              (should (vm-net-session-live-p session))
+              ;; closed where the finalizer of a dropped generator closes it:
+              ;; in another session's process buffer
+              (with-current-buffer their-buffer
+                (iter-close (vm-net-session-iterator session)))
+              (let ((deadline (+ (float-time) 5)))
+                (while (and (not (vm-pop-mock-received-p ours "QUIT"))
+                            (< (float-time) deadline))
+                  (accept-process-output nil 0.05)))
+              (should (vm-pop-mock-received-p ours "QUIT"))
+              (should-not (vm-pop-mock-received-p theirs "QUIT")))
+          (vm-net-close-process our-process)
+          (vm-net-close-process their-process)
+          (when (buffer-live-p our-buffer) (kill-buffer our-buffer))
+          (when (buffer-live-p their-buffer) (kill-buffer their-buffer)))))))
 
 (provide 'vm-pop-net-test)
 
