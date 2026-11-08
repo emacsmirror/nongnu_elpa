@@ -288,6 +288,63 @@ to copy out of its address bar."
           (should asked))
       (when (get-buffer "*VM OAuth2*") (kill-buffer "*VM OAuth2*")))))
 
+(ert-deftest vm-oauth2-test-the-accounts-come-from-the-maildrops ()
+  "The command completes on the XOAUTH2 accounts VM has, and only those.
+A mail address typed again is one more way to get it wrong, and the maildrops
+already say which addresses have tokens behind them."
+  (let ((vm-imap-account-alist
+         '(("imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@gmail.com:*" "gmail")
+           ("imap-ssl:imap.example.com:993:inbox:login:jane:*" "work")))
+        (vm-pop-folder-alist
+         '(("pop-ssl:pop.example.com:995:xoauth2:jill@example.com:*" "pop"))))
+    (should (equal (sort (vm-oauth2--maildrop-accounts) #'string<)
+                   '("jane@gmail.com" "jill@example.com")))
+    ;; and the host behind one, which is what the provider is guessed from
+    (should (equal (vm-oauth2--host-for-account "jane@gmail.com")
+                   "imap.gmail.com"))))
+
+(ert-deftest vm-oauth2-test-the-provider-is-guessed-from-the-host ()
+  "A Gmail or Office 365 server names its provider, and anything else does not.
+The guess is only a default: the command still offers the list."
+  (should (equal (vm-oauth2-provider-for-host "imap.gmail.com") "google"))
+  (should (equal (vm-oauth2-provider-for-host "outlook.office365.com")
+                 "microsoft"))
+  (should-not (vm-oauth2-provider-for-host "imap.example.com"))
+  (should-not (vm-oauth2-provider-for-host nil)))
+
+(ert-deftest vm-oauth2-test-a-maildrop-with-no-token-is-offered-one ()
+  "REGRESSION: a folder whose account has no token offers to authorize it.
+
+The session cannot ask, running in a process filter, so a maildrop with no
+token used to fail with a line in the log naming a command to run.  The
+command that started the session can ask, and this is where it does."
+  (let ((asked nil)
+        (authorized nil))
+    (cl-letf (((symbol-function 'vm-oauth2-available-p) (lambda () t))
+              ((symbol-function 'y-or-n-p)
+               (lambda (prompt) (setq asked prompt) t))
+              ((symbol-function 'vm-oauth2-authorize)
+               (lambda (account provider)
+                 (setq authorized (list account provider)))))
+      (should (vm-oauth2-offer-authorization "jane@gmail.com"
+                                             "imap.gmail.com"))
+      ;; the question names the account, the provider is not asked for where
+      ;; the host says it
+      (should (string-match-p "jane@gmail.com" asked))
+      (should (equal authorized '("jane@gmail.com" "google"))))))
+
+(ert-deftest vm-oauth2-test-nothing-is-offered-without-oauth2-el ()
+  "Without oauth2.el there is nothing to offer, so nothing is asked.
+The caller then reports a missing token as it always did, which is the
+answer for a machine that has no package to authorize with."
+  (let ((asked nil))
+    (vm-oauth2-test--without-oauth2-el
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq asked t) t)))
+        (should-not (vm-oauth2-offer-authorization "jane@gmail.com"
+                                                   "imap.gmail.com"))
+        (should-not asked)))))
+
 (provide 'vm-oauth2-test)
 
 ;;; vm-oauth2-test.el ends here

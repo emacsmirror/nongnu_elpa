@@ -1951,16 +1951,20 @@ authorization:
 @end example
 
 @item
-@strong{Authorize once}, with @kbd{M-x vm-oauth2-authorize}.  It asks for the
-mail address and the provider and opens your browser on the provider's
-consent page.  Say yes, and that is all: VM listens on a loopback port of its
+@strong{Authorize once}, with @kbd{M-x vm-oauth2-authorize}.  It completes
+on the addresses your XOAUTH2 maildrops name and picks the provider that
+goes with the server, then opens your browser on the provider's consent
+page.  Visiting the folder does as well, where there is no token yet: the
+question is put by the command that wants one, a session having nobody to
+ask.  Say yes, and that is all: VM listens on a loopback port of its
 own, takes the code out of the redirect the browser follows, and answers the
 browser with a page saying it has it.  The access token and the refresh token
 go into the @file{oauth2} package's store.
 
 @item
 @strong{Write @samp{xoauth2} in the maildrop}, with @samp{*} where the
-password goes:
+password goes.  Step 5 can be left out if you would rather: visiting this
+folder with no token offers the authorization itself.
 
 @example
 imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
@@ -1982,7 +1986,9 @@ saying @samp{imaps} answers nothing.
 @vindex auth-source-cache-expiry
 What a lookup answered is remembered for @code{auth-source-cache-expiry}, two
 hours by default, and that includes its having found nothing.  @kbd{M-x
-auth-source-forget-all-cached} after an edit.
+auth-source-forget-all-cached} after an edit.  An authorization does it for
+you, that being the same trap: the session that asked for one would
+otherwise go on finding nothing.
 
 @item Authorizing works and the session still finds no token.
 @vindex vm-oauth2-providers
@@ -1995,7 +2001,7 @@ and from the @code{auth-source} entry when the plugin looks.  Two
 for a token the other did not write.
 
 @item The authorization ends with @samp{Encrypt failed}.
-@vindex plstore-encrypt-to
+@cindex plstore
 @file{oauth2} keeps the token in a plstore, and a plstore with no recipient
 is encrypted symmetrically, with a passphrase for pinentry to ask for.  Where
 it cannot be asked for, nothing is kept and that is what it says.  Name a key

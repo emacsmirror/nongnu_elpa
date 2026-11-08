@@ -63,6 +63,7 @@
 
 ;;; Code:
 
+(require 'auth-source)
 (require 'browse-url)
 (require 'cl-lib)
 (require 'url-util)
@@ -344,6 +345,71 @@ being what they were bound away for."
        (vm-inform 5 "No browser (%s); the URL is in *VM OAuth2*"
 		  (error-message-string err))))))
 
+(defvar vm-imap-account-alist)
+(defvar vm-pop-folder-alist)
+(declare-function vm-imap-parse-spec-to-list "vm-imap" (spec))
+(declare-function vm-pop-parse-spec-to-list "vm-pop" (spec))
+
+(defun vm-oauth2--maildrop-accounts ()
+  "The user names of the XOAUTH2 maildrops VM has, newest spelling first.
+What `vm-oauth2-authorize' completes on: the account to authorize is one of
+these and typing a mail address again is one more way to get it wrong.
+
+Read defensively, since this file is autoloaded and runs before the rest of
+VM: a VM that has not been started yet offers nothing to complete on."
+  (let ((accounts nil))
+    (dolist (entry (and (boundp 'vm-imap-account-alist) vm-imap-account-alist))
+      (let ((parts (ignore-errors (vm-imap-parse-spec-to-list (car entry)))))
+	(when (equal (nth 4 parts) "xoauth2")
+	  (push (nth 5 parts) accounts))))
+    (dolist (entry (and (boundp 'vm-pop-folder-alist) vm-pop-folder-alist))
+      (let ((parts (ignore-errors (vm-pop-parse-spec-to-list (car entry)))))
+	(when (equal (nth 3 parts) "xoauth2")
+	  (push (nth 4 parts) accounts))))
+    (delete-dups (delq nil accounts))))
+
+(defun vm-oauth2--host-for-account (account)
+  "The server a maildrop of ACCOUNT names, or nil.
+For defaulting the provider: the account is a mail address and says nothing
+about who holds the mailbox."
+  (let ((host nil))
+    (dolist (entry (and (boundp 'vm-imap-account-alist) vm-imap-account-alist))
+      (let ((parts (ignore-errors (vm-imap-parse-spec-to-list (car entry)))))
+	(when (and (null host) (equal (nth 5 parts) account))
+	  (setq host (nth 1 parts)))))
+    (dolist (entry (and (boundp 'vm-pop-folder-alist) vm-pop-folder-alist))
+      (let ((parts (ignore-errors (vm-pop-parse-spec-to-list (car entry)))))
+	(when (and (null host) (equal (nth 4 parts) account))
+	  (setq host (nth 1 parts)))))
+    host))
+
+(defun vm-oauth2-provider-for-host (host)
+  "The provider in `vm-oauth2-providers' that serves HOST, or nil.
+By name, which is all there is to go on: a maildrop names a server and an
+authorization names a provider, and nothing in between says which is whose."
+  (cond ((null host) nil)
+	((string-match-p "\\(gmail\\|googlemail\\|google\\)\\." host) "google")
+	((string-match-p "\\(outlook\\|office365\\|microsoft\\)\\." host)
+	 "microsoft")))
+
+;;;###autoload
+(defun vm-oauth2-offer-authorization (account host)
+  "Ask whether to authorize ACCOUNT at HOST now, and do it if so.
+Answers with non-nil where it authorized.  Called where a session wants a
+token and auth-source has none: the command that started it can ask, where
+the session itself could not.
+
+Nothing is offered that cannot be done: without oauth2.el this says so and
+answers nil, leaving the caller to report a missing token as it always did."
+  (and (vm-oauth2-available-p)
+       (y-or-n-p (format "No OAuth2 token for %s.  Authorize it now? "
+			 account))
+       (let ((provider (or (vm-oauth2-provider-for-host host)
+			   (completing-read "Provider: " vm-oauth2-providers
+					    nil t (caar vm-oauth2-providers)))))
+	 (vm-oauth2-authorize account provider)
+	 t)))
+
 ;;;###autoload
 (defun vm-oauth2-authorize (account provider)
   "Authorize ACCOUNT with PROVIDER and keep the token oauth2.el gives back.
@@ -366,9 +432,18 @@ The token goes in oauth2.el\\='s own store, `oauth2-token-file', encrypted by
 plstore.  VM keeps no store of its own: writing the same one is what makes
 an account set up here work with everything else that reads it."
   (interactive
-   (list (read-string "Mail address to authorize: ")
-	 (completing-read "Provider: " vm-oauth2-providers nil t
-			  (caar vm-oauth2-providers))))
+   (let* ((accounts (vm-oauth2--maildrop-accounts))
+	  (account (completing-read
+		    (format "Mail address to authorize%s: "
+			    (if accounts "" " (none known yet)"))
+		    accounts nil nil nil nil (car accounts)))
+	  ;; the provider the account's own maildrop points at, where one of
+	  ;; VM's maildrops names it
+	  (host (vm-oauth2--host-for-account account)))
+     (list account
+	   (completing-read "Provider: " vm-oauth2-providers nil t
+			    (or (vm-oauth2-provider-for-host host)
+				(caar vm-oauth2-providers))))))
   (vm-oauth2-require)
   (unless vm-oauth2-client-id
     (error (concat "No client id: register VM with %s as an installed"
@@ -431,6 +506,10 @@ an account set up here work with everything else that reads it."
 			 (concat ".  A code is good once, for a few minutes,"
 				 " and only to the link that asked for it")
 		       ""))))
+	  ;; what auth-source answered before there was a token is remembered
+	  ;; for two hours, so without this the session that asked for the
+	  ;; authorization still finds nothing
+	  (auth-source-forget-all-cached)
 	  (vm-inform 5 "%s is authorized; write xoauth2 in its maildrop"
 		     account)
 	  token)
