@@ -359,7 +359,7 @@ and the sessions afterwards only read what it stored.
 
 The provider answers by redirecting the browser, and VM listens on a
 loopback port for that redirect and takes the code out of it, so there is
-nothing to copy.  See `vm-oauth2-catch-redirect\\=', which also says what
+nothing to copy.  See `vm-oauth2-catch-redirect', which also says what
 happens where the browser is on another machine.
 
 The token goes in oauth2.el\\='s own store, `oauth2-token-file', encrypted by
