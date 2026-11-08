@@ -1994,6 +1994,22 @@ and from the @code{auth-source} entry when the plugin looks.  Two
 @acronym{URL}s that are both the provider's own are enough to make each look
 for a token the other did not write.
 
+@item The authorization ends with @samp{Encrypt failed}.
+@vindex plstore-encrypt-to
+@file{oauth2} keeps the token in a plstore, and a plstore with no recipient
+is encrypted symmetrically, with a passphrase for pinentry to ask for.  Where
+it cannot be asked for, nothing is kept and that is what it says.  Name a key
+of your own instead, which needs no passphrase to encrypt to and leaves the
+question to the one decryption a session does:
+
+@example
+(setq plstore-encrypt-to "jane@@example.com")
+@end example
+
+@noindent
+A write that failed this way leaves the store holding the entry without its
+secrets, so take @file{oauth2-token-file} away before trying again.
+
 @item It stops working after a week.
 Google issues a refresh token that expires in seven days while the consent
 screen's publishing status is Testing.  Move the status to In production and
