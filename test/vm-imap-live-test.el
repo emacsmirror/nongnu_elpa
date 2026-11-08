@@ -283,7 +283,8 @@ of the whole exercise: everything above only proves the harness works."
             (should (processp (vm-net-session-process session)))
             (vm-net-start session
                           (vm-imap-net-one-command-session
-                           (nth 2 opened) (nth 3 opened) "NOOP" "NOOP"))
+                           session (nth 2 opened) (nth 3 opened)
+                           "NOOP" "NOOP"))
             (let ((deadline (+ (float-time) 30)))
               (while (and (vm-net-session-live-p session)
                           (< (float-time) deadline))

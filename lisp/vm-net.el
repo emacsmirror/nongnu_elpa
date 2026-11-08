@@ -596,14 +596,26 @@ putting a folder's flags back -- would silently not happen."
   (vm-net--cancel-timeout session)
   (setf (vm-net-session-state session) state)
   (setf (vm-net-session-request session) nil)
-  (let ((iterator (vm-net-session-iterator session)))
+  (let ((iterator (vm-net-session-iterator session))
+	(buffer (vm-net-session-buffer session)))
     (when iterator
       ;; Closing runs the generator's `unwind-protect' forms -- the LOGOUT, the
       ;; QUIT, the folder's bookkeeping.  One that signals used to be dropped
       ;; on the floor by `ignore-errors', which is where a folder update that
       ;; failed would have gone.
+      ;;
+      ;; In the session's own buffer, as every other resume of it is.  Those
+      ;; forms read the session from buffer-local variables and write to
+      ;; `(get-buffer-process (current-buffer))', so closed from wherever the
+      ;; driver happened to be they acted on another session: a LOGOUT went
+      ;; down a second connection, whose server answered BYE and closed it,
+      ;; and the folder that owned it reported the server as having
+      ;; disconnected in the middle of a command (emacs-vm/vm#939).
       (condition-case err
-	  (iter-close iterator)
+	  (if (buffer-live-p buffer)
+	      (with-current-buffer buffer
+		(iter-close iterator))
+	    (iter-close iterator))
 	(error (vm-net-warn 0 "%s: while stopping: %s"
 			(or (vm-net-session-name session) "session")
 			(error-message-string err))))

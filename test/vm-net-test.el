@@ -895,6 +895,39 @@ first, on `kill-buffer-hook', which leaves `kill-buffer' nothing to delete."
       (when (process-live-p process) (delete-process process))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(iter-defun vm-net-test--note-the-buffer-at-the-end (where)
+  "Read a line, recording in WHERE the buffer the cleanup form ran in."
+  (unwind-protect
+      (iter-yield-from (vm-net-test--read-line))
+    (setcar where (current-buffer))))
+
+(ert-deftest vm-net-test-a-generator-is-closed-in-its-own-buffer ()
+  "Closing a session runs its cleanup forms in the buffer the session reads
+in, whatever buffer the caller was in.
+
+`iter-close' used to be called wherever the driver happened to be, while
+every other resume of the generator is made in the session buffer.  The IMAP
+cleanup says LOGOUT to the process of the current buffer, so closed from
+another session buffer it logged that other session out: the server answered
+BYE and closed the connection, and the folder that owned it reported the
+server as having disconnected in the middle of a command (emacs-vm/vm#939)."
+  (vm-net-test--with-server (port (lambda (_connection _string) nil))
+    (let* ((process (vm-net-test--connect port))
+           (session (vm-net-session :name "test" :process process))
+           (elsewhere (generate-new-buffer " *vm-net-test-elsewhere*"))
+           (where (list nil)))
+      (unwind-protect
+          (progn
+            (vm-net-start session
+                          (vm-net-test--note-the-buffer-at-the-end where))
+            ;; waiting for a line that is not coming, so it is suspended at a
+            ;; yield and closing it has cleanup forms to run
+            (should (vm-net-session-live-p session))
+            (with-current-buffer elsewhere
+              (vm-net-abandon session))
+            (should (eq (car where) (process-buffer process))))
+        (kill-buffer elsewhere)))))
+
 (provide 'vm-net-test)
 
 ;;; vm-net-test.el ends here

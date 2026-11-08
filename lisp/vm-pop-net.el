@@ -29,7 +29,7 @@
 ;; Everything here is an `iter-defun' and so can only be run by the driver in
 ;; vm-net.el:
 ;;
-;;   (vm-net-start session (vm-pop-net-session user password))
+;;   (vm-net-start session (vm-pop-net-session session user password))
 ;;
 ;; Each of these yields exactly where vm-pop.el waits, and for the same
 ;; reason: POP responses end in a terminator, so a read asks to be resumed
@@ -147,6 +147,24 @@ The first line has been read already; this is the body after it."
     (goto-char (point-max))
     (set-marker vm-pop-net-read-point (point))
     (process-send-string process (concat command "\r\n"))))
+
+(defun vm-pop-net-goodbye (session)
+  "Say QUIT on SESSION's connection, without waiting to be answered.
+What the unwinding of a session says, where there was no chance to read the
+answer.  `vm-pop-net-quit' is the other way round: said in the body, and read.
+
+SESSION, rather than whatever connection the current buffer happens to hold.
+A generator that is dropped without being closed is closed by the finalizer
+`generator.el' gives it, which runs from inside whatever Emacs was doing when
+the garbage collector got to it -- and what Emacs was doing was usually
+feeding another session, in that session's own process buffer.  The QUIT
+then went down that connection, which ends it: a POP server acts on the
+session's deletions when it is told QUIT, so a stray one commits another
+folder's and leaves it reading a closed connection (emacs-vm/vm#939)."
+  (let ((process (vm-net-session-process session)))
+    (when (process-live-p process)
+      (ignore-errors
+	(process-send-string process "QUIT\r\n")))))
 
 (iter-defun vm-pop-net-command (command)
   "Send COMMAND and answer with its one-line response."
@@ -312,7 +330,7 @@ stays on its list."
   (setq vm-pop-net-said-goodbye t)
   t)
 
-(iter-defun vm-pop-net-session (user password)
+(iter-defun vm-pop-net-session (session user password)
   "A whole session: greet, log in, ask what is there, and say goodbye.
 Answers (COUNT . OCTETS) from STAT.  The QUIT is in an `unwind-protect', so
 it is said whether the session ran to the end or was abandoned -- a POP
@@ -324,9 +342,7 @@ generator rather than dropping it."
 	(let ((greeting (iter-yield-from (vm-pop-net-greeting))))
 	  (iter-yield-from (vm-pop-net-authenticate user password greeting)))
 	(iter-yield-from (vm-pop-net-stat)))
-    (let ((process (get-buffer-process (current-buffer))))
-      (when (process-live-p process)
-	(process-send-string process "QUIT\r\n")))))
+    (vm-pop-net-goodbye session)))
 
 
 ;;; Connecting
@@ -544,7 +560,7 @@ output.  A maildrop whose password VM has not been told signals
 
 ;;; Checking for mail, which is the first thing a command wanted
 
-(iter-defun vm-pop-net-unretrieved (user password source retrieved)
+(iter-defun vm-pop-net-unretrieved (session user password source retrieved)
   "Answer with how many messages of the maildrop have not been retrieved.
 RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
 its password, which is how an entry there names the maildrop it came from.
@@ -565,9 +581,7 @@ has already seen, and saying \"no mail\" would be a guess."
 			       (eq (nth 2 seen) 'uidl))
 		    (setq count (1+ count)))))
 	      count))))
-    (let ((process (get-buffer-process (current-buffer))))
-      (when (process-live-p process)
-	(process-send-string process "QUIT\r\n")))))
+    (vm-pop-net-goodbye session)))
 
 (defun vm-pop-net-checkable-p (source)
   "Whether SOURCE can be checked for mail without waiting.
@@ -612,7 +626,7 @@ Nothing waits: this returns as soon as the connection is made."
 		       (let ((count (vm-net-session-value finished)))
 			 (and count (> count 0)))))))
     (vm-net-start session
-		  (vm-pop-net-unretrieved (nth 1 opened) (nth 2 opened)
+		  (vm-pop-net-unretrieved session (nth 1 opened) (nth 2 opened)
 					  popdrop retrieved))
     session))
 
@@ -654,7 +668,7 @@ stays on the server, so raising the limit is all it takes."
 			      (nreverse too-large) ", ")))
     (nreverse wanted)))
 
-(iter-defun vm-pop-net-fetch-new (folder user password source retrieved)
+(iter-defun vm-pop-net-fetch-new (session folder user password source retrieved)
 	    "Fetch the messages of this maildrop that are not in RETRIEVED.
 
 RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
@@ -719,9 +733,7 @@ server for a body later."
 			(vm-net-inform 6 "%s: %d of %d messages retrieved"
 				       (vm-safe-popdrop-string source) count total))
 		      (nreverse fetched))))
-	      (let ((process (get-buffer-process (current-buffer))))
-		(when (process-live-p process)
-		  (process-send-string process "QUIT\r\n")))))
+	      (vm-pop-net-goodbye session)))
 
 (iter-defun vm-pop-net-sizes ()
   "Answer with the sizes of the maildrop, as (NUMBER . OCTETS).
@@ -765,7 +777,7 @@ buffer is, not in a process filter."
     (with-current-buffer (or folder (current-buffer))
       (vm-pop-net-take-session
        session
-       (vm-pop-net-fetch-new (or folder (current-buffer))
+       (vm-pop-net-fetch-new session (or folder (current-buffer))
 			     (nth 1 opened) (nth 2 opened)
 			     popdrop retrieved)))
     session))
@@ -1229,7 +1241,7 @@ this matches."
 	 nil))))))
 
 
-(iter-defun vm-pop-net-expunge-session (user password uidls)
+(iter-defun vm-pop-net-expunge-session (session user password uidls)
   "Log in and delete the messages whose UIDs are UIDLS.
 
 Answers (:deleted UIDLS :gone UIDLS): the ones this session deleted, and the
@@ -1268,9 +1280,7 @@ does whether this runs to the end or is abandoned."
 		  :gone (seq-remove (lambda (uidl) (rassoc uidl numbers))
 				    uidls))))
       (unless vm-pop-net-said-goodbye
-	(let ((process (get-buffer-process (current-buffer))))
-	  (when (process-live-p process)
-	    (process-send-string process "QUIT\r\n")))))))
+	(vm-pop-net-goodbye session)))))
 
 (defun vm-pop-net-send-changes ()
   "Start deleting on the server what this POP folder has expunged locally.
@@ -1331,7 +1341,7 @@ next fetch's business."
 				     "")))))))
 	    (vm-pop-net-take-session session
 				     (vm-pop-net-expunge-session
-				      (nth 1 opened) (nth 2 opened) uidls))
+				      session (nth 1 opened) (nth 2 opened) uidls))
 	    (vm-net-inform 6 "%s: deleting %d message%s on the server without waiting"
 		       name (length uidls) (if (= (length uidls) 1) "" "s"))
 	    t)
@@ -1357,7 +1367,7 @@ whether it started."
 		(funcall callback (or (vm-net-session-error finished)
 				      (vm-net-session-value finished)))))
 	(vm-net-start session
-		      (vm-pop-net-expunge-session (nth 1 opened) (nth 2 opened)
+		      (vm-pop-net-expunge-session session (nth 1 opened) (nth 2 opened)
 						  uidls))
 	t)
     (vm-pop-net-no-password nil)))
