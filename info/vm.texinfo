@@ -1859,248 +1859,6 @@ connected to an authenticated session.
 password.  @xref{OAuth2}.
 @end table
 
-@anchor{OAuth2}
-@unnumberedsubsec OAuth2
-
-@cindex XOAUTH2
-@cindex OAuth2
-@findex vm-oauth2-authorize
-An @samp{xoauth2} maildrop sends an OAuth2 access token where a password
-would go, which is what a Google Workspace or Office 365 tenant with app
-passwords switched off requires:
-
-@example
-imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
-@end example
-
-VM speaks the mechanism and nothing more: it acquires no token, refreshes
-none, stores none and ships no client credentials.  It asks
-@code{auth-source} for a token whenever it opens a session, so two things
-have to be set up outside it: something that answers that lookup with a token
-that has not expired, and a first authorization, which you do by hand because
-nothing can be asked of you while a session is running.
-
-The @var{PASSWORD} field of the maildrop stays @samp{*}.  You are never
-prompted for a token, nobody being able to type one, and VM does not remember
-one between sessions: an access token lives about an hour, so a remembered
-one would be a session that fails with nothing left to ask.  VM offers the
-mechanism only where the server advertises @samp{AUTH=XOAUTH2}.
-
-@unnumberedsubsubsec Setting up an account, from nothing
-
-@vindex vm-oauth2-client-id
-@vindex vm-oauth2-client-secret
-@enumerate
-@item
-@strong{Register a client with the provider, as a desktop application.}  VM
-ships none and never will: credentials compiled into a program readers
-install are public by definition.  With Google that is the Cloud console,
-where you make a project, enable the Gmail @acronym{API}, put
-@samp{https://mail.google.com/} on the consent screen, add yourself as a test
-user, and then create an OAuth client id of type Desktop app.  Keep the
-client id and the client secret it gives you.  A desktop client is the one
-that can use a loopback redirect, which is what saves you copying anything.
-
-@item
-@strong{Install @file{auth-source-xoauth2-plugin} from GNU ELPA and turn it
-on.}  It is what answers VM's lookups with a token, refreshing through the
-@file{oauth2} package as it goes:
-
-@example
-(require 'auth-source-xoauth2-plugin)
-(auth-source-xoauth2-plugin-mode t)
-@end example
-
-@item
-@strong{Write the account in @file{~/.authinfo}}, as one line.  The
-@samp{machine}, @samp{login} and @samp{port} are the maildrop's, and the rest
-is your registration:
-
-@example
-machine imap.gmail.com login jane@@gmail.com port 993 auth xoauth2
-  auth-url https://accounts.google.com/o/oauth2/auth
-  token-url https://oauth2.googleapis.com/token
-  scope https://mail.google.com/
-  client-id YOUR-ID.apps.googleusercontent.com
-  client-secret YOUR-SECRET
-@end example
-
-@noindent
-An entry runs to the next @samp{machine}, so it may be written over several
-lines as it is here.  Not with a backslash at the end of each, which is how a
-shell continues a line and not how this file is read: the backslash is taken
-for a field of its own and the one after it is lost, silently.
-
-@vindex auth-sources
-@noindent
-The file has to be one @code{auth-sources} names.  It names
-@file{~/.authinfo} and @file{~/.authinfo.gpg} to begin with, but a
-@code{customize} setting replaces that list rather than adding to it:
-
-@example
-(add-to-list 'auth-sources "~/.authinfo")
-@end example
-
-@item
-@strong{Tell VM the same client}, since VM is what runs the first
-authorization:
-
-@example
-(setq vm-oauth2-client-id "YOUR-ID.apps.googleusercontent.com"
-      vm-oauth2-client-secret "YOUR-SECRET")
-@end example
-
-@item
-@strong{Authorize once}, with @kbd{M-x vm-oauth2-authorize}.  It completes
-on the addresses your XOAUTH2 maildrops name and picks the provider that
-goes with the server, then opens your browser on the provider's consent
-page.  Visiting the folder does as well, where there is no token yet: the
-question is put by the command that wants one, a session having nobody to
-ask.  Say yes, and that is all: VM listens on a loopback port of its
-own, takes the code out of the redirect the browser follows, and answers the
-browser with a page saying it has it.  The access token and the refresh token
-go into the @file{oauth2} package's store.
-
-@item
-@strong{Write @samp{xoauth2} in the maildrop}, with @samp{*} where the
-password goes.  Step 5 can be left out if you would rather: visiting this
-folder with no token offers the authorization itself.
-
-@example
-imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
-@end example
-@end enumerate
-
-@unnumberedsubsubsec Where it goes wrong
-
-@table @asis
-@item The entry is never found.
-Two fields have to match the maildrop.  The @samp{machine} is the server's
-host name, or the account name @code{vm-imap-account-alist} gives the
-maildrop, those being what VM looks under.  The @samp{port} is the maildrop's
-own, @samp{993} here: @code{auth-source} matches it as it stands, so an entry
-saying @samp{imaps} answers nothing.
-
-@item A corrected entry changes nothing.
-@cindex auth-source cache
-@vindex auth-source-cache-expiry
-What a lookup answered is remembered for @code{auth-source-cache-expiry}, two
-hours by default, and that includes its having found nothing.  @kbd{M-x
-auth-source-forget-all-cached} after an edit.  An authorization does it for
-you, that being the same trap: the session that asked for one would
-otherwise go on finding nothing.
-
-@item Authorizing works and the session still finds no token.
-@vindex vm-oauth2-providers
-The two sides have to name the same endpoints.  @file{oauth2} names what it
-stores after the authorization and token @acronym{URL}s, the scope, the
-client id and the user name together; those come from
-@code{vm-oauth2-providers} and @code{vm-oauth2-client-id} when VM authorizes
-and from the @code{auth-source} entry when the plugin looks.  Two
-@acronym{URL}s that are both the provider's own are enough to make each look
-for a token the other did not write.
-
-@item The authorization ends with @samp{Encrypt failed}.
-@cindex plstore
-@file{oauth2} keeps the token in a plstore, and a plstore with no recipient
-is encrypted symmetrically, with a passphrase for pinentry to ask for.  Where
-it cannot be asked for, nothing is kept and that is what it says.  Name a key
-of your own instead, which needs no passphrase to encrypt to and leaves the
-question to the one decryption a session does:
-
-@example
-(setq plstore-encrypt-to "jane@@example.com")
-@end example
-
-@noindent
-A write that failed this way leaves the store holding the entry without its
-secrets, so take @file{oauth2-token-file} away before trying again.
-
-@item It stops working after a week.
-Google issues a refresh token that expires in seven days while the consent
-screen's publishing status is Testing.  Move the status to In production and
-authorize once more; an unverified app warns the reader and then lets them
-through, which for your own account is all it has to do.
-
-@item The browser is on another machine.
-@vindex vm-oauth2-catch-redirect
-@vindex vm-oauth2-redirect-timeout
-Then the redirect goes to that machine's loopback and VM never sees it.  The
-wait runs out after @code{vm-oauth2-redirect-timeout} and VM asks for the
-code instead: it is in the address bar of the page the browser failed to
-load, between @samp{code=} and the @samp{&} after it, with @samp{%2F} for a
-slash where the browser escapes it.  Paste it into the prompt that is
-waiting.  That code is good once, for a few minutes, and only to the request
-that produced the link, @acronym{PKCE} having tied it to a secret that call
-made up and did not write down, so it has to go back into the same prompt.
-@code{vm-oauth2-catch-redirect} turns the listening off altogether.
-@end table
-
-@unnumberedsubsubsec Without registering anything
-
-The plugin carries Thunderbird's published credentials, and an entry naming
-one of them borrows the registration whole, so steps 1 and 4 above fall away:
-
-@example
-machine imap.gmail.com login jane@@gmail.com port 993 auth xoauth2
-  auth-source-xoauth2-predefined-service google
-@end example
-
-@noindent
-@samp{google} and @samp{microsoft} are the two it knows.  What this costs is
-the redirect: Thunderbird registered @code{https://localhost/} and a client
-may only use a redirect its registration lists, so the browser ends on a page
-that cannot load and the code has to be copied out of its address bar, as
-above.  The consent screen says Thunderbird's name rather than yours.  VM's
-own first authorization does not fit this route, the client id not being
-yours to set, so make the lookup yourself from an Emacs that can ask you:
-
-@example
-(auth-source-search :host "imap.gmail.com" :user "jane@@gmail.com"
-                    :port 993 :max 1)
-@end example
-
-@unnumberedsubsubsec A token from a helper program
-
-@command{oauth2ms}, @command{mutt_oauth2.py} and @command{pizauth} do the
-authorization and the refreshing outside Emacs, and print a token when asked.
-Write what one of them prints where @code{auth-source} reads it:
-
-@example
-umask 077
-printf 'machine imap.gmail.com login jane@@gmail.com port 993 password %s\n' \
-       "$(oauth2ms)" > ~/.authinfo-token
-@end example
-
-@noindent
-and have @code{auth-source} read that file as well as the one your other
-passwords are in:
-
-@example
-(add-to-list 'auth-sources "~/.authinfo-token")
-@end example
-
-@noindent
-Run it again from a timer or a cron job well inside the hour the token lives.
-The file holds a bearer token in clear, which is what the @code{umask} is
-for; @code{auth-source} reads an encrypted @file{.gpg} file through EasyPG
-if you would rather write one of those.
-
-@unnumberedsubsubsec Or no OAuth2 in VM at all
-
-@cindex DavMail
-A local gateway such as @uref{https://davmail.sourceforge.net/, DavMail}
-holds the tokens itself and speaks ordinary @acronym{IMAP} to VM, so a
-maildrop pointed at @code{localhost} with @samp{login} works unchanged and no
-token reaches VM:
-
-@example
-imap:localhost:1143:inbox:login:jane:*
-@end example
-
-@noindent
-That covers Exchange and Office 365, and not Gmail.
-
 @anchor{encrypted connections}
 @unnumberedsubsec Encrypted connections
 
@@ -2197,6 +1955,7 @@ How many of them are kept is one variable per protocol:
 @menu
 * @acronym{POP} Folders::         How to use mailboxes on @acronym{POP} servers
 * @acronym{IMAP} Folders::        How to use mail folders on @acronym{IMAP} servers
+* OAuth2::              Using an access token instead of a password
 @end menu
 
 @node @acronym{POP} Folders, @acronym{IMAP} Folders, @acronym{POP} and @acronym{IMAP} Folders, @acronym{POP} and @acronym{IMAP} Folders
@@ -2255,7 +2014,7 @@ For example:
 when @code{vm-visit-pop-folder} asks for a folder name.  There is no
 need to specify the password for @acronym{POP} accounts in this definition.
 
-@node @acronym{IMAP} Folders,, @acronym{POP} Folders, @acronym{POP} and @acronym{IMAP} Folders
+@node @acronym{IMAP} Folders, OAuth2, @acronym{POP} Folders, @acronym{POP} and @acronym{IMAP} Folders
 @unnumberedsubsec @acronym{IMAP} Folders
 @cindex @acronym{IMAP}
 @cindex message attributes 
@@ -2626,6 +2385,248 @@ which is a different question from whether VM can see it.  Where a
 notification tool is involved, note that it can exit successfully having
 displayed nothing, so its exit status is not evidence.
 @end itemize
+
+@node OAuth2,, @acronym{IMAP} Folders, @acronym{POP} and @acronym{IMAP} Folders
+@unnumberedsubsec OAuth2
+
+@cindex XOAUTH2
+@cindex OAuth2
+@findex vm-oauth2-authorize
+An @samp{xoauth2} maildrop sends an OAuth2 access token where a password
+would go, which is what a Google Workspace or Office 365 tenant with app
+passwords switched off requires:
+
+@example
+imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
+@end example
+
+VM speaks the mechanism and nothing more: it acquires no token, refreshes
+none, stores none and ships no client credentials.  It asks
+@code{auth-source} for a token whenever it opens a session, so two things
+have to be set up outside it: something that answers that lookup with a token
+that has not expired, and a first authorization, which you do by hand because
+nothing can be asked of you while a session is running.
+
+The @var{PASSWORD} field of the maildrop stays @samp{*}.  You are never
+prompted for a token, nobody being able to type one, and VM does not remember
+one between sessions: an access token lives about an hour, so a remembered
+one would be a session that fails with nothing left to ask.  VM offers the
+mechanism only where the server advertises @samp{AUTH=XOAUTH2}.
+
+@unnumberedsubsubsec Setting up an account, from nothing
+
+@vindex vm-oauth2-client-id
+@vindex vm-oauth2-client-secret
+@enumerate
+@item
+@strong{Register a client with the provider, as a desktop application.}  VM
+ships none and never will: credentials compiled into a program readers
+install are public by definition.  With Google that is the Cloud console,
+where you make a project, enable the Gmail @acronym{API}, put
+@samp{https://mail.google.com/} on the consent screen, add yourself as a test
+user, and then create an OAuth client id of type Desktop app.  Keep the
+client id and the client secret it gives you.  A desktop client is the one
+that can use a loopback redirect, which is what saves you copying anything.
+
+@item
+@strong{Install @file{auth-source-xoauth2-plugin} from GNU ELPA and turn it
+on.}  It is what answers VM's lookups with a token, refreshing through the
+@file{oauth2} package as it goes:
+
+@example
+(require 'auth-source-xoauth2-plugin)
+(auth-source-xoauth2-plugin-mode t)
+@end example
+
+@item
+@strong{Write the account in @file{~/.authinfo}}, as one line.  The
+@samp{machine}, @samp{login} and @samp{port} are the maildrop's, and the rest
+is your registration:
+
+@example
+machine imap.gmail.com login jane@@gmail.com port 993 auth xoauth2
+  auth-url https://accounts.google.com/o/oauth2/auth
+  token-url https://oauth2.googleapis.com/token
+  scope https://mail.google.com/
+  client-id YOUR-ID.apps.googleusercontent.com
+  client-secret YOUR-SECRET
+@end example
+
+@noindent
+An entry runs to the next @samp{machine}, so it may be written over several
+lines as it is here.  Not with a backslash at the end of each, which is how a
+shell continues a line and not how this file is read: the backslash is taken
+for a field of its own and the one after it is lost, silently.
+
+@vindex auth-sources
+@noindent
+The file has to be one @code{auth-sources} names.  It names
+@file{~/.authinfo} and @file{~/.authinfo.gpg} to begin with, but a
+@code{customize} setting replaces that list rather than adding to it:
+
+@example
+(add-to-list 'auth-sources "~/.authinfo")
+@end example
+
+@item
+@strong{Tell VM the same client}, since VM is what runs the first
+authorization:
+
+@example
+(setq vm-oauth2-client-id "YOUR-ID.apps.googleusercontent.com"
+      vm-oauth2-client-secret "YOUR-SECRET")
+@end example
+
+@item
+@strong{Authorize once}, with @kbd{M-x vm-oauth2-authorize}.  It completes
+on the addresses your XOAUTH2 maildrops name and picks the provider that
+goes with the server, then opens your browser on the provider's consent
+page.  Visiting the folder does as well, where there is no token yet: the
+question is put by the command that wants one, a session having nobody to
+ask.  Say yes, and that is all: VM listens on a loopback port of its
+own, takes the code out of the redirect the browser follows, and answers the
+browser with a page saying it has it.  The access token and the refresh token
+go into the @file{oauth2} package's store.
+
+@item
+@strong{Write @samp{xoauth2} in the maildrop}, with @samp{*} where the
+password goes.  Step 5 can be left out if you would rather: visiting this
+folder with no token offers the authorization itself.
+
+@example
+imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
+@end example
+@end enumerate
+
+@unnumberedsubsubsec Where it goes wrong
+
+@table @asis
+@item The entry is never found.
+Two fields have to match the maildrop.  The @samp{machine} is the server's
+host name, or the account name @code{vm-imap-account-alist} gives the
+maildrop, those being what VM looks under.  The @samp{port} is the maildrop's
+own, @samp{993} here: @code{auth-source} matches it as it stands, so an entry
+saying @samp{imaps} answers nothing.
+
+@item A corrected entry changes nothing.
+@cindex auth-source cache
+@vindex auth-source-cache-expiry
+What a lookup answered is remembered for @code{auth-source-cache-expiry}, two
+hours by default, and that includes its having found nothing.  @kbd{M-x
+auth-source-forget-all-cached} after an edit.  An authorization does it for
+you, that being the same trap: the session that asked for one would
+otherwise go on finding nothing.
+
+@item Authorizing works and the session still finds no token.
+@vindex vm-oauth2-providers
+The two sides have to name the same endpoints.  @file{oauth2} names what it
+stores after the authorization and token @acronym{URL}s, the scope, the
+client id and the user name together; those come from
+@code{vm-oauth2-providers} and @code{vm-oauth2-client-id} when VM authorizes
+and from the @code{auth-source} entry when the plugin looks.  Two
+@acronym{URL}s that are both the provider's own are enough to make each look
+for a token the other did not write.
+
+@item The authorization ends with @samp{Encrypt failed}.
+@cindex plstore
+@file{oauth2} keeps the token in a plstore, and a plstore with no recipient
+is encrypted symmetrically, with a passphrase for pinentry to ask for.  Where
+it cannot be asked for, nothing is kept and that is what it says.  Name a key
+of your own instead, which needs no passphrase to encrypt to and leaves the
+question to the one decryption a session does:
+
+@example
+(setq plstore-encrypt-to "jane@@example.com")
+@end example
+
+@noindent
+A write that failed this way leaves the store holding the entry without its
+secrets, so take @file{oauth2-token-file} away before trying again.
+
+@item It stops working after a week.
+Google issues a refresh token that expires in seven days while the consent
+screen's publishing status is Testing.  Move the status to In production and
+authorize once more; an unverified app warns the reader and then lets them
+through, which for your own account is all it has to do.
+
+@item The browser is on another machine.
+@vindex vm-oauth2-catch-redirect
+@vindex vm-oauth2-redirect-timeout
+Then the redirect goes to that machine's loopback and VM never sees it.  The
+wait runs out after @code{vm-oauth2-redirect-timeout} and VM asks for the
+code instead: it is in the address bar of the page the browser failed to
+load, between @samp{code=} and the @samp{&} after it, with @samp{%2F} for a
+slash where the browser escapes it.  Paste it into the prompt that is
+waiting.  That code is good once, for a few minutes, and only to the request
+that produced the link, @acronym{PKCE} having tied it to a secret that call
+made up and did not write down, so it has to go back into the same prompt.
+@code{vm-oauth2-catch-redirect} turns the listening off altogether.
+@end table
+
+@unnumberedsubsubsec Without registering anything
+
+The plugin carries Thunderbird's published credentials, and an entry naming
+one of them borrows the registration whole, so steps 1 and 4 above fall away:
+
+@example
+machine imap.gmail.com login jane@@gmail.com port 993 auth xoauth2
+  auth-source-xoauth2-predefined-service google
+@end example
+
+@noindent
+@samp{google} and @samp{microsoft} are the two it knows.  What this costs is
+the redirect: Thunderbird registered @code{https://localhost/} and a client
+may only use a redirect its registration lists, so the browser ends on a page
+that cannot load and the code has to be copied out of its address bar, as
+above.  The consent screen says Thunderbird's name rather than yours.  VM's
+own first authorization does not fit this route, the client id not being
+yours to set, so make the lookup yourself from an Emacs that can ask you:
+
+@example
+(auth-source-search :host "imap.gmail.com" :user "jane@@gmail.com"
+                    :port 993 :max 1)
+@end example
+
+@unnumberedsubsubsec A token from a helper program
+
+@command{oauth2ms}, @command{mutt_oauth2.py} and @command{pizauth} do the
+authorization and the refreshing outside Emacs, and print a token when asked.
+Write what one of them prints where @code{auth-source} reads it:
+
+@example
+umask 077
+printf 'machine imap.gmail.com login jane@@gmail.com port 993 password %s\n' \
+       "$(oauth2ms)" > ~/.authinfo-token
+@end example
+
+@noindent
+and have @code{auth-source} read that file as well as the one your other
+passwords are in:
+
+@example
+(add-to-list 'auth-sources "~/.authinfo-token")
+@end example
+
+@noindent
+Run it again from a timer or a cron job well inside the hour the token lives.
+The file holds a bearer token in clear, which is what the @code{umask} is
+for; @code{auth-source} reads an encrypted @file{.gpg} file through EasyPG
+if you would rather write one of those.
+
+@unnumberedsubsubsec Or no OAuth2 in VM at all
+
+@cindex DavMail
+A local gateway such as @uref{https://davmail.sourceforge.net/, DavMail}
+holds the tokens itself and speaks ordinary @acronym{IMAP} to VM, so a
+maildrop pointed at @code{localhost} with @samp{login} works unchanged and no
+token reaches VM:
+
+@example
+imap:localhost:1143:inbox:login:jane:*
+@end example
+
+@noindent
+That covers Exchange and Office 365, and not Gmail.
 
 @node Thunderbird Folders, External Messages, @acronym{POP} and @acronym{IMAP} Folders, Starting Up
 @section Thunderbird Folders
