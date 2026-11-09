@@ -191,6 +191,160 @@ is what a reader chasing a stale code saw: a cheerful message and no mail."
       (should-not (cl-some (lambda (said) (string-match-p "authorized" said))
                            informed)))))
 
+(ert-deftest vm-oauth2-test-the-redirect-brings-the-code ()
+  "The listener takes the code out of the request the browser makes.
+A provider answers an authorization by redirecting the browser, so the code
+arrives as an ordinary GET on a loopback port rather than being read off a
+page and pasted."
+  (let ((vm-oauth2--code nil)
+        (vm-oauth2--refusal nil)
+        (server nil)
+        (browser nil)
+        (answer ""))
+    (unwind-protect
+        (progn
+          (setq server (vm-oauth2--listen))
+          (should (string-match-p "\\`http://127\\.0\\.0\\.1:[0-9]+/\\'"
+                                  (vm-oauth2--redirect-uri server)))
+          (setq browser (make-network-process
+                         :name "vm-oauth2-test-browser" :host 'local
+                         :service (process-contact server :service)
+                         :noquery t :coding 'binary
+                         :filter (lambda (_process text)
+                                   (setq answer (concat answer text)))))
+          (process-send-string
+           browser (concat "GET /?code=4%2F0Abc-def&scope=https%3A%2F%2Fmail"
+                           " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
+          (should (equal (vm-oauth2--wait-for-the-code 5) "4/0Abc-def"))
+          ;; and the browser was answered, rather than left to show its own
+          ;; failure to connect
+          (should (string-match-p "\\`HTTP/1\\.1 200 " answer))
+          (should (string-match-p "VM has the code" answer)))
+      (when browser (ignore-errors (delete-process browser)))
+      (when server (ignore-errors (delete-process server))))))
+
+(ert-deftest vm-oauth2-test-a-refusal-on-the-redirect-is-not-a-code ()
+  "A provider that refuses says so on the redirect, and that is an error.
+The browser arrives either way; what it carries is `error=' rather than
+`code=', and waiting for a code that is not coming would be the whole
+timeout spent on an answer VM already has."
+  (let ((vm-oauth2--code nil)
+        (vm-oauth2--refusal nil)
+        (server nil)
+        (browser nil))
+    (unwind-protect
+        (progn
+          (setq server (vm-oauth2--listen))
+          (setq browser (make-network-process
+                         :name "vm-oauth2-test-browser" :host 'local
+                         :service (process-contact server :service)
+                         :noquery t :coding 'binary))
+          (process-send-string
+           browser "GET /?error=access_denied HTTP/1.1\r\n\r\n")
+          (let ((message (cadr (should-error (vm-oauth2--wait-for-the-code 5)))))
+            (should (string-match-p "access_denied" message))))
+      (when browser (ignore-errors (delete-process browser)))
+      (when server (ignore-errors (delete-process server))))))
+
+(ert-deftest vm-oauth2-test-the-authorization-takes-the-code-off-the-redirect ()
+  "REGRESSION: nothing is pasted where the browser can reach VM.
+
+oauth2.el opens the browser and then reads the code with `read-string'.
+VM answers that out of the redirect, so the reader clicks Allow and is done;
+before this, every authorization ended with a browser error page and a code
+to copy out of its address bar."
+  (let ((vm-oauth2-client-id "id")
+        (vm-oauth2-client-secret "secret")
+        (vm-oauth2-redirect-timeout 5)
+        (asked nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-oauth2-require) #'ignore)
+                  ((symbol-function 'vm-oauth2-show-url) #'ignore)
+                  ((symbol-function 'vm-inform) #'ignore)
+                  ((symbol-function 'oauth2-token-p) #'ignore)
+                  ;; stands for oauth2.el: it opens the browser, which comes
+                  ;; back to the redirect, and then it reads the code
+                  ((symbol-function 'oauth2-auth-and-store)
+                   (lambda (_auth _token _scope _id _secret
+                            &optional redirect &rest _)
+                     (let ((browser (make-network-process
+                                     :name "vm-oauth2-test-browser"
+                                     :host 'local :noquery t :coding 'binary
+                                     :service
+                                     (and (string-match ":\\([0-9]+\\)/"
+                                                        redirect)
+                                          (string-to-number
+                                           (match-string 1 redirect))))))
+                       (unwind-protect
+                           (progn
+                             (process-send-string
+                              browser
+                              "GET /?code=from-the-redirect HTTP/1.1\r\n\r\n")
+                             (setq asked t)
+                             (read-string "Enter the code: "))
+                         (ignore-errors (delete-process browser)))))))
+          (should (equal (vm-oauth2-authorize "a@b.c" "google")
+                         "from-the-redirect"))
+          (should asked))
+      (when (get-buffer "*VM OAuth2*") (kill-buffer "*VM OAuth2*")))))
+
+(ert-deftest vm-oauth2-test-the-accounts-come-from-the-maildrops ()
+  "The command completes on the XOAUTH2 accounts VM has, and only those.
+A mail address typed again is one more way to get it wrong, and the maildrops
+already say which addresses have tokens behind them."
+  (let ((vm-imap-account-alist
+         '(("imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@gmail.com:*" "gmail")
+           ("imap-ssl:imap.example.com:993:inbox:login:jane:*" "work")))
+        (vm-pop-folder-alist
+         '(("pop-ssl:pop.example.com:995:xoauth2:jill@example.com:*" "pop"))))
+    (should (equal (sort (vm-oauth2--maildrop-accounts) #'string<)
+                   '("jane@gmail.com" "jill@example.com")))
+    ;; and the host behind one, which is what the provider is guessed from
+    (should (equal (vm-oauth2--host-for-account "jane@gmail.com")
+                   "imap.gmail.com"))))
+
+(ert-deftest vm-oauth2-test-the-provider-is-guessed-from-the-host ()
+  "A Gmail or Office 365 server names its provider, and anything else does not.
+The guess is only a default: the command still offers the list."
+  (should (equal (vm-oauth2-provider-for-host "imap.gmail.com") "google"))
+  (should (equal (vm-oauth2-provider-for-host "outlook.office365.com")
+                 "microsoft"))
+  (should-not (vm-oauth2-provider-for-host "imap.example.com"))
+  (should-not (vm-oauth2-provider-for-host nil)))
+
+(ert-deftest vm-oauth2-test-a-maildrop-with-no-token-is-offered-one ()
+  "REGRESSION: a folder whose account has no token offers to authorize it.
+
+The session cannot ask, running in a process filter, so a maildrop with no
+token used to fail with a line in the log naming a command to run.  The
+command that started the session can ask, and this is where it does."
+  (let ((asked nil)
+        (authorized nil))
+    (cl-letf (((symbol-function 'vm-oauth2-available-p) (lambda () t))
+              ((symbol-function 'y-or-n-p)
+               (lambda (prompt) (setq asked prompt) t))
+              ((symbol-function 'vm-oauth2-authorize)
+               (lambda (account provider)
+                 (setq authorized (list account provider)))))
+      (should (vm-oauth2-offer-authorization "jane@gmail.com"
+                                             "imap.gmail.com"))
+      ;; the question names the account, the provider is not asked for where
+      ;; the host says it
+      (should (string-match-p "jane@gmail.com" asked))
+      (should (equal authorized '("jane@gmail.com" "google"))))))
+
+(ert-deftest vm-oauth2-test-nothing-is-offered-without-oauth2-el ()
+  "Without oauth2.el there is nothing to offer, so nothing is asked.
+The caller then reports a missing token as it always did, which is the
+answer for a machine that has no package to authorize with."
+  (let ((asked nil))
+    (vm-oauth2-test--without-oauth2-el
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq asked t) t)))
+        (should-not (vm-oauth2-offer-authorization "jane@gmail.com"
+                                                   "imap.gmail.com"))
+        (should-not asked)))))
+
 (provide 'vm-oauth2-test)
 
 ;;; vm-oauth2-test.el ends here

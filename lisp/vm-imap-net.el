@@ -740,6 +740,7 @@ read, which is what keeps a mailbox of any size out of memory."
 
 (declare-function vm-imapdrop-sans-password-and-mailbox "vm-misc" (source))
 (declare-function vm-auth-source-password "vm-misc" (hosts port user))
+(declare-function vm-oauth2-offer-authorization "vm-oauth2" (account host))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
 (declare-function vm-imap-get-password "vm-imap"
 		  (folder source user host port ask-password purpose))
@@ -947,8 +948,14 @@ from inside a filter."
       (setq password
 	    (if (equal auth "xoauth2")
 		;; not `vm-imap-net-known-password', which reads the cache
-		;; first, and not the asking below either
-		(vm-imap-net-access-token source user host port)
+		;; first, and not the asking below either.  A maildrop with
+		;; no token yet is offered the authorization, which is a
+		;; browser and a question and so belongs here, in the
+		;; command, rather than in the session it is wanted by.
+		(or (vm-imap-net-access-token source user host port)
+		    (and may-ask
+			 (vm-oauth2-offer-authorization user host)
+			 (vm-imap-net-access-token source user host port)))
 	      (or (vm-imap-net-known-password source user host port)
 		  (and may-ask
 		       ;; `vm-imap-ok-to-ask' is nil unless something has
