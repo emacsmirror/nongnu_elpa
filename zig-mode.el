@@ -188,26 +188,23 @@ If given a SOURCE, execute the CMD on it."
      ;; Keywords, constants and types
      (,(rx symbol-start
            (|
-            ;; Storage
-            "const" "var" "extern" "packed" "export" "pub" "noalias" "inline"
-            "noinline" "comptime" "callconv" "volatile" "allowzero"
-            "align" "linksection" "threadlocal" "addrspace"
-
-            ;; Structure
-            "struct" "enum" "union" "error" "opaque"
-
-            ;; Statement
-            "break" "return" "continue" "asm" "defer" "errdefer" "unreachable"
-            "try" "catch" "async" "nosuspend" "await" "suspend" "resume"
-
-            ;; Conditional
-            "if" "else" "switch" "and" "or" "orelse"
-
-            ;; Repeat
-            "while" "for"
-
-            ;; Other keywords
-            "fn" "usingnamespace" "test")
+            "addrspace" "align" "allowzero" "and" "anytype" "asm"
+            "bitpack" "break"
+            "callconv" "catch" "comptime" "const" "continue"
+            "defer"
+            "else" "enum" "errdefer" "error" "export" "extern"
+            "fn" "for"
+            "if" "inline"
+            "linksection"
+            "noalias" "noinline"
+            "opaque" "or" "orelse"
+            "pub"
+            "return"
+            "struct" "switch"
+            "test" "threadlocal" "try"
+            "union" "unreachable"
+            "var" "volatile"
+            "while")
            symbol-end)
       . font-lock-keyword-face)
 
@@ -238,8 +235,7 @@ If given a SOURCE, execute the CMD on it."
             "comptime_int" "comptime_float"
 
             ;; Other types
-            "bool" "void" "noreturn" "type" "anyerror" "anyframe" "anytype"
-            "anyopaque")
+            "bool" "void" "noreturn" "type" "anyerror" "anyopaque")
            symbol-end)
       . font-lock-type-face)
 
