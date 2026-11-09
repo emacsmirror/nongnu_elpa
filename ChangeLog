@@ -1,3 +1,8 @@
+2026-11-09  Ulrich Müller  <ulm@gentoo.org>
+
+	* ebuild-mode-keywords.el (ebuild-mode-keywords-eclass):
+	Regenerated.
+
 2026-11-06  Ulrich Müller  <ulm@gentoo.org>
 
 	* test/xemacs-test-wrapper.el (ert-deftest): Call Skip-Test-Unless

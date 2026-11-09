@@ -450,8 +450,6 @@
      "linux-mod-r1_pkg_setup" "linux-mod-r1_src_compile"
      "linux-mod-r1_src_install" "linux-mod-r1_pkg_postinst" "linux_domodule"
      "linux_moduleinto" "modules_post_process"
-     ;; llvm
-     "get_llvm_slot" "get_llvm_prefix" "llvm_pkg_setup"
      ;; llvm-r1
      "llvm_gen_dep" "get_llvm_prefix" "llvm-r1_pkg_setup"
      ;; llvm-r2
