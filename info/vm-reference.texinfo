@@ -6315,12 +6315,39 @@ nowhere else.  Nothing can be asked from inside a process filter, which is
 where a session runs, so the first authorization of an account happens here
 and the sessions afterwards only read what it stored.
 
+The provider answers by redirecting the browser, and VM listens on a
+loopback port for that redirect and takes the code out of it, so there is
+nothing to copy.  See @code{vm-oauth2-catch-redirect}, which also says what
+happens where the browser is on another machine.
+
 The token goes in oauth2.el's own store, @code{oauth2-token-file}, encrypted by
 plstore.  VM keeps no store of its own: writing the same one is what makes
 an account set up here work with everything else that reads it.
 @end deffn
 
 @appendixsubsec User options
+
+@defopt vm-oauth2-catch-redirect
+@vindex vm-oauth2-catch-redirect
+Whether VM takes the authorization code off the redirect itself.
+
+A provider answers an authorization by redirecting the browser to an address
+the client named, with the code in it.  With this on VM listens on a loopback
+port, names that address, and reads the code out of the request the browser
+makes: nothing is copied, and the browser is answered with a page saying so.
+
+RFC 8252 7.3 is why the port needs no registering: the authorization server
+has to accept any port on a loopback redirect.  What does need registering is
+the client, as a desktop application; a web application is held to the exact
+addresses it listed and cannot use this.
+
+The browser has to be on the machine Emacs is on, since the redirect goes to
+that machine’s own loopback.  Where it is not, the wait runs out and VM asks
+for the code as it always did, to be read out of the browser’s address bar
+and pasted.
+
+Default value: @code{t}
+@end defopt
 
 @defopt vm-oauth2-client-id
 @vindex vm-oauth2-client-id
@@ -6369,17 +6396,28 @@ Default value:
 @end example
 @end defopt
 
+@defopt vm-oauth2-redirect-timeout
+@vindex vm-oauth2-redirect-timeout
+How long to wait for the browser to come back with the code, in seconds.
+Long enough to sign in, pick an account and read a consent screen.  When it
+runs out VM asks for the code instead, which is the answer for a browser on
+another machine: its redirect goes to its own loopback and never arrives.
+
+Default value: @code{300}
+@end defopt
+
 @defopt vm-oauth2-redirect-uri
 @vindex vm-oauth2-redirect-uri
 Where the provider sends the authorization code, or nil for oauth2.el’s own.
 
+Read only where @code{vm-oauth2-catch-redirect} is nil.  With that on, which is
+the default, VM listens on a loopback port and names that, so there is
+nothing to set here and nothing to paste.
+
 oauth2.el defaults to "urn:ietf:wg:oauth:2.0:oob", which hands the code to
 the reader to paste.  Google stopped accepting that in January 2023 and
 answers @code{invalid_request}, so a Google account needs something else here and
-it has to be one the registration lists.  A Desktop client registered with
-Google may use a loopback address, "http://127.0.0.1:PORT"; nothing in VM
-or in oauth2.el listens on one, so the code has to be read out of the
-browser’s address bar and pasted anyway.
+it has to be one the registration lists.
 
 Set to whatever your own registration says.
 @end defopt

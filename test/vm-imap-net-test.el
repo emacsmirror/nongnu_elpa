@@ -4551,6 +4551,50 @@ command (emacs-vm/vm#939)."
           (when (buffer-live-p our-buffer) (kill-buffer our-buffer))
           (when (buffer-live-p their-buffer) (kill-buffer their-buffer)))))))
 
+(ert-deftest vm-imap-net-test-a-maildrop-with-no-token-offers-to-authorize ()
+  "REGRESSION: opening an XOAUTH2 maildrop with no token offers one.
+
+The session cannot ask for anything, running in a process filter, so a
+maildrop VM had no token for failed with a line in the log naming a command
+to go and run.  The command that opens the connection can ask, and does."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
+                           :xoauth2 "ya29.token")
+    (let* ((spec (format "imap:127.0.0.1:%d:INBOX:xoauth2:%s:*"
+                         (vm-imap-mock-port mock) (vm-imap-mock-user mock)))
+           (offered nil)
+           (tokens (list nil "ya29.token"))
+           (opened nil))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vm-imap-net-access-token)
+                     ;; nothing the first time, the token once authorized
+                     (lambda (&rest _) (pop tokens)))
+                    ((symbol-function 'vm-oauth2-offer-authorization)
+                     (lambda (account host)
+                       (setq offered (list account host))
+                       t)))
+            (setq opened (vm-imap-net-open spec "test" 'may-ask))
+            (should (equal offered (list (vm-imap-mock-user mock) "127.0.0.1")))
+            ;; and it went on to open the connection with what it got
+            (should (vm-net-session-p (car opened))))
+        (when (car opened)
+          (vm-net-close-process (vm-net-session-process (car opened)))
+          (let ((buffer (vm-net-session-buffer (car opened))))
+            (when (buffer-live-p buffer) (kill-buffer buffer))))))))
+
+(ert-deftest vm-imap-net-test-a-maildrop-with-no-token-and-nobody-to-ask ()
+  "Without `may-ask' nothing is offered and the maildrop fails as before.
+A timer checking for mail is not a place to open a browser from."
+  (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
+    (let ((spec (format "imap:127.0.0.1:%d:INBOX:xoauth2:%s:*"
+                        (vm-imap-mock-port mock) (vm-imap-mock-user mock)))
+          (offered nil))
+      (cl-letf (((symbol-function 'vm-imap-net-access-token) #'ignore)
+                ((symbol-function 'vm-oauth2-offer-authorization)
+                 (lambda (&rest _) (setq offered t) t)))
+        (should-error (vm-imap-net-open spec "test")
+                      :type 'vm-imap-net-no-password)
+        (should-not offered)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

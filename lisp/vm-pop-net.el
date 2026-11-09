@@ -408,6 +408,7 @@ has no TLS and answers `:type \\='tls' with \"Unsupported connection type\"."
 (defvar vm-pop-ok-to-ask)
 
 (declare-function vm-auth-source-password "vm-misc" (hosts port user))
+(declare-function vm-oauth2-offer-authorization "vm-oauth2" (account host))
 (declare-function vm-pop-get-password "vm-pop"
 		  (popdrop source user host port ask-password))
 
@@ -486,8 +487,14 @@ output.  A maildrop whose password VM has not been told signals
       (setq password
 	    (if (equal auth "xoauth2")
 		;; neither the cache nor the asking below: see
-		;; `vm-pop-net-access-token'
-		(vm-pop-net-access-token source user host port)
+		;; `vm-pop-net-access-token'.  A maildrop with no token yet
+		;; is offered the authorization, which is a browser and a
+		;; question and so belongs in the command rather than in the
+		;; session that wants it.
+		(or (vm-pop-net-access-token source user host port)
+		    (and may-ask
+			 (vm-oauth2-offer-authorization user host)
+			 (vm-pop-net-access-token source user host port)))
 	      (or (vm-pop-net-known-password source user host port)
 		  (and may-ask
 		       ;; as for IMAP: nothing binds `vm-pop-ok-to-ask'
