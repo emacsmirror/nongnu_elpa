@@ -1118,6 +1118,21 @@ This was advice on `vm-mail-mode-insert-date-maybe'; it is a test inside it."
                                 (split-string (buffer-string) "\n"))))
       (should (string-match-p "01 Jan 2020" (buffer-string))))))
 
+(ert-deftest vm-reply-test-headers-written-under-a-ticks-hz-clock ()
+  "`current-time' answers a cons from Emacs 32.1 on, and both headers still go in.
+`current-time-list' nil is what a user of that Emacs has by default."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nSubject: hello\n" mail-header-separator "\n")
+    (let ((vm-mail-header-insert-date t)
+          (vm-mail-header-insert-message-id t)
+          (vm-mail-mode-fake-date-p nil))
+      (cl-letf (((symbol-function 'current-time)
+                 (lambda () '(1794306101368579 . 1000000))))
+        (vm-mail-mode-insert-date-maybe)
+        (vm-mail-mode-insert-message-id-maybe)))
+    (should (string-match-p "^Date: [A-Z][a-z][a-z], [0-9]+ Nov 2026 " (buffer-string)))
+    (should (string-match-p "^Message-ID: <[0-9.]+@[^ ]+>$" (buffer-string)))))
+
 (ert-deftest vm-reply-test-a-date-is-replaced-when-not-faking ()
   "With the flag off, VM writes the Date itself."
   (with-temp-buffer

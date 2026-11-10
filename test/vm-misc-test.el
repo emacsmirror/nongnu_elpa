@@ -1905,6 +1905,70 @@ directory part."
                            (expand-file-name "refused/folder" dir)))))
       (delete-directory dir t))))
 
+;;; Message-ID, issue #941
+
+
+(defmacro vm-misc-test--with-clock (time &rest body)
+  "Run BODY with `current-time' answering TIME and a hostname of our own."
+  (declare (indent 1))
+  `(cl-letf (((symbol-function 'current-time) (lambda () ,time))
+             ((symbol-function 'system-name) (lambda () "test.example.org")))
+     ,@body))
+
+(ert-deftest vm-misc-test-make-message-id-from-a-time-list ()
+  "A four element (HIGH LOW USEC PSEC) clock gives the four field Message-ID."
+  (vm-misc-test--with-clock '(27378 61493 368506 713345000)
+    (let ((id (vm-make-message-id)))
+      (should (string-match
+               "\\`<27378\\.61493\\.368506\\.\\([0-9]+\\)@test\\.example\\.org>\\'"
+               id))
+      (should (< (string-to-number (match-string 1 id)) 1000000)))))
+
+(ert-deftest vm-misc-test-make-message-id-from-a-ticks-hz-cons ()
+  "A (TICKS . HZ) clock gives a Message-ID instead of an error.
+`current-time' returns a cons from Emacs 32.1 on, and the four field format
+read it with `nth', which stops on the integer cdr."
+  (vm-misc-test--with-clock '(1794306101368579 . 1000000)
+    (let ((id (vm-make-message-id)))
+      (should (string-match
+               "\\`<1794306101\\.368579\\.\\([0-9]+\\)@test\\.example\\.org>\\'"
+               id))
+      (should (< (string-to-number (match-string 1 id)) 1000000)))))
+
+(ert-deftest vm-misc-test-make-message-id-from-a-nanosecond-clock ()
+  "HZ is whatever the clock offers, so the seconds come out of the division.
+A nanosecond clock gives six decimals like any other, the rest truncated."
+  (vm-misc-test--with-clock '(1794306101987654321 . 1000000000)
+    (should (string-prefix-p "<1794306101.987654." (vm-make-message-id))))
+  (vm-misc-test--with-clock '(1794306101000000 . 1000000)
+    (should (string-prefix-p "<1794306101.000000." (vm-make-message-id)))))
+
+(ert-deftest vm-misc-test-make-message-id-falls-back-to-mail-host-address ()
+  "A `system-name' with no dot in it is no address, so the option is used."
+  (cl-letf (((symbol-function 'current-time) (lambda () '(1794306101368579 . 1000000)))
+            ((symbol-function 'system-name) (lambda () "laptop")))
+    (let ((mail-host-address "example.net"))
+      (should (string-suffix-p "@example.net>" (vm-make-message-id))))
+    (let ((mail-host-address nil))
+      (should (string-suffix-p "@gargle.gargle.HOWL>" (vm-make-message-id))))))
+
+(ert-deftest vm-misc-test-make-message-id-is-unique-within-one-tick ()
+  "Two Message-IDs made at the same instant still differ."
+  (vm-misc-test--with-clock '(1794306101368579 . 1000000)
+    (should-not (equal (vm-make-message-id) (vm-make-message-id)))))
+
+(ert-deftest vm-misc-test-make-message-id-has-no-illegal-characters ()
+  "The Message-ID is an addr-spec in angle brackets, whichever clock made it."
+  (dolist (time '((27378 61493 368506 713345000)
+                  (1794306101368579 . 1000000)
+                  (1794306101987654321 . 1000000000)))
+    (let ((id (cl-letf (((symbol-function 'current-time) (lambda () time))
+                        ((symbol-function 'system-name)
+                         (lambda () "test.example.org")))
+                (vm-make-message-id))))
+      (should (string-match "\\`<[0-9.]+@[A-Za-z0-9.-]+>\\'" id)))))
+
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
