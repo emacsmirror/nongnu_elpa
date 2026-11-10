@@ -540,10 +540,28 @@ Works in issue view mode or in issues tl."
   (interactive)
   (fedi-kill-all-buffers "*fj-"))
 
+(defun fj--live-buffers ()
+  "Return a list of all live fj buffers."
+  (fedi-live-buffers "*fj-"))
+
 (defun fj-switch-to-buffer ()
   "Switch to a live fj buffer."
   (interactive)
-  (fedi-switch-to-buffer "*fj-"))
+  (fedi-do-item-completing
+   #'fj--live-buffers
+   (lambda (data)
+     (mapcar
+      (lambda (buf)
+        (with-current-buffer buf
+          (list
+           (string-join
+            (seq-remove #'null `(,(buffer-name) ,(fj--get-buffer-spec :title)))
+            " ")
+           buf)))
+      data))
+   "Switch to buffer: "
+   (lambda (buf _)
+     (when buf (switch-to-buffer buf)))))
 
 (defun fj--issue-right-align-str (str)
   "Right align STR and return it."
