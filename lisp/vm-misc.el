@@ -1551,10 +1551,15 @@ how it marked its own soft breaks; VM never unwrapped them."
 			       (string-match "\\." mail-host-address))
 			  mail-host-address)
 			 (t "gargle.gargle.HOWL")))
-    (format "<%d.%d.%d.%d@%s>"
-	    (car time) (nth 1 time) (nth 2 time)
-	    (random 1000000)
-	    hostname)))
+    (if (consp (cdr time))
+        (format "<%d.%d.%d.%d@%s>"
+	        (car time) (nth 1 time) (nth 2 time)
+	        (random 1000000)
+	        hostname)
+      (format "<%.6f.%d@%s>"
+	      (/ (car time) (float (cdr time)))
+	      (random 1000000)
+	      hostname))))
 
 (defvar vm-session-trace-max-size)
 
