@@ -2981,8 +2981,9 @@ for forming a URL.")
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
                 alnum)) ;;"A-Z" "a-z" "0-9")) ;; before slash (owner)
         (opt "/") ;; one slash
-        (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                "." alnum)) ;;"A-Z" "a-z" "0-9")) ;; after slash (repo)
+        (1+ ;; more than zero something before #
+         (any ?- ?_ ;?. ;; this . breaks word-boundary at end
+              "." alnum)) ;;"A-Z" "a-z" "0-9")) ;; after slash (repo)
         (group-n 2 (or ?# ?!) ;; # or !
                  (group-n 3
                    (1+ (any ;; "A-Z" "a-z"
