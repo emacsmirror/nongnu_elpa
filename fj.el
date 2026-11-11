@@ -6395,7 +6395,7 @@ PAGE and LIMIT as always."
     (fj-get endpoint params)))
 
 (defun fj-render-commits (commits)
-  "Remder COMMITS."
+  "Render COMMITS."
   (cl-loop for c in commits
            do (fj-render-commit c)))
 
