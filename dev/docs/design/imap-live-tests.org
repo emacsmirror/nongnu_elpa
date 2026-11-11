@@ -156,8 +156,8 @@ convincingly:
   RETR, TOP, DELE, RSET, NOOP, QUIT, with dot-stuffing, and
   misbehaves on request: :no-uidl, :refuse, :drop-on,
   :truncate-retr, :lie-about-size, :slow-greeting.  VM talks to it
-  through vm-pop-make-session and everything below, so the code under test
-  is the real client, not a stub of vm-pop-send-command.
+  through vm-pop-net-command and everything below, so the code under test
+  is the real client, not a stub of vm-pop-net-send.
 - test/vm-pop-live-init.el :: the live tier, against the same dovecot with
   pop3 added to protocols.  Skips unless vm-pop-test-servers is set.
 
