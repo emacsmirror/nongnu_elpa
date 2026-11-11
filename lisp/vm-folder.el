@@ -49,16 +49,12 @@
 (declare-function vm-imap-make-filename-for-spec "vm-imap" (spec))
 (declare-function vm-imap-cache-file-for-folder-name "vm-imap" (name))
 (declare-function vm-imap-set-default-attributes "vm-imap" (m))
-(declare-function vm-imap-end-session "vm-imap"
-		  (process &optional imap-buffer keep-buffer))
-(declare-function vm-imap-synchronize-folder "vm-imap" t)
 (declare-function vm-net-error-p "vm-net" (value))
 (declare-function vm-imap-net-send-changes "vm-imap-net" ())
 (declare-function vm-imap-net-stop "vm-imap-net" ())
 (declare-function vm-pop-net-stop "vm-pop-net" ())
 (declare-function vm-pop-net-send-changes "vm-pop-net" ())
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
-(declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
 (declare-function vm-imap-external-messages-p "vm-imap" (spec))
 

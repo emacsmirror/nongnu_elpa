@@ -10,7 +10,7 @@
 ;; spec parsing, the response parser and the file naming and stops where the
 ;; protocol starts; vm-imap-live-test.el drives the whole thing, but wants a
 ;; server in test/vm-live-config.el and skips without one -- so on a stock
-;; checkout nothing between `vm-imap-make-session' and the wire ran at all.
+;; checkout nothing between VM's IMAP client and the wire ran at all.
 ;;
 ;; This is the IMAP counterpart of vm-pop-mock.el and follows it: a real
 ;; server on a local port, spoken to through VM's ordinary code path, rather

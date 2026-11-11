@@ -1025,6 +1025,46 @@ What is quoted and is not a symbol is listed in
                                  missing)
                          #'string<)))))
 
+;;; A declare-function names a function that exists
+
+(defun vm-reference-test--declared-functions (file)
+  "Every VM function FILE declares with `declare-function'.
+Only VM's own: a declaration of an external function is a promise about
+another package, which may or may not be installed here."
+  (let ((names nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (re-search-forward "^(declare-function \\(vm-[^ ()\n]+\\)" nil t)
+        (push (intern (match-string 1)) names)))
+    (nreverse names)))
+
+(ert-deftest vm-reference-test-declared-functions-exist ()
+  "REGRESSION: a `declare-function' names a function VM defines.
+Six declarations named five functions of the blocking IMAP implementation,
+deleted in emacs-vm/vm#822: `vm-imap-make-session', `vm-imap-end-session',
+`vm-imap-append-message', `vm-imap-folder-check-mail' and
+`vm-imap-synchronize-folder'.
+
+A declaration is read by the byte compiler and by nothing else, so one left
+behind costs no warning and no error.  What it costs is a reader, who finds
+the name, looks for the definition and does not find it, and a test that
+stubs the name with `cl-letf' and asserts on a call that can never come:
+`vm-imap-net-test-completion-gets-its-names-from-the-driver' did exactly
+that.
+
+Read from the files rather than from the running Emacs, since a declaration
+leaves nothing behind once the file is compiled."
+  (vm-reference-load-everything)
+  (let ((lisp (expand-file-name "../lisp" vm-test-dir))
+        (missing nil))
+    (dolist (name (vm-reference-module-files lisp))
+      (dolist (symbol (vm-reference-test--declared-functions
+                       (expand-file-name name lisp)))
+        (unless (fboundp symbol)
+          (push (format "%s declared by %s" symbol name) missing))))
+    (should (equal nil (sort missing #'string<)))))
+
 ;;; The committed files are the ones the generator would write
 
 ;; info/vm-reference.texinfo and info/vm-docstrings.texinfo are generated from

@@ -1114,16 +1114,6 @@ compute the change the same way and only the sending of it differs."
 ;; 
 ;; top-level operations
 ;; vm-fetch-imap-message: (vm-message) -> void
-;; vm-imap-synchronize-folder:
-;;	(&optional :interactive interactive & 
-;;                 :do-remote-expunges bool & 
-;;                 :do-local-expunges bool & 
-;;                 :do-retrieves bool &
-;;                 :save-attributes nil|t|'all & 
-;;                 :retrieve-attributes bool) -> void
-;; vm-imap-save-attributes: (:all-flags bool) -> void
-;; vm-imap-folder-check-mail: (&optional interactive) -> ?
-;;
 ;; vm-imap-get-synchronization-data: (&optional bool) -> 
 ;;		(retrieve-list: (uid . int) list &
 ;;		 local-expunge-list: vm-message list & 

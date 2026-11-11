@@ -1000,20 +1000,16 @@ mailbox is examined rather than selected: asking is not reading."
   "The names completion needs come back on a session of the driver's.
 
 Completion has to answer with the names it has, so this is the one path that
-waits on purpose.  What it must not do is open a connection of its own through
-the blocking implementation."
+waits on purpose.  It waits on the driver, which is the only way VM opens a
+connection."
   (vm-imap-mock-with (mock)
     (vm-imap-mock-add-message mock "Archive" vm-imap-net-test--alice)
     (let* ((spec (vm-imap-mock-spec mock))
            (vm-imap-server-timeout 60)
-           (blocking nil)
            (before (buffer-list)))
       (unwind-protect
-          (cl-letf (((symbol-function 'vm-imap-make-session)
-                     (lambda (&rest _) (setq blocking t) nil)))
-            (let ((names (vm-imap-net-mailbox-names spec nil 10)))
-              (should (equal (sort names #'string-lessp) '("Archive" "INBOX")))
-              (should-not blocking)))
+          (let ((names (vm-imap-net-mailbox-names spec nil 10)))
+            (should (equal (sort names #'string-lessp) '("Archive" "INBOX"))))
         (dolist (buffer (buffer-list))
           (unless (memq buffer before)
             (when (buffer-live-p buffer)
@@ -1021,8 +1017,9 @@ the blocking implementation."
               (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-completion-answers-nothing-when-it-cannot-ask ()
-  "A maildrop the driver cannot open answers with no names, so completion
-still has the blocking path to fall back on."
+  "A maildrop the driver cannot open returns no names.
+Nothing else is tried: completion has no second implementation to fall back
+on, so what it cannot ask for it does not offer."
   (let ((vm-imap-passwords nil)
         (auth-sources nil))
     (should-not (vm-imap-net-mailbox-names

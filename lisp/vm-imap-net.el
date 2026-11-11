@@ -853,9 +853,9 @@ A secret that auth-source hands back as a function is called, which is how
 (defun vm-imap-net-known-password (source user host port)
   "The password VM already holds for SOURCE, or nil.
 
-Its own cache first, then auth-source.  Nothing is written back: what the
-blocking path remembers is its own business, and a wrong or empty entry
-written there is a login that fails without asking anybody anything.  Only a
+Its own cache first, then auth-source.  Nothing is written back: a wrong or
+empty entry written there is a login that fails without asking anybody
+anything.  Only a
 non-empty string counts -- auth-source hands back a function for some
 backends, and the cache can hold a `*' that means nothing yet."
   (let* ((spec (vm-imapdrop-sans-password-and-mailbox source))
