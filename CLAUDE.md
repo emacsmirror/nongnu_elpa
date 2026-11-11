@@ -271,24 +271,15 @@ Gotchas found the hard way:
 - **A mutation that makes a test skip reads as a surviving mutation.** ert
   counts a skip among its expected results, so a harness watching only for
   FAILED reports the test as blind when it never ran. Count skips too.
-- **A batch test of a blocking IMAP path needs the password seeded, or it
-  blocks on stdin.** VM records a maildrop in `vm-imap-retrieved-messages`
-  with the password stripped, so the blocking session asks for one:
+- **A batch test that opens an IMAP session needs the password seeded, or
+  it blocks on stdin.** VM records a maildrop in `vm-imap-retrieved-messages`
+  with the password stripped, so the session asks for one:
   `IMAP password for ...: Error reading from stdin`, and because Emacs is
   blocked reading stdin rather than waiting on a process, **no timer fires**
   and it reads as a hang with nothing to show for it. Seed `vm-imap-passwords`
   under `vm-imapdrop-sans-password-and-mailbox` of the spec, which is the key
-  `vm-imap-make-session` looks up. `SIGUSR2` with
+  `vm-imap-net-known-password` looks up. `SIGUSR2` with
   `(setq debug-on-event 'sigusr2)` is what got the answer out.
-- **A mock IMAP test can pass without running the code it claims to test.**
-  Visiting a folder and getting mail both go through the asynchronous driver,
-  and the blocking `vm-imap-synchronize-folder` runs only where the driver
-  declines -- so nothing in `vm-imap-retrieve-messages` is reached by an
-  ordinary mock test. A regression test for that path has to make the driver
-  decline, by stubbing `vm-imap-net-get-spooled-mail` to nil, which is what
-  happens in the field when a password cannot be asked for. The first test
-  written for #765 passed against the unfixed code for exactly this reason, and
-  reverting the fix is what caught it.
 
 ## Contributing workflow
 
@@ -319,10 +310,13 @@ needs `develop` merged into it for ever to stay honest. A large conversion goes
 to `develop` in the same one-branch-per-issue steps as anything else.
 
 - The decision it was built under is **non-blocking only**: no synchronous
-  driver and no dual mode, so every converted path is asynchronous. The
-  blocking implementation is still in the tree and serves what the driver
-  declines — a maildrop whose password VM has not been told, since nobody can
-  be asked from inside a process filter.
+  driver and no dual mode, so every path to a server is asynchronous. The
+  blocking implementation has been deleted, 137 functions and about 4000
+  lines of `vm-imap.el` and `vm-pop.el` along with the 60-odd tests that were
+  the only thing still reaching them, and nothing fell back to it. The driver
+  declines only for a maildrop whose password VM has not been told, and asks
+  for one first where there is a reader to ask; where it does not start,
+  nothing else is tried and the reader is told.
 - `dev/docs/design/async-imap.org` has the reasoning, the table of what was
   converted, and the two places that still wait on purpose.
 - A pause a reader can feel is a bug in this code and is measured, not
@@ -579,7 +573,7 @@ docstring means regenerating them and committing the result:
 make -C info vm-reference.texinfo vm-docstrings.texinfo
 ```
 
-`make check-reference` compares the committed copy with what the docstrings say
+`make -C info check-reference` compares the committed copy with what the docstrings say
 now and fails when they differ. A plain `make` rewrites them in the working
 tree, so forgetting this leaves the next person a dirty tree they did not
 cause. Only commands and user options appear there: a docstring on a plain
@@ -621,16 +615,15 @@ works before VM itself is loaded.
 
 ### Design Documentation
 
-Architecture docs in `dev/docs/design/`:
-- Virtual folder implementation
-- Threading design
-- Password handling
-- Folder data structures
-- **async-imap.org** - Planned async IMAP refactor (IMAP currently blocks Emacs)
-
-### Known Issues
-
-**IMAP blocks Emacs**: `vm-imap.el` uses synchronous `accept-process-output` in loops. See `dev/docs/design/async-imap.org` for the planned fix using CPS with process filters.
+Architecture docs in `dev/docs/design/`, each describing what was built:
+- `async-imap.org` - the asynchronous IMAP and POP network layer
+- `folder-type.org` - folder data structures
+- `gmail-labels.org` - Gmail labels against IMAP flags
+- `imap-live-tests.org` - the live IMAP test harness
+- `lazy-mime-parts.org` - fetching MIME parts on demand
+- `passwords.org` - password handling
+- `threading.txt` - threading
+- `virtual-revolution.txt` - virtual folder implementation
 
 ## Development Notes
 
