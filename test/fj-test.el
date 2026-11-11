@@ -1816,3 +1816,39 @@ prefix is used or not."
    (equal '("owner" "repo")
           (fj-owner+repo-from-url
            "https://example.org/owner/repo/pulls/1234"))))
+
+(ert-deftest fj-test-switch-to-buffer-completion-table ()
+  "Tests whether `fj-switch-to-buffer' properly sets up candidates for completion.
+
+This checks whether the minibuffer completion table used in
+`fj-switch-to-buffer' actually associates buffer names (\"*fj-\") with
+the corresponding buffers."
+  (with-mock
+    (mock (fj--live-buffers)
+          => (list (get-buffer-create "*fj-fj.el-item-1*")
+                   (get-buffer-create "*fj-fj.el-item-2*")
+                   (get-buffer-create "*fj-fj.el-item-3*")
+                   (get-buffer-create "*fj-fj.el-item-4*")))
+    (let* (local-comp-table
+           (get-minibuffer-comp-table-hook
+            (lambda ()
+              (setq local-comp-table minibuffer-completion-table)
+              (keyboard-quit))))
+
+      ;; add the hook to copy completion candidates into `local-comp-table'.
+      (add-hook 'minibuffer-setup-hook get-minibuffer-comp-table-hook)
+
+      ;; can't simply use `ignore-errors': need to explicitly handle
+      ;; quit so that ert doesn't think we're trying to abort the test.
+      (condition-case nil (fj-switch-to-buffer) (t))
+
+      ;; cleanup hook (finally clause)
+      (remove-hook 'minibuffer-setup-hook get-minibuffer-comp-table-hook)
+
+      (should
+       (equal
+        local-comp-table
+        `(("*fj-fj.el-item-1*" ,(get-buffer "*fj-fj.el-item-1*"))
+          ("*fj-fj.el-item-2*" ,(get-buffer "*fj-fj.el-item-2*"))
+          ("*fj-fj.el-item-3*" ,(get-buffer "*fj-fj.el-item-3*"))
+          ("*fj-fj.el-item-4*" ,(get-buffer "*fj-fj.el-item-4*"))))))))
