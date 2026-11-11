@@ -49,7 +49,7 @@ Note: `make elint-lint` is broken (max-lisp-eval-depth), `make elisp-lint` has m
 **`byte-compile-lint` cannot see a call across files.** It compiles the whole
 directory in one Emacs, so compiling `vm-imap.el` teaches that session the
 functions `vm-reply.el` goes on to call and the warning never appears. A user's
-Emacs native-compiles one file at a time and prints them — which is how seven
+Emacs native-compiles one file at a time and prints them, which is how seven
 went unnoticed until a maintainer pasted them in. `make cross-file-lint`
 compiles each file alone and fails on them; the fix is a `declare-function`
 beside the others at the top of the file, with the arglist the definition has.
@@ -72,7 +72,7 @@ target to the Makefile.
 `make test` fetches the optional packages first (BBDB, emacs-w3m, vcard) and
 records that with the stamp file `test/opt/installed`, so a run covers as much
 as the machine can. It needs the network once. A failure leaves no stamp and
-stops the run, so the next one tries again — a stamp written anyway would claim
+stops the run, so the next one tries again: a stamp written anyway would claim
 the packages are here and their tests would skip from then on with nothing to
 show for it. `make test-no-opt` runs everything without fetching, for a machine
 with no network.
@@ -221,7 +221,7 @@ about what another program makes of a VM folder.
 Every bug fix ships a regression test in the matching `test/vm-*-test.el`, in
 the same commit. **Verify the test actually fails without the fix**: stash the
 lisp change, run the test, restore. Where a fix removes unreachable code there
-is nothing to fail — say so in the commit rather than implying a verification
+is nothing to fail: say so in the commit rather than implying a verification
 that cannot exist, and pin the invariant that made it unreachable instead.
 
 Live IMAP and POP tests read `test/vm-live-config.el`, which is gitignored
@@ -230,7 +230,7 @@ fill it in. Every live test skips when nothing is configured, so `make test`
 works without it.
 
 Each test runs with the global value of every VM variable saved and restored,
-and buffers it created killed — see `vm-test-isolate-global-state` in
+and buffers it created killed; see `vm-test-isolate-global-state` in
 `test/vm-test-init.el`. Do not rely on state from an earlier test, and do not
 assume a test that leaks is harmless: `./test-runner --leaks` shows what is being
 leaked, and advice, non-VM hooks and files on disk are *not* restored.
@@ -250,7 +250,7 @@ Gotchas found the hard way:
   in `test/vm-test-init.el` and the existing stub macros for the pattern.
 - **`cl-letf` cannot stub a `defsubst` against compiled code.** The accessors are
   `defsubst`s, so a caller compiled with the definition in scope has it inlined
-  and never looks at the symbol —
+  and never looks at the symbol.
   `vm-set-body-to-be-retrieved-of`, `vm-th-parent-of` and
   `vm-select-folder-buffer-and-validate` have all cost time this way. Stub
   something further out, or assert on the effect rather than the call. The same
@@ -326,8 +326,8 @@ to `develop` in the same one-branch-per-issue steps as anything else.
 - **Cut branches from `central/develop`, never from a local integration branch.**
   A local branch that has other topic branches merged into it silently stacks
   them into the next MR; GitLab then takes the MR title and description from
-  the *oldest* commit in the range, so the MR ends up describing — and closing
-  — the wrong issue. Check with `git rev-list --count central/develop..<branch>`.
+  the *oldest* commit in the range, so the MR ends up describing the wrong
+  issue, and closing it. Check with `git rev-list --count central/develop..<branch>`.
 - `origin` is the personal fork, `central` is `emacs-vm/vm` (project id
   59241204). Issues and merge requests live on `central`; branches go to
   `origin` and the MR is cross-project.
@@ -336,7 +336,7 @@ to `develop` in the same one-branch-per-issue steps as anything else.
   `develop` reaches `main`. It was called `alpha` until 2026-08-03; the old
   name suggested a release channel, which it is not.
 - Editing an existing MR (target, title, description) or labelling and closing
-  an issue needs the REST API and a token with `api` scope — push options
+  an issue needs the REST API and a token with `api` scope; push options
   cannot do it.
 - **Wait for `detailed_merge_status` to reach `mergeable` before merging.** For a
   short while after an MR is created GitLab reports `preparing`, and a merge
@@ -344,7 +344,7 @@ to `develop` in the same one-branch-per-issue steps as anything else.
   until it says `mergeable`, then merge.
 - **Decisions and design questions belong in the issue, not only in a file.**
   `dev/docs/design/` is the right place for the long form, but those files live
-  on `develop`, which runs a long way ahead of `main` — so they are invisible
+  on `develop`, which runs a long way ahead of `main`, so they are invisible
   from a `main` checkout and from GitLab's default file view. Put the questions
   themselves in the ticket, which is visible whatever branch anyone is on, and
   reference the file for the detail.
@@ -365,7 +365,7 @@ https://gitlab.com/emacs-vm/vm/-/merge_requests/184
 ```
 
 `#453` on its own is not clickable, and neither is a Markdown link, whose
-target the terminal does not show — so both leave the reader to go and look the
+target the terminal does not show, so both leave the reader to go and look the
 number up. Issues take the `work_items` path, merge requests `merge_requests`.
 
 Give the title too, and when several are mentioned at once make them a list of
@@ -421,7 +421,7 @@ read without opening every one.
 
   Label it **and post a comment stating the choice as a checklist**, one
   `- [ ]` per option, with a recommendation. The analysis that led to the
-  choice is usually long and the options end up buried in it — on #532 they
+  choice is usually long and the options end up buried in it: on #532 they
   were at the bottom of the description, where the maintainer could not find
   them. A checklist in its own comment is what he acts on, and ticking a box
   is the answer.
@@ -429,7 +429,7 @@ read without opening every one.
   Not the same as `Undecided`, which is Launchpad's imported *importance* field
   and appears only alongside `Launchpad`, next to `Confirmed`, `Incomplete` and
   `In Progress`. Nor the same as `Kick can`, which records a decision already
-  taken — to defer. An issue can be both: deferred, and now wanting a second
+  taken, to defer. An issue can be both: deferred, and now wanting a second
   look.
 - `Close by hand` — `Pending`, and the merge will not close it: the trailer is
   `Re #NNN`, or names another issue, or the fix landed under another number and
@@ -454,7 +454,7 @@ name. A comment Claude wrote must say so, as its first line:
 This is not a formality. These comments state what was and was not
 reproduced, and how; a reader deciding whether to trust that needs to know it
 came from a tool run rather than from the maintainer's own testing. The same
-goes for anything else posted through the API under his account — issue
+goes for anything else posted through the API under his account: issue
 descriptions, MR descriptions.
 
 Commits carry the equivalent through their `Co-Authored-By:` trailer.
@@ -605,7 +605,7 @@ works before VM itself is loaded.
 
   A bare `;;;###autoload` copies the whole `defalias` into
   `lisp/vm-autoloads.el`, so that is where `symbol-file` says the alias is
-  defined — and the manual's appendix is built by asking `symbol-file` and
+  defined, and the manual's appendix is built by asking `symbol-file` and
   skipping the generated files, so the command silently drops out of the
   manual. Four did. `vm-reference-test-no-command-is-attributed-to-a-generated-file`
   checks it. Seven of VM's autoloaded commands are aliases.

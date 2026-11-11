@@ -28,8 +28,8 @@ twice.
 The blocking implementation is gone: 137 functions and about 4000 lines of
 vm-imap.el and vm-pop.el, and the 60-odd tests that were the only thing
 still reaching them.  What is left in those two files is the folder-side code
-the driver calls -- specs, cache file names, passwords, flag arithmetic,
-response parsing -- and the two bug-report commands.
+the driver calls (specs, cache file names, passwords, flag arithmetic,
+response parsing) and the two bug-report commands.
 
 Two things wait on purpose, and both wait on the driver, so C-g works:
 
