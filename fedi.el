@@ -751,8 +751,8 @@ the whole likes count in order to propertize it fully."
 ;;; PROPERTIZING SPECIAL ITEMS
 
 (defun fedi-propertize-items (regex type keymap subexp
-                                    &optional item-subexp domain-subexp link
-                                    extra-props face)
+                                &optional item-subexp _domain-subexp
+                                link extra-props face no-item)
   "Propertize items of TYPE matching REGEX in STR as links using JSON.
 KEYMAP and LINK are properties to add to the match.
 EXTRA-PROPS is a property list of any extra properties to add.
@@ -789,10 +789,16 @@ used in a link function. For an example of regexes' subgroups, see
                               item-str) ;; IF TYPE SHR: USE MATCHED URL
                              ((functionp link)
                               (funcall link))
-                             (t link))))
-            (add-text-properties beg
-                                 end
-                                 (fedi-link-props face link item type item-str keymap))
+                             (t link)))
+                 (item-old-prop (save-excursion
+                                  (backward-char)
+                                  (fedi--property 'item))))
+            (add-text-properties
+             beg end
+             ;; preserve existing 'item prop if :no-item arg:
+             (fedi-link-props face link (if no-item item-old-prop item)
+                          type (if no-item item-old-prop item-str)
+                          keymap))
             (add-text-properties beg end
                                  extra-props)))))))
 
