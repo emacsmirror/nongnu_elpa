@@ -4552,10 +4552,12 @@ SHA is the full commit hash."
 (defun fj-copy-commit-hash ()
   "Copy the commit hash if there is a commit-ref at point."
   (interactive)
-  (when (eq 'commit-ref (fj--property 'type))
-    (let ((ref (fj--property 'item)))
-      (kill-new ref)
-      (message (format "Commit ref copied: %s" ref)))))
+  (let ((type (fj--property 'type)))
+    (when (or (eq 'commit-ref type)
+              (eq 'commit type))
+      (let ((ref (fj--property 'item)))
+        (kill-new ref)
+        (message (format "Commit ref copied: %s" ref))))))
 
 (defun fj-format-change-target (format-str user old new)
   "Format a change-target-branch timeline item.
