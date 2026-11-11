@@ -6383,6 +6383,22 @@ If PREFIX arg, prompt for branch to show commits of."
       (setq fj-current-repo repo)
       (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
 
+(defun fj-pull-commit-log ()
+  "Render log of commits pull request currently being viewed."
+  (interactive)
+  (fj-with-pull
+   (fj-destructure-buf-spec (repo owner item)
+     (let* ((data (fj-get-pull-commits))
+            (buf (format "*fj-%s-commit-log-pull-%s*" repo item))
+            (wd default-directory))
+       (fj-with-buffer buf 'fj-commits-mode wd nil
+         ;; FIXME: use `fj-other-window-maybe'
+         (setq-local header-line-format (format "Commits in pull #%s"
+                                                item))
+         (fj-render-commits data)
+         (setq fj-current-repo repo)
+         (setq fj-buffer-spec `(:repo ,repo :owner ,owner :item ,item)))))))
+
 (defun fj-get-repo-commits (repo owner &optional branch page limit)
   ;; TODO: &optional sha path page limit not)
   ;; stat (diffs), verification, files, (optional, disable for speed)
