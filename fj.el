@@ -6328,10 +6328,13 @@ issuecomment-$id."
       (goto-char (prop-match-beginning match))
       (recenter-top-bottom 2))))
 
-(defun fj-repo-tag-follow (item)
+(defun fj-repo-tag-follow (str)
   "Follow link to ITEM, a repo tag."
-  (pcase-let* ((`(,owner ,repo ,item) (split-string item "[/#!]")))
-    (fj-item-view repo owner item)))
+  (pcase-let* ((`(,owner ,repo ,item) (split-string str "[/#!]")))
+    (fj-item-view repo owner item
+                ;; HACK: check if we split a PR ref:
+                (when (string-match "!" str)
+                  :pull))))
 
 (defun fj-browse-team (item)
   "Browse URL of team handle link.
