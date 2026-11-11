@@ -6325,7 +6325,7 @@ issuecomment-$id."
       (recenter-top-bottom 2))))
 
 (defun fj-repo-tag-follow (str)
-  "Follow link to ITEM, a repo tag."
+  "Follow link to STR, a repo tag."
   (pcase-let* ((`(,owner ,repo ,item) (split-string str "[/#!]")))
     (fj-item-view repo owner item
                 ;; HACK: check if we split a PR ref:
