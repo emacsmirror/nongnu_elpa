@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2020-2023 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianh@disroot.org>
-;; Version: 0.5
+;; Version: 0.6
 ;; Package-Requires: ((emacs "28.1") (markdown-mode "2.5"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
@@ -648,8 +648,8 @@ LIST-FUN is called on the data to return a collection for
 its first element, and an id as second element. A third element
 will be used as an annotation.
 PROMPT is for the same.
-ACTION-FUN is called with 2 args: the chosen item's id and the
-candidate's car, a string, usually its name or a handle."
+ACTION-FUN is called with 2 args: the chosen item's id and
+candidate returned by `completing-read'."
   (let* ((data (funcall fetch-fun))
          (list (funcall list-fun data))
          (completion-extra-properties
@@ -725,15 +725,14 @@ Examples are byline-top, byline-bottom, and body.
 REPLACE-FUN is a function sent to
 `fedi--replace-region-contents' to do the replacement. It
 should be called with at least 1 arg: the item's json."
-  (let ((json (fedi--property 'json)))
-    (let ((inhibit-read-only t)
-          (region
-           (fedi--find-property-range prop (point)
-                                      (when (fedi--property prop)
-                                        :backwards))))
-      (fedi--replace-region-contents
-       (car region) (cdr region)
-       replace-fun))))
+  (let ((inhibit-read-only t)
+        (region
+         (fedi--find-property-range prop (point)
+                                (when (fedi--property prop)
+                                  :backwards))))
+    (fedi--replace-region-contents
+     (car region) (cdr region)
+     replace-fun)))
 
 (defun fedi--replace-region-contents (beg end replace-fun)
   "Replace buffer contents from BEG to END with REPLACE-FUN.
@@ -751,8 +750,8 @@ the whole likes count in order to propertize it fully."
 ;;; PROPERTIZING SPECIAL ITEMS
 
 (defun fedi-propertize-items (regex type keymap subexp
-                                    &optional item-subexp domain-subexp link
-                                    extra-props face)
+                                &optional item-subexp _domain-subexp
+                                link extra-props face no-item)
   "Propertize items of TYPE matching REGEX in STR as links using JSON.
 KEYMAP and LINK are properties to add to the match.
 EXTRA-PROPS is a property list of any extra properties to add.
@@ -782,17 +781,23 @@ used in a link function. For an example of regexes' subgroups, see
                  (beg (match-beginning subexp))
                  (end (match-end subexp))
                  (item-str (buffer-substring-no-properties beg end))
-                 (domain (when domain-subexp ; fedi-post-handle-regex
-                           (buffer-substring-no-properties (match-beginning domain-subexp)
-                                                           (match-end domain-subexp))))
+                 ;; (domain (when domain-subexp ; fedi-post-handle-regex
+                 ;;           (buffer-substring-no-properties (match-beginning domain-subexp)
+                 ;;                                           (match-end domain-subexp))))
                  (link (cond ((eq type 'shr)
                               item-str) ;; IF TYPE SHR: USE MATCHED URL
                              ((functionp link)
                               (funcall link))
-                             (t link))))
-            (add-text-properties beg
-                                 end
-                                 (fedi-link-props face link item type item-str keymap))
+                             (t link)))
+                 (item-old-prop (save-excursion
+                                  (backward-char)
+                                  (fedi--property 'item))))
+            (add-text-properties
+             beg end
+             ;; preserve existing 'item prop if :no-item arg:
+             (fedi-link-props face link (if no-item item-old-prop item)
+                          type (if no-item item-old-prop item-str)
+                          keymap))
             (add-text-properties beg end
                                  extra-props)))))))
 

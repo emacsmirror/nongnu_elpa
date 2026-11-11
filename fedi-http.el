@@ -191,7 +191,11 @@ If JSON, encode PARAMS as JSON."
            (if json
                (encode-coding-string
                 (json-encode params) 'utf-8)
-             (fedi-http--build-params-string params)))))
+             (fedi-http--build-params-string params))))
+        (url-request-extra-headers
+         (when json
+           '(("Content-Type" . "application/json")
+             ("Accept" . "application/json")))))
     ;; (url (fedi-http--concat-params-to-url url params)))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
