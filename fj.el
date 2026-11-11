@@ -3239,7 +3239,7 @@ Optionally start from POINT."
       (fedi-propertize-items fedi-post-commit-regex 'commit
                              fj-link-keymap 1 1 nil nil
                              '(fj-tab-stop t)
-                             'fj-issue-commit-face)
+                             'fj-issue-commit-face :noitem)
       ;; FIXME: make md []() links tab stops? (doesn't work):
       ;; (fedi-propertize-items markdown-regex-link-inline 'shr
       ;;                        fj-link-keymap 1 1 nil nil
