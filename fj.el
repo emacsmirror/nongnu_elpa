@@ -3677,6 +3677,24 @@ RELOAD mean we reloaded."
            (when (string= "closed" .state)
              (concat " " (fedi--relative-time-description
                           (date-to-time .closed_at))))
+           (when (and pull-p
+                      (not (string= "closed" .state)))
+             ;; PR draft or maintainer-editable:
+             (concat
+              (when (eq .draft t)
+                (concat
+                 " "
+                 (propertize
+                  "draft"
+                  'face '(highlight :box t)
+                  'help-echo "This PR is marked as a draft/work-in-progress")))
+              (when (and (eq .allow_maintainer_edit t)
+                         (string= fj-user owner))
+                (concat
+                 " "
+                 (propertize "editable"
+                             'face '(highlight :box t)
+                             'help-echo "You can contribute to this PR")))))
            (when .milestone
              (concat "\nMilestone: " .milestone.title "\n"))
            (when .assignees
@@ -3704,22 +3722,6 @@ RELOAD mean we reloaded."
                (format "%s:%s".head.repo.full_name .head.label)
                'face 'fj-name-face)
               (propertize .base.label 'face 'fj-name-face)))
-           (when pull-p
-             (concat
-              "\nPull request:"
-              (when (eq .draft t)
-                (concat
-                 " "
-                 (propertize "Draft"
-                             'face '(highlight :box t)
-                             'help-echo "This PR is marked as a draft")))
-              (when (and (eq .allow_maintainer_edit t)
-                         (string= fj-user owner))
-                (concat
-                 " "
-                 (propertize "Editable"
-                             'face '(highlight :box t)
-                             'help-echo "You can contribute to this PR")))))
            "\n\n"
            ;; item byline:
            ;; FIXME: :extend t doesn't work here whatever i do
