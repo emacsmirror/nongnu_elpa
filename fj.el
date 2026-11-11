@@ -4268,7 +4268,7 @@ Optionally, provide the commit's SHA and URL."
                     item)) ;; item view? FIXME: remove?
            (endpoint (format "repos/%s/%s/git/commits/%s.diff"
                              owner repo sha)))
-      (fj-view-item-diff endpoint repo owner url sha))))
+      (fj-view-item-diff endpoint repo owner url item))))
 
 (defun fj-view-pull-diff ()
   "View a diff of the entire current PR."
@@ -4278,16 +4278,9 @@ Optionally, provide the commit's SHA and URL."
      (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
                               owner repo item))
             (commits (fj-get-pull-commits)))
-       (fj-view-item-diff endpoint repo owner url
-                        (cl-loop for x in commits
-                                 collect
-                                 (cons
-                                  (car (split-string
-                                        (map-nested-elt x '(commit message))
-                                        "\n\n"))
-                                  (alist-get 'sha x))))))))
+       (fj-view-item-diff endpoint repo owner url item)))))
 
-(defun fj-view-item-diff (endpoint &optional repo owner url commits)
+(defun fj-view-item-diff (endpoint &optional repo owner url item)
   "View a diff of an item, commit or pull diff.
 In REPO by OWNER.
 ENDPOINT is the API endpoint to hit.
@@ -4313,7 +4306,7 @@ commit-msg/commit-hash. Used to copy commit hashes using
          (diff-mode)
          (keymap-local-set "b" #'fj-browse-view) ;; requires url in buf-spec
          (setq fj-buffer-spec
-               `(:url ,url :repo ,repo :owner ,owner :commits ,commits)))))))
+               `(:url ,url :repo ,repo :owner ,owner :item ,item)))))))
 
 (defun fj-copy-diff-commit-hash ()
   "Add the full commit hash of the current diff view to the kill ring."
