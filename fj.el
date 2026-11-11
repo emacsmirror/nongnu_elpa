@@ -4479,13 +4479,7 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
                 (concat .ref_issue.title " #" number))
                'comment-ref number nil :noface))))
           ("commit_ref"
-           (concat
-            (format format-str user ts)
-            "\n"
-            (fj-propertize-link
-             (fj-format-tl-title
-              (url-unhex-string (fj-get-html-link-desc body)))
-             'commit-ref .ref_commit_sha nil :noface)))
+           (fj-format-commit-ref format-str user ts body .ref_commit_sha))
           ("issue_ref"
            (concat
             (format format-str user .ref_issue.repository.full_name ts)
@@ -4541,6 +4535,27 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
            (format "%s did unknown action: %s %s" user .type ts)))
         'fj-item-data item)
        "\n\n"))))
+
+(defun fj-format-commit-ref (format-str user ts body sha)
+  "Format a commit ref.
+FORMAT-STR is the base string. USER is the agent, TS a timestamp.
+BODY is used to extract the commit message as link.
+SHA is the full commit hash."
+  (concat
+   (format format-str user ts)
+   "\n"
+   (fj-propertize-link
+    (fj-format-tl-title
+     (url-unhex-string (fj-get-html-link-desc body)))
+    'commit-ref sha nil :noface)))
+
+(defun fj-copy-commit-hash ()
+  "Copy the commit hash if there is a commit-ref at point."
+  (interactive)
+  (when (eq 'commit-ref (fj--property 'type))
+    (let ((ref (fj--property 'item)))
+      (kill-new ref)
+      (message (format "Commit ref copied: %s" ref)))))
 
 (defun fj-format-change-target (format-str user old new)
   "Format a change-target-branch timeline item.
