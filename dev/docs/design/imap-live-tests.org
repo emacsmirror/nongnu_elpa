@@ -213,10 +213,10 @@ Step-by-step instructions live in [[file:../dev-guide.org][dev-guide.org]] under
 
 Gotchas from that config:
 
-- mail_max_userip_connections = 10 — tests that leave sessions open can
+- mail_max_userip_connections = 10 :: tests that leave sessions open can
   hit it; close sessions in unwind-protect.
-- auth_failure_delay = 2 secs — each negative auth test costs 2s.
-- imap_max_line_length = 64 k — relevant to literal/large-header tests.
+- auth_failure_delay = 2 secs :: each negative auth test costs 2s.
+- imap_max_line_length = 64 k :: relevant to literal/large-header tests.
 
 * CI
 
@@ -228,9 +228,9 @@ and 3 can run in CI; the default pipeline stays tier 1 only.
 1. [X] Harness test/vm-imap-live-init.el + make test-imap + smoke tests
    over plain and TLS.  Landed and green against dovecot 2.3.21: greeting,
    CAPABILITY, NAMESPACE, login, fixture create/append/select/fetch,
-   flags, cleanup, bad-password refusal, native TLS on 993, and VM's own
-   vm-imap-make-session.  The live tier costs about 1.8s.
-2. [ ] #38 — best value per effort on a healthy server, and flags are user
+   flags, cleanup, bad-password refusal, native TLS on 993, and a session
+   opened by VM itself.  The live tier costs about 1.8s.
+2. [ ] #38: best value per effort on a healthy server, and flags are user
    data.
 3. [ ] Tier 3 relay, then #335 and #286 together.
 4. [ ] #447 once component-folder naming comes from NAMESPACE.
