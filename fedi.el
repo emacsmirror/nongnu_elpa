@@ -725,15 +725,14 @@ Examples are byline-top, byline-bottom, and body.
 REPLACE-FUN is a function sent to
 `fedi--replace-region-contents' to do the replacement. It
 should be called with at least 1 arg: the item's json."
-  (let ((json (fedi--property 'json)))
-    (let ((inhibit-read-only t)
-          (region
-           (fedi--find-property-range prop (point)
-                                      (when (fedi--property prop)
-                                        :backwards))))
-      (fedi--replace-region-contents
-       (car region) (cdr region)
-       replace-fun))))
+  (let ((inhibit-read-only t)
+        (region
+         (fedi--find-property-range prop (point)
+                                (when (fedi--property prop)
+                                  :backwards))))
+    (fedi--replace-region-contents
+     (car region) (cdr region)
+     replace-fun)))
 
 (defun fedi--replace-region-contents (beg end replace-fun)
   "Replace buffer contents from BEG to END with REPLACE-FUN.
