@@ -563,6 +563,28 @@ Works in issue view mode or in issues tl."
    (lambda (buf _)
      (when buf (switch-to-buffer buf)))))
 
+(defun fj-copy-pull-commit-sha ()
+  "Copy a commit's SHA from a pull request."
+  (interactive)
+  (fedi-do-item-completing
+   #'fj-get-pull-commits
+   (lambda (data)
+     (mapcar
+      (lambda (commit)
+        (let-alist commit
+          (list
+           (string-join
+            (list
+             (car (split-string (alist-get 'message .commit) "\n"))
+             .sha)
+            " ")
+           .sha)))
+      data))
+   "Copy commit SHA: "
+   (lambda (sha _)
+     (kill-new sha)
+     (message "Copied: %s" sha))))
+
 (defun fj--issue-right-align-str (str)
   "Right align STR and return it."
   (concat
