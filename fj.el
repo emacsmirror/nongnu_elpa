@@ -4331,11 +4331,10 @@ commit-msg/commit-hash. Used to copy commit hashes using
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
   (interactive)
-  (fj-with-pull
-   (fj-destructure-buf-spec (repo owner item)
-     (let* ((endpoint (format "repos/%s/%s/pulls/%s/commits"
-                              owner repo item)))
-       (fj-get endpoint)))))
+  (fj-destructure-buf-spec (repo owner item)
+    (let* ((endpoint (format "repos/%s/%s/pulls/%s/commits"
+                             owner repo item)))
+      (fj-get endpoint))))
 
 (defun fj-merge-pull ()
   "Merge pull request of current view or at point."
