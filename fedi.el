@@ -648,8 +648,8 @@ LIST-FUN is called on the data to return a collection for
 its first element, and an id as second element. A third element
 will be used as an annotation.
 PROMPT is for the same.
-ACTION-FUN is called with 2 args: the chosen item's id and the
-candidate's car, a string, usually its name or a handle."
+ACTION-FUN is called with 2 args: the chosen item's id and
+candidate returned by `completing-read'."
   (let* ((data (funcall fetch-fun))
          (list (funcall list-fun data))
          (completion-extra-properties
