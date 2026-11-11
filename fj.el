@@ -4248,7 +4248,7 @@ Optionally, provide the commit's SHA and URL."
                     item)) ;; item view? FIXME: remove?
            (endpoint (format "repos/%s/%s/git/commits/%s.diff"
                              owner repo sha)))
-      (fj-view-item-diff endpoint repo owner url))))
+      (fj-view-item-diff endpoint repo owner url sha))))
 
 (defun fj-view-pull-diff ()
   "View a diff of the entire current PR."
@@ -4256,14 +4256,25 @@ Optionally, provide the commit's SHA and URL."
   (fj-with-pull
    (fj-destructure-buf-spec (repo owner item url)
      (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
-                              owner repo item)))
-       (fj-view-item-diff endpoint repo owner url)))))
+                              owner repo item))
+            (commits (fj-get-pull-commits)))
+       (fj-view-item-diff endpoint repo owner url
+                        (cl-loop for x in commits
+                                 collect
+                                 (cons
+                                  (car (split-string
+                                        (map-nested-elt x '(commit message))
+                                        "\n\n"))
+                                  (alist-get 'sha x))))))))
 
-(defun fj-view-item-diff (endpoint &optional repo owner url)
+(defun fj-view-item-diff (endpoint &optional repo owner url commits)
   "View a diff of an item, commit or pull diff.
 In REPO by OWNER.
 ENDPOINT is the API endpoint to hit.
-Optionally also provide the commit URL."
+Optionally also provide the commit URL.
+COMMITS can be a string of a single commit hash, or an alist of
+commit-msg/commit-hash. Used to copy commit hashes using
+`fj-copy-diff-commit-hash'."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
     (fedi-http--triage
@@ -4282,7 +4293,20 @@ Optionally also provide the commit URL."
          (diff-mode)
          (keymap-local-set "b" #'fj-browse-view) ;; requires url in buf-spec
          (setq fj-buffer-spec
-               `(:url ,url :repo ,repo :owner ,owner)))))))
+               `(:url ,url :repo ,repo :owner ,owner :commits ,commits)))))))
+
+(defun fj-copy-diff-commit-hash ()
+  "Add the full commit hash of the current diff view to the kill ring."
+  ;; FIXME: merge with `fj-copy-commit-hash':
+  (interactive)
+  (let ((val (fj--get-buffer-spec :commits)))
+    (if (stringp val)
+        (prog1 (kill-new val)
+          (message (format "Copied hash %s" val)))
+      (let* ((choice (completing-read "Copy hash for commit: " val))
+             (hash (cdr (assoc choice val #'string=))))
+        (prog1 (kill-new hash)
+          (message (format "Copied hash %s" hash)))))))
 
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
