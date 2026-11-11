@@ -287,9 +287,7 @@ has to be there afterwards; a command that deleted whatever it found would
 pass `expunging-what-has-been-retrieved' above, which retrieves both of its
 two and expects an empty mailbox.
 
-The coverage for this was against the blocking path (emacs-vm/vm#822), which
-had no equivalent here.  How it is done is worth knowing and is not visible
-from outside: VM flags each UID \\Deleted and then closes the mailbox, whose
+How it is done is worth knowing and is not visible from outside: VM flags each UID \\Deleted and then closes the mailbox, whose
 implicit expunge does the deleting (RFC 3501 6.4.2).  No EXPUNGE command is
 sent, so a test looking for one would conclude nothing had happened."
   (vm-imap-mock-test--spooling
@@ -494,9 +492,7 @@ is taken off the server behind VM's back, and the list comes back to one."
 
 (ert-deftest vm-imap-mock-test-pruning-says-so-when-it-cannot-ask ()
   "With no password for the maildrop, pruning says so and forgets nothing.
-It used to go on to a blocking session, whose process variable was bound to
-nil and never assigned: `(process-buffer nil)', so that half could not run at
-all.  Nothing is remembered as pruned by a look that never happened."
+Nothing is remembered as pruned by a look that never happened."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)

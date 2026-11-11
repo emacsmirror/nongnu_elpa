@@ -710,8 +710,8 @@ depend on when it was asked."
 (defun vm-net-free-port ()
   "A local port nothing is listening on.
 Asked of the operating system by taking one and giving it back, rather than
-by trying to connect to one port after another until a connection fails --
-which is what the blocking path does, and every one of those attempts waits."
+by trying to connect to one port after another until a connection fails:
+every one of those attempts waits."
   (let* ((server (make-network-process
 		  :name " *vm-net-port*" :server t :service t
 		  :host 'local :family 'ipv4 :noquery t))
@@ -825,10 +825,10 @@ still coming up left this polling, and each poll opens a probe connection."
 (defun vm-net-pipe (session name buffer program arguments)
   "Run PROGRAM with ARGUMENTS as SESSION's connection, and answer with it.
 
-What stunnel is used through, and what the blocking path has always done with
-it: given no port to listen on, stunnel relays its standard input and output,
-so the program is the connection.  There is nothing to wait for and nothing to
-connect to -- unlike ssh, which is asked for a local port and forwards it.
+What stunnel is used through: given no port to listen on, stunnel relays its
+standard input and output, so the program is the connection.  There is
+nothing to wait for and nothing to connect to, unlike ssh, which is asked for
+a local port and forwards it.
 
 The program's diagnostics go to a buffer of their own, killed when the session
 ends.  In BUFFER they would be read as protocol.

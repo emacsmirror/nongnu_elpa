@@ -436,9 +436,8 @@ a minute."
 
 (ert-deftest vm-pop-net-test-a-maildrop-it-cannot-open-says-so ()
   "A maildrop whose password VM does not hold signals rather than pretending:
-there is nobody to ask from inside a filter, and a caller that meets it uses
-the blocking implementation, which can ask.  So does a protocol this does not
-speak."
+there is nobody to ask from inside a filter.  So does a protocol this does
+not speak."
   ;; no password and nobody to ask: the work does not start, quietly
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
                 :type 'vm-pop-net-no-password)
@@ -495,9 +494,8 @@ SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
 (ert-deftest vm-pop-net-test-a-pop-save-sends-the-deletions-without-waiting ()
   "Saving a POP folder deletes on the server without waiting for it.
 
-The blocking save also worked out what the server no longer has, which means
-downloading the maildrop's UIDs; that is the next fetch's business.  Deletions
-that do not get through stay in `vm-pop-messages-to-expunge', which is in the
+What the server no longer has is the next fetch's business.  Deletions that
+do not get through stay in `vm-pop-messages-to-expunge', which is in the
 folder file, so the next save offers them again."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
                                                     vm-pop-net-test--bob))
@@ -658,15 +656,11 @@ writing one folder is what corrupts it."
 (ert-deftest vm-pop-net-test-expunging-says-so-with-no-password ()
   "`vm-expunge-pop-messages' says so when the driver cannot start.
 
-It used to fall back to a blocking expunge, a session per maildrop with Emacs
-held for all of them, which is the second implementation this does not have
-any more.  A command that answers a keystroke with silence looks as though it
-worked, so it says what happened instead."
+A command that answers a keystroke with silence looks as though it worked, so
+it says what happened instead."
   (let ((said nil))
     (cl-letf (((symbol-function 'vm-pop-net-expunge-retrieved) (lambda () nil))
               ((symbol-function 'vm-follow-summary-cursor) #'ignore)
-              ((symbol-function 'vm-pop-expunge-entries)
-               (lambda (&rest _) (error "the blocking expunge was called")))
               ((symbol-function 'vm-inform)
                (lambda (_level format &rest args)
                  (push (apply #'format format args) said))))
@@ -1256,8 +1250,8 @@ buffer the reader happened to be in when the answer arrived."
 
 (ert-deftest vm-pop-net-test-expunging-follows-the-setting ()
   "Whether the server is told to delete what was fetched is
-`vm-pop-auto-expunge-alist' and `vm-pop-expunge-after-retrieving', the same
-two the blocking path asks.  A maildrop is named there without its password
+`vm-pop-auto-expunge-alist' and `vm-pop-expunge-after-retrieving'.  A
+maildrop is named there without its password
 but with the colon and star that stands in for it, which is what
 `vm-popdrop-sans-password' makes of it."
   (let ((vm-pop-expunge-after-retrieving t)
@@ -1368,9 +1362,7 @@ whole server timeout with \"did not start listening on port\"."
 
 (ert-deftest vm-pop-net-test-an-ssh-maildrop-waits-for-its-tunnel ()
   "A pop-ssh maildrop starts the tunnel and has no connection until it is
-listening.  The blocking path waits inside `vm-setup-ssh-tunnel', with a loop
-of connect attempts to find a free port and an `accept-process-output' for
-the tunnel to come up."
+listening."
   (let* ((vm-ssh-program "sleep")
          (vm-ssh-program-switches nil)
          (vm-ssh-remote-command "")
@@ -1523,7 +1515,7 @@ that an APOP command was sent."
 (ert-deftest vm-pop-net-test-apop-without-a-timestamp-is-an-error ()
   "REGRESSION: a server offering no timestamp is an error, not a fall back.
 Falling back to PASS would send the password in clear, which is what the
-maildrop asked not to happen; the blocking implementation refuses too."
+maildrop asked not to happen."
   (should-not (vm-pop-net-timestamp "+OK POP3 server ready"))
   (should (equal "<1896.697170952@dbc.mtview.ca.us>"
                  (vm-pop-net-timestamp
@@ -1569,7 +1561,7 @@ Ignoring the field is what made the apop downgrade possible."
           (when (buffer-live-p (vm-net-session-buffer session))
             (kill-buffer (vm-net-session-buffer session))))))))
 
-;;; What the blocking POP session's own tests used to cover (emacs-vm/vm#822)
+;;; Fetching a maildrop into a crash box (emacs-vm/vm#822)
 
 (defun vm-pop-net-test--fetched-text (mock crash)
   "Fetch from MOCK into CRASH and answer what was written there."
@@ -1611,14 +1603,9 @@ truncate anything."
   "A server with no UIDL fetches nothing, and says why.
 
 UIDL is what tells one message from another between sessions, so without it
-nothing here can say which messages have been fetched before.  The blocking
-implementation kept count by deleting each message as it took it, which is
-not something to start from a process filter and is not what a reader who
-leaves mail on the server asked for.  So this refuses and names the reason: a
-maildrop that quietly never arrives is worse than one that says why.
-
-A capability the blocking implementation had and this does not; see
-emacs-vm/vm#822."
+nothing here can say which messages have been fetched before.  So this
+refuses and names the reason: a maildrop that quietly never arrives is worse
+than one that says why."
   (vm-pop-net-test--in-a-folder-with-spool
       (mock :no-uidl t :messages (list vm-pop-net-test--alice
                                        vm-pop-net-test--bob))
@@ -1674,10 +1661,8 @@ a reader who is told it is there.  The IMAP side says the same
   "A password the server has accepted is remembered, and the next session
 does not ask for it again.
 
-Nothing wrote `vm-pop-passwords' between the blocking implementation going
-and emacs-vm/vm#922, so every session asked: two questions for every
-`vm-get-new-mail', one for the fetch and one for the expunge after it, where
-VM had asked once per Emacs session since 5.35."
+Without it every session asks: two questions for every `vm-get-new-mail',
+one for the fetch and one for the expunge after it (emacs-vm/vm#922)."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
                                                     vm-pop-net-test--bob))
     (let* ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))

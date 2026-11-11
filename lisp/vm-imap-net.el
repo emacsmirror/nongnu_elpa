@@ -239,7 +239,7 @@ called with the process buffer current, a token holding positions in it."
 
 (defun vm-imap-net-parse-response ()
   "One whole response line as its tokens, or the request the parse wants.
-An ill-formed line answers with an empty list, as the blocking reader does.
+An ill-formed line answers with an empty list.
 
 A list of tokens means the line was all here and the read point is past it.
 A request -- a function, which tokens never are -- means it was not: nothing
@@ -329,9 +329,9 @@ mechanism name stays: a report is read to find out which one was tried."
 
 (defun vm-imap-net-send (command &optional tag)
   "Send COMMAND, tagged, and note where its answer begins.
-Answers with the tag it used.  The command is echoed into the process buffer
-the way the blocking implementation echoes it, so a session's buffer reads as
-a transcript -- with a LOGIN's arguments left out of it."
+Answers with the tag it used.  The command is echoed into the process buffer,
+so a session's buffer reads as a transcript, with a LOGIN's arguments left
+out of it."
   (let ((process (get-buffer-process (current-buffer)))
 	(tag (or tag (vm-imap-net-next-tag))))
     (goto-char (point-max))
@@ -766,10 +766,8 @@ read, which is what keeps a mailbox of any size out of memory."
 (defun vm-imap-net-done-with-buffer (buffer)
   "Finish with BUFFER, a session's process buffer.
 
-Kept as a trace when `vm-imap-keep-trace-buffer' says to, as the blocking
-path keeps its own: the driver killed every session buffer the moment the
-session ended, so there was nothing left to look at afterwards -- and \"did VM
-send that delete?\" is answered by the traffic and by nothing else."
+Kept as a trace when `vm-imap-keep-trace-buffer' says to: \"did VM send that
+delete?\" is answered by the traffic and by nothing else."
   (when (buffer-live-p buffer)
     ;; nothing to keep when nothing was said: a connection that was never made
     ;; leaves an empty buffer, and keeping those is how a session that failed
@@ -879,8 +877,7 @@ The parse is called once per token -- 190,000 times to fetch 6500 messages --
 and the generators it runs inside rebuild their closures on every call from
 source, through `cconv-make-interpreted-closure'.  Measured on a mock
 server, fetching a thousand messages takes 0.8 seconds compiled and three
-minutes from source, with Emacs held for tens of seconds at a time -- which
-looks exactly like the blocking implementation VM used to have.  A reader
+minutes from source, with Emacs held for tens of seconds at a time.  A reader
 testing an uncompiled tree would draw the wrong conclusion, so VM says so
 rather than being slow silently."
   (unless (or vm-imap-net-said-it-is-uncompiled
@@ -943,8 +940,7 @@ from inside a filter."
     (when (and (equal password "*") (not preauth))
       ;; "*" means VM is to find the password rather than read it out of the
       ;; maildrop.  VM may already know it; failing that, a command may ask
-      ;; the reader, which is what the blocking path did and the only reason
-      ;; it was reached at all.
+      ;; the reader.
       (setq password
 	    (if (equal auth "xoauth2")
 		;; not `vm-imap-net-known-password', which reads the cache
@@ -960,8 +956,7 @@ from inside a filter."
 		  (and may-ask
 		       ;; `vm-imap-ok-to-ask' is nil unless something has
 		       ;; bound it, and nothing binds it on the way here:
-		       ;; requiring it meant the question was never put and
-		       ;; the blocking path asked instead
+		       ;; requiring it meant the question was never put
 		       (let ((vm-imap-ok-to-ask t))
 			 (vm-net-inform 6
 					"%s: asking for a password, VM has none"
@@ -1027,9 +1022,9 @@ from inside a filter."
 		      (list host vm-ssh-remote-command))))
 	     ((and (equal protocol "imap-ssl") vm-stunnel-program)
 	      (vm-setup-stunnel-random-data-if-needed)
-	      ;; stunnel is the connection, over its own standard input and output,
-	      ;; which is what the blocking path does with it.  Telling it to listen
-	      ;; on a local port instead asked for an option stunnel does not have,
+	      ;; stunnel is the connection, over its own standard input and output.
+	      ;; Telling it to listen on a local port instead asked for an option
+	      ;; stunnel does not have,
 	      ;; so nothing ever came up on that port and the session failed after
 	      ;; the whole tunnel timeout.
 	      (setf (vm-net-session-process session)
@@ -1134,10 +1129,9 @@ with: the connection arrived authenticated."
 (defun vm-imap-net-install-message-data (data count)
   "Put DATA, from `vm-imap-net-message-data\\=', into the folder's own tables.
 The current buffer is the folder.  What
-`vm-imap-retrieve-uid-and-flags-data\\=' installs after its own blocking
-fetch -- and having installed it, that function finds the list already there
-and asks for nothing, which is what lets the synchronisation code below run
-unchanged.
+`vm-imap-retrieve-uid-and-flags-data\\=' installs after its own fetch: having
+installed it, that function finds the list already there and asks for
+nothing, which is what lets the synchronisation code below run unchanged.
 
 The obarrays are sized for the mailbox rather than fixed at 67 buckets: a
 mailbox of 100,000 messages put 1,500 symbols in each of those buckets, and
@@ -1208,12 +1202,11 @@ UIDVALIDITY and left this message behind, and that label is permanent
 (defmacro vm-imap-net-as-folder (&rest body)
   "Run BODY saying that the current buffer is a folder.
 
-`vm-buffer-types' is VM's stack of what kind of buffer it is working in, and
-the blocking code pushes and pops it around every change of buffer so that
-`vm-buffer-type:assert' can catch a folder being written where a connection
-was meant.  The driver does not push and pop -- a generator that suspended
-between an enter and its exit would leave the stack pushed for whatever ran
-next -- so it binds it instead, which cannot be left unbalanced.
+`vm-buffer-types' is VM's stack of what kind of buffer it is working in, read
+by `vm-buffer-type:assert' to catch a folder being written where a connection
+was meant.  This binds it rather than pushing and popping: a generator that
+suspended between a push and its pop would leave the stack pushed for
+whatever ran next, and a binding cannot be left unbalanced.
 
 Without this, code the driver calls into asserted that it was in a folder
 while the stack said nothing at all: with `vm-assertion-checking-off' set to
@@ -1390,7 +1383,7 @@ save landing in the middle of a bunch used to write to the cache file -- and
 after a crash there, the next fetch had no UID for it and brought it again, so
 the reader had it twice.
 
-The cleaning up a crash box wants, in the order the blocking path did it:
+The cleaning up a crash box wants, in order:
 CRLF to LF, the separators the folder's own type wants, and the headers that
 go with them."
   (with-current-buffer holding
@@ -1544,8 +1537,7 @@ supposed to remove, arriving from the other side."
   "Give the folder's messages the flags the server says they have.
 
 The current buffer is the folder, and its UID tables have been installed by
-`vm-imap-net-install-message-data' -- the same tables the blocking
-`retrieve-attributes' step reads.  Answers with how many messages were
+`vm-imap-net-install-message-data'.  Answers with how many messages were
 touched.
 
 A message whose own changes have not reached the server is left alone: its
@@ -1579,9 +1571,9 @@ it, so it runs here rather than in `vm-imap-net-assimilate'."
 (defun vm-imap-net-expunge-locally (local-expunge-list stale-list)
   "Take out of the folder what the server no longer has.
 The current buffer is the folder.  A message whose UIDVALIDITY is stale is
-labelled rather than removed: the blocking path asks whether to expunge
-those, and there is nobody to ask from inside a filter, so the safe half of
-the choice is taken and the label says which messages it was taken for."
+labelled rather than removed: there is nobody to ask whether to expunge it
+from inside a filter, so the safe half of the choice is taken and the label
+says which messages it was taken for."
   (when local-expunge-list
     ;; gone from the server, so nothing to tell the server about
     (vm-expunge-folder :quiet t :just-these-messages local-expunge-list
@@ -1634,9 +1626,9 @@ over.  Two prefix arguments to `vm-get-new-mail' ask for it."
 	  (with-current-buffer folder
 	    (let ((known (vm-folder-imap-uid-validity)))
     	      (when (and known uid-validity (not (equal known uid-validity)))
-    		;; The blocking path asks whether to refresh the cache.  There is
-    		;; nobody to ask from inside a filter, and going on regardless would
-    		;; fetch every message again under UIDs that mean something else.
+    		;; There is nobody to ask whether to refresh the cache from inside
+    		;; a filter, and going on regardless would fetch every message
+    		;; again under UIDs that mean something else.
     		(vm-imap-normal-error
     		 "UID VALIDITY of %s has changed on the server; refresh it with vm-imap-synchronize"
     		 mailbox)))
@@ -1653,10 +1645,9 @@ over.  Two prefix arguments to `vm-get-new-mail' ask for it."
 	  ;; the folder's own changes go up before its picture of the server is
 	  ;; taken, or the flags just fetched would be written back over them
 	  (iter-yield-from (vm-imap-net-save-flags folder all-flags))
-	  ;; level 5, unlike the blocking path's 6: there Emacs is frozen and
-	  ;; the freeze is the progress report.  Here nothing looks as if it is
-	  ;; happening unless VM says so, which is what the reader who waited
-	  ;; through a first fetch of a large mailbox was left doing.
+	  ;; level 5: nothing looks as if it is happening unless VM says so,
+	  ;; which is what the reader who waited through a first fetch of a
+	  ;; large mailbox was left doing.
 	  (unless (zerop count)
 	    (vm-net-inform 5 "%s: reading the list of %d message%s on the server..."
     		       (buffer-name folder) count (if (= count 1) "" "s"))
@@ -1944,8 +1935,7 @@ reader who sets none is not told about a limit that does not touch them."
 (iter-defun vm-imap-net-save-message-flags (folder message)
   "Send MESSAGE's flags to the server, and note what it took.
 Answers t when something was sent.  The change itself is worked out in the
-folder by `vm-imap-message-flag-changes\\=', the same function the blocking
-path uses; only the sending of it is here."
+folder by `vm-imap-message-flag-changes\\='; only the sending of it is here."
   (let* ((changes (and (buffer-live-p folder)
 		       (with-current-buffer folder
 			 (vm-imap-message-flag-changes message))))
@@ -2023,8 +2013,7 @@ message until this runs, and every command that works on the current message
 would have nothing to work on."
   (with-current-buffer folder
     ;; Built before the selection below, which reads a message and alters the
-    ;; new count, as the synchronous path builds its blurb first for the same
-    ;; reason.
+    ;; new count.
     (let ((blurb (vm-arrival-blurb count)))
       ;; If the reader is still sitting where the fetch put them to keep the
       ;; folder usable, that was a guess made from part of a folder and this
@@ -2999,10 +2988,8 @@ and is left alone."
 The current buffer is the folder.
 
 Both lists the folder keeps them in: the requests, which are done, and what
-the folder remembers having retrieved, which the blocking path clears here too
--- a UID that no longer exists on the server is not a message anything should
-be told not to fetch again.  Leaving one of the two behind is how the same
-folder ends up in a different state depending on which path did the work."
+the folder remembers having retrieved.  A UID that no longer exists on the
+server is not a message anything should be told not to fetch again."
   (let ((validity (vm-folder-imap-uid-validity)))
     (setq vm-imap-retrieved-messages
 	  (seq-remove (lambda (entry)
@@ -3091,10 +3078,9 @@ is written.  Nothing is lost by that: a message whose flags did not reach the
 server still has its modification flag in the file, so the next session sends
 them again.
 
-Answers `later' when a session is already running.  That is not a nil: two
-sessions writing to one mailbox would interleave, and the blocking path the
-caller would fall back to is the wait this is here to remove.  The changes
-keep their modification flags and go up next time."
+Answers `later' when a session is already running, rather than nil: two
+sessions writing to one mailbox would interleave.  The changes keep their
+modification flags and go up next time."
   (let ((folder (current-buffer)))
     (vm-imap-net-when-free
      "sending this folder's changes"
@@ -3637,10 +3623,9 @@ everything.
 A maildrop is fetched into a local folder, which cannot go back to the server
 for a body later, so an oversize message is left where it is rather than
 fetched as its headers: that is what `vm-imap-max-message-size' says happens
-in a local folder.  The blocking path asked the reader about each one instead,
-where a reader was there to ask; nothing can be asked from inside a process
-filter, and a question per message on a maildrop of any size is not what a
-fetch should be."
+in a local folder.  Nothing can be asked from inside a process filter, and a
+question per message on a maildrop of any size is not what a fetch should
+be."
   (let ((limit (vm-imap-message-size-limit source)))
     (if (null limit)
 	(list wanted nil nil)
@@ -3821,9 +3806,8 @@ the crash box: this writes it and remembers the UIDs.
 Queued when the folder is already busy, and the answer is then `later': a
 folder with two maildrops among its spool files is asked for both, one after
 the other, and the second must not open a second session writing the same
-folder and the same cache file.  It happened -- \"a second session was started
-while IMAP movemail was running\" -- and the caller is not to fall back to the
-blocking path either, which would be the same two writers.
+folder and the same cache file.  It happened, with the message \"a second
+session was started while IMAP movemail was running\".
 
 Signals `vm-imap-net-no-password' where VM has no password yet."
   (if (vm-imap-net-busy-p)
@@ -3952,7 +3936,7 @@ say what arrived anyway."
 An imap or imap-ssl maildrop whose password VM holds -- in the maildrop, in
 its own cache, or in auth-source.  Over ssh a tunnel program has to be
 started, and preauth runs a hook; neither belongs in a timer behind the
-reader, and both would want the blocking path to ask a question."
+reader."
   (condition-case nil
       (let* ((parts (vm-parse source "\\([^:]*\\):?" 1 7))
 	     (protocol (car parts))

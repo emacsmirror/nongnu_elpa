@@ -640,9 +640,6 @@ of the current folder, or nil if none has been recorded."
 ;; vm-net.el, and what is left in this file is the folder-side work they
 ;; call: maildrop specs, cache file names, passwords, the flag arithmetic
 ;; and the response parsing.
-;;
-;; There was an index of the blocking session functions here.  It went with
-;; them (emacs-vm/vm#822).
 ;; --------------------------------------------------------------------
 
 
@@ -1034,8 +1031,7 @@ server knows M by, the flags VM last saw it with, and the flags to add and
 to remove.  MESSAGE-NUM nil means the server does not have the message and
 there is nothing to do.
 
-Folder-side and no I/O, so both the blocking and the non-blocking paths
-compute the change the same way and only the sending of it differs."
+Folder-side and no I/O: working out the change is here, sending it is not."
   (let* ((uid (vm-imap-uid-of m))
 	 (uid-key1 (intern uid (vm-folder-imap-uid-obarray)))
 	 (uid-key2 (intern-soft uid (vm-folder-imap-flags-obarray)))
@@ -1411,10 +1407,9 @@ See Info node `(elisp)Programmed Completion'."
       (setq spec (vm-imap-spec-for-account account))
       (when (and (null mailbox-list) spec)
 	;; Completion has to answer with the names it has, so this is the one
-	;; place that waits on purpose.  It waits on the driver rather than the
-	;; blocking implementation: one connection, made and read the way every
-	;; other path here now does it, and `accept-process-output' leaves C-g
-	;; working.  What is asked for once is cached, so the next TAB is
+	;; place that waits on purpose.  It waits on the driver: one connection,
+	;; made and read the way every other path here does it, and
+	;; `accept-process-output' leaves C-g working.  What is asked for once is cached, so the next TAB is
 	;; instant.
 	(vm-inform 6 "Asking %s what folders it has..." account)
 	(setq mailbox-list (vm-imap-net-mailbox-names spec selectable-only))
