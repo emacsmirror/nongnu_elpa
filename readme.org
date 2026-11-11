@@ -285,8 +285,11 @@ Diffs (as commits and PRs):
 | C-c S-RET | fj-compose-remove-milestone      | Remove milestone from item being composed.                                |
 | C-c C-S-u | fj-compose-remove-upload         | Remove attachment file from item being composed.                          |
 | C-c C-c   | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.                     |
+|           | fj-copy-commit-hash              | Copy the commit hash if there is a commit-ref at point.                   |
+|           | fj-copy-diff-commit-hash         | Add the full commit hash of the current diff view to the kill ring.       |
 | C         | fj-copy-item-url                 | Copy URL of current item, either issue or PR.                             |
 |           | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                          |
+|           | fj-copy-pull-commit-sha          | Copy a commit's SHA from a pull request.                                  |
 | c         | fj-create-issue                  | Create issue in current repo or repo at point in tabulated listing.       |
 |           | fj-create-milestone              | Create a milestone for REPO by OWNER.                                     |
 |           | fj-create-token                  | Create an access token for `fj-user' on `fj-host'.                        |
@@ -363,8 +366,10 @@ Diffs (as commits and PRs):
 |           | fj-owned-issues-tl-mode          | Major mode for browsing a tabulated list of issues.                       |
 | ,         | fj-prev-page                     | Load the previous page.                                                   |
 | <backtab> | fj-prev-tab-item                 | Jump to prev tab item.                                                    |
+|           | fj-pull-commit-log               | Render log of commits pull request currently being viewed.                |
 |           | fj-pull-req-comment              | Add comment to PULL in REPO.                                              |
 |           | fj-remove-reaction               | Remove a reaction from issue, PR or comment at point.                     |
+|           | fj-remove-request-reviewers      | Remove reviewer requests for the current PR.                              |
 | L         | fj-repo-commit-log               | Render log of commits for REPO by OWNER.                                  |
 | u, L      | fj-repo-copy-clone-url           | Add the clone_url of repo at point to the kill ring.                      |
 |           | fj-repo-create                   | Create a new repo.                                                        |
@@ -380,6 +385,7 @@ Diffs (as commits and PRs):
 |           | fj-repo-tl-mode                  | Mode for displaying a tabulated list of repo search results.              |
 | R         | fj-repo-update-settings          | A transient for setting current repo settings.                            |
 |           | fj-repo-watchers                 | Render watchers for REPO by OWNER.                                        |
+|           | fj-request-reviewers             | Request reviewers for the current PR.                                     |
 | *         | fj-star-repo                     | Star or UNSTAR current repo from tabulated user repos listing.            |
 |           | fj-stargazers-completing         | Prompt for a repo stargazer, and view their repos.                        |
 |           | fj-starred-repos                 | List your starred repos.                                                  |
@@ -392,6 +398,7 @@ Diffs (as commits and PRs):
 |           | fj-update-repo                   | Update current repo settings.                                             |
 |           | fj-update-topics                 | Update repo topics on the server.                                         |
 |           | fj-update-user-settings          | Update current user settings on the server.                               |
+|           | fj-url-lookup                    | Try to load URL in fj.el, else `shr-browse-url'.                          |
 |           | fj-user-followers                | View users who follow USER or `fj-user'.                                  |
 |           | fj-user-following                | View users that USER or `fj-user' is following.                           |
 |           | fj-user-repo-tl-mode             | Mode for displaying a tabulated list of user repos.                       |
