@@ -4254,10 +4254,10 @@ Optionally, provide the commit's SHA and URL."
   "View a diff of the entire current PR."
   (interactive)
   (fj-with-pull
-   (fj-destructure-buf-spec (repo owner item)
+   (fj-destructure-buf-spec (repo owner item url)
      (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
                               owner repo item)))
-       (fj-view-item-diff endpoint repo owner)))))
+       (fj-view-item-diff endpoint repo owner url)))))
 
 (defun fj-view-item-diff (endpoint &optional repo owner url)
   "View a diff of an item, commit or pull diff.
