@@ -781,9 +781,9 @@ used in a link function. For an example of regexes' subgroups, see
                  (beg (match-beginning subexp))
                  (end (match-end subexp))
                  (item-str (buffer-substring-no-properties beg end))
-                 (domain (when domain-subexp ; fedi-post-handle-regex
-                           (buffer-substring-no-properties (match-beginning domain-subexp)
-                                                           (match-end domain-subexp))))
+                 ;; (domain (when domain-subexp ; fedi-post-handle-regex
+                 ;;           (buffer-substring-no-properties (match-beginning domain-subexp)
+                 ;;                                           (match-end domain-subexp))))
                  (link (cond ((eq type 'shr)
                               item-str) ;; IF TYPE SHR: USE MATCHED URL
                              ((functionp link)
