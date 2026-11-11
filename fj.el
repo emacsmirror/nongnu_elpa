@@ -4329,19 +4329,6 @@ commit-msg/commit-hash. Used to copy commit hashes using
          (setq fj-buffer-spec
                `(:url ,url :repo ,repo :owner ,owner :item ,item)))))))
 
-(defun fj-copy-diff-commit-hash ()
-  "Add the full commit hash of the current diff view to the kill ring."
-  ;; FIXME: merge with `fj-copy-commit-hash':
-  (interactive)
-  (let ((val (fj--get-buffer-spec :commits)))
-    (if (stringp val)
-        (prog1 (kill-new val)
-          (message (format "Copied hash %s" val)))
-      (let* ((choice (completing-read "Copy hash for commit: " val))
-             (hash (cdr (assoc choice val #'string=))))
-        (prog1 (kill-new hash)
-          (message (format "Copied hash %s" hash)))))))
-
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
   (interactive)
@@ -4605,16 +4592,6 @@ SHA is the full commit hash."
     (fj-format-tl-title
      (url-unhex-string (fj-get-html-link-desc body)))
     'commit-ref sha nil :noface)))
-
-(defun fj-copy-commit-hash ()
-  "Copy the commit hash if there is a commit-ref at point."
-  (interactive)
-  (let ((type (fj--property 'type)))
-    (when (or (eq 'commit-ref type)
-              (eq 'commit type))
-      (let ((ref (fj--property 'item)))
-        (kill-new ref)
-        (message (format "Commit ref copied: %s" ref))))))
 
 (defun fj-format-change-target (format-str user old new)
   "Format a change-target-branch timeline item.
