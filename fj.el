@@ -3704,6 +3704,22 @@ RELOAD mean we reloaded."
                (format "%s:%s".head.repo.full_name .head.label)
                'face 'fj-name-face)
               (propertize .base.label 'face 'fj-name-face)))
+           (when pull-p
+             (concat
+              "\nPull request:"
+              (when (eq .draft t)
+                (concat
+                 " "
+                 (propertize "Draft"
+                             'face '(highlight :box t)
+                             'help-echo "This PR is marked as a draft")))
+              (when (and (eq .allow_maintainer_edit t)
+                         (string= fj-user owner))
+                (concat
+                 " "
+                 (propertize "Editable"
+                             'face '(highlight :box t)
+                             'help-echo "You can contribute to this PR")))))
            "\n\n"
            ;; item byline:
            ;; FIXME: :extend t doesn't work here whatever i do
