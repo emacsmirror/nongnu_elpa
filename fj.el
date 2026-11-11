@@ -566,24 +566,30 @@ Works in issue view mode or in issues tl."
 (defun fj-copy-pull-commit-sha ()
   "Copy a commit's SHA from a pull request."
   (interactive)
-  (fedi-do-item-completing
-   #'fj-get-pull-commits
-   (lambda (data)
-     (mapcar
-      (lambda (commit)
-        (let-alist commit
-          (list
-           (string-join
-            (list
-             (car (split-string (alist-get 'message .commit) "\n"))
-             .sha)
-            " ")
-           .sha)))
-      data))
-   "Copy commit SHA: "
-   (lambda (sha _)
-     (kill-new sha)
-     (message "Copied: %s" sha))))
+  (let ((type (fj--property 'type)))
+    (if (or (eq 'commit-ref type)
+            (eq 'commit type))
+        (let ((ref (fj--property 'item)))
+          (kill-new ref)
+          (message (format "Copied: %s" ref)))
+      (fedi-do-item-completing
+       #'fj-get-pull-commits
+       (lambda (data)
+         (mapcar
+          (lambda (commit)
+            (let-alist commit
+              (list
+               (string-join
+                (list
+                 (car (split-string (alist-get 'message .commit) "\n"))
+                 .sha)
+                " ")
+               .sha)))
+          data))
+       "Copy commit SHA: "
+       (lambda (sha _)
+         (kill-new sha)
+         (message "Copied: %s" sha))))))
 
 (defun fj--issue-right-align-str (str)
   "Right align STR and return it."
