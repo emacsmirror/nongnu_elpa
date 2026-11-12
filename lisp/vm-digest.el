@@ -266,9 +266,9 @@ all of them will be burst."
 		    (insert-buffer-substring work-buffer)
 		    (vm-restore-buffer-modified-p 
 		     old-buffer-modified-p folder-buffer)
-		    ;; return non-nil so caller knows we found some messages
+		    ;; return non-nil so the caller can tell we found some messages
 		    t ))
-		 ;; return nil so the caller knows we didn't find anything
+		 ;; return nil so the caller can tell we found nothing
 		 (t nil))))
 	 (and work-buffer (kill-buffer work-buffer)))))
 
@@ -587,9 +587,9 @@ RFC 1153.  Otherwise assume RFC 934 digests."
 		      (insert-buffer-substring work-buffer)
 		      (vm-restore-buffer-modified-p 
 		       old-buffer-modified-p folder-buffer)
-		      ;; return non-nil so caller knows we found some messages
+		      ;; return non-nil so the caller can tell we found some messages
 		      t ))
-		   ;; return nil so the caller knows we didn't find anything
+		   ;; return nil so the caller can tell we found nothing
 		   (t nil)))
 	 (when work-buffer (kill-buffer work-buffer)))))))
 

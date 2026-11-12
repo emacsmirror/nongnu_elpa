@@ -217,7 +217,7 @@ is what takes them out, and it is the only reader that may."
 
 (defun vm-imap-net-token-text (token)
   "The text TOKEN stands for, read from the process buffer.
-A quoted string's backslash escapes are undone; a literal carries its octets
+A quoted string's backslash escapes are undone; a literal holds its octets
 as they came and has none, so only the quoted ones are touched.  Must be
 called with the process buffer current, a token holding positions in it."
   (let ((text (buffer-substring (nth 1 token) (nth 2 token))))
@@ -239,7 +239,7 @@ called with the process buffer current, a token holding positions in it."
 
 (defun vm-imap-net-parse-response ()
   "One whole response line as its tokens, or the request the parse wants.
-An ill-formed line answers with an empty list.
+An ill-formed line returns an empty list.
 
 A list of tokens means the line was all here and the read point is past it.
 A request -- a function, which tokens never are -- means it was not: nothing
@@ -312,10 +312,10 @@ being waited for, which is what `vm-imap-response-matches\\=' reads out of
 	(format "vm%d" (setq vm-imap-net-tag (1+ vm-imap-net-tag)))))
 
 (defun vm-imap-net-redact (command)
-  "COMMAND with whatever credential it carries left out, for the trace.
+  "COMMAND with whatever credential it contains left out, for the trace.
 `vm-imap-submit-bug-report' sends the session trace, so anything echoed into
-the process buffer leaves with it.  LOGIN carries the password.  AUTHENTICATE
-carries the SASL initial response, which for XOAUTH2 is a bearer token good
+the process buffer leaves with it.  LOGIN contains the password.  AUTHENTICATE
+contains the SASL initial response, which for XOAUTH2 is a bearer token good
 for about an hour and was echoed in full until emacs-vm/vm#915.  The
 mechanism name stays: a report is read to find out which one was tried."
   (let ((case-fold-search t))
@@ -355,7 +355,7 @@ credential."
   "Where `vm-imap-net-command' is to report its progress, or nil.
 A list (FOLDER PHASE TOTAL): the folder whose mode line says so, the word for
 what is being done, and how many responses are expected.  Bound around a
-command that answers one line per message, which is the only kind worth
+command whose reply is one line per message, which is the only kind worth
 counting.")
 
 (iter-defun vm-imap-net-command (command &optional description)
@@ -385,9 +385,9 @@ order."
       (when (> (- (float-time) worked) vm-net--slice)
 	(setq worked (float-time))
 	(iter-yield (vm-net-request-now)))
-      ;; A command that answers one line per message -- the FETCH of every
-      ;; UID and flag, which is the long silence at the start of a fetch of a
-      ;; big mailbox -- says how far it has got.  Every hundredth, because the
+      ;; A command whose reply is one line per message, the FETCH of every
+      ;; UID and flag that is the long silence at the start of a fetch of a
+      ;; big mailbox, reports how far it has got.  Every hundredth, because the
       ;; mode line is redrawn for each one and six thousand redraws are worth
       ;; nothing to anybody.
       (when (and vm-imap-net-counting (zerop (% counted 100)))
@@ -476,9 +476,9 @@ fails without anybody being asked anything."
 (declare-function vm-imap-protocol-error "vm-imap" (&rest args))
 
 (iter-defun vm-imap-net-authenticate-cram-md5 (user password)
-  "Log in as USER with CRAM-MD5, and answer what the server can do afterwards.
+  "Log in as USER with CRAM-MD5, and return what the server can do afterwards.
 
-RFC 2195: the server answers the AUTHENTICATE with a continuation line
+RFC 2195: the server replies to the AUTHENTICATE with a continuation line
 holding a base64 challenge, and the client sends back the user name and the
 HMAC-MD5 of that challenge under the password, base64 again, as a line of
 its own with no tag.
@@ -489,7 +489,7 @@ accented one (emacs-vm/vm#772)."
   (let ((tag (vm-imap-net-send "AUTHENTICATE CRAM-MD5"))
 	(challenge nil)
 	response)
-    ;; The server answers with a continuation line, not a tagged one, so this
+    ;; The server replies with a continuation line, not a tagged one, so this
     ;; reads a single response rather than going through
     ;; `vm-imap-net-command', which reads until a tag that cannot come until
     ;; the answer has been sent.
@@ -527,7 +527,7 @@ RFC 3501 has.
 A refused token does not arrive as a plain NO.  The server sends a
 continuation line holding base64 JSON saying why, and waits for a line from
 the client before it will send the tagged NO: an empty one is what gets the
-error out of it.  A client that answers nothing here waits for a tag that is
+error out of it.  A client that sends nothing here waits for a tag that is
 not coming.
 
 The token is not remembered.  The other two mechanisms call
@@ -638,10 +638,10 @@ PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
 
 (iter-defun vm-imap-net-message-data (first last)
   "Ask for the UID, size and flags of the messages FIRST to LAST.
-Answers an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
-`vm-imap-get-message-data-list\\=' answers, newest first.
+Returns an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
+`vm-imap-get-message-data-list\\=' returns, newest first.
 
-A response with no UID is not an answer to this: a server sends a message\\='s
+A response with no UID is not a reply to this: a server sends a message\\='s
 flags on its own account when somebody else changes them (RFC 3501 7.4.1), and
 taking that for message data put an entry with no UID in the folder\\='s tables
 -- \"Wrong type argument: stringp, nil\", and no mail.  VM reads the flags it
@@ -692,10 +692,10 @@ any order, and the responses have to be told apart (issue #185)."
 
 (defun vm-imap-net-fetch-message-text (response)
   "Where in the process buffer RESPONSE's message is: (UID START END).
-Answers nil for a FETCH that carries no message: a server sends one of its own
-accord to report a message's flags, and that is not an answer to a fetch of
-message text.  Signals for one that carries a message but no UID, there being
-no saying which message it would be."
+Returns nil for a FETCH that holds no message: a server sends one of its own
+accord to report a message's flags, and that is not a reply to a fetch of
+message text.  Signals for one that holds a message but no UID, there being
+no way to tell which message it would be."
   (let* ((parts (vm-imap-fetch-response-parts (cdr (nth 3 response))))
 	 (uid (car parts))
 	 (text (cdr parts)))
@@ -793,7 +793,7 @@ whether it ever will be, and its timeout covers a connect that never
 completes.
 
 TLS goes through `open-network-stream', which is the only thing that does
-it: `make-network-process' has no TLS of its own and answers `:type
+it: `make-network-process' has no TLS of its own and rejects `:type
 \\='tls' with \"Unsupported connection type\", so every imap-ssl maildrop
 without an stunnel failed there before it had sent a byte.  It takes
 `:nowait' too, and negotiates as the connection comes up."
@@ -810,9 +810,9 @@ without an stunnel failed there before it had sent a byte.  It takes
 (defun vm-imap-net-tunnelled (session name port buffer program arguments)
   "Run PROGRAM and attach SESSION to PORT once it is listening.
 For a maildrop reached over ssh, which is told to forward a local port.  The
-program is started, a timer looks until the port answers, and the session
-starts then -- so a tunnel that takes two seconds to come up costs those two
-seconds to the mail, not to Emacs."
+program is started, a timer polls until the port accepts a connection, and
+the session starts then, so a tunnel that takes two seconds to come up costs
+those two seconds to the mail, not to Emacs."
   (vm-net-tunnel
    session program arguments port
    (or vm-imap-server-timeout 30)
@@ -822,7 +822,7 @@ seconds to the mail, not to Emacs."
 		      (vm-imap-net-connect name "127.0.0.1" port buffer))))))
 
 (defun vm-imap-net-preauth-process (host port mailbox user password)
-  "What `vm-imap-session-preauth-hook' answers with, or nil.
+  "What `vm-imap-session-preauth-hook' returns, or nil.
 The hook is the user's own function and makes the connection itself; VM's
 half of a preauthenticated session is everything after that, which is what
 the driver runs."
@@ -926,12 +926,12 @@ from inside a filter."
 	 (preauth (equal auth "preauth")))
     (vm-imap-net-check-compiled)
     (unless (member protocol '("imap" "imap-ssl" "imap-ssh"))
-      (error (concat "%s is not an IMAP maildrop type VM knows."
+      (error (concat "%s is not an IMAP maildrop type VM supports."
 		     "  The types are imap, imap-ssl and imap-ssh;"
 		     " M-x vm-check-configuration checks every maildrop")
 	     protocol))
     (unless (member auth '("login" "cram-md5" "xoauth2" "preauth"))
-      (error (concat "%s is not an IMAP authentication VM knows."
+      (error (concat "%s is not an IMAP authentication VM supports."
 		     "  Write login, cram-md5, xoauth2 or preauth in the"
 		     " maildrop")
 	     (or auth "no authentication")))
@@ -997,7 +997,7 @@ from inside a filter."
 	(setq vm-imap-net-auth auth))
       ;; The buffer goes with a connection that was never made: a host that
       ;; does not resolve, an stunnel that is not installed, a preauth hook
-      ;; that answers with nothing.  Left behind, one accumulated per attempt.
+      ;; that returns nothing.  Left behind, one accumulated per attempt.
       (unwind-protect
 	  (progn
 	    (cond
@@ -1239,7 +1239,7 @@ visiting an IMAP folder brought in no messages."
 	  (nth 2 sync))))
 
 (defvar vm-imap-net-held-uids nil
-  "The table `vm-imap-net-uids-held\\=' answers with, or nil for none yet.
+  "The table `vm-imap-net-uids-held\\=' returns, or nil for none yet.
 Buffer-local to the folder.")
 (make-variable-buffer-local 'vm-imap-net-held-uids)
 
@@ -1432,7 +1432,7 @@ folder part way through a bunch."
 ENTRIES is (UID SEQUENCE-NUMBER HEADERS-ONLY) per message, as the plan made
 them; UIDS is what the server actually answered for.  Signals for a UID that
 was not asked for: a message in the folder is about to be given that UID, and
-one that came from nowhere the plan knows about is not a message this folder
+one that came from nowhere in the plan is not a message this folder
 can account for."
   (mapcar (lambda (uid)
 	    (or (assoc uid entries)
@@ -1472,8 +1472,8 @@ not assumed.
 Called once per bunch as the fetch runs, not once at the end.  The work is
 the same either way but the pieces are small: taking two thousand messages in
 at once, threading them and rebuilding the summary, is several seconds in
-which Emacs answers nothing -- which is the freeze the conversion was
-supposed to remove, arriving from the other side."
+which Emacs does not respond: the freeze the conversion was supposed to
+remove, arriving from the other side."
   (setq vm-spooled-mail-waiting nil)
   (vm-set-folder-imap-retrieved-count (vm-folder-imap-mailbox-count))
   (intern (buffer-name) vm-buffers-needing-display-update)
@@ -1723,9 +1723,9 @@ over.  Two prefix arguments to `vm-get-new-mail' ask for it."
 		   uid-validity))
     		(setq retrieved (+ retrieved count))
 		(vm-imap-net-note-progress folder retrieved (length retrieve-list))
-		;; level 6, so it is logged and not shown: the mode line carries the
+		;; level 6, so it is logged and not shown: the mode line shows the
 		;; count live, and a line per bunch in the echo area is in the way of
-		;; whoever is using Emacs while the fetch runs -- which is the point
+		;; whoever is using Emacs while the fetch runs, which is the point
 		;; of the fetch not freezing them out.  The start and the end are
 		;; said.
 		(vm-net-inform 6 "%s: %d of %d messages retrieved"
@@ -1758,17 +1758,17 @@ over.  Two prefix arguments to `vm-get-new-mail' ask for it."
 (declare-function vm-imap-fetch-response-flags "vm-imap" (response))
 
 (iter-defun vm-imap-net-store-flags-1 (sign uid flags)
-  "Send one UID STORE of FLAGS, and read its answer.
+  "Send one UID STORE of FLAGS, and read its reply.
 SIGN is \"+\" or \"-\" and UID the message's UID.  Signals
-`vm-imap-normal-error\\=' if the server refuses the command.
+`vm-imap-normal-error\\=' if the server rejects the command.
 
-Answers with (t . FLAGS), the flags the server reported the message to have
+Returns (t . FLAGS), the flags the server reported the message to have
 afterwards, or nil where it reported nothing.  The two differ: a message left
 with no flags reports an empty list, which is the case this is here to catch,
-so \"none\" and \"did not say\" cannot share a value.  The answer costs a
+so \"none\" and \"not reported\" cannot share a value.  The reply costs a
 response line per message, so it is asked for only where there is something to
 check.  A store of nothing but the protocol's own flags uses `.SILENT\\=' and
-asks nothing; one carrying a keyword does not, a keyword being what a server
+asks nothing; one containing a keyword does not, a keyword being what a server
 may take and discard (emacs-vm/vm#601).
 
 By UID and not by sequence number.  The numbers VM holds are the ones the
@@ -1819,13 +1819,13 @@ a mailbox can hold, and a mailbox that gains the ability keeps working."
 
 (iter-defun vm-imap-net-store-flags (sign uid flags)
   "Store FLAGS, one command if the server will take them, singly if not.
-Answers with the flags it accepted.
+Returns the flags it accepted.
 
-A server need not accept every keyword, and Exchange refuses the whole STORE
-when it meets one it does not know, so a single unknown keyword would
+A server need not accept every keyword, and Exchange rejects the whole STORE
+when it meets one it does not recognise, so a single unknown keyword would
 otherwise stop \\Deleted and everything else in the same command from being
-stored (issue #391).  What is refused on its own is remembered in
-`vm-imap-refused-flags\\=' and not offered again this session; a refusal of
+stored (issue #391).  What is rejected on its own is remembered in
+`vm-imap-refused-flags\\=' and not sent again this session; a refusal of
 every flag is re-signalled, which leaves the message pending for a later try
 (issue #270)."
   (let ((wanted (seq-remove (lambda (flag) (member flag vm-imap-refused-flags))
@@ -1861,7 +1861,7 @@ every flag is re-signalled, which leaves the message pending for a later try
 			 (push flag vm-imap-refused-flags))
 		(push flag accepted))))
 	  (when (and refused (cdr wanted))
-	    (vm-net-warn 1 "IMAP server refuses the flag%s %s; not sending %s again"
+	    (vm-net-warn 1 "IMAP server rejects the flag%s %s; not sending %s again"
 		     (if (cdr refused) "s" "")
 		     (mapconcat #'identity (reverse refused) ", ")
 		     (if (cdr refused) "them" "it")))
@@ -1869,7 +1869,7 @@ every flag is re-signalled, which leaves the message pending for a later try
 	    ;; the single flag that was refused, remembered without a second ask
 	    (setq refused wanted)
 	    (setq vm-imap-refused-flags (append wanted vm-imap-refused-flags))
-	    (vm-net-warn 1 "IMAP server refuses the flag %s; not sending it again"
+	    (vm-net-warn 1 "IMAP server rejects the flag %s; not sending it again"
 		     (car wanted)))
 	  (unless accepted
 	    (setq failure error-data)))))
@@ -1899,21 +1899,21 @@ that did not say."
         (and (member "\\*" permanent) t))))
 
 (defun vm-imap-net-tell-about-keywords (folder flags)
-  "Say once that FOLDER's server will not keep the keywords in FLAGS.
+  "Report once that FOLDER's server will not keep the keywords in FLAGS.
 
-A server that does not advertise `\\*' in PERMANENTFLAGS is saying it keeps
-no keywords of its own.  It takes the STORE all the same and answers OK, so
-nothing here fails and nothing is refused: the label is simply not there the
+A server that does not advertise `\\*' in PERMANENTFLAGS indicates that it
+keeps no keywords of its own.  It takes the STORE all the same and returns OK,
+so nothing here fails and nothing is rejected: the label is simply not there the
 next time the mailbox is read.  Gmail is such a server, which is
 emacs-vm/vm#601.
 
-Worded as what the server said rather than as a certainty, because
+Worded as what the server advertised rather than as a certainty, because
 PERMANENTFLAGS can be wrong both ways: a server may leave a keyword out of it
 and store the keyword anyway, or advertise `\\*' and keep nothing.  That is
 why it warns and changes nothing.
 
-`vm-imap-net-note-dropped-flags' says the same thing after the fact, having seen
-a keyword come back missing.  This says it at the moment the label is sent,
+`vm-imap-net-note-dropped-flags' reports the same thing after the fact, having
+seen a keyword come back missing.  This reports it as the label is sent,
 which is where the reader still has the label in front of them.
 
 Said where a label is actually at risk rather than at every visit, so a
@@ -1970,7 +1970,7 @@ folder by `vm-imap-message-flag-changes\\='; only the sending of it is here."
 
 (iter-defun vm-imap-net-save-flags (folder &optional all)
   "Send the flags of every message in FOLDER whose own have changed.
-Answers with how many were sent.  A message the server refuses is counted as
+Returns how many were sent.  A message the server rejects is counted as
 an error and left with its modification flag set, so the next synchronisation
 tries it again, and the rest are still sent.
 
@@ -2117,7 +2117,7 @@ The folder buffer, its summary and its presentation all show it: a reader
 looking at the summary is looking at a folder that is being written into, and
 the folder buffer may not be on screen at all.  What is queued is counted, so
 \" IMAP fetch +2\" is a fetch running with two things waiting for it, and how
-far it has got is there once it knows: \" fetching 24/340\"."
+far it has got appears once the total is known: \" fetching 24/340\"."
   (let* ((session vm-imap-net-session)
 	 (running (and session (vm-net-session-live-p session)
 		       (vm-net-session-doing (vm-net-session-name session))))
@@ -2339,11 +2339,11 @@ They must all be in one folder.  Nil means nothing was started, VM having no
 password for the maildrop yet.
 
 With a session already running on the folder this waits for it rather than
-opening a second connection into the same buffer, and answers `later\\=': the
+opening a second connection into the same buffer, and returns `later\\=': the
 bodies arrive when the fetch in front of them is done.
 
 Each message is marked as no longer needing its body only when the body is
-there, so a message the server did not answer for is asked for again rather
+there, so a message the server did not reply for is asked for again rather
 than left empty."
   (let ((folder (vm-buffer-of (car messages))))
     (with-current-buffer folder
@@ -2402,11 +2402,11 @@ a message with an eight-bit header or body went that way (#887)."
 
 The system flags, and the labels and the attributes that travel as keywords:
 `filed', `written', `forwarded' and `redistributed' are keywords on the
-sync path too, so a saved copy carries what a synchronised message carries
+sync path too, so a saved copy has what a synchronised message has
 (emacs-vm/vm#828).
 
-Which of the keywords are sent is the destination mailbox's to say, in its
-PERMANENTFLAGS; `vm-imap-net-flags-a-mailbox-takes' decides it.  An APPEND
+Which of the keywords are sent is stated by the destination mailbox, in its
+PERMANENTFLAGS; `vm-imap-net-flags-a-mailbox-takes' applies it.  An APPEND
 naming a flag the server does not support can be answered NO, and that loses
 the copy rather than the flag.
 
@@ -2442,7 +2442,7 @@ server that did not say, so everything goes."
 
 (iter-defun vm-imap-net-append (mailbox text flags)
   "APPEND TEXT to MAILBOX with FLAGS, as a literal.
-The server answers the command line with a `+' before the octets are sent,
+The server replies to the command line with a `+' before the octets are sent,
 which is the one place IMAP asks the client to wait for permission to
 speak."
   (vm-imap-net-send (format "APPEND %s %s {%d}"
@@ -2470,14 +2470,14 @@ speak."
   t)
 
 (iter-defun vm-imap-net-mailbox-permanent-flags (mailbox)
-  "What MAILBOX says it keeps, or nil where it would not say.
+  "What MAILBOX advertises that it keeps, or nil where it advertises nothing.
 EXAMINE rather than SELECT: nothing here writes to the mailbox, and this
 session is the save's own, so selecting in it takes no folder's mailbox
-away.  A mailbox that cannot be examined answers nil, which sends the flags
+away.  A mailbox that cannot be examined returns nil, which sends the flags
 a server is obliged to keep and no others.
 
 A named variable, and not `(condition-case nil ...)': inside an `iter-defun'
-whose protected form yields, that answers with the error object rather than
+whose protected form yields, that returns the error object rather than
 with the handler's value, which is generator.el's CPS transform and not what
 the same code means outside one.  A mailbox that could not be
 examined therefore looked like one that keeps no keywords, and every label
@@ -2487,12 +2487,12 @@ was dropped from the APPEND (emacs-vm/vm#889)."
     (vm-imap-normal-error nil)))
 
 (iter-defun vm-imap-net-save (session user password mailbox messages)
-  "Log in and APPEND each of MESSAGES to MAILBOX, and answer with how many.
-The mailbox is created if the server does not have it, its refusal to create
+  "Log in and APPEND each of MESSAGES to MAILBOX, and return how many.
+The mailbox is created if the server does not have it, a rejected CREATE of
 one it already has being no reason to stop.
 
-Each message carries the flags it was read with, less the keywords the
-mailbox says it will not keep: a refused APPEND loses the copy rather than
+Each message is sent with the flags it was read with, less the keywords the
+mailbox will not keep: a rejected APPEND loses the copy rather than
 the flag, so what the destination takes is asked before anything is sent
 (emacs-vm/vm#828)."
   (unwind-protect
@@ -2615,9 +2615,9 @@ the directories of a hierarchy and not mailboxes to be read."
     (nreverse names)))
 
 (iter-defun vm-imap-net-mailbox-status (mailbox)
-  "Answer with (MESSAGES RECENT) for MAILBOX, or nil if the server will not say.
+  "Return (MESSAGES RECENT) for MAILBOX, or nil if the server does not report them.
 A mailbox that cannot be asked about is not an error worth stopping a listing
-for: a server refuses STATUS on a name it has just listed often enough."
+for: a server rejects STATUS on a name it has just listed often enough."
   (let ((lines nil)
 	(counts nil)
 	(refused nil))
@@ -2789,11 +2789,11 @@ whether it started."
 
 GROUPS is (SOURCE . UIDS) per maildrop.  EACH is called in FOLDER with the
 source, the UID validity, the UIDs deleted and the UIDs the mailbox did not
-have, as each maildrop answers, so that the folder forgets them then rather
+have, as each maildrop replies, so that the folder forgets them then rather
 than at the end; DONE is called with the maildrops that gave trouble, newest
 first, when there are no more.
 
-Answers whether the first maildrop started.  Nil means nothing was started, VM
+Returns whether the first maildrop started.  Nil means nothing was started, VM
 having no password for that one yet, and no maildrop after it is answered for
 either: half an expunge is worse than none.
 
@@ -2928,10 +2928,10 @@ Nil means nothing was sent, VM having no password for the maildrop yet."
 
 (defun vm-imap-net-forget-folder-cache (spec)
   "Forget what SPEC's account was last known to hold.
-`vm-imap-account-folder-cache' is what folder-name completion answers from,
+`vm-imap-account-folder-cache' is what folder-name completion reads from,
 and it is filled once per account.  Anything that makes a mailbox, or
-unmakes one, has to say so or completion goes on describing the account as
-it was: a folder saved into for the first time was not offered afterwards
+unmakes one, has to clear it or completion goes on describing the account as
+it was: a folder saved into for the first time was not listed afterwards
 until `vm-list-imap-folders' was run by hand (emacs-vm/vm#920)."
   (let ((account (vm-imap-account-name-for-spec spec)))
     (setq vm-imap-account-folder-cache
@@ -3323,11 +3323,11 @@ arguments to `vm-get-new-mail' ask for.
 Nil means nothing was started: VM has no password for the maildrop and
 nobody can be asked for one from here.  `started' means the fetch is under
 way and has not happened yet: this returns before it does, so the folder is
-usable while it runs and says what arrived when it lands.
+usable while it runs and reports what arrived when it lands.
 
-`started' and not t, because the caller says what the folder holds when this
-answers and would otherwise say what it held before the fetch -- a visit that
-reported the cached count as though the fetch were done, which reads as
+`started' and not t, because the caller reports what the folder holds when
+this returns and would otherwise report what it held before the fetch: a visit
+that reported the cached count as though the fetch were done, which reads as
 nothing having happened (emacs-vm/vm#825).
 
 A folder already fetching is left to finish.  The mail check runs from a
@@ -3410,7 +3410,7 @@ travels to Emacs and back."
 			  (format "CREATE %s"
 				  (vm-imap-quote-mailbox-name mailbox))
 			  "CREATE"))
-      ;; CREATE of a mailbox that exists answers NO, which is not an error
+      ;; CREATE of a mailbox that exists returns NO, which is not an error
       ;; here (issue #690)
       (vm-imap-normal-error (setq error-data caught)))
     (ignore error-data))
@@ -3551,8 +3551,8 @@ password for the target yet.
 COUNT is what the command was given, for the deletion afterwards.
 
 The messages are flagged filed when the server has taken them, not when the
-command was typed: a save that the server refuses must not leave a folder
-saying it was saved."
+command was typed: a save the server rejects must not leave a folder
+marked as saved."
   (let ((folder (current-buffer)))
     (and (vm-imap-net-save-to-folder
 	  target messages
@@ -3576,7 +3576,7 @@ saying it was saved."
 	      ;; The save sends its own CREATE, so the mailbox may be one the
 	      ;; account did not have when completion last asked
 	      ;; (emacs-vm/vm#920).  Which of the two it was cannot be told
-	      ;; from here: CREATE of a mailbox that exists answers NO and is
+	      ;; from here: CREATE of a mailbox that exists returns NO and is
 	      ;; tolerated (emacs-vm/vm#690), so the cache is forgotten either
 	      ;; way and the next completion asks again.
 	      (vm-imap-net-forget-folder-cache target)
@@ -3598,8 +3598,8 @@ saying it was saved."
 (defvar vm-imap-retrieved-messages)
 
 (defun vm-imap-net-unretrieved (data source retrieved)
-  "The UIDs in DATA that RETRIEVED does not say were fetched from SOURCE.
-DATA is what `vm-imap-net-message-data' answers with; the answer is a list
+  "The UIDs in DATA that RETRIEVED does not record as fetched from SOURCE.
+DATA is what `vm-imap-net-message-data' returns, a list
 of (SEQUENCE-NUMBER . UID), oldest first."
   (let ((maildrop (vm-imapdrop-sans-password source))
 	(wanted nil))
@@ -3639,9 +3639,9 @@ be."
 	(list (nreverse keep) (nreverse skipped) (nreverse sizes))))))
 
 (defun vm-imap-net-say-what-was-too-large (source skipped sizes)
-  "Say that SKIPPED were left on SOURCE's server for being SIZES bytes.
-Named, since a message nobody is told about is one nobody knows to go and
-fetch by hand or to raise the limit for."
+  "Report that SKIPPED were left on SOURCE's server for being SIZES bytes.
+Named, since a message nobody is told about is one nobody goes to fetch by
+hand or raises the limit for."
   (when skipped
     (vm-net-warn 0 (concat "%s: %d message%s left on the server, over"
 			   " vm-imap-max-message-size (%d): %s")
@@ -3835,7 +3835,7 @@ Signals `vm-imap-net-no-password' where VM has no password yet."
 		(let ((error-data (vm-net-session-error finished)))
 		  ;; the UIDs were remembered as each bunch reached the crash
 		  ;; box, so there is nothing to record here: what is on disk
-		  ;; the folder already knows it has
+		  ;; is already recorded in the folder
 		  (funcall callback (or error-data
 					(vm-net-session-value finished))))))))
     (vm-imap-net-take-session session

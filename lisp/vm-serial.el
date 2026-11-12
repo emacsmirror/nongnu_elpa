@@ -525,7 +525,7 @@ Optional argument HEADER is the header to get the recipients from."
   ;; never requires BBDB itself, so ask for the file that has it (#549).
   (require 'bbdb-com)
   (let* ((to (vm-serial-get-to))
-         ;; `bbdb-message-search' answers with a list where the old
+         ;; `bbdb-message-search' returns a list where the old
          ;; `bbdb-search-simple' answered with one record (#549).
          (rec (car (bbdb-message-search nil (cadr to)))))
     (if rec

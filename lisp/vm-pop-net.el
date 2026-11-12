@@ -240,7 +240,7 @@ APOP or XOAUTH2 where the maildrop asked for one, USER and PASS otherwise.
 With XOAUTH2 the PASSWORD is an access token.  GREETING is what the server
 said, which is where the APOP timestamp comes from.
 
-A maildrop asking for APOP against a server that offers no timestamp is an
+A maildrop asking for APOP against a server that sends no timestamp is an
 error rather than a quiet fall back to PASS: the password would go over the
 wire in clear, which is the thing APOP was asked for to avoid."
   (if (equal vm-pop-net-auth "xoauth2")
@@ -249,7 +249,7 @@ wire in clear, which is the thing APOP was asked for to avoid."
 	(let ((timestamp (vm-pop-net-timestamp (or greeting ""))))
 	  (unless timestamp
 	    (signal 'vm-pop-net-error
-		    (list "server offers no APOP timestamp")))
+		    (list "server sends no APOP timestamp")))
 	  (iter-yield-from
 	   (vm-pop-net-command
 	    (format "APOP %s %s" user
@@ -272,14 +272,14 @@ wire in clear, which is the thing APOP was asked for to avoid."
 (iter-defun vm-pop-net-uidl ()
   "Answer with the UIDs of the maildrop, as (NUMBER . UID) in server order.
 
-Answers `unsupported' where the server has no UIDL: a maildrop VM cannot
+Returns `unsupported' where the server has no UIDL: a maildrop VM cannot
 identify messages in is one it must not delete from, and that is the
-caller's decision to make.  A maildrop that is simply empty answers the
-empty list.  The two were one answer until emacs-vm/vm#888, so a POP
+caller's decision to make.  A maildrop that is simply empty returns the
+empty list.  The two shared one value until emacs-vm/vm#888, so a POP
 maildrop with nothing new in it was reported as a server with no UIDL, which
 is every check of a maildrop whose mail is deleted as it is fetched."
   ;; a named variable and a handler body that is not nil: inside an
-  ;; iter-defun, (condition-case nil FORM (err nil)) answers with the error
+  ;; iter-defun, (condition-case nil FORM (err nil)) returns the error
   ;; object rather than nil, which is generator.el's CPS transform and not
   ;; what the same code means outside one
   (condition-case _err
@@ -387,7 +387,7 @@ whether it ever will be, and its timeout covers a connect that never
 completes.
 
 TLS goes through `open-network-stream', as for IMAP: `make-network-process'
-has no TLS and answers `:type \\='tls' with \"Unsupported connection type\"."
+has no TLS and rejects `:type \\='tls' with \"Unsupported connection type\"."
   (let ((process
 	 (if tls
 	     (open-network-stream name buffer host port
@@ -454,7 +454,7 @@ output.  A maildrop whose password VM has not been told signals
 	 (user (nth 4 parts))
 	 (password (nth 5 parts)))
     (unless (member protocol '("pop" "pop-ssl" "pop-ssh"))
-      (error (concat "%s is not a POP maildrop type VM knows.  The types"
+      (error (concat "%s is not a POP maildrop type VM supports.  The types"
 		     " are pop, pop-ssl and pop-ssh; M-x"
 		     " vm-check-configuration checks every maildrop")
 	     protocol))
@@ -467,9 +467,9 @@ output.  A maildrop whose password VM has not been told signals
 			 " under another verb.  Write pass or apop in the"
 			 " maildrop instead; see Spool Files in the VM"
 			 " manual"))
-	(error (concat "%s is not a POP authentication VM knows."
-		       "  Write pass, apop where the server offers a"
-		       " timestamp, or xoauth2 where it offers that")
+	(error (concat "%s is not a POP authentication VM supports."
+		       "  Write pass, apop where the server sends a"
+		       " timestamp, or xoauth2 where it supports that")
 	       (or auth "no authentication"))))
     (when (and (stringp port) (string-match "\\`[0-9]+\\'" port))
       (setq port (string-to-number port)))
@@ -640,7 +640,7 @@ Nothing waits: this returns as soon as the connection is made."
 
 Left out: what RETRIEVED already has from SOURCE, and what is larger than
 `vm-pop-max-message-size'.  What is left for its size is named, since a
-message nobody is told about is one nobody knows to raise the limit for; it
+message nobody is told about is one nobody raises the limit for; it
 stays on the server, so raising the limit is all it takes."
   (let ((wanted nil)
 	(too-large nil))
@@ -697,7 +697,7 @@ cannot go back to the server for a body later."
 		      ;; before, so nothing is fetched -- and a maildrop that quietly
 		      ;; never arrives is worse than one that says why.
 		      ;;
-		      ;; An empty maildrop is not this: it answers the empty list, and
+		      ;; An empty maildrop is not this: it returns the empty list, and
 		      ;; asking a server that has nothing for its sizes is pointless but
 		      ;; not an error (emacs-vm/vm#888).
 		      (signal 'vm-pop-net-error
@@ -722,9 +722,9 @@ cannot go back to the server for a body later."
 				    (iter-yield-from (vm-pop-net-retrieve (car pair))))
 			      fetched)
 			(setq count (1+ count))
-			;; level 6, so it is logged and not shown: the mode line carries the
+			;; level 6, so it is logged and not shown: the mode line shows the
 			;; count live, and a line per bunch in the echo area is in the way of
-			;; whoever is using Emacs while the fetch runs -- which is the point of
+			;; whoever is using Emacs while the fetch runs, which is the point of
 			;; the fetch not freezing them out.  The start and the end are said.
 			(vm-pop-net-note-progress folder count total)
 			(vm-net-inform 6 "%s: %d of %d messages retrieved"
@@ -816,9 +816,9 @@ then without, and `vm-pop-expunge-after-retrieving' failing those."
     (if entry (cdr entry) vm-pop-expunge-after-retrieving)))
 
 (defun vm-pop-net-write-crash-box (messages crash-box folder-type)
-  "Write MESSAGES to CRASH-BOX in FOLDER-TYPE, and answer with how many.
+  "Write MESSAGES to CRASH-BOX in FOLDER-TYPE, and return how many.
 
-MESSAGES is what `vm-pop-net-fetch' answers with.  A crash box rather than
+MESSAGES is what `vm-pop-net-fetch' returns.  A crash box rather than
 the folder itself, because that is what VM recovers from when Emacs dies
 between the fetch and the folder being written: `vm-gobble-crash-box' is
 what reads it, here and after a crash alike.
@@ -1024,11 +1024,11 @@ still queued waits for that."
 			    (error-message-string reason)))))))
 
 (defun vm-pop-net-take-session (session &optional iterator)
-  "Record SESSION as this folder's, start ITERATOR as its work, and answer it.
+  "Record SESSION as this folder's, start ITERATOR as its work, and return it.
 
-Where the folder refuses a second session, as the IMAP side does: two of them
+Where the folder rejects a second session, as the IMAP side does: two of them
 writing one folder is two sets of messages in one buffer and one cache file.
-ITERATOR is started after the refusal rather than before, so a second session
+ITERATOR is started after the rejection rather than before, so a second session
 is prevented instead of reported -- started first, the error arrived with a
 session already talking to a server and the folder holding no record of it."
   (let ((folder (current-buffer)))
@@ -1068,7 +1068,7 @@ the next message moves it on.")
   "Say in the mode line what this folder is doing with its server.
 The folder buffer, its summary and its presentation all show it: a reader
 looking at the summary is looking at a folder that is being written into.
-How far it has got is there once it knows: \" fetching 24/340\"."
+How far it has got appears once the total is known: \" fetching 24/340\"."
   (let* ((session vm-pop-net-session)
 	 (running (and session (vm-net-session-live-p session)
 		       (vm-net-session-doing (vm-net-session-name session))))
@@ -1137,8 +1137,8 @@ that must not be fetched again whether the list remembers it or not."
     retrieved))
 
 (defun vm-pop-net-store-in-folder (folder folder-type messages)
-  "Put MESSAGES, as `vm-pop-net-fetch' answers with them, into FOLDER.
-Answers with the UIDLs stored, oldest first.  The same cleaning up the crash
+  "Put MESSAGES, as `vm-pop-net-fetch' returns them, into FOLDER.
+Returns the UIDLs stored, oldest first.  The same cleaning up the crash
 box gets: CRLF to LF, and the folder's own separators where the server sent
 none."
   (with-current-buffer folder
@@ -1322,7 +1322,7 @@ next fetch's business."
 			     (gone (plist-get answer :gone))
 			     (settled (append deleted gone)))
 			;; what the server still has and did not delete stays on
-			;; the list, so the next save offers it again
+			;; the list, so the next save sends it again
 			(when (buffer-live-p folder)
 			  (with-current-buffer folder
 			    (setq vm-pop-messages-to-expunge
@@ -1377,8 +1377,8 @@ password for the first maildrop yet, and none after it is answered for
 either.  One maildrop at a time: a POP server serves one session anyway, and
 they all write the same folder.
 
-The folder forgets each maildrop's messages as that maildrop answers for
-them, so an expunge that fails half way leaves the rest to be offered again."
+The folder forgets each maildrop's messages as that maildrop replies for
+them, so an expunge that fails half way leaves the rest to be tried again."
   (let ((folder (current-buffer))
 	(groups nil)
 	step)

@@ -320,7 +320,7 @@ valid for as long as nothing is reparented, so it belongs to one walk."
 
 ;;;###autoload
 (defun vm-thread-symbol (m)
-  "Returns the interned symbol of message M which carries the
+  "Returns the interned symbol of message M which holds the
 threading information.  Threads should have been built before this.
 Otherwise nil is returned."
   (with-current-buffer (vm-buffer-of m)
@@ -329,7 +329,7 @@ Otherwise nil is returned."
 
 ;;;###autoload
 (defun vm-subject-symbol (m)
-  "Returns the interned symbol of message M which carries the
+  "Returns the interned symbol of message M which holds the
 subject-based threading information.  Threads should have been built
 before this.  Otherwise nil is returned."
   (with-current-buffer (vm-buffer-of m)
@@ -1459,7 +1459,7 @@ otherwise.  No exceptions are thrown for errors."
   ;; `vm-thread-symbol' returning nil is exactly the condition
   ;; `vm-thread-subtree' signals on, and it looks in the message's own folder
   ;; buffer, where `vm-thread-obarray' lives.  Note that `vm-thread-root'
-  ;; already answers this case without signalling, by returning M.
+  ;; already handles this case without signalling, by returning M.
   (and (vm-thread-symbol m)
        ;; A genuine threading error is still not worth failing a summary line
        ;; for, so those are caught as before.

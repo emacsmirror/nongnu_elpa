@@ -792,7 +792,7 @@ Ask whether to sign or encrypt outgoing messages with PGP/MIME.
 
 Add to @code{vm-mail-send-hook} to be asked each time you send a message.
 @code{vm-epg-ask-function} controls what is asked: by default
-@code{vm-epg-prompt-for-action} offers a choice of actions, but it can also name
+@code{vm-epg-prompt-for-action} presents a choice of actions, but it can also name
 a single action to confirm, or your own function.
 
 This hook must be last in @code{vm-mail-send-hook}, and signals an error if it is
@@ -915,7 +915,7 @@ Every recipient address found in the headers listed in
 @code{vm-epg-get-recipients-headers} must have a usable encryption key in your
 keyring; otherwise this signals an error and leaves the composition
 untouched.  Note that the message is never encrypted to a passphrase: if no
-recipient key can be found, it refuses rather than falling back to symmetric
+recipient key can be found, it signals rather than falling back to symmetric
 encryption.
 
 Encryption is to those recipients and to nobody else, so a copy filed with
@@ -953,8 +953,8 @@ two variables therefore do not matter here.
 
 If the composition has *already* been MIME-encoded -- for instance because
 you encoded it yourself with @code{vm-mime-encode-composition} -- this cannot
-re-encode it safely, so it checks for the two hazards above and refuses to
-sign rather than produce a signature that breaks in transit.
+re-encode it safely, so it checks for the two hazards above and signals
+rather than produce a signature that breaks in transit.
 @end deffn
 
 @end macro
@@ -1392,17 +1392,17 @@ message’s @code{Content-Length} matches its body.
 
 What the contents say is counted over every message, and the name is not
 consulted for it: the reader takes the type from the name, so a folder
-carrying a length on every message under a name that does not say mboxcl2 is
+with a length on every message under a name that does not state mboxcl2 is
 read as From_ and split wherever a body line begins "From ".  Nothing else
 tells the reader that, and it is the question the warning at visit time
 leaves open.
 
 A wrong length is the fault this is for, because it is the one that gives no
-other sign.  A missing one is refused when the folder is visited, but a
-length that is merely wrong opens without complaint: the reader falls back on
+other sign.  A missing one is rejected when the folder is visited, but a
+length that is merely wrong opens with no sign of it: the reader falls back on
 searching for the next separator when the count does not land on one, so VM
-reads the folder correctly while anything that believes the header -- which is
-what the format is for -- takes the wrong bytes.
+reads the folder correctly while any program that uses the header, which is
+what the format is for, takes the wrong bytes.
 
 A POP or IMAP cache whose name states no type is reported too, and
 @code{vm-convert-caches-to-mboxcl2} named as what converts it.  Nothing in such a
@@ -1448,7 +1448,7 @@ The caches are looked for where their names are built, which is
 @macro vmdocvmemittotalsblurb
 @deffn Command vm-emit-totals-blurb
 @findex vm-emit-totals-blurb
-Show the line @code{vm-totals-blurb} answers, and answer with it.
+Show the line @code{vm-totals-blurb} returns, and return it.
 @end deffn
 
 @end macro
@@ -2129,7 +2129,7 @@ This is consulted where a folder cannot say for itself what it is:
     are the same folder but for the ‘Content-Length’ header, so looking
     like one is no evidence: a folder named mboxcl2 is mboxcl2, and a
     message in it that has no length is then something the reader
-    complains about -- which is the use of saying so in the name.
+    reports: that is the use of stating the type in the name.
 
 @end example
 What a folder’s own contents say is never overridden where they settle the
@@ -2148,8 +2148,8 @@ those bodies.
 
 An extension and not a pattern over the name.  A pattern can be written so
 that it matches nothing, silently, and it can be written so that it claims
-every folder in a directory -- and a directory of nine From_ folders claimed
-as mboxcl2 is nine folders VM then refuses to read.  The cost is that a
+every folder in a directory: a directory of nine From_ folders matched
+as mboxcl2 is nine folders VM then rejects.  The cost is that a
 folder which cannot be renamed cannot be typed by its name; that is what
 @code{vm-default-folder-type} is for.
 
@@ -2252,7 +2252,7 @@ the same mail spool.
 @defopt vm-mail-check-interval
 @vindex vm-mail-check-interval
 Numeric value specifies the number of seconds between checks
-for new mail, carried out using a timer task.  The maildrops for all
+for new mail, performed by a timer task.  The maildrops for all
 visited folders are checked. 
 
 A nil value means don’t check for new mail.
@@ -2446,7 +2446,7 @@ or a list of lists.
 
 If the value is a list of strings, the strings should name files
 that VM will check for incoming mail instead of the default place
-VM thinks your system mailbox is.  Mail will be moved from these
+VM uses for your system mailbox.  Mail will be moved from these
 mailboxes to your primary inbox as specified by @code{vm-primary-inbox},
 using @code{vm-crash-box} as a waystation.
 
@@ -2999,16 +2999,16 @@ named by @code{vm-movemail-program}.
 @macro vmdocvmsessiontracemaxsize
 @defopt vm-session-trace-max-size
 @vindex vm-session-trace-max-size
-The most of one session trace a bug report carries, in characters.
+The most of one session trace a bug report includes, in characters.
 
 A session that fetched the UID and flags of every message in a large mailbox
 leaves most of a megabyte in its trace, and a bug report of that size cannot
-be sent.  Beyond this, the middle of the trace is left out and the report says
-how much: the start says what the server is and what was asked of it, the end
-says where it went wrong, and the thousands of identical FETCH lines between
-them say nothing twice.
+be sent.  Beyond this, the middle of the trace is left out and the report
+states how much: the start holds what the server is and what was asked of it,
+the end where it went wrong, and the thousands of identical FETCH lines
+between them hold nothing new.
 
-Nil carries every trace whole.
+Nil includes every trace whole.
 
 Default value: @code{100000}
 @end defopt
@@ -5049,9 +5049,9 @@ Non-nil value means VM should try to infer a MIME object’s
 @vindex vm-mime-8bit-header-charsets
 Coding systems to try on header text that arrives as raw 8-bit bytes.
 RFC 5322 allows only ASCII in a header and RFC 2047 provides encoded words
-for everything else, but plenty of mail carries 8-bit header text anyway,
-and RFC 6532 makes UTF-8 legal there.  Such text says nothing about its own
-character set, so VM tries these coding systems in order and takes the first
+for everything else, but plenty of mail has 8-bit header text anyway,
+and RFC 6532 makes UTF-8 legal there.  Such text states no character set of
+its own, so VM tries these coding systems in order and takes the first
 that decodes the whole of the text.
 
 The order matters: UTF-8 first, because a byte sequence that is valid UTF-8
@@ -5408,8 +5408,8 @@ date header as subdir for the attachments.
 Non-nil means don’t send folded Content- headers in MIME messages.
 @code{Folded} headers are headers broken into multiple lines as specified
 in RFC822 for readability and to avoid excessive line lengths.  At
-least one major UNIX vendor ships a version of sendmail that believes
-a folded Content-Type header is a syntax error, and returns any such
+least one major UNIX vendor ships a version of sendmail that treats
+a folded Content-Type header as a syntax error, and returns any such
 message to sender.  A typical error message from such a sendmail
 version is,
 
@@ -5614,11 +5614,11 @@ The first matching list element will be used.
 @defopt vm-mime-complete-html-for-external-viewer
 @vindex vm-mime-complete-html-for-external-viewer
 Whether to complete an HTML part before an external viewer sees it.
-Plenty of mail carries text/html that is a fragment rather than a document:
+Plenty of mail has text/html that is a fragment rather than a document:
 it opens with a @code{<span>} or a @code{<div>} and has no @code{<html>} and no @code{<head>}.
-Nothing in such a file says what character set its bytes are in -- the
-message said so in the part’s Content-Type header, which the file does not
-have -- so a browser handed it guesses, and gets an accented letter or a
+Nothing in such a file states what character set its bytes are in (the
+message stated it in the part’s Content-Type header, which the file does not
+have), so a browser handed it guesses, and gets an accented letter or a
 curly quote wrong.
 
 With this set, VM wraps a fragment in a document that declares the part’s
@@ -5765,7 +5765,7 @@ Default value: @code{t}
 @vindex vm-mime-encode-headers-regexp
 A regexp matching the headers whose words should be MIME-encoded.
 A header holding a character outside US-ASCII cannot be sent as it stands;
-the words carrying those characters are encoded as RFC 2047 words instead.
+the words holding those characters are encoded as RFC 2047 words instead.
 By default Subject, Organization, From, To, CC, BCC and their Resent- forms
 are encoded.  @code{vm-mime-encode-headers-type} says with which encoding.
 
@@ -5990,11 +5990,10 @@ Default value: @code{t}
 @defopt vm-mime-ignore-mime-version
 @vindex vm-mime-ignore-mime-version
 Non-nil value means ignore the version number in the MIME-Version
-header.  VM only knows how to decode and display MIME version 1.0
-messages.  Some systems scramble the MIME-Version header, causing
-VM to believe that it cannot display a message that it actually
-can display.  You can set @code{vm-mime-ignore-mime-version} non-nil if
-you use such systems.
+header.  VM decodes and displays MIME version 1.0 messages only.
+Some systems scramble the MIME-Version header, so that VM treats a
+message it can display as one it cannot.  You can set
+@code{vm-mime-ignore-mime-version} non-nil if you use such systems.
 
 Default value: @code{t}
 @end defopt
@@ -6073,7 +6072,7 @@ for transmission using the MIME message/partial type.
 @defopt vm-mime-max-text-line-length
 @vindex vm-mime-max-text-line-length
 Longest line VM sends in a text part without encoding it.
-A longer line is sent quoted-printable, which carries it as several
+A longer line is sent quoted-printable, which sends it as several
 physical lines each ending in @code{=} and has the recipient’s mail reader put
 it back together, so the line arrives as the one line you wrote.
 
@@ -6172,10 +6171,10 @@ Default value: @code{("application" "x-unknown" "application/x-gzip")}
 @vindex vm-mime-shr-inhibit-images
 Non-nil means the @code{shr} HTML handler displays no images.
 
-A remote image in a message is fetched from the sender's server, which then
-knows the message was opened and when.  That is why this is on by default,
-and why VM binds it while rendering rather than leaving it to the shr
-settings a reader has chosen for the web.
+A remote image in a message is fetched from the sender's server, which
+then has a record that the message was opened, and when.  That is why this
+is on by default, and why VM binds it while rendering rather than leaving it
+to the shr settings a reader has chosen for the web.
 
 Default value: @code{t}
 @end defopt
@@ -6387,8 +6386,9 @@ gives a reference to an object instead of the object itself.  Emacs does the
 retrieving, through @code{url-retrieve-synchronously}, so nothing need be
 installed and no program is named here.
 
-Set it to nil to refuse: an external-body URL is fetched from a server that
-then knows the message was opened, which is not always wanted.
+Set it to nil to prevent that: an external-body URL is fetched from a server
+that then has a record that the message was opened, which is not always
+wanted.
 
 Earlier releases took a list of external programs to try, such as
 '(lynx wget fetch curl w3m).  Such a value still reads as non-nil and so
@@ -7359,9 +7359,9 @@ nowhere else.  Nothing can be asked from inside a process filter, which is
 where a session runs, so the first authorization of an account happens here
 and the sessions afterwards only read what it stored.
 
-The provider answers by redirecting the browser, and VM listens on a
+The provider replies by redirecting the browser, and VM listens on a
 loopback port for that redirect and takes the code out of it, so there is
-nothing to copy.  See @code{vm-oauth2-catch-redirect}, which also says what
+nothing to copy.  See @code{vm-oauth2-catch-redirect}, which also states what
 happens where the browser is on another machine.
 
 The token goes in oauth2.el's own store, @code{oauth2-token-file}, encrypted by
@@ -7376,7 +7376,7 @@ an account set up here work with everything else that reads it.
 @vindex vm-oauth2-catch-redirect
 Whether VM takes the authorization code off the redirect itself.
 
-A provider answers an authorization by redirecting the browser to an address
+A provider completes an authorization by redirecting the browser to an address
 the client named, with the code in it.  With this on VM listens on a loopback
 port, names that address, and reads the code out of the request the browser
 makes: nothing is copied, and the browser is answered with a page saying so.
@@ -7476,7 +7476,7 @@ nothing to set here and nothing to paste.
 
 oauth2.el defaults to "urn:ietf:wg:oauth:2.0:oob", which hands the code to
 the reader to paste.  Google stopped accepting that in January 2023 and
-answers @code{invalid_request}, so a Google account needs something else here and
+returns @code{invalid_request}, so a Google account needs something else here and
 it has to be one the registration lists.
 
 Set to whatever your own registration says.
@@ -8255,7 +8255,7 @@ Whether a signature is inserted by something other than Personality Crisis.
 Emacs inserts one when @code{mail-signature} is set, taking it from that variable or
 from the file @code{mail-signature-file} names, and VM does that as it builds a
 composition.  Personality Crisis can only act on a signature whose extent it
-knows, so with this unset @code{vm-pcrisis-signature} neither replaces nor deletes
+has, so with this unset @code{vm-pcrisis-signature} neither replaces nor deletes
 that one: it looked to two readers of #540 like an action that had run and done
 nothing.  Set, which is the default, the signature already in a composition is
 found and comes under the same control as one Personality Crisis inserted
@@ -8422,7 +8422,7 @@ or if sure about what you are doing you can add it to @code{mail-send-hook}.
 @deffn Command vm-mail-fcc &optional arg
 @findex vm-mail-fcc
 Insert the FCC-header into a VM composition buffer.
-Like @code{mail-fcc}, but honors VM variables and offers a default folder
+Like @code{mail-fcc}, but honors VM variables and proposes a default folder
 according to @code{vm-mail-folder-alist}.
 Called with prefix ARG it just removes the FCC-header.
 @end deffn
@@ -8492,8 +8492,8 @@ again.  The source message is deleted either way.
 
 With NO-POSTPONE-HEADER, leave out the @code{vm-postponed-header} line that
 records the reply, forward and redistribute lists.  The draft is then an
-ordinary message, and @code{vm-continue-what-message} offers to continue only a
-message carrying that header.
+ordinary message, and @code{vm-continue-what-message} asks about continuing only a
+message with that header.
 @end deffn
 
 @end macro
@@ -9254,7 +9254,7 @@ into a presentation buffer before the filling is done.
 This variable determines which paragraphs are filled,
 but @code{vm-paragraph-fill-column} determines the fill column.
 
-Note that filling is carried out only if word wrapping is not in
+Note that filling is done only if word wrapping is not in
 effect.  The variable @code{vm-word-wrap-paragraphs} controls word
 wrapping.
 @end defopt
@@ -9853,7 +9853,7 @@ to @code{sendmail-program} and trust that program to take it out, because with
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
 
-Asks rather than refuses because a working sendmail, postfix or exim does
+Asks rather than rejecting, because a working sendmail, postfix or exim does
 remove it, and those are a great many of the people sending mail this way.
 Declining says what to change and where it is written down.
 
@@ -9902,9 +9902,9 @@ Subject header.
 @macro vmdocvmcheckbccremoval
 @defopt vm-check-bcc-removal
 @vindex vm-check-bcc-removal
-Non-nil means refuse to send a message whose Bcc could reach the recipients.
+Non-nil means do not send a message whose Bcc could reach the recipients.
 
-VM refuses when a composition carries a Bcc header and @code{send-mail-function}
+VM signals an error when a composition has a Bcc header and @code{send-mail-function}
 is not one of @code{vm-senders-that-remove-bcc}.  Such a function hands the
 header to a program outside Emacs and trusts it to remove it, so the privacy
 of the Bcc rests on that program being right.  Where it is not, everyone on
@@ -10068,7 +10068,7 @@ using the width of the Emacs window.
 This variable determines which paragraphs are filled,
 but @code{vm-fill-long-lines-in-reply-column} determines the fill column.
 
-Note that filling is carried out only if word wrapping is not in
+Note that filling is done only if word wrapping is not in
 effect.  The variable @code{vm-word-wrap-paragraphs-in-reply} controls word
 wrapping.
 @end defopt
@@ -10079,9 +10079,9 @@ wrapping.
 @defopt vm-html-in-reply-column
 @vindex vm-html-in-reply-column
 Column at which HTML quoted in a reply is broken into lines.
-An HTML part carries no line breaks of its own: whatever converts it to
-text decides where its lines end, and asked for nothing in particular each
-converter uses a width of its own -- emacs-w3m the width of the window the
+An HTML part has no line breaks of its own: whatever converts it to
+text determines where its lines end, and asked for nothing in particular each
+converter uses a width of its own: emacs-w3m the width of the window the
 message happened to be displayed in, lynx 72 columns.  So a reply quoted
 lines of one length today and another tomorrow.
 
@@ -11574,7 +11574,7 @@ threads will apply to all the messages in the threads.
 attributes, adding/deleting labels etc.
 
 If the variable is set to t then thread operations are always
-carried out.  If it is set to @code{ask}, then the user is asked for
+performed.  If it is set to @code{ask}, then the user is asked for
 confirmation whether the operation should apply to all the
 messages in the thread.  This can be overridden by invoking the
 operation with a prefix argument using @code{C-u} and no questions will be
@@ -11864,7 +11864,7 @@ Default value: @code{"->"}
 @macro vmdocvmsummaryattachmentindicator
 @defopt vm-summary-attachment-indicator
 @vindex vm-summary-attachment-indicator
-Indicator shown in the summary for a message carrying attachments.
+Indicator shown in the summary for a message with attachments.
 A string is shown as it stands.  A symbol is shown followed by the number
 of attachments, so the symbol $ gives "$2" for a message of two.  A
 message with none shows nothing either way.
@@ -12724,7 +12724,7 @@ number of messages that will be affected.
 @macro vmdocvmexpungeunusedlabels
 @deffn Command vm-expunge-unused-labels
 @findex vm-expunge-unused-labels
-Remove from the current folder every label that no message carries.
+Remove from the current folder every label that no message has.
 Such labels accumulate as messages are relabelled or expunged --
 deleting a label from the last message holding it does not remove it
 from the folder -- and they clutter label completion ever after.
@@ -12743,7 +12743,7 @@ labels that will be removed.
 @macro vmdocvmlistunusedlabels
 @deffn Command vm-list-unused-labels
 @findex vm-list-unused-labels
-List the labels of the current folder that no message carries.
+List the labels of the current folder that no message has.
 These are exactly the labels @code{vm-expunge-unused-labels} would remove.
 Nothing is changed.
 @end deffn
@@ -12774,7 +12774,7 @@ COUNT-1 messages to be altered.  COUNT defaults to one.
 Make the folder’s label list agree with the labels its messages carry.
 Adds labels that messages use but the folder does not list, and removes
 those the folder lists but no message uses.  Afterwards label completion
-offers exactly the labels in use.
+lists exactly the labels in use.
 
 No message is changed; only the folder’s label list.
 
@@ -12893,7 +12893,7 @@ Say what is missing from your VM configuration, and what to do about it.
 Checks the settings a first-time reader has to get right before anything
 works: which mail agent Emacs uses, the address mail goes out from, how it
 is sent, where folders are kept, and where new mail comes from.  Each
-maildrop is checked for a type VM knows and the right number of fields,
+maildrop is checked for a type VM supports and the right number of fields,
 neither of which the parsers mind, and @code{vm-mail-header-from} for a value
 that is not an address, which is a @code{From} header nobody can reply to.
 
@@ -13312,7 +13312,7 @@ visited folder.
 
 This function differs from @code{vm-visit-folder} in that it remembers that
 the folder is a foreign folder maintained by Thunderbird.  Saving
-of messages is carried out preferentially to other Thunderbird folders.
+of messages is performed preferentially to other Thunderbird folders.
 @end deffn
 
 @end macro

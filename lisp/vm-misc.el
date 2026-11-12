@@ -260,7 +260,7 @@ This function is similar to a spring-split, but a bit more complex
   (or matchn (setq matchn 1))
   ;; The position is kept here rather than read back out of the match data.
   ;; This used to clear the match data and then ask `match-end' for it, which
-  ;; is a question Emacs answers only where a search has succeeded: where
+  ;; is something Emacs reports only where a search has succeeded: where
   ;; clearing empties the registers rather than marking them unset, that
   ;; first call signals "No match data, because no search succeeded" and
   ;; takes with it whatever was parsing a maildrop (emacs-vm/vm#912).
@@ -1566,7 +1566,7 @@ how it marked its own soft breaks; VM never unwrapped them."
 (defun vm-insert-one-session-trace (buffer)
   "Insert BUFFER's text, the middle left out if it is too long to send.
 `vm-session-trace-max-size' says how much; half of it comes from the start and
-half from the end, which are the two ends that say anything.  Nil carries the
+half from the end, which are the two ends that matter.  Nil keeps the
 whole trace."
   (let* ((size (buffer-size buffer))
 	 (limit vm-session-trace-max-size))

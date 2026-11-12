@@ -498,7 +498,7 @@ A message, or `end' for the end of the buffer -- which is where
 message to name.
 
 Nil where the cursor is on the summary pointer, which is where VM put it: a
-rebuild setting the pointer again then carries the cursor along, and that is
+rebuild setting the pointer again then moves the cursor along, and that is
 what moving through a folder looks like.
 
 Anything else is the reader having gone somewhere of their own accord, which a
@@ -891,7 +891,7 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
    summary))
 
 (defun vm-summary-token-with-width (token format)
-  "TOKEN, in a group carrying the width and maximum of the last match.
+  "TOKEN, in a group holding the width and maximum of the last match.
 
 `%n', `%*' and `%I' become tokens rather than substitutions, and a token is
 inserted with no width of its own, so a width or a maximum written on one of
@@ -1250,7 +1250,7 @@ indicator string is that defined by the variable
     ""))
 
 (defun vm-su-attachment-indicator (msg)
-  "The summary indicator for MSG, empty where it carries no attachment.
+  "The summary indicator for MSG, empty where it has no attachment.
 `vm-summary-attachment-indicator' is shown as it stands where it is a
 string, which is the default, and followed by the number of attachments
 where it is a symbol."

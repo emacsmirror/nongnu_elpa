@@ -903,7 +903,7 @@ have pared down to nothing that matters here."
 A file is how the program is given the message, and not a pipe: a pipe whose
 reader has gone raises SIGPIPE on the next write, which kills Emacs outright
 with nothing printed and which no `condition-case' can see.  A mailer that
-refuses the message and exits is a reader that has gone, so a send down a
+rejects the message and exits is a reader that has gone, so a send down a
 pipe can take the whole of Emacs with it (emacs-vm/vm#921), which is what
 `call-process-region' avoids by handing over a file.  `make-temp-file' makes
 one nobody else can read.
@@ -963,7 +963,7 @@ over."
 (defun vm-process-exit-value (process)
   "What `call-process-region' would have answered for the finished PROCESS.
 A number is an exit status.  A string names the signal that killed the
-program, which is what `call-process-region' answers for one; the sentinel
+program, which is what `call-process-region' returns for one; the sentinel
 is told it in lower case and that function capitalises it, so this does
 too."
   (if (eq (process-status process) 'signal)
@@ -999,7 +999,7 @@ as replied to, forwarded, etc, if appropriate."
   (when vm-check-for-empty-subject
     (vm-mail-check-for-empty-subject))
   (save-excursion (run-hooks 'vm-mail-send-hook))
-  ;; A header carrying anything outside US-ASCII has to be encoded whatever
+  ;; A header holding anything outside US-ASCII has to be encoded whatever
   ;; the body is done with, so this is not conditional on
   ;; `vm-send-using-mime': without it an 8-bit Subject went out raw when
   ;; MIME was off.  `vm-mime-encode-composition' calls it again below and
@@ -1216,11 +1216,11 @@ filed, and the composition keeps its own."
 (defun vm-message-text-for-folder (type)
   "The message in the current buffer, ready to append to a folder of TYPE.
 That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
-in TYPE's separators, and carrying a `Content-Length' where TYPE asks for
+in TYPE's separators, and with a `Content-Length' where TYPE asks for
 one.  Neither a composition nor the message in a .eml file has been through
 any of that.
 
-The envelope line names the address the message is from and carries its own
+The envelope line names the address the message is from and holds its own
 Date, which is why this reads the headers rather than taking a message
 struct: the caller has none.  See `vm-fcc-leading-separator'."
   (let ((mailbuf (current-buffer)))
@@ -2906,7 +2906,7 @@ to `sendmail-program' and trust that program to take it out, because with
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
 
-Asks rather than refuses because a working sendmail, postfix or exim does
+Asks rather than rejecting, because a working sendmail, postfix or exim does
 remove it, and those are a great many of the people sending mail this way.
 Declining says what to change and where it is written down."
   (interactive)

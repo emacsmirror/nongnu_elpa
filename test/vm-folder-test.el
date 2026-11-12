@@ -5561,16 +5561,16 @@ most of a length on most of its messages is the case a reader has to judge."
                                   (concat (vm-folder-test--mboxcl2-message)
                                           (vm-folder-test--mboxcl2-message 999)))
     (should report)
-    (should (string-match-p "2 of 2 messages carry a length, 1 of those fit"
+    (should (string-match-p "2 of 2 messages have a length, 1 of those fit"
                             report))))
 
-(ert-deftest vm-folder-test-check-folder-says-nothing-carries-a-length ()
-  "A From_ folder with no lengths at all says so, rather than saying nothing."
+(ert-deftest vm-folder-test-check-folder-reports-that-no-message-has-a-length ()
+  "A From_ folder with no lengths at all is reported as such, not left silent."
   (vm-folder-test--checking (file "sent.mboxcl2"
                                   (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
                                           "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
     (should report)
-    (should (string-match-p "no message carries a length" report))))
+    (should (string-match-p "no message has a length" report))))
 
 (ert-deftest vm-folder-test-check-folder-leaves-a-named-mboxcl2-alone ()
   "A folder named mboxcl2 and read as mboxcl2 is not told its contents agree

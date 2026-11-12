@@ -546,8 +546,8 @@ same effect."
 
 (defun vm-mime-transfer-decode-region (layout start end)
   "Decode the body of a mime part given by LAYOUT at positions START
-to END, and replace it by the decoded content.  The decoding carried
-out includes base-64, quoted-printable, uuencode and CRLF conversion."
+to END, and replace it by the decoded content.  The decoding performed
+includes base-64, quoted-printable, uuencode and CRLF conversion."
   (let ((case-fold-search t) (crlf nil))
     (if (or (vm-mime-types-match "text" (car (vm-mm-layout-type layout)))
 	    (vm-mime-types-match "message" (car (vm-mm-layout-type layout))))
@@ -670,8 +670,8 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
 ;; A folder buffer holds bytes: VM reads it as raw text so that positions and
 ;; MIME decoding work on the message as it arrived.  Header text is therefore
 ;; ASCII plus whatever bytes the sender put there, and RFC 2047 encoded words
-;; are decoded from that.  Text that is simply 8-bit -- legal under RFC 6532,
-;; and sent regardless of any RFC for decades -- carries no character set of
+;; are decoded from that.  Text that is simply 8-bit, legal under RFC 6532 and
+;; sent regardless of any RFC for decades, states no character set of
 ;; its own, so it has to be guessed.  See `vm-mime-8bit-header-charsets'.
 
 (defun vm-decode-8bit-text (string)
@@ -817,9 +817,10 @@ raw bytes together, and there is no one character set for the whole of it."
 (defun vm-reencode-mime-absorb-separating-whitespace ()
   "Make whitespace between two to-be-encoded runs part of the first.
 RFC 2047 says whitespace *between* two encoded words is a separator and
-not part of the text, so a decoder drops it -- `vm-decode-mime-encoded-words'
-does exactly that.  Whitespace carries no `vm-charset' property of its
-own, so encoding the runs and leaving the space between them literal
+not part of the text, so a decoder drops it, as
+`vm-decode-mime-encoded-words' does.  Whitespace has no `vm-charset'
+property of its own, so encoding the runs and leaving the space between them
+literal
 turns \"f\\=\\o\\=\\o b\\=\\ar\" into two encoded words with a space between,
 which decodes back as \"f\\=\\o\\=\\ob\\=\\ar\".
 
@@ -2483,7 +2484,7 @@ possible.  Returns a boolean flag indicating success."
 
 (defun vm-mime-cid-retrieve (url message)
   "Insert the part of MESSAGE that URL names, URL having the cid: scheme.
-Returns the part, or nil when the message carries no part with that
+Returns the part, or nil when the message has no part with that
 Content-ID.  `vm-mime-cid-retrieved' is set only when a part was inserted,
 since it is what `vm-mime-display-internal-multipart/related' reads to decide
 that the viewer has shown the related parts itself."
@@ -2673,7 +2674,7 @@ here rather than left to the reader's shr settings, which are for the web."
 		     (downcase (vm-mime-unquote-parameter-value format)))))))
 
 (defun vm-mime-delsp-layout-p (layout)
-  "Return non-nil if LAYOUT carries the RFC 3676 delsp=yes parameter."
+  "Return non-nil if LAYOUT has the RFC 3676 delsp=yes parameter."
   (let ((delsp (vm-mime-get-parameter layout "delsp")))
     (and delsp
 	 (equal "yes" (downcase (vm-mime-unquote-parameter-value delsp))))))
@@ -2822,7 +2823,7 @@ from stuffing and does not need the parameter."
     flowed))
 
 (defun vm-mime-display-internal-text/plain (layout &optional no-highlighting)
-  "Display a text/plain mime part given by LAYOUT, carrying out
+  "Display a text/plain mime part given by LAYOUT, performing
 any necessary MIME-decoding, CRLF-conversion, charset-conversion
 and word-wrapping/filling.  The original text is replaced by the
 converted content.  Unless NO-HIGHLIGHTING is non-nil, the URL's
@@ -2942,8 +2943,8 @@ Note that `>' is a symbol constituent in the standard syntax table, so
 (defun vm-mime-complete-html-file (layout html-file)
   "Make HTML-FILE a whole document if the text/html in it is a fragment.
 HTML-FILE holds the text of LAYOUT, written out for an external viewer.  A
-fragment carries no charset of its own -- that was in the part's header, and
-the file has no header -- so the viewer guesses.  Issue #387.
+fragment has no charset of its own (that was in the part's header, and
+the file has no header), so the viewer guesses.  Issue #387.
 
 The text is wrapped, not re-encoded: the bytes VM wrote are the bytes the
 part had.  Returns t when the file was changed.
@@ -4020,7 +4021,7 @@ long as the picture stays frobbed (emacs-vm/vm#885)."
 		(progn
 		  ;; Problem - we have no way of knowing whether these
 		  ;; calls succeed or not.  USR, 2011-02-23
-		  ;; the file first: ImageMagick 7 refuses an operator with no
+		  ;; the file first: ImageMagick 7 rejects an operator with no
 		  ;; image read yet, "no images found for operation `-crop'",
 		  ;; and writes nothing (emacs-vm/vm#882)
 		  (insert (vm-imagemagick-convert-shell-command)
@@ -4198,7 +4199,7 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	    ;; convert just the first page "[0]" and enforce PNG
 	    ;; output by "png:"
 	    (let ((coding-system-for-read (vm-binary-coding-system)))
-	      ;; the image first, then what to do to it: ImageMagick 7 refuses
+	      ;; the image first, then what to do to it: ImageMagick 7 rejects
 	      ;; an operator with nothing read yet (emacs-vm/vm#882).  "-" is
 	      ;; standard input, "[0]" the first page of it
 	      (setq success
@@ -4402,8 +4403,8 @@ If optional argument FUNCTION is given, run it instead.
   ;; The presentation buffer counts too.  A message whose body is still on the
   ;; server has a layout parsed from its headers alone, so its parts have no
   ;; text: acting on one wrote an empty file and said nothing about why (issue
-  ;; #386).  The folder buffer refused already; this refuses wherever the button
-  ;; is, and says what to do about it.
+  ;; #386).  The folder buffer rejected it already; this rejects it wherever the
+  ;; button is, and reports what to do about it.
   (when (and (memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode))
 	     (vm-body-to-be-retrieved-of
 	      (vm-real-message-of (car vm-message-pointer))))
@@ -4845,8 +4846,8 @@ confirmed before creating a new directory."
 		     (or directory		      
 			 vm-mime-attachment-save-directory
 			 vm-mime-all-attachments-directory
-			 ;; both are allowed to be nil -- the customize type
-			 ;; of the first offers it -- and `file-name-as-directory'
+			 ;; both are allowed to be nil (the customize type
+			 ;; of the first includes it) and `file-name-as-directory'
 			 ;; of nil is an error, so the command signalled instead
 			 ;; of asking where to save
 			 default-directory))
@@ -6077,7 +6078,7 @@ there is no file name for this object.             USR, 2011-03-07"
 
 (defun vm-mime-set-parameter-in-list (params key value)
   "Return PARAMS with KEY set to VALUE, adding it if it is not there.
-PARAMS is a list of \"key=value\" strings as carried by the
+PARAMS is a list of \"key=value\" strings as held by the
 `vm-mime-parameters' and `vm-mime-disposition' properties of an
 attachment tag."
   (let ((entry (vm-mime-encode-parameter key value))
@@ -6137,7 +6138,7 @@ Content-Disposition filename parameter, and updates the visible tag."
     (let* ((start (car bounds))
 	     (end (cdr bounds))
 	     (inhibit-read-only t)
-	     ;; the whole tag carries one set of properties; work on a
+	     ;; the whole tag has one set of properties; work on a
 	     ;; copy and put it back over the tag once the text is right
 	     (props (copy-sequence (text-properties-at start)))
 	     (disposition (plist-get props 'vm-mime-disposition)))
@@ -6276,10 +6277,10 @@ This function is only used with GNU Emacs, not XEmacs.  USR, 2011-02-19"
   "The MIME type FILE's name suggests, or nil.
 
 `vm-mime-attachment-auto-type-alist' first, so what the user has set there
-decides.  Failing that, `mailcap-extension-to-mime', which knows the
+decides.  Failing that, `mailcap-extension-to-mime', which reads the
 system's /etc/mime.types and Emacs's own table: an .org file is text/x-org
 there and a .patch text/x-patch, and either is better than the
-application/octet-stream the callers fall back to -- octet-stream carries no
+application/octet-stream the callers fall back to: octet-stream states no
 charset, so text sent as one arrives as a download rather than as text."
   (let ((alist vm-mime-attachment-auto-type-alist)
 	(case-fold-search t)
@@ -6335,7 +6336,7 @@ should be included (?)                               USR, 2011-03-27"
 	   (vm-mime-base64-encode-region beg end crlf)
 	   (setq encoding "base64"))
 	  ((equal encoding vm-mime-long-lines-encoding)
-	   ;; Quoted-printable rather than base64: it carries the long line
+	   ;; Quoted-printable rather than base64: it sends the long line
 	   ;; just as exactly, and leaves the rest of the part readable to
 	   ;; anyone looking at the message as it was sent.
 	   (vm-mime-qp-encode-region beg end nil armor-from)
@@ -6415,7 +6416,7 @@ quoted-printable or binary).                            USR, 2011-03-27"
 						layout)))))
   ;; seems redundant because an encoding can never be equal to a type.
   ;; but it wasn't meant to be encoding becuase it woundn't be a list.
-  ;; who knows that is supposed to be?  USR, 2011-03-27
+  ;; what that is supposed to be is unclear.  USR, 2011-03-27
   (unless (equal encoding (downcase (car (vm-mm-layout-type layout))))
       (save-excursion
 	(save-restriction
@@ -6590,7 +6591,7 @@ the smaller, softer one, which VM aims for by folding; a header with a single
 unbreakable run longer than this exceeds it and cannot be helped.")
 
 (defconst vm-mime-encoded-word-line-limit 76
-  "The longest a line of a header carrying an encoded word may be.
+  "The longest a line of a header holding an encoded word may be.
 RFC 2047 section 2, and two shorter than `vm-mime-header-line-limit': a
 header with an encoded word anywhere in it is folded to this instead.")
 
@@ -6736,7 +6737,7 @@ Each allows a different set of characters to stand bare."
 	;; at the end of the new.
 	(goto-char start)
 	(insert words)
-	;; END advances, so the insertion above has already carried it past the
+	;; END advances, so the insertion above has already moved it past the
 	;; new text: what is left between point and it is the old text.
 	(delete-region (point) end))
       (set-marker end nil))))
@@ -6796,7 +6797,7 @@ are what makes it safe, and nothing needs encoding."
 		 ;; of an addr-spec, so there is nothing to be done with one.
 		 (not (eq (char-after end) ?@)))
 	;; Insert first and delete after, so that a marker sitting at the end
-	;; of the header is carried past the new text rather than collapsing
+	;; of the header is moved past the new text rather than collapsing
 	;; to START, as `vm-mime-encode-words' does for the same reason.
 	(let ((words (vm-mime-encode-phrase text encoding)))
 	  (goto-char start)
@@ -6813,7 +6814,7 @@ are what makes it safe, and nothing needs encoding."
 
 (defun vm-mime-encode-description (description)
   "DESCRIPTION as the body of a Content-Description header.
-The words carrying anything outside US-ASCII become RFC 2047 encoded words.
+The words holding anything outside US-ASCII become RFC 2047 encoded words.
 A header cannot hold those characters as they stand: a raw byte in a part
 header is not something a reader has to make sense of, and one in the
 message header fails the send, Emacs meeting it in `mail-encode-header' and
@@ -6950,7 +6951,7 @@ which RFC 2047 section 5(2) says needs no space after it."
 (defun vm-mime-encode-comment (encoding)
   "Encode the words of the comment beginning at point and move past it.
 The parentheses stay where they are: RFC 2047 section 5(2) has the encoded
-word stand inside the comment, and one carrying the delimiters hides them
+word stand inside the comment, and one holding the delimiters hides them
 from the parser."
   (let ((end (vm-mime-comment-end)))
     (if (not end)
@@ -7012,7 +7013,7 @@ The reader then has no address to parse."
   (vm-mime-separate-encoded-words))
 
 (defun vm-mime-address-header-p (name)
-  "Whether the header called NAME carries a list of addresses.
+  "Whether the header called NAME holds a list of addresses.
 `vm-mime-address-headers-regexp' names them."
   (let ((case-fold-search t))
     (and (string-match (concat "\\`\\(?:" vm-mime-address-headers-regexp "\\)\\'")
@@ -7099,7 +7100,7 @@ break: one long run with no whitespace in it."
 
 (defun vm-mime-fold-header--limit (start end)
   "The length a line of the header between START and END may reach.
-`vm-mime-encoded-word-line-limit' where the header carries an encoded word,
+`vm-mime-encoded-word-line-limit' where the header holds an encoded word,
 RFC 2047 section 2 allowing those lines two characters less than RFC 5322
 allows a line in general."
   (if (save-excursion
@@ -7112,7 +7113,7 @@ allows a line in general."
   "Fold the header between START and END so its lines are not over-long.
 RFC 5322 section 2.1.1 sets a limit of 998 characters that a line MUST NOT
 exceed and 78 that it SHOULD NOT; `vm-mime-header-line-limit' is the second.
-RFC 2047 section 2 allows a line of a header carrying an encoded word two
+RFC 2047 section 2 allows a line of a header holding an encoded word two
 characters less, `vm-mime-encoded-word-line-limit'.
 A folded line is broken at whitespace and the next one begins with a space,
 which section 2.2.3 says a reader joins back up.
@@ -7515,7 +7516,7 @@ WHOLE-MESSAGE is true then nil is returned."
 	encoding charset description marker flowed) ;; type params
     (narrow-to-region beg end)
     ;; Mark the soft line breaks before the text is encoded or measured, and
-    ;; only for plain text: text/enriched carries its own line structure.
+    ;; only for plain text: text/enriched has its own line structure.
     (when (and vm-send-using-flowed-text (not enriched))
       (setq flowed (vm-mime-flow-region (point-min) (point-max))))
     ;; support enriched-mode for text/enriched composition
