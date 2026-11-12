@@ -3905,7 +3905,9 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (wd default-directory)
          (item-type (fj--identify-item-format item)))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
-    (fj-with-buffer (format "*fj-%s-item-%s*" repo number)
+    (fj-with-buffer (format "*fj-%s-%s-%s*" repo
+                          (string-trim-left (symbol-name item-type) ":")
+                          number)
         'fj-item-view-mode wd nil ;; other-window
       ;; render actual (top) item:
       (fj-render-item repo owner item number item-type page limit)
