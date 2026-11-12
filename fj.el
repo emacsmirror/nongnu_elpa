@@ -1634,7 +1634,7 @@ If TYPE is :pull, get a pull request, not issue."
     (fj-get endpoint)))
 
 (defun fj-get-item-checked (repo &optional owner number type)
-  "Much like `fj-get-item' but ensures that TYPE makes sense.
+  "Like `fj-get-item' (in REPO by OWNER) but ensures that TYPE makes sense.
 
 As an example, if TYPE is `:pull' and the item identified by NUMBER
 corresponds to an issue, the function will send a second request (this
@@ -1655,7 +1655,7 @@ server (asking for a *pull request*)."
        (if (fj--item-is-pr-issue-p issue)
            (fj-get-item repo owner number :pull)
          issue)))
-    (_ (user-error "invalid type '%s'" type))))
+    (_ (user-error "Invalid type '%s'" type))))
 
 (defun fj-issue-success-maybe-upload (resp repo owner)
   "In sucess function with RESP, upload attachment if present.
@@ -3059,8 +3059,9 @@ for forming a URL.")
         (group-n 2
           (1+ alnum)))
       (| "'" word-boundary)) ; boundary or possessive
-  "Regex for a local pull request reference. Group 1 is for completion at point functions.
-Group 2 is the ref without any preceding !.")
+  "Regex for a local pull request reference.
+Group 1 is for completion at point functions. Group 2 is the ref without
+any preceding !.")
 
 (defvar fj-repo-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
