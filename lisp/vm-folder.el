@@ -2718,9 +2718,9 @@ repairing a folder whose list has already drifted."
 
 (defun vm-gobble-imap-to-expunge ()
   "Read back the server deletions a previous session could not send.
-The companion of `vm-stuff-imap-to-expunge'; see issue #556.  Entries for a
-different UID validity are left for `vm-imap-net-expunge-remote-messages'
-to notice and refuse, as it does for any other stale UID."
+The companion of `vm-stuff-imap-to-expunge'; see issue #556.  An entry for a
+different UID validity names nothing in the mailbox as it is now, and
+`vm-imap-net-uids-to-expunge' leaves it where it is rather than sending it."
   (let ((case-fold-search t)
 	ob oldpoint lim)
     (save-excursion

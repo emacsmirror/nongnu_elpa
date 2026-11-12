@@ -95,9 +95,9 @@ having to hand it on.")
 (defun vm-imap-net-parse-token ()
   "Parse the token at point, whatever it is, and answer with it.
 Throws `vm-imap-net-need\\=' with a request when the buffer does not hold the
-whole of it -- too little in it to tell what is coming, the octets of a
-literal, the closing quote of a quoted string, the terminator of an atom:
-the four places `vm-imap-read-object\\=' calls `accept-process-output\\='."
+whole of it: too little in it to tell what is coming, the octets of a
+literal, the closing quote of a quoted string, the terminator of an atom.
+Those are the four places a reader of IMAP has to wait for more input."
   (cond
    ((< (- (point-max) (point)) 2)
     (throw 'vm-imap-net-need (vm-net-request-growth)))
@@ -592,7 +592,7 @@ in it."
 (iter-defun vm-imap-net-select (mailbox &optional examine)
   "Select MAILBOX, or EXAMINE it, and answer with what the server said of it.
 The answer is (COUNT RECENT UID-VALIDITY READ-WRITE CAN-DELETE
-PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
+PERMANENT-FLAGS)."
   (let* ((command (if examine "EXAMINE" "SELECT"))
 	 (lines (iter-yield-from
 		 (vm-imap-net-command
@@ -638,8 +638,7 @@ PERMANENT-FLAGS), which is `vm-imap-select-mailbox\\='s."
 
 (iter-defun vm-imap-net-message-data (first last)
   "Ask for the UID, size and flags of the messages FIRST to LAST.
-Returns an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), which is what
-`vm-imap-get-message-data-list\\=' returns, newest first.
+Returns an alist of (SEQUENCE-NUMBER UID SIZE . FLAGS), newest first.
 
 A response with no UID is not a reply to this: a server sends a message\\='s
 flags on its own account when somebody else changes them (RFC 3501 7.4.1), and
@@ -682,7 +681,7 @@ acts on from the server at the next synchronisation anyway."
     data))
 
 (defun vm-imap-net-fetch-items (body-peek headers-only)
-  "What to ask a FETCH for, as `vm-imap-fetch-messages\\=' asks for it.
+  "What to ask a FETCH for.
 The UID comes back with the body because a server may answer for a range in
 any order, and the responses have to be told apart (issue #185)."
   (cond ((and headers-only body-peek) "(UID BODY.PEEK[HEADER])")
@@ -3125,62 +3124,6 @@ modification flags and go up next time."
 	 (vm-imap-net-no-password
 	  (vm-imap-net-say-no-password folder reason)
 	  nil))))))
-
-(iter-defun vm-imap-net-expunge-session (session user password mailbox uids)
-  "Log in, select MAILBOX, and expunge UIDS from it."
-  (unwind-protect
-      (progn
-	(iter-yield-from (vm-imap-net-open-session user password))
-	(iter-yield-from (vm-imap-net-select mailbox))
-	(iter-yield-from (vm-imap-net-expunge uids)))
-    (vm-imap-net-logout session)))
-
-(defun vm-imap-net-expunge-remote-messages ()
-  "Start expunging on the server what this folder has expunged locally.
-Answers with whether it did; nil means nothing was started, VM having no
-password for the maildrop yet.  With a session already running the expunge is
-done when that one ends and the answer is `later'."
-  (let* ((folder (current-buffer))
-	 (pending (vm-imap-net-uids-to-expunge (vm-folder-imap-uid-validity))))
-    (cond
-     ((null pending) nil)
-     (t
-      (vm-imap-net-when-free
-       (format "expunging %d message%s on the server"
-	       (length pending) (if (= (length pending) 1) "" "s"))
-       (lambda ()
-	 (condition-case reason
-	     ;; read again here, not from what was pending when this was asked
-	     ;; for: a session that ran in between may have expunged some of
-	     ;; them already
-	     (let* ((uids (vm-imap-net-uids-to-expunge
-			   (vm-folder-imap-uid-validity)))
-		    (opened (vm-imap-net-open (vm-folder-imap-maildrop-spec)
-					      "IMAP expunge" 'may-ask))
-		    (session (car opened))
-		    (buffer (vm-net-session-buffer session)))
-	       (setf (vm-net-session-finished session)
-		     (lambda (finished)
-		       (let ((process (vm-net-session-process finished)))
-			 (vm-net-close-process process))
-		       (vm-imap-net-done-with-buffer buffer)
-		       (when (buffer-live-p folder)
-			 (with-current-buffer folder
-			   (if (vm-net-session-error finished)
-			       (vm-net-warn 0 "%s: %s" (buffer-name folder)
-					(error-message-string
-					 (vm-net-session-error finished)))
-			     (vm-imap-net-note-expunged uids)
-			     (vm-net-inform 5 "%s: %d message%s expunged on the server"
-					(buffer-name folder) (length uids)
-					(if (= (length uids) 1) "" "s")))))))
-	       (vm-imap-net-take-session session
-			     (vm-imap-net-expunge-session
-			      session (nth 2 opened) (nth 3 opened) (nth 1 opened) uids))
-	       t)
-	   (vm-imap-net-no-password
-	    (vm-imap-net-say-no-password folder reason)
-	    nil))))))))
 
 (defun vm-imap-net-get-mail (source callback &optional may-ask full-retrieve)
   "Fetch into the current folder what SOURCE has that it has not, and

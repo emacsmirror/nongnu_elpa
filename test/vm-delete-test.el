@@ -992,8 +992,8 @@ The queue used to collect (nil . nil) for one, which is a UID no mailbox has."
 
 (ert-deftest vm-delete-test-a-stale-uid-is-not-queued ()
   "A UID under another UIDVALIDITY names nothing in the mailbox now.
-`vm-imap-expunge-remote-messages' rejects those and reports it, which tells the
-reader about something they can do nothing about."
+`vm-imap-net-uids-to-expunge' leaves such an entry unsent, so queueing one
+puts a request in the folder that nothing acts on."
   (vm-delete-test--in-an-imap-cache
     (vm-set-imap-uid-validity-of (vm-test-first-message) "99")
     (vm-delete-test--expunge-the-first)

@@ -411,11 +411,10 @@ The current buffer is MESSAGE\\='s folder, and its access method is `imap\\='.
 
 Only a UID under the mailbox\\='s own UIDVALIDITY is queued.  A message with no
 UID never came from the server; one whose UIDVALIDITY is not the mailbox\\='s
-names nothing there now, and `vm-imap-expunge-remote-messages\\=' would refuse
-it and say so, which tells the reader about something they can do nothing
-about.  A validity that goes stale after the queue is written is a different
-matter and is still refused at that point: the mailbox can be recreated while
-a deletion waits for a session (emacs-vm/vm#757)."
+names nothing there now, and `vm-imap-net-uids-to-expunge\\=' would leave it
+unsent for ever.  A validity that goes stale after the queue is written is a
+different matter and is left unsent at that point instead: the mailbox can be
+recreated while a deletion waits for a session (emacs-vm/vm#757)."
   (when (and (vm-imap-uid-of message)
 	     (equal (vm-imap-uid-validity-of message)
 		    (vm-folder-imap-uid-validity)))
