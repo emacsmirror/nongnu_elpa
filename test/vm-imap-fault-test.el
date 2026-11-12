@@ -7,8 +7,8 @@
 ;;; Commentary:
 
 ;; The other IMAP tests ask whether an operation does what it should.  These
-;; ask what is left of the folder when it does not: the server refuses, calls
-;; the command bad, hangs up mid-message, answers a FETCH backwards, lies about
+;; ask what is left of the folder when it does not: the server rejects a command, calls
+;; the command bad, hangs up mid-message, returns a FETCH backwards, lies about
 ;; a size.  A folder that ends up inconsistent after that is corrupted, and a
 ;; corrupted folder is what the asynchronous work has to be trusted not to
 ;; leave behind.

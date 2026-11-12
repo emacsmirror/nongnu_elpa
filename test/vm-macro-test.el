@@ -355,7 +355,7 @@ Callers catch that condition by name, so a plain `error' would not do."
                               (cadr (should-error
                                      (vm-error-if-virtual-folder))))))))
 
-(ert-deftest vm-macro-test-buffer-p-knows-vms-own-buffers ()
+(ert-deftest vm-macro-test-buffer-p-recognises-vms-own-buffers ()
   "`vm-buffer-p' is true in the four VM modes and false elsewhere."
   (with-temp-buffer
     (dolist (mode '(vm-mode vm-presentation-mode vm-virtual-mode

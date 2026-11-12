@@ -6,7 +6,7 @@
 
 ;;; Commentary:
 
-;; Arming the IMAP and POP trace keeping, and what the report carries.
+;; Arming the IMAP and POP trace keeping, and what the report holds.
 
 ;;; Code:
 
@@ -84,7 +84,7 @@ the trace keeping is off.  With it on there is nothing to ask about."
         (vm-imap-submit-bug-report)
         (should (equal asked 1))))))
 
-(ert-deftest vm-bug-report-test-the-report-carries-the-kept-traces ()
+(ert-deftest vm-bug-report-test-the-report-holds-the-kept-traces ()
   "The submit command hands `vm-submit-bug-report' a hook, and running that
 hook writes the kept trace buffers into the report.
 
@@ -113,7 +113,7 @@ the conversation that went wrong."
           (with-current-buffer trace (set-buffer-modified-p nil))
           (kill-buffer trace))))))
 
-(ert-deftest vm-bug-report-test-the-pop-report-carries-its-traces ()
+(ert-deftest vm-bug-report-test-the-pop-report-holds-its-traces ()
   "The same for POP, whose traces are kept in a list of its own."
   (vm-bug-report-test--in-a-folder
     (let ((trace (get-buffer-create "vm-bug-report-test-pop-trace"))
@@ -138,7 +138,7 @@ the conversation that went wrong."
           (with-current-buffer trace (set-buffer-modified-p nil))
           (kill-buffer trace))))))
 
-;;; The configuration the report carries (emacs-vm/vm#644)
+;;; The configuration the report holds (emacs-vm/vm#644)
 
 (defun vm-bug-report-test--submit-and-read ()
   "Return the text of the report `vm-submit-bug-report' composes.
@@ -208,14 +208,14 @@ report."
 
 (defun vm-bug-report-test--running-session (buffer)
   "A live session whose process buffer is BUFFER.
-A process of its own, so `vm-net-session-live-p' answers t: the folder's
+A process of its own, so `vm-net-session-live-p' returns t: the folder's
 session is what the report has to reach into, and a struct with no process
 is not one."
   (let ((process (start-process "vm-bug-report-test" buffer "cat")))
     (set-process-query-on-exit-flag process nil)
     (vm-net-session :process process :name "imap" :timeout 5)))
 
-(ert-deftest vm-bug-report-test-the-report-carries-the-running-session ()
+(ert-deftest vm-bug-report-test-the-report-holds-the-running-session ()
   "The trace of the session still running is in the report.
 
 It is not in `vm-kept-imap-buffers', which a session joins only when it ends,
@@ -284,7 +284,7 @@ sessions.  A reader who forgot to arm the trace keeping still gets a report."
       (vm-insert-session-traces "IMAP" nil)
       (should (string-match-p "IMAP Trace buffers" (buffer-string))))))
 
-(ert-deftest vm-bug-report-test-the-pop-report-carries-its-running-session ()
+(ert-deftest vm-bug-report-test-the-pop-report-holds-its-running-session ()
   "The same for POP: the session still running is in the report."
   (vm-bug-report-test--in-a-folder
     (let* ((buffer (get-buffer-create "vm-bug-report-test-pop-live"))
@@ -358,7 +358,7 @@ the positions by making the trace current copies it into itself."
         (vm-insert-session-traces "IMAP" (list trace)))
       (should (equal (with-current-buffer trace (buffer-string)) before)))))
 
-(ert-deftest vm-bug-report-test-a-short-trace-is-carried-whole ()
+(ert-deftest vm-bug-report-test-a-short-trace-is-kept-whole ()
   "Under the limit nothing is left out, and nothing is said about leaving
 anything out."
   (vm-bug-report-test--with-a-long-trace trace
@@ -369,8 +369,8 @@ anything out."
           (should-not (string-match-p "left out of the middle" report))
           (should (string-match-p "\\* 200 FETCH" report)))))))
 
-(ert-deftest vm-bug-report-test-no-limit-carries-every-trace-whole ()
-  "Nil for the limit carries the whole of it, which is the way to get a trace
+(ert-deftest vm-bug-report-test-no-limit-keeps-every-trace-whole ()
+  "Nil for the limit keeps the whole of it, which is the way to get a trace
 the elision has cut something out of."
   (vm-bug-report-test--with-a-long-trace trace
     (let ((vm-session-trace-max-size nil))

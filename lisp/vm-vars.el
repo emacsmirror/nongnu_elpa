@@ -314,7 +314,7 @@ or a list of lists.
 
 If the value is a list of strings, the strings should name files
 that VM will check for incoming mail instead of the default place
-VM thinks your system mailbox is.  Mail will be moved from these
+VM uses for your system mailbox.  Mail will be moved from these
 mailboxes to your primary inbox as specified by `vm-primary-inbox',
 using `vm-crash-box' as a waystation.
 
@@ -815,7 +815,7 @@ done."
 
 (defcustom vm-mail-check-interval 300
   "*Numeric value specifies the number of seconds between checks
-for new mail, carried out using a timer task.  The maildrops for all
+for new mail, performed by a timer task.  The maildrops for all
 visited folders are checked. 
 
 A nil value means don't check for new mail.
@@ -1017,7 +1017,7 @@ This is consulted where a folder cannot say for itself what it is:
     are the same folder but for the `Content-Length' header, so looking
     like one is no evidence: a folder named mboxcl2 is mboxcl2, and a
     message in it that has no length is then something the reader
-    complains about -- which is the use of saying so in the name.
+    reports: that is the use of stating the type in the name.
 
 What a folder's own contents say is never overridden where they settle the
 question: a name ending .mboxcl2 does not make VM read a BABYL file as one.
@@ -1035,8 +1035,8 @@ those bodies.
 
 An extension and not a pattern over the name.  A pattern can be written so
 that it matches nothing, silently, and it can be written so that it claims
-every folder in a directory -- and a directory of nine From_ folders claimed
-as mboxcl2 is nine folders VM then refuses to read.  The cost is that a
+every folder in a directory: a directory of nine From_ folders matched
+as mboxcl2 is nine folders VM then rejects.  The cost is that a
 folder which cannot be renamed cannot be typed by its name; that is what
 `vm-default-folder-type' is for.
 
@@ -1274,7 +1274,7 @@ into a presentation buffer before the filling is done.
 This variable determines which paragraphs are filled,
 but `vm-paragraph-fill-column' determines the fill column.
 
-Note that filling is carried out only if word wrapping is not in
+Note that filling is done only if word wrapping is not in
 effect.  The variable `vm-word-wrap-paragraphs' controls word
 wrapping."
   :group 'vm-presentation 
@@ -1292,7 +1292,7 @@ using the width of the Emacs window.
 This variable determines which paragraphs are filled,
 but `vm-fill-long-lines-in-reply-column' determines the fill column.
 
-Note that filling is carried out only if word wrapping is not in
+Note that filling is done only if word wrapping is not in
 effect.  The variable `vm-word-wrap-paragraphs-in-reply' controls word
 wrapping."
   :group 'vm-reply
@@ -1305,9 +1305,9 @@ wrapping."
 
 (defcustom vm-html-in-reply-column vm-html-default-column
   "Column at which HTML quoted in a reply is broken into lines.
-An HTML part carries no line breaks of its own: whatever converts it to
-text decides where its lines end, and asked for nothing in particular each
-converter uses a width of its own -- emacs-w3m the width of the window the
+An HTML part has no line breaks of its own: whatever converts it to
+text determines where its lines end, and asked for nothing in particular each
+converter uses a width of its own: emacs-w3m the width of the window the
 message happened to be displayed in, lynx 72 columns.  So a reply quoted
 lines of one length today and another tomorrow.
 
@@ -1417,11 +1417,10 @@ differently than any other message."
 ;; reason vm-mime-avoid-folding-content-type is also set to t.
 (defcustom vm-mime-ignore-mime-version t
   "*Non-nil value means ignore the version number in the MIME-Version
-header.  VM only knows how to decode and display MIME version 1.0
-messages.  Some systems scramble the MIME-Version header, causing
-VM to believe that it cannot display a message that it actually
-can display.  You can set `vm-mime-ignore-mime-version' non-nil if
-you use such systems."
+header.  VM decodes and displays MIME version 1.0 messages only.
+Some systems scramble the MIME-Version header, so that VM treats a
+message it can display as one it cannot.  You can set
+`vm-mime-ignore-mime-version' non-nil if you use such systems."
   :group 'vm-mime
   :type 'boolean)
 
@@ -1456,9 +1455,9 @@ did before it knew about the format."
 (defcustom vm-mime-8bit-header-charsets '(utf-8 iso-8859-1)
   "*Coding systems to try on header text that arrives as raw 8-bit bytes.
 RFC 5322 allows only ASCII in a header and RFC 2047 provides encoded words
-for everything else, but plenty of mail carries 8-bit header text anyway,
-and RFC 6532 makes UTF-8 legal there.  Such text says nothing about its own
-character set, so VM tries these coding systems in order and takes the first
+for everything else, but plenty of mail has 8-bit header text anyway,
+and RFC 6532 makes UTF-8 legal there.  Such text states no character set of
+its own, so VM tries these coding systems in order and takes the first
 that decodes the whole of the text.
 
 The order matters: UTF-8 first, because a byte sequence that is valid UTF-8
@@ -1651,11 +1650,11 @@ that type are assumed to be included."
 
 (defcustom vm-mime-complete-html-for-external-viewer t
   "*Whether to complete an HTML part before an external viewer sees it.
-Plenty of mail carries text/html that is a fragment rather than a document:
+Plenty of mail has text/html that is a fragment rather than a document:
 it opens with a `<span>' or a `<div>' and has no `<html>' and no `<head>'.
-Nothing in such a file says what character set its bytes are in -- the
-message said so in the part's Content-Type header, which the file does not
-have -- so a browser handed it guesses, and gets an accented letter or a
+Nothing in such a file states what character set its bytes are in (the
+message stated it in the part's Content-Type header, which the file does not
+have), so a browser handed it guesses, and gets an accented letter or a
 curly quote wrong.
 
 With this set, VM wraps a fragment in a document that declares the part's
@@ -1998,10 +1997,10 @@ Only `shr' is always available; the others need a package or a program.
 (defcustom vm-mime-shr-inhibit-images t
   "*Non-nil means the `shr' HTML handler displays no images.
 
-A remote image in a message is fetched from the sender\\='s server, which then
-knows the message was opened and when.  That is why this is on by default,
-and why VM binds it while rendering rather than leaving it to the shr
-settings a reader has chosen for the web."
+A remote image in a message is fetched from the sender\\='s server, which
+then has a record that the message was opened, and when.  That is why this
+is on by default, and why VM binds it while rendering rather than leaving it
+to the shr settings a reader has chosen for the web."
   :group 'vm-mime
   :type 'boolean)
 
@@ -2014,7 +2013,7 @@ no VM ever inserted anything (emacs-vm/vm#845).
 
 What blocks such an image is `vm-w3m-safe-url-regexp', which belongs to
 emacs-w3m and by default matches a cid: URL and nothing else, so only the
-images carried in the message itself are fetched.  The w3m and lynx handlers
+images contained in the message itself are fetched.  The w3m and lynx handlers
 render outside Emacs and fetch nothing at all.
 nothing at all."
   :group 'vm-mime
@@ -2547,7 +2546,7 @@ with the first type that matches will be used."
   "Subject\\|\\(\\(Resent-\\)?\\(From\\|To\\|CC\\|BCC\\)\\)\\|Organization"
   "*A regexp matching the headers whose words should be MIME-encoded.
 A header holding a character outside US-ASCII cannot be sent as it stands;
-the words carrying those characters are encoded as RFC 2047 words instead.
+the words holding those characters are encoded as RFC 2047 words instead.
 By default Subject, Organization, From, To, CC, BCC and their Resent- forms
 are encoded.  `vm-mime-encode-headers-type' says with which encoding."
   :group 'vm-mime
@@ -2587,7 +2586,7 @@ base64 for the words it matches and quoted-printable for the rest."
 
 (defcustom vm-mime-max-text-line-length 998
   "*Longest line VM sends in a text part without encoding it.
-A longer line is sent quoted-printable, which carries it as several
+A longer line is sent quoted-printable, which sends it as several
 physical lines each ending in `=' and has the recipient's mail reader put
 it back together, so the line arrives as the one line you wrote.
 
@@ -2672,8 +2671,8 @@ and the type corresponding to the first match found is used."
   "*Non-nil means don't send folded Content- headers in MIME messages.
 `Folded' headers are headers broken into multiple lines as specified
 in RFC822 for readability and to avoid excessive line lengths.  At
-least one major UNIX vendor ships a version of sendmail that believes
-a folded Content-Type header is a syntax error, and returns any such
+least one major UNIX vendor ships a version of sendmail that treats
+a folded Content-Type header as a syntax error, and returns any such
 message to sender.  A typical error message from such a sendmail
 version is,
 
@@ -3906,7 +3905,7 @@ after visiting it again."
   :type 'string)
 
 (defcustom vm-summary-attachment-indicator "$"
-  "*Indicator shown in the summary for a message carrying attachments.
+  "*Indicator shown in the summary for a message with attachments.
 A string is shown as it stands.  A symbol is shown followed by the number
 of attachments, so the symbol $ gives \"$2\" for a message of two.  A
 message with none shows nothing either way.
@@ -4568,8 +4567,9 @@ gives a reference to an object instead of the object itself.  Emacs does the
 retrieving, through `url-retrieve-synchronously', so nothing need be
 installed and no program is named here.
 
-Set it to nil to refuse: an external-body URL is fetched from a server that
-then knows the message was opened, which is not always wanted.
+Set it to nil to prevent that: an external-body URL is fetched from a server
+that then has a record that the message was opened, which is not always
+wanted.
 
 Earlier releases took a list of external programs to try, such as
 \\='(lynx wget fetch curl w3m).  Such a value still reads as non-nil and so
@@ -5997,7 +5997,7 @@ threads will apply to all the messages in the threads.
 attributes, adding/deleting labels etc.
 
 If the variable is set to t then thread operations are always
-carried out.  If it is set to `ask', then the user is asked for
+performed.  If it is set to `ask', then the user is asked for
 confirmation whether the operation should apply to all the
 messages in the thread.  This can be overridden by invoking the
 operation with a prefix argument using `C-u' and no questions will be
@@ -6293,10 +6293,10 @@ folder needs to be updated.")
 (defvar vm-matched-header-vector (make-vector 6 nil))
 (defconst vm-supported-folder-types
   '("From_" "mboxcl2" "mmdf" "babyl")
-  "The folder types VM offers to create, as strings, for completion.
+  "The folder types VM creates, as strings, for completion.
 `mboxcl2' was called `From_-with-Content-Length' until 2026; the old name is
-still accepted where a type is given, and is not offered here.  So is
-`BellFrom_', which VM reads and no longer offers to write, a folder written as
+still accepted where a type is given, and is not listed here.  So is
+`BellFrom_', which VM reads and no longer writes, a folder written as
 one being read back as From_ (issue #787).  `vm-folder-types' is the wider
 list, of what VM can read.")
 (defconst vm-supported-window-configurations
@@ -6882,16 +6882,16 @@ UIDVALIDITY for each message to be expunged.")
   :type '(choice (integer :tag "Number of session buffers kept"
 		 (const :tag "No session buffers kept" nil))))
 (defcustom vm-session-trace-max-size 100000
-  "*The most of one session trace a bug report carries, in characters.
+  "*The most of one session trace a bug report includes, in characters.
 
 A session that fetched the UID and flags of every message in a large mailbox
 leaves most of a megabyte in its trace, and a bug report of that size cannot
-be sent.  Beyond this, the middle of the trace is left out and the report says
-how much: the start says what the server is and what was asked of it, the end
-says where it went wrong, and the thousands of identical FETCH lines between
-them say nothing twice.
+be sent.  Beyond this, the middle of the trace is left out and the report
+states how much: the start holds what the server is and what was asked of it,
+the end where it went wrong, and the thousands of identical FETCH lines
+between them hold nothing new.
 
-Nil carries every trace whole."
+Nil includes every trace whole."
   :group 'vm-helpers
   :type '(choice (integer :tag "Characters of each trace")
 		 (const :tag "The whole of every trace" nil)))
@@ -6899,29 +6899,30 @@ Nil carries every trace whole."
 (defvar vm-imap-session-done nil)
 
 (defvar vm-imap-refused-flags nil
-  "Flags this IMAP server has refused to store, in the session's process buffer.
-A server need not accept every keyword: Exchange refuses any it does not know,
-and refuses the whole STORE with them, so one unknown keyword used to stop
-`\\Deleted' and the rest from being stored at all (issue #391).  A flag that
-comes back refused on its own is remembered here and not sent again for the rest
-of the session.")
+  "Flags this IMAP server has rejected, in the session's process buffer.
+A server need not accept every keyword: Exchange rejects any it does not
+recognise, and rejects the whole STORE with them, so one unknown keyword
+used to stop `\\Deleted' and the rest from being stored at all (issue #391).
+A flag that comes back rejected on its own is remembered here and not sent
+again for the rest of the session.")
 (make-variable-buffer-local 'vm-imap-refused-flags)
 
 (defvar vm-imap-dropped-flags nil
   "Keywords this IMAP server took and did not keep, in the process buffer.
-A server may accept a `STORE' of a keyword, answer OK, and not store it: RFC
+A server may accept a `STORE' of a keyword, return OK, and not store it: RFC
 3501 lets it ignore a flag that is not in the mailbox's PERMANENTFLAGS, and
 Gmail does exactly that with every keyword, which is what a VM label is on the
-wire.  The label is then set here and absent there, with nothing said at any
-point (issue #601).  A keyword seen to vanish is remembered here so that the
-complaint is made once per session rather than once per message.")
+wire.  The label is then set here and absent there, with nothing reported at
+any point (issue #601).  A keyword seen to vanish is remembered here so that
+the warning is given once per session rather than once per message.")
 (make-variable-buffer-local 'vm-imap-dropped-flags)
 
 (defvar vm-imap-keywords-carried nil
-  "Whether this mailbox carries IMAP keywords, in the folder buffer.
-A cons of the flags obarray the answer was worked out from and the answer, so
-that a new obarray -- a new look at the mailbox -- is worked out again.  See
-`vm-imap-mailbox-carries-keywords-p', which is the only thing that reads it.")
+  "Whether this mailbox keeps IMAP keywords, in the folder buffer.
+A cons of the flags obarray the result was worked out from and the result, so
+that a new obarray, which is a fresh look at the mailbox, is worked out again.
+See `vm-imap-mailbox-carries-keywords-p', which is the only thing that reads
+it.")
 (make-variable-buffer-local 'vm-imap-keywords-carried)
 (defvar vm-reply-list nil
   "Buffer local variable in Composition buffers that holds the set of
@@ -7274,7 +7275,7 @@ what `vm-mail-check-recipients' looks for."
 
 `smtpmail-send-it' works out the recipients first, in
 `smtpmail-deduce-address-list', and then deletes the header, in
-`smtpmail-do-bcc'.  Nothing reaches the server carrying it.
+`smtpmail-do-bcc'.  Nothing reaches the server with it.
 
 `sendmail-send-it' is not here and cannot be.  It passes -t and leaves the
 header in place, because with -t those addresses are how the transport
@@ -7284,9 +7285,9 @@ remove it.  A real sendmail does.  Whether the program behind
 `sendmail-program' does is outside Emacs.")
 
 (defcustom vm-check-bcc-removal t
-  "*Non-nil means refuse to send a message whose Bcc could reach the recipients.
+  "*Non-nil means do not send a message whose Bcc could reach the recipients.
 
-VM refuses when a composition carries a Bcc header and `send-mail-function'
+VM signals an error when a composition has a Bcc header and `send-mail-function'
 is not one of `vm-senders-that-remove-bcc'.  Such a function hands the
 header to a program outside Emacs and trusts it to remove it, so the privacy
 of the Bcc rests on that program being right.  Where it is not, everyone on

@@ -11,7 +11,7 @@
 ;; account for XOAUTH2.  Those code paths are the
 ;; least tested in VM, because a machine without the package cannot run them
 ;; at all -- the whole test suite prints "Could not load feature bbdb" and
-;; carries on.
+;; continues.
 ;;
 ;; This installs them under test/opt/elpa, where `vm-test-init.el' finds them
 ;; and the tests that need them stop skipping.  Run it with

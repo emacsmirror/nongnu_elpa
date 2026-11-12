@@ -140,7 +140,7 @@ This is what makes clicking a From line compose to it."
 (ert-deftest vm-mouse-test-send-url-uses-the-browser-it-is-given ()
   "A function browser is called with the URL; a program is run with switches.
 The argument wins over `vm-url-browser', which is how the button-3 menu
-offers a choice of browser."
+gives a choice of browser."
   (let ((got nil) (ran nil))
     (cl-letf (((symbol-function 'vm-run-background-command)
                (lambda (&rest args) (setq ran args)))

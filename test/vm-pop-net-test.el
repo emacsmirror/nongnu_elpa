@@ -42,7 +42,7 @@ two race and the test sometimes sees the process being torn down instead."
                                      timeout wait))
 
 (defun vm-pop-net-test--run-with-session (mock make &optional timeout wait)
-  "Run the generator MAKE answers against MOCK, and answer with the session.
+  "Run the generator MAKE returns against MOCK, and return the session.
 MAKE is called with the session, for a generator that is given it:
 `vm-pop-net-session' says QUIT on its own connection and not on whichever
 one the current buffer holds.  TIMEOUT and WAIT are as for
@@ -90,7 +90,7 @@ resumed in the filter when its line arrived."
   (iter-yield-from (vm-pop-net-authenticate user password))
   (iter-yield-from (vm-pop-net-uidl)))
 
-(ert-deftest vm-pop-net-test-uidl-answers-the-uids-in-order ()
+(ert-deftest vm-pop-net-test-uidl-returns-the-uids-in-order ()
   "A multi-line response is read to its dot and comes back as lines."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
                                                     vm-pop-net-test--bob))
@@ -102,8 +102,8 @@ resumed in the filter when its line arrived."
         (should (equal (mapcar #'car uids) '(1 2)))
         (should (cl-every #'stringp (mapcar #'cdr uids)))))))
 
-(ert-deftest vm-pop-net-test-uidl-answers-nothing-without-support ()
-  "A server with no UIDL answers -ERR, which is not a failed session: it is
+(ert-deftest vm-pop-net-test-uidl-returns-nothing-without-support ()
+  "A server with no UIDL replies -ERR, which is not a failed session: it is
 a maildrop VM cannot identify messages in, and the caller decides what that
 means.  It says so with `unsupported\=', which an empty maildrop does not
 (emacs-vm/vm#888)."
@@ -117,7 +117,7 @@ means.  It says so with `unsupported\=', which an empty maildrop does not
 
 (ert-deftest vm-pop-net-test-an-empty-maildrop-is-not-a-server-without-uidl ()
   "REGRESSION: an empty maildrop was reported as a server with no UIDL.
-Issue #888.  `vm-pop-net-uidl\=' answered nil both for a server that refuses
+Issue #888.  `vm-pop-net-uidl\=' returned nil both for a server that rejects
 UIDL and for a maildrop with nothing in it, and `vm-pop-net-fetch-new\=' read
 that as the first:
 
@@ -136,7 +136,7 @@ is what `vm-pop-expunge-after-retrieving\=' does, met it on every check."
       (should-not (eq (vm-net-session-value session) 'unsupported)))))
 
 (ert-deftest vm-pop-net-test-fetching-an-empty-maildrop-says-nothing ()
-  "Fetching from an empty maildrop answers no messages and warns about
+  "Fetching from an empty maildrop returns no messages and warns about
 nothing.  Issue #888: it answered with the no-UIDL error instead."
   (vm-pop-net-test--with-mock (mock :messages nil)
     (let ((answer 'not-called)
@@ -310,7 +310,7 @@ the answer already in its buffer."
              timer-list ", "))
 
 (defun vm-pop-net-test--wait-until (done seconds what)
-  "Pump until DONE answers non-nil, and fail with WHAT if SECONDS pass first.
+  "Pump until DONE returns non-nil, and fail with WHAT if SECONDS pass first.
 
 A wait that runs out says what the session was doing, what its buffer holds
 and what the timers are, because a wait that only says \"nothing came\" is a
@@ -337,8 +337,8 @@ that had stopped firing."
                      (format "%s, %s" (process-status process)
                              (if (eq (process-get process 'vm-net-session)
                                      session)
-                                 "carrying this session"
-                               "not carrying it: nothing will poll"))
+                                 "holding this session"
+                               "not holding it: nothing will poll"))
                    "none")
                  (if (and session (vm-net-session-request session))
                      (format "outstanding, says %s"
@@ -371,7 +371,7 @@ Answers what the callback was given."
 
 (ert-deftest vm-pop-net-test-a-maildrop-with-new-mail-says-so ()
   "`vm-pop-net-check-mail' takes a maildrop specification, opens it, asks
-UIDL and answers t through its callback -- and returns before any of that,
+UIDL and returns t through its callback, and returns before any of that,
 which is the whole point: the mail check runs on a timer, and today it stops
 Emacs every time it fires."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
@@ -496,7 +496,7 @@ SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
 
 What the server no longer has is the next fetch's business.  Deletions that
 do not get through stay in `vm-pop-messages-to-expunge', which is in the
-folder file, so the next save offers them again."
+folder file, so the next save sends them again."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice
                                                     vm-pop-net-test--bob))
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
@@ -525,7 +525,7 @@ folder file, so the next save offers them again."
 ;; failed (emacs-vm/vm#863).  Emacs is stopped for the whole pause, so nothing
 ;; the test or the driver does can see it coming.
 ;;
-;; The mock answers in milliseconds; these timeouts exist to stop a hang, not to
+;; The mock replies in milliseconds; these timeouts exist to stop a hang, not to
 ;; measure anything, so they cost nothing by being generous.  The wait is longer
 ;; again than the session's own timeout, so a session that does hang is reported
 ;; by the assertion that says what was not done rather than by a bare deadline.
@@ -565,7 +565,7 @@ Someone else deleted it, or an earlier session did and its answer was lost.
 The request stayed on `vm-pop-messages-to-expunge' either way, so every save
 opened a session to ask for a message that was not there -- for ever.  What
 the maildrop does not list is settled; what it lists and would not delete
-stays, so the next save offers that again."
+stays, so the next save sends that again."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-pop-mock-spec mock))
@@ -620,7 +620,7 @@ refusing -- is offered by the next save."
 
 (ert-deftest vm-pop-net-test-a-pop-save-during-a-session-waits ()
   "Deletions asked for while a session is running go up next time.
-Two POP sessions to one maildrop is what the server refuses anyway, and two
+Two POP sessions to one maildrop is what the server rejects anyway, and two
 writing one folder is what corrupts it."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
@@ -656,7 +656,7 @@ writing one folder is what corrupts it."
 (ert-deftest vm-pop-net-test-expunging-says-so-with-no-password ()
   "`vm-expunge-pop-messages' says so when the driver cannot start.
 
-A command that answers a keystroke with silence looks as though it worked, so
+A command that meets a keystroke with silence looks as though it worked, so
 it says what happened instead."
   (let ((said nil))
     (cl-letf (((symbol-function 'vm-pop-net-expunge-retrieved) (lambda () nil))
@@ -726,9 +726,9 @@ that fails half way leaves the rest to be offered again."
           (with-current-buffer folder (set-buffer-modified-p nil))
           (kill-buffer folder))))))
 
-(ert-deftest vm-pop-net-test-a-maildrop-that-refuses-keeps-its-messages ()
+(ert-deftest vm-pop-net-test-a-maildrop-that-rejects-keeps-its-messages ()
   "A maildrop that will not delete keeps its entries, so the next expunge
-offers them again rather than forgetting messages that are still there."
+sends them again rather than forgetting messages that are still there."
   (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice)
                                     :refuse "DELE")
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
@@ -787,7 +787,7 @@ in the round that started it would otherwise never report anything."
     (should (vm-check-for-spooled-mail nil t))))
 
 (ert-deftest vm-pop-net-test-an-empty-maildrop-reports-nothing ()
-  "A maildrop with nothing in it answers nil, and the folder says so."
+  "A maildrop with nothing in it returns nil, and the folder reports it."
   (vm-pop-net-test--in-a-folder-with-spool (mock :messages nil)
     (vm-check-for-spooled-mail nil t)
     (vm-pop-net-test--settle)
@@ -810,7 +810,7 @@ than that would otherwise collect a connection per round."
 (ert-deftest vm-pop-net-test-a-failed-check-leaves-the-last-answer ()
   "A check that fails does not report \"no mail\": a folder that had mail
 waiting goes on saying so while the server is down, which is the truth as
-far as anyone knows.
+far as anyone can tell.
 
 Not under instrumentation: the check does not settle inside the wait when
 every form is instrumented (emacs-vm/vm#870)."
@@ -837,10 +837,10 @@ Emacs negotiates it as the connection comes up."
 
 ;;; Connecting, which does not wait either
 
-(ert-deftest vm-pop-net-test-a-refused-connection-answers-the-callback ()
+(ert-deftest vm-pop-net-test-a-rejected-connection-reaches-the-callback ()
   "A port with nothing listening ends the session through its sentinel, so
 the caller is told rather than left waiting.  `make-network-process' with
-:nowait returns before it knows, and this is where the answer arrives."
+:nowait returns before the result is in, and this is where it arrives."
   (let ((answer 'not-called)
         (vm-pop-retrieved-messages nil)
         (vm-pop-server-timeout 3)
@@ -1079,7 +1079,7 @@ nothing: that list is what stops a folder filling with duplicates."
       (should (equal (vm-pop-net-test--get-mail mock crash) 0)))))
 
 (defun vm-pop-net-test--wait-for (predicate &optional seconds)
-  "Pump until PREDICATE answers non-nil, or SECONDS pass.  Answers what it saw."
+  "Pump until PREDICATE returns non-nil, or SECONDS pass.  Returns what it saw."
   (let ((deadline (+ (float-time) (or seconds 20)))
         (answer nil))
     (while (and (not (setq answer (funcall predicate)))
@@ -1425,7 +1425,7 @@ any other does."
 
 (ert-deftest vm-pop-net-test-a-check-during-a-fetch-does-not-start-a-second ()
   "The mail check runs on a timer, so it fires while a fetch is running.
-It answers from what it already knows rather than opening a session of its
+It replies from what it already holds rather than opening a session of its
 own into the same folder."
   (vm-pop-net-test--in-a-folder-with-spool (mock :messages
                                                  (list vm-pop-net-test--alice))
@@ -1526,7 +1526,7 @@ maildrop asked not to happen."
 
 It was RFC 1081\\='s trusted-host scheme: a privileged source port stood for
 the authentication and the password went under another verb.  Nothing
-offers it, and VM no longer serves it either -- so the error names what to
+supports it, and VM no longer serves it either, so the error names what to
 write instead, rather than reporting an authentication VM does not
 recognise (emacs-vm/vm#822)."
   (vm-pop-mock-with (mock)
@@ -1604,7 +1604,7 @@ truncate anything."
 
 UIDL is what tells one message from another between sessions, so without it
 nothing here can say which messages have been fetched before.  So this
-refuses and names the reason: a maildrop that quietly never arrives is worse
+signals and names the reason: a maildrop that quietly never arrives is worse
 than one that says why."
   (vm-pop-net-test--in-a-folder-with-spool
       (mock :no-uidl t :messages (list vm-pop-net-test--alice
@@ -1617,7 +1617,7 @@ than one that says why."
       (should-not (file-exists-p crash)))))
 
 (ert-deftest vm-pop-net-test-the-timeout-is-only-a-backstop ()
-  "A server that answers normally is not cut off by the timeout.
+  "A server that replies normally is not cut off by the timeout.
 The point of a timeout is a bound on waiting, not a bound on the session."
   (vm-pop-net-test--in-a-folder-with-spool
       (mock :messages (list vm-pop-net-test--alice vm-pop-net-test--bob))
@@ -1703,7 +1703,7 @@ one for the fetch and one for the expunge after it (emacs-vm/vm#922)."
 (ert-deftest vm-pop-net-test-the-deletion-report-counts-what-was-deleted ()
   "The report after a fetch counts the messages deleted.
 
-What the expunge answers is (:deleted UIDLS :gone UIDLS), and the report
+What the expunge returns is (:deleted UIDLS :gone UIDLS), and the report
 took the length of that plist: four messages deleted however many there had
 been, which is what a reader of one message saw (emacs-vm/vm#922)."
   (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
@@ -1753,7 +1753,7 @@ The mock checks the whole SASL string, so a malformed one fails here."
 
 (ert-deftest vm-pop-net-test-a-refused-xoauth2-token-ends-the-session ()
   "REGRESSION: a refused token does not hang the session.
-The server answers a bad token with a continuation line and sends no -ERR
+The server replies to a bad token with a continuation line and sends no -ERR
 until the client has sent a line of its own.  A client that does not reply
 waits for a response that is not coming."
   (vm-pop-net-test--with-mock (mock :xoauth2 "good")
@@ -1838,6 +1838,38 @@ on the deletions of the session it ends (emacs-vm/vm#939)."
           (vm-net-close-process their-process)
           (when (buffer-live-p our-buffer) (kill-buffer our-buffer))
           (when (buffer-live-p their-buffer) (kill-buffer their-buffer)))))))
+
+(ert-deftest vm-pop-net-test-a-save-that-expunges-stays-saved ()
+  "REGRESSION: the folder does not go modified again when the server confirms.
+
+Issue #942, reported against IMAP and the same here.  A save writes the file
+and then starts the session that sends the deletions, so the file goes out
+with them still listed.  When the session finished,
+`vm-pop-net-send-changes' struck them off `vm-pop-messages-to-expunge' and
+marked the folder modified, which left a folder reporting unsaved changes
+the reader cannot see."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock))
+          (vm-pop-server-timeout 60))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1"))
+            ;; as a save leaves the folder: the file written, the buffer clean
+            (set-buffer-modified-p nil)
+            (should (eq (vm-pop-net-send-changes) t))
+            (vm-pop-net-test--wait-until (lambda () (not (vm-pop-net-busy-p)))
+                                         10 "the deletions")
+            (should (equal (vm-pop-mock-deleted mock) '(1)))
+            (should-not vm-pop-messages-to-expunge)
+            ;; and the reader is not told there is something to save
+            (should-not (buffer-modified-p)))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
 
 (provide 'vm-pop-net-test)
 

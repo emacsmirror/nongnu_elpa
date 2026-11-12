@@ -97,7 +97,7 @@ set: an attachment cannot be sent without MIME."
 
 (ert-deftest vm-dired-test-attached-files-survive-encoding ()
   "What the tags stand for reaches the message: encoding the composition
-carries both files' contents."
+holds both files' contents."
   (vm-dired-test--with-files (_dir composition dired)
     (goto-char (point-min))
     (dired-mark-files-regexp "\\.txt\\'")

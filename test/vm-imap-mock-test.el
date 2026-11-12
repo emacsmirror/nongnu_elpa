@@ -68,7 +68,7 @@ would otherwise land in the user's home."
 (ert-deftest vm-imap-mock-test-visiting-a-folder-retrieves-the-messages ()
   "Visiting an IMAP maildrop brings the messages in, headers and bodies.
 This is the whole client path -- session, SELECT, the UID and size fetch, and
-the BODY.PEEK[] that carries the message -- and until there was a mock it ran
+the BODY.PEEK[] that holds the message, and until there was a mock it ran
 in no test that a machine without a server could run."
   (vm-imap-mock-test--visiting
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
@@ -82,7 +82,7 @@ in no test that a machine without a server could run."
                             (vm-imap-mock-test--body-of (cadr vm-message-list))))))
 
 (ert-deftest vm-imap-mock-test-an-extra-fetch-item-is-stepped-over ()
-  "A server that answers with more than VM asked for still delivers the mail.
+  "A server that returns more than VM asked for still delivers the mail.
 
 RFC 3501 7.4.2 lets a server send data items the client did not ask about, and
 a server with CONDSTORE on sends MODSEQ with everything.  VM called that a
@@ -103,7 +103,7 @@ matching (BODY[] string) or a UID before it and nothing else."
   "A FETCH the server sent of its own accord is not taken for an answer.
 
 Somebody else changing a message's flags has the server report them whenever it
-next can (RFC 3501 7.4.1).  That response carries no UID, and taking it for
+next can (RFC 3501 7.4.1).  That response has no UID, and taking it for
 message data put an entry with no UID in the folder's tables: \"Wrong type
 argument: stringp, nil\", and no mail."
   (vm-imap-mock-test--visiting
@@ -213,7 +213,7 @@ local folder buffer, with `vm-spool-files' naming the mock as its spool."
             ;; the messages had already arrived before the test asked for them
             ;; -- and a test of fetching twice would then be fetching once
             (vm-auto-get-new-mail nil)
-            ;; the crash box has to be a file of its own: VM refuses to gobble
+            ;; the crash box has to be a file of its own: VM will not gobble
             ;; a crash box that is the folder
             (vm-spool-files (list (list local (vm-imap-mock-spec ,(car spec))
                                         (concat local ".crash"))))
@@ -318,7 +318,7 @@ again rather than forgetting messages that are still on the server."
     (vm-get-new-mail)
     (vm-imap-net-wait nil 30)
     (should (equal (length vm-imap-retrieved-messages) 2))
-    ;; the server refuses the STORE, so nothing is deleted and nothing is
+    ;; the server rejects the STORE, so nothing is deleted and nothing is
     ;; forgotten
     (setf (vm-imap-mock-refuse mock) "STORE")
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
@@ -396,7 +396,7 @@ which is what to do with a message whose copy here has gone wrong."
 ;;; Synchronising, and pruning what the server no longer has
 
 (defun vm-imap-mock-test--has-flag (mock mailbox uid flag)
-  "Whether the message with UID in MAILBOX carries FLAG, whatever its case.
+  "Whether the message with UID in MAILBOX has FLAG, whatever its case.
 IMAP system flags are case-insensitive and VM sends \\deleted in lower case,
 while a mock that stored what it was given keeps it that way."
   (cl-some (lambda (had) (equal (downcase had) (downcase flag)))
@@ -519,7 +519,7 @@ a spec naming INBOX gives the name back in capitals."
           (vm-imap-mock-user mock) (vm-imap-mock-password mock)))
 
 (defun vm-imap-mock-test--wait-until (predicate &optional seconds)
-  "Wait until PREDICATE answers non-nil, up to SECONDS, and answer with it.
+  "Wait until PREDICATE returns non-nil, up to SECONDS, and return it.
 The mailbox commands go through the driver: they return before the server has
 done what they asked, so a test that reads the mailbox back waits for it."
   (let ((deadline (+ (float-time) (or seconds 10))))
@@ -608,7 +608,7 @@ still in it under the new name."
 
 (ert-deftest vm-imap-mock-test-deleting-a-mailbox-that-is-not-there ()
   "Deleting a mailbox the server does not have is reported, not passed over.
-The mock answers NO, which is what a server does, and VM has to notice."
+The mock replies NO, which is what a server does, and VM has to notice."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice)
                            :refuse "DELETE")
     (let ((vm-imap-server-timeout 10))
@@ -730,7 +730,7 @@ waiting for the rest of a literal that had finished, took the next command
 line as message data, and the session was lost.
 
 Every save of a message with an eight-bit header or body to an IMAP mailbox
-went that way, which is most real mail.  The test message carries UTF-8 in
+went that way, which is most real mail.  The test message holds UTF-8 in
 both."
   (let ((vm-imap-mock-test--folder-text vm-imap-mock-test--eight-bit))
     (vm-imap-mock-test--saving-from-a-file (mock)
@@ -748,7 +748,7 @@ both."
         (should (vm-filed-flag (car vm-message-list)))))))
 
 (ert-deftest vm-imap-mock-test-saving-remembers-the-folder-it-saved-to ()
-  "`vm-last-save-imap-folder' is what the next save offers, so it is the
+  "`vm-last-save-imap-folder' is what the next save proposes, so it is the
 folder that was saved to and not the one before it."
   (vm-imap-mock-test--saving-from-a-file (mock)
     (let ((target (vm-imap-mock-test--spec-for mock "Saved")))
@@ -880,7 +880,7 @@ verbosity ordinary progress is reported at."
   "REGRESSION: creating a mailbox inside a directory asks for that mailbox
 and nothing else.  Issue #691: `vm-imap-create-mailbox' walked the name and
 sent a CREATE for each parent first -- \"vmtest/\" for \"vmtest/saved\" -- which
-a server refuses as a name in its own right, and then read one response too
+a server rejects as a name in its own right, and then read one response too
 many, so the session was out of step with what it had asked.  RFC 3501 has
 the server make the parents."
   (vm-imap-mock-test--saving-from-a-file (mock)
@@ -901,7 +901,7 @@ the server make the parents."
                         (match-string 1 line)))
                     (vm-imap-mock-commands mock))))
 
-(ert-deftest vm-imap-mock-test-every-command-carries-its-own-tag ()
+(ert-deftest vm-imap-mock-test-every-command-has-its-own-tag ()
   "Each command of a session is tagged differently.  Every one of them was
 tagged `VM' until this was written, so a response could not be matched to
 the command it answered -- which is why nothing could have two commands
@@ -1017,7 +1017,7 @@ were printed on their own and again inside the line that followed."
 folder's labels alone.
 
 Issue #601.  The read-back gave each message exactly the keywords the server
-reported, so against Gmail -- which takes a STORE of a keyword, answers OK and
+reported, so against Gmail -- which takes a STORE of a keyword, returns OK and
 keeps nothing -- the step that followed the save erased every label the save
 had just failed to store.  The label was set here, absent there, and then
 absent here too, which is why it looked as though setting it had done nothing."
@@ -1036,12 +1036,12 @@ absent here too, which is why it looked as though setting it had done nothing."
       (should-not (member "important" (vm-imap-mock-flags mock "INBOX" 1))))))
 
 (ert-deftest vm-imap-mock-test-a-server-that-keeps-keywords-still-removes-a-label ()
-  "A server that carries keywords is still believed when it does not report
+  "A server that keeps keywords is still trusted when it does not report
 one: the label goes, which is how a label removed in another client reaches
 this folder.
 
 The other side of #601.  What decides it is whether any message in the mailbox
-carries a keyword at all, so a mailbox with one keeps its say over the rest."
+has a keyword at all, so a mailbox with one keeps its authority over the rest."
   (vm-imap-mock-test--visiting
       (mock :messages (list vm-imap-mock-test--alice))
     (let ((message (car vm-message-list)))
@@ -1169,7 +1169,7 @@ fetch.  BODY runs with the fetch still going and may call
 
 (defun vm-imap-bunch-test--at ()
   "The number of the message the folder is on, as a number.
-`vm-number-of' answers a string."
+`vm-number-of' returns a string."
   (and vm-message-pointer
        (string-to-number (vm-number-of (car vm-message-pointer)))))
 
@@ -1243,7 +1243,7 @@ The warning is the point, so `vm-net-warn' is captured rather than displayed."
   "A label sent to a server that keeps no keywords is reported, not lost quietly.
 
 emacs-vm/vm#601.  A server whose PERMANENTFLAGS does not offer `\\*' keeps no
-keywords of its own.  It takes the STORE and answers OK all the same, so
+keywords of its own.  It takes the STORE and returns OK all the same, so
 nothing fails and nothing is refused: the label is simply gone the next time
 the mailbox is read.  Gmail is such a server.
 
@@ -1316,7 +1316,7 @@ Only keywords are at risk; the system flags are in PERMANENTFLAGS by name."
   "Bodies that a folder of some type would otherwise read as a separator.")
 
 (defun vm-imap-mock-test--message-with (n body)
-  "A message numbered N carrying BODY."
+  "A message numbered N with BODY."
   (concat "From: alice@example.com\nTo: vmtest@example.com\n"
           (format "Subject: message %d\nMessage-ID: <imap-%d@example.com>\n\n" n n)
           body "\n"))
@@ -1336,7 +1336,7 @@ visits has."
     (cons vm-folder-type (length vm-message-list))))
 
 (defun vm-imap-mock-test--move-into (type body)
-  "Move two messages, the first carrying BODY, into a folder of TYPE.
+  "Move two messages, the first with BODY, into a folder of TYPE.
 Answers a complaint, or nil when the folder reads back as the two messages
 that were sent."
   (let ((dest (make-temp-file "vm-imap-mock-dest")))

@@ -401,7 +401,7 @@ Where the message is over is what the function is for; it used to be checked
 by its return value, which meant nothing here.  `vm-build-message-list' then
 read that value as saying point was on the *next* message\\='s leading
 separator, and no mmdf folder could be read at all (emacs-vm/vm#786).  Now
-every arm but the From_ header-block one answers nil, so the position is the
+every arm but the From_ header-block one returns nil, so the position is the
 only thing left to assert, and the only thing that was ever true."
   (with-temp-buffer
     (insert "Body text\n")
@@ -641,7 +641,7 @@ rebuild every link."
 ;;; label registration tests
 
 (defun vm-folder-test-message-with-labels (labels)
-  "Return an mbox message whose X-VM-v5-Data carries LABELS."
+  "Return an mbox message whose X-VM-v5-Data holds LABELS."
   (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
           "X-VM-v5-Data: ("
           (prin1-to-string (make-vector vm-attributes-vector-length nil))
@@ -1071,7 +1071,7 @@ It is rewritten on every save, so a folder must not collect a header per save."
 The index is the one source of a message list that does not come from
 `vm-build-message-list', which links only messages it creates itself and not
 ones it finds already in `vm-message-list'.  What links these instead is the
-message order the index also carries: `vm-read-index-file' ends by applying it,
+message order the index also holds: `vm-read-index-file' ends by applying it,
 and `vm-startup-apply-message-order' finishes with `vm-reverse-link-messages'.
 So the linking rides on a field written for another purpose.  Expunging reads
 these links to decide which cons to splice, so were the order ever written
@@ -1114,8 +1114,8 @@ conditionally the folder would start losing the wrong message.  Issue #453."
           (kill-buffer buffer)))
       (delete-directory dir t))))
 
-(ert-deftest vm-folder-test-index-file-carries-pending-expunges ()
-  "The index file carries the pending deletions, and still reads version 1.
+(ert-deftest vm-folder-test-index-file-holds-pending-expunges ()
+  "The index file holds the pending deletions, and still reads version 1.
 The index is an optional cache of the folder, so its version can move on: a
 reader that does not know version 2 discards the file and parses the folder,
 which is correct if slower.  This checks both directions -- a version 2 file
@@ -1182,7 +1182,7 @@ round-trips the list, and a version 1 file is still read, with the list empty."
 ;;; recovering a folder without knowing its file name (issue #547)
 
 (ert-deftest vm-folder-test-recover-defaults-to-the-current-folder ()
-  "REGRESSION: recovering a folder offers the folder you are in.
+  "REGRESSION: recovering a folder defaults to the folder you are in.
 Issue #547.  `vm-recover-folder' called `recover-file' interactively, which
 prompts for a file name with no default, so after a crash the user had to type
 the name of the folder's file -- and for a server folder that is a cache named
@@ -1522,7 +1522,7 @@ of its own -- there is then nothing to make the claim about."
               (goto-char (point-min))
               (should (= 2 (how-many "^From alice@example\\.com  ")))
               ;; and nothing added: these are the marks a rewriting movemail
-              ;; leaves, and what the folder in #538 arrived carrying
+              ;; leaves, and what the folder in #538 arrived with
               (should (= 0 (how-many "^>From ")))
               (should (= 0 (how-many "^X-IMAPbase:")))
               (should (= 0 (how-many "^X-UID:")))))
@@ -1538,7 +1538,7 @@ of its own -- there is then nothing to make the claim about."
 ;; test, so an off-by-one here was invisible.
 
 (ert-deftest vm-folder-test-numbering-continues-from-the-previous-message ()
-  "Renumbering from the middle carries on from the number before it.
+  "Renumbering from the middle continues from the number before it.
 The numbers of the messages ahead of the start point are not recomputed and not
 consulted, so a start point that took its first number by counting would give
 this folder two messages numbered 2."
@@ -2288,12 +2288,12 @@ refused."
           "From: alice@example.com\n"
           "Subject: hello\n"
           ;; read + folded + watched, and #x0010, Thunderbird's own note that
-          ;; the subject carries a "Re:" prefix, which VM has no flag for
+          ;; the subject has a "Re:" prefix, which VM has no flag for
           "X-Mozilla-Status: 0131\n"
           ;; attachments, and #x0100 template, which VM has no flag for
           "X-Mozilla-Status2: 11000000\n"
           "\n" "Body.\n\n")
-  "A message as Thunderbird writes one, carrying bits VM does not manage.")
+  "A message as Thunderbird writes one, with bits VM does not manage.")
 
 (defun vm-folder-test--mozilla-status (n)
   "The X-Mozilla-Status (N is 1) or -Status2 (N is 2) of the first message."
@@ -2398,7 +2398,7 @@ Mozilla headers into a folder at all."
        (delete-directory ,var t))))
 
 (ert-deftest vm-folder-test-type-for-name-reads-the-alist ()
-  "`vm-folder-type-for-name' answers from `vm-folder-type-by-extension-alist'."
+  "`vm-folder-type-for-name' reads `vm-folder-type-by-extension-alist'."
   (should (eq (vm-folder-type-for-name "/mail/2026-08.out.mboxcl2") 'mboxcl2))
   ;; .mbox is what the rest of the world means by an mbox file, which is From_
   (should (eq (vm-folder-type-for-name "/mail/2026-08.out.mbox") 'From_))
@@ -2431,7 +2431,7 @@ they cannot.  A BABYL file called .mboxcl2 is still BABYL."
   "A folder named mboxcl2 is read as mboxcl2 even with
 `vm-trust-content-length' nil: naming the file says as plainly as the option
 does that the header is to be believed.  With no Content-Length in it the name
-still decides -- see the test below -- and the reader then complains about the
+still decides (see the test below) and the reader is then told about the
 message that has none, which is the point of saying so in the name."
   (vm-folder-test-with-directory dir
     (let ((with-length (expand-file-name "sent.mboxcl2" dir))
@@ -2472,7 +2472,7 @@ of a `Content-Length'.  An existing folder is read as what it is."
 Issue #767.  A folder\\='s type is read back from its name, so creating mboxcl2
 under a name that says nothing leaves a folder read as From_ next time and
 split wherever a body line begins \"From \", which is what
-`vm-error-if-name-contradicts-type' refuses to do on a conversion."
+`vm-error-if-name-contradicts-type' rejects on a conversion."
   (vm-folder-test-with-directory dir
     (let ((new (expand-file-name "2026-08.out" dir))
           (named (expand-file-name "sent.mboxcl2" dir))
@@ -2602,7 +2602,7 @@ before that was read as From_, so a message whose body holds a line beginning
       ;; the original bytes are kept in a backup, which is the safety net
       (should (file-exists-p (vm-folder-backup-name old)))
       (should (eq (vm-get-folder-type (concat old ".mboxcl2")) 'mboxcl2))
-      ;; both messages are there, and each carries its length now
+      ;; both messages are there, and each has its length now
       (with-temp-buffer
         (insert-file-contents (concat old ".mboxcl2"))
         (should (equal 2 (how-many "^Content-Length:" (point-min) (point-max)))))
@@ -2610,11 +2610,11 @@ before that was read as From_, so a message whose body holds a line beginning
                           said)))))
 
 (ert-deftest vm-folder-test-a-visited-cache-is-refused-not-killed ()
-  "REGRESSION: converting a cache being visited refuses and keeps the buffer.
+  "REGRESSION: converting a cache being visited is rejected and keeps the buffer.
 Issue #770.  `vm-change-folder-type-of-file' guarded only on
 `buffer-modified-p', so a healthy folder buffer was killed without asking and
 its summary and presentation were left pointing at a dead buffer, where every
-command answers \"Folder buffer has been killed\"."
+command signals \"Folder buffer has been killed\"."
   (vm-folder-test--with-cache-directory dir
     (let ((old (vm-folder-test--cache dir "imap-cache-0123456789abcdef")))
       (cl-letf (((symbol-function 'vm-warn) #'ignore))
@@ -3078,7 +3078,7 @@ SPEC is (VAR NAME CONTENT)."
          (delete-directory dir t)))))
 
 (ert-deftest vm-folder-test-on-disk-conversion-repairs-a-folder-vm-cannot-read ()
-  "A folder VM refuses to read is converted on disk and then reads.
+  "A folder VM rejects is converted on disk and then reads.
 Its type cannot be changed in a buffer, because it cannot be visited; that is
 what this is for, and turning `vm-mboxcl2-strict' off by hand -- and having to
 remember to turn it back on -- is what it replaces."
@@ -3184,7 +3184,7 @@ buffer has been killed\"."
         (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string)))))))
 
 (ert-deftest vm-folder-test-on-disk-conversion-needs-a-folder ()
-  "A file that is not a folder VM knows is refused, not guessed at."
+  "A file that is not a folder VM supports is rejected, not guessed at."
   (vm-folder-test-with-file (file "notes.txt" "just some text\n")
     (let ((text-quoting-style 'grave))
       (should (string-match-p "no folder type"
@@ -3646,7 +3646,7 @@ a summary of a folder that is no longer there."
     (should (equal (buffer-name) "elsewhere"))
     (should (equal (buffer-name vm-summary-buffer) "elsewhere Summary"))))
 
-(ert-deftest vm-folder-test-write-file-refuses-a-virtual-folder ()
+(ert-deftest vm-folder-test-write-file-rejects-a-virtual-folder ()
   "A virtual folder has no file of its own and the command says so.
 
 The message is checked, not merely that something was signalled.  Any error
@@ -3707,7 +3707,7 @@ and not much else, which is what it is worth."
 ;; No test called it, so none of its branches was checked.
 
 (ert-deftest vm-folder-test-help-says-what-the-state-calls-for ()
-  "`vm-help' answers for the state the folder is in.
+  "`vm-help' reports what the state the folder is in calls for.
 
 Previewing, it says how to read the message; reading, it lists the keys worth
 knowing; editing, it says how to finish or abandon the edit.  The branches are
@@ -4228,7 +4228,7 @@ underneath it."
       (should vm-block-new-mail))))
 
 (ert-deftest vm-folder-test-getting-mail-while-blocked-is-refused ()
-  "`vm-get-spooled-mail' refuses while the block is on, and says what to do
+  "`vm-get-spooled-mail' does nothing while the block is on, and reports what to do
 about it: the message names saving, which is what clears the block."
   (vm-test-with-folder (vm-folder-test--write-folder-content 2)
     (setq major-mode 'vm-mode)
@@ -4326,7 +4326,7 @@ again as one rather than as the local file it is cached in."
 ;;; Which file the folder is cached in (emacs-vm/vm#670)
 
 (ert-deftest vm-folder-test-the-cache-file-of-an-imap-folder ()
-  "An IMAP folder answers with the file VM keeps it in locally, which is
+  "An IMAP folder returns the file VM keeps it in locally, which is
 the one named after the maildrop rather than after the mailbox."
   (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
         (spec "imap:mail.example.invalid:143:inbox:login:alice:*"))
@@ -4341,7 +4341,7 @@ the one named after the maildrop rather than after the mailbox."
                                (vm-folder-cache-file))))))
 
 (ert-deftest vm-folder-test-the-cache-file-of-a-pop-folder ()
-  "A POP folder answers the same way, through its own naming."
+  "A POP folder does the same, through its own naming."
   (let ((vm-pop-folder-cache-directory "/tmp/vm-test-cache")
         (spec "pop:mail.example.invalid:110:pass:alice:*"))
     (with-temp-buffer
@@ -4380,7 +4380,7 @@ another folder can ask about this one."
               (should-not (vm-folder-cache-file))))
         (kill-buffer folder)))))
 
-(ert-deftest vm-folder-test-the-cache-file-answers-from-the-summary ()
+(ert-deftest vm-folder-test-the-cache-file-is-found-from-the-summary ()
   "Asked in a summary or presentation buffer, the question is about the
 folder those belong to.  It answered \"Not a remote folder\" there, which is
 where a reader is when the question occurs to them -- and the buffer they
@@ -4586,7 +4586,7 @@ never written.  Nothing of it is left to call."
   "A From_ folder holding a message with a `Content-Length' stays From_.
 
 The two types are the same folder but for that header, so one message's is no
-evidence: mail arrives carrying a `Content-Length' of its own, and VM adds one
+evidence: mail arrives with a `Content-Length' of its own, and VM adds one
 to each message it rewrites, so a From_ folder ends up with a few.  Read as
 mboxcl2, such a folder stops at the first message without one -- 6433 of 6498
 messages in a maintainer's IMAP cache had none, and the folder would not open.
@@ -4831,7 +4831,7 @@ of its own, so a name it does not match is a cache with the warning lost."
                    vm-cache-folder-type-suffix)))
   (should-not (vm-cache-folder-name-p "imap-cache-0123456789abcdef.txt")))
 
-(ert-deftest vm-folder-test-an-imap-cache-file-name-carries-the-type ()
+(ert-deftest vm-folder-test-an-imap-cache-file-name-states-the-type ()
   "The name VM builds for a maildrop is the suffixed one, or the file there."
   (vm-folder-test--in-a-cache-directory
     (let* ((spec "imap-ssl:imap.example.com:993:INBOX:login:someone:*")
@@ -5073,7 +5073,7 @@ Something else makes that buffer: desktop.el restoring the session,
           "From $249.50 a month\n\n"
           "From bob@example.com Sat Aug  8 14:25:13 2026\n"
           "Content-Length: 5\nFrom: bob@example.com\nSubject: two\n\nbody\n")
-  "A folder carrying a length on each message, whose first body holds a
+  "A folder with a length on each message, whose first body holds a
 From_ line.  mboxcl2 does not escape one -- the lengths delimit instead -- so
 read as From_ this folder has a message of nonsense in it.")
 
@@ -5157,7 +5157,7 @@ regexp that matched nothing used to be."
 
 (defmacro vm-folder-test--with-a-check-that-cannot-start (method &rest body)
   "Run BODY in a folder buffer of METHOD whose driver check cannot start.
-The driver answers nil for a maildrop VM holds no password for, which is the
+The driver returns nil for a maildrop VM holds no password for, which is the
 case a mail-check timer meets and cannot do anything about."
   (declare (indent 1) (debug t))
   `(with-temp-buffer
@@ -5168,12 +5168,12 @@ case a mail-check timer meets and cannot do anything about."
          ,@body))))
 
 (ert-deftest vm-folder-test-a-check-that-cannot-start-does-not-signal ()
-  "A check that cannot reach the server answers no rather than signalling.
+  "A check that cannot reach the server reports no rather than signalling.
 
 `vm-check-mail-itimer-function' calls this every `vm-mail-check-interval'
 seconds and cannot be asked for a password, so a maildrop VM has no password
 for filled *Messages* with \"Error running timer\" for as long as Emacs ran.
-The check is the driver's and answers nil rather than signalling."
+The check is the driver's and returns nil rather than signalling."
   (dolist (method '(imap pop))
     (vm-folder-test--with-a-check-that-cannot-start method
       (should-not (vm-check-for-spooled-mail nil t))
@@ -5219,7 +5219,7 @@ interactive so that the offer is put at all."
 (defun vm-folder-test--convert (type)
   "Change this folder to TYPE as a reader typing the command would.
 The command decides whether to offer the deletion with `vm-interactive-p',
-a macro over `called-interactively-p', which in batch answers no however
+a macro over `called-interactively-p', which in batch returns nil however
 the call is made: `funcall-interactively' does not change it.  So the function
 is stubbed, and only around this call.  Stubbed for a whole test body, with
 the folder visited inside it, six of these took 25 seconds each."
@@ -5317,7 +5317,7 @@ already states the type, so nothing is renamed and nothing is offered."
 
 (ert-deftest vm-folder-test-the-name-a-type-asks-for ()
   "`vm-folder-name-for-type' replaces an extension that states a type, keeps
-one that does not, and answers the name itself for a type no extension names."
+one that does not, and returns the name itself for a type no extension names."
   (let ((vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2))))
     (should (equal (vm-folder-name-for-type "/m/inbox" 'mboxcl2)
                    "/m/inbox.mboxcl2"))
@@ -5373,7 +5373,7 @@ and `report', the text of the report buffer or nil where there was none."
          ,@body))))
 
 (defun vm-folder-test--imap-message (number uid)
-  "A message numbered NUMBER carrying UID, or none where UID is nil."
+  "A message numbered NUMBER with UID, or none where UID is nil."
   (let ((message (vm-make-message)))
     (vm-test-init-message-data message)
     (vm-set-number-of message number)
@@ -5382,7 +5382,7 @@ and `report', the text of the report buffer or nil where there was none."
 
 (defmacro vm-folder-test--in-an-imap-folder (uids &rest body)
   "Run BODY in a buffer that is an IMAP folder holding a message per UIDS.
-A nil in UIDS is a message carrying no UID."
+A nil in UIDS is a message with no UID."
   (declare (indent 1) (debug t))
   `(with-temp-buffer
      (vm-test-init-folder-variables)
@@ -5399,7 +5399,7 @@ A nil in UIDS is a message carrying no UID."
      ,@body))
 
 (ert-deftest vm-folder-test-check-folder-names-a-message-with-no-uid ()
-  "A message in an IMAP folder that carries no UID is reported by number.
+  "A message in an IMAP folder that has no UID is reported by number.
 
 Every message in a folder read from an IMAP mailbox came from the server
 under a UID.  One with none was left behind by a fetch that did not finish,
@@ -5477,7 +5477,7 @@ what the reader accepts a fault."
       (should (string-match-p "sound" said)))))
 
 (ert-deftest vm-folder-test-check-folder-has-nothing-to-check-in-From_ ()
-  "A From_ folder carries no lengths, so there is nothing to be wrong.
+  "A From_ folder has no lengths, so there is nothing to be wrong.
 The type is still reported, which is half of what the command is for."
   (vm-folder-test--checking (file "plain"
                                   (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
@@ -5515,11 +5515,11 @@ and the buffer is not modified, so running it is never a decision."
                             (file-attributes file)))))))
 
 (defun vm-folder-test--From_-message-with-a-length ()
-  "One message carrying a Content-Length that fits, under no particular name."
+  "One message with a Content-Length that fits, under no particular name."
   (vm-folder-test--mboxcl2-message))
 
 (ert-deftest vm-folder-test-check-folder-reads-the-contents-not-the-name ()
-  "A folder carrying a fitting length on every message is reported as mboxcl2
+  "A folder with a fitting length on every message is reported as mboxcl2
 whatever it is called.  The reader takes the type from the name, so this is
 the disagreement that leaves a folder read as a type it is not -- and the
 check is the only thing that says so."
@@ -5544,7 +5544,7 @@ how to decide."
 
 (ert-deftest vm-folder-test-check-folder-does-not-cry-mboxcl2-over-a-few ()
   "A From_ folder where only some messages carry a length is left alone.
-Mail arrives carrying the header and VM gives one to every message it
+Mail arrives with the header and VM gives one to every message it
 rewrites, so a few in a folder are no evidence at all -- and a check that
 said mboxcl2 on those would be wrong about most From_ folders."
   (vm-folder-test--checking (file "plain"
@@ -5561,16 +5561,16 @@ most of a length on most of its messages is the case a reader has to judge."
                                   (concat (vm-folder-test--mboxcl2-message)
                                           (vm-folder-test--mboxcl2-message 999)))
     (should report)
-    (should (string-match-p "2 of 2 messages carry a length, 1 of those fit"
+    (should (string-match-p "2 of 2 messages have a length, 1 of those fit"
                             report))))
 
-(ert-deftest vm-folder-test-check-folder-says-nothing-carries-a-length ()
-  "A From_ folder with no lengths at all says so, rather than saying nothing."
+(ert-deftest vm-folder-test-check-folder-reports-that-no-message-has-a-length ()
+  "A From_ folder with no lengths at all is reported as such, not left silent."
   (vm-folder-test--checking (file "sent.mboxcl2"
                                   (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
                                           "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
     (should report)
-    (should (string-match-p "no message carries a length" report))))
+    (should (string-match-p "no message has a length" report))))
 
 (ert-deftest vm-folder-test-check-folder-leaves-a-named-mboxcl2-alone ()
   "A folder named mboxcl2 and read as mboxcl2 is not told its contents agree
@@ -5584,12 +5584,12 @@ with its name: there is no disagreement to report, so it stays one line."
 (defconst vm-folder-test--plain-From_-message
   (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
           "From: alice@example.com\nSubject: one\n\nBody.\n\n")
-  "One From_ message carrying no Content-Length, as an older cache holds them.")
+  "One From_ message with no Content-Length, as an older cache holds them.")
 
 (ert-deftest vm-folder-test-check-folder-names-the-cache-conversion ()
   "A cache whose name states no type is reported, and the command named.
 Nothing in such a cache is wrong -- read as From_ it is From_ -- so no other
-part of VM says so: the visit-time warning fires only for a cache that carries
+part of VM says so: the visit-time warning fires only for a cache that has
 lengths.  This is the one place a reader is told, which is what #768 asked."
   (vm-folder-test--checking (file "imap-cache-0123456789abcdef"
                                   (concat vm-folder-test--plain-From_-message
@@ -5623,7 +5623,7 @@ never stops asking for something already done."
     (should (string-match-p "sound" said))))
 
 (ert-deftest vm-folder-test-check-folder-says-both-of-a-cache-that-is-mboxcl2 ()
-  "A cache carrying lengths under a name that says nothing gets both findings.
+  "A cache with lengths under a name that states no type gets both findings.
 What the contents turned out to be, then what converts it: the rename advice
 and the cache advice are about the same file and neither one says the whole of
 it."
@@ -5773,8 +5773,8 @@ buffer is left behind to be saved over it."
                             (file-attributes file))))
       (should (equal buffers (buffer-list))))))
 
-(ert-deftest vm-folder-test-check-folder-of-a-file-refuses-an-unknown-type ()
-  "A file that is no folder VM knows is refused, and says so of the file
+(ert-deftest vm-folder-test-check-folder-of-a-file-rejects-an-unknown-type ()
+  "A file that is no folder VM supports is rejected, and reported of the file
 rather than of a buffer nobody asked about."
   (vm-folder-test-with-file (file "notes.txt" "This is not a folder at all.\n")
     (let* ((text-quoting-style 'grave)
@@ -5782,7 +5782,7 @@ rather than of a buffer nobody asked about."
       (should (string-match-p "notes\\.txt has no folder type" (cadr err))))))
 
 (ert-deftest vm-folder-test-only-a-separator-the-type-reads-is-usable ()
-  "`vm-usable-From_-separator\\=' answers with the line only where a folder of
+  "`vm-usable-From_-separator\\=' returns the line only where a folder of
 that type can be read back with it.  The From_ and BellFrom_ readers ask for
 a digit at the end of the line and the mboxcl2 reader does not, so the same
 line is usable in one and not the other (emacs-vm/vm#898)."
@@ -6019,7 +6019,7 @@ says mboxcl2 still does not."
 (ert-deftest vm-folder-test-writing-elsewhere-needs-a-folder-on-disk ()
   "Asked to write the conversion elsewhere with no file to convert, the
 command says to save the folder and convert that, rather than converting the
-buffer and writing it who knows where."
+buffer and writing it somewhere unasked for."
   (let ((text-quoting-style 'grave))
     (should (string-match-p
              "needs a folder on disk"
@@ -6079,7 +6079,7 @@ write the conversion; one prefix argument asks only for the folder."
 which the act of visiting the folder does.")
 
 (defun vm-folder-test--attribute-of (name m)
-  "Whether M carries the attribute NAME."
+  "Whether M has the attribute NAME."
   (and (funcall (intern (format "vm-%s-flag" name)) m) t))
 
 (ert-deftest vm-folder-test-attributes-survive-saving-and-reading ()
@@ -6160,7 +6160,7 @@ rather than hidden by all of them agreeing."
         (should (equal (buffer-string) (concat ">" line)))))))
 
 (ert-deftest vm-folder-test-a-second-trip-through-From_-adds-no-second-quote ()
-  "A message converted to From_ and back twice carries one `>', not two.
+  "A message converted to From_ and back twice has one `>', not two.
 The manual promises the loss is one character per quoted line however many
 times the message passes through a From_ folder.  Round trips it twice and
 compares: the first trip adds the `>', the second changes nothing.
@@ -6204,7 +6204,7 @@ that it does not accumulate."
           (should (equal 1 (funcall quotes-in after-two))))))))
 
 
-;;; The types VM offers to create, and the wider set it reads
+;;; The types VM creates, and the wider set it reads
 
 ;; #787: a folder VM wrote as BellFrom_ is read back as From_ with its
 ;; messages run together, that format being From_ without the blank line
@@ -6212,11 +6212,11 @@ that it does not accumulate."
 ;; to stop offering it: VM reads one it is handed and creates none.
 
 (ert-deftest vm-folder-test-BellFrom_-is-not-offered-for-creation ()
-  "Neither `vm-default-folder-type' nor the conversion prompt offers BellFrom_.
+  "Neither `vm-default-folder-type' nor the conversion prompt lists BellFrom_.
 The two places a reader is asked what type to make a folder."
   (should-not (member "BellFrom_" vm-supported-folder-types))
   (should-not (memq 'BellFrom_
-                    ;; the symbols the option's :type offers
+                    ;; the symbols the option's :type lists
                     (let ((type (get 'vm-default-folder-type 'custom-type)))
                       (mapcar (lambda (choice)
                                 (and (consp choice) (eq (car choice) 'const)
@@ -6227,7 +6227,7 @@ The two places a reader is asked what type to make a folder."
   "VM still reads a BellFrom_ folder it is handed.
 Dropping it from what VM creates must not drop it from what VM understands:
 `vm-folder-types' is the wider list, `vm-change-folder-type' still accepts the
-symbol, and `vm-default-From_-folder-type' still offers it, that option being
+symbol, and `vm-default-From_-folder-type' still accepts it, that option being
 how a reader says which of the two From-style formats their system writes."
   (should (memq 'BellFrom_ vm-folder-types))
   (should (memq 'BellFrom_
@@ -6272,7 +6272,7 @@ have run together."
 ;; attributes were set with `norecord'.
 
 (defun vm-berkeley-test--folder (n)
-  "A From_ folder of N messages, none of them carrying VM's own data."
+  "A From_ folder of N messages, none of them holding VM's own data."
   (mapconcat
    (lambda (i)
      (format (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
@@ -6309,7 +6309,7 @@ folder."
 
 (ert-deftest vm-berkeley-test-the-status-says-whether-the-message-was-read ()
   "A read message is written `Status: RO', an unread one `Status: O'.
-That is the whole of what the header carries, and `vm-read-attributes' reads
+That is the whole of what the header holds, and `vm-read-attributes' reads
 the R back out of it."
   (vm-test-with-folder (vm-berkeley-test--folder 2)
     (let ((vm-berkeley-mail-compatibility t)
@@ -6552,7 +6552,7 @@ folder being opened."
     (should-not (vm-order-test--header))))
 
 (ert-deftest vm-order-test-having-an-order-header-is-detected ()
-  "`vm-has-message-order' answers for the folder in the buffer.
+  "`vm-has-message-order' reports on the folder in the buffer.
 It is how VM decides whether a folder has an order to apply at all, and it
 looks only in the first message's header block, which is where the writer
 puts one."
@@ -6701,8 +6701,8 @@ them has to stay."
 	(vm-get-spooled-mail-normal nil))
       (should fetched))))
 
-(ert-deftest vm-folder-test-move-spooled-mail-answers-t-once-mail-has-arrived ()
-  "An error or a quit answers t when mail has already reached the folder.
+(ert-deftest vm-folder-test-move-spooled-mail-returns-t-once-mail-has-arrived ()
+  "An error or a quit returns t when mail has already reached the folder.
 Anything else would leave the reader looking for mail that is neither in the
 crash box nor visibly in the folder."
   (cl-letf (((symbol-function 'vm-warn) (lambda (&rest _) nil)))
@@ -6784,7 +6784,7 @@ somewhere else gets this one there and not beside the folder."
 (ert-deftest vm-folder-test-a-folder-with-no-file-cannot-be-backed-up ()
   "A folder with nothing on disk says so rather than copying nothing.
 `vm-backup-folder-file' is silent about it, being called in the middle of
-other work; the command is what a reader typed, so it answers."
+other work; the command is what a reader typed, so it reports."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-backup" t)))
          (folder (expand-file-name "inbox" dir)))
     (unwind-protect
@@ -6857,7 +6857,7 @@ Counting a spool file is the expensive part, which is why the cache exists."
 
 (ert-deftest vm-folder-test-spool-check-mail-does-not-cache-an-unknown-count ()
   "A file whose messages cannot be counted is not remembered as empty.
-`vm-count-messages-in-file' answers nil for a file it cannot make sense of,
+`vm-count-messages-in-file' returns nil for a file it cannot make sense of,
 which is not the same as zero: caching it would make the answer stick."
   (vm-folder-test--with-spool spool vm-folder-test--spool-two-messages
     (cl-letf (((symbol-function 'vm-count-messages-in-file)
@@ -6878,10 +6878,10 @@ which is not the same as zero: caching it would make the answer stick."
 (ert-deftest vm-folder-test-a-bare-message-is-wrapped-for-the-folder ()
   "A .eml file is gathered into a folder as one message.
 
-emacs-vm/vm#908.  `vm-get-folder-type' answers `unknown' for a message with
+emacs-vm/vm#908.  `vm-get-folder-type' returns `unknown' for a message with
 no envelope line, and every path that incorporates mail refused that, so the
 commonest thing anyone wants to drop into a folder could not be dropped into
-one.  The envelope line names the sender and carries the message's own Date,
+one.  The envelope line names the sender and holds the message's own Date,
 and mboxcl2 gets its `Content-Length'."
   (let* ((eml (vm-test-read-fixture "emails" "job-advert.eml"))
          (text (vm-folder-test--gathered eml 'mboxcl2))
@@ -6901,14 +6901,14 @@ and mboxcl2 gets its `Content-Length'."
         (should (eq (vm-get-folder-type folder) 'mboxcl2))))))
 
 (ert-deftest vm-folder-test-a-bare-message-suits-a-From_-folder-too ()
-  "The same message gathered into a From_ folder carries no Content-Length."
+  "The same message gathered into a From_ folder has no Content-Length."
   (let ((text (vm-folder-test--gathered
                (vm-test-read-fixture "emails" "job-advert.eml") 'From_)))
     (should (string-prefix-p "From recruiting@example-institute.test " text))
     (should-not (string-match-p "^Content-Length:" text))))
 
 (ert-deftest vm-folder-test-gathering-converts-a-folder-of-another-type ()
-  "A folder of a type VM knows is converted, as `vm-check-folder-types' says.
+  "A folder of a type VM supports is converted, as `vm-check-folder-types' says.
 
 The option is `vm-convert-folder-types', which `vm-get-spooled-mail' has
 always honoured and this path used to ignore, refusing whatever it said."
@@ -6920,7 +6920,7 @@ always honoured and this path used to ignore, refusing whatever it said."
     (should (string-match-p "^Content-Length: [0-9]+$" text))
     (should (string-prefix-p "From alice@example.com " text))))
 
-(ert-deftest vm-folder-test-gathering-refuses-to-convert-when-told-not-to ()
+(ert-deftest vm-folder-test-gathering-does-not-convert-when-told-not-to ()
   "With `vm-convert-folder-types' nil it is an error, and the error says so."
   (let ((from_ (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
                        "From: alice@example.com\n"
@@ -6931,8 +6931,8 @@ always honoured and this path used to ignore, refusing whatever it said."
              "set vm-convert-folder-types"
              (cadr (should-error (vm-folder-test--gathered from_ 'mboxcl2)))))))
 
-(ert-deftest vm-folder-test-gathering-refuses-what-is-not-a-message ()
-  "A file that is neither a folder VM knows nor a message is still refused.
+(ert-deftest vm-folder-test-gathering-rejects-what-is-not-a-message ()
+  "A file that is neither a folder VM supports nor a message is still rejected.
 `unknown' covers a .eml file and a tarball alike, so wrapping whatever
 turns up would file rubbish as mail."
   (let ((text-quoting-style 'grave))

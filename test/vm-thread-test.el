@@ -607,7 +607,7 @@ for every message."
 ;;; asking rather than provoking an error (issue #476)
 
 (ert-deftest vm-thread-root-p-does-not-provoke-an-error-when-unbuilt ()
-  "REGRESSION: `vm-thread-root-p' answers without raising an error.
+  "REGRESSION: `vm-thread-root-p' returns without raising an error.
 Issue #476: with threads not built it used to call through to
 `vm-thread-subtree', which signals `vm-thread-error', and catch that to answer
 nil.  `vm-summary-faces-add' asks this for every summary line, so an ordinary
@@ -682,7 +682,7 @@ the singleton would mean `thread-any\\=' matching only when the thread root matc
         (should (= whole (length (vm-thread-subtree-safe root))))))))
 
 (ert-deftest vm-thread-subtree-safe-falls-back-when-unbuilt ()
-  "With threads unbuilt it still answers with just the message, as documented.
+  "With threads unbuilt it still returns just the message, as documented.
 The control: the fix must not turn the fallback into a call that signals."
   (vm-test-with-folder vm-thread-test-threaded-folder
     (should-not (vectorp vm-thread-obarray))
@@ -696,7 +696,7 @@ The control: the fix must not turn the fallback into a call that signals."
 
 ;; `vm-promote-subthread', `vm-demote-subthread' and `vm-attach-to-thread' let
 ;; the user override what the References headers say.  None of them had a test.
-;; `vm-attach-to-thread' refuses an attach that would make a cycle, and used to
+;; `vm-attach-to-thread' rejects an attach that would make a cycle, and used to
 ;; refuse it after taking the message out of its thread, leaving the folder
 ;; threaded differently and nothing to put it back.
 
@@ -808,7 +808,7 @@ Message 4 is in no thread; under message 2 it is three deep."
     (vm-attach-to-thread)
     (should (equal '(0 1 2 1 3) (vm-thread-test--indentations)))))
 
-(ert-deftest vm-thread-test-attach-to-thread-refuses-a-cycle-and-changes-nothing ()
+(ert-deftest vm-thread-test-attach-to-thread-rejects-a-cycle-and-changes-nothing ()
   "REGRESSION: a refused attach leaves the threading as it was.
 Issue #574.  Attaching the root under its own descendant is a cycle.  The check
 used to run after `vm-unthread-message', so the refusal cost the root its
@@ -829,7 +829,7 @@ children: message 3 was left at indentation 0."
 
 (ert-deftest vm-thread-test-demote-and-promote-move-the-whole-subtree ()
   "Demoting indents the message and everything under it, promoting undoes it.
-Message 1 carries message 2 with it, and the messages outside the subtree do not
+Message 1 takes message 2 with it, and the messages outside the subtree do not
 move."
   (vm-thread-test--with-fork
     (setq vm-message-pointer (nthcdr 1 vm-message-list))
@@ -1057,7 +1057,7 @@ computed."
 
 (ert-deftest vm-thread-test-a-reply-invalidates-what-its-parent-cached ()
   "A reply arriving into a folder whose threads are built clears the cached
-subtree of the message it answers: that subtree now has a message in it
+subtree of the message it returns: that subtree now has a message in it
 that was not there when it was computed."
   (vm-test-with-folder vm-thread-test-threaded-folder
     (let ((root (car vm-message-list))

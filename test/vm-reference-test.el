@@ -133,7 +133,7 @@ one each way round."
 `vm-mime-encode-headers-words-regexp' has `[^\\x0-\\x7f]+' in its default, and
 makeinfo stopped with \\ followed by `0-' the first time a chapter invoked
 such a macro.  The error comes when the macro is used, not when it is
-defined, so every macro nobody has invoked yet is carrying the same fault
+defined, so every macro nobody has invoked yet has the same fault
 until this holds."
   (let ((text (with-temp-buffer
                 (vm-reference-insert-macro
@@ -293,7 +293,7 @@ missing turn out to be commands."
   "Every command the manual documents can be run before VM is loaded.
 `M-x' has to find what the manual tells the reader to type, and with only
 `(require \\='vm-autoloads)' in an init file -- what INSTALL.md describes --
-it finds only what carries an autoload cookie.  Twenty-two documented
+it finds only what has an autoload cookie.  Twenty-two documented
 commands did not, among them `vm-compact-folder', `vm-recover-folder' and
 `vm-toggle-thread', while 455 others did.
 
@@ -409,7 +409,7 @@ definition so that the appendix lists it apart from the commands.")
                 (vm-reference-test--defined-commands file))))
 
 (ert-deftest vm-reference-test-what-is-marked-called-by-vm-is-a-command ()
-  "Nothing carries the mark but a command.
+  "Nothing has the mark but a command.
 The mark moves an entry out of the appendix\\='s command list, so putting one
 on a function that is not `interactive' at all hides nothing and means the
 mark is wrong."
@@ -423,7 +423,7 @@ mark is wrong."
 
 (ert-deftest vm-reference-test-every-callback-by-name-is-marked ()
   "A command named for the toolbar, a menu, the mouse or the minibuffer
-carries the mark, beside its own definition.
+has the mark, beside its own definition.
 
 The appendix listed 431 commands as though a reader might type any of them,
 a dozen toolbar handlers among them (emacs-vm/vm#715).  This is what stops
@@ -570,7 +570,7 @@ yet, where the other three carry the suffix the tree is built with."
 It said `released' from the moment the section was opened, so a reader
 scanning NEWS could not tell the entries waiting for a release from the ones
 that have had one.  Dating it is `dev/tools/vm-set-version''s last step, and
-the heading carries the date from then on."
+the heading holds the date from then on."
   (let ((version (vm-reference-test--version-in
                   "configure.ac" "^AC_INIT(\\[VM\\],\\[\\([^]]+\\)\\]" 'first))
         (heading (vm-reference-test--version-in
@@ -622,7 +622,7 @@ they were autoloaded for emacs-vm/vm#609.  An alias needs the explicit form:
   ;;;###autoload (autoload \\='vm-compact-folder \"vm-delete\" nil t)
 
 Not under instrumentation: edebug re-evaluates each definition, so
-`symbol-file' answers with the instrumenting file and every command reads as
+`symbol-file' returns the instrumenting file and every command reads as
 orphaned (emacs-vm/vm#870)."
   (skip-unless (not vm-test-instrumented))
   (vm-reference-load-everything)
@@ -674,7 +674,7 @@ Half of vm-rfaddons.el was deleted in one release, and with it three
 rebindings, which is the way this breaks.
 
 Only the pairs the manual states as a pair are checked: a key mentioned on its
-own may belong to Emacs, or to a mode VM knows nothing about."
+own may belong to Emacs, or to a mode unrelated to VM."
   (vm-reference-load-everything)
   (let ((maps (vm-reference-test--keymaps))
         (wrong nil))
@@ -780,7 +780,7 @@ was in the manual until `vm-reference-argument-name' started stripping it
   "Every command a VM module defines is in the appendix.
 
 222 interactive commands were in no part of the manual (emacs-vm/vm#715), and
-what answers that is the generated appendix rather than a chapter entry
+what satisfies that is the generated appendix rather than a chapter entry
 written by hand for each: it says what the code says.  So the appendix has to
 be complete, and the sweep that fills it asked for a name beginning with vm --
 which left `bbdb/vm-set-virtual-folder-alist' and its by-mail-alias twin out

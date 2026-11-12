@@ -464,7 +464,7 @@ number of messages that will be affected."
 
 ;;;###autoload
 (defun vm-unused-labels ()
-  "Return the labels of the current folder that no message carries.
+  "Return the labels of the current folder that no message has.
 The list is sorted.  A label becomes unused when it is deleted from
 the last message holding it: `vm-delete-message-labels' leaves it in
 the folder's label list, so it keeps turning up in completions."
@@ -474,7 +474,7 @@ the folder's label list, so it keeps turning up in completions."
       (dolist (label (vm-labels-of m))
 	;; Labels are lowercase by convention -- `vm-expunge-label' and
 	;; `vm-add-or-delete-message-labels' both downcase -- so compare
-	;; that way, or a message carrying "Work" against a folder
+	;; that way, or a message with "Work" against a folder
 	;; listing "work" makes the one label look both unused and
 	;; missing at once.
 	(intern (downcase label) used)))
@@ -486,7 +486,7 @@ the folder's label list, so it keeps turning up in completions."
 
 ;;;###autoload
 (defun vm-missing-labels ()
-  "Return the labels carried by messages but absent from the folder's list.
+  "Return the labels held by messages but absent from the folder's list.
 The list is sorted.  Labels only reach `vm-label-obarray' from the
 folder's own stored list, read at visit time, and from labels added
 interactively; a message that arrives already labelled -- saved in from
@@ -510,7 +510,7 @@ it never appears in completions."
   "Make the folder's label list agree with the labels its messages carry.
 Adds labels that messages use but the folder does not list, and removes
 those the folder lists but no message uses.  Afterwards label completion
-offers exactly the labels in use.
+lists exactly the labels in use.
 
 No message is changed; only the folder's label list.
 
@@ -554,7 +554,7 @@ added and removed.  See also `vm-list-unused-labels'."
 
 ;;;###autoload
 (defun vm-list-unused-labels ()
-  "List the labels of the current folder that no message carries.
+  "List the labels of the current folder that no message has.
 These are exactly the labels `vm-expunge-unused-labels' would remove.
 Nothing is changed."
   (interactive)
@@ -587,7 +587,7 @@ Nothing is changed."
 
 ;;;###autoload
 (defun vm-expunge-unused-labels ()
-  "Remove from the current folder every label that no message carries.
+  "Remove from the current folder every label that no message has.
 Such labels accumulate as messages are relabelled or expunged --
 deleting a label from the last message holding it does not remove it
 from the folder -- and they clutter label completion ever after.

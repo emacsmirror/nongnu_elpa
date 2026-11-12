@@ -326,7 +326,7 @@ hazard in place -- the combination that deleted the whole folder."
    '(0 1 2) "")
   "A folder of three messages, enough to have a head, a middle and a tail.")
 
-(ert-deftest vm-delete-test-expunge-message-refuses-a-stale-reverse-link ()
+(ert-deftest vm-delete-test-expunge-message-rejects-a-stale-reverse-link ()
   "A message whose reverse link points elsewhere is not expunged.
 The link decides which cons is spliced, so following it here would remove
 message 2 and mark it expunged while message 3 stayed in the folder.  The structure
@@ -345,7 +345,7 @@ points at where it used to be."
       (should-not (vm-deleted-flag m2))
       (should-not (vm-deleted-flag m3)))))
 
-(ert-deftest vm-delete-test-expunge-message-refuses-a-missing-reverse-link ()
+(ert-deftest vm-delete-test-expunge-message-rejects-a-missing-reverse-link ()
   "A message with no reverse link is expunged only if it is the folder head.
 No link reads as \"first in the list\", so before the guard this expunged
 message 1 in place of message 2."
@@ -650,7 +650,7 @@ point of these, so the thread database is real."
      (setq vm-message-pointer (nthcdr ,n vm-message-list))
      (let ((vm-move-after-killing nil)
            (vm-summary-show-threads t)
-           ;; `vm-inform' records where it spoke when it thinks a command is
+           ;; `vm-inform' records where it spoke when it takes a command to be
            ;; running, and the buffer these run in is gone afterwards.
            (vm-user-interaction-buffer vm-user-interaction-buffer))
        (cl-letf (((symbol-function 'vm-display) (lambda (&rest _) nil))
@@ -992,8 +992,8 @@ The queue used to collect (nil . nil) for one, which is a UID no mailbox has."
 
 (ert-deftest vm-delete-test-a-stale-uid-is-not-queued ()
   "A UID under another UIDVALIDITY names nothing in the mailbox now.
-`vm-imap-expunge-remote-messages' refuses those and says so, which tells the
-reader about something they can do nothing about."
+`vm-imap-net-uids-to-expunge' leaves such an entry unsent, so queueing one
+puts a request in the folder that nothing acts on."
   (vm-delete-test--in-an-imap-cache
     (vm-set-imap-uid-validity-of (vm-test-first-message) "99")
     (vm-delete-test--expunge-the-first)
@@ -1036,7 +1036,7 @@ every save."
 
 (defmacro vm-delete-test--in-a-pop-folder (&rest body)
   "Run BODY in a folder whose access method is `pop', its messages given UIDLs.
-The maildrop spec carries a password, as a configured one does: what is
+The maildrop spec holds a password, as a configured one does: what is
 recorded has to name the maildrop without it."
   (declare (indent 0) (debug t))
   `(vm-test-with-folder vm-delete-test--two-messages

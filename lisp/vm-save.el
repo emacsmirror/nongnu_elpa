@@ -322,7 +322,7 @@ what `vm-fcc-message-text' does for a composition.
 
 Saving wrote the bytes as they stood.  A message from a folder that had no
 need to quote them -- mboxcl2 counts its bytes, mmdf and babyl have
-separators of their own -- then carried a line that the target read as a
+separators of their own, then held a line that the target read as a
 separator: saved into a From_ folder it became two messages there, and
 saved into an mmdf folder it made that folder unreadable."
   (let ((source (vm-buffer-of m))
@@ -1028,7 +1028,7 @@ The saved messages are flagged as `filed'."
     (setq mlist (vm-select-operable-messages count (vm-interactive-p) "Save")))
   ;; On the driver, which is the only way this is done.  The messages are
   ;; flagged filed when the server has taken them rather than when the
-  ;; command was typed: a save the server refuses must not leave the folder
+  ;; command was typed: a save the server rejects must not leave the folder
   ;; saying it was saved.
   (vm-imap-net-save-messages-to-folder folder mlist count)
   (setq vm-last-save-imap-folder folder)

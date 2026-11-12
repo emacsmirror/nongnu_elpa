@@ -601,8 +601,8 @@ again.  The source message is deleted either way.
 
 With NO-POSTPONE-HEADER, leave out the `vm-postponed-header' line that
 records the reply, forward and redistribute lists.  The draft is then an
-ordinary message, and `vm-continue-what-message' offers to continue only a
-message carrying that header."
+ordinary message, and `vm-continue-what-message' asks about continuing only a
+message with that header."
   (interactive "P")
   
   (let ((message-buffer (current-buffer))
@@ -992,7 +992,7 @@ appears, and a `vm-mail' typed by mistake is not a draft."
                                      name vm-save-killed-messages-folder))))
           (progn
             (vm-postpone-message vm-save-killed-messages-folder t)
-            ;; said, since nobody asked for it: a draft nobody knows about is
+            ;; reported, since nobody asked for it: a draft nobody is told about is
             ;; one nobody goes back to
             (vm-inform 5 "%s kept as a draft in %s; %s takes it up again"
                        name vm-save-killed-messages-folder
@@ -1159,7 +1159,7 @@ outgoing message."
 ;;;###autoload
 (defun vm-mail-fcc (&optional arg)
   "Insert the FCC-header into a VM composition buffer.
-Like `mail-fcc', but honors VM variables and offers a default folder
+Like `mail-fcc', but honors VM variables and proposes a default folder
 according to `vm-mail-folder-alist'.
 Called with prefix ARG it just removes the FCC-header."
   (interactive "P")
@@ -1348,7 +1348,7 @@ mode too, and postponing it into a VM folder is not VM's business."
                (buffer-list))))
 
 (defun vm-postpone-composition-quietly (buffer)
-  "Kill BUFFER, so that `vm-save-killed-message-hook' offers to keep it.
+  "Kill BUFFER, so that `vm-save-killed-message-hook' can keep it.
 The offer is the one killing a composition has always made, rather than a
 second one of its own.  A failure is reported rather than raised: this runs
 while Emacs is being left, where an error would put a debugger between the
@@ -1363,7 +1363,7 @@ user and the door."
 ;;;###autoload
 (defun vm-postpone-unfinished-compositions ()
   "Offer each unfinished composition to the drafts folder as Emacs is left.
-Killing a composition already offers this -- see `vm-save-killed-message',
+Killing a composition already does this: see `vm-save-killed-message',
 which says whether to ask, to save without asking, or to do neither, and
 `vm-save-killed-messages-folder', which says where.  But Emacs does not kill
 buffers one at a time as it exits, so on the way out the offer was never

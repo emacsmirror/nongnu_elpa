@@ -1029,7 +1029,7 @@ with a real key or wake a passphrase prompt."
 (defun vm-epg-test--decrypt-composition ()
   "Decrypt the armored message in the current composition and return it.
 
-Returns a cons of the plain text and the list of signatures it carried, so a
+Returns a cons of the plain text and the list of signatures it held, so a
 test can tell an encrypted message from a signed-and-encrypted one.  The
 alternative is to assert on the ciphertext, which is the same either way."
   (goto-char (point-min))
@@ -1077,7 +1077,7 @@ rather than armor in the body: that is what multipart/signed means."
 
 (ert-deftest vm-epg-test-encrypting-a-composition ()
   "`vm-epg-encrypt' encrypts to the recipients, and the body is gone from
-the composition: an encrypted message that still carried its plain text
+the composition: an encrypted message that still held its plain text
 would be the worst possible bug in this file."
   (vm-epg-test--with-a-test-keyring
     (vm-epg-test--in-a-composition
@@ -1088,7 +1088,7 @@ would be the worst possible bug in this file."
         (should (string-match-p "application/pgp-encrypted" composed))
         (should (string-match-p "BEGIN PGP MESSAGE" composed))
         (should-not (string-match-p "A body to work on" composed)))
-      ;; the recipient gets the text back, and it carries no signature:
+      ;; the recipient gets the text back, and it has no signature:
       ;; signing is what the prefix argument is for
       (let ((decrypted (vm-epg-test--decrypt-composition)))
         (should (string-match-p "A body to work on" (car decrypted)))
@@ -1160,7 +1160,7 @@ answer with."
               ;; named for the author, which is what the recipient sees,
               ;; in the part's name parameter and in its disposition alike.
               ;; The name pattern needs the leading delimiter: without it,
-              ;; "filename=" answers for "name=" and the parameter goes
+              ;; "filename=" stands in for "name=" and the parameter goes
               ;; unchecked.
               (let ((named (concat "=\"" (regexp-quote vm-epg-test--address)
                                    "\\.asc\"")))
@@ -1272,7 +1272,7 @@ save, which is the opposite of what the sender asked for."
        (should (string-match-p "BEGIN PGP MESSAGE" (buffer-string)))
        (should-not (string-match-p "the secret body" (buffer-string)))))))
 
-(ert-deftest vm-epg-test-cleartext-decrypt-refuses-a-read-only-folder ()
+(ert-deftest vm-epg-test-cleartext-decrypt-rejects-a-read-only-folder ()
   "A read-only folder is refused, as the docstring says.
 Only the presentation copy is written, so the check is a policy rather than
 a necessity -- which is exactly why it needs a test to keep it."

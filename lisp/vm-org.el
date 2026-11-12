@@ -28,10 +28,10 @@
 ;; `C-c C-o' on it opens the folder and shows that message, and `C-c l' in a
 ;; VM folder makes such a link to the message being read.
 ;;
-;; Put (require 'vm-org) in your init file.  Org itself carries no support
+;; Put (require 'vm-org) in your init file.  Org itself includes no support
 ;; for VM: this is it.
 ;;
-;; This was contrib/org-vm.el, which Org used to load and VM then carried,
+;; This was contrib/org-vm.el, which Org used to load and VM then included,
 ;; and it had gone stale.  It registered the link type with
 ;; `org-add-link-type', obsolete since Org 9.0, and hooked link storing onto
 ;; `org-store-link-functions', which Org 9.3 removed: `add-hook' made a

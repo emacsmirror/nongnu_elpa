@@ -38,7 +38,7 @@ is what `vm-test-probe-imap-server' returns."
   "The value of KEY in REPORT."
   (cdr (assoc key report)))
 
-(ert-deftest vm-probe-test-a-server-that-answers-is-reached ()
+(ert-deftest vm-probe-test-a-server-that-replies-is-reached ()
   "A server that logs in is listed as reached and nothing is said against it."
   (vm-probe-test--reporting '(("plain") ("tls"))
     (let ((report (vm-test-probe-report)))
@@ -74,7 +74,7 @@ empty one."
 
 (ert-deftest vm-probe-test-the-report-is-one-line-per-key ()
   "`vm-test-probe-batch' prints key=value lines and the shell reads them with
-`sed', so a value carrying a newline would be read as another key.  Server
+`sed', so a value holding a newline would be read as another key.  Server
 errors are multi-line often enough for this to matter."
   (should (equal (vm-test-probe--reason '(error "one\ntwo\r\nthree"))
                  "one two three")))
@@ -109,7 +109,7 @@ this file configures for its own tests."
     (should (seq-every-p #'consp forms))))
 
 (ert-deftest vm-probe-test-the-config-template-shows-a-secret-store ()
-  "REGRESSION: the template offers a password that is not written in the file.
+  "REGRESSION: the template shows a password that is not written in the file.
 
 emacs-vm/vm#906.  `vm-live-config-keychain' has to raise rather than answer
 the empty string: a lookup that returns nothing sends an empty password, and

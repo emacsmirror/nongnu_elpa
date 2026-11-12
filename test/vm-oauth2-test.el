@@ -71,7 +71,7 @@ starts in and the message has to say what to do about it."
 
 (ert-deftest vm-oauth2-test-the-built-in-providers-ask-for-mail-scopes ()
   "The two entries carry the scope that reads mail, and an https endpoint.
-A scope that does not cover IMAP gets a token the server refuses, which
+A scope that does not cover IMAP gets a token the server rejects, which
 looks like a bad password and is not one."
   (let ((google (vm-oauth2-provider "google"))
         (microsoft (vm-oauth2-provider "microsoft")))
@@ -115,7 +115,7 @@ minibuffer prompt is the worst place to copy one from anyway."
 to put the reader's own setting back for the call inside.  Reading it out of
 `browse-url-browser-function' there does not work and is not merely
 imprecise: a plain `let' on a variable with no buffer-local binding rebinds
-the default, so `default-value' answers `vm-oauth2-browse' and the browser
+the default, so `default-value' returns `vm-oauth2-browse' and the browser
 opens itself until `max-lisp-eval-depth' stops it.  Which is what the
 command did."
   (let ((seen nil))
@@ -157,9 +157,9 @@ oauth2.el asks to be opened has to reach the reader's browser exactly once."
       (when (get-buffer "*VM OAuth2*") (kill-buffer "*VM OAuth2*")))))
 
 (ert-deftest vm-oauth2-test-a-refused-authorization-is-reported ()
-  "REGRESSION: a provider that refuses is an error, not a success message.
+  "REGRESSION: a provider that rejects the request is an error, not a success message.
 
-oauth2.el answers with a token structure either way.  A refusal leaves the
+oauth2.el returns a token structure either way.  A rejection leaves the
 access token nil and the provider's words in the response it kept, and
 signals nothing, so VM said the account was authorized, nothing was stored,
 and the next session found no token with nothing anywhere to say why.  That
@@ -193,7 +193,7 @@ is what a reader chasing a stale code saw: a cheerful message and no mail."
 
 (ert-deftest vm-oauth2-test-the-redirect-brings-the-code ()
   "The listener takes the code out of the request the browser makes.
-A provider answers an authorization by redirecting the browser, so the code
+A provider completes an authorization by redirecting the browser, so the code
 arrives as an ordinary GET on a loopback port rather than being read off a
 page and pasted."
   (let ((vm-oauth2--code nil)
@@ -224,8 +224,8 @@ page and pasted."
       (when server (ignore-errors (delete-process server))))))
 
 (ert-deftest vm-oauth2-test-a-refusal-on-the-redirect-is-not-a-code ()
-  "A provider that refuses says so on the redirect, and that is an error.
-The browser arrives either way; what it carries is `error=' rather than
+  "A provider that rejects the request reports it on the redirect, and that is an error.
+The browser arrives either way; what it holds is `error=' rather than
 `code=', and waiting for a code that is not coming would be the whole
 timeout spent on an answer VM already has."
   (let ((vm-oauth2--code nil)
@@ -250,7 +250,7 @@ timeout spent on an answer VM already has."
   "REGRESSION: nothing is pasted where the browser can reach VM.
 
 oauth2.el opens the browser and then reads the code with `read-string'.
-VM answers that out of the redirect, so the reader clicks Allow and is done;
+VM reads that out of the redirect, so the reader clicks Allow and is done;
 before this, every authorization ended with a browser error page and a code
 to copy out of its address bar."
   (let ((vm-oauth2-client-id "id")
@@ -305,7 +305,7 @@ already say which addresses have tokens behind them."
 
 (ert-deftest vm-oauth2-test-the-provider-is-guessed-from-the-host ()
   "A Gmail or Office 365 server names its provider, and anything else does not.
-The guess is only a default: the command still offers the list."
+The guess is only a default: the command still lists them all."
   (should (equal (vm-oauth2-provider-for-host "imap.gmail.com") "google"))
   (should (equal (vm-oauth2-provider-for-host "outlook.office365.com")
                  "microsoft"))
@@ -313,7 +313,7 @@ The guess is only a default: the command still offers the list."
   (should-not (vm-oauth2-provider-for-host nil)))
 
 (ert-deftest vm-oauth2-test-a-maildrop-with-no-token-is-offered-one ()
-  "REGRESSION: a folder whose account has no token offers to authorize it.
+  "REGRESSION: a folder whose account has no token prompts to authorize it.
 
 The session cannot ask, running in a process filter, so a maildrop with no
 token used to fail with a line in the log naming a command to run.  The

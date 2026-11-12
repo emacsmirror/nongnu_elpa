@@ -244,7 +244,7 @@ read as the answer to this one."
   (iter-yield-from (vm-imap-net-select mailbox examine)))
 
 (ert-deftest vm-imap-net-test-select-says-what-the-mailbox-holds ()
-  "SELECT answers the count, the UIDVALIDITY and whether the mailbox can be
+  "SELECT returns the count, the UIDVALIDITY and whether the mailbox can be
 written to, which is what the folder needs before it can ask for anything."
   (vm-imap-net-test--with-session (mock :messages (list vm-imap-net-test--alice
                                                         vm-imap-net-test--bob))
@@ -324,7 +324,7 @@ has to know which message it is looking at (issue #185)."
           (should (string-match-p "badgers" (cdr (nth 0 stored))))
           (should (string-match-p "The second body" (cdr (nth 1 stored)))))))))
 
-;; A wait must outlast the session's own timeout.  `vm-imap-net-wait' answers
+;; A wait must outlast the session's own timeout.  `vm-imap-net-wait' returns
 ;; nil when its deadline passes with the session still running, so a test that
 ;; waits exactly as long as `vm-imap-server-timeout' is asking which of two
 ;; deadlines fires first.  Two tests here did; the POP side is where it was caught
@@ -342,7 +342,7 @@ has to know which message it is looking at (issue #185)."
 ;; failed (emacs-vm/vm#863).  Emacs is stopped for the whole pause, so nothing
 ;; the test or the driver does can see it coming.
 ;;
-;; The mock answers in milliseconds; these timeouts exist to stop a hang, not to
+;; The mock replies in milliseconds; these timeouts exist to stop a hang, not to
 ;; measure anything, so they cost nothing by being generous.  The wait is longer
 ;; again than the session's own timeout, so a session that does hang is reported
 ;; by the assertion that says what was not done rather than by a bare deadline.
@@ -440,7 +440,7 @@ a body at all."
     (should (equal (length vm-message-list) 2))))
 
 (ert-deftest vm-imap-net-test-the-uid-and-flags-are-kept-with-the-message ()
-  "A fetched message carries the UID it was fetched under and the flags the
+  "A fetched message has the UID it was fetched under and the flags the
 server reported, which is what stops it being fetched again and what makes
 it show as read."
   (vm-imap-net-test--visiting (mock)
@@ -541,7 +541,7 @@ shown is that the fetch began, and afterwards what arrived."
                           said))))))
 
 (ert-deftest vm-imap-net-test-a-failed-fetch-tells-the-caller ()
-  "A server that refuses the fetch ends the session and the folder hears
+  "A server that rejects the fetch ends the session and the folder hears
 about it, rather than the callback never coming."
   (vm-imap-net-test--visiting (mock)
     (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
@@ -570,9 +570,9 @@ what was just fetched would be written back over the change."
     (should (member "\\seen" (mapcar #'downcase
                                      (vm-imap-mock-flags mock "INBOX" 1))))))
 
-(ert-deftest vm-imap-net-test-a-flag-the-server-refuses-is-not-lost ()
+(ert-deftest vm-imap-net-test-a-flag-the-server-rejects-is-not-lost ()
   "A STORE the server says NO to leaves the message with its modification
-flag set, so the next synchronisation offers it again, and the fetch carries
+flag set, so the next synchronisation sends it again, and the fetch goes
 on regardless."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((message (car vm-message-list)))
@@ -888,7 +888,7 @@ before: it is the answer that makes the cache wrong."
               (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-a-mailbox-command-vm-cannot-send-says-so ()
-  "A maildrop the driver cannot open answers nil, rather than reporting a
+  "A maildrop the driver cannot open returns nil, rather than reporting a
 command as sent when nothing went out."
   (let ((vm-imap-passwords nil)
         (auth-sources nil))
@@ -933,7 +933,7 @@ server for and the one worst spent frozen."
               (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-a-mailbox-that-will-not-say-does-not-stop-a-listing ()
-  "A STATUS the server refuses leaves that mailbox at zero, and the rest of
+  "A STATUS the server rejects leaves that mailbox at zero, and the rest of
 the listing still arrives.  Servers refuse STATUS on names they have just
 listed often enough for this to matter."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
@@ -1008,7 +1008,7 @@ connection."
               (with-current-buffer buffer (set-buffer-modified-p nil))
               (kill-buffer buffer))))))))
 
-(ert-deftest vm-imap-net-test-completion-answers-nothing-when-it-cannot-ask ()
+(ert-deftest vm-imap-net-test-completion-returns-nothing-when-it-cannot-ask ()
   "A maildrop the driver cannot open returns no names.
 Nothing else is tried: completion has no second implementation to fall back
 on, so what it cannot ask for it does not offer."
@@ -1177,7 +1177,7 @@ wrong.  It signals instead."
   "A session buffer goes with a connection that was never made.
 
 A host that does not resolve, an stunnel that is not installed, a preauth hook
-that answers with nothing: the buffer was made before the connection was
+that returns nothing: the buffer was made before the connection was
 tried, and one was left behind for every attempt."
   (let ((vm-imap-passwords (list (list "imap-ssl:nowhere.invalid:993:*:login:me:*"
                                        "secret")))
@@ -1247,7 +1247,7 @@ what keeps the two the same view of the mailbox."
 (ert-deftest vm-imap-net-test-get-new-mail-goes-through-the-driver ()
   "`vm-get-new-mail' on an IMAP folder starts the session and returns.  What
 it returns is that it started, not what arrived: the messages land while
-Emacs carries on, which is the point of the whole conversion."
+Emacs continues, which is the point of the whole conversion."
   (vm-imap-net-test--visiting (mock)
     (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
     (should (vm-imap-net-get-spooled-mail))
@@ -1258,7 +1258,7 @@ Emacs carries on, which is the point of the whole conversion."
     (should (equal (length vm-message-list) 1))))
 
 (ert-deftest vm-imap-net-test-an-unsupported-maildrop-is-not-fetched ()
-  "A maildrop this cannot open without waiting answers nil, and the caller
+  "A maildrop this cannot open without waiting returns nil, and the caller
 fetches nothing."
   (vm-imap-net-test--visiting (mock)
     (cl-letf (((symbol-function 'vm-folder-imap-maildrop-spec)
@@ -1295,7 +1295,7 @@ were asked for."
 (ert-deftest vm-imap-net-test-a-body-fetch-survives-an-unsolicited-flag-report ()
   "REGRESSION: another client changing a flag aborted a body fetch.
 Issue #890.  A server reports a message's flags whenever it next can when
-somebody else changes them (RFC 3501 7.4.1), and that FETCH carries no UID.
+somebody else changes them (RFC 3501 7.4.1), and that FETCH has no UID.
 `vm-imap-net-fetch' passes one over; `vm-imap-net-fetch-bodies' did not, and
 handed the nil UID to `vm-imap-net-store-body', which found no message for it
 and signalled \"FETCH response for a UID that was not asked for\".  The whole
@@ -1365,7 +1365,7 @@ one of its own and nobody waits for it."
               (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-a-composition-vm-cannot-file-is-left-to-the-old-path ()
-  "A maildrop the driver cannot open answers nil, so the caller still files it.
+  "A maildrop the driver cannot open returns nil, so the caller still files it.
 Nothing is silently not filed: the message has been sent by then."
   (let ((vm-imap-passwords nil)
         (auth-sources nil))
@@ -1459,10 +1459,10 @@ PERMANENTFLAGS, which is a server saying it keeps keywords of its own."
 
 (ert-deftest vm-imap-net-test-a-mailbox-that-cannot-be-examined-keeps-the-labels ()
   "REGRESSION: a failed EXAMINE dropped every label from a save.
-Issue #889.  `vm-imap-net-mailbox-permanent-flags' answers nil where the
+Issue #889.  `vm-imap-net-mailbox-permanent-flags' returns nil where the
 mailbox will not say what it keeps, which sends the flags a server is obliged
 to keep and the keywords as well.  It was written `(condition-case nil ...)',
-and inside an `iter-defun' whose protected form yields, that answers with the
+and inside an `iter-defun' whose protected form yields, that returns the
 error object rather than with the handler's value: generator.el's CPS
 transform does not treat the two spellings alike.
 
@@ -1484,13 +1484,13 @@ over again, by another route."
                      '("\\Seen" "todo"))))))
 
 (ert-deftest vm-imap-net-test-a-mailbox-that-keeps-no-keywords-gets-none ()
-  "REGRESSION: the copy arrives whole where the destination refuses keywords.
+  "REGRESSION: the copy arrives whole where the destination rejects keywords.
 RFC 3501 has a server answer NO to an APPEND naming a flag it does not
 support, and a refused APPEND loses the copy rather than the flag.  So what
 the mailbox says it keeps is asked before anything is sent, and a keyword it
 did not name is left out (emacs-vm/vm#828).
 
-The mock without `\\*' in its PERMANENTFLAGS is what Gmail answers."
+The mock without `\\*' in its PERMANENTFLAGS is what Gmail advertises."
   (let ((vm-imap-mock-permanent-flags
          "\\Answered \\Flagged \\Deleted \\Seen \\Draft"))
     (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
@@ -1524,8 +1524,8 @@ The mock without `\\*' in its PERMANENTFLAGS is what Gmail answers."
 
 (ert-deftest vm-imap-net-test-the-attributes-that-travel-as-keywords ()
   "`filed', `written', `forwarded' and `redistributed' go as keywords.
-They are keywords on the sync path, so a saved copy carries what a
-synchronised message carries (emacs-vm/vm#828)."
+They are keywords on the sync path, so a saved copy has what a
+synchronised message has (emacs-vm/vm#828)."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((message (car vm-message-list))
           (answer 'not-called))
@@ -1659,7 +1659,7 @@ erroring somewhere further in where the cause is no longer visible."
 (ert-deftest vm-imap-net-test-a-response-in-pieces-is-read-the-same ()
   "A body that arrives in many chunks reads as the one that arrives in one.
 On a real connection a literal spans TCP segments, and the reader is resumed
-once per segment; the mock answers in one write, so this makes the pieces by
+once per segment; the mock replies in one write, so this makes the pieces by
 hand and feeds them through the driver."
   (let* ((body (mapconcat (lambda (n) (format "line %d" n))
                           (number-sequence 1 200) "\r\n"))
@@ -1901,9 +1901,9 @@ the same session, so the server is not left holding a second copy."
 (ert-deftest vm-imap-net-test-mail-on-disk-is-not-fetched-a-second-time ()
   "A session that fails after writing the crash box leaves nothing to refetch.
 
-The maildrop is set to delete what is fetched and the server refuses the
+The maildrop is set to delete what is fetched and the server rejects the
 EXPUNGE, so the session fails with the mail already in the crash box.  The
-folder gobbles that crash box when it next looks; unless it also knows it has
+folder gobbles that crash box when it next looks; unless it also has a record of
 those UIDs, it fetches them again and both copies land -- three goes at a
 two-message maildrop put four messages in the folder."
   (let ((vm-imap-expunge-after-retrieving t))
@@ -1913,7 +1913,7 @@ two-message maildrop put four messages in the folder."
       (let ((crash (nth 2 (car vm-spool-files))))
         (vm-get-new-mail)
         (should (vm-imap-net-wait nil 90))
-        ;; the mail is on disk and the folder knows it has it, though the
+        ;; the mail is on disk and the folder has it recorded, though the
         ;; session it came in on failed
         (should (file-exists-p crash))
         (should (equal (length vm-imap-retrieved-messages) 2))
@@ -1927,7 +1927,7 @@ two-message maildrop put four messages in the folder."
                        '("badgers" "otters")))))))
 
 (ert-deftest vm-imap-net-test-an-extra-fetch-item-is-stepped-over ()
-  "A server that answers with more than VM asked for still delivers the mail.
+  "A server that returns more than VM asked for still delivers the mail.
 
 RFC 3501 7.4.2 lets a server send data items the client did not ask about, and
 a server with CONDSTORE on sends MODSEQ with everything.  Refusing to read
@@ -1945,7 +1945,7 @@ and (FLAGS list) in FETCH response\", and no mailbox arrived at all."
   "A FETCH the server sent of its own accord is not taken for an answer.
 
 Somebody else changing a message's flags has the server report them whenever
-it next can (RFC 3501 7.4.1).  That response carries no UID, and taking it for
+it next can (RFC 3501 7.4.1).  That response has no UID, and taking it for
 message data put an entry with no UID in the folder's tables: \"Wrong type
 argument: stringp, nil\", and no mail."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
@@ -1998,10 +1998,10 @@ which is what `vm-imap-net-note-expunged' says of the folder\\='s own list."
       (should (null (vm-imap-mock-messages mock "INBOX")))
       (should-not vm-imap-retrieved-messages))))
 
-(ert-deftest vm-imap-net-test-a-check-refuses-a-mailbox-of-another-validity ()
+(ert-deftest vm-imap-net-test-a-check-rejects-a-mailbox-of-another-validity ()
   "REGRESSION: the mail check rewrote the folder's UID tables with no guard.
 Issue #892.  `vm-imap-net-check' plans against what the server answered, and
-planning installs those UIDs into the folder's own tables.  The fetch refuses
+planning installs those UIDs into the folder's own tables.  The fetch rejects
 a mailbox whose UIDVALIDITY is not the folder's; the check did not, though
 SELECT had told it.  So after a mailbox was recreated on the server the folder
 held the new mailbox's UIDs under the old validity, and the next write of the
@@ -2025,7 +2025,7 @@ is the same disagreement from the other side."
 (ert-deftest vm-imap-net-test-a-warning-does-not-stop-the-fetch ()
   "A session that has something to warn about does not hold Emacs to say it.
 
-The server refuses every STORE, so saving the flags of two messages warns
+The server rejects every STORE, so saving the flags of two messages warns
 twice.  Each warning was `sit-for' 2 in a process filter: four seconds of
 Emacs stopped, for work that takes a tenth of one.  Timed rather than counted
 -- what is wrong with a pause is the wall clock."
@@ -2182,7 +2182,7 @@ if Emacs went before the bunch was taken in, the next fetch had no UID for it
 and brought it again: the reader saw the message twice.
 
 The bunch is collected in a buffer of its own now and goes into the folder in
-one piece, so a save can only ever see whole messages the list knows about."
+one piece, so a save can only ever see whole messages the list names."
   (let ((vm-imap-message-bunch-size 4))
     (vm-imap-mock-with (mock :messages (list "From: z@example.com\nSubject: first\n\nZ.\n"))
       (let* ((cache (make-temp-file "vm-imap-save-cache" t))
@@ -2336,7 +2336,7 @@ rather than over a socket: there is no port here to point a mock server at.")
 (ert-deftest vm-imap-net-test-a-tls-maildrop-does-not-ask-make-network-process ()
   "An imap-ssl maildrop is connected with `open-network-stream'.
 
-`make-network-process' has no TLS: given `:type \\='tls' it answers
+`make-network-process' has no TLS: given `:type \\='tls' it rejects it with
 \"Unsupported connection type\" and nothing is connected at all.  Every
 imap-ssl maildrop without an stunnel failed there, before a byte was sent.
 Checked by watching which of the two is called, since a test cannot make a TLS
@@ -2480,7 +2480,7 @@ any other does: the tunnel is only how the connection is made."
 
 (ert-deftest vm-imap-net-test-a-server-may-answer-a-fetch-backwards ()
   "The UID in each response says which message it is, so a server that
-answers a range in any order is read correctly.  Order is not something a
+returns a range in any order is read correctly.  Order is not something a
 client may rely on, and issue #185 asked for the UID for this reason."
   (vm-imap-net-test--visiting (mock :reorder-fetch t)
     (dotimes (i 4)
@@ -2635,7 +2635,7 @@ thing that can fail, so a refused UIDVALIDITY leaked one every time."
       (should-not (vm-imap-net-test--bunch-buffers))
       (vm-net-close-process process))))
 
-(ert-deftest vm-imap-net-test-waiting-answers-nil-when-it-runs-out ()
+(ert-deftest vm-imap-net-test-waiting-returns-nil-when-it-runs-out ()
   "`vm-imap-net-wait' says whether the session finished.  A caller that has
 to have the mail can tell the difference between having it and having waited
 long enough."
@@ -2697,7 +2697,7 @@ the mode line stops saying there is some."
     (should (vm-imap-net-wait nil 90))
     (should-not vm-spooled-mail-waiting)))
 
-(ert-deftest vm-imap-net-test-a-password-vm-already-knows-is-enough ()
+(ert-deftest vm-imap-net-test-a-password-vm-already-has-is-enough ()
   "A maildrop written with `*' for its password is one VM is to find the
 password for.  It may already know it -- from a session earlier in this
 Emacs, or from auth-source -- and only asking the user is out of the
@@ -2792,7 +2792,7 @@ in the round that started it would otherwise never report anything."
     (should (vm-check-for-spooled-mail nil t))))
 
 (ert-deftest vm-imap-net-test-an-empty-maildrop-reports-nothing ()
-  "A maildrop with nothing in it answers nil, and the folder says so."
+  "A maildrop with nothing in it returns nil, and the folder reports it."
   (vm-imap-net-test--in-a-folder-with-spool (mock :messages nil)
     (vm-check-for-spooled-mail nil t)
     (vm-imap-net-test--settle)
@@ -2854,7 +2854,7 @@ logged into and a reader who is never prompted."
         (vm-net-close-process process)))))
 
 (ert-deftest vm-imap-net-test-a-refused-password-is-not-remembered ()
-  "A login the server refuses leaves the cache alone: an entry there would
+  "A login the server rejects leaves the cache alone: an entry there would
 be sent again by every operation that still blocks, and none of them would
 ask."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice)
@@ -3013,7 +3013,7 @@ have: every visit to an empty IMAP folder failed with `processp nil'."
     (should (eq (vm-net-session-state vm-imap-net-session) 'done))))
 
 (ert-deftest vm-imap-net-test-an-empty-mailbox-checks-clean ()
-  "The check on an empty mailbox answers no mail, rather than failing."
+  "The check on an empty mailbox reports no mail, rather than failing."
   (vm-imap-net-test--visiting (mock)
     (setq vm-spooled-mail-waiting t)
     (should (vm-check-for-spooled-mail nil t))
@@ -3040,8 +3040,8 @@ something."
   "The folder shows what has arrived while the rest is still coming.
 
 Taking two thousand messages into the message list at once, threading them
-and rebuilding the summary, is several seconds in which Emacs answers
-nothing -- the freeze the conversion removes, arriving from the other side.
+and rebuilding the summary, is several seconds in which Emacs does
+not respond: the freeze the conversion removes, arriving from the other side.
 So each bunch is taken in as it lands.
 
 Counted at the point where it happens rather than by watching from outside:
@@ -3265,7 +3265,7 @@ plan's own check having been made before any of this was asked for."
       (should (string-match-p "not written twice" (car said))))))
 
 (defun vm-imap-net-test--flags-on-the-server (mock)
-  "What flags each message in MOCK's INBOX carries, as (UID . FLAGS)."
+  "What flags each message in MOCK's INBOX has, as (UID . FLAGS)."
   (mapcar (lambda (m)
             (cons (vm-imap-mock-message-uid m)
                   (sort (mapcar #'downcase (vm-imap-mock-message-flags m))
@@ -3362,7 +3362,7 @@ that ignored it would leave the command doing nothing at all."
 ;;; The table of UIDs the folder already holds
 
 (defun vm-imap-net-test--message-holding (uid validity)
-  "A message carrying UID under VALIDITY, as one read from a folder does."
+  "A message with UID under VALIDITY, as one read from a folder does."
   (let ((message (vm-make-message)))
     (vm-test-init-message-data message)
     (vm-set-imap-uid-of message uid)
@@ -3426,7 +3426,7 @@ UIDVALIDITY both nil against a mailbox validity of 1778127965
 (ert-deftest vm-imap-net-test-a-save-forgets-what-the-account-held ()
   "REGRESSION: saving into a mailbox forgets the account's folder list.
 
-`vm-imap-account-folder-cache' is what folder-name completion answers from,
+`vm-imap-account-folder-cache' is what folder-name completion reads from,
 filled once per account.  The explicit mailbox commands forget the entry
 when the server has obeyed, but a save sends its own CREATE before the
 APPEND and used to leave the cache alone, so a folder saved into for the
@@ -3447,7 +3447,7 @@ run by hand (emacs-vm/vm#920)."
 
 (ert-deftest vm-imap-net-test-forgetting-an-unknown-account-is-harmless ()
   "A spec whose account is not in `vm-imap-account-alist' leaves the cache alone.
-`vm-imap-account-name-for-spec' answers nil there, and nil must not match an
+`vm-imap-account-name-for-spec' returns nil there, and nil must not match an
 entry."
   (let ((vm-imap-account-folder-cache (list (cons "work" (list "INBOX"))))
         (vm-imap-account-alist nil))
@@ -3564,7 +3564,7 @@ anything or not.  The table is there because the plan built it."
     (should (gethash "1" vm-imap-net-held-uids))))
 
 (ert-deftest vm-imap-net-test-a-partly-arrived-line-asks-for-more ()
-  "A response line that is not all here answers with a request, and moves
+  "A response line that is not all here returns a request, and moves
 nothing: the parse starts again from the beginning of the line once the
 request is satisfied, so there is nothing to resume and no state to keep."
   (with-temp-buffer
@@ -3607,7 +3607,7 @@ names it could not read back (emacs-vm/vm#894)."
       (should (equal (vm-imap-net-token-text (nth 4 response)) "say \"hi\"")))))
 
 (ert-deftest vm-imap-net-test-a-literal-keeps-its-backslashes ()
-  "Only a quoted string carries escapes.  A literal is octets as they came,
+  "Only a quoted string has escapes.  A literal is octets as they came,
 so a body with a backslash in it must come out with the backslash."
   (let ((text "a\\b\\\\c"))
     (with-temp-buffer
@@ -3621,7 +3621,7 @@ so a body with a backslash in it must come out with the backslash."
 
 (ert-deftest vm-imap-net-test-a-split-literal-is-waited-for-once ()
   "A literal's octets are waited for by position, not by whatever arrives.
-The count comes before the octets, so the wait knows where they end: a body
+The count comes before the octets, so the wait can tell where they end: a body
 arriving in a thousand chunks is one wait and one parse, where a wait for the
 buffer merely growing would be a thousand of each."
   (with-temp-buffer
@@ -3693,7 +3693,7 @@ greeting and read it as the challenge."
 (ert-deftest vm-imap-net-test-a-session-authenticates-with-cram-md5 ()
   "REGRESSION: the driver logs in with CRAM-MD5.
 
-RFC 2195: the server challenges, the client answers with its user name and
+RFC 2195: the server challenges, the client replies with its user name and
 the HMAC-MD5 of that challenge keyed by the password.  The mock checks the
 digest, so a wrong answer fails here rather than merely a missing one."
   (vm-imap-net-test--with-session (mock :cram-md5 t)
@@ -3728,7 +3728,7 @@ and the answer is a credential derived from the password."
         (should (string-match-p "authentication response omitted" transcript))))))
 
 (ert-deftest vm-imap-net-test-a-cram-md5-maildrop-is-not-declined ()
-  "REGRESSION: `vm-imap-net-open' no longer refuses a CRAM-MD5 maildrop.
+  "REGRESSION: `vm-imap-net-open' no longer rejects a CRAM-MD5 maildrop.
 It signalled `vm-imap-net-no-password' for any auth but login."
   (vm-imap-mock-with (mock :cram-md5 t)
     (let ((opened (vm-imap-net-open
@@ -3815,7 +3815,7 @@ These run in their own process buffer either way."
     accepted))
 
 (ert-deftest vm-imap-net-test-a-discarded-keyword-is-reported ()
-  "A server that answers OK to a keyword and does not keep it is complained
+  "A server that returns OK to a keyword and does not keep it is reported
 about, naming the keyword.  This is Gmail: a VM label is an IMAP keyword, and
 Gmail takes the STORE, says OK, and stores nothing, so the label was lost with
 nothing said at any point."
@@ -3843,7 +3843,7 @@ be silent in the ordinary case, since it runs on every label VM stores."
 
 (ert-deftest vm-imap-net-test-a-discarded-keyword-is-reported-once ()
   "Said once per session, not once per message: a folder of a thousand
-messages carrying the same label would otherwise complain a thousand times."
+messages with the same label would otherwise warn a thousand times."
   (vm-imap-net-test--with-session
       (mock :messages (list vm-imap-net-test--alice vm-imap-net-test--bob)
             :drops-keywords t)
@@ -3862,7 +3862,7 @@ messages carrying the same label would otherwise complain a thousand times."
 
 (ert-deftest vm-imap-net-test-only-a-keyword-store-asks-for-the-flags-back ()
   "The protocol's own flags are stored with `.SILENT', so the ordinary
-business of marking messages read costs no extra response; a store carrying a
+business of marking messages read costs no extra response; a store with a
 keyword asks, because a keyword is what a server may discard."
   (vm-imap-net-test--with-session
       (mock :messages (list vm-imap-net-test--alice))
@@ -3998,7 +3998,7 @@ does."
                               (vm-imap-net-test--body-of message))))))
 
 (ert-deftest vm-imap-net-test-a-body-that-cannot-wait-reports-a-silent-server ()
-  "A server that never answers is an error, not an empty message body.
+  "A server that never replies is an error, not an empty message body.
 The caller is saving or copying, so answering with no body would write one."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((vm-enable-external-messages '(imap))
@@ -4044,7 +4044,7 @@ a message written without its body."
       (should (vm-imap-net-wait nil 90))
       (should-not (vm-body-to-be-retrieved-of message)))))
 
-;;; A session the server refuses (emacs-vm/vm#822)
+;;; A session the server rejects (emacs-vm/vm#822)
 
 (iter-defun vm-imap-net-test--select-only (mailbox)
   "Log in and select MAILBOX, and answer what SELECT said."
@@ -4053,7 +4053,7 @@ a message written without its body."
     (vm-imap-net-test--logout)))
 
 (ert-deftest vm-imap-net-test-a-refused-select-stops-the-session ()
-  "A SELECT the server answers NO stops the session with an error rather than
+  "A SELECT the server rejects with NO stops the session with an error rather than
 leaving VM to fetch from a mailbox it never selected."
   (vm-imap-net-test--with-session
       (mock :messages (list vm-imap-net-test--alice) :refuse "SELECT")
@@ -4080,7 +4080,7 @@ with a shorter list is worth knowing."
     (let ((session (vm-imap-net-test--run
                     mock (vm-imap-net-test--select-only "INBOX"))))
       (should (eq (vm-net-session-state session) 'done))
-      ;; SELECT still answers with what the mailbox holds
+      ;; SELECT still returns what the mailbox holds
       (should (equal (nth 0 (vm-net-session-value session)) 1)))))
 
 ;;; A body a folder type would otherwise read as a separator
@@ -4095,7 +4095,7 @@ with a shorter list is worth knowing."
   "Bodies that a folder of some type would otherwise read as a separator.")
 
 (defun vm-imap-net-test--message-with (n body)
-  "A message numbered N carrying BODY."
+  "A message numbered N with BODY."
   (concat "From: alice@example.com\nTo: vmtest@example.com\n"
           (format "Subject: message %d\nMessage-ID: <imap-%d@example.com>\n\n" n n)
           body "\n"))
@@ -4115,8 +4115,8 @@ visits has."
     (cons vm-folder-type (length vm-message-list))))
 
 (defun vm-imap-net-test--move-into (type body)
-  "Move two messages, the first carrying BODY, into a folder of TYPE.
-On the driver, which is the only way in; answers a complaint, or nil when the
+  "Move two messages, the first with BODY, into a folder of TYPE.
+On the driver, which is the only way in; returns a complaint, or nil when the
 folder reads back as the two messages that were sent."
   (let ((dest (make-temp-file "vm-imap-net-dest"))
         (folder (generate-new-buffer " *vm-imap-net-move*")))
@@ -4254,9 +4254,9 @@ change."
       (should (vm-body-to-be-retrieved-of (nth 1 vm-message-list))))))
 
 (ert-deftest vm-imap-net-test-a-started-fetch-says-it-started ()
-  "`vm-imap-net-get-spooled-mail' answers `started', not t.
+  "`vm-imap-net-get-spooled-mail' returns `started', not t.
 
-The caller says what the folder holds when this answers.  With t it could not
+The caller reports what the folder holds when this returns.  With t it could not
 tell a fetch that had begun from mail that had arrived, so a visit reported
 the cached count as though the fetch were done -- which reads as nothing
 having happened, and is what was reported (emacs-vm/vm#825)."
@@ -4269,7 +4269,7 @@ having happened, and is what was reported (emacs-vm/vm#825)."
     (should (equal (length vm-message-list) 1))))
 
 (ert-deftest vm-imap-net-test-a-folder-already-fetching-says-started-too ()
-  "A folder with a fetch running answers `started' as well: the mail is on
+  "A folder with a fetch running returns `started' as well: the mail is on
 its way either way, and the caller must not report a count as final."
   (vm-imap-net-test--visiting (mock)
     (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
@@ -4390,7 +4390,7 @@ so a server advertising XOAUTH2 and not SASL-IR has to be answered this way."
 
 (ert-deftest vm-imap-net-test-a-refused-xoauth2-token-ends-the-session ()
   "REGRESSION: a refused token does not hang the session.
-The server answers a bad token with a continuation line holding base64 JSON
+The server replies to a bad token with a continuation line holding base64 JSON
 and sends no tagged response until the client has sent a line of its own.  A
 client that does not reply waits for a tag that is not coming, which is a
 fetch that never finishes and no error to show for it."
@@ -4517,8 +4517,8 @@ command (emacs-vm/vm#939)."
           (when (buffer-live-p our-buffer) (kill-buffer our-buffer))
           (when (buffer-live-p their-buffer) (kill-buffer their-buffer)))))))
 
-(ert-deftest vm-imap-net-test-a-maildrop-with-no-token-offers-to-authorize ()
-  "REGRESSION: opening an XOAUTH2 maildrop with no token offers one.
+(ert-deftest vm-imap-net-test-a-maildrop-with-no-token-prompts-to-authorize ()
+  "REGRESSION: opening an XOAUTH2 maildrop with no token prompts for one.
 
 The session cannot ask for anything, running in a process filter, so a
 maildrop VM had no token for failed with a line in the log naming a command
@@ -4560,6 +4560,33 @@ A timer checking for mail is not a place to open a browser from."
         (should-error (vm-imap-net-open spec "test")
                       :type 'vm-imap-net-no-password)
         (should-not offered)))))
+
+(ert-deftest vm-imap-net-test-a-save-that-expunges-stays-saved ()
+  "REGRESSION: the folder does not go modified again when the server confirms.
+
+Issue #942.  `vm-save-folder' writes the file and then starts the session
+that sends the deletions, so the file goes out with them still listed in
+`X-VM-IMAP-to-expunge'.  When the session finished,
+`vm-imap-net-note-expunged' struck them off the folder's own lists and marked
+the folder modified, so every save that expunged produced a `**' mode line a
+few minutes later, on a timer, with nothing new in the folder and nothing for
+the reader to save.
+
+What is left in the file is bookkeeping: the next session sends an expunge
+for a UID the server no longer has, which it tolerates, and the next save
+rewrites the headers."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((validity (vm-folder-imap-uid-validity)))
+      (setq vm-imap-messages-to-expunge (list (cons "1" validity)))
+      ;; as a save leaves the folder: the file written, the buffer clean
+      (set-buffer-modified-p nil)
+      (should (eq (vm-imap-net-send-changes) t))
+      (should (vm-imap-net-wait nil 30))
+      ;; the deletion happened and the request is done with
+      (should (null (vm-imap-mock-messages mock "INBOX")))
+      (should-not vm-imap-messages-to-expunge)
+      ;; and the reader is not told there is something to save
+      (should-not (buffer-modified-p)))))
 
 (provide 'vm-imap-net-test)
 

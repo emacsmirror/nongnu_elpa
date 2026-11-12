@@ -54,7 +54,7 @@ instead of indenting anything."
 (ert-deftest vm-ps-print-test-tokenized-summary-agrees-with-the-summary-buffer ()
   "The printed summary indents a thread as the summary buffer does.
 It is the same renderer now: `vm-ps-print-tokenized-summary' runs
-`vm-tokenized-summary-insert' in a buffer of its own and answers with what it
+`vm-tokenized-summary-insert' in a buffer of its own and returns what it
 wrote (emacs-vm/vm#862).  This holds the two together, which is what it was
 written for when they were separate."
   (cl-letf (((symbol-function 'vm-thread-indentation) (lambda (_m) 4)))
@@ -69,7 +69,7 @@ written for when they were separate."
                        (buffer-string)))))))
 
 (ert-deftest vm-ps-print-test-a-printed-group-is-padded-and-cut ()
-  "REGRESSION: a group carries its width and its maximum onto paper.
+  "REGRESSION: a group keeps its width and its maximum onto paper.
 
 `vm-ps-print-tokenized-summary' was a copy of the buffer renderer with no
 `group-begin\' or `group-end\' branch, and unknown tokens fall through its

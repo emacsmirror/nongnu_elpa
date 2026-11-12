@@ -10,7 +10,7 @@
 ;; emacs-w3m for HTML, vcard for business cards.  Those paths were the least
 ;; tested code in VM, and not for want of tests -- a machine without the
 ;; package cannot run them at all.  The suite has been printing "Could not
-;; load feature bbdb" and carrying on for as long as anyone can remember.
+;; load feature bbdb" and continuing for as long as anyone can remember.
 ;;
 ;; `make optional-packages' installs them under test/opt/elpa; every test here
 ;; skips without them, so the suite still runs on a machine that has none.
@@ -203,8 +203,8 @@ this one the names the manual tells the reader to."
           "To: " (or to "someone@example.com") "\n"
           "Subject: test\n\nbody\n"))
 
-(ert-deftest vm-optional-test-in-bbdb-selector-answers-for-a-message ()
-  "The `in-bbdb' selector says whether BBDB knows the message's correspondent.
+(ert-deftest vm-optional-test-in-bbdb-selector-reports-for-a-message ()
+  "The `in-bbdb' selector says whether BBDB has the message's correspondent.
 The whole path: VM reads the headers, parses the addresses and asks BBDB.  It
 used to hand the job to `bbdb-get-addresses', which BBDB 3 does not have."
   (skip-unless (vm-optional-test--installed-p 'bbdb))

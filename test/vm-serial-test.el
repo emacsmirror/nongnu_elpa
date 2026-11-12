@@ -202,8 +202,8 @@ the arguments VM passes and the answer it expects back, not BBDB itself."
 
 ;;; vm-serial-get-emails tests
 
-(ert-deftest vm-serial-test-get-emails-answers-a-pair ()
-  "`vm-serial-get-emails' answers (NAME ADDRESS), with BBDB and without."
+(ert-deftest vm-serial-test-get-emails-returns-a-pair ()
+  "`vm-serial-get-emails' returns (NAME ADDRESS), with BBDB and without."
   (vm-serial-test--in-a-composition "To: Alice Smith <alice@example.com>\n" ""
     (cl-letf (((symbol-function 'bbdb-extract-address-components) nil))
       (should (equal (vm-serial-get-emails "To:")
@@ -226,7 +226,7 @@ was reading `car' of a string and expanding to nothing."
         (should (equal (vm-serial-get-name 'last) "Smith"))))))
 
 (ert-deftest vm-serial-test-get-emails-with-no-such-header ()
-  "A missing or empty header answers nil, and the name falls back.
+  "A missing or empty header returns nil, and the name falls back.
 `mail-extract-address-components' signals on nil, which reached the caller
 as a warning and left `vm-serial-unknown-to' unreachable."
   (vm-serial-test--in-a-composition "Subject: hi\n" ""

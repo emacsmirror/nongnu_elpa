@@ -120,7 +120,7 @@ kept rather than merely held in memory until the folder is closed."
         (kill-buffer again)))))
 
 (ert-deftest vm-label-test-a-label-search-folder-selects-by-label ()
-  "`vm-create-label-virtual-folder' collects the messages carrying a label."
+  "`vm-create-label-virtual-folder' collects the messages with a label."
   (vm-label-test--with-folder (_file)
     (vm-add-message-labels "wanted" 1)
     (setq vm-message-pointer (nthcdr 2 vm-message-list))

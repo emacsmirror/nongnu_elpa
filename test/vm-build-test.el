@@ -238,7 +238,7 @@ trip it."
     (should (equal (nreverse offenders) nil))))
 
 
-;;; the build refuses an Emacs too old to run VM (issue #526)
+;;; the build rejects an Emacs too old to run VM (issue #526)
 
 (defun vm-build-test--package-requires-emacs ()
   "Return the Emacs version vm.el's Package-Requires header asks for."
@@ -262,7 +262,7 @@ nothing else does."
     (should (string-match-p "\\`[0-9]+\\.[0-9]" minimum))
     (should (equal minimum declared))))
 
-(ert-deftest vm-build-test-refuses-an-old-emacs ()
+(ert-deftest vm-build-test-rejects-an-old-emacs ()
   "REGRESSION: building with too old an Emacs is an error, not a warning.
 Issue #526.  An Emacs too old to run VM will still byte-compile it, mostly
 without complaint, and the failure turns up at run time instead -- which is how
@@ -489,7 +489,7 @@ That macro records the absolute path found on the build machine."
 
 (ert-deftest vm-build-test-no-tool-path-is-baked-into-a-makefile ()
   "REGRESSION: no `AC_PATH_PROG' name is substituted into a Makefile.
-`AC_PATH_PROG' answers the absolute path on the machine that ran configure,
+`AC_PATH_PROG' writes the absolute path on the machine that ran configure,
 so lisp/Makefile came out with RM = /opt/local/libexec/gnubin/rm and the same
 for ls, mkdir and rmdir.  A packager who builds in one place and runs in
 another then calls tools that are not there.  `AC_CHECK_PROG' records the
@@ -627,7 +627,7 @@ elpa-admin passes `--exclude-vcs', which covers .git and its sidecar files.")
   "Every top-level entry is either shipped to ELPA or named in `.elpaignore'.
 
 emacs-vm/vm#814.  elpa-admin passes the file to tar as `-X', so what the
-NonGNU ELPA tarball carries is decided here and not in the recipe.  package.el
+NonGNU ELPA tarball holds is decided here and not in the recipe.  package.el
 byte-compiles every .el in the tarball on install, which is why shipping
 test/ mattered: its 91 lisp files were compiled with test/ off the load-path
 and every one of them failed.

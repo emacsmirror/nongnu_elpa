@@ -177,7 +177,7 @@ MAILPATH and MAIL, so the test clears those as well."
         (should (string-match-p "takes 7" (car problems)))))))
 
 (ert-deftest vm-configuration-test-a-good-maildrop-is-quiet ()
-  "Each type VM knows, written out in full, is accepted."
+  "Each type VM supports, written out in full, is accepted."
   (vm-configuration-test--with-a-working-setup
     (dolist (spec '("imap:mail.example.com:143:inbox:login:becky:*"
                     "imap-ssl:mail.example.com:993:inbox:login:becky:*"
@@ -204,7 +204,7 @@ make the command useless to everybody reading local mail."
                               (car (vm-configuration-problems)))))))
 
 (ert-deftest vm-configuration-test-the-command-counts-what-it-found ()
-  "The command answers how many problems it reported, and says so plainly.
+  "The command returns how many problems it reported, and says so plainly.
 It is called for its buffer, but the count is what a test and a hook can
 use."
   (vm-configuration-test--with-a-working-setup

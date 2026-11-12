@@ -474,7 +474,7 @@
 ;;; vm-obarray-empty-p tests
 
 (ert-deftest vm-misc-test-obarray-empty-p ()
-  "`vm-obarray-empty-p' answers what `null' cannot ask.
+  "`vm-obarray-empty-p' reports what `null' cannot.
 An obarray used as a set is a vector, so it is true whether anything has been
 interned in it or not.  Testing one with `null' is what #572 was."
   (let ((ob (make-vector 7 0)))
@@ -659,7 +659,7 @@ It is how the folder permission defaults are written: (vm-octal 600) is the
   (should (= 420 (vm-octal 644)))            ; 0644
   (should (= 0 (vm-octal 0)))
   (should (= 8 (vm-octal 10)))
-  ;; and it refuses what is not octal rather than returning a wrong number
+  ;; and it rejects what is not octal rather than returning a wrong number
   (should-error (vm-octal 8) :type 'error)
   (should-error (vm-octal 649) :type 'error))
 
@@ -1197,7 +1197,7 @@ no list syntax for."
 
 (ert-deftest vm-misc-test-a-pause-can-be-typed-through ()
   "`vm-pause' waits with `sit-for', so a reader who has read the message
-carries on rather than waiting out the rest of it.  `sleep-for' does not
+continues rather than waiting out the rest of it.  `sleep-for' does not
 return early for anything, and every message pause in the IMAP and POP code
 was one until this was written."
   (let (waited)
@@ -1242,7 +1242,7 @@ how a reader is given time to see it."
        (when (get-buffer vm-log-buffer-name)
          (kill-buffer vm-log-buffer-name)))))
 
-(ert-deftest vm-misc-test-what-is-shown-carries-no-timing ()
+(ert-deftest vm-misc-test-what-is-shown-holds-no-timing ()
   "The message in the echo area says what it always did.  The time goes to
 the log, where there is room for it and where it can be read afterwards."
   (let ((vm-log-level nil)
@@ -1257,7 +1257,7 @@ the log, where there is room for it and where it can be read afterwards."
 (ert-deftest vm-misc-test-the-log-says-when-and-how-long ()
   "The first line is the clock time; each after it adds the real and CPU
 seconds since the line before.  Which step of a slow operation the time went
-to is the question the log answers."
+to is what the log records."
   (let ((vm-verbosity 5)
         (vm-log-level 10))
     (let ((log (vm-misc-test--with-log
@@ -1432,7 +1432,7 @@ sites pass while a file is being compiled."
                 (vm-load-features '(vm-test-no-such-feature) t))))
     (should-not said)))
 
-(ert-deftest vm-misc-test-load-features-answers-what-loaded ()
+(ert-deftest vm-misc-test-load-features-returns-what-loaded ()
   "The return value is the features that did load, warning or no warning."
   (should-not (let ((noninteractive t))
                 (vm-load-features '(vm-test-no-such-feature))))
@@ -1441,7 +1441,7 @@ sites pass while a file is being compiled."
                  '(subr-x))))
 
 (defun vm-misc-test--feature-that-signals (dir)
-  "Write a feature into DIR that is installed and refuses to load.
+  "Write a feature into DIR that is installed and fails to load.
 Returns its symbol.  w3m.el is the real one: it signals when the w3m program
 is not in `exec-path'."
   (with-temp-file (expand-file-name "vm-test-signalling-feature.el" dir)
@@ -1458,7 +1458,7 @@ emacs-vm/vm#903.  The fallback `load' sat inside the handler of the
 covers a file that is not there rather than an error raised while loading.
 So the signal came back out and killed the caller: vm-w3m.el calls this
 inside `eval-and-compile', and a NonGNU ELPA install compiled it on a
-machine carrying emacs-w3m but no w3m program and wrote no vm-w3m.elc."
+machine with emacs-w3m but no w3m program and wrote no vm-w3m.elc."
   (vm-test-with-temp-dir
     (let* ((load-path (cons temp-dir load-path))
            (feature (vm-misc-test--feature-that-signals temp-dir))
@@ -1519,7 +1519,7 @@ each line, which is what the reply held."
       (should (looking-at "> "))
       (forward-line 1))))
 
-(ert-deftest vm-misc-test-fill-prefix-leaves-room-p-answers-both-ways ()
+(ert-deftest vm-misc-test-fill-prefix-leaves-room-p-returns-both-ways ()
   "`vm-fill-prefix-leaves-room-p' compares the prefix with the column."
   (should (let ((fill-prefix nil) (fill-column 70))
             (vm-fill-prefix-leaves-room-p)))
@@ -1603,7 +1603,7 @@ would be one nobody should trust the rest of the run on."
   (should (equal nil (vm-stale-compiled-files))))
 
 (ert-deftest vm-misc-test-the-version-stamp-names-a-build ()
-  "`vm-version-stamp' answers the release and the commit, and is stable."
+  "`vm-version-stamp' returns the release and the commit, and is stable."
   (let ((stamp (vm-version-stamp)))
     (should (stringp stamp))
     (should (string-match-p "/" stamp))
@@ -1646,7 +1646,7 @@ comparison of timestamps can say anything."
     (should (string-match-p "8\\.3\\.2/deadbeef" said))
     (should (string-match-p "byte-recompile-directory" said))))
 
-(ert-deftest vm-misc-test-every-compiled-vm-file-carries-the-assertion ()
+(ert-deftest vm-misc-test-every-compiled-vm-file-has-the-assertion ()
   "Every VM file that is byte-compiled says which VM built it.
 A file without the form is one whose staleness nothing would notice, which
 is how #791 went unexplained.  The four left out are named here with why."
@@ -1784,7 +1784,7 @@ reading format=flowed."
 ;;; Parsing a date out of a header (emacs-vm/vm#831)
 
 (ert-deftest vm-misc-test-parse-date-reads-a-conforming-date ()
-  "`vm-parse-date' answers the six fields of an RFC 822 date."
+  "`vm-parse-date' returns the six fields of an RFC 822 date."
   (should (equal (vm-parse-date "Mon, 5 Jan 2026 12:00:00 -0800")
                  ["Mon" "5" "Jan" "2026" "12:00:00" "-0800"]))
   (should (equal (vm-parse-date "Tue, 6 Feb 2026 01:02:03 +0530")
@@ -1845,7 +1845,7 @@ rather than calls."
   "REGRESSION: `vm-parse' reads match data only after a search of its own.
 
 It used to clear the match data and then ask `match-end' for it.  Emacs
-answers that question only where a search has succeeded, so on a build where
+reports it only where a search has succeeded, so on a build where
 clearing empties the registers rather than marking them unset, that first
 call signals \"No match data, because no search succeeded\" and takes with it
 whatever was parsing a maildrop.  Opening a folder did exactly that
@@ -1856,7 +1856,7 @@ Checked on the source form.  Stubbing the primitives is no good twice over:
 the compiled `vm-parse' does not consult a stub, since these are byte-code
 operations there, and redefining a subr makes Emacs build a native-
 compilation trampoline for it, which failed inside a suite run.  Emacs 31.1
-marks the registers unset and answers nil, so there is no build here on
+marks the registers unset and returns nil, so there is no build here on
 which the old code fails either."
   (let* ((form (vm-misc-test--source-form "vm-misc.el" "vm-parse"))
          (symbols (flatten-tree form))

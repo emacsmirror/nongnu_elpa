@@ -426,7 +426,7 @@ which covers the copy of this validation in the pcrisis advice."
                       (progn (vm-select-folder-buffer-and-validate 0) nil)
                     (error err)))
       ;; What it asked for before, kept so the difference is visible.  A minimum
-      ;; of 1 still refuses, which is right for commands that act on a message.
+      ;; of 1 still signals, which is right for commands that act on a message.
       (should (eq 'folder-empty
                   (car (condition-case err
                            (progn (vm-select-folder-buffer-and-validate 1) nil)
@@ -481,7 +481,7 @@ Without this, the fix above could pass by never looking at the sender at all."
   "REGRESSION: giving `vm-mail-mode-map' its parent twice is harmless.
 Issue #560: on GNU Emacs this was done with `(nconc vm-mail-mode-map
 mail-mode-map)\', which splices Mail mode\'s keymap onto the end of VM\'s.
-`keymap-parent\' then answers `mail-mode-map\', so it looks like parenting, but a
+`keymap-parent\' then returns `mail-mode-map\', so it looks like parenting, but a
 second call walks to the end of the spliced list -- which is now inside
 `mail-mode-map\' -- and points that cell back at `mail-mode-map\'.  The keymap is
 then circular, `lookup-key\' on it does not return, and Emacs dies of a stack
@@ -496,7 +496,7 @@ Emacs crashing, and a test may not do that: it has to be able to report."
     (define-key vm-mail-mode-map "\C-c\C-v" 'from-vm)
     (vm-mail-mode-parent-keymap)
     (vm-mail-mode-parent-keymap)
-    ;; Neither keymap is a circular list.  `proper-list-p' answers nil for one,
+    ;; Neither keymap is a circular list.  `proper-list-p' returns nil for one,
     ;; and unlike `lookup-key' it returns either way.
     (should (proper-list-p vm-mail-mode-map))
     (should (proper-list-p mail-mode-map))
@@ -546,7 +546,7 @@ number, a platform and a date, none of which belongs in a header."
 (ert-deftest vm-reply-test-composition-takes-drops-the-portable-way ()
   "A composition installs VM\\='s handlers in `dnd-protocol-alist'.
 This is how a dropped file becomes an attachment, and it is what replaced
-the `[ns-drag-file]\\=' binding VM carried for Mac and NextStep -- whose own
+the `[ns-drag-file]\\=' binding VM held for Mac and NextStep, whose own
 comment said to remove it once this existed.  Removed in #531, after the
 maintainer confirmed on a Mac that dropping a file on a composition attaches
 it."
@@ -678,7 +678,7 @@ cover the newline, which is why it is added before the count is taken."
       (delete-directory dir t))))
 
 (ert-deftest vm-reply-test-fcc-counts-for-a-Content-Length-folder ()
-  "REGRESSION: a copy filed in a Content-Length folder carries a count.
+  "REGRESSION: a copy filed in a Content-Length folder has a count.
 `mail-do-fcc' never wrote one, whatever the folder was, so the byte counts
 stopped describing the folder from that message on and it no longer read
 back the way it was written.  The test is that it does read back: the folder
@@ -867,7 +867,7 @@ count and the undo records -- so it is worth exercising rather than assuming."
                        (cl-count-if (lambda (l) (string-prefix-p "From " l))
                                     (split-string (buffer-string) "\n")))))))))
 
-(ert-deftest vm-reply-test-fcc-refuses-a-folder-it-cannot-read ()
+(ert-deftest vm-reply-test-fcc-rejects-a-folder-it-cannot-read ()
   "A folder whose type VM does not recognize is not written to.
 Appending to it in some other format is how a folder gets two formats in it."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
@@ -1415,12 +1415,12 @@ never came true."
 
 (ert-deftest vm-reply-test-fcc-envelope-line-names-the-sender-and-the-date ()
   "A filed copy's envelope line names the address the message is from and
-carries the message's own Date.  Every other writer of an mbox puts an
+holds the message's own Date.  Every other writer of an mbox puts an
 addr-spec there; VM used to write its own name and the moment of filing, so
 the line recorded neither fact (emacs-vm/vm#611).
 
 The rendering is computed rather than spelled out.  `current-time-string'
-answers in the local zone, so the literal this used to carry was right only
+returns the local zone, so the literal this used to hold was right only
 at -0700: a Fedora builder at +0200 read the same instant as 23:24:13 and
 failed (emacs-vm/vm#907).  What the test is for survives, since an expected
 string built from the header's instant still fails if VM dates the line from
@@ -1477,7 +1477,7 @@ the moment of filing."
       (should (equal (vm-fcc-leading-separator 'mmdf) "\001\001\001\001\n")))))
 
 (ert-deftest vm-reply-test-fcc-writes-that-envelope-line ()
-  "The filed copy on disk carries that line, not the time of filing.
+  "The filed copy on disk holds that line, not the time of filing.
 The test above checks what the function returns; this one checks that the
 write path is the caller, which is the part a wiring mistake breaks."
   (let ((dir (file-name-as-directory (make-temp-file "vm-reply-fcc-date" t))))
@@ -1763,7 +1763,7 @@ written to, and VM cites the message itself only where the hook is empty."
 
 (ert-deftest vm-reply-test-the-composition-is-a-mail-buffer-set-up-for-vm ()
   "A reply is left in a buffer VM's own commands work in.
-`vm-mail-buffer' points back at the folder -- that is how C-c C-y knows which
+`vm-mail-buffer' points back at the folder -- that is how C-c C-y finds which
 folder to yank from -- and `vm-reply-list' records what is being answered, so
 the message is marked replied when it is sent."
   (vm-reply-test--composing (_folder vm-reply-test--incoming)
@@ -1793,7 +1793,7 @@ minibuffer, so a test has to answer that prompt."
       (set-buffer-modified-p nil))))
 
 (ert-deftest vm-reply-test-resending-asks-for-a-new-recipient ()
-  "`vm-resend-message' copies the message and offers a Resent-To to fill in.
+  "`vm-resend-message' copies the message and leaves a Resent-To to fill in.
 The original headers come along -- that is what makes it a resend rather than
 a fresh message -- and the empty Resent-To is what its docstring says you must
 fill in for the result to mean anything."
@@ -2002,7 +2002,7 @@ entry of `vm-mail-subject-prefix-replacements' is what handles WG and FO."
     (should (equal (vm-reply-test--subject) "Fo: hello"))))
 
 (ert-deftest vm-reply-test-subject-cleanup-numbers-by-the-references ()
-  "With numbering on, the reply prefix carries the number of references, so
+  "With numbering on, the reply prefix holds the number of references, so
 the subject says how deep in the thread it is."
   (vm-reply-test--with-subject '(:subject "Re: hello" :prefix "Re: " :number t
                                  :references "<a@x> <b@x>")
@@ -2047,7 +2047,7 @@ exist, so a reader could not find what had complained."
 
 (ert-deftest vm-reply-test-subject-cleanup-leaves-a-new-message-alone ()
   "A composition that is not a reply is not numbered, whatever References it
-carries: `vm-reply-list' is what says it is a reply."
+holds: `vm-reply-list' is what marks it a reply."
   (let ((vm-reply-list nil))
     (vm-reply-test--with-subject '(:subject "Re: hello" :prefix "Re: " :number t
                                    :references "<a@x> <b@x>")
@@ -2616,8 +2616,8 @@ header, so there is nothing to ask about."
   (should (equal nil vm-reply-test--asked)))
 
 (ert-deftest vm-reply-test-the-bcc-check-can-be-turned-off ()
-  "`vm-check-bcc-removal' nil sends without asking, for a reader who knows
-their transport removes it."
+  "`vm-check-bcc-removal' nil sends without asking, for a reader whose
+transport removes it."
   (should (equal 'sent (vm-reply-test--send-with t 'sendmail-send-it nil nil)))
   (should (equal nil vm-reply-test--asked)))
 
@@ -2916,7 +2916,7 @@ He is not available to check the fix, which is why it is tested here."
             (with-current-buffer buffer (set-buffer-modified-p nil))
             (let ((kill-buffer-query-functions nil)) (kill-buffer buffer))))))))
 
-;;; A composition carries a From header, so a filed copy names its sender
+;;; A composition has a From header, so a filed copy names its sender
 
 (defmacro vm-reply-test--composing (&rest body)
   "Make a composition with `vm-mail' and run BODY in it.
@@ -2969,7 +2969,7 @@ It is VM's own option and more specific than the Emacs one."
                      (vm-mail-get-header-contents "From:"))))))
 
 (ert-deftest vm-reply-test-an-imap-fcc-copy-names-its-sender ()
-  "REGRESSION: the copy filed on the server carries a From header.
+  "REGRESSION: the copy filed on the server has a From header.
 
 What John Stoffel reported: with an IMAP-FCC header the copy in the Sent
 mailbox had a blank sender, his client showing it as
@@ -3040,7 +3040,7 @@ VM would otherwise ask the server to create one."
                                 (error-message-string err)))))))
 
 (ert-deftest vm-reply-test-a-trailing-space-does-not-reach-the-server ()
-  "REGRESSION: the mailbox VM asks the server for carries no stray space.
+  "REGRESSION: the mailbox VM asks the server for has no stray space.
 
 The three tests above pin `vm-imap-fcc-mailbox', which is new, so reverting
 the fix makes them fail by making it void, which demonstrates nothing.  This
@@ -3061,7 +3061,7 @@ that reached the wire, and fails against the old code for the right reason."
     (should (equal asked '("Sent")))))
 
 (ert-deftest vm-reply-test-no-imap-fcc-header-is-not-an-error ()
-  "A composition without the header answers nil, which is what files nothing."
+  "A composition without the header returns nil, which is what files nothing."
   (let ((mail-header-separator "--text follows this line--"))
     (with-temp-buffer
       (mail-mode)
@@ -3070,13 +3070,13 @@ that reached the wire, and fails against the old code for the right reason."
 
 ;;; A send that has stopped can be interrupted (emacs-vm/vm#842)
 
-(ert-deftest vm-reply-test-the-interruptible-call-answers-as-the-real-one ()
+(ert-deftest vm-reply-test-the-interruptible-call-returns-as-the-real-one ()
   "`vm-call-process-region-interruptibly' stands in for `call-process-region'.
 It is installed by rebinding the symbol for the length of the send, so
 anything the senders or the hooks do with it has to come back the same: the
 exit status, the signal, where the output lands and where point is left.
 
-What a signal answers with is the C library's strsignal, \"Terminated: 15\" on
+What a signal returns is the C library's strsignal, \"Terminated: 15\" on
 macOS and \"Terminated\" on glibc, so the real one is asked first and the
 stand-in compared against it.  The literal this used to carry named one
 platform and failed on Fedora (emacs-vm/vm#907).  Comparing the two is in
@@ -3173,7 +3173,7 @@ because nothing else in Emacs runs during the wait this is replacing."
   "REGRESSION: a program that stops reading the message does not kill Emacs.
 Writing to a pipe whose reader has gone raises SIGPIPE, which Emacs does
 not catch: the process dies where it stands, printing nothing at all and
-exiting 141.  A mailer that refuses the message and exits is such a reader,
+exiting 141.  A mailer that rejects the message and exits is such a reader,
 and a send that wrote down a pipe took the whole of Emacs with it
 (emacs-vm/vm#921).  The message is handed over in a file instead, so there
 is no pipe to break.
@@ -3351,7 +3351,7 @@ longer, so a program run for any other reason is left alone."
   "A BUFFER the stand-in does not implement goes to the definition it replaced.
 Calling `call-process-region' by name there would reach the stand-in again,
 which is an unbounded recursion rather than a send.  BUFFER 0 asks for no
-wait, so there is nothing to interrupt and the real one is what answers."
+wait, so there is nothing to interrupt and the real one is what runs."
   (let ((vm-call-process-region-original
          (symbol-function 'call-process-region)))
     (cl-letf (((symbol-function 'call-process-region)

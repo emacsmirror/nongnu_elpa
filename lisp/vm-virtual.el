@@ -1048,7 +1048,7 @@ listed in `vm-spam-score-headers'."
 (defun vm-vs-header-field (m field regexp)
   "Virtual selector to check if the given header FIELD contains
 an instance of REGEXP.  A message without the header does not match.
-`vm-get-header-contents' answers nil for a header that is not there, and
+`vm-get-header-contents' returns nil for a header that is not there, and
 passing that to `string-match' signalled: nothing catches a selector's error,
 so a folder picking out the messages that carry a header stopped at the first
 message that did not."

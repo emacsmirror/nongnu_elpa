@@ -315,7 +315,7 @@ With ONLY-FIRST, only the first address in it is looked up, which is what
     found))
 
 (defun vm-bbdb-search-headers (contents-list only-first)
-  "Whether BBDB knows an address in any of CONTENTS-LIST."
+  "Whether BBDB has a record for an address in any of CONTENTS-LIST."
   (let ((found nil))
     (while (and contents-list (not found))
       (setq found (vm-bbdb-known-address-p (car contents-list) only-first)
@@ -738,7 +738,7 @@ its own folder, so a mirror left registered is expunged from a list it is not
 in: its reverse link is stale, and the message that link now precedes is
 spliced out and flagged expunged instead.  Attributes are shared with the real
 message, so that flag comes back to the real folder and its expunge loop
-carries on into messages nobody deleted (#569).
+continues into messages nobody deleted (#569).
 
 M's reverse link goes too, having nothing to describe."
   (let ((real-m (vm-real-message-of m)))

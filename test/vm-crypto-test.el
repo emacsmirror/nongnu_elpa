@@ -100,7 +100,7 @@ That is the property the fix rests on: whichever of the two reaches
                                 "challenge")))))
 
 (ert-deftest vm-crypto-test-a-long-password-does-not-signal ()
-  "A password of any length answers a digest rather than raising.
+  "A password of any length returns a digest rather than raising.
 65 characters is the first that used to signal, the block size being 64."
   (dolist (n '(63 64 65 200))
     (should (equal (length (vm-hmac-md5 (make-string n ?a) "challenge")) 32))))
@@ -116,7 +116,7 @@ The UTF-8 part is why APOP, which uses this alone, is unaffected by #772."
                  (vm-md5-string (encode-coding-string "caf\N{U+00E9}" 'utf-8)))))
 
 (ert-deftest vm-crypto-test-md5-raw-string-is-sixteen-octets ()
-  "`vm-md5-raw-string' answers the digest as bytes, not hex.
+  "`vm-md5-raw-string' returns the digest as bytes, not hex.
 It is the inner digest of the HMAC, so it has to be the raw 16."
   (let ((raw (vm-md5-raw-string "abc")))
     (should (equal (length raw) 16))
@@ -126,7 +126,7 @@ It is the inner digest of the HMAC, so it has to be the raw 16."
                    "900150983cd24fb0d6963f7d28e17f72"))))
 
 (ert-deftest vm-crypto-test-xor-string ()
-  "`vm-xor-string' XORs octet by octet, and refuses unequal lengths."
+  "`vm-xor-string' XORs octet by octet, and rejects unequal lengths."
   (should (equal (vm-xor-string (unibyte-string 0 255 15)
                                 (unibyte-string 255 255 240))
                  (unibyte-string 255 0 255)))

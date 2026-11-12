@@ -86,7 +86,7 @@ point of the format.
 
 Reading the folder back with VM is not enough on its own: VM recovers from a
 wrong length by looking for the next separator, so a stale one passes there
-while another mailer, which believes the header, takes the wrong bytes."
+while another mailer, which uses the header, takes the wrong bytes."
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert-file-contents-literally file)
@@ -358,7 +358,7 @@ the folder's type before appending, which is where the header comes from."
 (ert-deftest vm-mboxcl2-test-deleting-an-attachment-updates-the-length ()
   "Deleting an attachment shrinks the body, and the length follows it.
 This is the largest change VM makes to a message in place, and the folder is
-unreadable by anything that believes the header if the length stays as it was."
+unreadable by anything that uses the header if the length stays as it was."
   (vm-mboxcl2-test-with-folders (_source target)
     (vm-mboxcl2-test--write
      target (list (cons "with an attachment"
@@ -443,15 +443,15 @@ list it puts to the user."
           (should (equal (eval (cadr (interactive-form 'vm-change-folder-type)) t)
                          '(mboxcl2 nil nil)))))
       (should (member "mboxcl2" offered))
-      ;; and it offers the others as it always did
+      ;; and it lists the others as it always did
       (should (member "From_" offered))
       (should (member "babyl" offered)))))
 
 (ert-deftest vm-mboxcl2-test-converting-to-the-same-type-fixes-stale-lengths ()
   "A folder whose lengths are wrong is repaired by converting it to mboxcl2.
 A wrong length is not a missing one: the folder opens, because the reader falls
-back on searching for the next separator, so nothing complains and the folder
-is wrong for anything that believes the header.  Converting it to the type it
+back on searching for the next separator, so nothing reports it and the folder
+is wrong for anything that uses the header.  Converting it to the type it
 already has rewrites every message and recomputes every length."
   (vm-mboxcl2-test-with-folders (_source target)
     ;; written by hand, with lengths that are all wrong

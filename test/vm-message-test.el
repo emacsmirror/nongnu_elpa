@@ -26,7 +26,7 @@
 
 (ert-deftest vm-message-test-every-softdata-accessor-reads-its-own-field ()
   "Each `vm-FIELD-of' reads the slot `vm-softdata-fields' names for it.
-The vector is positional and every accessor carries its index as a literal,
+The vector is positional and every accessor holds its index as a literal,
 so a slot added or taken out in one place and not the other is silent.  The
 padded-number slot came out in emacs-vm/vm#861 and every index above it moved
 down; this is what says they all moved together.
@@ -305,7 +305,7 @@ message would recurse through the folder.  Issue #453."
 ;; back into something that can be written into the folder as X-VM-v5-Data.
 ;; It copies fifty slots one at a time, and had fifteen surviving mutations:
 ;; deleting any one of those copies loses a field silently, and the folder
-;; then carries a summary line with a hole in it.
+;; then holds a summary line with a hole in it.
 
 (defconst vm-message-test--decoded-slots
   '(7 8 11 13 14 17 28 37 38 39 40)
