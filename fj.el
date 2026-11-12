@@ -3886,9 +3886,10 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          ;; mode check for other-window arg:
          ;; (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
-         (item (fj-get-item repo owner number type))
+         (item (fj-get-item-checked repo owner number type))
          (number (or number (alist-get 'number item)))
-         (wd default-directory))
+         (wd default-directory)
+         (type (fj--identify-item-format item)))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fj-with-buffer (format "*fj-%s-item-%s*" repo number)
         'fj-item-view-mode wd nil ;; other-window
