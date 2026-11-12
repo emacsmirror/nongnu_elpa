@@ -4468,7 +4468,10 @@ commit-msg/commit-hash. Used to copy commit hashes using
                   (y-or-n-p "No local repo. Open one with magit?"))
          ;; if we are not in a repo, read one and open:
          (magit-status-setup-buffer (magit-read-repository)))
-       (magit-fetch-refspec remote refspec nil)))))
+       (magit-fetch-refspec
+        (magit-read-remote-or-url "Fetch from remote or url" remote)
+        refspec
+        nil)))))
 
 ;;; TIMELINE ITEMS
 
