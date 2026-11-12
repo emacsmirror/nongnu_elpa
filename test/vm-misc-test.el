@@ -1909,14 +1909,14 @@ directory part."
 
 
 (defmacro vm-misc-test--with-clock (time &rest body)
-  "Run BODY with `current-time' answering TIME and a hostname of our own."
+  "Run BODY with `current-time' returning TIME and a fixed hostname."
   (declare (indent 1))
   `(cl-letf (((symbol-function 'current-time) (lambda () ,time))
              ((symbol-function 'system-name) (lambda () "test.example.org")))
      ,@body))
 
 (ert-deftest vm-misc-test-make-message-id-from-a-time-list ()
-  "A four element (HIGH LOW USEC PSEC) clock gives the four field Message-ID."
+  "A four element (HIGH LOW USEC PSEC) time value gives the four field Message-ID."
   (vm-misc-test--with-clock '(27378 61493 368506 713345000)
     (let ((id (vm-make-message-id)))
       (should (string-match
@@ -1925,9 +1925,9 @@ directory part."
       (should (< (string-to-number (match-string 1 id)) 1000000)))))
 
 (ert-deftest vm-misc-test-make-message-id-from-a-ticks-hz-cons ()
-  "A (TICKS . HZ) clock gives a Message-ID instead of an error.
+  "A (TICKS . HZ) time value gives a Message-ID instead of an error.
 `current-time' returns a cons from Emacs 32.1 on, and the four field format
-read it with `nth', which stops on the integer cdr."
+read it with `nth', which signals wrong-type-argument on the integer cdr."
   (vm-misc-test--with-clock '(1794306101368579 . 1000000)
     (let ((id (vm-make-message-id)))
       (should (string-match
@@ -1936,15 +1936,16 @@ read it with `nth', which stops on the integer cdr."
       (should (< (string-to-number (match-string 1 id)) 1000000)))))
 
 (ert-deftest vm-misc-test-make-message-id-from-a-nanosecond-clock ()
-  "HZ is whatever the clock offers, so the seconds come out of the division.
-A nanosecond clock gives six decimals like any other, the rest truncated."
+  "HZ is the clock resolution, so the seconds come from the division.
+A nanosecond resolution gives six decimals like any other, the rest
+truncated."
   (vm-misc-test--with-clock '(1794306101987654321 . 1000000000)
     (should (string-prefix-p "<1794306101.987654." (vm-make-message-id))))
   (vm-misc-test--with-clock '(1794306101000000 . 1000000)
     (should (string-prefix-p "<1794306101.000000." (vm-make-message-id)))))
 
 (ert-deftest vm-misc-test-make-message-id-falls-back-to-mail-host-address ()
-  "A `system-name' with no dot in it is no address, so the option is used."
+  "A `system-name' with no dot is not a domain, so `mail-host-address' is used."
   (cl-letf (((symbol-function 'current-time) (lambda () '(1794306101368579 . 1000000)))
             ((symbol-function 'system-name) (lambda () "laptop")))
     (let ((mail-host-address "example.net"))
@@ -1958,7 +1959,7 @@ A nanosecond clock gives six decimals like any other, the rest truncated."
     (should-not (equal (vm-make-message-id) (vm-make-message-id)))))
 
 (ert-deftest vm-misc-test-make-message-id-has-no-illegal-characters ()
-  "The Message-ID is an addr-spec in angle brackets, whichever clock made it."
+  "The Message-ID is an addr-spec in angle brackets, for every time value."
   (dolist (time '((27378 61493 368506 713345000)
                   (1794306101368579 . 1000000)
                   (1794306101987654321 . 1000000000)))

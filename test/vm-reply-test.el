@@ -1119,8 +1119,8 @@ This was advice on `vm-mail-mode-insert-date-maybe'; it is a test inside it."
       (should (string-match-p "01 Jan 2020" (buffer-string))))))
 
 (ert-deftest vm-reply-test-headers-written-under-a-ticks-hz-clock ()
-  "`current-time' answers a cons from Emacs 32.1 on, and both headers still go in.
-`current-time-list' nil is what a user of that Emacs has by default."
+  "`current-time' returns a cons from Emacs 32.1 on, and both headers still go in.
+`current-time-list' is nil by default in that Emacs."
   (with-temp-buffer
     (insert "To: someone@example.com\nSubject: hello\n" mail-header-separator "\n")
     (let ((vm-mail-header-insert-date t)
