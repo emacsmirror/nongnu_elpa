@@ -17,8 +17,6 @@ CASK ?= cask
 CLIFF = $$(git-cliff -l)
 CLIFF_U = $$(git-cliff -u)
 CAT = $$(cat changelog.md)
-
-CLIFF_CAT = $(CLIFF)$(CAT)
 ## ################################################################
 
 .PHONY: infoclean tests changes
