@@ -462,13 +462,18 @@ Commits carry the equivalent through their `Co-Authored-By:` trailer.
 ## Writing
 
 These apply to everything written for this repo: the manual, NEWS, docstrings,
-code comments, commit messages, and issue and merge request text.
+code comments, commit messages, issue and merge request text, and replies.
 
-- **No em dashes in prose.** Not the character, and not `---`, which is what
-  Texinfo renders as one. Use a comma, a colon, or two sentences.
+- **No dash as punctuation.** Not an em dash, not `--`, not `---`, which is
+  what Texinfo renders as one. Use a comma, a colon, a semicolon, or two
+  sentences. A colon is usually right where the clause explains what came
+  before.
 
-  This is about the punctuation mark, not about the characters wherever they
-  appear. Leave these alone, none of them being an em dash:
+  The rule governs what is added. Leave the dashes already in a file alone
+  unless changing them is what was asked for.
+
+  It is about the punctuation mark, not about the characters wherever they
+  appear. Leave these alone, none of them being punctuation:
 
   - the Emacs file header, `;;; vm-foo.el --- description`, which is a required
     convention and uses `---` (135 files have one)
@@ -490,11 +495,11 @@ code comments, commit messages, and issue and merge request text.
   to enforce.
 - **Do not write "shape".** Say "structure", "form", "layout", or name the thing.
   It is vague where "structure" is specific.
-- **No org emphasis markup in a `.org` file.** Never `=verbatim=`, never
-  `*bold*`. Write the name or the number plainly: emphasis is what sentence
-  order is for, and a fact that has to be marked up to be noticed is in the
-  wrong place in the sentence. Org tables, links, headings and `: example`
-  blocks are fine, as are src blocks.
+- **No org emphasis markup.** Never `=verbatim=`, never `*bold*`, never
+  `~code~`, in a `.org` file or in a reply. Write the name or the number
+  plainly: emphasis is what sentence order is for, and a fact that has to be
+  marked up to be noticed is in the wrong place in the sentence. Org tables,
+  links, headings and `: example` blocks are fine, as are src blocks.
 
   Stripping it from an existing file is not a regexp job, and three things
   make it worse than it looks:
