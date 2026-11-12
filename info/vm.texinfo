@@ -212,8 +212,8 @@ hope you will too!
 @cindex installing VM
 @cindex @acronym{ELPA}
 @cindex package-install
-VM is a package on NonGNU @acronym{ELPA}, which Emacs 28.1 and later know
-about without being told:
+VM is a package on NonGNU @acronym{ELPA}, an archive Emacs 28.1 and later
+are configured to use:
 
 @example
 M-x package-install @key{RET} vm @key{RET}
@@ -270,7 +270,7 @@ If you type @kbd{?} in a VM folder buffer you will get some help, i.e.
 @findex vm-view-manual
 @findex vm-view-news
 @kbd{M-x vm-view-manual} opens this manual, and @kbd{M-x vm-view-news} the
-newest of VM's NEWS files, which is where a release says what changed.
+newest of VM's NEWS files, which is where a release records what changed.
 
 @findex vm-scroll-forward
 @findex vm-scroll-backward
@@ -420,12 +420,12 @@ files.  In this case the source folder is copied but no messages are
 deleted from it as they would be for a spool file.
 
 The file need not be a folder of this folder's type.  One of another type
-VM knows is converted as it is gathered, which is what
+VM supports is converted as it is gathered, which is what
 @code{vm-check-folder-types} and @code{vm-convert-folder-types} describe;
 set the latter to @code{nil} to be told of the mismatch instead.  A file
 holding a single message with no envelope line, which is what a @file{.eml}
 file saved out of another mailer is, is wrapped in this folder's separators
-and gathered as one message.  Anything else is refused.
+and gathered as one message.  Anything else is rejected.
 
 Two prefix arguments (@kbd{C-u C-u g}) mean something else again, and only
 for an @acronym{IMAP} folder: fetch every message the mailbox has and this
@@ -453,10 +453,10 @@ files with other folders by setting the variable
 @kbd{M-x vm} is how you begin, and on a machine whose mail is already where
 Emacs expects it that is all you need.  Otherwise VM has to be told where
 your mail is: @ref{Setting Up} builds a configuration one piece at a time,
-and @kbd{M-x vm-check-configuration} says what is still missing.
+and @kbd{M-x vm-check-configuration} reports what is still missing.
 
-The rest of this chapter is what happens when VM starts, which is worth
-knowing when something does not.
+The rest of this chapter describes what happens when VM starts, and what to
+check when it does not.
 
 @findex vm-load-init-file
 @vindex vm-init-file
@@ -786,15 +786,14 @@ mailbox.  The retrieved messages can be automatically removed from the
 
 VM retrieves the messages while you carry on reading: the fetch is started
 and Emacs comes straight back to you, the messages arrive a bunch at a time,
-and the mode line says how far it has got.  One fetch brings in everything
+and the mode line shows how far it has got.  One fetch brings in everything
 waiting, however large the mailbox.
 
 @vindex vm-pop-max-message-size
 @findex vm-get-new-mail
-You can say how large a message VM will fetch at all.  If you set
+You can limit how large a message VM will fetch.  If you set
 @code{vm-pop-max-message-size} to a positive numeric value, VM leaves a
-message larger than that on the server and says how large it was and what the
-limit is; raise the limit and the next @code{vm-get-new-mail} brings it in.
+message larger than that on the server and reports its size and the limit; raise the limit and the next @code{vm-get-new-mail} brings it in.
 In earlier releases VM asked, message by message, whether to retrieve it.
 
 @cindex expunging, @acronym{POP} servers
@@ -863,16 +862,15 @@ retained until a later expunge operation.
 
 VM retrieves the messages while you carry on reading: the fetch is started
 and Emacs comes straight back to you, the messages arrive a bunch at a time,
-and the mode line says how far it has got.  One fetch brings in everything
+and the mode line shows how far it has got.  One fetch brings in everything
 waiting, however large the mailbox.
 
 @vindex vm-imap-max-message-size
 @findex vm-get-new-mail
-You can say how large a message VM will fetch at all.  If you set
+You can limit how large a message VM will fetch.  If you set
 @code{vm-imap-max-message-size} to a positive numeric value, VM will not
 retrieve messages larger than this size from a maildrop.  Each one is left
-on the server, and VM says how large it was and
-what the limit is; raise the limit and the next @code{vm-get-new-mail} brings
+on the server, and VM reports its size and the limit; raise the limit and the next @code{vm-get-new-mail} brings
 it in.  In earlier releases VM asked, message by message, whether to retrieve
 it, delete it or leave it, and showed you its headers to decide by.
 
@@ -1013,19 +1011,19 @@ appropriately.  (However, such inference is not fully automatic.  See
 below.)
 
 @vindex vm-mboxcl2-strict
-Every message in an mboxcl2 folder carries a @code{Content-Length} header,
+Every message in an mboxcl2 folder has a @code{Content-Length} header,
 which is how the end of a message is found.
 
 @itemize
 @item
 VM writes one on every message it puts in such a folder.
 @item
-VM refuses to read a message that has none, and names it.  A folder written
+VM signals an error on a message that has none, naming it.  A folder written
 by a mailer that omits the header is one VM will not open.
 @item
 A length that is wrong rather than missing gives no sign of it.  The folder
-opens, VM falling back on a search for the next separator, while anything
-that believes the header, which is what the format is for, reads the wrong
+opens, VM falling back on a search for the next separator, while any program
+that uses the header, which is what the format is for, reads the wrong
 bytes.
 @end itemize
 
@@ -1050,11 +1048,11 @@ on a folder that is open in front of you.
 @end itemize
 
 @vindex vm-folder-type-by-extension-alist
-A folder that does not exist yet has no contents to examine, so a name
-can say what it is instead.  @code{vm-folder-type-by-extension-alist} matches
+A folder that does not exist yet has no contents to examine, so the file
+name states its type instead.  @code{vm-folder-type-by-extension-alist} matches
 the file name's extension against folder types, and out of the box a folder
 whose name ends in @samp{.mboxcl2} is created as one, which is what a name
-like @file{2026-08.out.mboxcl2} was already trying to say.  @samp{.mbox} is
+like @file{2026-08.out.mboxcl2} already states.  @samp{.mbox} is
 From_, which is what everything outside VM means by an mbox file.
 
 A name settles the question for an existing folder too, but only between
@@ -1062,16 +1060,16 @@ From_ and mboxcl2: those are the same folder but for the
 @code{Content-Length} header, so a folder that looks like one gives no
 evidence either way.  A folder called @file{.mboxcl2} is read as mboxcl2
 whether or not it has the headers yet, and one that does not have them is
-refused with the message above, which is how you find out, rather than
-VM reading it as a From_ folder and saying nothing.  A folder's own
-contents win where they decide the question: a BABYL file called
+rejected with the message above, which is how you find out, rather than
+VM reading it as a From_ folder without comment.  A folder's own
+contents take precedence where they settle the question: a BABYL file called
 @file{old.mboxcl2} is read as BABYL.
 
 An extension, and not a pattern over the name.  A pattern can be written so
 that it matches nothing, and it does so silently, since a rule that matches
-nothing is a rule that does nothing.  It can also be written so that it claims every
-folder in a directory, which for a directory holding one mboxcl2 folder and
-nine From_ ones is nine folders VM then refuses to read.  Neither can be
+nothing is a rule that does nothing.  It can also be written so that it matches
+every folder in a directory, which for a directory holding one mboxcl2 folder
+and nine From_ ones is nine folders VM then rejects.  Neither can be
 said in an extension.
 
 What it costs: a folder that cannot be renamed cannot be typed by its name.
@@ -1084,7 +1082,7 @@ A primary inbox called @file{INBOX} is the case, and the answer for one is
 @cindex mboxcl2, why
 @cindex corruption, mbox
 In a From_ folder the end of a message is the next line that begins
-``From ''.  Nothing but the structure of the line says so, and mail contains such
+``From ''.  Nothing but the structure of the line marks it, and mail contains such
 lines: a message that quotes another message, a digest, a mailing list
 footer, a base64 attachment that happens to wrap that way.  The answer every
 mailer uses, VM included, is to alter the mail to protect the format, turning
@@ -1199,8 +1197,8 @@ exactly as it came, and it is the whole difference between mboxcl2 and the
 older mboxcl, which counted the bytes @emph{and} quoted.
 
 The folder does no quoting; it does not undo quoting done elsewhere.  A
-message that has passed through a From_ folder arrives carrying whatever that
-folder added, and mboxcl2 stores it faithfully, @samp{>} and all.
+message that has passed through a From_ folder arrives with whatever that
+folder added, and mboxcl2 stores it unchanged, @samp{>} and all.
 
 @item A babyl folder VM writes may not be one Rmail can open.
 @cindex babyl, quoting
@@ -1213,7 +1211,7 @@ a body holding the two characters that begin a babyl message, @kbd{C-_} and
 
 VM reads such a folder back correctly, because its own reader takes those two
 characters for a separator only where a babyl attribute line follows them.
-Rmail is less forgiving and refuses the file:
+Rmail is stricter and fails on the file:
 
 @example
 Search failed: ",, ?"
@@ -1237,9 +1235,9 @@ message exactly as it came and has none of this.
 
 @item VM keeps its own state in the messages.
 @cindex X-VM-v5-Data
-Every message carries an @code{X-VM-v5-Data} header holding its attributes,
+Every message has an @code{X-VM-v5-Data} header holding its attributes,
 its labels and the summary data VM caches for it, and the first message in
-the folder carries the folder's own state as well: the message order, the
+the folder holds the folder's own state as well: the message order, the
 bookmark, the label list, the summary format, which headers are shown, when
 the folder was last modified, and for a cache folder what has been retrieved
 from the server and what deletions the server has not been told about yet.
@@ -1301,8 +1299,9 @@ particular program, the thing to know is which rule that program uses.
 
 @noindent
 The short of it: a From_ folder is safe to share with another program if you
-are content that read and unread will not travel, that the first message is
-carrying luggage, and that a message whose body has a @samp{From } line in it
+are content that read and unread marks will not survive the transfer, that
+the first message holds VM's own state, and that a message whose body has a
+@samp{From } line in it
 may be escaped differently, and so split differently, at each end.  A folder
 VM writes for itself, a cache above all, is better left to VM, and
 better still written as mboxcl2, where the boundary is a byte count rather
@@ -1312,31 +1311,31 @@ than a line that has to be recognised, and where nothing is escaped at all.
 The Library of Congress describes the format family and its variants:
 @indicateurl{https://www.loc.gov/preservation/digital/formats/fdd/fdd000383.shtml}.
 
-@subheading How VM decides what a folder is
+@subheading How VM determines a folder's type
 
-@cindex folder type, how it is decided
-The name decides, and between From_ and mboxcl2 the name is the only thing
-that can:
+@cindex folder type, how it is determined
+The file name determines it, and between From_ and mboxcl2 the name is the
+only thing that can:
 
 @enumerate
 @item
-@b{What the name says}, through @code{vm-folder-type-by-extension-alist},
+@b{The file name}, through @code{vm-folder-type-by-extension-alist},
 matched against the file name's extension.  A folder called
 @file{sent.mboxcl2} is mboxcl2 wherever it sits.  Nothing in a folder can
 supply this or overrule it.  From_ and mboxcl2 look alike: the difference is a
-@code{Content-Length} header that a From_ folder is free to carry as well, so
+@code{Content-Length} header that a From_ folder may have as well, so
 a folder that looks like one is no evidence of either.
 @item
 @b{What VM can work out from the contents}, for an existing folder whose name
-says nothing.  BABYL and MMDF are detected from what stands at the front of
+states no type.  BABYL and MMDF are detected from what stands at the front of
 the file, which is reliable.  Telling mboxcl2 from From_ is not: it rests on
-whether every message carries a length, and VM reads a folder as From_ unless
+whether every message has a length, and VM reads a folder as From_ unless
 enough of them do.  @xref{VM's mbox}.  A folder read as the wrong one of those
 two is misparsed rather than refused, which is why the name is worth putting on
 a folder that has no From_ line to lose.
 @item
 @b{@code{vm-default-folder-type}}, for a folder that does not exist yet.  It
-decides what VM creates and nothing else, so changing it cannot change how a
+determines what VM creates and nothing else, so changing it cannot change how a
 folder you already have is read.  It is @code{From_} on every platform, which
 is why a folder called @file{INBOX}, or one called @file{2026-08.out}, is VM's
 mbox and stays it.
@@ -1344,12 +1343,12 @@ mbox and stays it.
 
 @noindent
 @vindex vm-default-folder-type
-Set the default to mboxcl2 and it decides the name as well: a folder VM
+Set the default to mboxcl2 and it determines the name as well: a folder VM
 creates is created as @file{NAME.mboxcl2}, whether it is a folder you saved a
 message to, an @code{FCC:} copy or a postponed draft.  That is the same rule
 @code{vm-change-folder-type} follows when it converts a folder, and for the
 same reason: a folder's type is read back from its name, so mboxcl2 written
-under a name that says nothing would be read as From_ next time and split
+under a name that states no type would be read as From_ next time and split
 wherever a body line begins @samp{From }.
 
 @noindent
@@ -1412,7 +1411,7 @@ and renames it.
 
 It looks where cache names are built: @code{vm-imap-folder-cache-directory},
 @code{vm-pop-folder-cache-directory}, @code{vm-folder-directory} and your home
-directory.  It says how many it found and asks once; with a prefix argument it
+directory.  It reports how many it found and asks once; with a prefix argument it
 asks about each.  Each conversion is @code{vm-change-folder-type-of-file} on
 that cache, so the previous contents are kept in a backup file and you are
 asked whether to delete the copy under the old name.  Two copies of a large
@@ -1423,8 +1422,8 @@ A cache that cannot be read is left exactly as it was, and the others are
 converted anyway.  A directory that cannot be read is reported the same way and
 the rest are still searched.  Where anything could not be converted the faults
 are listed in a buffer, @file{*VM cache conversion*}, naming each cache or
-directory and what stopped it; a run that converts everything says so in one
-line and opens nothing.
+directory and what stopped it; a run that converts everything reports it in
+one line and opens nothing.
 
 A cache you are reading cannot be converted.  Quit that folder with
 @code{vm-quit} and run the command again: converting the file under a live
@@ -1435,8 +1434,9 @@ longer is.  Nothing is refetched from any server.
 
 @findex vm-check-folder
 @code{vm-check-folder} reports what the folder you are in is and whether it is
-sound, and writes nothing.  It says what type VM reads it as, what its name
-says it is, what its contents say and what @code{vm-default-folder-type} is,
+sound, and writes nothing.  It reports what type VM reads it as, what its
+name states, what its contents indicate and what
+@code{vm-default-folder-type} is,
 how many messages the folder holds against how many the reader finds by
 walking the separators, and for an mboxcl2 folder whether every message's
 @code{Content-Length} matches its body.  A sound folder is one line in the
@@ -1444,14 +1444,14 @@ echo area; anything else gets a report naming each message at fault.
 
 With a prefix argument, @code{vm-check-folder} asks for a folder file and
 checks that, without visiting it.  That is how to check the folder most likely
-to want it: a folder whose name says mboxcl2 and which has a message with no
+to need it: a folder whose name states mboxcl2 and which has a message with no
 @code{Content-Length} cannot be visited at all, so there is no buffer in which
 to check it.  Nothing is written either way.
 
-What the contents say is counted over every message in the folder, and the
-name is not consulted for it.  That is the case a name cannot answer: VM takes
-a folder's type from its name, so a folder carrying a @code{Content-Length}
-that fits on every message, under a name that does not say mboxcl2, is read as
+What the contents indicate is counted over every message in the folder, and
+the name is not consulted for it.  That is the case the name cannot settle: VM
+takes a folder's type from its name, so a folder with a @code{Content-Length}
+that fits on every message, under a name that does not state mboxcl2, is read as
 From_ and split wherever a body line begins @samp{From }.  Visiting such a
 folder warns, and the check is what settles it: the warning looks at the
 first two messages, which is as much as a folder being visited can afford to
@@ -1461,16 +1461,16 @@ A cache whose name states no type is reported too, and
 @code{vm-convert-caches-to-mboxcl2} named as what converts it.  Nothing in
 such a cache is wrong: read as From_ it is From_, and the messages in it now
 are delimited correctly.  What it lacks is the guarantee mboxcl2 gives, so the
-report says so and names the command rather than calling it a fault.  It is
-the one place a reader is told, since the warning at visit time fires only for
-a cache that carries lengths.
+report states that and names the command rather than calling it a fault.  It
+is the one place a reader is told, since the warning at visit time appears only
+for a cache that has lengths.
 
 A wrong length is what the command exists for, because it is the only one of
-these faults that gives no other sign.  A missing length is refused when the
-folder is visited, and a folder VM cannot parse fails loudly, but a length
-that is merely wrong opens without complaint: the reader falls back on
+these faults that gives no other sign.  A missing length is rejected when the
+folder is visited, and a folder VM cannot parse fails with an error, but a
+length that is merely wrong opens with no sign of it: the reader falls back on
 searching for the next separator when the count does not land on one, so VM
-reads the folder correctly while anything that believes the header, which
+reads the folder correctly while any program that uses the header, which
 is what the format is for, takes the wrong bytes.
 
 A length short by the newlines at the end of a body is not a fault.  The
@@ -1493,12 +1493,12 @@ good idea to keep all your mail folders in a single format in order to avoid
 incompatibilities.
 
 @cindex folder type, name refused
-A name that cannot hold the type is refused rather than written, and the
-command says what to call it instead.  An mboxcl2 folder called
+A name that cannot state the type is rejected rather than written, and the
+command gives a name to use instead.  An mboxcl2 folder called
 @file{out.mbox} would be read back as From_ and split wherever a body line
 begins ``From '', and one called @file{out} with no extension the same, so
 neither is written.  Nothing is asked of a name that could not state the type
-anyway: @code{From_} is the type a folder has when its name says nothing, and
+anyway: @code{From_} is the type a folder has when its name states no type, and
 a reader who has emptied @code{vm-folder-type-by-extension-alist} has said
 that names mean nothing here.
 
@@ -1553,12 +1553,12 @@ converted away from it loses the extension, and the file left behind under the
 old name is offered for deletion once the new one is on disk.
 
 From_ is the exception, and is never put into a name that has not got it: it is
-the type a folder has when its name says nothing about it, so a folder called
+the type a folder has when its name states no type, so a folder called
 @file{INBOX} converted to From_ is still @file{INBOX} rather than
 @file{INBOX.mbox}.  A folder you called @file{sent.mbox} keeps that name,
-since the name already says what the folder now is.  Keeping it is
-allowed, and it is worth knowing what you are keeping: two folders holding the
-same mail, of which the old one is the copy VM is no longer looking at.  The
+since the name already states what the folder now is.  Keeping it is
+allowed, and what you keep is two folders holding the same mail, of which the
+old one is the copy VM is no longer reading.  The
 folder as it was is kept in a backup file either way, named as Emacs names one
 when saving a buffer.
 
@@ -1594,14 +1594,14 @@ the command @code{vm-change-folder-type}.
 
 @vindex vm-default-folder-type
 VM will not create a @code{BellFrom_} folder.  It is not among the types
-@code{vm-default-folder-type} offers, nor among those
-@code{vm-change-folder-type} offers to convert to, because a folder VM writes
+@code{vm-default-folder-type} accepts, nor among those
+@code{vm-change-folder-type} can convert to, because a folder VM writes
 as one cannot be read back as one: having no trailing blank line, the format
-has no signature of its own, so VM reads it as @code{From_} and each message
-swallows the headers of the next.  Reading is unaffected, which is what
+has no signature of its own, so VM reads it as @code{From_} and the headers
+of each message after the first are read as part of the message before it.  Reading is unaffected, which is what
 @code{vm-default-From_-folder-type} above is for.  Setting
 @code{vm-default-folder-type} to @code{BellFrom_} by hand still works, and
-still has that result, so VM says so as it starts.
+still has that result, and VM warns about it at startup.
 
 @cindex Solaris
 @cindex System V
@@ -1610,17 +1610,16 @@ still has that result, so VM says so as it starts.
 @vindex vm-trust-content-length
 @cindex mboxcl2
 Solaris, System V and AIX operating systems use another variant of the mbox
-format, in which each message carries a @code{Content-Length} header giving
+format, in which each message has a @code{Content-Length} header giving
 the length of its body, and that count rather than the next ``From '' line
-says where the message ends.  VM refers to this format as
+marks where the message ends.  VM refers to this format as
 @code{mboxcl2}.
 
 @vindex vm-trust-content-length
 Asking for it used to mean setting @code{vm-trust-content-length}, which told
-VM to believe a @code{Content-Length} header wherever it found one.  That
-option is deprecated: it made a statement about every folder read, in order to
-say something about one, and nothing stops a message carrying such a header
-that means something else.  Name the folder for the type instead, or set
+VM to use a @code{Content-Length} header wherever it found one.  That option is
+deprecated: it applies to every folder read in order to settle one, and a
+message may have such a header that means something else.  Name the folder for the type instead, or set
 @code{vm-default-folder-type}; both are described below.
 
 @cindex mbox variants
@@ -1657,7 +1656,7 @@ variant: quoting a body it has already measured alters the message for no
 gain.
 
 @item mboxcl2
-As mboxcl, but with no quoting at all: the count alone says where the
+As mboxcl, but with no quoting at all: the count alone marks where the
 message ends, so the body is stored exactly as it arrived.  This is VM's
 @code{mboxcl2} folder type.
 @end table
@@ -1690,20 +1689,20 @@ set to for a folder kept as a record.  All four are described in the Library of 
 registry of formats for digital preservation, which exists to record how
 well a format suits keeping things: mboxcl2 is @code{fdd000387}, mboxcl
 @code{fdd000386}, mboxrd @code{fdd000385} and mboxo @code{fdd000384}.  Those
-are descriptions rather than standards: they say what each format is, not
+are descriptions rather than standards: they record what each format is, not
 what anyone is obliged to write.
 
 The reason not to care is interoperability, and it cuts the other way.  A
-program that does not honour @code{Content-Length}, which is most of them
--- will read an mboxcl2 folder as mboxo, and split it wrongly at the first
-body line beginning ``From '', silently.  Content-Length formats are right
+program that does not honour @code{Content-Length}, which is most of them,
+reads an mboxcl2 folder as mboxo and splits it wrongly at the first body line
+beginning ``From '', with no sign of it.  Content-Length formats are right
 for folders you keep and wrong for folders you hand to other tools.
 
 @cindex reading a folder
 Which of the two VM reads a folder as is not something it can tell from the
-file, since nothing in an mbox says which variant it is.  There is no
+file, since nothing in an mbox states which variant it is.  There is no
 extension, media type or magic number for any of them, and the Library of
-Congress descriptions say as much.  VM looks at the first message: if it has
+Congress descriptions state as much.  VM looks at the first message: if it has
 a @code{Content-Length} header and @code{vm-trust-content-length}
 is set, the folder is read by its counts, and otherwise by its @samp{From }
 lines.  A folder read the wrong way is not damaged, but it is a different
@@ -1765,7 +1764,7 @@ gives you.
 @anchor{maildrop specification}
 @unnumberedsubsec Maildrop specification
 
-A maildrop specification says which server, which mailbox on it, and how to
+A maildrop specification names which server, which mailbox on it, and how to
 log in.  The fields are separated by colons:
 
 @example
@@ -1799,7 +1798,8 @@ Your password, or @samp{*} to be asked for it.  @xref{passwords}.
 @end table
 
 @noindent
-The first field is the protocol, and it also says how the connection is made.
+The first field is the protocol, and it also determines how the connection is
+made.
 @samp{pop} and @samp{imap} are in clear; @samp{pop-ssl} and @samp{imap-ssl}
 are encrypted (@pxref{encrypted connections}); @samp{pop-ssh} and
 @samp{imap-ssh} go through a tunnel (@pxref{over SSH}).
@@ -1823,8 +1823,8 @@ or a gateway such as DavMail holding the credentials for you
 @anchor{authentication}
 @unnumberedsubsec Authentication
 
-Which methods work is the server's choice rather than yours.  If you do not
-know which it wants, ask whoever runs it, or try.
+Which methods work is set by the server rather than by you.  If you do not
+know which it requires, ask whoever runs it, or try.
 
 @table @samp
 @item pass
@@ -1845,13 +1845,13 @@ command, in clear, so use it over @acronym{SSL}.
 @item cram-md5
 @cindex CRAM-MD5
 @acronym{IMAP}.  Challenge and response as RFC 2195 describes it, so the
-password itself never crosses the net.  Not every server offers it.
+password itself never crosses the net.  Not every server supports it.
 
 @item preauth
 @vindex vm-imap-session-preauth-hook
 @acronym{IMAP}.  VM does not authenticate at all: the connection is expected
 to arrive authenticated, having been made by something else.
-@code{vm-imap-session-preauth-hook} is run and must answer with a process
+@code{vm-imap-session-preauth-hook} is run and must return a process
 connected to an authenticated session.
 
 @item xoauth2
@@ -1878,9 +1878,10 @@ without it VM runs the @command{stunnel} program instead.  That is what
 where there is GnuTLS and @samp{stunnel} where there is not, which works if
 that program is in your command search path.  An Emacs without GnuTLS on a
 machine without stunnel cannot reach a server that requires @acronym{SSL} at
-all.  Some versions of stunnel want a configuration file of their own;
+all.  Some versions of stunnel require a configuration file of their own;
 @code{vm-stunnel-program-additional-configuration-file} names it, and that
-variable's own documentation, with the stunnel manual, says what goes in it.
+variable's own documentation, with the stunnel manual, describes what goes in
+it.
 
 @anchor{over SSH}
 @unnumberedsubsec Over @acronym{SSH}
@@ -1895,7 +1896,7 @@ anything, which means a key or @file{.shosts} rather than a password.
 
 VM runs a command on the far end to hold the session open while the mail
 connection is made.  That command is @samp{echo ready; sleep 15} unless
-@code{vm-ssh-remote-command} says otherwise, and whatever you put there must
+@code{vm-ssh-remote-command} sets another, and whatever you put there must
 print something and stay alive long enough for the forwarded connection to
 come up.
 
@@ -1913,7 +1914,7 @@ whichever file the maildrop is written in.
 @cindex auth-source library
 @cindex authinfo
 VM looks the password up through @code{auth-source} before asking you for it,
-so a line in a file such as @file{~/.authinfo.gpg} answers for it:
+so a line in a file such as @file{~/.authinfo.gpg} supplies it:
 
 @example
 machine @var{HOST} login @var{USER} password @var{PASSWORD} port @var{PORT}
@@ -1922,7 +1923,7 @@ machine @var{HOST} login @var{USER} password @var{PASSWORD} port @var{PORT}
 @noindent
 @var{HOST}, @var{USER}, @var{PASSWORD} and @var{PORT} are the maildrop's.
 The @samp{epa-file} library encrypts that file, so the password is not left
-lying in the clear, and @code{auth-sources} says which files are read.
+lying in the clear, and @code{auth-sources} lists which files are read.
 @xref{Help for users,, Help for users, auth , Emacs auth-source}.
 
 Only the first line for a given machine is used, so two accounts on one
@@ -1985,8 +1986,8 @@ the server, you should use @acronym{IMAP} folders (@ref{@acronym{IMAP}
 Folders}) resident on an @acronym{IMAP} server.
 
 @vindex vm-pop-folder-alist
-In order for VM to know about @acronym{POP} folders that you can access, you
-must declare them by setting the variable @code{vm-pop-folder-alist}.
+Declare the @acronym{POP} folders you can access by setting the variable
+@code{vm-pop-folder-alist}.
 The variable's value should be an associative list of the form:
 
 @example
@@ -2038,8 +2039,8 @@ with @code{vm-save-folder}.
 @findex vm-folder-cache-file
 A cache folder is named after the @acronym{MD5} of the maildrop it holds, so
 it can be neither read nor typed by hand.  @kbd{M-x vm-folder-cache-file} in
-the folder says which file it is; it works for @acronym{POP} folders too, and
-answers nothing for a folder that is a file in the first place.  Only the
+the folder reports which file it is; it works for @acronym{POP} folders too,
+and returns nothing for a folder that is a file in the first place.  Only the
 scheme, the host, the mailbox and the login name go into the name, so
 @code{imap} and @code{imap-ssl} for one mailbox share a cache and changing
 your password does not orphan it.
@@ -2065,9 +2066,9 @@ rare enough that the caches you already have are worth more.
 VM's @acronym{IMAP} and @acronym{POP} operations are asynchronous: they do not
 block Emacs.  Fetching mail, loading a message body, sending your flag
 changes, expunging, saving, quitting, synchronising, filing a copy of a
-message you send: all of them go on in the background, and Emacs answers you
-throughout.  What you see of it is in the mode line of the folder, its summary
-and its presentation buffer, which say what the folder is doing:
+message you send: all of them run in the background, and Emacs stays
+responsive throughout.  What you see of it is in the mode line of the folder,
+its summary and its presentation buffer, which show what the folder is doing:
 
 @example
 VM: inbox   3 (of 412)   fetching 24/340 +1 
@@ -2076,12 +2077,12 @@ VM: inbox   3 (of 412)   fetching 24/340 +1
 @noindent
 @samp{fetching} is what it is doing; @samp{24/340} is how far it has got, which
 moves as each bunch of messages arrives; @samp{+1} is one more piece of work
-waiting for it.  The count appears once VM knows how many messages it is
-fetching, and a piece of work with nothing to count (sending your flag
+waiting for it.  The count appears once VM has the number of messages to
+fetch, and a piece of work with nothing to count (sending your flag
 changes, say) shows none.  It is shown in the face @code{vm-net-session-face}, which
 inherits @code{mode-line-emphasis}; give that face a background if you want it
-louder.  When the mode line says nothing there, VM is not talking to that
-folder's server.
+louder.  When the mode line shows nothing there, VM has no session open to
+that folder's server.
 
 A folder is not locked while this goes on.  You can read it, move about it,
 delete, undelete, mark, label and expunge as usual.  What VM does with the
@@ -2115,8 +2116,8 @@ the @acronym{IMAP} server has the ability to store user-defined permanent
 flags.)
 
 @vindex vm-imap-account-alist
-In order for VM to know about @acronym{IMAP} accounts that you can access, you
-must declare them by setting the variable @code{vm-imap-account-alist}.
+Declare the @acronym{IMAP} accounts you can access by setting the variable
+@code{vm-imap-account-alist}.
 The variable's value should be an associative list of the form:
 
 @example
@@ -2202,19 +2203,19 @@ The synchronization can also be asked for on its own:
 @cindex X-GM-LABELS
 Gmail's @acronym{IMAP} is a mapping onto Gmail's own model rather than an
 implementation of the protocol, and the differences are not ones VM can
-paper over.
+conceal.
 
 @table @asis
 @item A label is a mailbox.
-A message carrying two labels appears in two mailboxes, and @code{All Mail}
+A message with two labels appears in two mailboxes, and @code{All Mail}
 holds every message once.  Applying a label is a @code{UID COPY} into the
 mailbox of that name, not a flag.
 
 @item @acronym{IMAP} keywords are not labels.
 A VM label is an @acronym{IMAP} keyword on the wire.  Gmail accepts a
-@code{STORE} of an arbitrary keyword, answers success, and does not keep it,
-with no error at any point.  VM notices and says so once per session, and
-keeps the label in the folder.  It used to be erased in the same breath: the
+@code{STORE} of an arbitrary keyword, reports success, and does not keep it,
+with no error at any point.  VM detects this and warns once per session, and
+keeps the label in the folder.  It used to be erased at once: the
 flags read back from the server replaced the folder's labels with what the
 server had, which was nothing, so setting a label against Gmail looked like a
 command that did nothing.  A label now stays where you set it and goes no
@@ -2243,7 +2244,7 @@ labels behave, and the local server is faster besides.
 Be clear about the ceiling: labels then live on your machine.  A keyword set
 in VM reaches the local server and stops there, because Gmail has nowhere to
 put it and the sync tools do not translate keywords into labels.  The reverse
-direction is possible with a tool that carries Gmail's labels,
+direction is possible with a tool that transfers Gmail's labels,
 @code{offlineimap} writes them as an @code{X-Keywords:} header with
 @code{synclabels = yes}, but that is a header rather than a keyword, so VM
 does not read it as labels either.  If your labels matter across machines and
@@ -2257,7 +2258,7 @@ clients, they cannot be VM labels against Gmail today.
 @cindex mbsync
 @cindex isync
 @cindex offlineimap
-A remote server that is slow to answer makes every operation slow, because
+A remote server that is slow to respond makes every operation slow, because
 each one is a round trip.  Gmail is the usual example.  The arrangement that
 fixes it is not a VM feature at all: run an @acronym{IMAP} server on your own
 machine, hold a copy of the remote mailbox in it, and point VM at
@@ -2268,7 +2269,7 @@ Two things follow, and the second is the one people do not expect:
 
 @itemize
 @item
-Every VM operation answers at local speed rather than at the remote's.
+Every VM operation runs at local speed rather than at the remote's.
 @item
 Changes are queued for you.  A local server accepts a flag change
 immediately and its sync tool pushes it when the remote is reachable, so VM
@@ -2351,7 +2352,7 @@ account's state cannot be confused with another's.
 @item
 @b{Run it.}  A timer is the simple answer, through @code{launchd} on macOS or
 a systemd user timer on Linux; @code{goimapnotify} on the remote account is
-the responsive one, running the sync when the server says something has
+the responsive one, running the sync when the server reports that mail has
 arrived.  A service started by the system does not inherit your interactive
 @env{PATH}, so name programs by absolute path in whatever you install there.
 @end enumerate
@@ -2403,14 +2404,14 @@ imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
 VM speaks the mechanism and nothing more: it acquires no token, refreshes
 none, stores none and ships no client credentials.  It asks
 @code{auth-source} for a token whenever it opens a session, so two things
-have to be set up outside it: something that answers that lookup with a token
-that has not expired, and a first authorization, which you do by hand because
+have to be set up outside it: something that supplies that lookup with a
+token that has not expired, and a first authorization, which you do by hand because
 nothing can be asked of you while a session is running.
 
 The @var{PASSWORD} field of the maildrop stays @samp{*}.  You are never
 prompted for a token, nobody being able to type one, and VM does not remember
 one between sessions: an access token lives about an hour, so a remembered
-one would be a session that fails with nothing left to ask.  VM offers the
+one would be a session that fails with nothing left to ask.  VM uses the
 mechanism only where the server advertises @samp{AUTH=XOAUTH2}.
 
 @unnumberedsubsubsec Setting up an account, from nothing
@@ -2430,7 +2431,7 @@ that can use a loopback redirect, which is what saves you copying anything.
 
 @item
 @strong{Install @file{auth-source-xoauth2-plugin} from GNU ELPA and turn it
-on.}  It is what answers VM's lookups with a token, refreshing through the
+on.}  It is what supplies VM's lookups with a token, refreshing through the
 @file{oauth2} package as it goes:
 
 @example
@@ -2482,16 +2483,16 @@ authorization:
 on the addresses your XOAUTH2 maildrops name and picks the provider that
 goes with the server, then opens your browser on the provider's consent
 page.  Visiting the folder does as well, where there is no token yet: the
-question is put by the command that wants one, a session having nobody to
+question is put by the command that needs one, a session having nobody to
 ask.  Say yes, and that is all: VM listens on a loopback port of its
-own, takes the code out of the redirect the browser follows, and answers the
-browser with a page saying it has it.  The access token and the refresh token
+own, takes the code out of the redirect the browser follows, and sends the
+browser a page confirming it.  The access token and the refresh token
 go into the @file{oauth2} package's store.
 
 @item
 @strong{Write @samp{xoauth2} in the maildrop}, with @samp{*} where the
 password goes.  Step 5 can be left out if you would rather: visiting this
-folder with no token offers the authorization itself.
+folder with no token prompts for the authorization itself.
 
 @example
 imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
@@ -2506,7 +2507,7 @@ Two fields have to match the maildrop.  The @samp{machine} is the server's
 host name, or the account name @code{vm-imap-account-alist} gives the
 maildrop, those being what VM looks under.  The @samp{port} is the maildrop's
 own, @samp{993} here: @code{auth-source} matches it as it stands, so an entry
-saying @samp{imaps} answers nothing.
+that gives @samp{imaps} matches nothing.
 
 @item A corrected entry changes nothing.
 @cindex auth-source cache
@@ -2531,7 +2532,7 @@ for a token the other did not write.
 @cindex plstore
 @file{oauth2} keeps the token in a plstore, and a plstore with no recipient
 is encrypted symmetrically, with a passphrase for pinentry to ask for.  Where
-it cannot be asked for, nothing is kept and that is what it says.  Name a key
+it cannot be asked for, nothing is kept and the error reports that.  Name a key
 of your own instead, which needs no passphrase to encrypt to and leaves the
 question to the one decryption a session does:
 
@@ -2563,8 +2564,8 @@ have Emacs do the asking in the minibuffer:
 Only where there is no window system.  Loopback goes round the
 @command{pinentry} program, and with it whatever that program remembers.
 
-On macOS, @command{pinentry-mac} offers to keep the passphrase in the login
-keychain and answers out of it from then on, so the question is asked once
+On macOS, @command{pinentry-mac} can keep the passphrase in the login
+keychain and supply it from there, so the question is asked once
 rather than once a session.  The keychain is a cache and not the only source:
 where it holds nothing for the key, the dialog appears as before.  Name the
 program in @file{~/.gnupg/gpg-agent.conf}, there being other pinentries that
@@ -2600,7 +2601,7 @@ made up and did not write down, so it has to go back into the same prompt.
 
 @unnumberedsubsubsec Without registering anything
 
-The plugin carries Thunderbird's published credentials, and an entry naming
+The plugin includes Thunderbird's published credentials, and an entry naming
 one of them borrows the registration whole, so steps 1 and 4 above fall away:
 
 @example
@@ -2609,11 +2610,11 @@ machine imap.gmail.com login jane@@gmail.com port 993 auth xoauth2
 @end example
 
 @noindent
-@samp{google} and @samp{microsoft} are the two it knows.  What this costs is
+@samp{google} and @samp{microsoft} are the two it supports.  What this costs is
 the redirect: Thunderbird registered @code{https://localhost/} and a client
 may only use a redirect its registration lists, so the browser ends on a page
 that cannot load and the code has to be copied out of its address bar, as
-above.  The consent screen says Thunderbird's name rather than yours.  VM's
+above.  The consent screen shows Thunderbird's name rather than yours.  VM's
 own first authorization does not fit this route, the client id not being
 yours to set, so make the lookup yourself from an Emacs that can ask you:
 
@@ -2814,7 +2815,7 @@ That keeps the bodies of a large archive mailbox on the server while the
 mailbox you read every day is fetched whole.  Scope both options or neither:
 a message is external only when it is over the limit as well, so a per
 mailbox @code{vm-enable-external-messages} with one
-@code{vm-imap-max-message-size} for every folder says nothing new.
+@code{vm-imap-max-message-size} for every folder changes nothing.
 
 Note when trying this out that visiting a folder previews its current message,
 and previewing an external message fetches it.  So the message you are looking
@@ -2885,17 +2886,17 @@ that have mail waiting.  Having found mail it leaves the indicator on and
 checks no further until you retrieve it.
 
 Where several mail clients read the same spool, another of them can take
-that mail, and the indicator then says what is no longer true.  Set
+that mail, and the indicator then shows what is no longer true.  Set
 @code{vm-mail-check-always} to have VM go on checking.
 
 @cindex checking for mail, cost of
 For a @acronym{POP} or @acronym{IMAP} folder a check is a conversation with
 the server, and it goes on in the background like everything else VM does
 with one (@pxref{talking to the server}): the check is started and Emacs
-comes straight back to you, and the answer sets the indicator when it
+comes straight back to you, and the reply sets the indicator when it
 arrives.  A server that is slow or unreachable therefore costs you nothing
-but a late answer or none, and a check that fails says so in the session log
-rather than at you.  Setting @code{vm-mail-check-interval} and
+but a late reply or none, and a check that fails is recorded in the session
+log rather than reported to you.  Setting @code{vm-mail-check-interval} and
 @code{vm-auto-get-new-mail} to @code{nil} stops the checking altogether, at
 the price of no longer being told about new mail until you ask for it with
 @kbd{g}.
@@ -2930,8 +2931,8 @@ compromised.
 
 When you visit a folder, VM looks for an auto-save file modified more
 recently than the folder file.  One that exists is a good sign that Emacs or
-your operating system crashed while VM was visiting the folder, so VM says
-so in the echo area and visits the folder in @emph{read-only} mode.
+your operating system crashed while VM was visiting the folder, so VM reports
+it in the echo area and visits the folder in @emph{read-only} mode.
 Read-only mode is what protects the auto-save file: nothing can modify the
 folder, so Emacs has no new changes to write over it.  While the
 folder is read-only:
@@ -3088,13 +3089,13 @@ The same settings, in one file you can copy, are installed as
 
 @findex vm-check-configuration
 @cindex checking a configuration
-@kbd{M-x vm-check-configuration} says what is still missing, and what to set
+@kbd{M-x vm-check-configuration} reports what is still missing, and what to set
 for each, in a buffer of its own.  It reports only settings whose default either does nothing or
 does something you did not choose, so a report is worth acting on and
 silence means the pieces below are in place.  It also checks each maildrop
-for a type VM knows and the right number of fields, neither of which the
-parsers mind: a misspelt @code{imapssl} is accepted where it is written and
-fails much later, saying something about the server.
+for a type VM supports and the right number of fields, neither of which the
+parsers reject: a misspelt @code{imapssl} is accepted where it is written and
+fails much later, with an error about the server.
 
 @vindex vm-mail-header-from
 @vindex mail-default-headers
@@ -3105,9 +3106,8 @@ line, @samp{IMAP-FCC: Sent} for instance, makes every message go out with a
 adds a header to every composition.
 
 @vindex vm-suggest-checking-configuration
-It never runs by itself.  What VM does unasked is say once per session, in
-one line, that the command would have something to report, and only where
-it would; @code{vm-suggest-checking-configuration} set to nil stops even
+It never runs by itself.  Unasked, VM prints one line per session stating
+that the command would have something to report, and only where it would; @code{vm-suggest-checking-configuration} set to nil stops even
 that.
 
 The line waits for Emacs to go idle before it is said, so that the folder
@@ -3143,7 +3143,7 @@ This line belongs in your Emacs init file rather than in
 loads is read when VM starts, so a @kbd{C-x m} before that would find
 whatever @code{mail-user-agent} was.  It works from the init file because
 @file{vm-autoloads.el} registers the agent, so nothing of VM needs to be
-loaded for Emacs to know how to reach it.
+loaded for Emacs to find it.
 
 @node Local mail, Server mail, Mail agent, Setting Up
 @section Folders on this machine
@@ -3230,7 +3230,7 @@ tells you nothing; naming yourself here shows the recipient instead:
 @end lisp
 
 @noindent
-@code{vm-summary-format} decides the rest.  @xref{Summary Format}, for what
+@code{vm-summary-format} determines the rest.  @xref{Summary Format}, for what
 the conversions mean.  Change it in a folder you already have and
 @kbd{M-x vm-fix-my-summary} rebuilds the lines that were made under the old
 one.
@@ -3292,7 +3292,7 @@ alias fred fred@@example.com
 @noindent
 lets you address a message to @samp{fred}.  This is Emacs's own
 @file{mailalias.el} and needs nothing set up; @code{mail-personal-alias-file}
-says where the file is if it is not @file{~/.mailrc}.  The alias is expanded
+names the file if it is not @file{~/.mailrc}.  The alias is expanded
 as the message goes out, so the composition shows @samp{fred} until you send
 it.
 
@@ -3411,7 +3411,7 @@ that exist already, and @code{nil} does nothing.
 
 @noindent
 That form is worth copying for any package you are not certain of:
-@code{(require @var{feature} nil t)} answers nil rather than signalling, and
+@code{(require @var{feature} nil t)} returns nil rather than signalling, and
 everything that depends on it sits inside the @code{when}.  A bare
 @code{require} of something missing stops your configuration where it stands,
 and every setting after it is silently never made.
@@ -3850,12 +3850,12 @@ except html, and of the images only JPEG.
 @cindex Content-Disposition
 @vindex vm-mime-honor-content-disposition
 @cindex attachments
-A @acronym{MIME} object carries a @dfn{Content-Disposition} header saying
+A @acronym{MIME} object has a @dfn{Content-Disposition} header stating
 how it is meant to be shown: @samp{inline}, as part of the message, or as an
 @dfn{attachment}, a button you invoke to see it.  It is a suggestion, and
 one many mail clients make badly, some declaring every object inline and
 others declaring every object an attachment.
-@code{vm-mime-honor-content-disposition} says how much notice VM takes:
+@code{vm-mime-honor-content-disposition} determines how much notice VM takes:
 
 @table @code
 @item t
@@ -3980,7 +3980,7 @@ is the same command under its other name.
 @vmdocvmmimeinternalcontenttypes
 
 @noindent
-VM knows which types it can display internally, so naming one it cannot is
+VM checks which types it can display internally, so naming one it cannot is
 not an error; it falls back the same way an unlisted type does.  For
 example:
 
@@ -3999,7 +3999,7 @@ variable.
 @cindex @acronym{HTML}
 @vindex vm-mime-text/html-handler
 The @acronym{HTML} content in text/html @acronym{MIME} parts can be
-displayed in Emacs using a variety of packages.  VM knows about:
+displayed in Emacs using a variety of packages.  VM supports:
 
 @cindex lynx
 @cindex w3m
@@ -4034,7 +4034,7 @@ program, so a library without the program falls through to the next, and
 @code{nil} asks VM not to display @acronym{HTML} content internally at all.
 
 @cindex no handler for @acronym{HTML}
-With @code{nil}, or with none of the three installed, VM says @samp{No
+With @code{nil}, or with none of the three installed, VM reports @samp{No
 handler available for internal display of text/html} and shows the part as
 a button rather than as text.  @xref{External display}, for handing the
 type to a program of your own.
@@ -4078,8 +4078,8 @@ An image in an @acronym{HTML} part either came with the message, which
 @samp{multipart/related} does with a @samp{cid:} @acronym{URL}, or sits on a
 web server and is fetched as the message is displayed.  Fetching the second
 kind tells the sender that you have read the message, and an address that
-answers is worth more to them than one that does not.  Two settings decide
-what is fetched:
+responds is worth more to them than one that does not.  Two settings
+determine what is fetched:
 
 @table @code
 @vindex vm-w3m-display-inline-images
@@ -4102,11 +4102,11 @@ image in that message as safe, which is how to see the rest of one you
 trust without changing what the next message may fetch.
 
 @vindex vm-use-presentation-minor-modes
-The same setting decides which links Emacs-w3m will follow for you, where
+The same setting determines which links Emacs-w3m will follow for you, where
 @code{vm-use-presentation-minor-modes} is @code{t} and its own key bindings
-are in force: a link whose @acronym{URL} does not match is refused with
-@samp{This link is considered to be unsafe}, and a prefix argument follows
-it anyway.  That is worth having on a message asking you to click something,
+are in force: a link whose @acronym{URL} does not match is not followed, and
+the message is @samp{This link is considered to be unsafe}; a prefix argument
+follows it anyway.  That is worth having on a message asking you to click something,
 which is how ``phishing'' works: the text of a link says nothing about where
 it goes.
 
@@ -4296,8 +4296,8 @@ meant to.  This puts the images in the temporary directory along with the
 @findex display-images-p
 @findex image-type-available-p
 Emacs shows an image where the display is graphical, which
-@code{display-images-p} answers, and in the formats the build has the
-libraries for, which @code{image-type-available-p} answers one format at a
+@code{display-images-p} reports, and in the formats the build has the
+libraries for, which @code{image-type-available-p} reports one format at a
 time, @samp{tiff} or @samp{gif} for instance.
 
 @vindex vm-mime-internal-content-types
@@ -4389,19 +4389,19 @@ Example:
 
 @cindex character sets
 For text type messages, @acronym{MIME} also requires that a character set
-be specified, so that the recipient's mail reader knows what character
-glyphs to use to display each character code.  Emacs decodes any character
+be specified, so that the recipient's mail reader can determine what
+character glyphs to use to display each character code.  Emacs decodes any character
 set it has a coding system for, and draws a replacement character where the
 font has no glyph, so a message is shown whatever it declares.
 
 @vindex vm-mime-charset-converter-alist
-A few of the names that arrive in mail are not names Emacs knows:
+A few of the names that arrive in mail are not names Emacs recognises:
 @samp{windows-874}, @samp{x-mac-roman} and @samp{unknown-8bit} are three.
 Text declaring one of those is guessed at rather than decoded, and it is
 those that @code{vm-mime-charset-converter-alist} is for.  Name a command
-that converts from such a charset to one Emacs knows, and VM runs the text
-through it before decoding.  A charset Emacs can decode is left alone,
-whatever the list says.
+that converts from such a charset to one Emacs recognises, and VM runs the
+text through it before decoding.  A charset Emacs can decode is left alone,
+whatever the list contains.
 
 The alist format is:
 
@@ -4414,7 +4414,7 @@ Emacs has no coding system for.  Example @samp{"windows-874"} or
 @samp{"x-mac-roman"}.
 
 @var{END-CHARSET} is a string specifying the charset to which
-@var{START-CHARSET} will be converted, one Emacs does know.
+@var{START-CHARSET} will be converted, one Emacs does recognise.
 
 @var{COMMAND-LINE} is a string giving a command line to be passed to
 the shell.  The characters in @var{START-CHARSET} will be written to the
@@ -4442,9 +4442,9 @@ of causing error messages.
 @cindex RFC 6532
 @vindex vm-mime-8bit-header-charsets
 A header is supposed to be @acronym{ASCII}, with anything else written as the
-encoded words of RFC 2047, but mail carrying raw 8-bit bytes in its headers has
+encoded words of RFC 2047, but mail with raw 8-bit bytes in its headers has
 always existed and RFC 6532 now makes @acronym{UTF-8} legal there.  Such text
-says nothing about its own character set, so VM guesses:
+states no character set of its own, so VM guesses:
 @code{vm-mime-8bit-header-charsets} lists the coding systems to try, in order,
 and defaults to @acronym{UTF-8} and then ISO-8859-1.  This affects the summary
 and the displayed message only; the folder on disk keeps the bytes exactly as
@@ -4455,7 +4455,7 @@ they arrived.  Set the variable to @code{nil} to be shown the bytes.
 
 @cindex @acronym{MIME} alternatives
 @cindex multipart/alternative
-@acronym{MIME} allows a message to carry its content in several formats at
+@acronym{MIME} allows a message to hold its content in several formats at
 once, in the same message, as a @dfn{multipart/alternative}.  It is there
 because the sender's mail program and the recipient's need not display the
 same things: a message composed with tables, italics and equations goes out
@@ -4466,13 +4466,13 @@ it can.
 @vindex vm-mime-alternative-show-method
 @cindex @acronym{MIME} alternative, best
 @cindex @acronym{MIME} alternative, best-internal
-@code{vm-mime-alternative-show-method} says which alternative VM shows:
+@code{vm-mime-alternative-show-method} determines which alternative VM shows:
 
 @table @code
 @item best
 The subpart closest in appearance to what the sender composed, displayed
 internally or by an external viewer.  In the example above, the fully
-featured text subpart, if VM knows how to display that type.
+featured text subpart, if VM can display that type.
 @item best-internal
 The closest subpart VM can display itself.  No external viewer is used.
 @item all
@@ -4496,7 +4496,7 @@ first that VM can display itself.
 @vindex vm-mime-auto-displayed-content-type-exceptions
 @cindex @acronym{MIME} alternative, as a button
 To read one alternative and keep the others within reach, ask for @code{all}
-and then say which types are not to be displayed:
+and then list which types are not to be displayed:
 
 @example
 (setq vm-mime-alternative-show-method 'all)
@@ -4574,7 +4574,7 @@ cases the filename sent along with the mistyped file
 @cindex text/calendar
 A meeting invitation arrives as a @samp{text/calendar} part holding an
 iCalendar object (RFC 5545), which is a form to be read by a program.  VM
-shows what it says instead:
+shows its contents instead:
 
 @example
 Invitation
@@ -4587,12 +4587,12 @@ Invitation
   Carol <carol@@example.com> -- not answered
 @end example
 
-@noindent The first line says what kind of message it is (an invitation, a
+@noindent The first line names the kind of message (an invitation, a
 cancellation, a reply to an invitation) since @samp{REQUEST} and
 @samp{CANCEL} are not words a reader should have to know.  A time is shown as
-the sender wrote it, with @samp{UTC} where the sender said UTC; a zone named
-by @samp{TZID} is not converted, on the grounds that 14:00 as written beats
-14:00 in the wrong zone.
+the sender wrote it, with @samp{UTC} where the sender wrote UTC; a zone named
+by @samp{TZID} is not converted, 14:00 as written being more use than 14:00 in
+the wrong zone.
 
 @vindex vm-icalendar-show-description
 @vindex vm-icalendar-description-lines
@@ -4718,7 +4718,7 @@ to cite; anything on that hook runs once the text is in.
 With nothing on the hook, VM does the citing itself: the headers are trimmed
 to @code{vm-included-text-headers} and
 @code{vm-included-text-discard-header-regexp}, which between them keep none
-unless you say otherwise, and every remaining line is prefixed with
+unless you set them otherwise, and every remaining line is prefixed with
 @code{vm-included-text-prefix}.  @xref{Replying}, for the attribution line
 and the rest of what is included.
 
@@ -4859,9 +4859,9 @@ addresses.
 It asks rather than refusing because a working sendmail, postfix or exim
 does remove the header, and there is no way for Emacs to tell one of those
 from a transport that does not.  Answer @kbd{n} and nothing is sent; the
-message then says what to change.  Setting @code{vm-check-bcc-removal} to
-@code{nil} stops it asking at all, for someone who knows their transport
-removes it.
+message then names what to change.  Setting @code{vm-check-bcc-removal} to
+@code{nil} stops it asking at all, for someone whose transport does remove
+it.
 @end quotation
 
 @vmdocvmmailautosavedirectory
@@ -4930,9 +4930,9 @@ releases; each is an option of its own now.
 Two commands go with them, for a composition you are already in:
 @code{vm-mail-mode-citation-clean-up} takes the noise out of a citation,
 and @code{vm-mail-mode-elide-reply-region} replaces a stretch of quoted
-text with a marker saying it was cut.
+text with a marker noting the omission.
 
-A header carrying anything outside @acronym{US-ASCII} is encoded on the way
+A header containing anything outside @acronym{US-ASCII} is encoded on the way
 out whatever else is set; that was an add-on too, and is not optional.
 
 @node Sending @acronym{MIME} Messages, Sending Secure @acronym{MIME}, Sending Options, Sending Messages
@@ -5072,17 +5072,17 @@ A composition holding nothing but @acronym{ASCII} is sent as
 @code{us-ascii}.  Otherwise VM looks for a character set that can hold
 everything you have typed: @code{vm-coding-system-priorities} is tried in
 order, and where none of them fits, @code{iso-2022-jp}, which can represent
-every character set Emacs knows at the cost of being awkward for a recipient
+every character set Emacs supports at the cost of being awkward for a recipient
 outside East Asia.  So set @code{vm-coding-system-priorities} where the
 choice matters to you; a list such as @code{(utf-8)} settles it.
 
 You do not declare the character set of a composition, and there is nothing
-to set for one: Emacs knows which characters are in the buffer, and VM asks
-it (@code{vm-determine-proper-charset}).
+to set for one: the characters in the buffer determine it, and VM works it
+out (@code{vm-determine-proper-charset}).
 
 Character codes greater than 128 may not be transported reliably
-across the Internet in mail messages.  Some machines will refuse
-to accept messages containing such characters and some will accept
+across the Internet in mail messages.  Some machines reject
+messages containing such characters and some will accept
 them but zero the eighth bit, garbling the message.  To avoid
 these problems, VM transfer encodes 8-bit text by default.
 
@@ -5096,14 +5096,14 @@ reader.
 
 @noindent
 It applies to textual content types.  Images, audio and video almost always
-carry a carriage return or a NUL, which makes VM treat the part as binary
-and send it BASE64 whatever this says.
+contain a carriage return or a NUL, which makes VM treat the part as binary
+and send it BASE64 whatever this is set to.
 
 @cindex long lines
 @cindex line length
 A long line is the other thing that cannot go out as it stands.  RFC 5322
 allows 998 characters in a line and asks for 78; past the first of those a
-line has to be encoded, and quoted-printable is how VM does it, carrying
+line has to be encoded, and quoted-printable is how VM does it, sending
 the line as several physical lines each ending in @samp{=} for the
 recipient's mail reader to join back up.  So the line arrives as the one
 line you wrote.
@@ -5309,7 +5309,7 @@ prefer @acronym{PGP}/@acronym{MIME} for messages you send.  Incoming inline
 @vindex vm-epg-auto-snarf
 @vindex vm-epg-fetch-missing-keys
 Displaying a @acronym{PGP} message decrypts encrypted parts, verifies
-signatures, and imports (@dfn{snarfs}) any public keys it carries, reporting
+signatures, and imports (@dfn{snarfs}) any public keys it contains, reporting
 the result in the modeline.  Set @code{vm-epg-auto-decrypt} or
 @code{vm-epg-auto-snarf} to @code{nil} to get a button to press instead of
 having it happen automatically.  When a signature was made by a key you do
@@ -5325,7 +5325,7 @@ being apparent from the message replied to.  You can edit them, and every
 other header, as you please.
 
 By an old convention a reply's subject is prefixed with @samp{Re: } where it
-does not already carry it.  @code{vm-reply-subject-prefix} is the string to
+does not already have it.  @code{vm-reply-subject-prefix} is the string to
 prepend; @code{nil}, the default, prepends nothing.
 
 @vindex vm-included-text-prefix
@@ -5427,7 +5427,7 @@ message is sent.  The format of the button in this case looks like:
 @vindex vm-mime-alternative-yank-method
 When citing a @code{multipart/alternative} @acronym{MIME} component, VM
 uses the variable @code{vm-mime-alternative-yank-method}
-to decide which alternative should be cited.  It can 
+to determine which alternative is cited.  It can
 be defined in a similar way to the variable
 @code{vm-mime-alternative-show-method}. (@pxref{multipart/alternative}.) 
 
@@ -5454,8 +5454,8 @@ used, the fill column is controlled by the variable
 
 @findex vm-fill-long-lines-in-reply
 You can also invoke the command @code{vm-fill-long-lines-in-reply}
-interactively.  It uses the two variables mentioned above to decide when and
-how to fill text.  If the
+interactively.  It uses the two variables mentioned above to determine when
+and how to fill text.  If the
 @code{vm-fill-paragraphs-containing-long-lines-in-reply} is @code{nil}, it
 assumes that it should fill any lines longer than the current window width. 
 
@@ -5487,7 +5487,7 @@ copied verbatim as the quoted text.
 
 @unnumberedsubsec Options
 
-The @dfn{attribution} is a line of text saying who wrote what is being
+The @dfn{attribution} is a line of text naming who wrote what is being
 included, inserted before it.  @xref{Summaries}, for the format.
 
 @vmdocvmincludedtextattributionformat
@@ -5691,11 +5691,11 @@ it with a message the counts did not describe.
 
 @cindex FCC header after sending
 The @samp{FCC:} header stays in the composition after the message has gone,
-so the buffer VM leaves you with still says where the copy went.  Editing
+so the buffer VM leaves you with still shows where the copy went.  Editing
 that buffer and sending it again therefore files another copy.  The header
 is not in the message that is sent, nor in the copy that is filed: the first
 would tell the recipient a path on your machine, and the second does not
-need to say where it already is.
+need to state where it already is.
 
 @vmdocvmdofccbeforemimeencode
 
@@ -5714,14 +5714,14 @@ continue it later.  This is called @dfn{postponing}.
 @vindex vm-save-killed-message
 @vindex vm-save-killed-messages-folder
 Killing a composition you have written in keeps it as a draft, in
-@code{vm-save-killed-messages-folder}, and VM says where it went and which
+@code{vm-save-killed-messages-folder}, and VM reports where it went and which
 key takes it up again.  A composition buffer belongs to no file, so Emacs does
 not put the question it puts about an unsaved file, and anything bound to
 @code{kill-buffer} took an unsent message with no warning.  Nothing is kept
 for a composition you have written nothing in.
 
 @vindex vm-confirm-killing-a-composition
-@code{vm-save-killed-message} says what happens: @code{always}, the default,
+@code{vm-save-killed-message} determines what happens: @code{always}, the default,
 keeps it; @code{ask} asks each time; @code{nil} keeps nothing, and then
 @code{vm-confirm-killing-a-composition} asks before the writing is lost.  Set
 that to @code{nil} as well and a kill takes the writing with it, as it did in
@@ -5745,12 +5745,12 @@ what happens to a composition you kill; that is
 
 Loading the file installed them in earlier releases, so @code{(require
 'vm-postpone)} was how one switched it on.  That still loads the file but no
-longer changes how VM behaves, so an init file saying only @code{(require
+longer changes how VM behaves, so an init file with only @code{(require
 'vm-postpone)} needs the line above.  The same applies to
 @file{vm-message-history.el} and @file{vm-serial.el}, which have
 @code{vm-message-history-mode} and @code{vm-serial-mode}.  The reason is that
-Customize loads any of them to answer a question about a VM option, so a
-reader who never asked for one was getting its hooks and keys anyway.
+Customize loads any of them when a reader opens a VM option, so a reader who
+never asked for one was getting its hooks and keys anyway.
 
 @findex vm-postpone-message
 @kindex C-c C-d
@@ -5783,7 +5783,7 @@ in your VM configuration file.
 That happens through @code{vm-delete-postponed-message}, which a continued
 composition puts on its own @code{mail-send-hook}: it marks the draft the
 composition came from deleted, and expunges it where
-@code{vm-auto-expunge-postponed-folder} says to.  Typed by hand in a
+@code{vm-auto-expunge-postponed-folder} is set.  Typed by hand in a
 continued composition, @kbd{M-x vm-delete-postponed-message} does the same
 thing there and then, which is how to be rid of a draft you have decided
 against without sending anything.
@@ -5825,7 +5825,7 @@ turning it off with @code{(vm-pcrisis-mode -1)} removes the advice again.
 In earlier releases the advice was installed merely by loading the file, so
 @code{(require 'vm-pcrisis)} was how one switched it on, and there was no way to
 switch it off.  That still loads the file but no longer changes how VM behaves,
-so an init file saying only @code{(require 'vm-pcrisis)} needs the line above.
+so an init file with only @code{(require 'vm-pcrisis)} needs the line above.
 
 Everything here was named differently in earlier releases.  An old name is
 no longer an alias: setting one, or naming one in a rule, reports what to
@@ -5990,8 +5990,8 @@ Conditions are evaluated in the order written, so this one goes last:
 @end example
 
 @noindent Composing in either account sets the matching address; anywhere else
-asks which of the actions to run, and offers to remember the answer for that
-correspondent.  Name an ordinary action instead of @code{ask} to fall back to
+asks which of the actions to run, and asks whether to remember the answer for
+that correspondent.  Name an ordinary action instead of @code{ask} to fall back to
 a fixed identity without being asked.
 
 A rule is keyed on the name of a condition, and a rule naming something that
@@ -6054,9 +6054,10 @@ inserted.
 
 @vindex vm-pcrisis-expect-default-signature
 @vindex mail-signature
-Personality Crisis can only replace or delete a signature whose extent it
-knows.  A signature it inserted itself, it knows; one that Emacs put there
-because @code{mail-signature} is set, it finds by looking for the line
+Personality Crisis can only replace or delete a signature whose extent it can
+determine.  It has the extent of a signature it inserted itself; one that
+Emacs put there because @code{mail-signature} is set, it finds by looking for
+the line
 @samp{-- } that separates it, which is what
 @code{vm-pcrisis-expect-default-signature} asks for and is the default.  A
 signature in quoted text is prefixed by @code{vm-included-text-prefix} and so
@@ -6066,7 +6067,7 @@ is not that line.
 (setq vm-pcrisis-expect-default-signature nil)
 @end lisp
 
-@noindent turns the search off, and a rule saying
+@noindent turns the search off, and a rule of
 @code{(vm-pcrisis-signature "")} then has nothing to delete and leaves the
 signature where it is.
 
@@ -6114,7 +6115,7 @@ to the same recipient:
 @vindex vm-pcrisis-auto-profiles-file
 @noindent
 Remembering writes @code{vm-pcrisis-auto-profiles-file}, which is
-@file{~/.vmpc-auto-profiles} unless you say otherwise, and every later
+@file{~/.vmpc-auto-profiles} unless you set it otherwise, and every later
 composition consults it.  The question names that file, and so does the
 message after any profile is written or removed, which is the only notice
 the @code{t} form gives since it asks nothing.  To be rid of a profile,
@@ -6124,7 +6125,7 @@ answer the question with no actions, or edit the file.
 Answer with an action that sets something, never with the name of this action
 itself.  Remembering the asking action makes a profile that means ``ask'' and
 so is never asked: the lookup finds it, nothing is prompted, and what it runs
-is the action that would have prompted.  VM refuses such an answer, and drops
+is the action that would have prompted.  VM rejects such an answer, and drops
 such a profile if an older VM wrote one.
 
 @noindent
@@ -6138,7 +6139,7 @@ then covers every composition of that kind rather than one correspondent.
 @vindex vm-pcrisis-current-buffer
 An action of your own is an ordinary function named in
 @code{vm-pcrisis-actions}, and it runs twice: once before the composition
-buffer exists and once in it.  Two variables say which:
+buffer exists and once in it.  Two variables record which:
 @code{vm-pcrisis-current-buffer} is @code{none} the first time and
 @code{composition} the second, and @code{vm-pcrisis-current-state} is
 @code{reply}, @code{forward}, @code{resend}, @code{mail}, @code{newmail} or
@@ -6152,7 +6153,7 @@ doing anything:
 @end lisp
 
 @noindent
-Both answer to their old @code{vmpc-} names as well.
+Both are defined under their old @code{vmpc-} names as well.
 
 @section Automorph
 
@@ -6247,8 +6248,8 @@ Conditions are ordinary Lisp, so they combine:
 
 @findex vm-pcrisis-check-configuration
 Rules are data, so a mistake in them is not a Lisp error and nothing stops.
-@kbd{M-x vm-pcrisis-check-configuration} reads what you have set and says what
-cannot work, and what to do about each:
+@kbd{M-x vm-pcrisis-check-configuration} reads what you have set and reports
+what cannot work, and what to do about each:
 
 @itemize @bullet
 @item a rule keyed on a condition that is not defined, which never runs
@@ -6501,19 +6502,18 @@ folder on interactive saves.
 
 @cindex flags, on a message saved to a server
 @cindex labels, on a message saved to a server
-A message saved into an @acronym{IMAP} mailbox carries its flags with it:
-read, replied to and flagged, and its labels, which travel as @acronym{IMAP}
-keywords, as do @samp{filed}, @samp{written}, @samp{forwarded} and
+A message saved into an @acronym{IMAP} mailbox keeps its flags: read,
+replied to and flagged, and its labels, which are sent as @acronym{IMAP}
+keywords, as are @samp{filed}, @samp{written}, @samp{forwarded} and
 @samp{redistributed}.  It is never saved as deleted.  Whether the
-destination keeps keywords is its own to say, in its PERMANENTFLAGS, and one
-that says it keeps none is sent the flags without them: VM names what was
-left behind.
+destination keeps keywords is stated in its PERMANENTFLAGS, and one that
+keeps none is sent the flags without them: VM names what was left behind.
 
 
 @vindex vm-visit-when-saving
 A message is saved either by appending it to the folder file on disk, or by
 visiting the folder as Emacs visits any file and appending to that buffer,
-which you then have to save yourself.  @code{vm-visit-when-saving} decides
+which you then have to save yourself.  @code{vm-visit-when-saving} determines
 which:
 
 @table @code
@@ -6523,7 +6523,7 @@ the file otherwise.
 @item t
 Always visit the folder first.
 @item nil
-Always append to the file.  VM then refuses to save into the disk copy of a
+Always append to the file.  VM then does not save into the disk copy of a
 folder that is being visited, which would leave the buffer and the file
 disagreeing.
 @end table
@@ -6737,7 +6737,7 @@ The variable @code{vm-expunge-before-quit} can be similarly set to
 non-@code{nil} to cause VM to expunge deleted messages whenever you quit the
 folder.
 
-Deleted messages can be kept whatever those variables say:
+Deleted messages can be kept whatever those variables are set to:
 
 @vmdocvmsavefoldernoexpunge
 
@@ -6814,7 +6814,7 @@ A message you marked to come back to, with @kbd{!}
 @itemize
 @item
 The summary shows @samp{!}, in the @code{vm-summary-high-priority} face
-(@pxref{predefined summary faces}).  One character carries whichever of
+(@pxref{predefined summary faces}).  One character shows whichever of
 deleted, new, unread and flagged applies first, so a message flagged before
 it is read shows @samp{N} until you read it (@pxref{Summary Format}).
 @item
@@ -6852,7 +6852,7 @@ You can set and unset these attributes directly by using
 minibuffer for names of the attributes and you can enter them with
 completion.  Every attribute has an ``un-'' prefixed name you can use
 to unset the attribute, excepting ``new'' and ``unread'', which are both
-negated by ``read''.  Completion offers the names BABYL uses as well:
+negated by ``read''.  Completion includes the names BABYL uses as well:
 ``recent'' for new, ``unseen'' for unread, and ``answered'' and
 ``unanswered'' for replied.  You can use a prefix argument with this command to
 affect multiple messages, and you can apply this command to marked
@@ -6901,7 +6901,7 @@ A folder remembers every label it has ever been given, so a label that
 you delete from the last message holding it stays in the folder's label
 list and keeps appearing in completions.  Over time these accumulate.
 @kbd{M-x vm-list-unused-labels} shows the labels of the current folder
-that no message carries, and @kbd{M-x vm-expunge-unused-labels} removes
+that no message has, and @kbd{M-x vm-expunge-unused-labels} removes
 them, asking for confirmation first.
 
 @findex vm-sync-labels
@@ -6921,7 +6921,7 @@ list.  All of them can be undone with @code{vm-undo}.
 @cindex auto-save
 Message attributes live in the folder, and reach the disk only by being
 written into the folder's buffer before that buffer is saved.
-@code{vm-flush-interval} says when they are written:
+@code{vm-flush-interval} determines when they are written:
 
 @table @code
 @item @var{n}
@@ -7198,13 +7198,13 @@ creates the summary buffer.
 
 
 A summary is generated at startup, which is what
-@code{vm-startup-with-summary} says and is its default.  Set it to
+@code{vm-startup-with-summary} sets and is its default.  Set it to
 @code{nil} for a folder window alone, or to a number to have the summary
 only for a folder holding at least that many messages.
 @xref{Starting Up}.
 
 All VM commands are available in the summary buffer just as they are in
-the folder buffer itself, and the cursor can say which message they act on:
+the folder buffer itself, and the cursor can determine which message they act on:
 
 @vmdocvmfollowsummarycursor
 
@@ -7268,8 +7268,8 @@ that is not one
 
 @vindex vm-summary-attachment-indicator
 @item P
-indicator for a message carrying attachments, and nothing for a message
-with none.  @code{vm-summary-attachment-indicator} says what it is: a
+indicator for a message with attachments, and nothing for a message
+with none.  @code{vm-summary-attachment-indicator} sets what it is: a
 string is shown as it stands, @samp{$} by default, and a symbol is shown
 followed by the number of attachments, so the symbol @code{$} gives
 @samp{$2} for a message of two.
@@ -7370,7 +7370,7 @@ Use ``%%'' to get a single ``%''.  A ``%'' before anything VM does not
 recognise is left as it stands, so a mistyped specifier costs you the
 specifier and not the summary.
 
-A specifier may carry a field width and a maximum, which is what
+A specifier may have a field width and a maximum, which is what
 @samp{%-17.17F} in the default format is.  Both work as they do in
 @command{printf}:
 
@@ -7381,7 +7381,7 @@ that many columns on the left, so that it is right justified.  A negative
 number pads on the right instead.  A width beginning with @samp{0} fills
 with zeros rather than spaces, for the specifiers whose substitution is a
 number: @samp{%c}, @samp{%d}, @samp{%l}, @samp{%M}, @samp{%n} and
-@samp{%y}.  A negative width fills with spaces whatever the @samp{0} says,
+@samp{%y}.  A negative width fills with spaces even with the @samp{0},
 zeros to the right of a number being a different number.  A folder summary
 fills @samp{%n} with spaces even so: it is written as a token and filled in
 as the line is displayed, which is what keeps the number right when messages
@@ -7451,8 +7451,8 @@ Parent messages are displayed before their children and children are
 indented by a default two spaces to the right.  The amount of
 indentation per level is controlled by the variable
 @code{vm-summary-thread-indent-level}.  The default is two spaces.
-The variable @code{vm-summary-maximum-thread-indentation} says how
-many levels should be displayed via indentation.  The default is 20.
+The variable @code{vm-summary-maximum-thread-indentation} sets how
+many levels are shown by indentation.  The default is 20.
 
 @vindex vm-summary-show-threads
 If you want VM to always display summaries using threads, you should
@@ -7720,7 +7720,7 @@ There are two ways of working with virtual folders.  When you are
 visiting a folder, you can use one or more selectors or search keys to
 interactively create a virtual folder.  We call such folders @dfn{search
 folders}.  You can browse through the
-messages in the search folder and carry out actions on them which
+messages in the search folder and perform actions on them which
 will be reflected back to the original folder.  When you are done, you
 can quit the search folder and return to the original folder.
 
@@ -7731,7 +7731,7 @@ can quit the search folder and return to the original folder.
 A second way of using virtual folders is to define them through the
 variable @code{vm-virtual-folder-alist}.  You can visit such virtual
 folders by typing @kbd{V V} (@code{vm-visit-virtual-folder}).  Any
-actions carried out on the virtual folder messages will be reflected
+action performed on the virtual folder messages is reflected
 back to the underlying real folders.  When you quit a virtual folder, all
 its underlying real folders will also be quit, unless they were previously
 visited in the Emacs session.  We call such virtual folders
@@ -8016,7 +8016,7 @@ the prefixes, suffixes and insignificant characters left out that
 @code{vm-subject-ignored-prefix}, @code{vm-subject-ignored-suffix},
 @code{vm-subject-tag-prefix}, @code{vm-subject-tag-prefix-exceptions} and
 @code{vm-subject-significant-chars} describe.  So a reply and the message it
-answers match alike, whatever @samp{Re:} the reply carries.
+replies to match alike, whatever @samp{Re:} the reply has.
 @item sent-after
 matches message if it was sent after the date @var{ARG}.
 A fully specified date looks like this:
@@ -8143,7 +8143,7 @@ matches if a message contains an attachment, i.e., its text matches
 @vindex vm-spam-words-file
 @item spam-word
 matches message if it contains one of the words listed in the file
-@code{vm-spam-words-file}.  @var{ARG} says where to look, and is one of
+@code{vm-spam-words-file}.  @var{ARG} selects where to look, and is one of
 @samp{header}, @samp{text} or @samp{header-or-text}; it defaults to
 @samp{header-or-text}.  As with @code{text}, a message held in an external
 source must have been loaded for its body to be searched.
@@ -8327,7 +8327,7 @@ prefix argument, it will print diagnostic information in a separate buffer.
 This feature is useful because virtual folder selectors can get quite
 complicated and it is important to make sure that they work correctly.
 
-The vm-avirtual packages allows you to use virtual selectors to carry out
+The vm-avirtual packages allows you to use virtual selectors to perform
 automatic deletion of messages (e.g., for spam) and for automatic saving of
 messages to folders.
 
@@ -8394,8 +8394,9 @@ the form
 @end example
 
 @noindent where @var{VIRTUAL-FOLDER-NAME} names a virtual folder in
-@code{vm-virtual-folder-alist}, whose selector says which messages the rule
-applies to, and @var{ACTIONS} is a property list saying what to do with them:
+@code{vm-virtual-folder-alist}, whose selector determines which messages the
+rule applies to, and @var{ACTIONS} is a property list stating what to do with
+them:
 
 @table @code
 @item :label @var{STRING}
@@ -8564,12 +8565,12 @@ This works best with a full-screen window configuration assigned to
 
 @vindex vm-search-other-frames
 When VM is deciding whether to create a new frame, it checks
-other existing frames to see if a buffer that it wants to display in a
-frame is already being displayed somewhere.  If so, then VM will
+other existing frames to see whether the buffer it is to display in a
+frame is already displayed somewhere.  If so, then VM will
 not create a new frame.  If you don't want VM to search other
 frames, set the variable @code{vm-search-other-frames} to @code{nil}.  VM will 
 still search the currently selected frame and will not create a
-new frame if the buffer that it wants to display is visible there.
+new frame if the buffer it is to display is visible there.
 
 @vmdocvmframeparameteralist
 
@@ -8785,7 +8786,7 @@ flushright, and an integer put that many pixels of space in.  The Emacs
 toolbar has neither.
 
 @cindex toolbar, where it is placed
-The toolbar goes where the frame parameter @code{tool-bar-position} says,
+The toolbar goes where the frame parameter @code{tool-bar-position} sets,
 which is not VM's to set.  @code{vm-toolbar-orientation} used to
 place it and is gone.
 
@@ -8825,7 +8826,7 @@ under the drop-down menu labelled @code{VM}).
 
 @cindex graphics toolkit
 On some graphics toolkits, menu bar cannot have ``buttons'' that
-invoke immediate actions (such as @code{[Emacs]}).  VM knows about
+invoke immediate actions (such as @code{[Emacs]}).  VM detects
 some of those toolkits and automatically uses drop-down menus instead
 of buttons.  If your system shows buttons but they are not
 operational, then you should set @code{vm-use-menubar-buttons} to nil
@@ -8896,8 +8897,8 @@ named by @code{vm-highlight-url-face}.  Typing Return on such URL's or
 clicking button-2 has the effect of sending the @acronym{URL} to an external web
 browser.  @xref{Using the Mouse}.  Searching for @acronym{URL}s in a
 large message can take a long time.  Since @acronym{URL}s often occur near
-the beginning and near the end of messages, VM offers a way to
-search just those parts of a message for @acronym{URL}s.  The variable
+the beginning and near the end of messages, VM can search just those
+parts of a message for @acronym{URL}s.  The variable
 @code{vm-url-search-limit} specifies how much of a message to search.
 If @code{vm-url-search-limit} has a positive numeric value @var{N}, VM 
 will search the first @math{@var{N} / 2} characters and the last
@@ -9077,7 +9078,7 @@ The hook matters, not just the setting.  VM builds the summary after
 @code{vm-mode-hook} has run and before @code{vm-visit-folder-hook}, so a
 summary format set in the latter has no effect on the summary you are looking
 at: the lines have already been made, and each one is cached with its
-message.  Anything that decides how the folder is displayed goes in
+message.  Anything that determines how the folder is displayed goes in
 @code{vm-mode-hook}.  @xref{Hooks}, for the other hooks and their order.
 
 @cindex local variables list
@@ -9250,14 +9251,14 @@ Sockets Layer).  A later version of the protocol is called @acronym{TLS}
 (Transport Layer Security), which is backward compatible with @acronym{SSL}.
 
 Emacs does @acronym{TLS} itself, through @acronym{GnuTLS}, which most builds
-have compiled in; @code{(gnutls-available-p)} says whether yours does.  On
+have compiled in; @code{(gnutls-available-p)} reports whether yours does.  On
 such a build VM opens the connection itself and needs no other program.
 
 @vindex vm-stunnel-program
 A build without @acronym{GnuTLS} needs an external @code{stunnel} program to
 make the secure ``tunnel'' instead.  Download it from the
 @code{stunnel.org} web site and install it somewhere on the
-@code{exec-path}.  @code{vm-stunnel-program} decides which of the two is
+@code{exec-path}.  @code{vm-stunnel-program} determines which of the two is
 used, and takes its default from the build: @code{nil}, meaning Emacs's own
 @acronym{TLS}, where @acronym{GnuTLS} is there, and @code{"stunnel"} where
 it is not.  Set it to @code{"stunnel"} to use the program on a build that
@@ -9293,7 +9294,7 @@ library @code{smtpmail.el} has been written to intervene in the operation of
 @code{sendmail.el} and hand the mail to the remote @acronym{SMTP} server
 instead.  @xref{top,, Emacs SMTP Library, smtpmail, Emacs SMTP Library}.
 
-Which port the server takes mail on says what kind of server it is:
+The port the server takes mail on determines what kind of server it is:
 
 @itemize
 @item
@@ -9326,17 +9327,17 @@ Set @code{smtpmail-stream-type} to @code{ssl} and
 
 @item The @acronym{SMTP} server upgrades the connection with @acronym{STARTTLS}.
 
-The connection begins in plain text, the server says it wants
+The connection begins in plain text, the server advertises
 @acronym{STARTTLS}, and the mail program negotiates a secure channel before
 handing over anything.  Emacs does that itself, through @acronym{GnuTLS},
-which most builds have compiled in; @code{(gnutls-available-p)} says whether
-yours does.  Set @code{smtpmail-stream-type} to @code{starttls} and
+which most builds have compiled in; @code{(gnutls-available-p)} reports
+whether yours does.  Set @code{smtpmail-stream-type} to @code{starttls} and
 @code{smtpmail-smtp-service} to 587.
 @end itemize
 
-@code{starttls} refuses to send where the server does not offer the upgrade.
-@code{nil}, the default, takes the upgrade where it is offered and sends in
-plain text where it is not.
+@code{starttls} does not send where the server does not advertise the
+upgrade.  @code{nil}, the default, takes the upgrade where it is advertised
+and sends in plain text where it is not.
 
 @anchor{Outside programs}
 @unnumberedsec Programs VM works with
@@ -9394,7 +9395,7 @@ your own configuration.  @xref{Sending Options}.
 @cindex Maildir
 @cindex mbox
 VM reads mbox folders and Babyl, and no Maildir (@pxref{Folder types}).
-That is what decides which of these tools fits where.
+That is what determines which of these tools fits where.
 
 @itemize
 @item
@@ -9425,7 +9426,7 @@ Maildir, which VM cannot read directly.  They are used with a local
 @unnumberedsubsec A server on your own machine
 
 @cindex dovecot
-A local @acronym{IMAP} server, @code{dovecot} being the usual one, answers
+A local @acronym{IMAP} server, @code{dovecot} being the usual one, solves
 two different problems with one arrangement: a remote server too slow to work
 against, and a store in a format VM does not read.  Served over
 @acronym{IMAP}, a Maildir is a mailbox like any other.  @xref{IMAP Cache
@@ -9437,7 +9438,7 @@ Server}, for the whole of it.
 @cindex Exchange
 @cindex Office 365
 @uref{https://davmail.sourceforge.net/, DavMail} fronts Exchange and Office
-365: it holds the OAuth2 tokens itself and offers ordinary @acronym{IMAP} and
+365: it holds the OAuth2 tokens itself and serves ordinary @acronym{IMAP} and
 @acronym{SMTP} on @code{localhost}, so VM needs no change and no token of its
 own.  That is the answer for a tenant with app passwords switched off, and it
 does not cover Gmail.  VM speaks XOAUTH2 as well, where you have somewhere to
@@ -9449,8 +9450,8 @@ get a token from.  @xref{OAuth2}.
 @vindex vm-ssh-program
 Emacs does @acronym{TLS} itself on any build with @acronym{GnuTLS}, which is
 most of them; @command{stunnel} is for a build without it.  @command{ssh}
-carries @acronym{POP} and @acronym{IMAP} through a tunnel where the maildrop
-says @samp{pop-ssh} or @samp{imap-ssh}.  @xref{maildrop specification}.
+forwards @acronym{POP} and @acronym{IMAP} through a tunnel where the maildrop
+names @samp{pop-ssh} or @samp{imap-ssh}.  @xref{maildrop specification}.
 @command{gpg} signs and encrypts, through Emacs's EasyPG@.  @xref{Reading
 Secure @acronym{MIME}}, and @ref{Sending Secure @acronym{MIME}}.
 
@@ -9488,11 +9489,12 @@ take @option{-X}.  Set @code{vm-display-xfaces} to @code{t} to see them.
 @vindex vm-grep-program
 VM searches inside Emacs: virtual folders over the folders you have open
 (@pxref{Virtual Folders}), and @kbd{M-x vm-grepmail} over folder files
-through the @command{grepmail} program, which answers without opening them.
+through the @command{grepmail} program, which searches them without VM
+opening them.
 VM sends no @acronym{IMAP} @code{SEARCH}, so a search of a server folder sees
 what has been fetched and no more.  Separately, @code{vm-grep-program} names
 the @command{grep} that counts the messages in a folder file, which is how VM
-says a spool has mail waiting, and how many drafts are postponed, without
+reports that a spool has mail waiting, and how many drafts are postponed, without
 opening either.
 
 @unnumberedsec Org links to messages
@@ -9519,7 +9521,7 @@ Load it in your init file:
 @end lisp
 
 @noindent
-Org carries no support for VM of its own, so this is it.  The folder is
+Org includes no support for VM of its own, so this is it.  The folder is
 written relative to @code{vm-folder-directory} where it is under it, so a
 link made on one machine can be followed on another whose mail lives
 somewhere else, and a folder reached over @acronym{SSH} or ftp is written
@@ -9556,8 +9558,8 @@ Written by Robert Fenk, as part of vm-rfaddons.
 @cindex return receipt
 @cindex read receipt
 @cindex @acronym{MDN}
-A sender can ask to be told when you read their message.  VM does not
-answer such a request unless you say so:
+A sender can ask to be told when you read their message.  VM does not reply
+to such a request unless you set it to:
 
 @vmdocvmhandlereturnreceipts
 
@@ -9609,16 +9611,16 @@ To have it happen to every message as it arrives:
 @noindent
 Written by Robert Fenk, as part of vm-rfaddons.
 
-@section How much VM says
+@section How much VM reports
 
 @cindex verbosity
 @cindex progress messages
 @cindex chattiness
 @vindex vm-verbosity
 VM reports what it is doing in the echo area, and the variable
-@code{vm-verbosity} decides how much of that you see.  Every message VM
+@code{vm-verbosity} determines how much of that you see.  Every message VM
 prints has a level of its own, and one is shown when its level is
-@code{vm-verbosity} or lower, so a larger number means more talk.  The
+@code{vm-verbosity} or lower, so a larger number means more output.  The
 scale runs from 0 to 10:
 
 @table @asis
@@ -9658,7 +9660,7 @@ screen, and should normally be 0, since anything else delays VM.
 @findex vm-show-log
 When an operation is slow, the question is which part of it is, and the echo
 area is no place to answer it: each message is gone as the next one arrives.
-Everything VM says is therefore kept in the buffer @samp{*VM Log*}, timed,
+Everything VM prints is therefore kept in the buffer @samp{*VM Log*}, timed,
 and @kbd{M-x vm-show-log} shows it.  Nothing has to be turned on for that.
 
 @vindex vm-verbosity
@@ -9672,7 +9674,7 @@ a level on the scale above and records everything up to it, so
 @noindent
 leaves the display exactly as it was, what is recorded and what is shown
 being decided separately, and keeps the detail of a slow operation, which
-is what to send with a report of one.  Each line says when, and how long
+is what to send with a report of one.  Each line records when, and how long
 since the line before it:
 
 @example
@@ -9716,7 +9718,7 @@ A composition is named after its recipient and subject, so a reply to
 Ren@'e Descartes opens a buffer called @samp{reply to Ren@'e Descartes}.  The
 name also names the auto-save file, so characters a file name cannot hold are
 replaced by
-@samp{_}: @code{vm-drop-buffer-name-chars} says which, and defaults to
+@samp{_}: @code{vm-drop-buffer-name-chars} lists which, and defaults to
 @samp{[[:cntrl:]/]}, or on MS-Windows to the wider set that platform needs.
 Set it to @samp{[^ a-zA-Z0-9.,_"'+-]} for the behaviour of earlier releases,
 which replaced every accented letter as well.
@@ -9752,7 +9754,7 @@ series.
 Those releases were made from the project page VM had at Savannah,
 @uref{https://savannah.nongnu.org/projects/viewmail/}, which said that
 ``this site exists to continue VM development after version 7.19 as a
-community project.''  It still carries the mailing lists; the code moved.
+community project.''  It still hosts the mailing lists; the code moved.
 
 @cindex Ulrich Müller
 @cindex Uday S Reddy
@@ -9795,7 +9797,7 @@ Report a bug at @uref{https://gitlab.com/emacs-vm/vm/-/issues}, which is where
 the developers work and where a report is acted on.
 
 @code{M-x vm-submit-bug-report} prepares a message to
-@code{viewmail-bugs@@nongnu.org} carrying the state of your VM, which is what
+@code{viewmail-bugs@@nongnu.org} containing the state of your VM, which is what
 lets a developer reproduce the problem.  Passwords and other sensitive values
 are left out.  Say what you did and what happened; you may be asked for more,
 or asked to try something that narrows it down.
@@ -9991,9 +9993,9 @@ made about a fetch while it is happening.
 
 @vindex vm-session-trace-max-size
 A session that read the flags of every message in a large mailbox leaves most
-of a megabyte behind it, which is more than a bug report can carry.  Beyond
+of a megabyte behind it, which is more than a bug report needs.  Beyond
 @code{vm-session-trace-max-size} the middle of a trace is left out and the
-report says how much: what is at the ends is what says anything, the start
+report states how much: what is at the ends is what matters, the start
 naming the server and what was asked of it and the end showing where it went
 wrong.  Set it to @code{nil} to send the whole of every trace.
 
@@ -10629,25 +10631,25 @@ redistributed.
 subthread rooted at this message has been ``folded'', i.e., hidden from
 view.
 @item
-@code{watched-flag} (11). Flag that says that the user wants to ``watch''
+@code{watched-flag} (11). Flag to indicate that the user wants to ``watch''
 this thread.  There are no functions that use this at present.
 @item
-@code{ignored-flag} (12).  Flag that says that the user wants to ignore this
-thread.  There are no functions that use this at present.
+@code{ignored-flag} (12).  Flag to indicate that the user wants to ignore
+this thread.  There are no functions that use this at present.
 @item
-@code{read-receipt-flag} (13).  Flag that says that the sender of this
+@code{read-receipt-flag} (13).  Flag to indicate that the sender of this
 message wishes to receive a read-receipt.  There are no functions that use
 this at present. 
 @item
-@code{read-receipt-sent-flag} (14).  Flag that says that a read-receipt has
+@code{read-receipt-sent-flag} (14).  Flag to indicate that a read-receipt has
 been sent for this message.  There are no functions that use this at present.
 @item
-@code{attachments-flag} (15).  Flag that says that this message has
+@code{attachments-flag} (15).  Flag to indicate that this message has
 attachments.  There are no functions that use this at present.
 @item
-@code{thread-root-flag} (16). Flag that says that this message should be
+@code{thread-root-flag} (16). Flag to indicate that this message should be
 regarded as the root of a message thread, even if its ``parent'' and
-``references'' headers say otherwise.  This field is not used at present.
+``references'' headers indicate otherwise.  This field is not used at present.
 
 @end itemize
 
@@ -11174,7 +11176,7 @@ following information is stored for each message ID:
 
 @itemize
 @item messages:
-The list of messages that carry this message ID in the folder.  There
+The list of messages with this message ID in the folder.  There
 could be none, if we only know this message from its appearance in
 other ``References'' headers.
 @item message:
@@ -11264,7 +11266,7 @@ are updated when new messages are received or existing messages are
 expunged, this led to unstable results.
 
 Following Jamie Zawinski's recommendation, VM now avoids cycles in
-thread trees.  Loop detection is still carried out during traversal as
+thread trees.  Loop detection is still performed during traversal as
 a double safeguard.
 
 VM gives priority to the parent information contained in the
@@ -11280,7 +11282,7 @@ be used to fill in the missing information.
 @section Sorting Internals
 
 @inindex vm-key-functions
-Sorting of messages in VM is carried out using the Emacs built-in
+Sorting of messages in VM uses the Emacs built-in
 sorting function, which is generic in the comparison
 operation to be used for sorting.  The required comparison operation
 is expressed as a sequence of basic comparison operations such as
@@ -11292,7 +11294,7 @@ functions before calling the Emacs sort function.
 The function @code{vm-sort-compare-xxxxxx} uses the functions listed
 in @code{vm-key-functions} to do the overall comparison.  It compares
 the given messages using the key functions in sequence.  If the first
-key function decides one of the messages to precede the other, then
+key function orders one message before the other, then
 the comparison is over.  If the messages are found to be equivalent
 according to the first key function then the second key function is
 tried and, if they are still equivalent, then the next key
@@ -11488,7 +11490,7 @@ buffer.  This is done in two stages: @i{Preview} and @i{Show}.
 The previewing is done by a function called
 @code{vm-present-current-message}.  It creates a Presentation buffer if it
 is not present already, makes a copy of the message text in the Presentation
-buffer and carries out any @acronym{MIME} decoding that may be necessary.
+buffer and performs any @acronym{MIME} decoding that may be necessary.
 And, then, depending on the value of @code{vm-preview-lines}, it narrows the
 buffer to show a selected portion of the message.
 
@@ -11557,7 +11559,7 @@ Always @code{t}.
 @item @code{vm-mime-layout}.  
 Gives the layout of the @acronym{MIME} part.
 @item @code{vm-mime-function}.
-The function that carries out the action represented by pressing the
+The function that performs the action represented by pressing the
 button.
 @item @code{vm-mime-disposable}.
 Set to true if the button should be removed when it is replaced by the
@@ -11760,7 +11762,7 @@ selectors that can be used with the @kbd{V C} command.
 @inindex overlays
 An @dfn{extent} was XEmacs's single object for everything non-textual in a
 buffer, where Emacs has two: text properties and overlays.  VM was written
-in the early days of that fork and carried both implementations until 2026.
+in the early days of that fork and contained both implementations until 2026.
 
 What is left is the naming.  @code{vm-misc.el} defines @code{vm-make-extent},
 @code{vm-extent-property} and a dozen others, each of which is now the
