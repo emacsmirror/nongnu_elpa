@@ -2055,28 +2055,27 @@ prefix is used or not."
            "https://example.org/owner/repo/pulls/1234"))))
 
 ;;;
-;;; ERTs for `fj--item-is-pr-disguised-as-issue-p'
+;;; ERTs for `fj--item-is-pr-issue-p'
 ;;;
 
-(ert-deftest fj-test/item-is-pr-disguised-as-issue-p/issue ()
+(ert-deftest fj-test/item-is-pr-issue-p/issue ()
   "Tests that an issue is not regarded \"disguised\"."
   (should
-   (equal (fj--item-is-pr-disguised-as-issue-p (car fj-test-issues))
+   (equal (fj--item-is-pr-issue-p (car fj-test-issues))
           nil)))
 
-(ert-deftest fj-test/item-is-pr-disguised-as-issue-p/pull-request ()
+(ert-deftest fj-test/item-is-pr-issue-p/pull-request ()
   "Tests that a PR is not regarded \"disguised\" as an issue."
   (should
-   (equal (fj--item-is-pr-disguised-as-issue-p
+   (equal (fj--item-is-pr-issue-p
            (car fj-test-pull-reqs))
           nil)))
 
-(ert-deftest fj-test/item-is-pr-disguised-as-issue-p/pull-request-as-issue ()
+(ert-deftest fj-test/item-is-pr-issue-p/pull-request-as-issue ()
   "Tests that a PR requested as an issue is regarded \"disguised\" as an issue."
   (should
-   (equal (fj--item-is-pr-disguised-as-issue-p
-           (car fj-test-pull-reqs-as-issues))
-          t)))
+   (listp (fj--item-is-pr-issue-p
+           (car fj-test-pull-reqs-as-issues)))))
 
 ;;;
 ;;; ERTs for `fj--identify-item-format'
@@ -2093,7 +2092,7 @@ prefix is used or not."
   "Tests that issues are identified with the `:list' format."
   (should
    (equal (fj--identify-item-format (car fj-test-issues))
-          :list)))
+          :issue)))
 
 (ert-deftest fj-test/identify-item-format/pull-request ()
   "Tests that PRs are identified with the `:pull' format."
@@ -2106,4 +2105,4 @@ prefix is used or not."
   (should
    (equal (fj--identify-item-format
            (car fj-test-pull-reqs-as-issues))
-          :list)))
+          :issue)))
