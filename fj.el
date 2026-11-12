@@ -3889,12 +3889,12 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (item (fj-get-item-checked repo owner number type))
          (number (or number (alist-get 'number item)))
          (wd default-directory)
-         (type (fj--identify-item-format item)))
+         (item-type (fj--identify-item-format item)))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fj-with-buffer (format "*fj-%s-item-%s*" repo number)
         'fj-item-view-mode wd nil ;; other-window
       ;; render actual (top) item:
-      (fj-render-item repo owner item number type page limit)
+      (fj-render-item repo owner item number item-type page limit)
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
