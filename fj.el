@@ -3003,6 +3003,15 @@ TYPE is the item type."
 Group 1 is for completion at point functions. Group 2 is
 for forming a URL.")
 
+(defvar fj-local-pull-reference-regex
+  (rx (| (any ?\( "\n" "\t" " ") bol)
+      (group-n 1
+        (any ?!)
+        (group-n 2
+          (one-or-more (any "A-Z" "a-z" "0-9"))))
+      (| "'" word-boundary)) ; boundary or possessive
+  "Regex for a local pull request reference. Group 1 is for completion at point functions.")
+
 (defvar fj-repo-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
       (group-n 1 ; = owner/repo#item
@@ -3248,6 +3257,9 @@ Optionally start from POINT."
                              fj-link-keymap 1 2 nil nil
                              '(fj-tab-stop t))
       (fedi-propertize-items fedi-post-tag-regex 'tag
+                             fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fj-local-pull-reference-regex 'pull
                              fj-link-keymap 1 2 nil nil
                              '(fj-tab-stop t))
       (fedi-propertize-items fj-team-handle-regex 'team
@@ -6219,6 +6231,8 @@ Used for hitting RET on a given link."
       (pcase type
         ('tag
          (fj-item-view repo owner item))
+        ('pull
+         (fj-item-view repo owner item :pull))
         ('comment-ref
          (fj-issue-ref-follow item))
         ('pull-ref
