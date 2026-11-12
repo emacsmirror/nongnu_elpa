@@ -2054,7 +2054,7 @@ prefix is used or not."
           (fj-owner+repo-from-url
            "https://example.org/owner/repo/pulls/1234"))))
 
-(ert-deftest fj-test-switch-to-buffer-completion-table ()
+(ert-deftest fj-test/switch-to-buffer/completion-table ()
   "Tests whether `fj-switch-to-buffer' properly sets up candidates for completion.
 
 This checks whether the minibuffer completion table used in
