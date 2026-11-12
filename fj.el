@@ -1597,6 +1597,26 @@ all for `fj-issues-search'."
                 "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type\
  | \\`C-c C-d': cycle relation")))))
 
+(defun fj--item-is-pr-issue-p (item)
+  "Return whether ITEM is a pull request formatted as an issue.
+ITEM should be the result of `fj-get-item'."
+  (alist-get 'pull_request item))
+
+(defun fj--identify-item-format (item)
+  "Identify the format of ITEM.
+If ITEM looks like a pull request -> :pull
+If ITEM looks like an issue       -> :issue
+Otherwise                         -> nil
+ITEM should be the result of `fj-get-item'."
+  ;; 'pull_request   present -> :issue
+  ;; 'head and 'base present -> :pull
+  ;;  else                   -> nil
+  (if (assq 'pull_request item)
+      :issue
+    (and (assq 'head item)
+         (assq 'base item)
+         :pull)))
+
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
 If TYPE is :pull, get a pull request, not issue."
@@ -1607,6 +1627,30 @@ If TYPE is :pull, get a pull request, not issue."
          (endpoint (format "repos/%s/%s/%s/%s" owner repo
                            (if (eq type :pull) "pulls" "issues") number)))
     (fj-get endpoint)))
+
+(defun fj-get-item-checked (repo &optional owner number type)
+  "Much like `fj-get-item' but ensures that TYPE makes sense.
+
+As an example, if TYPE is `:pull' and the item identified by NUMBER
+corresponds to an issue, the function will send a second request (this
+time asking for an *issue*).
+
+Likewise, if TYPE is nil or `:issue' (used for issues) and the item is
+actually a PR, the function will send a new request to the
+server (asking for a *pull request*)."
+  (pcase (or type :issue)
+    (:pull
+     (condition-case nil
+         (fj-get-item repo owner number :pull)
+       (user-error
+        ;; requested as PR, not found -> try asking for an issue
+        (fj-get-item repo owner number :issue))))
+    (:issue
+     (let ((issue (fj-get-item repo owner number :issue)))
+       (if (fj--item-is-pr-issue-p issue)
+           (fj-get-item repo owner number :pull)
+         issue)))
+    (_ (user-error "invalid type '%s'" type))))
 
 (defun fj-issue-success-maybe-upload (resp repo owner)
   "In sucess function with RESP, upload attachment if present.
@@ -3842,7 +3886,7 @@ Adds PROPS to the link's properties."
 (defun fj-item-view (&optional repo owner number type page limit target)
   "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window.
-TYPE is :pull or :list (default).
+TYPE is :pull or :issue (default).
 PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
   (let* ( ;; set defaults for pagination:
@@ -3851,14 +3895,15 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          ;; mode check for other-window arg:
          ;; (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
-         (item (fj-get-item repo owner number type))
+         (item (fj-get-item-checked repo owner number type))
          (number (or number (alist-get 'number item)))
-         (wd default-directory))
+         (wd default-directory)
+         (item-type (fj--identify-item-format item)))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fj-with-buffer (format "*fj-%s-item-%s*" repo number)
         'fj-item-view-mode wd nil ;; other-window
       ;; render actual (top) item:
-      (fj-render-item repo owner item number type page limit)
+      (fj-render-item repo owner item number item-type page limit)
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)

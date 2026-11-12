@@ -774,6 +774,243 @@ repo view could include:
       (full_name . "martianh/fj.el"))
      (pin_order . 0))))
 
+(defvar fj-test-pull-reqs
+  '(((id . 222526)
+     (url . "https://codeberg.org/api/v1/repos/martianh/fj.el/pulls/26")
+     (number . 26)
+     (user (id . 36599) (login . "martianh") (login_name . "")
+           (source_id . 0) (full_name . "")
+           (email . "martianh@noreply.codeberg.org")
+           (avatar_url
+            . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+           (html_url . "https://codeberg.org/martianh") (language . "")
+           (is_admin . :json-false) (last_login . "0001-01-01T00:00:00Z")
+           (created . "2021-12-22T10:45:50+01:00")
+           (restricted . :json-false) (active . :json-false)
+           (prohibit_login . :json-false) (location . "local group")
+           (pronouns . "he/him or they/them")
+           (website . "https://anarchive.mooo.com")
+           (description
+            . "If you appreciate my packages, consider donating: https://paypal.me/martianh, https://wise.com/pay/me/martinh1676 or\n<a href=\"https://liberapay.com/martianh/donate\"><img alt=\"Liberapay\" src=\"https://liberapay.com/assets/widgets/donate.svg\"></a>")
+           (visibility . "public") (followers_count . 40)
+           (following_count . 80) (starred_repos_count . 109)
+           (username . "martianh"))
+     (title . "test PR dev into main") (body . "just testing.") (labels)
+     (milestone) (assignee) (assignees) (requested_reviewers)
+     (requested_reviewers_teams) (state . "closed") (draft . :json-false)
+     (is_locked . :json-false) (comments . 0) (review_comments . 0)
+     (additions . 10606) (deletions . 1290) (changed_files . 17)
+     (html_url . "https://codeberg.org/martianh/fj.el/pulls/26")
+     (diff_url . "https://codeberg.org/martianh/fj.el/pulls/26.diff")
+     (patch_url . "https://codeberg.org/martianh/fj.el/pulls/26.patch")
+     (mergeable . t) (merged . :json-false) (merged_at) (merge_commit_sha)
+     (merged_by) (allow_maintainer_edit . :json-false)
+     (base (label . "dev") (ref . "dev")
+           (sha . "d4c1ef493217b509948ad4d14f27d6979b125b43")
+           (repo_id . 142698)
+           (repo (id . 142698)
+                 (owner (id . 36599) (login . "martianh")
+                        (login_name . "") (source_id . 0) (full_name . "")
+                        (email . "martianh@noreply.codeberg.org")
+                        (avatar_url
+                         . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+                        (html_url . "https://codeberg.org/martianh")
+                        (language . "") (is_admin . :json-false)
+                        (last_login . "0001-01-01T00:00:00Z")
+                        (created . "2021-12-22T10:45:50+01:00")
+                        (restricted . :json-false) (active . :json-false)
+                        (prohibit_login . :json-false)
+                        (location . "local group")
+                        (pronouns . "he/him or they/them")
+                        (website . "https://anarchive.mooo.com")
+                        (description
+                         . "If you appreciate my packages, consider donating: https://paypal.me/martianh, https://wise.com/pay/me/martinh1676 or\n<a href=\"https://liberapay.com/martianh/donate\"><img alt=\"Liberapay\" src=\"https://liberapay.com/assets/widgets/donate.svg\"></a>")
+                        (visibility . "public") (followers_count . 40)
+                        (following_count . 80) (starred_repos_count . 109)
+                        (username . "martianh"))
+                 (name . "fj.el") (full_name . "martianh/fj.el")
+                 (description
+                  . "An Emacs client for Forgejo instances (such as Codeberg).")
+                 (empty . :json-false) (private . :json-false)
+                 (fork . :json-false) (template . :json-false) (parent)
+                 (mirror . :json-false) (size . 6973)
+                 (language . "Emacs Lisp")
+                 (languages_url
+                  . "https://codeberg.org/api/v1/repos/martianh/fj.el/languages")
+                 (html_url . "https://codeberg.org/martianh/fj.el")
+                 (url . "https://codeberg.org/api/v1/repos/martianh/fj.el")
+                 (link . "")
+                 (ssh_url . "ssh://git@codeberg.org/martianh/fj.el.git")
+                 (clone_url . "https://codeberg.org/martianh/fj.el.git")
+                 (original_url . "") (website . "") (stars_count . 50)
+                 (forks_count . 7) (watchers_count . 6)
+                 (open_issues_count . 62) (open_pr_counter . 4)
+                 (release_counter . 0) (default_branch . "main")
+                 (archived . :json-false)
+                 (created_at . "2023-09-11T17:17:45+02:00")
+                 (updated_at . "2026-11-11T20:20:24+01:00")
+                 (archived_at . "1970-01-01T01:00:00+01:00")
+                 (permissions (admin . :json-false) (push . :json-false)
+                              (pull . t))
+                 (has_issues . t)
+                 (internal_tracker (enable_time_tracker . t)
+                                   (allow_only_contributors_to_track_time
+                                    . :json-false)
+                                   (enable_issue_dependencies
+                                    . :json-false))
+                 (has_wiki . :json-false)
+                 (has_wiki_contents . :json-false)
+                 (wiki_branch . "master")
+                 (wiki_ssh_url
+                  . "ssh://git@codeberg.org/martianh/fj.el.wiki.git")
+                 (wiki_clone_url
+                  . "https://codeberg.org/martianh/fj.el.wiki.git")
+                 (globally_editable_wiki . :json-false)
+                 (has_pull_requests . t) (has_projects . t)
+                 (has_releases . t) (has_packages . t) (has_actions . t)
+                 (ignore_whitespace_conflicts . :json-false)
+                 (allow_merge_commits . t) (allow_rebase . t)
+                 (allow_rebase_explicit . t) (allow_squash_merge . t)
+                 (allow_fast_forward_only_merge . t)
+                 (allow_rebase_update . t)
+                 (default_delete_branch_after_merge . :json-false)
+                 (default_merge_style . "rebase")
+                 (default_allow_maintainer_edit . :json-false)
+                 (default_update_style . "merge") (avatar_url . "")
+                 (internal . :json-false) (mirror_interval . "")
+                 (object_format_name . "sha1")
+                 (mirror_updated . "0001-01-01T00:00:00Z") (repo_transfer)
+                 (topics "codeberg" "emacs" "forge" "forgejo" "git"
+                         "version-control")))
+     (head (label . "main") (ref . "main")
+           (sha . "37c57a02478bb4de0f2afa2f68c2be7a2e80c7d4")
+           (repo_id . 142698)
+           (repo (id . 142698)
+                 (owner (id . 36599) (login . "martianh")
+                        (login_name . "") (source_id . 0) (full_name . "")
+                        (email . "martianh@noreply.codeberg.org")
+                        (avatar_url
+                         . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+                        (html_url . "https://codeberg.org/martianh")
+                        (language . "") (is_admin . :json-false)
+                        (last_login . "0001-01-01T00:00:00Z")
+                        (created . "2021-12-22T10:45:50+01:00")
+                        (restricted . :json-false) (active . :json-false)
+                        (prohibit_login . :json-false)
+                        (location . "local group")
+                        (pronouns . "he/him or they/them")
+                        (website . "https://anarchive.mooo.com")
+                        (description
+                         . "If you appreciate my packages, consider donating: https://paypal.me/martianh, https://wise.com/pay/me/martinh1676 or\n<a href=\"https://liberapay.com/martianh/donate\"><img alt=\"Liberapay\" src=\"https://liberapay.com/assets/widgets/donate.svg\"></a>")
+                        (visibility . "public") (followers_count . 40)
+                        (following_count . 80) (starred_repos_count . 109)
+                        (username . "martianh"))
+                 (name . "fj.el") (full_name . "martianh/fj.el")
+                 (description
+                  . "An Emacs client for Forgejo instances (such as Codeberg).")
+                 (empty . :json-false) (private . :json-false)
+                 (fork . :json-false) (template . :json-false) (parent)
+                 (mirror . :json-false) (size . 6973)
+                 (language . "Emacs Lisp")
+                 (languages_url
+                  . "https://codeberg.org/api/v1/repos/martianh/fj.el/languages")
+                 (html_url . "https://codeberg.org/martianh/fj.el")
+                 (url . "https://codeberg.org/api/v1/repos/martianh/fj.el")
+                 (link . "")
+                 (ssh_url . "ssh://git@codeberg.org/martianh/fj.el.git")
+                 (clone_url . "https://codeberg.org/martianh/fj.el.git")
+                 (original_url . "") (website . "") (stars_count . 50)
+                 (forks_count . 7) (watchers_count . 6)
+                 (open_issues_count . 62) (open_pr_counter . 4)
+                 (release_counter . 0) (default_branch . "main")
+                 (archived . :json-false)
+                 (created_at . "2023-09-11T17:17:45+02:00")
+                 (updated_at . "2026-11-11T20:20:24+01:00")
+                 (archived_at . "1970-01-01T01:00:00+01:00")
+                 (permissions (admin . :json-false) (push . :json-false)
+                              (pull . t))
+                 (has_issues . t)
+                 (internal_tracker (enable_time_tracker . t)
+                                   (allow_only_contributors_to_track_time
+                                    . :json-false)
+                                   (enable_issue_dependencies
+                                    . :json-false))
+                 (has_wiki . :json-false)
+                 (has_wiki_contents . :json-false)
+                 (wiki_branch . "master")
+                 (wiki_ssh_url
+                  . "ssh://git@codeberg.org/martianh/fj.el.wiki.git")
+                 (wiki_clone_url
+                  . "https://codeberg.org/martianh/fj.el.wiki.git")
+                 (globally_editable_wiki . :json-false)
+                 (has_pull_requests . t) (has_projects . t)
+                 (has_releases . t) (has_packages . t) (has_actions . t)
+                 (ignore_whitespace_conflicts . :json-false)
+                 (allow_merge_commits . t) (allow_rebase . t)
+                 (allow_rebase_explicit . t) (allow_squash_merge . t)
+                 (allow_fast_forward_only_merge . t)
+                 (allow_rebase_update . t)
+                 (default_delete_branch_after_merge . :json-false)
+                 (default_merge_style . "rebase")
+                 (default_allow_maintainer_edit . :json-false)
+                 (default_update_style . "merge") (avatar_url . "")
+                 (internal . :json-false) (mirror_interval . "")
+                 (object_format_name . "sha1")
+                 (mirror_updated . "0001-01-01T00:00:00Z") (repo_transfer)
+                 (topics "codeberg" "emacs" "forge" "forgejo" "git"
+                         "version-control")))
+     (merge_base . "f26e4194c1fbc304637d2451e4422bb63172332e") (due_date)
+     (created_at . "2024-07-10T16:47:26+02:00")
+     (updated_at . "2026-11-11T21:46:52+01:00")
+     (closed_at . "2024-07-11T11:12:56+02:00") (pin_order . 0) (flow . 0)))
+  "These items are the result of asking the server for PRs as if they were **pull requests**.
+
+For example: (fj-get-item \"fj.el\" \"martianh\" \"26\" :pull).
+
+This is different from `fj-test-pull-reqs-as-issues'.")
+
+(defvar fj-test-pull-reqs-as-issues
+  '(((id . 815374)
+     (url . "https://codeberg.org/api/v1/repos/martianh/fj.el/pulls/26")
+     (html_url . "https://codeberg.org/martianh/fj.el/pulls/26")
+     (number . 26)
+     (user (id . 36599) (login . "martianh") (login_name . "")
+           (source_id . 0) (full_name . "")
+           (email . "martianh@noreply.codeberg.org")
+           (avatar_url
+            . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+           (html_url . "https://codeberg.org/martianh") (language . "")
+           (is_admin . :json-false) (last_login . "0001-01-01T00:00:00Z")
+           (created . "2021-12-22T10:45:50+01:00")
+           (restricted . :json-false) (active . :json-false)
+           (prohibit_login . :json-false) (location . "local group")
+           (pronouns . "he/him or they/them")
+           (website . "https://anarchive.mooo.com")
+           (description
+            . "If you appreciate my packages, consider donating: https://paypal.me/martianh, https://wise.com/pay/me/martinh1676 or\n<a href=\"https://liberapay.com/martianh/donate\"><img alt=\"Liberapay\" src=\"https://liberapay.com/assets/widgets/donate.svg\"></a>")
+           (visibility . "public") (followers_count . 40)
+           (following_count . 80) (starred_repos_count . 109)
+           (username . "martianh"))
+     (original_author . "") (original_author_id . 0)
+     (title . "test PR dev into main") (body . "just testing.") (ref . "")
+     (assets) (labels) (milestone) (assignee) (assignees)
+     (state . "closed") (is_locked . :json-false) (comments . 0)
+     (created_at . "2024-07-10T16:47:26+02:00")
+     (updated_at . "2026-11-11T21:46:52+01:00")
+     (closed_at . "2024-07-11T11:12:56+02:00") (due_date)
+     (pull_request (merged . :json-false) (merged_at)
+                   (draft . :json-false)
+                   (html_url
+                    . "https://codeberg.org/martianh/fj.el/pulls/26"))
+     (repository (id . 142698) (name . "fj.el") (owner . "martianh")
+                 (full_name . "martianh/fj.el"))
+     (pin_order . 0)))
+  "These items are the result of asking the server for PRs as if they were **issues**.
+
+For example: (fj-get-item \"fj.el\" \"martianh\" \"26\" :list).
+
+This is different from `fj-test-pull-reqs'.")
+
 (defvar fj-test-comments
   ;; (fj-issue-get-comments "fj.el" "martianh" "101")
   '(((id . 3086223)
@@ -1852,3 +2089,56 @@ the corresponding buffers."
           ("*fj-fj.el-item-2*" ,(get-buffer "*fj-fj.el-item-2*"))
           ("*fj-fj.el-item-3*" ,(get-buffer "*fj-fj.el-item-3*"))
           ("*fj-fj.el-item-4*" ,(get-buffer "*fj-fj.el-item-4*"))))))))
+
+;;;
+;;; ERTs for `fj--item-is-pr-issue-p'
+;;;
+
+(ert-deftest fj-test/item-is-pr-issue-p/issue ()
+  "Tests that an issue is not regarded \"disguised\"."
+  (should
+   (equal (fj--item-is-pr-issue-p (car fj-test-issues))
+          nil)))
+
+(ert-deftest fj-test/item-is-pr-issue-p/pull-request ()
+  "Tests that a PR is not regarded \"disguised\" as an issue."
+  (should
+   (equal (fj--item-is-pr-issue-p
+           (car fj-test-pull-reqs))
+          nil)))
+
+(ert-deftest fj-test/item-is-pr-issue-p/pull-request-as-issue ()
+  "Tests that a PR requested as an issue is regarded \"disguised\" as an issue."
+  (should
+   (listp (fj--item-is-pr-issue-p
+           (car fj-test-pull-reqs-as-issues)))))
+
+;;;
+;;; ERTs for `fj--identify-item-format'
+;;;
+
+(ert-deftest fj-test/identify-item-format/invalid ()
+  "Tests some invalid lists for `fj--identify-item-format'."
+  (should
+   (equal (fj--identify-item-format nil) nil))
+  (should
+   (equal (fj--identify-item-format '(1 2 3)) nil)))
+
+(ert-deftest fj-test/identify-item-format/issue ()
+  "Tests that issues are identified with the `:list' format."
+  (should
+   (equal (fj--identify-item-format (car fj-test-issues))
+          :issue)))
+
+(ert-deftest fj-test/identify-item-format/pull-request ()
+  "Tests that PRs are identified with the `:pull' format."
+  (should
+   (equal (fj--identify-item-format (car fj-test-pull-reqs))
+          :pull)))
+
+(ert-deftest fj-test/identify-item-format/pull-request-as-issue ()
+  "Tests that PRs requested as issues are identified with the `:list' format."
+  (should
+   (equal (fj--identify-item-format
+           (car fj-test-pull-reqs-as-issues))
+          :issue)))
