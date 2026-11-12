@@ -134,7 +134,7 @@ the function defines keys in shared maps, which is state no fixture restores."
       (should (eq entry vm-menu-fsfemacs-mail-menu)))))
 
 (ert-deftest vm-menu-test-menubar-buttons-are-not-possible-without-a-window-system ()
-  "`vm-menubar-buttons-possible-p' answers for the current windowing system.
+  "`vm-menubar-buttons-possible-p' reports on the current windowing system.
 A menubar button is a menu entry that acts when clicked, which GTK and NeXTstep
 do not allow.  In batch there is no window system, so they are possible, which
 is the branch that decides whether `vm-menu-fsfemacs-add-vm-menu' makes a button
@@ -325,7 +325,7 @@ what they do to the disk."
        (delete-directory dir t))))
 
 (defun vm-menu-test--as-read-file-name (typed)
-  "A `read-file-name' stub that answers TYPED as the real one would.
+  "A `read-file-name' stub that returns TYPED as the real one would.
 
 The real prompt resolves what is typed against the DIR argument it is
 given, so a stub that ignores DIR cannot see a command passing the wrong

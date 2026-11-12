@@ -216,7 +216,7 @@
 ;;; vm-mime-default-type-from-filename tests
 
 (ert-deftest vm-mime-test-default-type-from-filename ()
-  "What `vm-mime-attachment-auto-type-alist' answers, and only that.
+  "What `vm-mime-attachment-auto-type-alist' returns, and only that.
 
 The mailcap fallback is stubbed away.  It reads the system's
 /etc/mime.types, so leaving it in makes the last assertion here a statement
@@ -360,7 +360,7 @@ characters came back as two bytes and a comma (emacs-vm/vm#923)."
   "Payloads to put through a transfer encoding and back.
 
 Bytes, not characters: `unibyte-string' rather than a literal, because a
-literal above 127 is read as a character and a codec answers bytes, so the
+literal above 127 is read as a character and a codec returns bytes, so the
 two compare unequal however well the codec did.  That cost an hour.
 
 The awkward ones are here on purpose: trailing whitespace, which
@@ -380,7 +380,7 @@ which are what the encodings quote; a bare CR; and no final newline.")
 
 (defun vm-mime-test--transfer-round-trip (encoding text &optional crlf)
   "Encode TEXT under ENCODING and decode it again, answering what comes back.
-CRLF asks base64 for the line endings a part carries on the wire, which is
+CRLF asks base64 for the line endings a part has on the wire, which is
 the path emacs-vm/vm#792 broke: without it the bug is invisible here, since
 the marker it turned on only matters where the CRLF conversion inserts."
   (with-temp-buffer
@@ -468,13 +468,13 @@ OPTION is `vm-mime-8bit-text-transfer-encoding' and ARMOR is
       (vm-mime-test--decode-by-name used)
       (cons used (buffer-substring-no-properties (point-min) (point-max))))))
 
-(ert-deftest vm-mime-test-whatever-encoding-vm-picks-carries-the-body ()
+(ert-deftest vm-mime-test-whatever-encoding-vm-picks-preserves-the-body ()
   "The body survives whichever encoding VM chooses for it.
 
 Eight bodies by the three values of `vm-mime-8bit-text-transfer-encoding' by
 the two of `vm-mime-composition-armor-from-lines'.  What is pinned is the
 invariant rather than any one choice: decoding by the name
-`vm-mime-transfer-encode-region' answers gives the bytes back.
+`vm-mime-transfer-encode-region' returns gives the bytes back.
 
 The choice is checked in two places where it is not free.  A `From ' line
 goes out as it stands when armoring is off, which is the default and is what
@@ -542,16 +542,16 @@ anyone looking at the message as it was sent."
 
 ;;; Charsets Emacs can and cannot decode (issue #879)
 
-(ert-deftest vm-mime-test-a-charset-emacs-knows-is-decodable ()
+(ert-deftest vm-mime-test-a-charset-emacs-recognises-is-decodable ()
   "The charsets of ordinary mail, all of which Emacs has a coding system for."
   (dolist (charset '("utf-8" "us-ascii" "iso-8859-1" "iso-2022-jp" "big5"))
     (should (vm-mime-charset-decodable-p charset))))
 
 (ert-deftest vm-mime-test-a-charset-emacs-does-not-know-is-not-decodable ()
   "Names that arrive in mail and that Emacs has no coding system for.
-`vm-mime-charset-to-coding' answers `undecided' for these, so the text is
+`vm-mime-charset-to-coding' returns `undecided' for these, so the text is
 guessed at rather than decoded, and they are the ones
-`vm-mime-charset-converter-alist' exists for.  Emacs knows the same character
+`vm-mime-charset-converter-alist' exists for.  Emacs has the same character
 sets under other names, cp874 and mac-roman among them, which is why a
 converter is worth having."
   (dolist (charset '("windows-874" "x-mac-roman" "unknown-8bit"
@@ -1458,7 +1458,7 @@ from the reader dropped the tag into the middle of what they were typing."
 
 (defun vm-mime-test-decoded-string (text &rest spans)
   "Return TEXT marked up as `vm-decode-mime-encoded-words' would leave it.
-Each SPAN is (START END CHARSET CODING); the text between spans carries
+Each SPAN is (START END CHARSET CODING); the text between spans holds
 no charset, exactly as whitespace separating two encoded words does not."
   (let ((s (copy-sequence text)))
     (dolist (span spans)
@@ -1471,7 +1471,7 @@ no charset, exactly as whitespace separating two encoded words does not."
 
 (ert-deftest vm-mime-test-reencode-keeps-separating-space ()
   "Test that a space between two encoded runs survives a round trip.
-Regression test for issue #383: the space carries no charset, so it was
+Regression test for issue #383: the space has no charset, so it was
 left literal between two encoded words -- and RFC 2047 says whitespace
 between encoded words is a separator, so decoding threw it away and
 \"foo bar\" came back as \"foobar\"."
@@ -1594,7 +1594,7 @@ there was one, so the file would have been sent twice."
     (vm-mime-set-attachment-name-at-point "renamed.txt")
     (should (= 1 (length (vm-mime-attachment-button-extents
                           (point-min) (point-max) 'vm-mime-object))))
-    ;; the whole tag is one unbroken run carrying the new name
+    ;; the whole tag is one unbroken run holding the new name
     (goto-char (point-min))
     (let* ((start (progn (search-forward "[ATTACHMENT") (match-beginning 0)))
            (change (next-single-property-change start 'vm-mime-type)))
@@ -1740,7 +1740,7 @@ with markers into a buffer that is about to be erased for the next message."
           ;; The location data was always private; the soft data must be too.
           (should-not (eq (vm-softdata-of pres) (vm-softdata-of real)))
           ;; Shallow: every field still refers to what it did before, so the
-          ;; copy still knows its folder buffer and its real message.
+          ;; copy still has its folder buffer and its real message.
           (should (eq (vm-buffer-of pres) (vm-buffer-of real)))
           (should (eq (vm-real-message-of pres) real)))))))
 
@@ -1954,7 +1954,7 @@ and the name survives to what actually gets sent."
   (let ((dir (file-name-as-directory (make-temp-file "vm-rfc2231" t))))
     (unwind-protect
         (vm-mime-test-with-attachment-tag (concat dir "räksmörgås.txt")
-          ;; What the tag carries, and how it spells it.
+          ;; What the tag holds, and how it spells it.
           (should (equal "räksmörgås.txt" (vm-mime-attachment-name-at-point)))
           (let ((params (get-text-property (car (vm-mime-attachment-tag-bounds))
                                           'vm-mime-parameters)))
@@ -2249,7 +2249,7 @@ Not the line breaks: undoing them is the whole point, and the reader re-wraps."
 (ert-deftest vm-mime-test-every-image-strip-has-an-image-in-it ()
   "REGRESSION: pressing [Display] on an image displayed nothing.
 Issue #882.  VM ran ImageMagick with the operators ahead of the file,
-`magick -crop ... FILE OUT', and version 7 answers \"no images found for
+`magick -crop ... FILE OUT', and version 7 reports \"no images found for
 operation `-crop'\" to an operator with nothing read yet.  Nothing was
 written, and nothing noticed: the strip files are made by `vm-make-tempfile'
 before the conversion runs, so all of them existed and all of them were
@@ -2281,7 +2281,7 @@ the reader sees instead of the image when this breaks."
 (ert-deftest vm-mime-test-a-thumbnail-names-the-image-before-the-operators ()
   "The thumbnail conversion reads the image first too.
 Issue #882: `vm-mime-frob-image-xxxx' passed `-[0]', which is the first page
-of standard input, after the operators, and ImageMagick 7 refuses that in the
+of standard input, after the operators, and ImageMagick 7 rejects that in the
 same way.  The arguments are checked here rather than the picture, the
 picture wanting a presentation buffer and a button in it."
   (let ((sent nil))
@@ -2481,7 +2481,7 @@ them."
                 ;; beside the HTML, so a bare file name resolves
                 (should (equal (file-name-directory html-file)
                                (file-name-directory f))))
-              ;; the suffix comes from the part, so the browser knows the type
+              ;; the suffix comes from the part, so the browser can tell the type
               (should (seq-find (lambda (f) (string-suffix-p ".png" f)) written))
               (should (seq-find (lambda (f) (string-suffix-p ".gif" f)) written))
               (with-temp-buffer
@@ -2698,7 +2698,7 @@ exists for."
 (ert-deftest vm-mime-test-cid-retrieve-finds-a-sibling-part ()
   "The flat case the rewrite must keep: an image beside the HTML that shows it.
 Both are parts of the same multipart/related, which is how most HTML mail
-carries its pictures."
+holds its pictures."
   (require 'vm)
   (let* ((got (vm-mime-test--cid-retrieve nil "cid:first@example.com"))
          (part (nth 0 got)))
@@ -2719,7 +2719,7 @@ nothing, so the reader saw neither the picture nor a button for it."
     (should (equal "" (nth 1 got)))
     (should-not (nth 2 got))))
 
-(ert-deftest vm-mime-test-cid-retrieve-refuses-a-url-of-another-scheme ()
+(ert-deftest vm-mime-test-cid-retrieve-rejects-a-url-of-another-scheme ()
   "Only cid: URLs are the message's own parts, so anything else is an error."
   (require 'vm)
   (should-error (vm-mime-cid-retrieve "http://example.com/pic.png" nil)))
@@ -2783,7 +2783,7 @@ do it."
                                      'all '("text/html"))))
     (should (string-match-p "plain version" text))
     (should-not (string-match-p "html version" text))
-    ;; the button says what it is and offers to display it
+    ;; the button names what it is and can be pressed to display it
     (should (string-match-p "HTML" text))
     (should (string-match-p "\\[display\\]" text))))
 
@@ -2929,7 +2929,7 @@ Issue #387, driven through `vm-mime-display-external-generic' and an elisp
 
 ;;; The width HTML is converted at (#369)
 
-(ert-deftest vm-mime-test-html-columns-answers-each-setting ()
+(ert-deftest vm-mime-test-html-columns-returns-each-setting ()
   "`vm-mime-html-columns' reads `vm-html-fill-column'."
   (should (equal (let ((vm-html-fill-column 80)) (vm-mime-html-columns)) 80))
   ;; nil once meant a page 100000 columns wide (#540)
@@ -3039,7 +3039,7 @@ charset with its spaces and semicolons intact (emacs-vm/vm#935)."
 `shell-command-on-region' looked at neither the exit status nor the standard
 error, so a converter that refused the part replaced it with nothing and the
 reader was told nothing.  The caller turns the signal into the display error
-the part carries."
+the part holds."
   (vm-mime-test--with-a-converter dir
     (let ((vm-lynx-program
            (vm-mime-test--stub-converter
@@ -3188,7 +3188,7 @@ and what Gmail encodes to."
   "RFC 2045 6.4 allows only 7bit, 8bit and binary on a `message/*\\=' or
 `multipart/*\\=' body, so neither the sentinel `long-lines\\=' nor the
 quoted-printable it stands for is open to one.  A line too long to send as
-it stands makes the body binary, the parts inside carrying their own
+it stands makes the body binary, the parts inside holding their own
 encodings (emacs-vm/vm#895)."
   (with-temp-buffer
     (insert "a short line\n" (make-string 1200 ?x) "\n")
@@ -3199,7 +3199,7 @@ encodings (emacs-vm/vm#895)."
     (should (equal (vm-mime-encapsulation-transfer-encoding
                     (point-min) (point-max))
                    "binary")))
-  ;; and it answers the ordinary three unchanged
+  ;; and it returns the ordinary three unchanged
   (with-temp-buffer
     (insert "a short line\n")
     (should (equal (vm-mime-encapsulation-transfer-encoding
@@ -3219,7 +3219,7 @@ encodings (emacs-vm/vm#895)."
 (ert-deftest vm-mime-test-quoted-printable-folds-its-output ()
   "No line of a quoted-printable part is longer than the 76 of RFC 2045.
 `quoted-printable-encode-region' folds only when told to, and VM did not
-tell it, so a quoted-printable part carried whatever line lengths the text
+tell it, so a quoted-printable part held whatever line lengths the text
 had -- and no soft line break was ever emitted."
   (with-temp-buffer
     (set-buffer-multibyte nil)
@@ -3415,7 +3415,7 @@ base64."
 (ert-deftest vm-mime-test-attaching-a-file-to-a-composition ()
   "`vm-attach-file' puts the file in the composition and it survives encoding.
 The tag in the buffer is a stand-in; what matters is that encoding the
-composition turns it into a part of the right type carrying the file."
+composition turns it into a part of the right type holding the file."
   (let ((file (expand-file-name "attach-me.txt" temporary-file-directory)))
     (unwind-protect
         (progn
@@ -3442,7 +3442,7 @@ composition turns it into a part of the right type carrying the file."
 (ert-deftest vm-mime-test-an-attachment-alone-becomes-the-body ()
   "A composition of nothing but an attachment is encoded as one part.
 There is no second part for it to be multipart with, so the file becomes the
-message body and its name is carried in the Content-Disposition."
+message body and its name is held in the Content-Disposition."
   (let ((file (expand-file-name "only-attachment.txt" temporary-file-directory)))
     (unwind-protect
         (progn
@@ -3493,7 +3493,7 @@ attached copy keeps its own headers."
 (ert-deftest vm-mime-test-attaching-the-object-at-point-to-a-composition ()
   "`vm-mime-reader-map-attach-to-composition' moves an attachment you were
 sent into one you are sending.  The composition is asked for by name, and
-what lands in it is the part -- so encoding the composition carries the same
+what lands in it is the part -- so encoding the composition sends the same
 bytes on."
   (vm-mime-test--with-attachment (button)
     (let ((composition nil))
@@ -3978,7 +3978,7 @@ CHECKS see DELETED, the number of parts deleted, and the folder buffer."
 
 (ert-deftest vm-mime-test-nuking-html-keeps-the-plain-text ()
   "The html copy goes and the plain-text one stays: that is the trade the
-command offers, and the reason it is safe at all."
+command presents, and the reason it is safe at all."
   (vm-mime-test--nuking
       (vm-mime-test--alternative "IN" '("text/plain" . "the plain one")
                                  '("text/html" . "<p>the html one</p>"))
@@ -4046,8 +4046,8 @@ alternative, so there is nothing to fall back to."
     (should (string-match-p "the whole message" (buffer-string)))))
 
 (ert-deftest vm-mime-test-nuking-marks-the-message-edited ()
-  "The message is marked edited and its counts cleared, so the folder knows
-it has to write the change out and the summary is recomputed."
+  "The message is marked edited and its counts cleared, so the folder has a record that
+it must write the change out and the summary is recomputed."
   (vm-mime-test--nuking
       (vm-mime-test--alternative "IN" '("text/plain" . "the plain one")
                                  '("text/html" . "<p>the html one</p>"))
@@ -4090,7 +4090,7 @@ start of the attachment tag, which is where the attachment commands look."
   (car (get-text-property (point) 'vm-mime-disposition)))
 
 (ert-deftest vm-mime-test-changing-a-disposition-changes-it ()
-  "The disposition read at the prompt is the one the attachment carries.
+  "The disposition read at the prompt is the one the attachment has.
 It is what tells the recipient's mail reader whether to show the part or
 offer it as a file to save."
   (vm-mime-test--in-a-composition-with-a-file
@@ -4133,7 +4133,7 @@ above it in the file, has always guarded for this."
           (should (equal (error-message-string err) "No attachment here"))))
       (should-not asked))))
 
-;;; Attaching a file that carries its own MIME headers
+;;; Attaching a file that has its own MIME headers
 
 (ert-deftest vm-mime-test-attaching-a-mime-file-keeps-its-headers ()
   "`vm-attach-mime-file' attaches the file as it stands, headers and all:
@@ -4210,7 +4210,7 @@ each refused by name, rather than attached and found wanting at send time."
 
 (ert-deftest vm-mime-test-attaching-a-mime-file-needs-mime-sending ()
   "With `vm-send-using-mime' off there is no way to send an attachment, so
-the command refuses and says which option turns it on."
+the command signals and names which option turns it on."
   (let ((vm-send-using-mime nil)
         (text-quoting-style 'grave))
     (with-temp-buffer
@@ -4453,7 +4453,7 @@ maintainer reading a bug report wants: the same parts, all of the fields."
     (let ((listing (vm-mime-test--part-listing t)))
       (should (string-match-p "multipart/mixed" listing))
       (should (string-match-p "text/html" listing))
-      ;; a layout carries the positions of the part in the folder, which the
+      ;; a layout holds the positions of the part in the folder, which the
       ;; short form does not print
       (should (string-match-p "#<marker" listing)))))
 
@@ -4493,7 +4493,7 @@ had no effect since Emacs 20 decided a buffer's charset for itself
 
 It was consulted nowhere in the tree, so setting it did nothing, and the
 manual told a reader to set it to declare a composition's character set.
-Emacs knows what is in the buffer and `vm-determine-proper-charset' asks it;
+Emacs has the characters in the buffer and `vm-determine-proper-charset' asks it;
 `vm-coding-system-priorities' is what puts your own order on the answer.  Its
 sibling `vm-mime-8bit-composition-charset' went for the same reason
 (emacs-vm/vm#697)."
@@ -4512,7 +4512,7 @@ choosing it left every HTML part failing on a void `w3-region'."
     (should-not (eq (vm-mime-text/html-handler) 'emacs-w3))))
 
 (defun vm-mime-test--custom-constants (variable)
-  "The symbols a `const' in VARIABLE's customize type offers."
+  "The symbols a `const' in VARIABLE's customize type lists."
   (let ((type (get variable 'custom-type)))
     (delq nil (mapcar (lambda (branch)
                         (and (consp branch) (eq (car branch) 'const)
@@ -4530,7 +4530,7 @@ among them, and this list comes first so an entry here still wins."
   ;; default, so these say nothing about the machine.
   (should (equal (vm-mime-default-type-from-filename "notes.txt") "text/plain"))
   (should (equal (vm-mime-default-type-from-filename "sheet.csv") "text/csv"))
-  ;; mailcap, for what the alist has no entry for.  What mailcap answers is
+  ;; mailcap, for what the alist has no entry for.  What mailcap returns is
   ;; not ours to assert: it reads the system's /etc/mime.types, where .org is
   ;; text/x-org on a host that has no such file and
   ;; application/vnd.lotus-organizer on Fedora (emacs-vm/vm#907).  That VM
@@ -4559,7 +4559,7 @@ is what makes an attached text/x-org readable rather than a button, and
   (should (fboundp (vm-mime-handler "display-internal" "text")))
   (should (member "text" vm-mime-auto-displayed-content-types)))
 
-;;; What a transfer encoding does to the body it carries
+;;; What a transfer encoding does to the body it sends
 
 (defconst vm-mime-test--encoded-bodies
   `(("plain ascii"      . "a body line\n")
@@ -4627,21 +4627,21 @@ and the charset, which is what a receiving reader does."
                        (nth 2 got) (cdr spec)))))
          vm-mime-test--encoded-bodies)))
 
-(ert-deftest vm-mime-test-quoted-printable-carries-the-body-unchanged ()
+(ert-deftest vm-mime-test-quoted-printable-sends-the-body-unchanged ()
   "Every body survives being sent with `vm-mime-8bit-text-transfer-encoding'
 set to quoted-printable."
   (should (equal nil (vm-mime-test--encoding-losses 'quoted-printable))))
 
-(ert-deftest vm-mime-test-base64-carries-the-body-unchanged ()
+(ert-deftest vm-mime-test-base64-sends-the-body-unchanged ()
   "Every body survives being sent with that option set to base64.
 It did not: `vm-mime-base64-encode-region' held the end of the region in a
 marker that does not advance, and turning the last LF into CRLF inserts at
 that marker.  The final line break fell outside the region and went
 unencoded, so a base64 part arrived one newline short of what was sent,
-where quoted-printable and 8bit carried it."
+where quoted-printable and 8bit sent it."
   (should (equal nil (vm-mime-test--encoding-losses 'base64))))
 
-(ert-deftest vm-mime-test-8bit-carries-the-body-unchanged ()
+(ert-deftest vm-mime-test-8bit-sends-the-body-unchanged ()
   "Every body survives being sent with that option set to 8bit."
   (should (equal nil (vm-mime-test--encoding-losses '8bit))))
 
@@ -4884,7 +4884,7 @@ counting `=?' against `?=': a base64 payload ends in padding, so
     ("base64"           . B)
     ("base64 on 8-bit"  . "[^- !#-'*+/-9=?A-Z^-~]"))
   "The values `vm-mime-encode-headers-type' takes.
-The third is the regexp form the option offers as a default, which picks
+The third is the regexp form the option has as a default, which picks
 base64 for a word holding anything outside a bare ASCII set.")
 
 (defconst vm-mime-test--long-header-texts
@@ -5065,7 +5065,7 @@ constraint."
 (ert-deftest vm-charset-test-a-list-that-cannot-hold-the-text-falls-back ()
   "A priority list with nothing wide enough falls back to utf-8.
 `(iso-8859-1)' alone cannot carry Greek, and holds no universal coding system
-to stop the search, so the loop runs out and the documented fallback answers.
+to stop the search, so the loop runs out and the documented fallback applies.
 Without it VM would name iso-8859-1 for text it cannot represent."
   (dolist (text '("Ελληνικά" "日本語" "hi 😀"))
     (should (equal "utf-8" (vm-charset-test--chosen text '(iso-8859-1)))))
@@ -5076,7 +5076,7 @@ Without it VM would name iso-8859-1 for text it cannot represent."
 (ert-deftest vm-charset-test-a-universal-coding-system-stops-the-search ()
   "A charset in `vm-mime-ucs-list' is taken even where it cannot be checked.
 The loop stops at the first entry that is universal, so utf-8 anywhere in the
-list answers for any text at all."
+list applies to any text at all."
   (should (member 'utf-8 (vm-get-mime-ucs-list)))
   (dolist (text (mapcar #'cdr vm-charset-test--texts))
     (unless (equal text "plain text")
@@ -5136,7 +5136,7 @@ own number where the total goes, and the fill-in then ran on after it: three
 parts went out saying total=13, 23 and 33.
 
 Nothing could reassemble such a message, VM included:
-`vm-mime-display-internal-message/partial' refuses parts that disagree about
+`vm-mime-display-internal-message/partial' rejects parts that disagree about
 the total, and a lone part claiming thirteen would wait for ten that never
 come."
   (dolist (avoid '(nil t))
@@ -5172,7 +5172,7 @@ come."
 (ert-deftest vm-fragment-test-the-bodies-join-back-into-the-message ()
   "The fragment bodies, in order, are the message that was split.
 
-The invariant the whole feature rests on.  Every part carries a slice of the
+The invariant the whole feature rests on.  Every part holds a slice of the
 original and nothing else, so a reader that concatenates them in number order
 has the message back."
   (let ((vm-mime-avoid-folding-content-type nil)
@@ -5204,7 +5204,7 @@ has the message back."
   "Every fragment says message/partial and 7bit, and drops the original type.
 RFC 2046 section 5.2.2 allows message/partial only with 7bit, and the
 original Content-Type belongs to the message inside, not to the fragment
-carrying it."
+holding it."
   (vm-fragment-test--with-fragments (3000 100)
     (dolist (buffer fragments)
       (with-current-buffer buffer
@@ -5256,7 +5256,7 @@ is the option's only use here and neither arm had a test."
 ;; feature tested above, and had no test either: the form coverage report put
 ;; it at the head of the definitions with the most forms never evaluated.
 ;;
-;; These drive it as the button does, with an extent carrying the part's
+;; These drive it as the button does, with an extent holding the part's
 ;; layout, over a folder whose messages are the fragments.
 
 (defun vm-partial-test--folder-of-fragments (file fragments)
@@ -5294,7 +5294,7 @@ is the option's only use here and neither arm had a test."
 (defmacro vm-partial-test--with-a-folder-of (texts &rest body)
   "Visit a From_ folder whose messages are TEXTS, and run BODY.
 FOLDER is bound to the folder buffer and ASSEMBLE to a function of no
-arguments that reassembles from the first message and answers the assembled
+arguments that reassembles from the first message and returns the assembled
 buffer, widened."
   (declare (indent 1) (debug t))
   `(let* ((dir (file-name-as-directory (make-temp-file "vm-partial" t)))
@@ -5364,7 +5364,7 @@ back: every line is there, in order, with the original headers."
   "Parts claiming different totals are an error, not a wrong assembly.
 
 The check that makes #797 visible from the receiving end: fragments written
-before that fix each declared a different total, and this refuses them rather
+before that fix each declared a different total, and this rejects them rather
 than assembling something short."
   (let* ((texts (vm-partial-test--fragment-texts 60 2500))
          (broken (cons (car texts)
@@ -5527,7 +5527,7 @@ so vm-vars.el is left out."
 
 (ert-deftest vm-mime-test-the-html-blocker-options-are-obsolete ()
   "REGRESSION: both say so, so setting one warns instead of being believed.
-Neither has a replacement in VM itself, so each carries the message rather
+Neither has a replacement in VM itself, so each holds the message rather
 than a name: `vm-w3m-safe-url-regexp' is vm-w3m.el\='s, loaded only where
 emacs-w3m is installed."
   (require 'vm-vars)
@@ -5563,7 +5563,7 @@ Content-type and Content-length in front of the file, without binding
       (delete-file source))))
 
 (ert-deftest vm-mime-test-fetch-url-warns-and-gives-up-on-a-bad-url ()
-  "A URL that cannot be retrieved warns and answers nil, rather than signalling."
+  "A URL that cannot be retrieved warns and returns nil, rather than signalling."
   (let ((warnings nil)
         (target (generate-new-buffer " *vm-mime-url-test*")))
     (unwind-protect
@@ -5577,7 +5577,7 @@ Content-type and Content-length in front of the file, without binding
           (should (string-match-p "Could not retrieve" (car warnings))))
       (kill-buffer target))))
 
-(ert-deftest vm-mime-test-fetch-url-answers-nil-for-an-empty-object ()
+(ert-deftest vm-mime-test-fetch-url-returns-nil-for-an-empty-object ()
   "Nothing retrieved is not a retrieval."
   (let ((target (generate-new-buffer " *vm-mime-url-test*")))
     (unwind-protect
@@ -5637,7 +5637,7 @@ time as well as at run time."
     (should (equal "." (plist-get seen :blocked)))))
 
 (ert-deftest vm-mime-test-auto-select-falls-back-to-shr ()
-  "With no w3m and no lynx, `auto-select' answers shr rather than nil.
+  "With no w3m and no lynx, `auto-select' returns shr rather than nil.
 It used to answer nil, and VM then said it had no handler for text/html."
   (skip-unless (and (fboundp 'libxml-available-p) (libxml-available-p)))
   (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil))
@@ -5762,7 +5762,7 @@ that follows the grammar ends the encoded word."
     (should (equal (vm-mime-test--decode-as-vm value) "Göran? really"))))
 
 (ert-deftest vm-mime-test-a-phrase-escapes-the-characters-it-may-not-carry ()
-  "In an address header the encoded word carries only what section 5(3) allows.
+  "In an address header the encoded word holds only what section 5(3) allows.
 Letters, digits and `!*+-/' stand bare; a period does not, and one left bare
 is a character the address parser acts on where it stands."
   (let ((value (vm-mime-test--encode-address-header "Ö. Uddeborg <a@b>")))
@@ -5785,7 +5785,7 @@ is a character the address parser acts on where it stands."
   "An RFC 2047 encoded word as section 2 defines it.
 The charset and the encoded text may hold no question mark, which is what
 makes the word self-delimiting, so the groups are spelled that way here
-rather than with a lazy match: a word carrying a bare question mark is not
+rather than with a lazy match: a word with a bare question mark is not
 one this matches, and a test that wants to catch that must say so itself.")
 
 (defun vm-mime-test--encoded-words (value)
@@ -5858,7 +5858,7 @@ that it tested something."
   "Address header values, each with what a reader gets back from it.
 One for each of the places RFC 2047 section 5 names, and for the quoting and
 the specials of RFC 5322 section 3.4 that surround them.  The second element
-is the text a decoder answers; the third is what an address parser answers,
+is the text a decoder returns; the third is what an address parser returns,
 each entry an address and the display name beside it, and a comment dropped
 as a comment is.
 
@@ -5885,7 +5885,7 @@ A list of (BEFORE . AFTER), either of them nil at an end of VALUE."
 (ert-deftest vm-mime-test-every-address-header-survives-a-conforming-reader ()
   "Each of the corpus comes back from Emacs\\='s own decoder as it should.
 That decoder is not VM\\='s, so a round trip through it says the header really
-carries the text and not merely that VM agrees with itself."
+holds the text and not merely that VM agrees with itself."
   (dolist (spec vm-mime-test--address-headers)
     (should (equal (vm-mime-test--decode-as-rfc2047
                     (vm-mime-test--encode-address-header (nth 0 spec)))
@@ -5899,7 +5899,7 @@ one, and parsed as something else.
 The question is not whether the parse is the same as the parse of the text
 VM was given, which is no test at all: that text holds characters RFC 5322
 does not allow in a header, which is the reason it is being encoded, and the
-parser makes what it can of it.  Asked for `Ö. Uddeborg\\=' it answers
+parser makes what it can of it.  Asked for `Ö. Uddeborg\\=' it returns
 `Uddeborg\\='.  The encoded header is the valid one, and what it must parse to
 is written out beside it."
   (require 'mail-parse)
@@ -5914,7 +5914,7 @@ is written out beside it."
                      (mapcar #'cdr (nth 2 spec)))))))
 
 (ert-deftest vm-mime-test-an-encoded-word-stays-inside-its-phrase ()
-  "In a display name the encoded word carries only what section 5(3) allows.
+  "In a display name the encoded word holds only what section 5(3) allows.
 Letters, digits and ! * + - / stand bare; every other character, a period or
 a comma or an apostrophe among them, is written as =XX.  A bare one is a
 character the address parser acts on where it stands."
@@ -5940,7 +5940,7 @@ not decode it."
 
 (ert-deftest vm-mime-test-a-comment-keeps-its-parentheses ()
   "Section 5(2) has the encoded word stand inside the comment, not around it.
-The parentheses are the comment, so a word that carries them hides the
+The parentheses are the comment, so a word that holds them hides the
 comment from the parser; a word inside one may not hold a parenthesis or a
 quotation mark at all."
   (dolist (text '("Göran <a@b> (Åsa)" "(Åsa) Göran <a@b>"))
@@ -5964,7 +5964,7 @@ however much of the rest of the header is encoded."
 (ert-deftest vm-mime-test-an-address-outside-ascii-is-refused ()
   "An address VM cannot encode is refused rather than written wrongly.
 Section 5 reaches no part of an addr-spec, so a non-ASCII local part or
-domain has no RFC 2047 form; carrying it takes an SMTPUTF8 server.  VM used
+domain has no RFC 2047 form; sending it takes an SMTPUTF8 server.  VM used
 to encode across the angle brackets, and what went out was a header with no
 address in it at all."
   (dolist (text '("Göran <a@exämple.com>"

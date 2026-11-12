@@ -83,7 +83,7 @@ being prevented."
 
 (ert-deftest vm-test-init-test-isolation-kills-leaked-buffers ()
   "A buffer a test leaves behind does not outlive it either.
-A folder buffer carries a folder's worth of buffer-local state and a name that
+A folder buffer holds a folder's worth of buffer-local state and a name that
 the next test's `get-buffer' will find, so leaving one behind is as much a leak
 as setting a variable is."
   (let ((vm-test-isolate-global-state t)

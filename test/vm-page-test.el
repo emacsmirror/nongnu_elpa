@@ -86,7 +86,7 @@
 
 (defmacro vm-page-test-with-paged-message (&rest body)
   "Show a three-page message read, and run BODY in the buffer showing it.
-`vm-honor-page-delimiters' is on, and the message carries a header that
+`vm-honor-page-delimiters' is on, and the message has a header that
 `vm-visible-headers' hides, so exposing them is observable."
   (declare (indent 0) (debug t))
   `(let* ((dir (file-name-as-directory (make-temp-file "vm-page-test" t)))
@@ -206,7 +206,7 @@ headers are exposed, and that is what the command reads."
                               (buffer-substring (point-min) (point-max)))))))
 
 ;;; What a preview shows, what the end-of-message blurb says, and what the
-;;; URL help offers.  These three had a test each asserting the function was
+;;; URL help gives.  These three had a test each asserting the function was
 ;;; bound, which is true of any file that loads.
 
 (defconst vm-page-test--folder

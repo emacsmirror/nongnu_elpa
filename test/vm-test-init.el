@@ -313,10 +313,10 @@ asserting on what an error says rather than only that one was raised."
 (defun vm-test-connection-lost (protocol doing original)
   "Signal that a live PROTOCOL server closed the connection while DOING.
 ORIGINAL is the error that reported the close, or nil where the close was
-noticed rather than signalled; its text is carried into this one so that
+noticed rather than signalled; its text is included in this one so that
 nothing is lost by explaining it.
 
-DOING names the step and never the command: a LOGIN or a PASS carries the
+DOING names the step and never the command: a LOGIN or a PASS holds the
 password.
 
 The measured instance is IMAPS, in emacs-vm/vm#864, and the message names it
@@ -523,7 +523,7 @@ it where there is anything to do.
 
 The reason is printed as well as handed to `ert-skip'.  A batch run shows only
 the name of a skipped test -- neither the per-test line nor the summary
-carries the reason -- so a message given to `ert-skip' alone is invisible
+holds the reason, so a message given to `ert-skip' alone is invisible
 exactly where someone is reading the output and wondering what went wrong."
   `(unless ,condition
      (let ((reason (or ,message "Precondition not met")))
@@ -830,7 +830,7 @@ cost more than the tests do."
 (defun vm-test-kill-new-buffers (buffers)
   "Kill every live buffer that is not in BUFFERS.
 A folder buffer outlives its test just as readily as a variable does, and it
-carries a whole folder's worth of buffer-local state plus a name that the next
+holds a whole folder's worth of buffer-local state plus a name that the next
 test's `get-buffer' will find.  Session buffers are the common case, since VM
 keeps them for reuse and the variable holding them has just been wound back.
 
@@ -851,7 +851,7 @@ down the whole run rather than the one test."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (set-buffer-modified-p nil)
-          ;; `vm-postpone' offers to save a composition as a draft from
+          ;; `vm-postpone' asks to save a composition as a draft from
           ;; `kill-buffer-hook', which is another question.
           (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t))
         (ignore-errors (kill-buffer buffer))))))
@@ -876,7 +876,7 @@ from.  No test leaves a composition behind, so the timer has nothing to rename."
 reached a password prompt did not fail, it hung, and took the whole run with
 it -- an hour of a suite for one test asking a question nobody was there to
 answer.  A test that means to be asked binds this away with `cl-letf' and
-answers for itself."
+speaks for itself."
   (error "No reader here to give a password to"))
 
 (defun vm-test-run-test-isolated (run-test test)

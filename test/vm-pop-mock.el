@@ -34,7 +34,7 @@
 ;;   :lie-about-size report a wrong octet count in LIST and STAT
 ;;   :slow-greeting  wait before greeting, for timeout tests
 ;;   :xoauth2        TOKEN; serve AUTH XOAUTH2 and take that token.  Any other
-;;                   is refused the way a real server refuses one, on a
+;;                   is rejected the way a real server rejects one, on a
 ;;                   continuation line that waits for a line back before the
 ;;                   -ERR
 ;;
@@ -119,12 +119,12 @@ the terminating dot is sent."
 
 (defconst vm-pop-mock-xoauth2-refusal
   "{\"status\":\"401\",\"schemes\":\"bearer\",\"scope\":\"https://mail.google.com/\"}"
-  "What a server sends on the continuation line when it refuses a token.")
+  "What a server sends on the continuation line when it rejects a token.")
 
 (defun vm-pop-mock--auth (mock process words)
   "Answer an AUTH command, WORDS being the line split up.
 Only XOAUTH2, which is the whole of SASL this serves.  A token the mock does
-not hold is refused the way a real server refuses one: the reason on a
+not hold is rejected the way a real server rejects one: the reason on a
 continuation line, and the -ERR only after the client has sent a line of its
 own."
   (let* ((mechanism (upcase (or (nth 1 words) "")))
@@ -154,7 +154,7 @@ own."
 		 (string-to-number arg))))
     (cond
      ;; The line a refused token is waiting for, before anything reads a verb
-     ;; off the front of it: it carries none.
+     ;; off the front of it: it has none.
      ((vm-pop-mock-xoauth2-refused mock)
       (setf (vm-pop-mock-xoauth2-refused mock) nil)
       (vm-pop-mock--send process "-ERR authentication failed\r\n"))
@@ -283,7 +283,7 @@ own."
 (defun vm-pop-mock--filter (process text)
   "Split TEXT from PROCESS into commands and answer each.
 An error while answering is caught, recorded and answered -ERR.  Emacs prints
-an error in a process filter to the messages and carries on, so an error here
+an error in a process filter to the messages and continues, so an error here
 was invisible to the test and cost it the rest of PENDING as well -- the
 command still in there was never answered, and the client sat waiting for a
 reply that was not coming until its deadline ran out.  A silent timeout is

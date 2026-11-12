@@ -52,7 +52,7 @@ stub and the VM 7 set that went with it are gone, and the bindings are in
 (ert-deftest vm-vars-test-the-installer-binds-what-is-bound-already ()
   "`vm-v8-key-bindings' is kept for preferences files that call it.
 It binds what the maps already carry, so calling it changes nothing.  The
-documented alias still answers to its name."
+documented alias is still defined under its name."
   (should (eq (symbol-function 'vm-current-key-bindings) 'vm-v8-key-bindings))
   (vm-vars-test--with-a-copy-of-the-maps
     (vm-v8-key-bindings)

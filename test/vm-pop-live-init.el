@@ -22,7 +22,7 @@
 ;; twice.
 ;;
 ;; That makes the INBOX shared state, which the tests are careful about: every
-;; fixture message carries an X-VMTest-Id header naming the test run, and
+;; fixture message has an X-VMTest-Id header naming the test run, and
 ;; anything left over is removed over IMAP afterwards even if the test failed.
 ;; A maildrop is not a throwaway mailbox, so nothing here may assume it starts
 ;; empty either -- the assertions are about the messages the test itself put
@@ -53,7 +53,7 @@
 (defvar vm-pop-live-enabled (vm-test-live-wanted-p)
   "Whether the live POP tests may run at all.
 As with `vm-imap-live-enabled', the config file is the real opt-in; bind this
-to nil to keep a configured checkout off the network, and the default answers
+to nil to keep a configured checkout off the network, and the default is
 VM_TEST_LIVE.")
 
 (defvar vm-pop-test-servers nil
@@ -116,7 +116,7 @@ message into a maildrop, and comes back over POP."
       (while (and (not (vm-pop-live--line-ready-p))
 		  (< (float-time) deadline))
 	(accept-process-output process 0 100)
-	;; A dead process answers at once, so without this the wait becomes a
+	;; A dead process returns at once, so without this the wait becomes a
 	;; spin until the deadline and reports silence for what is a closed
 	;; connection.  The second look is for a line delivered alongside the
 	;; close.
@@ -167,7 +167,7 @@ message into a maildrop, and comes back over POP."
 	(process-send-string process (concat string "\r\n"))
       (error
        (unless (process-live-p process)
-	 ;; STRING is not named: a PASS carries the password.
+	 ;; STRING is not named: a PASS holds the password.
 	 (vm-test-connection-lost "POP" "sending a command" err))
        (signal (car err) (cdr err))))))
 
@@ -233,7 +233,7 @@ SPEC is (CONN-VAR SERVER ACCOUNT)."
   (format "vmtest-pop-%d-%d" (emacs-pid) vm-pop-live--id-counter))
 
 (defun vm-pop-live-message (id &optional body)
-  "Return a whole message carrying fixture id ID."
+  "Return a whole message holding fixture id ID."
   (concat "From: alice@example.com\r\n"
 	  "To: vmtest@example.com\r\n"
 	  (format "Subject: live pop test %s\r\n" id)
@@ -253,7 +253,7 @@ SPEC is (CONN-VAR SERVER ACCOUNT)."
       (vm-imap-live-close conn))))
 
 (defun vm-pop-live-purge-inbox (imap-server account id)
-  "Delete and expunge any INBOX message on IMAP-SERVER carrying fixture id ID.
+  "Delete and expunge any INBOX message on IMAP-SERVER holding fixture id ID.
 Used to clean up after a test, whether or not it got as far as retrieving
 what it put there."
   (let ((conn (vm-imap-live--open imap-server)))

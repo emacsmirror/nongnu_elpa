@@ -69,7 +69,7 @@
 
 (ert-deftest vm-postpone-test-no-variable-alias-for-the-old-group-name ()
   "REGRESSION: the old group name is not aliased as though it were a variable.
-This group was `vm-pine' before 8.4.0, and the file carried
+This group was `vm-pine' before 8.4.0, and the file held
 \(defvaralias \\='vm-pine \\='vm-postpone\) with a comment calling it a group
 alias.  Neither name is a variable, so what that did was make `vm-pine' a
 variable alias pointing at nothing, and Customize has no group-alias mechanism
@@ -413,7 +413,7 @@ name, which is how it survived: nothing checked that the target was defined."
           "attachment payload\n"
           "\n"
           "--SEP--\n\n")
-  "A postponed draft carrying an attachment, as `vm-postpone-message' writes it.")
+  "A postponed draft with an attachment, as `vm-postpone-message' writes it.")
 
 (defun vm-postpone-test-continue (decoded)
   "Continue the test draft and return the resulting composition as a string.
@@ -459,7 +459,7 @@ body declared as the default 7bit when it is not."
 (ert-deftest vm-postpone-test-continue-raw-body-keeps-mime-headers ()
   "Test that a raw body is never copied without its MIME headers.
 Regression test for the failure described in issue #141: when the
-headers say nothing about MIME but the body still carries boundary
+headers say nothing about MIME but the body still holds boundary
 lines, sending re-encodes the whole thing and the attachments are lost.
 `vm-mime-decoded' is set here with no presentation buffer, so the body
 inserted is the raw one and the headers must be kept to match."
@@ -711,7 +711,7 @@ composition left one `#mail%20to%20...#' file behind, in among the folders."
 ;;; Postponing into an mboxcl2 folder (emacs-vm/vm#612)
 
 (ert-deftest vm-postpone-test-a-draft-gets-a-content-length ()
-  "A draft postponed into an mboxcl2 folder carries a `Content-Length'.
+  "A draft postponed into an mboxcl2 folder has a `Content-Length'.
 Neither branch of the writer had one, so a draft written into such a folder
 could not be read back -- and the folder said nothing was wrong until VM was
 made to check."
@@ -932,7 +932,7 @@ than filing the copy somewhere arbitrary."
     (vm-mail-auto-fcc)
     (should-not (vm-postpone-test--fcc))))
 
-(ert-deftest vm-postpone-test-auto-fcc-refuses-a-directory ()
+(ert-deftest vm-postpone-test-auto-fcc-rejects-a-directory ()
   "REGRESSION: a name that resolves to a directory is refused.
 
 The check was made on the name as the rules gave it, and the header
@@ -1042,7 +1042,7 @@ composed, no prefix argument was given, and `vm-continue-what-message'
 is `ask'.  BINDINGS are let bindings on top of that.
 
 A question is an error unless the test stubs `y-or-n-p' itself: batch ert
-has a terminal to read the answer from, so a question nothing answers
+has a terminal to read the answer from, so a question nothing can answer
 hangs the run rather than failing it."
   (declare (indent 1) (debug t))
   `(let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-test-" t)))
@@ -1094,12 +1094,12 @@ folder."
 
 (ert-deftest vm-postpone-test-a-prefix-argument-forces-a-continue ()
   "C-u says continue even with nothing to continue, which is how the
-command offers the drafts folder anyway."
+command proposes the drafts folder anyway."
   (vm-postpone-test--deciding ((current-prefix-arg '(4)))
     (should (eq (vm-continue-what-message-composing) 'force-continue))))
 
 (ert-deftest vm-postpone-test-a-draft-under-the-cursor-is-continued ()
-  "A message in the current folder carrying `vm-postponed-header' is a
+  "A message in the current folder with `vm-postponed-header' is a
 draft, so it is continued rather than the drafts folder visited."
   (vm-postpone-test--deciding ()
     (vm-test-with-folder vm-postpone-test--draft
@@ -1127,7 +1127,7 @@ draft, so it is continued rather than the drafts folder visited."
 
 (ert-deftest vm-postpone-test-a-drafts-folder-on-disk-is-visited ()
   "Drafts saved in an earlier session are found by their folder, which VM
-offers to visit."
+proposes visiting."
   (vm-postpone-test--deciding ((vm-continue-what-message 'continue))
     (vm-postpone-test--write-drafts dir)
     (should (eq (vm-continue-what-message-composing) 'visit))))
@@ -1512,7 +1512,7 @@ draft is in the folder by then, and this runs on `mail-send-hook' too."
                       (error :signalled))))))
     (should (= 1 (length warnings)))
     (should (string-match-p "Source message not deleted" (car warnings)))
-    ;; the underlying error is carried, not thrown away
+    ;; the underlying error is kept, not thrown away
     (should (string-match-p "arrayp\\|wrong-type" (car warnings)))))
 (ert-deftest vm-postpone-test-dont-kill-keeps-the-buffer-and-still-deletes-the-source ()
   "DONT-KILL decides the composition buffer, not the source message.
@@ -1540,7 +1540,7 @@ it an FCC header naming the folder."
             (vm-postpone-message drafts t))
           ;; the source was dealt with despite DONT-KILL
           (should (= deleted 1))
-          ;; and the composition is still here, carrying the FCC
+          ;; and the composition is still here, holding the FCC
           (should (buffer-live-p composition))
           (should (string-match-p (concat "FCC: " (regexp-quote drafts))
                                   (with-current-buffer composition

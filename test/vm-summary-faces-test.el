@@ -18,7 +18,7 @@
 ;;; Summary faces (emacs-vm/vm#632)
 ;;
 ;; `vm-summary-faces-mode' turns the decoration of summary lines on and off,
-;; and `vm-summary-faces-hide' hides the lines carrying one of those faces --
+;; and `vm-summary-faces-hide' hides the lines with one of those faces:
 ;; hiding the deleted messages, by default.  Neither had a test.
 
 (defconst vm-summary-faces-test--folder
@@ -32,7 +32,7 @@
   "Visit a folder with a summary and run BODY in the folder buffer.
 SPEC is (SUMMARY-VAR), bound to the summary buffer.  It has to be captured
 here: `vm-summary-faces-hide' leaves the summary buffer current, and
-`vm-summary-buffer' is nil there -- it is the folder that knows its summary."
+`vm-summary-buffer' is nil there -- it is the folder that holds its summary."
   (declare (indent 1) (debug t))
   `(let ((dir (file-name-as-directory (make-temp-file "vm-summary-faces" t)))
          (before (buffer-list)))
@@ -94,7 +94,7 @@ for, so a deleted message's line is marked deleted."
     (should vm-summary-enable-faces)))
 
 (ert-deftest vm-summary-faces-test-hiding-the-lines-with-a-face ()
-  "`vm-summary-faces-hide' hides the summary lines carrying the face named,
+  "`vm-summary-faces-hide' hides the summary lines with the face named,
 and shows them again.  Only those lines: the message that is not deleted stays
 visible while the deleted one is hidden."
   (vm-summary-faces-test--with-summary (summary)
@@ -107,8 +107,8 @@ visible while the deleted one is hidden."
     (vm-summary-faces-hide "vm-summary-deleted")
     (should (equal (vm-summary-faces-test--invisible-count summary) 0))))
 
-(ert-deftest vm-summary-faces-test-hiding-a-face-no-line-carries ()
-  "Hiding a face nothing carries hides nothing, rather than everything."
+(ert-deftest vm-summary-faces-test-hiding-a-face-no-line-has ()
+  "Hiding a face nothing has hides nothing, rather than everything."
   (vm-summary-faces-test--with-summary (summary)
     (vm-summary-faces-mode 1)
     (vm-update-summary-and-mode-line)

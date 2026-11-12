@@ -223,7 +223,7 @@ PREDICATE would not signal `void-function'."
 (ert-deftest vm-minibuf-test-read-number-keeps-asking-until-it-gets-one ()
   "A number is what comes back, and nothing else is accepted.
 The prompt is repeated rather than an error signalled, since this is what
-answers `C-u' style counts."
+accepts `C-u' style counts."
   (let ((answers '("not a number" "  -12 messages")))
     (cl-letf (((symbol-function 'read-string)
                (lambda (&rest _) (pop answers))))

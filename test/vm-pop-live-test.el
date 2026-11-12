@@ -87,14 +87,14 @@ that is where the password is."
 	  (should (string-match-p "closed the connection" text))
 	  (should (string-match-p "emacs-vm/vm#864" text))
 	  (should (string-match-p "Run the test again" text))
-	  ;; the error that reported it is carried, not replaced
+	  ;; the error that reported it is kept, not replaced
 	  (should (string-match-p "not running" text))
 	  (should-not (string-match-p "the-password" text)))
       (kill-buffer (vm-pop-live-conn-buffer conn)))))
 
 (ert-deftest vm-pop-live-test-a-closed-connection-explains-itself-on-read ()
   "Awaiting a line on a dropped connection explains rather than waiting out.
-A dead process answers `accept-process-output' at once, so that path used to
+A dead process returns from `accept-process-output' at once, so that path used to
 spin until `vm-pop-live-timeout' and then report that the server said
 nothing, which is a closed connection described as silence.  The elapsed
 time is asserted because it is what tells the two apart."

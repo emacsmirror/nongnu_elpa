@@ -402,7 +402,7 @@ It works by leaving its own name in `last-command', which the operable-message
 selection reads -- so this checks the mechanism the whole marking system rests
 on rather than the command's own return value."
   (vm-mark-test--with-folder (_folder)
-    ;; mark a message other than the current one, so the two answers differ
+    ;; mark a message other than the current one, so the two results differ
     (setq vm-message-pointer (cdr (cdr vm-message-list)))
     (vm-mark-message 1)
     (setq vm-message-pointer vm-message-list)

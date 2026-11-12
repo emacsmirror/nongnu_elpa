@@ -54,7 +54,7 @@ so, and this is that claim measured rather than asserted.
 
 The babyl one is the limit emacs-vm/vm#801 decided to keep.  VM quotes a body
 separator for From_ and for mmdf and not for babyl, so `mailbox.Babyl\' finds
-three messages where VM filed two, and Rmail refuses the folder outright.
+three messages where VM filed two, and Rmail rejects the folder outright.
 Quoting it would have cost a `>\' on three more of the hundred and twenty
 conversion round trips, and the decision was to leave babyl compatibility
 where it has always been and describe it in the manual instead.")
@@ -189,12 +189,12 @@ error here."
               n))
         (error (error-message-string error-data))))))
 
-(ert-deftest vm-interop-test-rmail-refuses-a-babyl-body-holding-a-separator ()
+(ert-deftest vm-interop-test-rmail-rejects-a-babyl-body-holding-a-separator ()
   "Rmail opens every babyl folder VM writes but one, and this is the one.
 
 emacs-vm/vm#801, and the measurement the decision rests on.  Rmail is the
 reference implementation of this format, and a body holding the babyl
-separator does not merely confuse it: it refuses the folder with
+separator does not merely confuse it: it rejects the folder with
 
     Search failed: \",, ?\"
 

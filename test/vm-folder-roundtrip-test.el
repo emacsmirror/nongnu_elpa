@@ -124,7 +124,7 @@ these answered `end-of-buffer' (emacs-vm/vm#786)."
   "A BellFrom_ folder is read back as From_, and its messages run together.
 That type is a From_ folder without the blank line between messages, so it
 has no signature of its own and nothing in its name says what it is: VM
-answers From_ for it, and the From_ reader takes the next envelope line for
+returns From_ for it, and the From_ reader takes the next envelope line for
 body text, which for that format it has to.  Recorded here rather than
 asserted away, because what to do about it is a question for the maintainer
 and not for this test (emacs-vm/vm#787).
@@ -187,8 +187,8 @@ puts on a line that would otherwise read as a separator."
 
 (defun vm-folder-roundtrip-test--every-conversion (check)
   "Convert between every pair of types, with every body, and collect CHECK.
-CHECK is called with the plist a conversion answers and the pair and body it
-came from; what it answers, when not nil, is collected as a complaint."
+CHECK is called with the plist a conversion returns and the pair and body it
+came from; what it returns, when not nil, is collected as a fault."
   (let (complaints)
     (dolist (from vm-folder-roundtrip-test--convertible)
       (dolist (to vm-folder-roundtrip-test--convertible)
@@ -321,7 +321,7 @@ something signalled."
   "Saving a message into a folder of another type puts one message there.
 The bytes were written as they stood, with no quoting for the target.  A
 message out of a folder that had no need to quote them -- mboxcl2 counts its
-bytes, mmdf and babyl have separators of their own -- then carried a line the
+bytes, mmdf and babyl have separators of their own, then held a line the
 target read as a separator: into a From_ folder it became two messages, and
 into an mmdf folder it made the folder unreadable."
   (should (equal nil

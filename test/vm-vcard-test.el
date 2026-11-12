@@ -38,7 +38,7 @@ which is not a special variable and so cannot be let-bound."
      ,@body))
 
 (ert-deftest vm-vcard-test-declines-when-vcard-el-is-missing ()
-  "The vCard displayer answers nil and writes nothing without vcard.el.
+  "The vCard displayer returns nil and writes nothing without vcard.el.
 It reached vcard.el's own variables regardless, so displaying a vCard part
 on a machine without the package signalled void-variable."
   (with-temp-buffer
@@ -72,7 +72,7 @@ that it still runs against a vm-vcard.el that has no such function."
     (should (equal (buffer-string) vm-vcard-test--card))))
 
 (ert-deftest vm-vcard-test-renders-a-card-with-vcard-el ()
-  "With vcard.el installed the part is rendered and the displayer answers t."
+  "With vcard.el installed the part is rendered and the displayer returns t."
   (skip-unless (vm-vcard-available-p))
   (with-temp-buffer
     (insert vm-vcard-test--card)

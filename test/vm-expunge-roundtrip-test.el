@@ -334,7 +334,7 @@ file:
 - mboxcl2 writes it as it stands, which is the point of the type: the byte
   count says where the message ends whatever the body holds (emacs-vm/vm#466);
 - babyl writes it as it stands, and an outside reader cannot cope: Rmail
-  refuses such a folder outright and Python\'s `mailbox.Babyl\' finds three
+  rejects such a folder outright and Python\'s `mailbox.Babyl\' finds three
   messages where VM wrote two.  VM\'s babyl munging looks for a separator
   followed by an attribute line and a bare one in a body has none, so nothing
   is quoted.  Kept deliberately, emacs-vm/vm#801 having decided to leave

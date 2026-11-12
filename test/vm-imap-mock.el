@@ -56,7 +56,7 @@
 ;;   :cram-md5        advertise AUTH=CRAM-MD5 and serve AUTHENTICATE
 ;;   :xoauth2         TOKEN; advertise AUTH=XOAUTH2 and SASL-IR, and take that
 ;;                    token.  Any other is refused the way a real server
-;;                    refuses one, on a continuation line that waits for a
+;;                    rejects one, on a continuation line that waits for a
 ;;                    line back before the tagged NO
 ;;   :no-sasl-ir      leave SASL-IR out, so the response goes after a
 ;;                    challenge rather than on the AUTHENTICATE line
@@ -169,7 +169,7 @@ For a test that has already done something over the wire -- a visit, a fetch
 (defun vm-imap-mock-set-flags (mock mailbox uid flags)
   "Give the message with UID in MAILBOX the FLAGS, as another client would.
 For the synchronisation tests: what VM is to notice is a change the server
-knows about and VM does not."
+has and VM does not."
   (let ((message (cl-find uid (vm-imap-mock-messages mock mailbox)
 			  :key #'vm-imap-mock-message-uid)))
     (unless message
@@ -363,10 +363,10 @@ SPEC is an IMAP sequence set: 1, 1:4, 1:*, or a comma-separated list of them."
 
 (defvar vm-imap-mock-permanent-flags
   "\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*"
-  "What the mock answers for PERMANENTFLAGS at SELECT.
+  "What the mock returns for PERMANENTFLAGS at SELECT.
 The `\\*\\=' at the end is the server saying it keeps keywords of its own.
 Bind this without it for a server that does not, which is what Gmail
-answers and what makes a label set in VM disappear (emacs-vm/vm#601).")
+returns and what makes a label set in VM disappear (emacs-vm/vm#601).")
 
 (defun vm-imap-mock--fetch (mock process tag spec items by-uid)
   "Answer a FETCH or UID FETCH of SPEC for ITEMS."
@@ -607,14 +607,14 @@ challenge keyed by the password, in lower case hexadecimal."
 
 (defconst vm-imap-mock-xoauth2-refusal
   "{\"status\":\"401\",\"schemes\":\"bearer\",\"scope\":\"https://mail.google.com/\"}"
-  "What a server sends on the continuation line when it refuses a token.
+  "What a server sends on the continuation line when it rejects a token.
 Google's wording; the client is not expected to read it, only to answer
 with a line so that the tagged NO can follow.")
 
 (defun vm-imap-mock--xoauth2-answer (mock process tag line)
   "Check LINE, an XOAUTH2 SASL response to TAG, and answer the client.
 The response is the base64 of user=U^Aauth=Bearer T^A^A.  A token the mock
-does not hold is refused the way a real server refuses one: the reason on a
+does not hold is rejected the way a real server rejects one: the reason on a
 continuation line, and the tagged NO only after the client has sent a line
 of its own."
   (let* ((given (ignore-errors (base64-decode-string line)))
@@ -644,7 +644,7 @@ of its own."
   "Answer LINE, one command from PROCESS."
   (vm-imap-mock--log mock line)
   (cond
-   ;; the answer to a continuation carries no tag, so it is taken before
+   ;; the reply to a continuation has no tag, so it is taken before
    ;; anything tries to read one off the front of it
    ((vm-imap-mock-challenge mock)
     (vm-imap-mock--cram-md5-answer mock process line))
@@ -740,7 +740,7 @@ than commands, so they are counted off first."
       ;; an error must not cost the rest of PENDING: the command still in
       ;; there would never be answered, and the client would wait for a reply
       ;; that is not coming.  Emacs prints an error in a process filter and
-      ;; carries on, so the test would see only a timeout.
+      ;; continues, so the test would see only a timeout.
       (process-put process 'vm-imap-mock-pending pending))))
 
 (defun vm-imap-mock-errors (mock)
