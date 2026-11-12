@@ -127,7 +127,7 @@
 
 (defgroup vm-epg nil
   "PGP and PGP/MIME support for VM."
-  :group 'vm-ext)
+  :group 'vm)
 
 (defface vm-epg-bad-signature
   '((((type tty) (class color))

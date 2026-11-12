@@ -119,10 +119,6 @@
   "Options affecting the saving, deleting and expunging of messages in VM."
   :group 'vm)
 
-(defgroup vm-ext nil
-  "VM's add-on packages."
-  :group 'vm)
-
 (defgroup vm-print nil
   "Options affecting printing of messages in VM."
   :group 'vm)
