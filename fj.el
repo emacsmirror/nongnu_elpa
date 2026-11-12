@@ -3011,7 +3011,7 @@ for forming a URL.")
           (1+ alnum)))
       (| "'" word-boundary)) ; boundary or possessive
   "Regex for a local pull request reference. Group 1 is for completion at point functions.
-Group 2 is the ref without any preceding # or !.")
+Group 2 is the ref without any preceding !.")
 
 (defvar fj-repo-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
