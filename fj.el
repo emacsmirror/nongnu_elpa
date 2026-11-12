@@ -1607,15 +1607,15 @@ ITEM should be the result of `fj-get-item'."
   "Identify the format of ITEM.
 
 If ITEM looks like a pull request -> :pull
-If ITEM looks like an issue       -> :list
+If ITEM looks like an issue       -> :issue
 Otherwise                         -> nil
 
 ITEM should be the result of `fj-get-item'."
-  ;; 'pull_request   present -> :list
+  ;; 'pull_request   present -> :issue
   ;; 'head and 'base present -> :pull
   ;;  else                   -> nil
   (if (assq 'pull_request item)
-      :list
+      :issue
     (and (assq 'head item)
          (assq 'base item)
          :pull)))
@@ -1638,18 +1638,18 @@ As an example, if TYPE is `:pull' and the item identified by NUMBER
 corresponds to an issue, the function will send a second request (this
 time asking for an *issue*).
 
-Likewise, if TYPE is nil or `:list' (used for issues) and the item is
+Likewise, if TYPE is nil or `:issue' (used for issues) and the item is
 actually a PR, the function will send a new request to the
 server (asking for a *pull request*)."
-  (pcase (or type :list)
+  (pcase (or type :issue)
     (:pull
      (condition-case nil
          (fj-get-item repo owner number :pull)
        (user-error
         ;; requested as PR, not found -> try asking for an issue
-        (fj-get-item repo owner number :list))))
-    (:list
-     (let ((issue (fj-get-item repo owner number :list)))
+        (fj-get-item repo owner number :issue))))
+    (:issue
+     (let ((issue (fj-get-item repo owner number :issue)))
        (if (fj--item-is-pr-disguised-as-issue-p issue)
            (fj-get-item repo owner number :pull)
          issue)))
@@ -3877,7 +3877,7 @@ Adds PROPS to the link's properties."
 (defun fj-item-view (&optional repo owner number type page limit target)
   "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window.
-TYPE is :pull or :list (default).
+TYPE is :pull or :issue (default).
 PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
   (let* ( ;; set defaults for pagination:
