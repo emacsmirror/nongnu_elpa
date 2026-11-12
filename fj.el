@@ -1597,6 +1597,29 @@ all for `fj-issues-search'."
                 "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type\
  | \\`C-c C-d': cycle relation")))))
 
+(defun fj--item-is-pr-disguised-as-issue-p (item)
+  "Return whether ITEM is a pull request formatted as an issue.
+
+ITEM should be the result of `fj-get-item'."
+  (> (length (assq 'pull_request item)) 1))
+
+(defun fj--identify-item-format (item)
+  "Identify the format of ITEM.
+
+If ITEM looks like a pull request -> :pull
+If ITEM looks like an issue       -> :list
+Otherwise                         -> nil
+
+ITEM should be the result of `fj-get-item'."
+  ;; 'pull_request   present -> :list
+  ;; 'head and 'base present -> :pull
+  ;;  else                   -> nil
+  (if (assq 'pull_request item)
+      :list
+    (and (assq 'head item)
+         (assq 'base item)
+         :pull)))
+
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
 If TYPE is :pull, get a pull request, not issue."
@@ -1607,6 +1630,30 @@ If TYPE is :pull, get a pull request, not issue."
          (endpoint (format "repos/%s/%s/%s/%s" owner repo
                            (if (eq type :pull) "pulls" "issues") number)))
     (fj-get endpoint)))
+
+(defun fj-get-item-checked (repo &optional owner number type)
+  "Much like `fj-get-item' but ensures that TYPE makes sense.
+
+As an example, if TYPE is `:pull' and the item identified by NUMBER
+corresponds to an issue, the function will send a second request (this
+time asking for an *issue*).
+
+Likewise, if TYPE is nil or `:list' (used for issues) and the item is
+actually a PR, the function will send a new request to the
+server (asking for a *pull request*)."
+  (pcase (or type :list)
+    (:pull
+     (condition-case nil
+         (fj-get-item repo owner number :pull)
+       (user-error
+        ;; requested as PR, not found -> try asking for an issue
+        (fj-get-item repo owner number :list))))
+    (:list
+     (let ((issue (fj-get-item repo owner number :list)))
+       (if (fj--item-is-pr-disguised-as-issue-p issue)
+           (fj-get-item repo owner number :pull)
+         issue)))
+    (_ (user-error "invalid type '%s'" type))))
 
 (defun fj-issue-success-maybe-upload (resp repo owner)
   "In sucess function with RESP, upload attachment if present.
