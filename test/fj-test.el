@@ -2053,3 +2053,27 @@ prefix is used or not."
    (equal '("owner" "repo")
           (fj-owner+repo-from-url
            "https://example.org/owner/repo/pulls/1234"))))
+
+;;;
+;;; ERTs for `fj--item-is-pr-disguised-as-issue-p'
+;;;
+
+(ert-deftest fj-test/item-is-pr-disguised-as-issue-p/issue ()
+  "Tests that an issue is not regarded \"disguised\"."
+  (should
+   (equal (fj--item-is-pr-disguised-as-issue-p (car fj-test-issues))
+          nil)))
+
+(ert-deftest fj-test/item-is-pr-disguised-as-issue-p/pull-request ()
+  "Tests that a PR is not regarded \"disguised\" as an issue."
+  (should
+   (equal (fj--item-is-pr-disguised-as-issue-p
+           (car fj-test-pull-reqs))
+          nil)))
+
+(ert-deftest fj-test/item-is-pr-disguised-as-issue-p/pull-request-as-issue ()
+  "Tests that a PR requested as an issue is regarded \"disguised\" as an issue."
+  (should
+   (equal (fj--item-is-pr-disguised-as-issue-p
+           (car fj-test-pull-reqs-as-issues))
+          t)))
