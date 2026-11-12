@@ -3723,10 +3723,11 @@ TS is a formatted timestamp."
               (fj-prop-item-flag "edited")))))
 
 (defun fj-render-item (repo owner item number
-                            &optional type page limit)
-  "Render ITEM number NUMBER, in REPO and its TIMELINE.
-OWNER is the repo owner.
-RELOAD mean we reloaded."
+                          &optional type page limit)
+  "Render ITEM number NUMBER, in REPO by OWNER, and its timeline.
+Type is :pull or :issue.
+PAGE and LIMIT are for setting `fj-buffer-spec', for reloading and
+pagination."
   (let ((header-line-indent " "))
     (header-line-indent-mode 1) ; broken?
     (let-alist item
