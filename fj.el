@@ -4558,7 +4558,7 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
            (concat
             (format format-str user ts)
             "\n"
-            (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
+            (fj-propertize-link .ref_issue.title 'pull-ref .ref_issue.number)))
           ("delete_branch"
            (format format-str user
                    (propertize .old_ref
@@ -6221,8 +6221,8 @@ Used for hitting RET on a given link."
          (fj-item-view repo owner item))
         ('comment-ref
          (fj-issue-ref-follow item))
-        ;; ((eq type 'pull)
-        ;; (fj-item-view repo owner item nil :pull))
+        ('pull-ref
+         (fj-item-view repo owner item :pull))
         ('handle (if (string= fj-user item)
                      (fj-list-own-repos)
                    (fj-user-repos item)))
