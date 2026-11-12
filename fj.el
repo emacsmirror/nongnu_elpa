@@ -563,33 +563,38 @@ Works in issue view mode or in issues tl."
    (lambda (buf _)
      (when buf (switch-to-buffer buf)))))
 
-(defun fj-copy-pull-commit-sha ()
+(defun fj-copy-commit-sha ()
   "Copy a commit's SHA from a pull request."
   (interactive)
   (let ((type (fj--property 'type)))
-    (if (or (eq 'commit-ref type)
-            (eq 'commit type))
-        (let ((ref (fj--property 'item)))
-          (kill-new ref)
-          (message (format "Copied: %s" ref)))
-      (fedi-do-item-completing
-       #'fj-get-pull-commits
-       (lambda (data)
-         (mapcar
-          (lambda (commit)
-            (let-alist commit
-              (list
-               (string-join
-                (list
-                 (car (split-string (alist-get 'message .commit) "\n"))
-                 .sha)
-                " ")
-               .sha)))
-          data))
-       "Copy commit SHA: "
-       (lambda (sha _)
-         (kill-new sha)
-         (message "Copied: %s" sha))))))
+    (cond ((or (eq 'commit-ref type)
+               (eq 'commit type))
+           (let ((ref (fj--property 'item)))
+             (kill-new ref)
+             (message (format "Copied: %s" ref))))
+          ((fj--get-buffer-spec :sha)
+           (let ((ref (fj--get-buffer-spec :sha)))
+             (kill-new ref)
+             (message (format "Copied: %s" ref))))
+          (t
+           (fedi-do-item-completing
+            #'fj-get-pull-commits
+            (lambda (data)
+              (mapcar
+               (lambda (commit)
+                 (let-alist commit
+                   (list
+                    (string-join
+                     (list
+                      (car (split-string (alist-get 'message .commit) "\n"))
+                      .sha)
+                     " ")
+                    .sha)))
+               data))
+            "Copy commit SHA: "
+            (lambda (sha _)
+              (kill-new sha)
+              (message "Copied: %s" sha)))))))
 
 (defun fj--issue-right-align-str (str)
   "Right align STR and return it."
@@ -4353,7 +4358,7 @@ Optionally, provide the commit's SHA and URL."
                     item)) ;; item view? FIXME: remove?
            (endpoint (format "repos/%s/%s/git/commits/%s.diff"
                              owner repo sha)))
-      (fj-view-item-diff endpoint repo owner url item))))
+      (fj-view-item-diff endpoint repo owner url item sha))))
 
 (defun fj-view-pull-diff ()
   "View a diff of the entire current PR."
@@ -4364,7 +4369,7 @@ Optionally, provide the commit's SHA and URL."
                               owner repo item)))
        (fj-view-item-diff endpoint repo owner url item)))))
 
-(defun fj-view-item-diff (endpoint &optional repo owner url item)
+(defun fj-view-item-diff (endpoint &optional repo owner url item sha)
   "View a diff of an item, commit or pull diff.
 In REPO by OWNER.
 ENDPOINT is the API endpoint to hit.
@@ -4390,7 +4395,8 @@ commit-msg/commit-hash. Used to copy commit hashes using
          (diff-mode)
          (keymap-local-set "b" #'fj-browse-view) ;; requires url in buf-spec
          (setq fj-buffer-spec
-               `(:url ,url :repo ,repo :owner ,owner :item ,item)))))))
+               `( :url ,url :repo ,repo :owner ,owner
+                  :item ,item :sha ,sha)))))))
 
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
