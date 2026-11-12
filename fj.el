@@ -1597,19 +1597,16 @@ all for `fj-issues-search'."
                 "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type\
  | \\`C-c C-d': cycle relation")))))
 
-(defun fj--item-is-pr-disguised-as-issue-p (item)
+(defun fj--item-is-pr-issue-p (item)
   "Return whether ITEM is a pull request formatted as an issue.
-
 ITEM should be the result of `fj-get-item'."
-  (> (length (assq 'pull_request item)) 1))
+  (alist-get 'pull_request item))
 
 (defun fj--identify-item-format (item)
   "Identify the format of ITEM.
-
 If ITEM looks like a pull request -> :pull
 If ITEM looks like an issue       -> :issue
 Otherwise                         -> nil
-
 ITEM should be the result of `fj-get-item'."
   ;; 'pull_request   present -> :issue
   ;; 'head and 'base present -> :pull
@@ -1650,7 +1647,7 @@ server (asking for a *pull request*)."
         (fj-get-item repo owner number :issue))))
     (:issue
      (let ((issue (fj-get-item repo owner number :issue)))
-       (if (fj--item-is-pr-disguised-as-issue-p issue)
+       (if (fj--item-is-pr-issue-p issue)
            (fj-get-item repo owner number :pull)
          issue)))
     (_ (user-error "invalid type '%s'" type))))
