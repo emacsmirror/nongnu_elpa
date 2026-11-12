@@ -3017,15 +3017,14 @@ Group 2 is the ref without any preceding !.")
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
       (group-n 1 ; = owner/repo#item
         (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                alnum)) ;;"A-Z" "a-z" "0-9")) ;; before slash (owner)
+                alnum)) ;; before slash (owner)
         (opt "/") ;; one slash
-        (1+ ;; more than zero something before #
+        (* ;; zero or more before !/#
          (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-              "." alnum)) ;;"A-Z" "a-z" "0-9")) ;; after slash (repo)
+              "." alnum))  ;; after slash (repo)
         (group-n 2 (or ?# ?!) ;; # or !
                  (group-n 3
-                   (1+ (any ;; "A-Z" "a-z"
-                        digit)))))
+                   (1+ (any digit)))))
       (| "'" word-boundary)) ; boundary or possessive
   "Regex for a repo-prefixed tag.
 Group 1 is owner/repo#item, group 2 is #item, group 3 is item.")
