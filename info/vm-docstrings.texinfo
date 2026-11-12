@@ -8596,54 +8596,6 @@ List of hook functions to be run after continuing a postponed message.
 
 @end macro
 
-@macro vmdocvmmailfccdefault
-@defopt vm-mail-fcc-default
-@vindex vm-mail-fcc-default
-A list which is evaluated to return a folder name.
-By reordering the elements of this list or adding own functions you
-can control the behavior of vm-mail-fcc and @code{vm-mail-auto-fcc}.
-You may allow a sophisticated decision for the right folder for your
-outgoing message.
-
-Default value:
-@example
-(or (vm-mail-select-folder vm-mail-folder-alist)
-    (vm-mail-to-fcc nil t) mail-archive-file-name)
-@end example
-@end defopt
-
-@end macro
-
-@macro vmdocvmmailfolderalist
-@defopt vm-mail-folder-alist
-@vindex vm-mail-folder-alist
-Like @code{vm-auto-folder-alist} but for outgoing messages.
-It should be fed to @code{vm-mail-select-folder}.
-@end defopt
-
-@end macro
-
-@macro vmdocvmmailtoheaders
-@defopt vm-mail-to-headers
-@vindex vm-mail-to-headers
-A list of headers for finding the email address to use as FCC-folder.
-
-Default value: @code{("To:" "CC:" "BCC:")}
-@end defopt
-
-@end macro
-
-@macro vmdocvmmailtoregexp
-@defopt vm-mail-to-regexp
-@vindex vm-mail-to-regexp
-A regexp matching the part of an email address to use as FCC-folder.
-The string enclosed in "\\\\(\\\\)" is used as folder name.
-
-Default value: @code{"\\\\([^<\\11\\n ]+\\\\)@@"}
-@end defopt
-
-@end macro
-
 @macro vmdocvmpostponemessagehook
 @defopt vm-postpone-message-hook
 @vindex vm-postpone-message-hook
@@ -8724,18 +8676,18 @@ Default value:
 @macro vmdocvmsavekilledmessage
 @defopt vm-save-killed-message
 @vindex vm-save-killed-message
-What killing a composition with writing in it does with the writing.
+Whether killing an unsent composition saves it as a draft.
 
-@code{always}, the default, files it in @code{vm-save-killed-messages-folder} and says
-so.  Nothing is lost by killing a composition, which is what a reader who has
-lost drafts to a keystroke needs (emacs-vm/vm#824).
+@code{always}, the default, saves it in @code{vm-save-killed-messages-folder} and
+reports where it went, so killing a composition loses nothing
+(emacs-vm/vm#824).
 
-@code{ask} asks whether to keep it.  Nil neither keeps it nor asks, and then
-@code{vm-confirm-killing-a-composition} is what stands between a keystroke and the
-writing.
+@code{ask} asks before saving.  Nil neither saves nor asks, leaving
+@code{vm-confirm-killing-a-composition} as the only check before the text is
+lost.
 
-A composition nothing has been written in is not kept and is not asked about,
-whichever this is.
+A composition the writer has typed nothing into is never saved and never
+asked about.
 
 Default value: @code{always}
 @end defopt
@@ -10317,6 +10269,33 @@ Default value: @code{t}
 
 @end macro
 
+@macro vmdocvmmailfccdefault
+@defopt vm-mail-fcc-default
+@vindex vm-mail-fcc-default
+A list which is evaluated to return a folder name.
+By reordering the elements of this list or adding own functions you
+can control the behavior of vm-mail-fcc and @code{vm-mail-auto-fcc}.
+You may allow a sophisticated decision for the right folder for your
+outgoing message.
+
+Default value:
+@example
+(or (vm-mail-select-folder vm-mail-folder-alist)
+    (vm-mail-to-fcc nil t) mail-archive-file-name)
+@end example
+@end defopt
+
+@end macro
+
+@macro vmdocvmmailfolderalist
+@defopt vm-mail-folder-alist
+@vindex vm-mail-folder-alist
+Like @code{vm-auto-folder-alist} but for outgoing messages.
+It should be fed to @code{vm-mail-select-folder}.
+@end defopt
+
+@end macro
+
 @macro vmdocvmmailheaderfrom
 @defopt vm-mail-header-from
 @vindex vm-mail-header-from
@@ -10493,6 +10472,27 @@ Default value:
   . "Re: ")
  ("\\\\(\\\\(fo\\\\|wg\\\\)\\\\(\\\\[[0-9]+\\\\]\\\\)?:[ 	]*\\\\)+" . "Fo: "))
 @end example
+@end defopt
+
+@end macro
+
+@macro vmdocvmmailtoheaders
+@defopt vm-mail-to-headers
+@vindex vm-mail-to-headers
+A list of headers for finding the email address to use as FCC-folder.
+
+Default value: @code{("To:" "CC:" "BCC:")}
+@end defopt
+
+@end macro
+
+@macro vmdocvmmailtoregexp
+@defopt vm-mail-to-regexp
+@vindex vm-mail-to-regexp
+A regexp matching the part of an email address to use as FCC-folder.
+The string enclosed in "\\\\(\\\\)" is used as folder name.
+
+Default value: @code{"\\\\([^<\\11\\n ]+\\\\)@@"}
 @end defopt
 
 @end macro

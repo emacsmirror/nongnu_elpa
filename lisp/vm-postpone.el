@@ -119,7 +119,7 @@
 
 (defgroup vm-postpone nil
   "Postponed message handling and draft support in VM."
-  :group  'vm-ext)
+  :group  'vm-compose)
 
 ;; This group was called `vm-pine' before 8.4.0.  There is nothing to write
 ;; here for that: Customize has no group-alias mechanism, and the two lines that
@@ -943,21 +943,21 @@ configuration."
 ;; This was inspired by Uwe Brauer
 (defcustom vm-save-killed-message
   'always
-  "What killing a composition with writing in it does with the writing.
+  "Whether killing an unsent composition saves it as a draft.
 
-`always', the default, files it in `vm-save-killed-messages-folder' and says
-so.  Nothing is lost by killing a composition, which is what a reader who has
-lost drafts to a keystroke needs (emacs-vm/vm#824).
+`always', the default, saves it in `vm-save-killed-messages-folder' and
+reports where it went, so killing a composition loses nothing
+(emacs-vm/vm#824).
 
-`ask' asks whether to keep it.  Nil neither keeps it nor asks, and then
-`vm-confirm-killing-a-composition' is what stands between a keystroke and the
-writing.
+`ask' asks before saving.  Nil neither saves nor asks, leaving
+`vm-confirm-killing-a-composition' as the only check before the text is
+lost.
 
-A composition nothing has been written in is not kept and is not asked about,
-whichever this is."
-  :type '(choice (const :tag "keep it" always)
+A composition the writer has typed nothing into is never saved and never
+asked about."
+  :type '(choice (const :tag "save it as a draft" always)
                  (const :tag "ask" ask)
-                 (const :tag "never keep it" nil))
+                 (const :tag "do not save it" nil))
   :group 'vm-postpone)
 
 (defcustom vm-save-killed-messages-folder
@@ -1081,7 +1081,7 @@ say so here."
   (concat (user-full-name) " <" user-mail-address ">")
   "The address where return receipts should be sent to."
   :type 'string
-  :group 'vm-postpone)
+  :group 'vm-compose)
 
 ;;;###autoload
 (defun vm-mail-return-receipt-to ()
@@ -1115,7 +1115,7 @@ See the variable `vm-mail-return-receipt-to'."
   "Priority: urgent\nImportance: High\nX-Priority: 1"
   "The priority headers."
   :type 'string
-  :group 'vm-postpone)
+  :group 'vm-compose)
 
 ;;;###autoload
 (defun vm-mail-priority ()
@@ -1141,7 +1141,7 @@ See the variable `vm-mail-priority'."
   "Like `vm-auto-folder-alist' but for outgoing messages.
 It should be fed to `vm-mail-select-folder'."
   :type 'sexp
-  :group 'vm-postpone)
+  :group 'vm-compose)
 
 ;;;###autoload
 (defcustom vm-mail-fcc-default
@@ -1154,7 +1154,7 @@ can control the behavior of vm-mail-fcc and `vm-mail-auto-fcc'.
 You may allow a sophisticated decision for the right folder for your
 outgoing message."
   :type 'sexp
-  :group 'vm-postpone)
+  :group 'vm-compose)
 
 ;;;###autoload
 (defun vm-mail-fcc (&optional arg)
@@ -1286,13 +1286,13 @@ This function is a slightly changed version of `vm-auto-select-folder'."
   "A regexp matching the part of an email address to use as FCC-folder.
 The string enclosed in \"\\\\(\\\\)\" is used as folder name."
   :type 'regexp
-  :group 'vm-postpone)
+  :group 'vm-compose)
 
 ;;;###autoload
 (defcustom vm-mail-to-headers '("To:" "CC:" "BCC:")
   "A list of headers for finding the email address to use as FCC-folder."
   :type '(repeat (string))
-  :group 'vm-postpone)
+  :group 'vm-compose)
 
 ;;;###autoload
 (defun vm-mail-to-fcc (&optional arg return-only)
