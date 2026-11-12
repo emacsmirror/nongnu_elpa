@@ -909,7 +909,7 @@ afterwards.  Values:
 (defun vm-epg-cleartext-set-result (status output face)
   "Record the cleartext STATUS, OUTPUT and FACE for the display advice.
 Return non-nil when running under `vm-epg--display-cleartext-automode' (which
-will do the cleanup); return nil otherwise, so the caller knows it must run
+will do the cleanup); return nil otherwise, so the caller can tell it must run
 `vm-epg-cleartext-cleanup' itself."
   (unless (eq vm-epg-cleartext-result 'none)
     (setq vm-epg-cleartext-result
@@ -1266,7 +1266,7 @@ is nil."
   "Display the PGP/MIME multipart/encrypted part LAYOUT, decrypting it.
 Insert the decrypted content at point, parsed and displayed as MIME in its
 own right, and report the outcome in the modeline.  If the plaintext also
-carried a signature, verify that and report it too.  When
+had a signature, verify that and report it too.  When
 `vm-epg-auto-decrypt' is nil, insert a button that decrypts on demand
 instead.
 
@@ -1700,8 +1700,8 @@ two variables therefore do not matter here.
 
 If the composition has *already* been MIME-encoded -- for instance because
 you encoded it yourself with `vm-mime-encode-composition' -- this cannot
-re-encode it safely, so it checks for the two hazards above and refuses to
-sign rather than produce a signature that breaks in transit."
+re-encode it safely, so it checks for the two hazards above and signals
+rather than produce a signature that breaks in transit."
   (interactive)
 
   (when (vm-mail-mode-get-header-contents "MIME-Version:")
@@ -1793,7 +1793,7 @@ Every recipient address found in the headers listed in
 `vm-epg-get-recipients-headers' must have a usable encryption key in your
 keyring; otherwise this signals an error and leaves the composition
 untouched.  Note that the message is never encrypted to a passphrase: if no
-recipient key can be found, it refuses rather than falling back to symmetric
+recipient key can be found, it signals rather than falling back to symmetric
 encryption.
 
 Encryption is to those recipients and to nobody else, so a copy filed with
@@ -1909,7 +1909,7 @@ choice, and `q' aborts sending with an error."
 
 Add to `vm-mail-send-hook' to be asked each time you send a message.
 `vm-epg-ask-function' controls what is asked: by default
-`vm-epg-prompt-for-action' offers a choice of actions, but it can also name
+`vm-epg-prompt-for-action' presents a choice of actions, but it can also name
 a single action to confirm, or your own function.
 
 This hook must be last in `vm-mail-send-hook', and signals an error if it is

@@ -174,7 +174,7 @@ sender wrote it is better than showing it in the wrong zone."
         (t value)))
 
 (defun vm-icalendar-attendee-line (properties)
-  "The attendees named in PROPERTIES, one per line, with their answers."
+  "The attendees named in PROPERTIES, one per line, with their replies."
   (let ((lines nil))
     (dolist (p properties)
       (when (equal (car p) "ATTENDEE")
@@ -319,8 +319,8 @@ the entry filed.
 so both are needed and the new one is asked for first (emacs-vm/vm#858).
 
 They do not answer alike, which is why neither is simply called in the
-other's place.  The old one answers t when it imported and nil when it did
-not.  The new one ends in `save-buffer' and answers nil whatever happened,
+other's place.  The old one returns t when it imported and nil when it did
+not.  The new one ends in `save-buffer' and returns nil whatever happened,
 and raises when it cannot read the text; that is all there is to go on, and
 it is enough.  It also shows the diary buffer, which VM does not want over
 a folder, so nothing is displayed for the length of the call."

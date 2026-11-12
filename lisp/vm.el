@@ -682,7 +682,7 @@ visited folder.
 
 This function differs from `vm-visit-folder' in that it remembers that
 the folder is a foreign folder maintained by Thunderbird.  Saving
-of messages is carried out preferentially to other Thunderbird folders."
+of messages is performed preferentially to other Thunderbird folders."
   (interactive
    (save-current-buffer
      (vm-session-initialization)
@@ -878,14 +878,14 @@ visited folder."
   ;; Before anything else does: a folder that is not a maildrop is read as
   ;; one further down, and `vm-imap-normalize-spec' fails on it with
   ;; "Wrong type argument: consp, nil" and no hint of the cause.  Nil is what
-  ;; `vm-imap-spec-for-account' answers for an account VM has not got, which
+  ;; `vm-imap-spec-for-account' returns for an account VM has not got, which
   ;; is what a command naming an account hands over (emacs-vm/vm#826).
   (unless (and (stringp folder) (vm-imap-folder-spec-p folder))
     (error (concat "%s is not an IMAP maildrop."
 		   "  A command that names an account gets nil from"
 		   " vm-imap-spec-for-account until vm-imap-account-alist"
 		   " has that account in it; M-x vm-check-configuration"
-		   " lists the accounts VM knows")
+		   " lists the accounts VM has")
 	   (if folder (format "%S" folder) "Nothing")))
   (setq vm-last-visit-imap-folder folder)
   (vm folder :access-method 'imap
@@ -1788,7 +1788,7 @@ every copy filed of it (emacs-vm/vm#832)."
 (defun vm-configuration-problem-folder-directory ()
   "A problem with where folders are kept, or nil."
   (cond ((null vm-folder-directory)
-         (concat "`vm-folder-directory' is not set, so saving a message offers"
+         (concat "`vm-folder-directory' is not set, so saving a message proposes"
                  " whatever directory happens to be current and folders end up"
                  " scattered.  Set it to the one directory your folders live"
                  " in.  See Local mail in the VM manual"))
@@ -1824,7 +1824,7 @@ comes later, from the session, saying something about the server instead.")
          (known (assoc type vm-maildrop-types)))
     (cond ((null known)
            (format (concat "%s names the maildrop %S, whose type %S is not one"
-                           " VM knows.  The types are %s.  See Server mail in"
+                           " VM supports.  The types are %s.  See Server mail in"
                            " the VM manual")
                    where spec type
                    (mapconcat #'car vm-maildrop-types ", ")))
@@ -1896,7 +1896,7 @@ of their rules ran."
 Checks the settings a first-time reader has to get right before anything
 works: which mail agent Emacs uses, the address mail goes out from, how it
 is sent, where folders are kept, and where new mail comes from.  Each
-maildrop is checked for a type VM knows and the right number of fields,
+maildrop is checked for a type VM supports and the right number of fields,
 neither of which the parsers mind, and `vm-mail-header-from' for a value
 that is not an address, which is a `From' header nobody can reply to.
 

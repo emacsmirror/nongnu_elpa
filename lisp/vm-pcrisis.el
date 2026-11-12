@@ -262,7 +262,7 @@ i.e. when within the composition buffer.")
 Emacs inserts one when `mail-signature' is set, taking it from that variable or
 from the file `mail-signature-file' names, and VM does that as it builds a
 composition.  Personality Crisis can only act on a signature whose extent it
-knows, so with this unset `vm-pcrisis-signature' neither replaces nor deletes
+has, so with this unset `vm-pcrisis-signature' neither replaces nor deletes
 that one: it looked to two readers of #540 like an action that had run and done
 nothing.  Set, which is the default, the signature already in a composition is
 found and comes under the same control as one Personality Crisis inserted
@@ -624,8 +624,8 @@ This is suitable for FCC, which can be specified multiple times."
   (when (vm-pcrisis-composition-buffer-p 'vm-pcrisis-add-header)
     ;; The headers to compare against are the composition's own, and read
     ;; from the buffer rather than through `vm-pcrisis-get-header-contents', which
-    ;; answers for the message being replied to, or
-    ;; `vm-pcrisis-get-current-header-contents', which answers only while
+    ;; returns the value for the message being replied to, or
+    ;; `vm-pcrisis-get-current-header-contents', which returns one only while
     ;; automorphing.  Both return nil in a composition, and `vm-pcrisis-split' then
     ;; choked on it (#576).
     (let ((prev-contents (save-excursion
@@ -905,8 +905,8 @@ the signature at POS if `vm-pcrisis-sig-exerlay' is detached."
 
 (defun vm-pcrisis-report-an-unknown-signature ()
   "Say what to set when the composition holds a signature not ours to act on.
-Personality Crisis acts on a signature whose extent it knows, and knows one it
-did not insert only when `vm-pcrisis-expect-default-signature' says to look
+Personality Crisis acts on a signature whose extent it has, and has one it
+did not insert only when `vm-pcrisis-expect-default-signature' is set to look
 for it.  Without that, a rule saying (vm-pcrisis-signature \"\") deleted
 nothing and said nothing, which is indistinguishable from having worked: #540
 was reported twice over, the second time by a reader who had the fix and not
@@ -1251,7 +1251,7 @@ nothing and does nothing: the lookup finds it, so nothing is asked, and what
 it queues is the asking action, which finds it again (emacs-vm/vm#809).  No
 header is ever set and the composition looks configured.
 
-Says so rather than refusing quietly, and answers non-nil for anything else,
+Reported rather than rejected in silence; returns non-nil for anything else,
 including no actions at all, which is how a profile is deleted."
   (if (vm-pcrisis-only-asks-p actions)
       (let ((vm-current-warning nil))
@@ -2106,7 +2106,7 @@ repeating itself is the point."
 ;; Everything is vm-pcrisis- now; what a reader's init file can hold keeps
 ;; working under its old name.
 ;;
-;; The options matter most: an alias carries a value saved by customize
+;; The options matter most: an alias holds a value saved by customize
 ;; across.  The condition and action functions matter too -- they are
 ;; written into `vm-pcrisis-conditions' and `vm-pcrisis-actions' as data,
 ;; so a configuration names them without calling them.

@@ -24,7 +24,7 @@
 ;; VM speaks XOAUTH2 to IMAP and POP servers and reads the access token out
 ;; of auth-source; `vm-net-xoauth2-response' is the mechanism and
 ;; `vm-imap-net-access-token' the lookup.  Where the token comes from is a
-;; separate question, and four answers are in use:
+;; separate question, and four arrangements are in use:
 ;;
 ;;   auth-source-xoauth2-plugin on GNU ELPA, which makes an auth-source
 ;;     lookup answer with a freshly refreshed token.  VM needs nothing for
@@ -139,7 +139,7 @@ nothing to set here and nothing to paste.
 
 oauth2.el defaults to \"urn:ietf:wg:oauth:2.0:oob\", which hands the code to
 the reader to paste.  Google stopped accepting that in January 2023 and
-answers `invalid_request', so a Google account needs something else here and
+returns `invalid_request', so a Google account needs something else here and
 it has to be one the registration lists.
 
 Set to whatever your own registration says."
@@ -149,7 +149,7 @@ Set to whatever your own registration says."
 (defcustom vm-oauth2-catch-redirect t
   "Whether VM takes the authorization code off the redirect itself.
 
-A provider answers an authorization by redirecting the browser to an address
+A provider completes an authorization by redirecting the browser to an address
 the client named, with the code in it.  With this on VM listens on a loopback
 port, names that address, and reads the code out of the request the browser
 makes: nothing is copied, and the browser is answered with a page saying so.
@@ -190,7 +190,7 @@ client secret cannot be kept."
 (defun vm-oauth2-provider (name)
   "The entry in `vm-oauth2-providers' called NAME, or an error naming the rest."
   (or (cdr (assoc name vm-oauth2-providers))
-      (error "No OAuth2 provider called %s.  VM knows %s; add another to %s"
+      (error "No OAuth2 provider called %s.  VM has %s; add another to %s"
 	     name
 	     (mapconcat #'car vm-oauth2-providers ", ")
 	     "vm-oauth2-providers")))
@@ -319,7 +319,7 @@ that setting is bound away.
 
 Not read back out of `browse-url-browser-function', which is where it came
 from: a plain `let' on a variable with no buffer-local binding rebinds the
-default itself, so `default-value' inside the binding answers
+default itself, so `default-value' inside the binding returns
 `vm-oauth2-browse' and the browser opens itself until the stack runs out.")
 
 (defvar vm-oauth2--handlers nil
@@ -356,7 +356,7 @@ What `vm-oauth2-authorize' completes on: the account to authorize is one of
 these and typing a mail address again is one more way to get it wrong.
 
 Read defensively, since this file is autoloaded and runs before the rest of
-VM: a VM that has not been started yet offers nothing to complete on."
+VM: a VM that has not been started yet has nothing to complete on."
   (let ((accounts nil))
     (dolist (entry (and (boundp 'vm-imap-account-alist) vm-imap-account-alist))
       (let ((parts (ignore-errors (vm-imap-parse-spec-to-list (car entry)))))
@@ -399,8 +399,9 @@ Answers with non-nil where it authorized.  Called where a session wants a
 token and auth-source has none: the command that started it can ask, where
 the session itself could not.
 
-Nothing is offered that cannot be done: without oauth2.el this says so and
-answers nil, leaving the caller to report a missing token as it always did."
+Nothing is proposed that cannot be done: without oauth2.el this reports that
+and returns nil, leaving the caller to report a missing token as it always
+did."
   (and (vm-oauth2-available-p)
        (y-or-n-p (format "No OAuth2 token for %s.  Authorize it now? "
 			 account))
@@ -423,9 +424,9 @@ nowhere else.  Nothing can be asked from inside a process filter, which is
 where a session runs, so the first authorization of an account happens here
 and the sessions afterwards only read what it stored.
 
-The provider answers by redirecting the browser, and VM listens on a
+The provider replies by redirecting the browser, and VM listens on a
 loopback port for that redirect and takes the code out of it, so there is
-nothing to copy.  See `vm-oauth2-catch-redirect', which also says what
+nothing to copy.  See `vm-oauth2-catch-redirect', which also states what
 happens where the browser is on another machine.
 
 The token goes in oauth2.el\\='s own store, `oauth2-token-file', encrypted by
@@ -490,11 +491,11 @@ an account set up here work with everything else that reads it."
 		  nil account nil vm-oauth2-use-pkce))))
 	  (unless token
 	    (error "%s gave no token for %s" provider account))
-	  ;; oauth2.el answers with a token structure whether the provider gave
-	  ;; a token or refused to: the refusal is in the response it kept, the
-	  ;; access token is nil, and nothing signals.  Said here, or VM reports
-	  ;; an authorization that did not happen and the session afterwards
-	  ;; finds no token with nothing anywhere to say why.
+	  ;; oauth2.el returns a token structure whether the provider gave
+	  ;; a token or rejected the request: the rejection is in the response it
+	  ;; kept, the access token is nil, and nothing signals.  Reported here,
+	  ;; or VM reports an authorization that did not happen and the session
+	  ;; afterwards finds no token with nothing anywhere to say why.
 	  (when (and (oauth2-token-p token)
 		     (null (oauth2-token-access-token token)))
 	    (let* ((response (oauth2-token-access-response token))

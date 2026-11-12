@@ -303,7 +303,7 @@ Filled in as they load; `vm-warn-about-stale-compiled-files' reports them.")
 (defmacro vm-assert-version ()
   "Note it if the file being compiled is loaded into another VM later.
 Expands with this tree's version written into it, so the compiled file
-carries the version it was built against and can say so as it loads.
+holds the version it was built against and reports it as it loads.
 
 Put this at the top of every VM file that is byte-compiled, after its
 requires.  It costs one string comparison at load."

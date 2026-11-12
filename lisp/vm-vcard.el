@@ -65,7 +65,7 @@ this is asked again at display time rather than assumed."
 (defun vm-mime-display-internal-text/x-vcard (layout)
   "Insert the vCard part LAYOUT as vcard.el formats it.
 Answer nil when vcard.el is not installed.  That is how an internal MIME
-displayer declines, and VM then offers the part as an attachment; the
+displayer declines, and VM then shows the part as an attachment; the
 formatting reads variables that belong to vcard.el, so without the file it
 signalled void-variable from inside the display (#779)."
   (when (vm-vcard-available-p)

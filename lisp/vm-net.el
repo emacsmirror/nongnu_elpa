@@ -21,7 +21,7 @@
 
 ;; VM's IMAP and POP code reads by waiting: a parser wants more bytes than the
 ;; process buffer holds, so it calls `accept-process-output' and Emacs stops
-;; until the server answers.  This file is the other way round.  A session is a
+;; until the server replies.  This file is the other way round.  A session is a
 ;; generator that yields when it wants input, a process filter puts what
 ;; arrived into the buffer and asks the generator to carry on, and Emacs is
 ;; never inside a wait.
@@ -43,7 +43,7 @@
 ;;
 ;;   nil                   resume as soon as anything arrives
 ;;   FUNCTION              resume when calling FUNCTION in the process buffer
-;;                         answers non-nil
+;;                         returns non-nil
 ;;
 ;; The request is what lets one driver serve both protocols: IMAP's parser
 ;; wants "more than there was", POP's reads want "the terminator is in the
@@ -132,7 +132,7 @@ fetch\".")
 (defun vm-net-at-end (session function)
   "Call FUNCTION with no arguments when SESSION ends, however it ends.
 
-For what the connection was made out of and the caller knows nothing about: a
+For what the connection was made out of and the caller has no record of: a
 tunnel program to kill, a buffer of diagnostics to bury.  Kept apart from
 `finished', which is the caller's and is assigned rather than added to --
 chaining onto it here was undone by the next caller that set it, and the
@@ -181,8 +181,8 @@ to the name lookup, so there is nothing left for it to cancel and wait for."
 
 Not `delete-process', which spins on a connection made with :nowait whose
 name lookup has not finished.  Emacs asks glibc to cancel the lookup and then
-waits for it to end; glibc answers a lookup that finished in between with
-EAI_ALLDONE, Emacs reads every non-zero answer as \"not yet\" and asks again
+waits for it to end; glibc returns EAI_ALLDONE for a lookup that finished in
+between, Emacs reads every non-zero result as \"not yet\" and asks again
 for ever (Emacs 30.2 `src/process.c', in `delete_process').  A batch Emacs
 in the test suite was found burning a core in that loop, and a reader would
 see Emacs stop and never start again.  The window is the microseconds between
@@ -308,7 +308,7 @@ the error is put where one that came out of the generator would go."
   session)
 
 (defun vm-net-when-ready (test seconds callback)
-  "Call CALLBACK with t once TEST answers non-nil, or with nil after SECONDS.
+  "Call CALLBACK with t once TEST returns non-nil, or with nil after SECONDS.
 Polled from a timer, so nothing waits.  What a tunnel program is waited for
 with: it has to be listening before there is a port to connect to, and the
 only way to know is to look."
@@ -368,7 +368,7 @@ The string the mechanism asks for is user=USER^Aauth=Bearer TOKEN^A^A, where
 ^A is a control-A.  Google defined it and Microsoft took it unchanged, and it
 is what `nnimap' and `smtpmail' send as well.  One line, as a SASL response
 has to be, and the octets of the UTF-8 rather than the characters: a user
-name is not always ASCII and `base64-encode-string' refuses a multibyte
+name is not always ASCII and `base64-encode-string' rejects a multibyte
 string rather than guessing at one.
 
 Here rather than beside either driver: IMAP sends it after AUTHENTICATE and
@@ -410,7 +410,7 @@ stopped dead, until something else happened to poll it."
   (when (vm-net-session-resuming session)
     ;; A generator resumed while it is running is `iter-next' on a running
     ;; generator, which signals; and if it did not signal, it would be two
-    ;; halves of one session writing one folder.  The poll refuses this case
+    ;; halves of one session writing one folder.  The poll rejects this case
     ;; rather than reaching it, so getting here is a fault in the driver.
     (error "%s session resumed while it was running"
 	   (or (vm-net-session-name session) "network")))
@@ -538,9 +538,9 @@ having it."
       (setq watching t)
       ;; One session's fault must not take the watchdog down with it: an error
       ;; out of a timer leaves Emacs marking the timer as triggered and never
-      ;; rescheduling it, so the sessions after this one -- and every session
-      ;; afterwards, for the life of the Emacs -- would have nothing watching
-      ;; them.  Said out loud and carried on with instead.
+      ;; rescheduling it, so the sessions after this one, and every session
+      ;; afterwards for the life of the Emacs, would have nothing watching
+      ;; them.  Reported and continued from instead.
       (condition-case err
 	  (vm-net--watch-session session now)
 	(error (vm-net-warn 0 "%s: watching it failed: %s"

@@ -134,7 +134,7 @@ using cached data."
 
 (defvar vm-imap-tokens nil
   "Internal variable used to store a trail of the lexical and parsing
-activity carried out on the IMAP process output.  Used for debugging
+activity performed on the IMAP process output.  Used for debugging
 purposes.")
 
   
@@ -197,12 +197,12 @@ decides between an existing cache and the name a new one gets."
 
 (defun vm-imap-canonical-spec (spec)
   "SPEC normalized, with INBOX spelled the way RFC 3501 spells it.
-Two specs name the same mailbox when this answers the same string for both.
+Two specs name the same mailbox when this returns the same string for both.
 IMAP treats that one mailbox name case-insensitively (RFC 3501 5.1) and
 every other name as case-sensitive, so it is the only name to fold.
 
 A folder whose `vm-primary-inbox' spells the mailbox `inbox' records that
-spelling in its X-VM-IMAP-Retrieved header, while completion offers the
+spelling in its X-VM-IMAP-Retrieved header, while completion uses the
 INBOX the server lists.  Compared with `equal', the two did not match and
 `vm-prune-imap-retrieved-list' answered \"No messages to be pruned\" with
 tens of thousands of stale entries in front of it (emacs-vm/vm#936).
@@ -420,7 +420,7 @@ for accessing MAILBOX."
 ;; 
 ;; -- Functions that treat IMAP mailboxes as spools to get mail
 ;; -- into local buffers and subsequently expunge on the server.
-;; -- USR thinks this is obsolete functionality that should not be
+;; -- USR considers this obsolete functionality that should not be
 ;; -- used. Use 'IMAP folders' instead.
 ;;
 ;; handler methods:
@@ -455,17 +455,18 @@ on all the relevant IMAP servers and then immediately expunges."
   ;; held Emacs for all of them.
   (let ((vm-global-block-new-mail t)
 	(vm-imap-ok-to-ask t))
-    ;; Said rather than discarded: with no password nothing is expunged, and a
-    ;; command that answers a keystroke with silence looks as though it worked.
+    ;; Reported rather than discarded: with no password nothing is expunged,
+    ;; and a command that meets a keystroke with silence looks as though it
+    ;; worked.
     (unless (vm-imap-net-expunge-retrieved)
       (vm-inform 5 (concat "Nothing expunged: VM has no password for the"
 			   " maildrop yet")))))
 (defun vm-imap-net-expunge-retrieved ()
   "Delete on their servers the messages this folder has retrieved, without
-waiting for any of it.  Answers whether it started.
+waiting for any of it.  Returns whether it started.
 
-The folder forgets each maildrop's messages as that maildrop answers for
-them, so an expunge that fails half way through leaves the rest to be offered
+The folder forgets each maildrop's messages as that maildrop replies for
+them, so an expunge that fails half way through leaves the rest to be tried
 again rather than forgetting what was never deleted."
   (let ((folder (current-buffer))
 	(groups nil))
@@ -714,8 +715,8 @@ anything the grammar allows without knowing what it means."
       rest)))
 
 (defun vm-imap-message-item-p (token)
-  "Whether TOKEN names the item that carries a message's text.
-The names a fetch of message text asks under, as the server answers them:
+  "Whether TOKEN names the item that holds a message's text.
+The names a fetch of message text asks under, as the server returns them:
 BODY.PEEK comes back as BODY, and the section follows it in brackets."
   (and (eq (car token) 'atom)
        (member (upcase (buffer-substring (nth 1 token) (nth 2 token)))
@@ -723,7 +724,7 @@ BODY.PEEK comes back as BODY, and the section follows it in brackets."
 
 (defun vm-imap-fetch-response-parts (contents)
   "The UID and the message of a FETCH response's CONTENTS, as (UID . TOKEN).
-Either may be nil: a response the server sent to report flags carries neither.
+Either may be nil: a response the server sent to report flags has neither.
 
 The items are walked by name rather than matched in a fixed order, because a
 server may answer them in any order and may add items the client did not ask
@@ -871,7 +872,7 @@ holds nothing."
 ;; several messages at once, using vm-imap-get-message-data-list
 
 (defun vm-imap-mailbox-holds-a-keyword-p (flags-obarray)
-  "Whether any message in FLAGS-OBARRAY carries an IMAP keyword.
+  "Whether any message in FLAGS-OBARRAY has an IMAP keyword.
 FLAGS-OBARRAY is the folder's flags obarray, whose value for each UID is the
 message's size followed by its flags."
   (catch 'found
@@ -890,17 +891,17 @@ label the reader has removed somewhere else.  Gmail keeps no keyword at all
 (emacs-vm/vm#601), so the read-back that follows a save erased every label the
 save had just failed to store, leaving the reader's labels nowhere.
 
-The answer is whether any message in the mailbox carries a keyword.  Nothing
-in the protocol answers it: a server may leave a keyword out of PERMANENTFLAGS
+The test is whether any message in the mailbox has a keyword.  Nothing
+in the protocol reports it: a server may leave a keyword out of PERMANENTFLAGS
 and store it anyway, or advertise `\\*' and keep nothing, which is what Gmail
-does.  A mailbox where no message has one is a mailbox whose flag list says
+does.  A mailbox where no message has one is a mailbox whose flag list states
 nothing about labels, and the labels are left as the folder has them.
 
 Being wrong here costs a label that lingers one sync too long, on a mailbox
-where no message carries a keyword and another client removed the last one.
+where no message has a keyword and another client removed the last one.
 Being wrong the other way costs the reader the labels they set.
 
-The answer is worked out once per look at the mailbox and kept in
+The result is worked out once per look at the mailbox and kept in
 `vm-imap-keywords-carried'; the current buffer is the folder."
   (let ((flags-obarray (vm-folder-imap-flags-obarray)))
     (cond
@@ -990,8 +991,8 @@ recorded in the undo stack."
     (setq seen-labels (sort seen-labels 'string-lessp))
     (cond
      ((equal labels seen-labels) t)
-     ;; A mailbox that carries no keyword anywhere has said nothing about this
-     ;; message's labels, so they stay as the folder has them.  Gmail carries
+     ;; A mailbox with no keyword anywhere has stated nothing about this
+     ;; message's labels, so they stay as the folder has them.  Gmail has
      ;; none: taking its flag list for the whole truth is what erased a label
      ;; a moment after it was set (emacs-vm/vm#601).
      ((and (null seen-labels) (not (vm-imap-mailbox-carries-keywords-p))) t)
@@ -1015,7 +1016,7 @@ has to know it."
 
 (defun vm-imap-fetch-response-flags (response)
   "The flag names in an untagged FETCH RESPONSE, downcased.
-Nil when the response carries no FLAGS item.  Reads the process buffer, so it
+Nil when the response has no FLAGS item.  Reads the process buffer, so it
 is called there."
   (let ((tokens (cdr (vm-imap-plist-get (car (nthcdr 3 response)) "FLAGS")))
 	(flags nil))
@@ -1026,8 +1027,8 @@ is called there."
 
 (defun vm-imap-message-flag-changes (m)
   "What M's flags on the server would have to be to match VM's.
-Answers (MESSAGE-NUM CACHED-FLAGS FLAGS+ FLAGS-): the sequence number the
-server knows M by, the flags VM last saw it with, and the flags to add and
+Returns (MESSAGE-NUM CACHED-FLAGS FLAGS+ FLAGS-): the sequence number the
+server has for M, the flags VM last saw it with, and the flags to add and
 to remove.  MESSAGE-NUM nil means the server does not have the message and
 there is nothing to do.
 
@@ -1142,7 +1143,7 @@ synchronise deleted them: what put a message on that list was as often a
 damaged cache as a reader expunging it, and a truncated cache put the whole
 mailbox on it (emacs-vm/vm#752).  Server deletions come from
 `vm-imap-messages-to-expunge', which `vm-expunge-folder' fills as the reader
-expunges and which the folder carries in its `X-VM-IMAP-To-Expunge' header."
+expunges and which the folder holds in its `X-VM-IMAP-To-Expunge' header."
 
   ;; Comments by USR
   ;; - Originally, messages with stale UIDVALIDITY values were
@@ -1343,8 +1344,8 @@ that destroyed mail nobody asked it to (emacs-vm/vm#752)."
 
 (defun vm-imap-mailbox-known-p (spec)
   "Whether SPEC names a mailbox the account is known to hold.
-Three answers: t where the account holds it, nil where the account's folder
-list is known and does not, and `unknown' where VM cannot say: an account
+Three results: t where the account holds it, nil where the account's folder
+list is known and does not, and `unknown' where VM cannot tell: an account
 whose folder list is not cached and whose server will not answer, which is a
 maildrop VM has no password for.  Asking the server is the same
 one-connection wait that folder-name completion makes, and what it learns is
@@ -1680,7 +1681,7 @@ rather than only when it was waited for."
 (defun vm-imap-fcc-mailbox ()
   "The mailbox the IMAP-FCC header of this composition names, or nil for none.
 Trimmed: the whitespace around a header value is not part of the value, and
-a mailbox name carrying it is a different mailbox, which the server creates
+a mailbox name holding it is a different mailbox, which the server creates
 and files the copy in without anyone asking for it.  Signals when the header
 is there and names nothing."
   (let ((value (vm-mail-get-header-contents "IMAP-FCC:")))
