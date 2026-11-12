@@ -285,11 +285,9 @@ Diffs (as commits and PRs):
 | C-c S-RET | fj-compose-remove-milestone      | Remove milestone from item being composed.                                |
 | C-c C-S-u | fj-compose-remove-upload         | Remove attachment file from item being composed.                          |
 | C-c C-c   | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.                     |
-|           | fj-copy-commit-hash              | Copy the commit hash if there is a commit-ref at point.                   |
-|           | fj-copy-diff-commit-hash         | Add the full commit hash of the current diff view to the kill ring.       |
+|           | fj-copy-commit-sha               | Copy a commit's SHA from a pull request.                                  |
 | C         | fj-copy-item-url                 | Copy URL of current item, either issue or PR.                             |
 |           | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                          |
-|           | fj-copy-pull-commit-sha          | Copy a commit's SHA from a pull request.                                  |
 | c         | fj-create-issue                  | Create issue in current repo or repo at point in tabulated listing.       |
 |           | fj-create-milestone              | Create a milestone for REPO by OWNER.                                     |
 |           | fj-create-token                  | Create an access token for `fj-user' on `fj-host'.                        |
