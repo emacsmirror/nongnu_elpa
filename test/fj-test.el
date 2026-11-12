@@ -2060,6 +2060,7 @@ prefix is used or not."
 This checks whether the minibuffer completion table used in
 `fj-switch-to-buffer' actually associates buffer names (\"*fj-\") with
 the corresponding buffers."
+  (skip-when noninteractive)
   (with-mock
     (mock (fj--live-buffers)
           => (list (get-buffer-create "*fj-fj.el-item-1*")
