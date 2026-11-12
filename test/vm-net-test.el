@@ -283,8 +283,8 @@ end of its response, and searches from where the reader is."
 
 (ert-deftest vm-net-test-a-free-port-is-one-nothing-answers-on ()
   "`vm-net-free-port' asks the operating system for a port rather than
-trying one after another until a connection fails -- which is what the
-blocking path does, and every one of those attempts waits."
+trying one after another until a connection fails, every one of those
+attempts being a wait."
   (let ((port (vm-net-free-port)))
     (should (integerp port))
     (should (> port 0))
@@ -648,7 +648,7 @@ filters, which is the re-entry the driver's own guards refuse."
         (vm-net-warn 0 "something went wrong")
         (vm-net-inform 5 "getting on with it")
         (should-not (delq 0 (delq nil (copy-sequence paused))))
-        ;; and the blocking path still pauses, which is what it is for
+        ;; and `vm-warn' still pauses, which is what it is for
         (setq paused nil)
         (setq vm-current-warning nil)
         (vm-warn 0 2 "something else went wrong")

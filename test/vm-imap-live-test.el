@@ -1237,10 +1237,9 @@ nothing.  A later session did not fetch them again -- X-VM-IMAP-Retrieved
 remembers those UIDs -- so nothing looked wrong locally while the mail the user
 deleted was still in their mailbox.
 
-Three messages; delete two, end the session so that the server cannot be
-reached, expunge, save, quit.  The server should
-still have three, and the folder should have recorded what it owes.  Then visit
-again, online, and save: the two deletions should go out."
+Three messages; delete two, expunge, save, quit.  The expunge is recorded
+rather than sent, so the server should still have three and the folder should
+have recorded what it owes.  Then visit again and the deletions go out."
   (vm-imap-live-skip-unless-server "plain")
   (require 'vm)
   (vm-imap-live-with-mailbox (conn mailbox "plain"
@@ -1255,14 +1254,13 @@ again, online, and save: the two deletions should go out."
            (vm-confirm-quit nil))
       (unwind-protect
           (progn
-            ;; ---- session one, going offline before the expunge
+            ;; ---- session one: the expunge is recorded, not sent
             (vm-visit-imap-folder spec)
             (vm-imap-net-wait nil 30)
             (should (= 3 (length vm-message-list)))
             (vm-delete-message 1)
             (vm-next-message 1)
             (vm-delete-message 1)
-            (ignore-errors (vm-imap-end-session (vm-folder-imap-process)))
             (vm-expunge-folder)
             (should (= 2 (length vm-imap-messages-to-expunge)))
             (vm-save-folder)

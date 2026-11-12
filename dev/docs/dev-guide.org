@@ -38,7 +38,7 @@ make elisp-lint
 info/vm-reference.texinfo is built from the docstrings by
 info/gen-reference.el, and unlike VM's other generated files it is
 committed.  info/vm.texinfo has @include vm-reference.texinfo, and makeinfo
-writes no manual at all when the file is missing -- not a manual without its
+writes no manual at all when the file is missing: not a manual without its
 appendix, nothing.  So a build that never runs make gets no manual, and the
 NonGNU ELPA tarball is exactly such a build: it ships what git has.  Issue #589.
 
@@ -97,9 +97,9 @@ cd test && ./test-runner --probe    # what is available, run nothing
 cd test && make test ARGS="--one vm-imap-test.el"
 #+end_src
 
-It asks what is there before running anything -- which configured servers
-answer, whether mail can be sent, which optional packages are installed -- so
-that a failure can be told from a machine that is short of a server.  Then it
+It asks what is there before running anything: which configured servers
+answer, whether mail can be sent, which optional packages are installed.
+That is what tells a failure from a machine short of a server.  Then it
 runs each pass in its own Emacs, every one this machine can:
 
 | suite       | everything, with whatever this machine has                                               |
@@ -137,7 +137,7 @@ stamp asks for it again.
 
 The optional packages are what the bbdb, w3m and vcard tests need; without them
 those tests skip.  Fetching them takes the network, so make clean leaves them
-alone -- it removes only what a run produced, test/scratch and the coverage
+alone: it removes only what a run produced, test/scratch and the coverage
 report.  make distclean removes them, being the target for everything that is
 not part of the checkout.  A run that reports eleven skipped tests rather than
 one has usually lost them.
@@ -161,11 +161,11 @@ describes it.  Without one every test skips.
 the thing to get wrong: the servers in vm-imap-test-servers are usually test
 accounts on a local dovecot, and such an account receives nothing that is sent
 to your address.  Point :verify-server at one of those and every test sends
-its mail, waits :wait seconds and fails -- which is what happened the first
+its mail, waits :wait seconds and fails, which is what happened the first
 time this was run against a real configuration.  The failure says so now, and
 reports how many messages the mailbox holds, an empty one being the giveaway.
 
-Mail that arrives in a mirror -- mbsync, offlineimap -- arrives when the mirror
+Mail that arrives in a mirror (mbsync, offlineimap) arrives when the mirror
 next runs, so :wait has to cover that or the message is there and the test has
 stopped looking.
 
@@ -237,7 +237,7 @@ conf.d/.  Confirm what your instance actually reads with doveconf -n.
 
 *** one-time dovecot setup
 Add two test users.  doveadm pw prompts for the password and prints the
-hash.  Check doveadm pw -l for the schemes your build actually has -- the
+hash.  Check doveadm pw -l for the schemes your build actually has: the
 MacPorts 2.3.21 build has no SHA512-CRYPT, so use BLF-CRYPT:
 
 #+begin_src sh
@@ -257,8 +257,8 @@ vmtest2:{BLF-CRYPT}$2y$05$...:::::
 
 Then reload dovecot, per the table above.  It may need privileges.
 
-Two accounts, because the cross-account tests -- saving to another IMAP
-folder, IMAP-FCC -- need somewhere to save to.  Use throwaway accounts:
+Two accounts, because the cross-account tests (saving to another IMAP
+folder, IMAP-FCC) need somewhere to save to.  Use throwaway accounts:
 the tests create and delete mailboxes named vmtest*.  Never point the
 config at an account holding real mail.
 
@@ -311,8 +311,8 @@ Copy the checked-in template and edit it:
 cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
 
-test/vm-live-config.el is gitignored -- it holds passwords, so keep it that
-way.  The template describes both protocols and every key; read it there.
+test/vm-live-config.el is gitignored because it holds passwords, so keep it
+that way.  The template describes both protocols and every key; read it there.
 
 What it cannot tell you is what to put in :trustfile here: the self-signed
 certificate itself, which is its own trust anchor.  Without it Emacs either
@@ -346,9 +346,8 @@ Two kinds, and only the second needs anything set up.
 test/vm-pop-mock.el is a POP3 server inside the test process, on a port the
 operating system picks.  make test runs those tests everywhere, with no
 configuration and no network beyond the loopback interface.  They are where
-the failure paths live -- a download cut off half way, a server with no
-UIDL, a DELE answered -ERR -- since a real server will not do those on
-request.
+the failure paths live: a download cut off half way, a server with no
+UIDL, a DELE answered -ERR.  A real server will not do those on request.
 
 #+begin_src sh
 cd test && ./test-runner --pop

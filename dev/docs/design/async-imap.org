@@ -28,8 +28,8 @@ twice.
 The blocking implementation is gone: 137 functions and about 4000 lines of
 vm-imap.el and vm-pop.el, and the 60-odd tests that were the only thing
 still reaching them.  What is left in those two files is the folder-side code
-the driver calls -- specs, cache file names, passwords, flag arithmetic,
-response parsing -- and the two bug-report commands.
+the driver calls (specs, cache file names, passwords, flag arithmetic,
+response parsing) and the two bug-report commands.
 
 Two things wait on purpose, and both wait on the driver, so C-g works:
 
@@ -184,9 +184,10 @@ Emacs 30, so the counters barely move.
 
 *** The parse is not a generator
 
-Every token was once read by a generator of its own, vm-imap-net-read-object
-descending into read-group, read-literal, read-quoted and read-atom
-through iter-yield-from.  Over a fetch of 6500 messages that is 340,000
+Every token was once read by a generator of its own: vm-imap-net-parse-object
+descending into vm-imap-net-parse-group, vm-imap-net-parse-literal,
+vm-imap-net-parse-quoted and vm-imap-net-parse-atom through iter-yield-from,
+each of them an iter-defun then and a plain function now.  Over a fetch of 6500 messages that is 340,000
 generator instantiations against 2,011 waits, so 99.4% of the parse paid for
 the machinery of waiting and never waited.
 
