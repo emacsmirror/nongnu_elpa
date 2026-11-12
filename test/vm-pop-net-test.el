@@ -1839,6 +1839,38 @@ on the deletions of the session it ends (emacs-vm/vm#939)."
           (when (buffer-live-p our-buffer) (kill-buffer our-buffer))
           (when (buffer-live-p their-buffer) (kill-buffer their-buffer)))))))
 
+(ert-deftest vm-pop-net-test-a-save-that-expunges-stays-saved ()
+  "REGRESSION: the folder does not go modified again when the server confirms.
+
+Issue #942, reported against IMAP and the same here.  A save writes the file
+and then starts the session that sends the deletions, so the file goes out
+with them still listed.  When the session finished,
+`vm-pop-net-send-changes' struck them off `vm-pop-messages-to-expunge' and
+marked the folder modified, which left a folder reporting unsaved changes
+the reader cannot see."
+  (vm-pop-net-test--with-mock (mock :messages (list vm-pop-net-test--alice))
+    (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
+          (spec (vm-pop-mock-spec mock))
+          (vm-pop-server-timeout 60))
+      (unwind-protect
+          (with-current-buffer folder
+            (setq vm-folder-access-method 'pop)
+            (setq vm-folder-access-data (make-vector 10 nil))
+            (vm-set-folder-pop-maildrop-spec spec)
+            (setq vm-pop-messages-to-expunge (list "uid1"))
+            ;; as a save leaves the folder: the file written, the buffer clean
+            (set-buffer-modified-p nil)
+            (should (eq (vm-pop-net-send-changes) t))
+            (vm-pop-net-test--wait-until (lambda () (not (vm-pop-net-busy-p)))
+                                         10 "the deletions")
+            (should (equal (vm-pop-mock-deleted mock) '(1)))
+            (should-not vm-pop-messages-to-expunge)
+            ;; and the reader is not told there is something to save
+            (should-not (buffer-modified-p)))
+        (when (buffer-live-p folder)
+          (with-current-buffer folder (set-buffer-modified-p nil))
+          (kill-buffer folder))))))
+
 (provide 'vm-pop-net-test)
 
 ;;; vm-pop-net-test.el ends here
