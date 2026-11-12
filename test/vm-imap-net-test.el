@@ -369,7 +369,7 @@ comes back is the headers and not the body."
 ;;; Into a folder
 
 (defmacro vm-imap-net-test--visiting (spec &rest body)
-  "Visit a mock IMAP folder with the blocking code and run BODY in it.
+  "Visit a mock IMAP folder and run BODY in it.
 The folder is set up as VM sets one up -- access data, cache file and all --
 so what BODY exercises is the asynchronous path against a real folder rather
 than against a buffer a test invented."
@@ -587,10 +587,8 @@ on regardless."
 (ert-deftest vm-imap-net-test-saving-sends-the-changes-without-waiting ()
   "Saving an IMAP folder sends the flags and the expunges and returns.
 
-The blocking save also worked out what the server had expunged, which means a
-FETCH of the flags of every message in the mailbox: nineteen seconds and a
-still Emacs on a folder of six thousand, on every quit.  What it sends is what
-the reader changed; what the server did is the next fetch's business."
+What it sends is what the reader changed; what the server did is the next
+fetch's business."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
                                                     vm-imap-net-test--bob))
     (should (equal (length vm-message-list) 2))
@@ -632,9 +630,7 @@ the reader changed; what the server did is the next fetch's business."
 (ert-deftest vm-imap-net-test-a-save-during-a-fetch-starts-no-second-session ()
   "Saving while a fetch is running leaves the changes for next time.
 
-Two sessions writing into one mailbox would interleave, and the blocking path
-is not the answer either: a reader who quit during a fetch of six thousand
-messages waited out a second login and a second download of every flag."
+Two sessions writing into one mailbox would interleave."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((message (car vm-message-list)))
       (vm-set-unread-flag message nil)
@@ -659,9 +655,8 @@ messages waited out a second login and a second download of every flag."
   "Work asked for while a session is running is done when it ends.
 
 Two sessions writing one folder would interleave their messages, flags and
-expunges in one buffer and one cache file.  So the second waits, and it waits
-in the folder rather than being turned away to the blocking path, which would
-open the connection this is avoiding."
+expunges in one buffer and one cache file.  So the second waits, in the
+folder, rather than opening the connection this is avoiding."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((message (car vm-message-list)))
       (vm-set-unread-flag message nil)
@@ -760,10 +755,7 @@ flag in the file, so the next visit sends them again."
         (should (eq (vm-net-session-state session) 'done))))))
 
 (ert-deftest vm-imap-net-test-synchronizing-goes-both-ways-without-waiting ()
-  "`vm-imap-synchronize' on the driver: flags up, flags down, mail in.
-
-The blocking version fetched the flags of every message in the mailbox with
-Emacs held still, which on a folder of six thousand was half a minute."
+  "`vm-imap-synchronize' on the driver: flags up, flags down, mail in."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (should (equal (length vm-message-list) 1))
     (let ((message (car vm-message-list)))
@@ -896,8 +888,8 @@ before: it is the answer that makes the cache wrong."
               (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-a-mailbox-command-vm-cannot-send-says-so ()
-  "A maildrop the driver cannot open answers nil, so the command still goes
-the blocking way rather than silently not being sent."
+  "A maildrop the driver cannot open answers nil, rather than reporting a
+command as sent when nothing went out."
   (let ((vm-imap-passwords nil)
         (auth-sources nil))
     ;; nobody to ask: the reader is not there, and a test that let VM ask
@@ -1000,20 +992,16 @@ mailbox is examined rather than selected: asking is not reading."
   "The names completion needs come back on a session of the driver's.
 
 Completion has to answer with the names it has, so this is the one path that
-waits on purpose.  What it must not do is open a connection of its own through
-the blocking implementation."
+waits on purpose.  It waits on the driver, which is the only way VM opens a
+connection."
   (vm-imap-mock-with (mock)
     (vm-imap-mock-add-message mock "Archive" vm-imap-net-test--alice)
     (let* ((spec (vm-imap-mock-spec mock))
            (vm-imap-server-timeout 60)
-           (blocking nil)
            (before (buffer-list)))
       (unwind-protect
-          (cl-letf (((symbol-function 'vm-imap-make-session)
-                     (lambda (&rest _) (setq blocking t) nil)))
-            (let ((names (vm-imap-net-mailbox-names spec nil 10)))
-              (should (equal (sort names #'string-lessp) '("Archive" "INBOX")))
-              (should-not blocking)))
+          (let ((names (vm-imap-net-mailbox-names spec nil 10)))
+            (should (equal (sort names #'string-lessp) '("Archive" "INBOX"))))
         (dolist (buffer (buffer-list))
           (unless (memq buffer before)
             (when (buffer-live-p buffer)
@@ -1021,8 +1009,9 @@ the blocking implementation."
               (kill-buffer buffer))))))))
 
 (ert-deftest vm-imap-net-test-completion-answers-nothing-when-it-cannot-ask ()
-  "A maildrop the driver cannot open answers with no names, so completion
-still has the blocking path to fall back on."
+  "A maildrop the driver cannot open returns no names.
+Nothing else is tried: completion has no second implementation to fall back
+on, so what it cannot ask for it does not offer."
   (let ((vm-imap-passwords nil)
         (auth-sources nil))
     (should-not (vm-imap-net-mailbox-names
@@ -1268,9 +1257,9 @@ Emacs carries on, which is the point of the whole conversion."
     (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 1))))
 
-(ert-deftest vm-imap-net-test-an-unsupported-maildrop-is-left-to-the-old-path ()
-  "A maildrop this cannot open without waiting answers nil, which is the
-caller\\='s cue to use the blocking implementation rather than to fail."
+(ert-deftest vm-imap-net-test-an-unsupported-maildrop-is-not-fetched ()
+  "A maildrop this cannot open without waiting answers nil, and the caller
+fetches nothing."
   (vm-imap-net-test--visiting (mock)
     (cl-letf (((symbol-function 'vm-folder-imap-maildrop-spec)
                (lambda () "imap-ssh:host:143:INBOX:login:someone:*")))
@@ -2253,12 +2242,8 @@ one piece, so a save can only ever see whole messages the list knows about."
           (delete-directory cache t))))))
 
 (ert-deftest vm-imap-net-test-a-session-can-leave-its-traffic-behind ()
-  "`vm-imap-keep-trace-buffer' keeps a driver session's buffer, as it does the
-blocking path's.
-
-The driver killed every session buffer the moment the session ended, so after
-a save there was nothing left to look at -- and \"did VM send that delete?\" is
-answered by the traffic and by nothing else."
+  "`vm-imap-keep-trace-buffer' keeps a driver session's buffer.
+\"Did VM send that delete?\" is answered by the traffic and by nothing else."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice
                                                     vm-imap-net-test--bob))
     (let ((vm-imap-keep-trace-buffer 2)
@@ -2268,8 +2253,8 @@ answered by the traffic and by nothing else."
       (set-buffer-modified-p t)
       (vm-save-folder)
       (should (vm-imap-net-wait nil 15))
-      ;; the session that sent the changes is still there, named as the
-      ;; blocking path names its own
+      ;; the session that sent the changes is still there, with "saved" in
+      ;; its name
       (should vm-kept-imap-buffers)
       (should (seq-find (lambda (buffer)
                           (string-match-p "\\`saved " (buffer-name buffer)))
@@ -2394,7 +2379,7 @@ VM used to hand stunnel `-d 127.0.0.1:PORT' and wait for that port to answer,
 which stunnel has no such option for and never did: the session sat until the
 whole server timeout was up and then failed with \"did not start listening on
 port\".  Told nothing to listen on, stunnel relays its own standard input and
-output, which is what the blocking path has always used it for."
+output."
   (let* ((vm-stunnel-program "sh")
          (vm-stunnel-program-switches nil)
          (vm-imap-server-timeout 60)
@@ -2428,9 +2413,7 @@ output, which is what the blocking path has always used it for."
 
 (ert-deftest vm-imap-net-test-an-ssh-maildrop-waits-for-its-tunnel ()
   "An imap-ssh maildrop starts the tunnel and has no connection until the
-tunnel is listening -- which is the wait the blocking path does inside
-`vm-setup-ssh-tunnel', with `accept-process-output' and a loop of connect
-attempts to find a free port."
+tunnel is listening."
   (let* ((vm-ssh-program "sleep")
          (vm-ssh-program-switches nil)
          (vm-ssh-remote-command "")
@@ -2718,13 +2701,12 @@ the mode line stops saying there is some."
   "A maildrop written with `*' for its password is one VM is to find the
 password for.  It may already know it -- from a session earlier in this
 Emacs, or from auth-source -- and only asking the user is out of the
-question inside a filter.  Refusing those sent every folder whose password
-is not written down back to the blocking path."
+question inside a filter."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
     (let* ((port (vm-imap-mock-port mock))
            (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
            (vm-imap-passwords nil))
-      ;; not known yet, so this is one for the blocking path
+      ;; not known yet, so nothing can be opened
       (should-error (vm-imap-net-open spec "x") :type 'vm-imap-net-no-password)
       ;; known now, as it would be after one login
       (setq vm-imap-passwords
@@ -2847,11 +2829,10 @@ a timer may check, and `vm-imap-net-checkable-p' says so."
   "The driver writes `vm-imap-passwords' when the login succeeds, and not
 before.
 
-The operations that still block look the password up there, so something has
-to put it there -- but a wrong or unproven entry is worse than none: the
-blocking path finds one, sends it, is refused, and never asks anybody
-anything, which is a folder that cannot be logged into and a reader who is
-never prompted."
+The next session looks the password up there, so something has to put it
+there.  A wrong or unproven entry is worse than none: it is found, sent and
+refused, and nobody is asked anything, which is a folder that cannot be
+logged into and a reader who is never prompted."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
     (let* ((port (vm-imap-mock-port mock))
            (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:secret" port))
@@ -2896,7 +2877,7 @@ ask."
 
 (ert-deftest vm-imap-net-test-a-useless-cached-password-is-not-a-password ()
   "A cache entry that is empty, a `*', or not a string at all is nothing to
-log in with, and the maildrop is left to the blocking path -- which can ask."
+log in with, so VM asks for a password rather than sending it."
   (let ((spec "imap:host:143:INBOX:login:someone:*")
         (key "imap:host:143:*:login:someone:*")
         (auth-sources nil))
@@ -2910,7 +2891,7 @@ log in with, and the maildrop is left to the blocking path -- which can ask."
       (should (vm-imap-net-checkable-p spec)))))
 
 
-;;; The log says which path took the work
+;;; The log says what VM did
 
 (ert-deftest vm-imap-net-test-not-starting-says-so ()
   "Work that does not start is announced as such, rather than as started.
@@ -2957,9 +2938,8 @@ saying so means the session exists."
 
 (ert-deftest vm-imap-net-test-a-command-may-ask-for-a-password ()
   "A maildrop whose password VM does not hold is opened by a command asking
-for it.  That is where the blocking path was being reached from: a fresh
-Emacs holds no passwords, so the first fetch of every session went the old
-way and stopped Emacs for as long as it took."
+for it.  A fresh Emacs holds no passwords, so this is the first fetch of
+every session."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
     (let* ((port (vm-imap-mock-port mock))
            (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
@@ -2979,8 +2959,8 @@ way and stopped Emacs for as long as it took."
 
 (ert-deftest vm-imap-net-test-a-timer-never-asks-for-a-password ()
   "The check runs on a timer, and a question from a timer arrives while
-somebody is typing something else.  It declines instead, and the blocking
-path -- which the reader started -- can ask."
+somebody is typing something else.  It declines instead, and a command the
+reader starts can ask."
   (let ((spec "imap:host:143:INBOX:login:someone:*")
         (vm-imap-passwords nil)
         (auth-sources nil)
@@ -2996,9 +2976,8 @@ path -- which the reader started -- can ask."
 (ert-deftest vm-imap-net-test-asking-does-not-need-ok-to-ask-bound ()
   "`vm-imap-ok-to-ask' is nil unless something has bound it, and nothing
 binds it on the way to a fetch.  Requiring it meant the question was never
-put: the driver declined, the blocking path asked, and the reader waited for
-the server with Emacs stopped -- which is what a log of three attempts
-showed, each one saying \"password not remembered\"."
+put, which is what a log of three attempts showed, each one saying
+\"password not remembered\"."
   (vm-imap-mock-with (mock :messages (list vm-imap-net-test--alice))
     (let* ((port (vm-imap-mock-port mock))
            (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
@@ -3025,9 +3004,8 @@ the same as failing.
 
 The plan went through `vm-imap-get-synchronization-data', which asks the
 server for the UID list itself unless one is already there -- and an empty
-mailbox's list is empty, so it asked, through the process a blocking session
-would have had.  A session on the driver has no such process, and died of it:
-every visit to an empty IMAP folder failed with `processp nil'."
+mailbox's list is empty, so it asked, through a process the session does not
+have: every visit to an empty IMAP folder failed with `processp nil'."
   (vm-imap-net-test--visiting (mock)
     (should (null vm-message-list))
     (should (equal (vm-imap-net-test--get-mail mock) 0))
@@ -3154,8 +3132,7 @@ form gone it is a quarter of a millisecond a line.
 
 Timed rather than counted, since what went wrong was a constant factor and
 nothing else would have shown it.  The bound is loose: 200 lines in under a
-second, where the pathology took twenty.  It used to be checked against the
-blocking reader as well, which is gone."
+second, where the pathology took twenty."
   (let* ((lines 200)
          (response (with-temp-buffer
                      (dotimes (i lines)
@@ -3564,9 +3541,7 @@ the next fetch asks for a message the folder holds and writes it twice."
       (should (vm-imap-net-uid-held-p "2")))))
 
 (ert-deftest vm-imap-net-test-forgetting-the-held-uids-reads-the-list-again ()
-  "Forgetting the table makes the next question read the whole list again.
-What the blocking fetch does, having appended messages and given them their
-UIDs without asking the table anything."
+  "Forgetting the table makes the next question read the whole list again."
   (vm-imap-net-test--in-a-folder-holding '("1")
     (let ((late (vm-imap-net-test--message-holding nil nil)))
       (setcdr (vm-last vm-message-list) (list late))
@@ -3705,11 +3680,6 @@ the count then measures (emacs-vm/vm#870)."
           (should (< conses (* 200 lines))))))))
 
 ;;; CRAM-MD5 (emacs-vm/vm#822)
-;;
-;; The blocking implementation spoke CRAM-MD5 and the driver did not, so a
-;; maildrop asking for it fell back to blocking on every fetch.  That, and
-;; APOP and RPOP on the POP side, is why the blocking driver could not
-;; simply be deleted.
 
 (iter-defun vm-imap-net-test--login-cram-md5 (user password)
   "Greet and log in with CRAM-MD5, through the dispatch production uses.
@@ -3759,8 +3729,7 @@ and the answer is a credential derived from the password."
 
 (ert-deftest vm-imap-net-test-a-cram-md5-maildrop-is-not-declined ()
   "REGRESSION: `vm-imap-net-open' no longer refuses a CRAM-MD5 maildrop.
-It signalled `vm-imap-net-no-password' for any auth but login, and that
-signal is what sent the work to the blocking path."
+It signalled `vm-imap-net-no-password' for any auth but login."
   (vm-imap-mock-with (mock :cram-md5 t)
     (let ((opened (vm-imap-net-open
                    (vm-imap-mock-spec mock "INBOX" "cram-md5")
@@ -3785,9 +3754,7 @@ signal is what sent the work to the blocking path."
 ;;
 ;; `vm-imap-max-message-size' with `vm-enable-external-messages' naming imap
 ;; means a message over the limit is fetched as headers only, its body left
-;; on the server.  The coverage for this was against the blocking path, which
-;; is going, and the driver had none -- so it is written here first, and the
-;; blocking tests go after.
+;; on the server.
 
 (ert-deftest vm-imap-net-test-a-message-over-the-limit-comes-as-headers ()
   "REGRESSION: a message larger than the limit is fetched headers-only.
@@ -4010,9 +3977,8 @@ Recorded, it would never be fetched even after the limit was raised."
 
 `vm-retrieve-real-message-body' without `:may-arrive-later' is a save or a
 copy: a message whose body has not arrived would be written as an empty one.
-It used to fetch through the blocking implementation, a second connection into
-a folder the driver may be writing.  It waits on the folder's own session
-instead, which is what folder-name completion does."
+It waits on the folder's own session, which is what folder-name completion
+does."
   (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
     (let ((vm-enable-external-messages '(imap))
           (vm-imap-server-timeout 60)
@@ -4025,7 +3991,7 @@ instead, which is what folder-name completion does."
         ;; the answer is not the point and is not a documented one; the body
         ;; being in the folder when this returns is
         (vm-retrieve-real-message-body message :fail t))
-      ;; the body is here, and the blocking fetch was not used to get it
+      ;; the body is here, and `vm-fetch-imap-message' was not used to get it
       (should-not called)
       (should-not (vm-body-to-be-retrieved-of message))
       (should (string-match-p "The first body"
@@ -4078,7 +4044,7 @@ a message written without its body."
       (should (vm-imap-net-wait nil 90))
       (should-not (vm-body-to-be-retrieved-of message)))))
 
-;;; What the blocking session's own tests used to cover (emacs-vm/vm#822)
+;;; A session the server refuses (emacs-vm/vm#822)
 
 (iter-defun vm-imap-net-test--select-only (mailbox)
   "Log in and select MAILBOX, and answer what SELECT said."

@@ -33,32 +33,6 @@
   "From: bob@example.com\nTo: me@example.com\nSubject: otters\nMessage-ID: <two@example.com>\n\nThe second body.\n"
   "Another, so a test can tell one message from the next.")
 
-(defmacro vm-imap-mock-test--with-session (spec &rest body)
-  "Open a VM IMAP session against a mock server and run BODY in its buffer.
-SPEC is (MOCK-VAR PROCESS-VAR &rest ARGS), ARGS going to `vm-imap-mock-start'.
-BODY runs with the process buffer current, which is where VM's own IMAP
-functions read their responses from -- called anywhere else they read an
-empty buffer and time out.
-
-`vm-buffer-types' says `process' while BODY runs, because that is what a real
-caller has done by the time it gets here: VM pushes the type on its way into a
-connection, and the functions BODY calls assert it.  Without it these tests
-fail with VM's assertions checked -- `test-runner --assert\\=' -- which is a test
-setting up a state no caller is in rather than anything wrong with VM."
-  (declare (indent 1) (debug t))
-  `(vm-imap-mock-with (,(car spec) ,@(cddr spec))
-     (let* ((vm-imap-server-timeout 10)
-            (,(cadr spec) (vm-imap-make-session (vm-imap-mock-spec ,(car spec))
-                                                nil :purpose "test"))
-            (vm-buffer-types (cons 'process vm-buffer-types)))
-       (unwind-protect
-           (with-current-buffer (process-buffer ,(cadr spec))
-             ,@body)
-         (when (processp ,(cadr spec))
-           (ignore-errors (delete-process ,(cadr spec)))
-           (when (buffer-live-p (process-buffer ,(cadr spec)))
-             (kill-buffer (process-buffer ,(cadr spec)))))))))
-
 (defmacro vm-imap-mock-test--visiting (spec &rest body)
   "Visit a mock IMAP folder as a VM folder and run BODY in it.
 SPEC is (MOCK-VAR &rest ARGS) as for `vm-imap-mock-start'.  The cache
@@ -106,18 +80,6 @@ in no test that a machine without a server could run."
                             (vm-imap-mock-test--body-of (car vm-message-list))))
     (should (string-match-p "The second body"
                             (vm-imap-mock-test--body-of (cadr vm-message-list))))))
-
-(defmacro vm-imap-mock-test--blocking (&rest body)
-  "Run BODY with the asynchronous driver declining, so the old path runs.
-`vm-get-spooled-mail' calls `vm-imap-net-get-spooled-mail' first and falls
-back to `vm-imap-synchronize-folder' when it answers nil, which is what
-happens when the driver cannot ask for something -- a password nobody can be
-prompted for inside a process filter.  That fallback is the only caller of
-`vm-imap-retrieve-messages'."
-  (declare (indent 0) (debug t))
-  `(cl-letf (((symbol-function 'vm-imap-net-get-spooled-mail)
-              (lambda (&rest _) nil)))
-     ,@body))
 
 (ert-deftest vm-imap-mock-test-an-extra-fetch-item-is-stepped-over ()
   "A server that answers with more than VM asked for still delivers the mail.
@@ -325,9 +287,7 @@ has to be there afterwards; a command that deleted whatever it found would
 pass `expunging-what-has-been-retrieved' above, which retrieves both of its
 two and expects an empty mailbox.
 
-The coverage for this was against the blocking path (emacs-vm/vm#822), which
-had no equivalent here.  How it is done is worth knowing and is not visible
-from outside: VM flags each UID \\Deleted and then closes the mailbox, whose
+How it is done is worth knowing and is not visible from outside: VM flags each UID \\Deleted and then closes the mailbox, whose
 implicit expunge does the deleting (RFC 3501 6.4.2).  No EXPUNGE command is
 sent, so a test looking for one would conclude nothing had happened."
   (vm-imap-mock-test--spooling
@@ -532,9 +492,7 @@ is taken off the server behind VM's back, and the list comes back to one."
 
 (ert-deftest vm-imap-mock-test-pruning-says-so-when-it-cannot-ask ()
   "With no password for the maildrop, pruning says so and forgets nothing.
-It used to go on to a blocking session, whose process variable was bound to
-nil and never assigned: `(process-buffer nil)', so that half could not run at
-all.  Nothing is remembered as pruned by a look that never happened."
+Nothing is remembered as pruned by a look that never happened."
   (vm-imap-mock-test--spooling
       (mock :messages (list vm-imap-mock-test--alice vm-imap-mock-test--bob))
     (vm-get-new-mail)
@@ -1093,41 +1051,6 @@ carries a keyword at all, so a mailbox with one keeps its say over the rest."
       (vm-imap-synchronize)
       (vm-imap-net-wait nil 10)
       (should (equal (vm-decoded-labels-of message) (list "important"))))))
-
-
-
-;;; Expunging from the server what has been retrieved
-
-;; `vm-expunge-imap-messages' sets \Deleted on every message the folder has
-;; already retrieved and expunges.  Deleting the wrong one is not recoverable,
-;; so what it must never do is touch a message that is not in
-;; `vm-imap-retrieved-messages'.
-;;
-;; This is the blocking path, which runs only where the asynchronous driver
-;; declines, so `vm-imap-net-expunge-retrieved' is stubbed to nil, as
-;; vm-imap-mock-test--blocking does for retrieval.
-;;
-;; **The password has to be seeded.**  VM records a maildrop in
-;; `vm-imap-retrieved-messages' with the password stripped
-;; (`vm-imapdrop-sans-password'), so the session opened here has none and asks
-;; for one.  In batch that blocks on stdin and no timer fires, which reads as
-;; a hang with nothing to show for it.  The key `vm-imap-make-session' looks
-;; the password up under is the maildrop without its password *and* without
-;; its mailbox.
-
-(defconst vm-imap-expunge-test--messages
-  (list "From: a@example.com\nSubject: m1\n\nbody 1\n"
-        "From: a@example.com\nSubject: m2\n\nbody 2\n"
-        "From: a@example.com\nSubject: m3\n\nbody 3\n")
-  "Three messages, so that one can be left alone.")
-
-(defun vm-imap-expunge-test--subjects (mock)
-  "The subjects MOCK's INBOX still holds."
-  (mapcar (lambda (message)
-            (let ((text (vm-imap-mock-message-text message)))
-              (and (string-match "Subject: \\(m[0-9]\\)" text)
-                   (match-string 1 text))))
-          (vm-imap-mock-messages mock "INBOX")))
 
 (ert-deftest vm-imap-mock-test-a-modified-cache-is-saved-on-exit ()
   "REGRESSION: `vm-save-folder-caches' writes a modified IMAP cache.

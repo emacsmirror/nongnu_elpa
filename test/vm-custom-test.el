@@ -79,8 +79,7 @@ too, so a genuinely untyped option is what would show here."
 
 `vm-add-ons' was defined and nothing was ever put in it: no option, face or
 subgroup named it, so Customize listed it under `vm' and then showed the
-reader nothing (emacs-vm/vm#857).  `vm-ext' is the group that holds the
-add-ons.
+reader nothing (emacs-vm/vm#857).
 
 Emptiness is not something a lint can see, and a group can fill up from a
 file that is loaded later, so this asks an Emacs that has loaded them all."
@@ -94,6 +93,29 @@ file that is loaded later, so this asks an Emacs that has loaded them all."
     (should (string-match "checked \\([0-9]+\\) VM customize groups" output))
     (should (> (string-to-number (match-string 1 output)) 25))
     (should (equal nil (sort empty #'string<)))))
+
+(ert-deftest vm-custom-test-every-group-can-be-reached-from-vm ()
+  "REGRESSION: a path from `vm' leads to every VM customize group.
+
+A group whose `:group' names a group that no longer exists keeps its options
+and drops out of the tree, so Customize offers no way to open it and the
+reader finds those options only by typing their names.  Nothing reports it:
+`defgroup' takes any symbol, and the group still has a parent recorded, one
+that nothing defines.
+
+That is what removing a parent group costs if its children are left behind,
+which is how `vm-ext' was taken out: its six add-on groups were given real
+parents in the same commit."
+  (let* ((result (vm-custom-test--run-checker))
+         (output (cdr result))
+         (unreachable nil))
+    (dolist (line (split-string output "\n" t))
+      (when (string-prefix-p "UNREACHABLE " line)
+        (push (substring line (length "UNREACHABLE ")) unreachable)))
+    ;; the same premise as the tests above: a load that went wrong checks nothing
+    (should (string-match "checked \\([0-9]+\\) VM customize groups" output))
+    (should (> (string-to-number (match-string 1 output)) 25))
+    (should (equal nil (sort unreachable #'string<)))))
 
 ;;; The misspelled option names are gone, not aliased
 

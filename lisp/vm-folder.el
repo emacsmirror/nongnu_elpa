@@ -49,16 +49,12 @@
 (declare-function vm-imap-make-filename-for-spec "vm-imap" (spec))
 (declare-function vm-imap-cache-file-for-folder-name "vm-imap" (name))
 (declare-function vm-imap-set-default-attributes "vm-imap" (m))
-(declare-function vm-imap-end-session "vm-imap"
-		  (process &optional imap-buffer keep-buffer))
-(declare-function vm-imap-synchronize-folder "vm-imap" t)
 (declare-function vm-net-error-p "vm-net" (value))
 (declare-function vm-imap-net-send-changes "vm-imap-net" ())
 (declare-function vm-imap-net-stop "vm-imap-net" ())
 (declare-function vm-pop-net-stop "vm-pop-net" ())
 (declare-function vm-pop-net-send-changes "vm-pop-net" ())
 (declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
-(declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
 (declare-function vm-imap-external-messages-p "vm-imap" (spec))
 
@@ -5402,8 +5398,7 @@ anyway, which is what the check was going to ask."
 	;; On the driver, which answers whether it asked rather than whether
 	;; there is mail: the answer arrives in `vm-spooled-mail-waiting',
 	;; which is what the mode line reads.  A check that fails says so at
-	;; level 6 and is not repeated at the reader, so the once-per-failure
-	;; bookkeeping the blocking check needed has nothing to do here.
+	;; level 6 and is not repeated at the reader.
 	(cond ((eq vm-folder-access-method 'pop)
 	       (vm-pop-net-folder-check-mail))
 	      ((eq vm-folder-access-method 'imap)
@@ -5452,9 +5447,8 @@ anyway, which is what the check was going to ask."
 		      (setq mail-waiting
 			    (or mail-waiting (vm-mail-waiting-p maildrop))))
 		     ;; Not checkable: VM has no password for it and nobody can
-		     ;; be asked from here.  Nothing is contributed rather than
-		     ;; the same question being put a second time by a blocking
-		     ;; check; the last answer, if there was one, still stands.
+		     ;; be asked from here.  Nothing is contributed; the last
+		     ;; answer, if there was one, still stands.
 		     (t
 		      (setq mail-waiting
 			    (or mail-waiting (vm-mail-waiting-p maildrop))))))))
@@ -5494,9 +5488,8 @@ list, and say where they came from."
 			      "vm-retrieved-spooled-mail-hook. %S")
 		  errmsg)))
     (vm-assimilate-new-messages :read-attributes nil)
-    ;; and one of them is made current, as `vm-get-new-mail' does after the
-    ;; blocking fetch: a folder that was empty has no current message until
-    ;; this runs, and every command that works on the current message takes
+    ;; and one of them is made current: a folder that was empty has no current
+    ;; message until this runs, and every command that works on it takes
     ;; `(car vm-message-pointer)' and gets nil
     (if (vm-thoughtfully-select-message)
 	(vm-present-current-message)
@@ -7559,7 +7552,7 @@ Signals when the fetch cannot be started or does not finish."
       (unless (vm-imap-net-load-message-bodies messages)
 	(error "VM has no password for this maildrop yet"))
       ;; `vm-imap-server-timeout' nil means never time out, which is what it
-      ;; says and what the blocking fetch did; `vm-imap-net-wait' would read
+      ;; says; `vm-imap-net-wait' would read
       ;; nil as its own default of 30 seconds.  C-g is the way out of a wait
       ;; with no deadline, and works because the wait is
       ;; `accept-process-output'.

@@ -20,11 +20,7 @@
 ;;; Commentary:
 
 ;; POP3 written as generators, so that a session runs in the process filter
-;; and Emacs is never inside a wait.  The blocking implementation in vm-pop.el
-;; is still what the commands use; this is the protocol layer they will move
-;; to, converted first because POP is the smaller and simpler of the two --
-;; five waits against IMAP's four in a recursive parser, and no session state
-;; machine.  See dev/docs/design/async-imap.org.
+;; and Emacs is never inside a wait.  See dev/docs/design/async-imap.org.
 ;;
 ;; Everything here is an `iter-defun' and so can only be run by the driver in
 ;; vm-net.el:
@@ -101,9 +97,8 @@ reading it as one is how a client gets out of step with a server."
 
 (iter-defun vm-pop-net-read-response ()
   "Read one response line and answer with it, signalling on -ERR.
-The blocking code answers nil for an error and leaves the caller to work out
-what happened; a signal says what the server said, which is what a user is
-shown when a session fails."
+A signal says what the server said, which is what a user is shown when a
+session fails; nil would leave the caller to work out what happened."
   (let ((line (iter-yield-from (vm-pop-net-read-line))))
     (cond ((string-prefix-p "+OK" line) line)
 	  ((string-prefix-p "-ERR" line)
@@ -201,11 +196,9 @@ over."
 
 After the login and not before: an entry in `vm-pop-passwords' is what the
 next session looks the password up in, and a wrong one there is a login that
-fails without anybody being asked anything.
-
-Nothing wrote that list between the blocking implementation going and
-emacs-vm/vm#922, so every session asked again: twice per `vm-get-new-mail',
-one for the fetch and one for the expunge after it."
+fails without anybody being asked anything.  Without it every session asks
+again, twice per `vm-get-new-mail': one for the fetch and one for the expunge
+after it."
   (let ((key vm-pop-net-password-key))
     (when (and key (stringp password) (not (equal password ""))
 	       (not (equal password "*"))
@@ -691,9 +684,8 @@ deletion of messages whose text was thrown away with the session: fetched,
 deleted on the server, never written anywhere.  The caller deletes them once
 the crash box is on disk, in a session of its own and by UID.
 
-Passes over a message bigger than `vm-pop-max-message-size', which the
-blocking implementation honoured too: a local folder cannot go back to the
-server for a body later."
+Passes over a message bigger than `vm-pop-max-message-size': a local folder
+cannot go back to the server for a body later."
 	    (unwind-protect
 		(progn
 		  (let ((greeting (iter-yield-from (vm-pop-net-greeting))))
@@ -703,9 +695,7 @@ server for a body later."
 		      ;; UIDL is what tells one message from another between sessions.
 		      ;; Without it nothing here can say which of these has been fetched
 		      ;; before, so nothing is fetched -- and a maildrop that quietly
-		      ;; never arrives is worse than one that says why.  The blocking
-		      ;; path deletes each message as it takes it instead, which is the
-		      ;; other way to keep count and not one to start from a filter.
+		      ;; never arrives is worse than one that says why.
 		      ;;
 		      ;; An empty maildrop is not this: it answers the empty list, and
 		      ;; asking a server that has nothing for its sizes is pointless but
@@ -834,7 +824,7 @@ between the fetch and the folder being written: `vm-gobble-crash-box' is
 what reads it, here and after a crash alike.
 
 The messages arrive in CRLF and with the separators the server chose, or
-with none: the same cleaning up the blocking path does, in the same order."
+with none, and this is where both are cleaned up."
   (let ((count 0))
     (with-temp-buffer
       (set-buffer-multibyte nil)
@@ -893,9 +883,9 @@ is for the caller to gobble the crash box: this writes it and remembers the
 UIDs, and what to do with a folder is the folder's business.
 
 Nothing waits.  Whether the messages are deleted from the server is
-`vm-pop-net-auto-expunge-p', as it is for the blocking path -- and the
-deletion is a session of its own, run once the crash box is written: what
-the server still has is what VM has not saved yet."
+`vm-pop-net-auto-expunge-p', and the deletion is a session of its own, run
+once the crash box is written: what the server still has is what VM has not
+saved yet."
   (let ((folder (current-buffer))
 	;; an empty folder has no type of its own yet, and a crash box has
 	;; to be written in some type or nothing can read it back

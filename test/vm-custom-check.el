@@ -7,8 +7,9 @@
 ;;; Commentary:
 
 ;; Prints every VM `defcustom' whose `:type' does not accept its own default
-;; value, every option that declares no `:type' at all, and every customize
-;; group with nothing in it, and exits non-zero if there are any of the first.  Run by
+;; value, every option that declares no `:type' at all, every customize group
+;; with nothing in it and every one that cannot be reached from `vm', and exits
+;; non-zero if there are any of the first.  Run by
 ;; `vm-custom-test-every-type-accepts-its-own-default', and by hand as
 ;;
 ;;     emacs -Q --batch -L lisp -l test/vm-custom-check.el
@@ -85,6 +86,31 @@ empty page, which says the options are somewhere they are not."
   (seq-remove (lambda (sym) (get sym 'custom-group))
               (vm-custom-check-groups)))
 
+(defun vm-custom-check-reachable-groups ()
+  "Return every VM customize group reachable from `vm'.
+A group is reached through its parent's `custom-group' property, which is
+where `defgroup' records a `:group' argument, so this walks the tree the
+reader walks in Customize."
+  (let ((seen nil)
+        (todo (list 'vm)))
+    (while todo
+      (let ((group (pop todo)))
+        (unless (memq group seen)
+          (push group seen)
+          (dolist (entry (get group 'custom-group))
+            (when (eq (cadr entry) 'custom-group)
+              (push (car entry) todo))))))
+    seen))
+
+(defun vm-custom-check-unreachable-groups ()
+  "Return every VM customize group Customize cannot be navigated to, sorted.
+A group whose `:group' names a group that does not exist, or that names no
+group at all, is still defined and still holds its options, and no path from
+`vm' leads to it: the options in it are reachable only by name."
+  (let ((reachable (vm-custom-check-reachable-groups)))
+    (seq-remove (lambda (sym) (memq sym reachable))
+                (vm-custom-check-groups))))
+
 (defun vm-custom-check-untyped ()
   "Return every VM option that declares no `:type', sorted by name.
 Customize offers a raw sexp editor for one of those, which asks the reader
@@ -113,6 +139,8 @@ Return a cons of (CHECKED . MISMATCHES)."
       (princ (format "UNTYPED %s\n" sym)))
     (dolist (sym (vm-custom-check-empty-groups))
       (princ (format "EMPTYGROUP %s\n" sym)))
+    (dolist (sym (vm-custom-check-unreachable-groups))
+      (princ (format "UNREACHABLE %s\n" sym)))
     (princ (format "checked %d VM defcustoms\n" (length customs)))
     (princ (format "checked %d VM customize groups\n"
                    (length (vm-custom-check-groups))))

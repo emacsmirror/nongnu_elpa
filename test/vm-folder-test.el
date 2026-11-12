@@ -1465,8 +1465,8 @@ mail."
 (ert-deftest vm-folder-test-arriving-spooled-mail-makes-a-message-current ()
   "Mail arriving into an empty folder leaves it with a current message.
 
-`vm-get-new-mail' selects one after the blocking fetch; the asynchronous path
-does not go through it, so the folder was left with messages in its list and
+Mail arriving on the driver does not go through the selection
+`vm-get-new-mail' does, so the folder was left with messages in its list and
 nothing in `vm-message-pointer', and the next command that worked on the
 current message failed with \"Wrong type argument: arrayp, nil\"."
   (vm-test-with-real-folder (0)
@@ -5173,9 +5173,7 @@ case a mail-check timer meets and cannot do anything about."
 `vm-check-mail-itimer-function' calls this every `vm-mail-check-interval'
 seconds and cannot be asked for a password, so a maildrop VM has no password
 for filled *Messages* with \"Error running timer\" for as long as Emacs ran.
-There is one check now and it is the driver's, which answers nil rather than
-signalling; the blocking check this used to fall through to, and the
-once-per-failure bookkeeping that went with it, are gone."
+The check is the driver's and answers nil rather than signalling."
   (dolist (method '(imap pop))
     (vm-folder-test--with-a-check-that-cannot-start method
       (should-not (vm-check-for-spooled-mail nil t))
@@ -6669,11 +6667,10 @@ named in the triple, so there has to be a file and it has to be visited."
 	 (kill-buffer buffer))
        (delete-directory directory t))))
 
-(ert-deftest vm-folder-test-a-network-maildrop-is-not-fetched-by-waiting ()
-  "A network spool maildrop the driver declines is not fetched blockingly.
+(ert-deftest vm-folder-test-a-network-maildrop-the-driver-declines-is-not-fetched ()
+  "A network spool maildrop the driver declines is not fetched at all.
 The driver declines only where VM has no password and the reader, who was
-asked, gave none, so calling the blocking implementation would put the same
-question a second time."
+asked, gave none, so there is nothing left to try."
   (let ((called nil)
 	(said nil))
     (cl-letf (((symbol-function 'vm-start-spooled-mail) (lambda (&rest _) nil))

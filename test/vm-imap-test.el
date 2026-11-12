@@ -539,7 +539,7 @@ the case that sends `vm-imap-save-composition' to
 (ert-deftest vm-imap-test-save-composition-no-default-account ()
   "Test that a nil `vm-imap-default-account' is reported clearly.
 Regression test for issue #427: the guard used to skip the error in
-exactly this case, leaving `maildrop' nil for `vm-imap-make-session'."
+exactly this case, leaving `maildrop' nil for the session it opened."
   (vm-imap-test-with-composition
     (let ((vm-imap-default-account nil)
           (vm-imap-account-alist nil))

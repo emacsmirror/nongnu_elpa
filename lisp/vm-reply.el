@@ -80,16 +80,9 @@
 (declare-function vm-imap-save-composition "vm-imap" ())
 (declare-function vm-imap-parse-spec-to-list "vm-imap" (spec))
 (declare-function vm-imap-subst-CRLF-for-LF "vm-imap" (string))
-;; A cl-defun taking &key arguments: spelling the arglist out here makes the
-;; compiler count a keyword call wrongly, so it is left unsaid.
-(declare-function vm-imap-make-session "vm-imap" t)
 (declare-function vm-imap-spec-fields "vm-imap" (spec))
 (declare-function vm-imap-net-append-text "vm-imap-net"
 		  (spec mailbox text &optional flags may-ask))
-(declare-function vm-imap-append-message "vm-imap"
-		  (process mailbox string &optional flags))
-(declare-function vm-imap-end-session "vm-imap"
-		  (process &optional imap-buffer keep-buffer))
 (declare-function dnd-get-local-file-name "dnd" (uri &optional must-exist))
 (declare-function vm-session-initialization "vm" ())
 (declare-function vm-version "vm" ())

@@ -944,6 +944,53 @@ where a MIME boundary of hyphens is the thing being named."
 the word was taken out of the manual once already (emacs-vm/vm#776)."
   (should (equal nil (vm-reference-test--prose-matching "\\bshapes?\\b"))))
 
+;;; The design documents and the development guide
+
+(defun vm-reference-test--org-files (directory)
+  "Every org file in DIRECTORY and in its design subdirectory."
+  (append (directory-files directory t "\\.org\\'")
+          (directory-files (expand-file-name "design" directory) t "\\.org\\'")))
+
+(defun vm-reference-test--org-prose (file)
+  "The lines of FILE that are prose: everything outside a block.
+A src block holds a command line, where a double hyphen is an option, and an
+example block holds what a program printed."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (goto-char (point-min))
+    (let ((lines nil))
+      (while (not (eobp))
+        (let ((line (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position))))
+          (cond ((string-match-p "^[ \t]*#\\+begin_" line)
+                 (re-search-forward "^[ \t]*#\\+end_" nil 'move))
+                ((string-match-p "^[ \t]*:\\( \\|$\\)" line))
+                (t (push line lines))))
+        (forward-line 1))
+      (nreverse lines))))
+
+(ert-deftest vm-reference-test-the-design-documents-use-no-dash-as-punctuation ()
+  "REGRESSION: no em dash in dev/docs, and no ` -- ' standing for one.
+The rule CLAUDE.md states for the manual holds for the documents beside it,
+and nothing was checking them: 12 double hyphens in dev-guide.org, 5 em
+dashes in imap-live-tests.org and 1 double hyphen in async-imap.org were
+taken out by hand.
+
+A comma, a colon, parentheses or two sentences says the same thing.  Org
+writes a gloss as `- term :: description', which is what the dovecot
+settings in imap-live-tests.org now use.
+
+Src and example blocks are not prose and are not searched: a command line
+takes double-hyphen options, and what a program printed is quoted rather
+than written."
+  (let ((docs (expand-file-name "../dev/docs" vm-test-dir))
+        (found nil))
+    (dolist (file (vm-reference-test--org-files docs))
+      (dolist (line (vm-reference-test--org-prose file))
+        (when (string-match-p "—\\| -- " line)
+          (push (format "%s: %s" (file-name-nondirectory file) line) found))))
+    (should (equal nil (sort found #'string<)))))
+
 ;;; The names VM's own docstrings use (emacs-vm/vm#840)
 
 (defconst vm-reference-test--names-that-are-not-symbols
@@ -1024,6 +1071,46 @@ What is quoted and is not a symbol is listed in
                                            (cdr pair)))
                                  missing)
                          #'string<)))))
+
+;;; A declare-function names a function that exists
+
+(defun vm-reference-test--declared-functions (file)
+  "Every VM function FILE declares with `declare-function'.
+Only VM's own: a declaration of an external function is a promise about
+another package, which may or may not be installed here."
+  (let ((names nil))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (re-search-forward "^(declare-function \\(vm-[^ ()\n]+\\)" nil t)
+        (push (intern (match-string 1)) names)))
+    (nreverse names)))
+
+(ert-deftest vm-reference-test-declared-functions-exist ()
+  "REGRESSION: a `declare-function' names a function VM defines.
+Six declarations named five functions of the blocking IMAP implementation,
+deleted in emacs-vm/vm#822: `vm-imap-make-session', `vm-imap-end-session',
+`vm-imap-append-message', `vm-imap-folder-check-mail' and
+`vm-imap-synchronize-folder'.
+
+A declaration is read by the byte compiler and by nothing else, so one left
+behind costs no warning and no error.  What it costs is a reader, who finds
+the name, looks for the definition and does not find it, and a test that
+stubs the name with `cl-letf' and asserts on a call that can never come:
+`vm-imap-net-test-completion-gets-its-names-from-the-driver' did exactly
+that.
+
+Read from the files rather than from the running Emacs, since a declaration
+leaves nothing behind once the file is compiled."
+  (vm-reference-load-everything)
+  (let ((lisp (expand-file-name "../lisp" vm-test-dir))
+        (missing nil))
+    (dolist (name (vm-reference-module-files lisp))
+      (dolist (symbol (vm-reference-test--declared-functions
+                       (expand-file-name name lisp)))
+        (unless (fboundp symbol)
+          (push (format "%s declared by %s" symbol name) missing))))
+    (should (equal nil (sort missing #'string<)))))
 
 ;;; The committed files are the ones the generator would write
 

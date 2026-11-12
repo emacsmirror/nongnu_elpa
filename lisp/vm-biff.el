@@ -68,7 +68,7 @@
 
 (defgroup vm-biff nil
   "The VM biff lib"
-  :group 'vm-ext)
+  :group 'vm)
 
 (defcustom vm-biff-position 'center
   "*Position of the popup-frame."

@@ -90,7 +90,7 @@
 
 (defgroup vm-serial nil
   "Sending personalized serial mails and getting message templates."
-  :group  'vm-ext)
+  :group  'vm-compose)
 
 (declare-function bbdb-extract-address-components
 		  "ext:bbdb-snarf" (adstring &optional ignore-errors))

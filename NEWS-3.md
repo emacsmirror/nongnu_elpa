@@ -8,6 +8,20 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
 
 ## VM 9.0.1 unreleased
 
+### Customization
+
+  * **VM's add-on packages are no longer grouped under `vm-ext`**
+    (emacs-vm/vm!854).  That group collected packages by how they were added
+    rather than by what they configure.  `vm-postpone` and `vm-serial` are
+    under `vm-compose`, `vm-avirtual` is under `vm-virtual`, and `vm-biff`,
+    `vm-epg` and `vm-message-history` are directly under `vm`, where
+    `vm-grepmail`, `vm-oauth2` and `vm-pcrisis` already were.  Six options
+    that are about outgoing mail rather than about drafts move from
+    `vm-postpone` to `vm-compose`: `vm-mail-return-receipt-to`,
+    `vm-mail-priority`, `vm-mail-folder-alist`, `vm-mail-fcc-default`,
+    `vm-mail-to-regexp` and `vm-mail-to-headers`.  No option is renamed and
+    no default changes, so a saved customization keeps working.
+
 ### IMAP and POP
 
   * **IMAP and POP accounts can authenticate with OAuth2**
