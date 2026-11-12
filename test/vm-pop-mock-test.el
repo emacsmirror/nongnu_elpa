@@ -308,7 +308,7 @@ SPEC is (MOCK-VAR &rest ARGS), ARGS going to `vm-pop-mock-start'.  The name in
   "`vm-visit-pop-folder' opens the maildrop named in `vm-pop-folder-alist'
 and the messages arrive whole.
 
-The folder knows it is POP afterwards, which is what tells the rest of VM to
+The folder is marked POP afterwards, which is what tells the rest of VM to
 talk to the server rather than to a file."
   (vm-pop-mock-test--visiting
       (mock :messages (list vm-pop-mock-test--message-1
@@ -393,7 +393,7 @@ server."
   "Bodies that a folder of some type would otherwise read as a separator.")
 
 (defun vm-pop-mock-test--message-with (n body)
-  "A message numbered N carrying BODY."
+  "A message numbered N with BODY."
   (concat "From: alice@example.com\nTo: vmtest@example.com\n"
           (format "Subject: message %d\nMessage-ID: <pop-%d@example.com>\n\n" n n)
           body "\n"))
@@ -413,7 +413,7 @@ visits has."
     (cons vm-folder-type (length vm-message-list))))
 
 (defun vm-pop-mock-test--retrieve-into (type body)
-  "Retrieve two messages, the first carrying BODY, into a folder of TYPE.
+  "Retrieve two messages, the first with BODY, into a folder of TYPE.
 Answers a complaint, or nil when the folder reads back as the two messages
 that were sent."
   (let ((dest (make-temp-file "vm-pop-mock-dest")))

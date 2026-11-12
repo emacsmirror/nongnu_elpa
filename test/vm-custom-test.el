@@ -55,12 +55,12 @@ type says something false about what the code accepts."
 
 (ert-deftest vm-custom-test-every-option-declares-a-type ()
   "REGRESSION: every VM user option declares a `:type'.
-Customize offers a raw sexp editor for an option without one, which asks the
+Customize gives a raw sexp editor for an option without one, which asks the
 reader to know the structure the code wants and helps them with none of it.
 
 Thirty-two looked untyped (emacs-vm/vm#837) and every one of them was an
-obsolete name.  A `defvaralias' carries no type of its own, the option it
-points at carries it, and `customize-option' resolves the alias before it
+obsolete name.  A `defvaralias' has no type of its own, the option it
+points at has it, and `customize-option' resolves the alias before it
 builds anything, saying which option it went to.  The checker resolves them
 too, so a genuinely untyped option is what would show here."
   (let* ((result (vm-custom-test--run-checker))
@@ -98,7 +98,7 @@ file that is loaded later, so this asks an Emacs that has loaded them all."
   "REGRESSION: a path from `vm' leads to every VM customize group.
 
 A group whose `:group' names a group that no longer exists keeps its options
-and drops out of the tree, so Customize offers no way to open it and the
+and drops out of the tree, so Customize gives no way to open it and the
 reader finds those options only by typing their names.  Nothing reports it:
 `defgroup' takes any symbol, and the group still has a parent recorded, one
 that nothing defines.
@@ -121,7 +121,7 @@ parents in the same commit."
 
 ;; Three user options were spelled wrong in their own names.  They were
 ;; renamed, and the misspellings were *not* kept as aliases: a name nobody
-;; meant to type is not worth carrying.  Issue #589.
+;; meant to type is not worth keeping.  Issue #589.
 ;;
 ;; The cost of that decision is silent: an init file still setting a
 ;; misspelling gets no error, the option simply keeps its default.  These tests

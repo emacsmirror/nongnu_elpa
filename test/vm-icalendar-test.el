@@ -72,7 +72,7 @@ continuation belongs to the line before it."
 ;;; Saying it in words
 
 (ert-deftest vm-icalendar-test-says-what-the-invitation-says ()
-  "The rendering answers what, when, where and who."
+  "The rendering reports what, when, where and who."
   (let ((text (vm-icalendar-format vm-icalendar-test--invitation)))
     (should (string-match-p "\\`Invitation" text))
     (should (string-match-p "Quarterly review" text))
@@ -240,7 +240,7 @@ gives it the part and that the event arrives."
 ;; `icalendar-import-buffer' is obsolete from Emacs 31.1, the release
 ;; `diary-icalendar-import-buffer' arrived in, and VM runs on 28.1, so both
 ;; are called and the new one first.  They report differently: the old one
-;; answers t when it imported, the new one ends in `save-buffer' and answers
+;; returns t when it imported, the new one ends in `save-buffer' and returns
 ;; nil whatever happened, raising instead when it cannot read the text.
 
 (ert-deftest vm-icalendar-test-import-asks-for-the-name-emacs-still-has ()
@@ -258,7 +258,7 @@ gives it the part and that the event arrives."
         (should (equal called '(old)))))))
 
 (ert-deftest vm-icalendar-test-a-nil-answer-from-the-new-name-is-not-a-failure ()
-  "REGRESSION: `diary-icalendar-import-buffer' answers nil when it worked.
+  "REGRESSION: `diary-icalendar-import-buffer' returns nil when it worked.
 Reading that as failure reported `icalendar could not import this part' on
 every successful import."
   (skip-unless (fboundp 'diary-icalendar-import-buffer))

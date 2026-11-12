@@ -62,7 +62,7 @@
 (defvar vm-imap-fuzz-test--refused nil
   "UIDs whose flags the server refused while a sequence ran.
 
-A server that refuses a keyword has VM drop it rather than offer it for ever
+A server that rejects a keyword has VM drop it rather than send it for ever
 (issue #391), so the folder ends up saying a message is read while the server
 says it is not -- deliberately.  Those messages are left out of the check that
 the two agree; every other message is not.")
@@ -180,7 +180,7 @@ pending is left alone, and so is one the server no longer has."
 (defun vm-imap-fuzz-test--reader-operation (choice &optional uid)
   "Do reader operation CHOICE in the current folder, and describe it.
 UID says which message to do it to, for a replay; without one a message is
-chosen at random.  Every description carries the UID it used, so a sequence
+chosen at random.  Every description holds the UID it used, so a sequence
 that broke something can be run again."
   (let ((m (if uid
                (vm-imap-fuzz-test--message-by-uid uid)

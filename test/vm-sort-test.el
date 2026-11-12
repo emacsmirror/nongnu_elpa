@@ -844,7 +844,7 @@ message to insert before and the text goes to the end of the folder."
                    (vm-sort-test--subjects-in-the-list)))))
 
 (ert-deftest vm-sort-test-a-physical-move-is-refused-on-a-read-only-folder ()
-  "Only the physical move writes the folder, and only it refuses a read-only
+  "Only the physical move writes the folder, and only it rejects a read-only
 one.  The ordinary move changes presentation order and is allowed."
   (vm-sort-test--moving-physically 3
     (let ((vm-folder-read-only t)
@@ -946,7 +946,7 @@ is what the two keys are for."
 so neither belongs in a sweep that only asks whether a key sorts.")
 
 (ert-deftest vm-sort-test-every-supported-key-sorts ()
-  "REGRESSION: every key completion offers is one that sorts.
+  "REGRESSION: every key completion lists is one that sorts.
 
 `reversed-addressees\=' was in `vm-supported-sort-keys\=' with no arm in the
 `cond\=' that maps a key to its comparison, and the fallback arm interns
@@ -982,7 +982,7 @@ folder of sent mail is read by."
 
 (ert-deftest vm-sort-test-sorting-by-a-header-of-your-own ()
   "The header key sorts by any header, read from the minibuffer.  Nothing
-else offers that, and nothing tested it."
+else lists that, and nothing tested it."
   (vm-sort-test--sorting
     (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "X-Priority")))
       (let ((vm-sort-compare-header nil))

@@ -24,7 +24,7 @@
 
 (defun vm-net-test--start-server (script)
   "Serve SCRIPT on a local port and return (PROCESS . PORT).
-SCRIPT is called with the connection and the line that arrived, and answers
+SCRIPT is called with the connection and the line that arrived, and returns
 by writing to it.  A server rather than a pipe: VM talks to a socket, and a
 socket is what shows a filter being called with whatever chunks arrive."
   (let* ((server (make-network-process
@@ -84,7 +84,7 @@ parsers keep a read point of their own for the same reason."
     (goto-char (point-min))
     (buffer-substring-no-properties (point-min) (line-end-position))))
 
-(ert-deftest vm-net-test-a-session-answers-when-the-line-arrives ()
+(ert-deftest vm-net-test-a-session-resumes-when-the-line-arrives ()
   "The generator asks for input, the filter gives it, and the session ends
 with what the generator returned.  Nothing waited: the whole of it happened
 in the filter."
@@ -127,7 +127,7 @@ wants."
     (let* ((process (vm-net-test--connect port))
            (session (vm-net-session :process process :name "test")))
       (vm-net-start session (vm-net-test--collect-two))
-      ;; two arrivals, not one chunk carrying both: the point is that each
+      ;; two arrivals, not one chunk holding both: the point is that each
       ;; one resumes the generator
       (process-send-string process "one\n")
       (accept-process-output nil 0.2)
@@ -281,7 +281,7 @@ end of its response, and searches from where the reader is."
 
 ;;; A connection that has to be tunnelled
 
-(ert-deftest vm-net-test-a-free-port-is-one-nothing-answers-on ()
+(ert-deftest vm-net-test-a-free-port-is-one-nothing-listens-on ()
   "`vm-net-free-port' asks the operating system for a port rather than
 trying one after another until a connection fails, every one of those
 attempts being a wait."
@@ -376,8 +376,8 @@ connected once it has answered."
     ;; the probe that answered was closed, and this port has none outstanding
     (should-not (gethash port vm-net--probes))))
 
-(ert-deftest vm-net-test-a-port-with-nothing-there-answers-no ()
-  "A port nothing is listening on answers nil however often it is asked, and
+(ert-deftest vm-net-test-a-port-with-nothing-there-returns-nil ()
+  "A port nothing is listening on returns nil however often it is asked, and
 leaves no probe behind.
 
 How many asks an answer takes is the machine's business: a connection made
@@ -832,7 +832,7 @@ the slice is then free to hand Emacs a turn first."
 
 `delete-process' on a connection made with :nowait whose name lookup has not
 finished spins: Emacs cancels the lookup and then waits for it, and glibc
-answers a lookup that finished in between with EAI_ALLDONE, which Emacs reads
+returns EAI_ALLDONE for a lookup that finished in between, which Emacs reads
 as \"not yet\" for ever.  A whole test run was found burning a core there.
 The status leaves `connect' only once Emacs has taken the answer to the
 lookup, so that is what is waited for."

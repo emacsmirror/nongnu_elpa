@@ -384,7 +384,7 @@ whoever wants to act first."
 
 (ert-deftest vm-integration-test-startup-hook-is-a-hook-variable ()
   "It is a `defcustom' of type hook, like VM's other hooks.
-So `add-hook' works on it and Customize offers it beside the rest."
+So `add-hook' works on it and Customize lists it beside the rest."
   (require 'vm-vars)
   (should (boundp 'vm-startup-hook))
   (should (eq 'hook (get 'vm-startup-hook 'custom-type)))
@@ -423,7 +423,7 @@ The optional bindings are installed first, so they are covered too, into
 copies of the maps.  Installing them for real leaves them installed: the
 functions call `define-key' on the map the variable holds, and the harness
 restores VM's variables rather than what their values point at, so the run
-carried VM 8 bindings from here on."
+held VM 8 bindings from here on."
   (require 'vm)
   (vm-integration-test--check-bindings))
 
@@ -535,7 +535,7 @@ this also keeps such a mistake from being quietly absorbed."
     (should (equal nil (nreverse probes)))))
 
 (ert-deftest vm-integration-test-the-probed-arities-are-still-there ()
-  "The arities those probes fell back from are the ones Emacs offers.
+  "The arities those probes fell back from are the ones Emacs accepts.
 This is what made the handlers dead code, so it is what has to stay true."
   (dolist (probe '((insert-file-contents . 5)   ; file nil 0 4096
                    (base64-encode-region . 3)   ; start end no-line-break
@@ -878,7 +878,7 @@ terminate some other way are named in
   "No plain `defun', `defsubst' or `defmacro' has `&key' or `&aux' in its
 arglist.
 
-Emacs Lisp's own lambda list knows `&optional' and `&rest' and nothing else,
+Emacs Lisp's own lambda list accepts `&optional' and `&rest' and nothing else,
 so a `&key' there is not a keyword marker: it becomes an ordinary variable
 whose name happens to be `&key', and the argument after it becomes one more
 positional.  `vm-retrieve-operable-messages' was written that way and worked
@@ -1246,7 +1246,7 @@ A name in a comment or a docstring is then not a hit."
     (delete-dups found)))
 
 (ert-deftest vm-integration-test-no-menu-only-command-is-called ()
-  "REGRESSION: VM calls no command that refuses to run outside a menu.
+  "REGRESSION: VM calls no command that signals when run outside a menu.
 
 `kill-this-buffer' has done so since Emacs 30, and VM called it from three
 places.  `vm-postpone-message' was the visible one: it wrote the draft to the
@@ -1385,8 +1385,8 @@ own Emacs has VM loaded and initialised long before any test runs."
       (should (equal status 0))
       (buffer-string))))
 
-(ert-deftest vm-integration-test-an-account-lookup-answers-on-a-cold-start ()
-  "`vm-imap-spec-for-account' answers the first time it is called.
+(ert-deftest vm-integration-test-an-account-lookup-returns-on-a-cold-start ()
+  "`vm-imap-spec-for-account' returns a spec the first time it is called.
 
 `vm-imap-account-alist' is set in the init file, which VM reads when it
 initialises, so a command of one's own naming an account was answered with nil
@@ -1412,9 +1412,9 @@ In a child Emacs, since the suite's own has VM initialised already."
 			    printed))))
 
 (ert-deftest vm-integration-test-visiting-a-non-maildrop-says-what-is-wrong ()
-  "`vm-visit-imap-folder' refuses a folder that is not an IMAP maildrop.
+  "`vm-visit-imap-folder' rejects a folder that is not an IMAP maildrop.
 
-Nil is what an account lookup answers for an account VM has not got, and it
+Nil is what an account lookup returns for an account VM has not got, and it
 used to be turned into the primary inbox and then read as a maildrop:
 \"Wrong type argument: consp, nil\" from `vm-imap-normalize-spec', which says
 nothing about the cause (emacs-vm/vm#826)."
@@ -1456,7 +1456,7 @@ file may call it."
 
 (defun vm-integration-test--ineffective-escapes-in (file)
   "Every line of FILE holding an escape of `=' that does nothing.
-A docstring shows a literal apostrophe by carrying the two characters
+A docstring shows a literal apostrophe by holding the two characters
 backslash and `=', which `substitute-command-keys' then reads as quoting
 what follows.  Written with one backslash the Lisp reader eats it, the
 string holds a bare `=', and the reader of the docstring sees it."
@@ -1480,7 +1480,7 @@ string holds a bare `=', and the reader of the docstring sees it."
 one, in two forms: a `symbol\\=' reference whose closing quote was escaped for
 no reason, and an apostrophe in a word escaped with one backslash where two
 are needed.  relint reports them and was being read as a false positive
-because the convention it complains about looks right (emacs-vm/vm#829).
+because the convention it reports looks right (emacs-vm/vm#829).
 
 lisp/ and info/ are scanned, the first being the docstrings a user reads and
 the second `info/gen-reference.el', which had 27 of these and was missed the
@@ -1540,7 +1540,7 @@ which is a real function in a file that happened not to be loaded."
         (read (current-buffer))))))
 
 (ert-deftest vm-integration-test-every-option-matches-its-own-type ()
-  "REGRESSION: no user option offers Customize a default its :type refuses.
+  "REGRESSION: no user option gives Customize a default its :type rejects.
 
 A :type that does not admit the option's own default is a Customize buffer
 that will not save, for a value the code is using at that moment.  Nothing
@@ -1560,7 +1560,7 @@ sample and not a boundary.  It grows when the next collision is found.")
 (defun vm-integration-test--arguments-that-shadow ()
   "Every VM function argument that is also a dynamic variable, one per line.
 
-In a child Emacs: `special-variable-p' answers from what is loaded, and
+In a child Emacs: `special-variable-p' reports from what is loaded, and
 loading these libraries into the suite's own Emacs would change an answer
 for every test after it, which `vm-test-isolate-global-state' does not undo."
   (with-temp-buffer

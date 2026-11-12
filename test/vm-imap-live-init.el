@@ -56,7 +56,7 @@ They run only when `vm-live-config-file' also exists, so the config is the real
 opt-in.  Bind this to nil to keep a configured checkout from using the network
 -- in CI, say -- without deleting the config.
 
-The default answers VM_TEST_LIVE, so `make test-mock' and
+The default comes from VM_TEST_LIVE, so `make test-mock' and
 `VM_TEST_LIVE=0 make test' run the mock servers alone on a machine that has a
 live one.  See `vm-test-live-wanted-p'.")
 
@@ -186,7 +186,7 @@ happened to the mail-sending tests."
                             regexp (buffer-substring start (point-max))))
         (while (not (vm-imap-live--seen-p start regexp))
           (accept-process-output process 0 200)
-          ;; A dead process answers at once, so without this the wait becomes
+          ;; A dead process returns at once, so without this the wait becomes
           ;; a spin until `vm-imap-live-timeout' and reports a timeout for
           ;; what is a closed connection.  The second look is for output
           ;; delivered alongside the close.
@@ -281,7 +281,7 @@ would give \"INBOX.\" and \".\"."
 
 (defun vm-imap-live-mailbox-name (conn)
   "Return a fresh throwaway mailbox name on CONN, under vmtest.
-Never INBOX.  The name carries the microsecond clock, the pid and a counter.
+Never INBOX.  The name holds the microsecond clock, the pid and a counter.
 
 The clock is what makes it unique.  This was the pid and the counter alone,
 and a pid is unique only among running processes: every killed run leaves
@@ -296,7 +296,7 @@ says how old a leftover is, which is what a sweep needs."
 
 (defun vm-imap-live-append (conn mailbox message &optional flags)
   "APPEND MESSAGE to MAILBOX on CONN, with optional FLAGS string.
-Uses a LITERAL+ non-synchronising literal when the server offers one, so no
+Uses a LITERAL+ non-synchronising literal when the server supports one, so no
 continuation handshake is needed."
   (let* ((crlf (replace-regexp-in-string "\n" "\r\n"
                                          (replace-regexp-in-string

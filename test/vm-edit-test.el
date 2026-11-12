@@ -479,7 +479,7 @@ go back to."
 
 (ert-deftest vm-edit-test-the-edit-buffer-holds-the-whole-message ()
   "The buffer holds the message from its first header to its last line, and
-knows which folder it belongs to.  `vm-edit-message-end' reads all of that
+holds which folder it belongs to.  `vm-edit-message-end' reads all of that
 back, so a buffer set up short of it writes a truncated message."
   (vm-edit-test--in-a-folder (2)
     (vm-edit-message)
@@ -527,7 +527,7 @@ command says so rather than pretending to edit."
       (let ((err (should-error (vm-edit-message) :type 'error)))
         (should (string-match-p "unmirrored" (error-message-string err)))))))
 
-;;; A folder that carries its own lengths
+;;; A folder that holds its own lengths
 
 (ert-deftest vm-edit-test-an-edit-recomputes-the-content-length ()
   "In an mboxcl2 folder the body length is a header, and an edit that changes

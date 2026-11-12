@@ -242,7 +242,7 @@
 ;; A message omitted from a virtual folder used to stay registered as a mirror
 ;; of its real message.  Expunging the real message then expunged the omitted
 ;; one from a list it was no longer in, and its stale reverse link took the
-;; following message instead: shared attributes carried the wrong expunged flag
+;; following message instead: shared attributes held the wrong expunged flag
 ;; back to the real folder, whose expunge loop ran on into messages nobody had
 ;; deleted.  Four messages, one deleted, three lost.
 ;;
@@ -1147,7 +1147,7 @@ That is what the command is for."
 (ert-deftest vm-avirtual-test-saving-uses-the-folder-the-rules-name ()
   "`vm-virtual-save-message' is `vm-save-message' with the folder guessed:
 called from Lisp with a folder it saves there, and the guess is what the
-interactive form offers as the default."
+interactive form uses as the default."
   (vm-avirtual-test--with-folder (file archive)
     (let ((vm-virtual-folder-alist
            (list (list "badger-mail" (list (list file) '(subject "badgers")))))
@@ -1191,8 +1191,8 @@ looked at."
 
 (ert-deftest vm-avirtual-test-adding-a-selector-names-its-function ()
   "`vm-avirtual-add-selectors' is how this file registers the selectors it
-defines: each name is paired with the `vm-vs-' function that answers it, and
-listed as one the interactive selector reader offers."
+defines: each name is paired with the `vm-vs-' function that evaluates it, and
+listed as one the interactive selector reader lists."
   (let ((vm-vs-alist
          (copy-sequence vm-vs-alist))
         (vm-vs-interactive

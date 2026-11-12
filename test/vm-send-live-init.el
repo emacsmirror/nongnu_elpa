@@ -77,7 +77,7 @@ Sending itself is not described here: the config file sets
        ;; and a way to send.  Any named function will do: how this machine
        ;; sends mail is the config's business, and a list of the four the
        ;; harness happened to know left a valid one reading as no
-       ;; configuration at all.  `functionp' is no test either -- it answers
+       ;; configuration at all.  `functionp' is no test either: it returns
        ;; nil for a function in a library not loaded yet, which is what
        ;; `message-send-mail-with-sendmail' is until message.el arrives, so
        ;; the send tests skipped in silence for a config that worked.
@@ -108,7 +108,7 @@ one."
   "Compose a message, run BODY in its buffer, and send it.
 SPEC is (SUBJECT-VAR WHAT): SUBJECT-VAR is bound to a subject naming WHAT.
 The composition is made with `vm-mail', addressed to the configured :to, and
-carries the marker header.  BODY adds whatever the test is about; the send
+holds the marker header.  BODY adds whatever the test is about; the send
 happens after it.
 
 The buffer is killed afterwards whether the send worked or not, so a failed
@@ -231,7 +231,7 @@ afterwards, found by its marker header rather than by guessing."
 
 (defvar vm-send-live-messages nil
   "Alist of (TAG . FUNCTION) naming the messages a run sends.
-FUNCTION composes and sends one and answers a plist describing it, which
+FUNCTION composes and sends one and returns a plist describing it, which
 `vm-send-live-sent\=' hands to the test that asked for TAG.  A `:dir\=' in that
 plist is a directory the sweep removes.  The test file fills this in.")
 

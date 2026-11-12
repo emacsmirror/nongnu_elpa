@@ -107,7 +107,7 @@ configuration and runs everywhere."
   "Sending on a dropped connection says what dropped it and what to do.
 emacs-vm/vm#864: dovecot drops about 1% of IMAPS connections just after
 login, and the bare report of that was \"connection broken by remote peer\",
-which names neither the server nor the rerun that answers it.
+which names neither the server nor the rerun that resolves it.
 
 The command is deliberately a LOGIN: the message must not carry it, since
 that is where the password is."
@@ -120,14 +120,14 @@ that is where the password is."
           (should (string-match-p "closed the connection" text))
           (should (string-match-p "emacs-vm/vm#864" text))
           (should (string-match-p "Run the test again" text))
-          ;; the error that reported it is carried, not replaced
+          ;; the error that reported it is kept, not replaced
           (should (string-match-p "not running" text))
           (should-not (string-match-p "the-password" text)))
       (kill-buffer (vm-imap-live-conn-buffer conn)))))
 
 (ert-deftest vm-imap-live-test-a-closed-connection-explains-itself-on-read ()
   "Awaiting a reply on a dropped connection explains rather than times out.
-The drop can land while the harness is reading, and a dead process answers
+The drop can land while the harness is reading, and a dead process returns
 `accept-process-output' at once, so that path used to spin until
 `vm-imap-live-timeout' and report a timeout for a closed connection.  The
 elapsed time is asserted because it is what tells the two apart."
@@ -303,7 +303,7 @@ of the whole exercise: everything above only proves the harness works."
 ;;; ------------------------------------------------------------------
 
 (defun vm-imap-live-test--numbered (n)
-  "Return a small message carrying number N."
+  "Return a small message holding number N."
   (format (concat "From: alice@example.com\r\n"
                   "To: vmtest@example.com\r\n"
                   "Subject: message %d\r\n"
@@ -646,11 +646,11 @@ behind #335 and #286."
 ;;; ------------------------------------------------------------------
 
 (ert-deftest vm-imap-live-test-refused-store-keeps-the-local-label ()
-  "REGRESSION: a STORE the server refuses does not destroy the local label.
+  "REGRESSION: a STORE the server rejects does not destroy the local label.
 Issue #270 asked whether VM could check that flags really were stored.  It
 was worse than not checking.  Uploading attributes and downloading them are
 two separate passes of a sync: `vm-imap-save-attributes' counts a refused
-STORE as an error and carries on, and the download pass then applied the
+STORE as an error and continues, and the download pass then applied the
 server's flags to every message, including the one whose upload had just
 failed.  So the server's stale view overwrote the user's label, the change
 was gone, and the modflag left set for a retry had nothing left to retry.
@@ -664,7 +664,7 @@ reached the server."
       (vm-add-message-labels "vmtest-refused" 1)
       (should (member "vmtest-refused" (vm-labels-of m)))
       (should (vm-attribute-modflag-of m))
-      ;; The server now refuses every STORE.
+      ;; The server now rejects every STORE.
       (setf (vm-imap-relay-reject relay) "STORE")
       (vm-get-new-mail)
       (vm-imap-net-wait nil 30)
@@ -678,7 +678,7 @@ Issue #38.  The happy path keeps them -- `vm-imap-copy-message' flushes
 pending flags before UID COPY, and
 `vm-imap-live-test-save-to-imap-keeps-attributes' pins that.  This is the
 path where the flush fails: the call sits in a `condition-case' that
-swallows `vm-imap-protocol-error', so a server that refuses the STORE left
+swallows `vm-imap-protocol-error', so a server that rejects the STORE left
 the COPY to go ahead and file the server's stale flags, with nothing said to
 anyone.  Which is the report, fifteen years on."
   (vm-imap-live-skip-unless-server "plain")
@@ -692,7 +692,7 @@ anyone.  Which is the report, fifteen years on."
               (vm-imap-live-cmd-ok conn "CREATE \"%s\"" dst)
               (vm-add-message-labels label 1)
               (should (vm-attribute-modflag-of m))
-              ;; From here the server refuses to store any flag.
+              ;; From here the server rejects every flag.
               (setf (vm-imap-relay-reject relay) "STORE")
               (let ((vm-current-warning nil))
                 (vm-save-message-to-imap-folder
@@ -713,14 +713,14 @@ anyone.  Which is the report, fifteen years on."
 
 (ert-deftest vm-imap-live-test-one-refused-flag-does-not-block-the-others ()
   "REGRESSION: a keyword the server will not take does not hold back the rest.
-Issue #391.  VM sent every pending flag in one STORE, so a server that refuses
-one of them refuses the command, and nothing was stored: the reporter marked mail
+Issue #391.  VM sent every pending flag in one STORE, so a server that rejects
+one of them rejects the command, and nothing was stored: the reporter marked mail
 deleted and labelled it, Exchange would not take the label, and the deletion
 never reached the server either.  The refusal is now met by offering the flags
 one at a time, so what the server will take is stored and what it will not is
 remembered and not offered again.
 
-The relay refuses any command mentioning the label, which is how an Exchange
+The relay rejects any command mentioning the label, which is how an Exchange
 server behaves towards a keyword it does not know."
   (vm-imap-live-skip-unless-server "plain")
   (require 'vm)
@@ -746,7 +746,7 @@ server behaves towards a keyword it does not know."
     (should checked)))
 
 (ert-deftest vm-imap-live-test-a-refused-flag-is-offered-only-once ()
-  "REGRESSION: a keyword the server refuses is not offered for the next message.
+  "REGRESSION: a keyword the server rejects is not sent for the next message.
 Issue #389.  John Stoffel's trace shows ten identical refusals, one message after
 another --
 
@@ -811,7 +811,7 @@ label: the transcript must hold one STORE of it, not three."
   "A message with an attachment, over any sensible `vm-imap-max-message-size'.")
 
 (ert-deftest vm-imap-live-test-external-attachment-is-not-silently-empty ()
-  "REGRESSION: a part of a message whose body is not here refuses, not empties.
+  "REGRESSION: a part of a message whose body is not here signals, not empties.
 Issue #386.  With `vm-external-fetch-message-for-presentation' nil, a message
 over `vm-imap-max-message-size' is presented from its headers alone, and the
 layout parsed from them has parts with no text.  Acting on one of those parts
@@ -820,7 +820,7 @@ Adobe Reader complaining about it.
 
 Measured before the fix, on this server: the presentation buffer holds 249
 characters of headers, both parts report body 250..250, and the written file is 0
-bytes.  Now the button refuses and says what to do; after loading the message it
+bytes.  Now the button signals and reports what to do; after loading the message it
 writes the attachment."
   (vm-imap-live-skip-unless-server "plain")
   (require 'vm)
@@ -862,7 +862,7 @@ writes the attachment."
             (vm-show-current-message)
             (vm-imap-net-wait nil 30)
             (set-buffer folder)
-            ;; The button refuses rather than writing nothing.
+            ;; The button signals rather than writing nothing.
             (with-current-buffer vm-presentation-buffer
               (let ((err (should-error (vm-mime-run-display-function-at-point
                                         'vm-mime-send-body-to-file)
@@ -1029,7 +1029,7 @@ the rest.  The stale copies come first, so the good ones were flagged --
 and then answering yes to \"Found N messages with invalid UIDs.  Expunge
 them?\" took the stale ones as well, losing every copy.
 
-VM already skipped messages carrying the `stale' label, but that label is
+VM already skipped messages with the `stale' label, but that label is
 only applied when the user *declines* that prompt, which is after this has
 run.  Staleness is now judged by UID validity, so the good copy survives and
 the stale one is left for the invalid-UID path to deal with."
@@ -1087,7 +1087,7 @@ which would leave duplicates behind instead."
 
 (defun vm-imap-live-test--bulky (n)
   "Return message N whose body is well over `vm-imap-live-test--size-limit'.
-Every body line carries VMTESTBODY, so body text appearing among the headers
+Every body line holds VMTESTBODY, so body text appearing among the headers
 is unmistakable.  The last header is a sentinel for the same reason."
   (concat "From: alice@example.com\r\n"
           "To: vmtest@example.com\r\n"
@@ -1146,7 +1146,7 @@ in a buffer holding the message; `vm-fetch-imap-message' inserts into whatever
 buffer is current when it is called.  This test pins the folder-buffer path,
 where point is controlled.
 
-VM knows the invariant and guards it with four `vm-assert's around the
+VM states the invariant and guards it with four `vm-assert's around the
 insertion.  All four are inert in normal use: `vm-assertion-checking-off'
 defaults to t, so the macro expands to a disjunction that short-circuits.
 This test binds it to nil, so a fetch that lands point in the wrong place
@@ -1265,7 +1265,7 @@ have recorded what it owes.  Then visit again and the deletions go out."
             (should (= 2 (length vm-imap-messages-to-expunge)))
             (vm-save-folder)
             (vm-imap-live-test--quit-folder)
-            ;; The folder knows what it owes ...
+            ;; The folder has a record of what it owes ...
             (with-temp-buffer
               (insert-file-contents cache)
               (should (string-match-p "X-VM-IMAP-To-Expunge" (buffer-string))))
@@ -1451,7 +1451,7 @@ instead of skipping.
 
 Checked by catching the skip rather than being skipped by it."
   ;; before the let: binding a variable this file has not seen declared makes
-  ;; it lexical, and the defvar in the required file then refuses it
+  ;; it lexical, and the defvar in the required file then rejects it
   (require 'vm-send-live-init)
   ;; the skips here are provoked on purpose, so their reasons are not printed:
   ;; `vm-test-skip-unless' says why it is skipping, and a run on a configured
@@ -1606,7 +1606,7 @@ tell the two apart."
 completion.
 
 `vm-imap-account-folder-cache' is filled once per account and is what
-folder-name completion answers from.  The save sends its own CREATE, and it
+folder-name completion reads from.  The save sends its own CREATE, and it
 used to leave the cache alone, so a folder saved into for the first time was
 not offered until `vm-list-imap-folders' was run by hand (emacs-vm/vm#920).
 
@@ -1653,7 +1653,7 @@ when the command was typed."
 
 (ert-deftest vm-imap-live-test-a-saved-to-mailbox-can-be-inside-a-directory ()
   "REGRESSION: saving to a mailbox in a directory that VM has to create works.
-Issue #691.  Against a real server because it is the server that refuses
+Issue #691.  Against a real server because it is the server that rejects
 \"vmtest/\" as a mailbox name, and dovecot does: VM created the parents itself,
 one CREATE per component, rather than leaving it to the server as RFC 3501
 requires."
@@ -1745,7 +1745,7 @@ using one reads flags an earlier run set."
 
 `vm-imap-net-flags-a-mailbox-takes' asks the destination what it keeps before
 an APPEND, because a server may answer NO to the whole APPEND over one flag
-it will not have (emacs-vm/vm#828).  A Gmail mailbox answers that it takes
+it will not have (emacs-vm/vm#828).  A Gmail mailbox advertises that it takes
 anything, which is what makes saving a labelled message to Gmail work."
   (vm-imap-live-skip-unless-server "gmail")
   (vm-imap-live-with-mailbox (conn mailbox "gmail")
@@ -1795,7 +1795,7 @@ already has, and a label put on either is on both."
                                      (and (member "labeltwo" flags) t)))))))
         (when two (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" two)))))))
 
-(ert-deftest vm-imap-live-test-gmail-save-carries-the-label ()
+(ert-deftest vm-imap-live-test-gmail-save-keeps-the-label ()
   "A label VM put on a message is on it in the mailbox it was saved to.
 
 The Gmail end of `vm-imap-live-test-save-to-imap-keeps-attributes', which
@@ -1832,7 +1832,7 @@ there -- and the reason it holds is not."
       (should (member "\\Seen" flags))
       (should (member "vmgmaillabel" flags)))))
 
-(ert-deftest vm-imap-live-test-gmail-append-from-elsewhere-carries-the-label ()
+(ert-deftest vm-imap-live-test-gmail-append-from-elsewhere-keeps-the-label ()
   "A label reaches Gmail on the path that has to ask what the mailbox keeps.
 
 The test above saves within one account, so VM issues UID COPY and the flags

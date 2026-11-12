@@ -80,7 +80,7 @@ cannot read is a file this report is blind to."
   "Which source lines hold a form that was never evaluated, or only one value.
 
 Answers an alist of (FILE (NEVER . lines) (ONE . lines) (ANY . lines)), the
-line numbers sorted.  ANY is every line carrying an instrumented form at all,
+line numbers sorted.  ANY is every line with an instrumented form at all,
 which is the denominator: a line of comment or a blank one is not uncovered,
 it simply has nothing to run.
 
@@ -123,7 +123,7 @@ is exact rather than guessed at."
 (defun vm-forms-coverage-write-lines (rows)
   "Write the per-line report and an lcov file from ROWS.
 Two files: one to read, and one for `genhtml' and the coverage viewers, which
-speak lcov.  lcov counts executions and this knows only whether a form ran, so
+speak lcov.  lcov counts executions and this records only whether a form ran, so
 a line is written as run once or not at all."
   (let ((plain (expand-file-name "test/line-coverage-results.txt"
                                  vm-forms-coverage-dir))
@@ -132,7 +132,7 @@ a line is written as run once or not at all."
     (with-temp-file plain
       (insert "VM LINE COVERAGE REPORT\n")
       (insert (format-time-string "%Y-%m-%d %H:%M:%S\n\n"))
-      (insert "A line is counted only where it carries a form that was\n")
+      (insert "A line is counted only where it holds a form that was\n")
       (insert "instrumented.  NEVER lists the lines holding a form that never\n")
       (insert "ran; 1VALUE those whose forms all ran but always answered the\n")
       (insert "same thing.  Ranges are collapsed.\n\n")

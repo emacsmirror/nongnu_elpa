@@ -429,7 +429,7 @@ what the user has to go and fix."
         (should (equal (vm-auto-select-folder-for-save vm-message-list alist)
                        "from-alice"))))))
 
-(ert-deftest vm-save-test-imap-folder-p-answers-for-the-folder-buffer ()
+(ert-deftest vm-save-test-imap-folder-p-reports-on-the-folder-buffer ()
   "Whether this is an IMAP folder is a question about the folder buffer,
 asked from the summary as often as not."
   (let ((folder (generate-new-buffer " *vm-save-test-folder*"))
@@ -565,7 +565,7 @@ since both were wrong in the same way."
         (ignore-errors (delete-file target))))))
 
 (ert-deftest vm-save-test-piping-remembers-the-last-command ()
-  "The command is remembered, since `vm-pipe-message-to-command' offers it
+  "The command is remembered, since `vm-pipe-message-to-command' proposes it
 as the default next time."
   (vm-save-test--with-pipe-folder
     (let ((target (expand-file-name "piped-remember" temporary-file-directory)))
@@ -772,7 +772,7 @@ and body, so the folder can be read back as a folder."
 
 (ert-deftest vm-save-test-saving-flags-the-message-filed ()
   "A saved message is marked filed, which is how the summary shows that a
-copy of it is somewhere else, and how `vm-auto-archive-messages' knows to
+copy of it is somewhere else, and how `vm-auto-archive-messages' finds what to
 leave it alone."
   (vm-save-test--with-a-folder-of 3
     (should-not (vm-filed-flag (car vm-message-list)))
@@ -790,7 +790,7 @@ whatever `default-directory' happens to be."
     (should (equal (vm-save-test--subjects-in target) '("msg 1")))))
 
 (ert-deftest vm-save-test-saving-remembers-the-name-as-typed ()
-  "`vm-last-save-folder' keeps the name as given, so the next save offers
+  "`vm-last-save-folder' keeps the name as given, so the next save proposes
 it back the same way rather than as an expanded path."
   (vm-save-test--with-a-folder-of 2
     (vm-save-message "archive" 1)
@@ -947,7 +947,7 @@ one format into a folder of another is how a folder stops being readable."
                                       (insert-file-contents target)
                                       (buffer-string))))
         ;; and with conversion on, the message is written in the folder's
-        ;; own format: an mboxcl2 message carries a Content-Length
+        ;; own format: an mboxcl2 message has a Content-Length
         (let ((vm-convert-folder-types t)
               (vm-check-folder-types t))
           (vm-save-message target 1)
@@ -1167,7 +1167,7 @@ the command's whole purpose."
 
 ;;; The two guards on saving into a local folder
 
-;; `vm-save-message-to-local-folder' refuses two things before it writes, and
+;; `vm-save-message-to-local-folder' rejects two things before it writes, and
 ;; the line coverage report had both among the lines never reached.
 
 (ert-deftest vm-save-test-a-new-folder-is-confirmed-when-asked-for ()
@@ -1203,7 +1203,7 @@ folder name is otherwise a folder, and mail filed into it looks lost."
 `vm-visit-when-saving' nil means VM writes the file directly.  Doing that to
 a folder someone has open would put the buffer and the file out of step, and
 the next save from that buffer would write the buffer over the top of what was
-appended.  So it refuses, and says which folder."
+appended.  So it signals, and names the folder."
   (vm-save-test--with-a-folder-of 2
     (let ((vm-visit-when-saving nil)
           (visiting nil))

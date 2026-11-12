@@ -20,7 +20,7 @@
 
 (defmacro vm-w3m-test-with-rendered-part (&rest body)
   "Run BODY in a buffer that looks like a w3m-rendered presentation.
-The text carries a `w3m-safe-url-regexp' property, which is how emacs-w3m
+The text holds a `w3m-safe-url-regexp' property, which is how emacs-w3m
 records what it was willing to load when it rendered."
   (declare (indent 0))
   `(with-temp-buffer
@@ -46,7 +46,7 @@ emacs-w3m; see vm-optional-test.el."
 (ert-deftest vm-w3m-test-a-prefix-argument-drops-the-safe-regexp ()
   "With a prefix argument every image counts as safe.
 emacs-w3m decides from the `w3m-safe-url-regexp' text property it left on the
-rendered text, and refuses any image whose URL does not match it, so removing
+rendered text, and shows no image whose URL does not match it, so removing
 the property is what makes them all safe.  The old `w3m-safe-toggle-inline-images'
 took an argument for this; its replacement does not."
   (cl-letf (((symbol-function 'w3m-toggle-inline-images) #'ignore))

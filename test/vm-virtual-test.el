@@ -692,7 +692,7 @@ Asserted on a second real folder, this one's own messages being gone with it."
 (ert-deftest vm-virtual-test-killing-a-virtual-folder-asks-nothing ()
   "Killing a virtual folder itself is unaffected: no question, nothing else dies.
 The query and the kill are both on the real folder's hooks, and a virtual folder
-carries no other folder's messages."
+holds no other folder's messages."
   (vm-virtual-test--with-folders (real virt-a virt-b 3)
     (with-current-buffer virt-a
       (vm-set-deleted-flag (vm-test-first-message) t))
@@ -1012,7 +1012,7 @@ does not."
     (should (equal (vm-virtual-test--subjects) nil))))
 
 (ert-deftest vm-virtual-test-a-label-search-folder-selects-by-label ()
-  "`vm-create-label-virtual-folder' collects the messages carrying a label."
+  "`vm-create-label-virtual-folder' collects the messages with a label."
   (vm-virtual-test--with-real-folder (_folder)
     (vm-set-labels (nth 2 vm-message-list) '("todo"))
     (vm-create-label-virtual-folder "todo")
@@ -1081,7 +1081,7 @@ and leaves Saturday's out."
 (ert-deftest vm-virtual-test-a-date-search-folder-counts-from-the-stubbed-day ()
   "The window is measured from the stubbed day, and is inclusive.
 Nought days back is Monday's message alone; two days back reaches Saturday's
-as well, so all three.  These answers hold whatever the real date is.
+as well, so all three.  These results hold whatever the real date is.
 
 Each search runs from the real folder: `vm-create-date-virtual-folder' works
 on the current folder, so called again without going back it would search the
@@ -1115,7 +1115,7 @@ wrapper's argument order -- which is what a thin wrapper gets wrong."
 ;;
 ;; Thirty of the vm-vs-* selectors were called by no test.  They are what a
 ;; virtual folder definition and an interactive search are built from, and a
-;; selector that answers wrongly quietly mis-files mail.
+;; selector that returns the wrong value quietly mis-files mail.
 
 (defconst vm-virtual-test--selector-folder
   (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"
@@ -1156,12 +1156,12 @@ SPEC is (FIRST-VAR SECOND-VAR)."
 
 (ert-deftest vm-virtual-test-header-field-selector-without-the-header ()
   "REGRESSION: `header-field' does not match a message that lacks the header.
-Issue #633.  `vm-get-header-contents' answers nil for a header that is not
+Issue #633.  `vm-get-header-contents' returns nil for a header that is not
 there, and that went straight to `string-match': the selector signalled
 rather than declining to match, and nothing catches it -- `vm-vs-or' and
 `vm-vs-and' apply the selector with no `condition-case', so the whole
 virtual folder stopped being built.  Which is the case the selector exists
-for: the messages you are picking out are the ones carrying the header."
+for: the messages you are picking out are the ones with the header."
   (vm-virtual-test--with-selectors (first second)
     (should (vm-vs-header-field first "X-Spam-Flag" "YES"))
     (should-not (vm-vs-header-field second "X-Spam-Flag" "YES"))
@@ -1589,7 +1589,7 @@ hold whole threads rather than the messages that matched."
 
 (ert-deftest vm-virtual-test-a-thread-folder-with-no-argument-passes-none ()
   "A selector that takes no argument gets a clause with none, rather than
-one carrying nil for it to test against."
+one holding nil for it to test against."
   (vm-virtual-test--in-a-small-folder
     (vm-virtual-test--building
       (vm-create-virtual-folder-of-threads 'unread)
@@ -1684,7 +1684,7 @@ selected."
 ;;; A label added in one folder is a label in the others
 
 (defun vm-virtual-test--known-labels (buffer)
-  "The labels BUFFER's folder knows about, sorted."
+  "The labels BUFFER's folder holds, sorted."
   (with-current-buffer buffer
     (let (names)
       (mapatoms (lambda (s) (push (symbol-name s) names)) vm-label-obarray)
@@ -1693,7 +1693,7 @@ selected."
 (ert-deftest vm-virtual-test-a-label-added-here-is-known-there ()
   "A label put on a message in a virtual folder is a label of the real
 folder and of every other virtual folder showing that message, so
-completion offers it in all of them and the summary can show it."
+completion lists it in all of them and the summary can show it."
   (vm-virtual-test--with-folders (real virt-a virt-b)
     (with-current-buffer virt-a
       (vm-add-or-delete-message-labels "urgent" (list (car vm-message-list))
@@ -1768,7 +1768,7 @@ nowhere and a keystroke was needed to bring it back (emacs-vm/vm#821).
 
 `vm-quit' undisplays its own summary and presentation buffers before killing
 them, and `vm-undisplay-buffer' hands the window to whatever `other-buffer'
-answers.  Leaving a virtual folder that is the real folder's presentation
+returns.  Leaving a virtual folder that is the real folder's presentation
 buffer, `vm-virtual-quit' having just presented into it to carry the message
 pointer across, so the summary lost its window to the presentation of the
 same folder.
@@ -1793,7 +1793,7 @@ window count was right throughout and the buffer in it was wrong."
   "Quitting the last folder has none to return to, and must still work.
 Putting the folder left on display is the case above; here there is none,
 which the fix has to pass over rather than fail on.  Asserted on what is
-left rather than on the function that answers it, so it holds whichever way
+left rather than on the function that returns it, so it holds whichever way
 that is written."
   (vm-virtual-test--with-a-displayed-folder (_folder)
     (let ((folder (current-buffer)))

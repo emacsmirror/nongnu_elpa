@@ -681,7 +681,7 @@ the end marker.  For a message whose text does not end in a newline that
 separator was on the last body line, so the delete took the body with it and
 `after' never left the machine.
 
-Not an exotic message: `vm-text-end-of' answers text with no final newline
+Not an exotic message: `vm-text-end-of' returns text with no final newline
 whenever the body ends with a single newline in a From_ folder, that newline
 being the trailing separator.
 
@@ -700,7 +700,7 @@ is what RFC 934 asks for and what the fix restores."
 
 (defun vm-digest-test--attached-encoding (thunk)
   "Run THUNK and answer the Content-Transfer-Encoding of the buffer it attached.
-The header goes on a work buffer, which the composition then carries as an
+The header goes on a work buffer, which the composition then holds as an
 attached object, so it is not in the composition's own text."
   (let ((encoding nil)
         (attach (symbol-function 'vm-attach-object)))
@@ -756,7 +756,7 @@ attached object, so it is not in the composition's own text."
 
 (ert-deftest vm-digest-test-a-forwarded-long-line-keeps-a-real-encoding ()
   "A MIME forward writes its own Content-Transfer-Encoding and sends it as
-it stands.  `vm-determine-proper-content-transfer-encoding' answers the
+it stands.  `vm-determine-proper-content-transfer-encoding' returns the
 sentinel `long-lines\\=' for a line over the limit, which is no encoding at
 all, and the header went out saying it (emacs-vm/vm#895).  A message body
 may carry only 7bit, 8bit or binary (RFC 2045 6.4), so binary is what a

@@ -386,7 +386,7 @@ Body 3
          ,@body))))
 
 (ert-deftest vm-undo-test-unused-labels-finds-them ()
-  "Test that `vm-unused-labels' reports labels no message carries."
+  "Test that `vm-unused-labels' reports labels no message has."
   (vm-undo-test-with-labels
       '("important" "work" "stale" "gone")
       '(("important" "work") ("important") nil)
@@ -473,7 +473,7 @@ nothing interns them, so they never reach completion."
   "Test that label case does not make one label look like two.
 Labels are lowercase by convention -- `vm-expunge-label' and
 `vm-add-or-delete-message-labels' both downcase -- but a message can
-arrive carrying \"Work\" while the folder lists \"work\".  Comparing
+arrive with \"Work\" while the folder lists \"work\".  Comparing
 verbatim reported the one label as unused and missing at once."
   (vm-undo-test-with-labels
       '("work")
@@ -727,7 +727,7 @@ from the user, and one typo should not abandon the rest of it."
       (should (null (vm-deleted-flag m))))))
 
 (ert-deftest vm-undo-test-every-offered-attribute-name-is-accepted ()
-  "REGRESSION: completion offers no name the setter rejects.
+  "REGRESSION: completion lists no name the setter rejects.
 
 `vm-supported-attribute-names' is the completion table of
 `vm-set-message-attributes', so every name in it is one a reader can arrive
@@ -785,7 +785,7 @@ would make one undo command do nothing.  Squeezing them is what stops that."
 (ert-deftest vm-undo-test-describe-names-the-flag-and-its-two-states ()
   "Undoing a flag change says which flag, and which way the undo goes.
 A record is (FUNCTION MESSAGE VALUE) where VALUE is what undoing will set --
-`vm-set-xxxx-flag' records `(not flag)\\=' -- so a record carrying t reads
+`vm-set-xxxx-flag' records `(not flag)\\=' , so a record holding t reads
 undeleted -> deleted: the state it is in now, and the state it goes to."
   (vm-test-with-folder
       (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
@@ -861,7 +861,7 @@ to tell the user about them."
 (ert-deftest vm-undo-test-adding-a-label-keeps-the-labels-there-already ()
   "A label is added to the labels the message has, not put in place of
 them, and it is added to the folder's list of labels so that completion
-offers it."
+lists it."
   (vm-undo-test--labelling
     (vm-set-labels one '("work"))
     (should-not (vm-add-or-delete-message-labels "Urgent" (list one) 'all))

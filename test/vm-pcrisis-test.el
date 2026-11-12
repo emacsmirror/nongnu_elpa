@@ -1158,7 +1158,7 @@ of the body and so could never see it, and the action found nothing to delete."
 
 (ert-deftest vm-pcrisis-test-signature-action-needs-to-be-told-to-expect-one ()
   "Unset, `vm-pcrisis-expect-default-signature' leaves the signature alone.
-Personality Crisis acts only on a signature whose extent it knows, and this is
+Personality Crisis acts only on a signature whose extent it has, and this is
 how it comes to know one it did not insert.  The other side of the branch, so
 the fix is not simply deleting whatever is at the end of the buffer.  It is
 set by default, so this is the off switch rather than the usual case."
@@ -1447,7 +1447,7 @@ See `vm-renamed-variables' and the Commentary of vm-renamed.el."
 
 (ert-deftest vm-pcrisis-test-an-old-name-is-not-a-variable-holding-nil ()
   "Reading an old name signals `void-variable' rather than answering nil.
-An alias to an unset variable answers nil, so a configuration that reads one
+An alias to an unset variable returns nil, so a configuration that reads one
 cannot tell an unset option from a name that has moved."
   (dolist (pair vm-renamed-variables)
     (should-not (boundp (car pair)))))
@@ -1762,7 +1762,7 @@ headers."
   "A header taken from the message being replied to arrives intact.
 
 Including a folded one, which stays folded and so stays a single field, and
-8-bit text, which is carried as the bytes it was."
+8-bit text, which is sent as the bytes it was."
   (dolist (spec (list (cons "plain" "Alice <alice@example.com>")
                       (cons "folded" "a@x.com,\n\tb@x.com")
                       (cons "8-bit" (decode-coding-string
@@ -1905,7 +1905,7 @@ questions put and `vm-pcrisis-test--saved' what was written."
 (defvar vm-pcrisis-test--saved nil "What the stubs were told to save.")
 
 (ert-deftest vm-pcrisis-test-an-action-that-asks-is-recognised ()
-  "`vm-pcrisis-prompting-action-p' knows an action that asks from one that acts.
+  "`vm-pcrisis-prompting-action-p' tells an action that asks from one that acts.
 It looks through the action's forms for the function, so the argument it is
 given does not matter.  The old `vmpc-' name is not looked for: it signals
 when the action runs, and the signal names the current one

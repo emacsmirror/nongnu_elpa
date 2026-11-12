@@ -49,7 +49,7 @@
 
 (defun vm-custom-check-options ()
   "Return every VM user option, aliases resolved, sorted by name.
-An obsolete name is a `defvaralias' and carries no type of its own: the
+An obsolete name is a `defvaralias' and has no type of its own: the
 option it points at has one, and `customize-option' follows the alias
 before it builds anything.  So the alias is not an untyped option and is not
 a second option either, and resolving it here says so once
@@ -113,8 +113,8 @@ group at all, is still defined and still holds its options, and no path from
 
 (defun vm-custom-check-untyped ()
   "Return every VM option that declares no `:type', sorted by name.
-Customize offers a raw sexp editor for one of those, which asks the reader
-to know the structure the code wants and offers no help with it."
+Customize gives a raw sexp editor for one of those, which asks the reader
+to know the structure the code wants and gives no help with it."
   (seq-remove (lambda (sym) (get sym 'custom-type))
               (vm-custom-check-options)))
 

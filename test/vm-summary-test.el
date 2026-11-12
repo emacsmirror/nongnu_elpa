@@ -450,7 +450,7 @@ not the summary."
 That is printf\='s order, and it was the other way round: the maximum was
 applied to the padded text, so \"%20.4s\" answered four spaces and lost the
 subject altogether (emacs-vm/vm#848).  A format writing the two with the
-same number, as the default \"%-17.17F\" does, answers the same either way,
+same number, as the default \"%-17.17F\" does, gives the same either way,
 which is why nothing noticed."
   (vm-test-with-folder vm-summary-test-folder
     (let ((message (car vm-message-list)))
@@ -601,7 +601,7 @@ with, and a token list is written into the folder's own summary cache."
           "--b--\n\n"
           "From a@b.c Mon Jan  2 00:00:00 2024\n"
           "From: a@b.c\nSubject: plain\n\nnothing\n\n")
-  "Two messages, the first carrying two attachments and the second none.")
+  "Two messages, the first with two attachments and the second none.")
 
 (defmacro vm-summary-test--visiting (text &rest body)
   "Visit a folder holding TEXT as a real folder and run BODY in its buffer.
@@ -643,7 +643,7 @@ vector does not carry."
 
 (ert-deftest vm-summary-test-the-attachment-indicator-counts-for-a-symbol ()
   "%P is the indicator alone for a string and the indicator and count for a
-symbol, and nothing at all for a message carrying no attachment.
+symbol, and nothing at all for a message with no attachment.
 
 The docstring said the count was always there, the manual did not mention
 it, and the `:type\=' offered the counting branch with ?$ in it, which is the
@@ -984,7 +984,7 @@ thread operation is being made."
       (should (equal '(3 . nil) (vm-summary-test--operable 4 'ask))))))
 
 (ert-deftest vm-summary-test-folding-needs-both-options ()
-  "Folding refuses to run unless it is enabled and the summary is threaded.
+  "Folding does not run unless it is enabled and the summary is threaded.
 Two separate refusals: without `vm-summary-enable-thread-folding' there is no
 folding at all, and without `vm-summary-show-threads' there are no threads to
 fold."
@@ -1085,7 +1085,7 @@ anywhere else, so the pointer takes the cursor with it."
 (ert-deftest vm-summary-test-end-of-buffer-is-where-a-reader-lands ()
   "The cursor survives where \\[end-of-buffer] actually leaves it.
 Which is `point-max', not the start of the last summary line -- and
-`vm-summary-message-at-point' answers nil at end of buffer, so a fix that
+`vm-summary-message-at-point' returns nil at end of buffer, so a fix that
 only knew about a cursor on a message would not have covered the keystroke
 the fault was reported against."
   (vm-summary-test--with-summary (_folder)
@@ -1099,10 +1099,10 @@ the fault was reported against."
         (should (eobp))
         (should (= (point) where))))))
 
-;;; The recovery from a header rfc822.el refuses
+;;; The recovery from a header rfc822.el rejects
 
 (ert-deftest vm-summary-test-a-corrupt-recipient-header-recovers ()
-  "A header `rfc822-addresses' refuses leaves \"corrupted-header\", not an error.
+  "A header `rfc822-addresses' rejects leaves \"corrupted-header\", not an error.
 The handler warned with `(vm-warn 0 5 err)', and `vm-warn' formats its
 arguments -- so `format' was handed the condition object as its format
 string and answered `wrong-type-argument stringp'.  The recovery below it
@@ -1121,7 +1121,7 @@ never ran, and the summary line failed outright (#781)."
 
 (ert-deftest vm-summary-test-the-warning-survives-a-percent ()
   "The warning for that header says what went wrong, percent sign and all.
-`vm-warn' formats what it is given, so an error text carrying a percent
+`vm-warn' formats what it is given, so an error text holding a percent
 signalled in place of reporting anything."
   (vm-test-with-folder (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
                                "From: alice@example.com\n"

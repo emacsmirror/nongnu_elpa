@@ -50,7 +50,7 @@ Without it every folder visit would define the keys again."
       (vm-toolbar-install-toolbar)
       (should (= 0 installs)))))
 
-(ert-deftest vm-toolbar-test-update-answers-for-the-current-folder ()
+(ert-deftest vm-toolbar-test-update-reads-the-current-folder ()
   "The toolbar's state follows the folder: what is deleted, and what it can do.
 `vm-toolbar-update-toolbar' picks the delete or undelete icon from the current
 message and a helper command from `vm-toolbar-can-recover-p',
@@ -63,16 +63,16 @@ beyond the wiring above."
           ;; Deleting queues the message for a summary update, and the queue is
           ;; global; nothing here redraws a summary, so it would be left on it.
           (vm-messages-needing-summary-update vm-messages-needing-summary-update))
-      ;; nothing deleted: the button offers to delete
+      ;; nothing deleted: the button is the delete button
       (vm-toolbar-update-toolbar)
       (should (eq vm-toolbar-delete/undelete-icon vm-toolbar-delete-icon))
-      ;; and with the message deleted it offers to undelete
+      ;; and with the message deleted it is the undelete button
       (vm-set-deleted-flag (car vm-message-pointer) t)
       (vm-toolbar-update-toolbar)
       (should (eq vm-toolbar-delete/undelete-icon vm-toolbar-undelete-icon))
       ;; the folder is not read-only and has no autosave newer than itself
       (should-not (vm-toolbar-can-recover-p))
-      ;; each predicate answers rather than signalling, which is all their
+      ;; each predicate returns rather than signalling, which is all their
       ;; `condition-case' promises
       (should (memq (and (vm-toolbar-can-decode-mime-p) t) '(nil t)))
       (should (memq (and (vm-toolbar-mail-waiting-p) t) '(nil t))))))

@@ -17,7 +17,7 @@
 (require 'vm-test-init)
 (require 'vm-org)
 
-(ert-deftest vm-org-test-the-link-type-carries-both-halves ()
+(ert-deftest vm-org-test-the-link-type-holds-both-halves ()
   "REGRESSION: Org can both follow a `vm:' link and store one.
 
 emacs-vm/vm#812.  Following worked: `org-add-link-type' is obsolete but
@@ -29,7 +29,7 @@ type now, which is where Org looks for them."
   (should (equal 'vm-org-open (org-link-get-parameter "vm" :follow)))
   (should (equal 'vm-org-store-link (org-link-get-parameter "vm" :store))))
 
-(ert-deftest vm-org-test-storing-outside-a-folder-answers-nil ()
+(ert-deftest vm-org-test-storing-outside-a-folder-returns-nil ()
   "Org asks every link type to store, so ours must decline quietly.
 Signalling here would stop `org-store-link' wherever the reader happened to
 be."

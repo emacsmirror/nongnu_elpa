@@ -93,7 +93,7 @@ the authentication method does not orphan one.
 The fourth is a restriction, emacs-vm/vm#716: two servers on one host reached
 on different ports, with the same login and mailbox, name the same file and
 so share one cache, and visiting the second gets the first one's folder.  The
-manual documents that and offers the way round it, which is giving them
+manual documents that and gives the way round it, which is giving them
 different host names, so this pins the way round it too.  The port cannot
 simply be added: every cache that exists is named without it."
   (let ((base "imap:mail.example.com:143:inbox:login:me:pass"))
@@ -672,7 +672,7 @@ none, and no response at all is no match."
       (should (vm-imap-response-matches response 'VM 'OK 'BODY '(vector))))))
 
 (ert-deftest vm-imap-test-cached-server-data-is-not-read-from-the-global-obarray ()
-  "A folder with no server data of its own answers nothing, not Emacs.
+  "A folder with no server data of its own returns nothing, not Emacs.
 
 The obarrays are dropped at the end of a session, and `intern' with a nil
 obarray reads the global one: the accessors then answered a UID out of
@@ -796,7 +796,7 @@ save starts, since nothing can ask from inside the driver."
 
 (ert-deftest vm-imap-test-an-account-vm-cannot-ask-about-is-not-asked-about ()
   "An account whose folder list VM has not got asks nothing.
-`vm-imap-net-mailbox-names' answers nil both for a server that says it holds
+`vm-imap-net-mailbox-names' returns nil both for a server that says it holds
 nothing and for a maildrop VM has no password for, and the two cannot be
 told apart.  Asking would mean a question before every save to such an
 account, so VM says nothing instead."
@@ -851,7 +851,7 @@ account, so VM says nothing instead."
                      setting vm-imap-test--work-archive))))))
 
 (ert-deftest vm-imap-test-setting-for-folder-falls-back-to-t ()
-  "The key t answers for a mailbox no regexp named, and for an unknown account."
+  "The key t applies to a mailbox no regexp named, and for an unknown account."
   (vm-imap-test--with-work-account
     (let ((setting '(("work:Archive/.*" . 50000) (t . 1000000))))
       (should (equal (vm-imap-setting-for-folder
@@ -867,7 +867,7 @@ account, so VM says nothing instead."
                    '(("work:Archive/.*" imap)) vm-imap-test--work-inbox)))))
 
 (ert-deftest vm-imap-test-external-messages-are-scoped-to-a-mailbox ()
-  "`vm-enable-external-messages' answers per mailbox when it is an alist."
+  "`vm-enable-external-messages' applies per mailbox when it is an alist."
   (vm-imap-test--with-work-account
     (let ((vm-enable-external-messages '(("work:Archive/.*" imap))))
       (should (vm-imap-external-messages-p vm-imap-test--work-archive))
@@ -881,7 +881,7 @@ account, so VM says nothing instead."
       (should-not (vm-imap-external-messages-p vm-imap-test--work-inbox)))))
 
 (ert-deftest vm-imap-test-the-size-limit-is-scoped-to-a-mailbox ()
-  "`vm-imap-max-message-size' answers per mailbox when it is an alist.
+  "`vm-imap-max-message-size' applies per mailbox when it is an alist.
 Both options have to be scoped together: nothing is external until a message
 is over the limit, so a per-mailbox flag with one global limit says nothing."
   (vm-imap-test--with-work-account
@@ -909,7 +909,7 @@ is over the limit, so a per-mailbox flag with one global limit says nothing."
 
 (defconst vm-imap-test--inbox-upper
   "imap-ssl:mail.example.com:993:INBOX:login:user:*"
-  "The same mailbox, spelled as the server lists it and completion offers it.")
+  "The same mailbox, spelled as the server lists it and completion lists it.")
 
 (ert-deftest vm-imap-test-inbox-is-one-mailbox-however-it-is-spelled ()
   "INBOX is case-insensitive and every other mailbox name is not.
@@ -935,7 +935,7 @@ RFC 3501 5.1 says so of that one name."
 (ert-deftest vm-imap-test-pruning-reaches-an-inbox-spelled-in-another-case ()
   "REGRESSION: an entry recorded from `inbox' is pruned by INBOX.
 The spelling in the header is the one `vm-primary-inbox' used and the
-spelling typed is the one completion offers.  Compared with `equal' the two
+spelling typed is the one completion lists.  Compared with `equal' the two
 never matched, and the command reported nothing to prune with 44425 stale
 entries in front of it (emacs-vm/vm#936)."
   (let ((entries (vm-imap-test--retrieved-entries
