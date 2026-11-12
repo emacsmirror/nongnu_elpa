@@ -3008,9 +3008,10 @@ for forming a URL.")
       (group-n 1
         (any ?!)
         (group-n 2
-          (one-or-more (any "A-Z" "a-z" "0-9"))))
+          (1+ alnum)))
       (| "'" word-boundary)) ; boundary or possessive
-  "Regex for a local pull request reference. Group 1 is for completion at point functions.")
+  "Regex for a local pull request reference. Group 1 is for completion at point functions.
+Group 2 is the ref without any preceding # or !.")
 
 (defvar fj-repo-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
