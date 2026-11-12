@@ -1325,11 +1325,17 @@ next fetch's business."
 			;; the list, so the next save sends it again
 			(when (buffer-live-p folder)
 			  (with-current-buffer folder
+			    ;; and not marked modified for it: the save that
+			    ;; started this wrote the file with the requests
+			    ;; still in it, and a folder that reports unsaved
+			    ;; changes minutes later, with nothing in it to
+			    ;; see, is what emacs-vm/vm#942 reported.  A
+			    ;; request sent again for a message the server no
+			    ;; longer has is answered as already gone.
 			    (setq vm-pop-messages-to-expunge
 				  (seq-remove (lambda (uidl)
 						(member uidl settled))
-					      vm-pop-messages-to-expunge))
-			    (vm-mark-folder-modified-p)))
+					      vm-pop-messages-to-expunge))))
 			(vm-net-inform 5 "%s: %d message%s deleted on the server%s"
 				   name (length deleted)
 				   (if (= (length deleted) 1) "" "s")

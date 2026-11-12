@@ -4561,6 +4561,33 @@ A timer checking for mail is not a place to open a browser from."
                       :type 'vm-imap-net-no-password)
         (should-not offered)))))
 
+(ert-deftest vm-imap-net-test-a-save-that-expunges-stays-saved ()
+  "REGRESSION: the folder does not go modified again when the server confirms.
+
+Issue #942.  `vm-save-folder' writes the file and then starts the session
+that sends the deletions, so the file goes out with them still listed in
+`X-VM-IMAP-to-expunge'.  When the session finished,
+`vm-imap-net-note-expunged' struck them off the folder's own lists and marked
+the folder modified, so every save that expunged produced a `**' mode line a
+few minutes later, on a timer, with nothing new in the folder and nothing for
+the reader to save.
+
+What is left in the file is bookkeeping: the next session sends an expunge
+for a UID the server no longer has, which it tolerates, and the next save
+rewrites the headers."
+  (vm-imap-net-test--visiting (mock :messages (list vm-imap-net-test--alice))
+    (let ((validity (vm-folder-imap-uid-validity)))
+      (setq vm-imap-messages-to-expunge (list (cons "1" validity)))
+      ;; as a save leaves the folder: the file written, the buffer clean
+      (set-buffer-modified-p nil)
+      (should (eq (vm-imap-net-send-changes) t))
+      (should (vm-imap-net-wait nil 30))
+      ;; the deletion happened and the request is done with
+      (should (null (vm-imap-mock-messages mock "INBOX")))
+      (should-not vm-imap-messages-to-expunge)
+      ;; and the reader is not told there is something to save
+      (should-not (buffer-modified-p)))))
+
 (provide 'vm-imap-net-test)
 
 ;;; vm-imap-net-test.el ends here

@@ -2989,7 +2989,16 @@ The current buffer is the folder.
 
 Both lists the folder keeps them in: the requests, which are done, and what
 the folder remembers having retrieved.  A UID that no longer exists on the
-server is not a message anything should be told not to fetch again."
+server is not a message anything should be told not to fetch again.
+
+The folder is not marked modified for this.  A save writes the file and then
+starts the session that sends the deletions, so the file goes out with them
+still listed, and marking it modified when the session replied left the
+folder reporting unsaved changes minutes later, on a timer, with nothing new
+in it and nothing for the reader to save (emacs-vm/vm#942).  What is left in
+the file is bookkeeping: an expunge sent again for a UID the server no longer
+has is tolerated, an X-VM-IMAP-Retrieved entry for a message that is gone
+matches nothing, and the next save rewrites both headers."
   (let ((validity (vm-folder-imap-uid-validity)))
     (setq vm-imap-retrieved-messages
 	  (seq-remove (lambda (entry)
@@ -3000,8 +3009,7 @@ server is not a message anything should be told not to fetch again."
 	(seq-remove (lambda (entry) (member (car entry) uids))
 		    vm-imap-messages-to-expunge))
   (vm-set-folder-imap-mailbox-count
-   (max 0 (- (or (vm-folder-imap-mailbox-count) 0) (length uids))))
-  (vm-mark-folder-modified-p))
+   (max 0 (- (or (vm-folder-imap-mailbox-count) 0) (length uids)))))
 
 (iter-defun vm-imap-net-save-attributes-session (session folder user password mailbox)
   "Log in, select MAILBOX, and send FOLDER's changed flags."
