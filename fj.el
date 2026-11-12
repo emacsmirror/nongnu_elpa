@@ -6304,7 +6304,10 @@ Used for hitting RET on a given link."
         ('team (fj-browse-team item))
         ('repo-tag (fj-repo-tag-follow item))
         ((or  'commit 'commit-ref)
-         (fj-view-commit-diff item (fedi--property 'shr-url)))
+         (if current-prefix-arg
+             ;; jump to commit log starting at commit at point
+             (fj-repo-commit-log nil nil nil (fj--property 'item))
+           (fj-view-commit-diff item (fedi--property 'shr-url))))
         ('issue-ref
          (fj-issue-ref-follow item))
         ('notif
@@ -6480,15 +6483,16 @@ Used for a mouse-click EVENT on a link."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-repo-commit-log (&optional prefix repo owner)
-  "Render log of commits for REPO by OWNER.
+(defun fj-repo-commit-log (&optional prefix repo owner commit)
+  "Render log of commits starting at COMMIT for REPO by OWNER.
 If PREFIX arg, prompt for branch to show commits of."
   (interactive "P")
   (let* ((repo (or repo (fj--repo-name)))
          (owner (or owner (fj--repo-owner)))
-         (branch (when prefix
+         (branch (if prefix
                    (completing-read "Branch: "
-                                    (fj-repo-branches-list repo owner))))
+                                    (fj-repo-branches-list repo owner))
+                   commit))
          (data (fj-get-repo-commits repo owner branch))
          (buf (format "*fj-%s-commit-log%s*" repo
                       (if branch (format "-branch-%s" branch) "")))
