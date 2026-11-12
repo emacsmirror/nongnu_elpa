@@ -4541,7 +4541,8 @@ AUTHOR is timeline item's author, OWNER is of item's REPO."
                 (concat .ref_issue.title " #" number))
                'comment-ref number nil :noface))))
           ("commit_ref"
-           (fj-format-commit-ref format-str user ts body .ref_commit_sha))
+           (fj-format-commit-ref format-str user ts .body ;; un-decoded!
+                               .ref_commit_sha))
           ("issue_ref"
            (concat
             (format format-str user .ref_issue.repository.full_name ts)
@@ -4608,7 +4609,9 @@ SHA is the full commit hash."
    "\n"
    (fj-propertize-link
     (fj-format-tl-title
-     (url-unhex-string (fj-get-html-link-desc body)))
+     (url-unhex-string
+      (mm-url-decode-entities-string
+       (fj-get-html-link-desc body))))
     'commit-ref sha nil :noface)))
 
 (defun fj-format-change-target (format-str user old new)
