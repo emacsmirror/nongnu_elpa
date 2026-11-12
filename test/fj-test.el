@@ -2077,3 +2077,33 @@ prefix is used or not."
    (equal (fj--item-is-pr-disguised-as-issue-p
            (car fj-test-pull-reqs-as-issues))
           t)))
+
+;;;
+;;; ERTs for `fj--identify-item-format'
+;;;
+
+(ert-deftest fj-test/identify-item-format/invalid ()
+  "Tests some invalid lists for `fj--identify-item-format'."
+  (should
+   (equal (fj--identify-item-format nil) nil))
+  (should
+   (equal (fj--identify-item-format '(1 2 3)) nil)))
+
+(ert-deftest fj-test/identify-item-format/issue ()
+  "Tests that issues are identified with the `:list' format."
+  (should
+   (equal (fj--identify-item-format (car fj-test-issues))
+          :list)))
+
+(ert-deftest fj-test/identify-item-format/pull-request ()
+  "Tests that PRs are identified with the `:pull' format."
+  (should
+   (equal (fj--identify-item-format (car fj-test-pull-reqs))
+          :pull)))
+
+(ert-deftest fj-test/identify-item-format/pull-request-as-issue ()
+  "Tests that PRs requested as issues are identified with the `:list' format."
+  (should
+   (equal (fj--identify-item-format
+           (car fj-test-pull-reqs-as-issues))
+          :list)))
