@@ -6489,21 +6489,20 @@ If PREFIX arg, prompt for branch to show commits of."
   (interactive "P")
   (let* ((repo (or repo (fj--repo-name)))
          (owner (or owner (fj--repo-owner)))
-         (branch (if prefix
-                   (completing-read "Branch: "
-                                    (fj-repo-branches-list repo owner))
-                   commit))
-         (data (fj-get-repo-commits repo owner branch))
-         (buf (format "*fj-%s-commit-log%s*" repo
-                      (if branch (format "-branch-%s" branch) "")))
+         (sha (if prefix
+                  (completing-read "Branch: "
+                                   (fj-repo-branches-list repo owner))
+                commit))
+         (data (fj-get-repo-commits repo owner sha))
+         (buf (format "*fj-%s-commit-log%s*" repo (or sha "")))
          (wd default-directory))
     (fj-with-buffer buf 'fj-commits-mode wd nil
       ;; FIXME: use `fj-other-window-maybe'
-      (setq-local header-line-format (format "Commits in branch: %s"
-                                             (or branch "default")))
+      (setq-local header-line-format (format "Commits from: %s"
+                                             (or sha "default")))
       (fj-render-commits data)
       (setq fj-current-repo repo)
-      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
+      (setq fj-buffer-spec `(:repo ,repo :owner ,owner :sha ,sha)))))
 
 (defun fj-pull-commit-log ()
   "Render log of commits pull request currently being viewed."
