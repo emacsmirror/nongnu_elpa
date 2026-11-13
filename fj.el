@@ -334,7 +334,9 @@ Not used for items that are links.")
 (defun fj-create-token ()
   "Create an access token for `fj-user' on `fj-host'.
 Reads a token name and reads a user password for BasicAuth.
-Copies the token to the kill ring and returns it."
+Copies the token to the kill ring and returns it.
+`fj-create-token-use-otp' can be customized to send the server an OTP
+code (2FA)."
   (interactive)
   (let* ((name (read-string "Token name: "))
          (params `(("name" . ,name)
