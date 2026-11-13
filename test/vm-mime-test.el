@@ -4392,7 +4392,36 @@ one did rather than in whatever directory the composition is visiting."
     (vm-mime-test--composing
       (goto-char (point-max))
       (vm-attach-files-in-directory dir "\\.txt\\'")
-      (should (equal vm-mime-all-attachments-directory dir)))))
+      (should (equal vm-mime-all-attachments-last-directory dir))
+      (should (equal (vm-attach-files-in-directory-default) dir)))))
+
+(ert-deftest vm-mime-test-attaching-a-directory-leaves-the-option-alone ()
+  "REGRESSION: the user option is read and not written.
+Attaching used to assign the directory to `vm-mime-all-attachments-directory',
+which left Customize reporting the option as changed outside Customize, and a
+save there wrote the last directory attached from into the custom file
+(emacs-vm/vm#943)."
+  (vm-mime-test--with-a-directory-of-files
+    (vm-mime-test--composing
+      (goto-char (point-max))
+      (let ((vm-mime-all-attachments-directory nil))
+        (vm-attach-files-in-directory dir "\\.txt\\'")
+        (should-not vm-mime-all-attachments-directory)))))
+
+(ert-deftest vm-mime-test-attaching-a-directory-prefers-the-last-one ()
+  "The last directory attached from comes before the options, which come
+before the directory of the composition."
+  (let ((vm-mime-all-attachments-last-directory nil)
+        (vm-mime-all-attachments-directory nil)
+        (vm-mime-attachment-save-directory nil)
+        (default-directory "/one/"))
+    (should (equal (vm-attach-files-in-directory-default) "/one/"))
+    (setq vm-mime-attachment-save-directory "/two/")
+    (should (equal (vm-attach-files-in-directory-default) "/two/"))
+    (setq vm-mime-all-attachments-directory "/three/")
+    (should (equal (vm-attach-files-in-directory-default) "/three/"))
+    (setq vm-mime-all-attachments-last-directory "/four/")
+    (should (equal (vm-attach-files-in-directory-default) "/four/"))))
 
 ;;; Listing what a message is made of
 
