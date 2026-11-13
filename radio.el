@@ -68,7 +68,7 @@ The `:url' keyword is replaced with the URL of the radio station."
   "Sentinel for the current media player process.
 
 EVENT is a string describing the type of event."
-  (radio-line-mode--set (format "[Station: <%s>]" (string-trim event)))
+  (radio-line-mode--set (format "[Station: <%s>] " (string-trim event)))
   (radio-mode--revert-buffer))
 
 (defun radio--play (station)
@@ -83,7 +83,7 @@ being played, it is stopped first."
     (setq radio--current-proc (apply #'start-process start-process-args))
     (set-process-sentinel radio--current-proc #'radio--current-proc-sentinel)
     (process-put radio--current-proc :radio-station station)
-    (radio-line-mode--set (format "[Station: %s]" (car station)))
+    (radio-line-mode--set (format "[Station: %s] " (car station)))
     (radio-mode--revert-buffer)))
 
 ;;;###autoload
