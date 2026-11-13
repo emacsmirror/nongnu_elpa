@@ -3806,16 +3806,19 @@ pagination."
               (if (eq :json-false .merged)
                   "\n%s wants to merge from %s into %s"
                 "\n%s merged from %s into %s")
+              ;; author or merger:
               (propertize (if (eq t .merged)
                               .merged_by.login
                             .user.username)
                           'face 'fj-name-face)
-              ;; FIXME: make links work! data doesn't have branch URLs
-              ;; and gitnex doesn't linkify them
-              ;; webUI uses $fork-repo/src/branch/$name:
-              (propertize
-               (format "%s:%s".head.repo.full_name .head.label)
-               'face 'fj-name-face)
+              ;; head as link:
+              (let ((url (concat fj-host "/" .head.repo.full_name
+                                 "/src/branch/" .head.label)))
+                (fj-propertize-link (format "%s:%s"
+                                          .head.repo.full_name
+                                          .head.label)
+                                  'shr url nil nil url))
+              ;; base:
               (propertize .base.label 'face 'fj-name-face)))
            "\n\n"
            ;; item byline:
@@ -4717,14 +4720,14 @@ If REMOVED, format an unassigned string."
     (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)
     (match-string 2 str)))
 
-(defun fj-propertize-link (str &optional type item face no-face)
+(defun fj-propertize-link (str &optional type item face no-face url)
   "Propertize a link with text STR.
 Optionally set link TYPE and ITEM number and FACE.
 NO-FACE means don't set a face prop."
   ;; TODO: poss to refactor with `fedi-link-props'?
   ;; make plain links work:
   (when (eq type 'shr)
-    (setq str (propertize str 'shr-url str)))
+    (setq str (propertize str 'shr-url (or url str))))
   (if no-face
       (propertize str
                   'mouse-face 'highlight
