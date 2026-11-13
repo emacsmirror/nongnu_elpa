@@ -333,9 +333,12 @@ Copies the token to the kill ring and returns it."
                    ("scopes" . ("all"))))
          (endpoint (format "users/%s/tokens" fj-user))
          (password (read-passwd (format "%s password: " fj-host)))
+         (otp (read-passwd "OTP code (if required): "))
+         (headers (and (not (string-blank-p otp))
+                       `(("X-Forgejo-OTP" . ,otp))))
          (url (fj-api endpoint))
          (resp (fedi-http--basic-auth-request
-                #'fedi-http--post url fj-user password params nil :json)))
+                #'fedi-http--post url fj-user password params headers :json)))
     (fedi-http--triage
      resp
      (lambda (resp)
