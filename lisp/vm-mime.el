@@ -8184,6 +8184,16 @@ This is a destructive operation and cannot be undone!"
 ;;; Attachment commands, from vm-rfaddons.el (issue #606)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun vm-attach-files-in-directory-default ()
+  "Return the directory `vm-attach-files-in-directory' starts its prompt in.
+The directory of the last attach comes first, so a second attach starts
+where the first one did, then `vm-mime-all-attachments-directory', then
+`vm-mime-attachment-save-directory', then the directory of the composition."
+  (or vm-mime-all-attachments-last-directory
+      vm-mime-all-attachments-directory
+      vm-mime-attachment-save-directory
+      default-directory))
+
 ;;;###autoload
 (defun vm-attach-files-in-directory (directory &optional regexp)
   "Attach all files in DIRECTORY matching REGEXP.
@@ -8191,24 +8201,25 @@ The optional argument MATCH might specify a regexp matching all files
 which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
-match."
+match.
+
+The prompt starts in the directory of the last attach, then
+`vm-mime-all-attachments-directory', then
+`vm-mime-attachment-save-directory'.  Those two options are read and never
+set: the last directory is kept in `vm-mime-all-attachments-last-directory'."
   (interactive
    ;; FIXME: Temporarily override substitute-in-file-name. but why?
    (cl-letf (((symbol-function 'substitute-in-file-name) #'identity))
      (let ((file (vm-read-file-name
                   "Attach files matching regexp: "
-                  (or vm-mime-all-attachments-directory
-                      vm-mime-attachment-save-directory
-                      default-directory)
-                  (or vm-mime-all-attachments-directory
-                      vm-mime-attachment-save-directory
-                      default-directory)
+                  (vm-attach-files-in-directory-default)
+                  (vm-attach-files-in-directory-default)
                   nil nil
                   'vm-attach-files-in-directory-regexps-history)))
        (list (file-name-directory file)
              (file-name-nondirectory file)))))
 
-  (setq vm-mime-all-attachments-directory directory)
+  (setq vm-mime-all-attachments-last-directory directory)
 
   (message "Attaching files matching `%s' from directory %s " regexp directory)
   
