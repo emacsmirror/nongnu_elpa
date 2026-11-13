@@ -167,6 +167,14 @@ authorization token of the forgejo instance.
 If set to nil, you need to set `fj-token' to your user token."
   :type 'boolean)
 
+(defcustom fj-create-token-use-otp nil
+  "Whether to use OTP (2FA) in `fj-create-token'.
+If non-nil, `fj-create-token' will prompt for an OTP code to send to
+the server.
+If nil, no OTP code will be sent to the server for creating the access
+token."
+  :type 'boolean)
+
 (defcustom fj-use-emojify t
   "Whether to enable `emojify-mode' in item views.
 This will not install emojify for you, you have to do that yourself."
@@ -333,8 +341,10 @@ Copies the token to the kill ring and returns it."
                    ("scopes" . ("all"))))
          (endpoint (format "users/%s/tokens" fj-user))
          (password (read-passwd (format "%s password: " fj-host)))
-         (otp (read-passwd "OTP code (if required): "))
-         (headers (and (not (string-blank-p otp))
+         (otp (and fj-create-token-use-otp
+                   (read-passwd "OTP code: ")))
+         (headers (and otp
+                       (not (string-blank-p otp))
                        `(("X-Forgejo-OTP" . ,otp))))
          (url (fj-api endpoint))
          (resp (fedi-http--basic-auth-request
