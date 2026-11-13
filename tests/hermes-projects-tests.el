@@ -56,13 +56,19 @@
      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
                 (lambda (method path &rest args)
                   (push (list method path args) calls)
-                  (if (equal method "PATCH") patch read))))
+                  (cond
+                   ((string-suffix-p "/mutation-snapshot" path)
+                    (hermes--promise-resolved
+                     '((session_id . "s/a") (exists . t)
+                       (runtime_revision . 0) (runtime_generation . 0))))
+                   ((equal method "PATCH") patch)
+                   (t read)))))
        (hermes-projects-test--sessions
         (call-interactively #'hermes-sessions-pin)
         (should (equal (caar calls) "PATCH"))
         (should (equal (cadar calls) "/api/sessions/s%2Fa"))
-        (should (equal (plist-get (caddar calls) :body)
-                       '((profile . "work") (pinned . t))))
+        (should (equal (alist-get 'profile (plist-get (caddar calls) :body)) "work"))
+        (should (eq (alist-get 'pinned (plist-get (caddar calls) :body)) t))
         (should (eq (hermes-sessions--pin-state (hermes-sessions--selected-session)) 'unknown))
         (hermes--promise-resolve patch '((pinned . t)))
         (should (equal (caar calls) "GET"))
@@ -79,12 +85,16 @@
   (hermes-projects-test--client
    (let (calls)
      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
-                (lambda (method _path &rest _args)
+                (lambda (method path &rest _args)
                   (push method calls)
-                  (hermes--promise-rejected "Connection lost"))))
+                  (if (string-suffix-p "/mutation-snapshot" path)
+                      (hermes--promise-resolved
+                       '((session_id . "s/a") (exists . t)
+                         (runtime_revision . 0) (runtime_generation . 0)))
+                    (hermes--promise-rejected "Connection lost")))))
        (hermes-projects-test--sessions
         (hermes-sessions-unpin)
-        (should (equal (reverse calls) '("PATCH" "GET")))
+        (should (equal (reverse calls) '("GET" "PATCH" "GET")))
         (should (eq (hermes-sessions--pin-state (hermes-sessions--selected-session)) 'unknown))
         (should (string-match-p "Failed" hermes-browser--status)))))))
 
@@ -433,7 +443,10 @@
                     (when (equal (plist-get request :method) "PATCH")
                       (setq pinned (if (eq (alist-get 'pinned (plist-get request :body)) t) 1 0)))
                     (hermes--promise-resolved
-                     `(:status 200 :body ((id . "stored") (profile . ,launch) (pinned . ,pinned)))))))
+                     (if (string-match-p "/mutation-snapshot" (plist-get request :url))
+                         '(:status 200 :body ((session_id . "stored") (exists . t)
+                                              (runtime_revision . 0) (runtime_generation . 0)))
+                       `(:status 200 :body ((id . "stored") (profile . ,launch) (pinned . ,pinned))))))))
          (with-temp-buffer
            (hermes-sessions-mode)
            ;; Released session.list omits both profile and pinned.
@@ -451,12 +464,15 @@
            (call-interactively (key-binding (kbd "k")))
            (should (eq (hermes-sessions--pin-state (hermes-sessions--selected-session)) 'unpinned))
            (should (equal (mapcar (lambda (r) (plist-get r :method)) (reverse calls))
-                          '("GET" "PATCH" "GET" "PATCH" "GET")))
+                          '("GET" "GET" "PATCH" "GET" "GET" "PATCH" "GET")))
            (dolist (request (butlast calls))
              (if (equal (plist-get request :method) "PATCH")
                  (should (equal (alist-get 'profile (plist-get request :body)) launch))
                (should (equal (plist-get request :url)
-                              (concat "http://pin.invalid/api/sessions/stored?profile=" launch)))))
+                              (concat "http://pin.invalid/api/sessions/stored"
+                                      (if (string-match-p "/mutation-snapshot" (plist-get request :url))
+                                          "/mutation-snapshot" "")
+                                      "?profile=" launch)))))
            (should (eq (hermes-sessions--pin-state
                         (gethash '("other" . "stored") hermes-sessions--session-map)) 'pinned))
            (should (= (hash-table-count hermes-sessions--session-map) 2))
@@ -465,9 +481,13 @@
              (hermes-sessions--render '((sessions . (((id . "stored"))))))
              (goto-char (point-min))
              (call-interactively action)
-             (should-not (assq 'profile (plist-get (car (last calls)) :body)))
+             (should-not
+              (assq 'profile
+                    (plist-get (cl-find "PATCH" calls :test #'equal
+                                        :key (lambda (r) (plist-get r :method)))
+                               :body)))
              (should (equal (mapcar (lambda (r) (plist-get r :method)) (reverse calls))
-                            '("PATCH" "GET")))
+                            '("GET" "PATCH" "GET")))
              (should (eq (hermes-sessions--pin-state (hermes-sessions--selected-session))
                          (if (eq action 'hermes-sessions-pin) 'pinned 'unpinned))))))))))
 

@@ -288,7 +288,11 @@
                (lambda (method path &rest args)
                  (let ((body (plist-get args :body)) (query (plist-get args :query)))
                  (push (list method path body query) requests)
-                 (hermes--promise-resolved (hermes-sessions-test--page 0 0))))))
+                 (if (string-suffix-p "/mutation-snapshot" path)
+                     (hermes--promise-rejected
+                      (concat "Hermes dashboard request failed (HTTP 404): "
+                              "No such API endpoint: " path))
+                   (hermes--promise-resolved (hermes-sessions-test--page 0 0)))))))
       (hermes-sessions--history-promise 'client "s1" "s1" "work")
       (hermes-sessions--set-title-promise 'client "s1" "Renamed" "work"))
     (should (member '("GET" "/api/sessions/s1/messages" nil
@@ -1299,6 +1303,93 @@
                                       (window-point (car entry))))))
                     (unless (eq action 'reopen) (should released))))))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest hermes-sessions-mutations-send-snapshot-identity ()
+  "Browser edits use the selected profile's revision and generation."
+  (let (ids)
+    (dolist (action '(hermes-sessions-delete hermes-sessions-archive
+                     hermes-sessions-unarchive hermes-sessions-rename
+                     hermes-sessions-pin hermes-sessions-unpin))
+      (let ((client (make-hermes-dashboard-transport-client
+                     :host "127.0.0.1" :port 9119 :token "fixture")) requests)
+        (cl-letf (((symbol-function 'hermes-browser--with-client)
+                   (lambda (fn) (funcall fn client #'ignore)))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'read-string) (lambda (&rest _) "Renamed"))
+                  ((symbol-function 'hermes-dashboard-transport-api-request-async)
+                   (lambda (method path &rest args)
+                     (push (list method path args) requests)
+                     (hermes--promise-resolved
+                      (if (string-suffix-p "/mutation-snapshot" path)
+                          '((session_id . "s/1") (exists . t)
+                            (runtime_revision . 7) (runtime_generation . 3))
+                        '((id . "s/1") (profile . "work") (pinned . t)))))))
+          (with-temp-buffer
+            (hermes-sessions-mode)
+            (hermes-sessions--render
+             '((sessions . (((id . "s/1") (profile . "work"))))))
+            (goto-char (point-min))
+            (call-interactively action)))
+        (setq requests (nreverse requests))
+        (should (equal (caar requests) "GET"))
+        (should (equal (cadar requests) "/api/sessions/s%2F1/mutation-snapshot"))
+        (should (equal (plist-get (caddar requests) :query) '((profile . "work"))))
+        (let* ((write (cadr requests))
+               (identity (plist-get (caddr write)
+                                    (if (eq action 'hermes-sessions-delete)
+                                        :query :body))))
+          (should (equal (car write)
+                         (if (eq action 'hermes-sessions-delete) "DELETE" "PATCH")))
+          (should (equal (cadr write) "/api/sessions/s%2F1"))
+          (should (equal (alist-get 'profile identity) "work"))
+          (should (equal (alist-get 'expected_revision identity) 7))
+          (should (equal (alist-get 'expected_generation identity) 3))
+          (should (stringp (alist-get 'request_id identity)))
+          (push (alist-get 'request_id identity) ids))))
+    (should (= (length (delete-dups ids)) 6))))
+
+(ert-deftest hermes-sessions-mutation-refusals-never-retry ()
+  "Invalid snapshots and read failures refuse writes; conflicts never retry."
+  (dolist (result '(((session_id . "s1") (exists . t)
+                    (runtime_revision . 0) (runtime_generation . 0))
+                   ((session_id . "other") (exists . t)
+                    (runtime_revision . 0) (runtime_generation . 0))
+                   ((session_id . "s1") (exists . :false)
+                    (runtime_revision . 0) (runtime_generation . nil))
+                   ((session_id . "s1") (exists . t) (runtime_revision . -1))
+                   "Hermes dashboard request failed (HTTP 404): Session not found"
+                   "Hermes dashboard request failed (HTTP 503): storage_unavailable"))
+    (let ((writes 0) promise)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+                 (lambda (method _path &rest _args)
+                   (if (equal method "GET")
+                       (if (stringp result) (hermes--promise-rejected result)
+                         (hermes--promise-resolved result))
+                     (cl-incf writes)
+                     (hermes--promise-rejected "revision_conflict")))))
+        (setq promise (hermes-sessions--rest 'client "PATCH" "/api/sessions/s1"
+                                              '((archived . t)))))
+      (should (eq (hermes--promise-state promise) 'rejected))
+      (should (= writes (if (equal result '((session_id . "s1") (exists . t)
+                                          (runtime_revision . 0)
+                                          (runtime_generation . 0))) 1 0))))))
+
+(ert-deftest hermes-sessions-mutation-snapshot-retains-dispatch-guard ()
+  "A delayed snapshot keeps its originating guard through the write."
+  (let* ((pending (hermes--promise-make))
+         (guard (lambda () nil)) seen)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method _path &rest args)
+                 (if (equal method "GET")
+                     (progn (should (eq (plist-get args :current-p) guard)) pending)
+                   (setq seen hermes-dashboard-transport--api-dispatch-guard)
+                   (hermes--promise-rejected "Retired browser operation")))))
+      (let ((hermes-dashboard-transport--api-dispatch-guard guard))
+        (hermes-sessions--rest 'client "DELETE" "/api/sessions/s1"))
+      (hermes--promise-resolve
+       pending '((session_id . "s1") (exists . t)
+                 (runtime_revision . 0) (runtime_generation . 0)))
+      (should (eq seen guard)))))
 
 (provide 'hermes-sessions-tests)
 ;;; hermes-sessions-tests.el ends here

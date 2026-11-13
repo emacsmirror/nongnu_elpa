@@ -2478,8 +2478,12 @@ Several instances name the owner in the mode line, not the header (#148)."
                            (not (eq event 'cancel))))
                         ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
                          (lambda (request &rest _)
-                           (push request requests)
-                           (hermes--promise-resolved '(:body ((ok . t))))))
+                           (if (string-match-p "/mutation-snapshot" (plist-get request :url))
+                               (hermes--promise-rejected
+                                '(hermes-dashboard-http-error
+                                  "Hermes dashboard request failed (HTTP 404): Not Found" 404))
+                             (push request requests)
+                             (hermes--promise-resolved '(:body ((ok . t)))))))
                         ((symbol-function 'hermes-profiles--revert) #'ignore)
                         ((symbol-function 'hermes-cron--revert) #'ignore)
                         ((symbol-function 'hermes-sessions--after-delete) #'ignore))
@@ -2676,8 +2680,12 @@ Several instances name the owner in the mode line, not the header (#148)."
                                                 "http://a.invalid/api/profiles"))
                                  (hermes--promise-resolved
                                   '(:body ((profiles . (((name . "worker"))))))))
+                             (if (string-match-p "/mutation-snapshot" (plist-get request :url))
+                               (hermes--promise-rejected
+                                '(hermes-dashboard-http-error
+                                  "Hermes dashboard request failed (HTTP 404): Not Found" 404))
                              (push request requests)
-                             (hermes--promise-resolved '(:body ((ok . t)))))))
+                             (hermes--promise-resolved '(:body ((ok . t))))))))
                         ((symbol-function 'hermes-profiles--revert) #'ignore)
                         ((symbol-function 'hermes-cron--revert) #'ignore)
                         ((symbol-function 'hermes-sessions--after-rename) #'ignore))
@@ -2767,8 +2775,12 @@ Several instances name the owner in the mode line, not the header (#148)."
                  (lambda (&rest _) auth))
                 ((symbol-function 'hermes-dashboard-transport--http-json-request-async)
                  (lambda (request &rest _)
-                   (push request requests)
-                   (hermes--promise-resolved '(:body ((ok . t))))))
+                   (if (string-match-p "/mutation-snapshot" (plist-get request :url))
+                               (hermes--promise-rejected
+                                '(hermes-dashboard-http-error
+                                  "Hermes dashboard request failed (HTTP 404): Not Found" 404))
+                             (push request requests)
+                             (hermes--promise-resolved '(:body ((ok . t)))))))
                 ((symbol-function 'hermes-sessions--after-rename) #'ignore))
         (with-temp-buffer
           (hermes-browser-test--mutation-row 'hermes-sessions-mode)

@@ -167,9 +167,50 @@
 
 (defun hermes-sessions--rest (client method path &optional body query)
   "Return a dashboard REST METHOD PATH promise through CLIENT.
-BODY and QUERY extend the request."
-  (hermes-dashboard-transport-api-request-async
-   method path :body body :query query :client client))
+BODY and QUERY extend the request.  Fence session edits with a fresh snapshot."
+  (if (not (member method '("PATCH" "DELETE")))
+      (hermes-dashboard-transport-api-request-async
+       method path :body body :query query :client client)
+    (let* ((guard hermes-dashboard-transport--api-dispatch-guard)
+           (profile (or (alist-get 'profile body) (alist-get 'profile query)))
+           (send (lambda (identity)
+                   (let ((hermes-dashboard-transport--api-dispatch-guard guard))
+                     (hermes-dashboard-transport-api-request-async
+                      method path :client client
+                      :body (if (equal method "PATCH")
+                                (append body identity) body)
+                      :query (if (equal method "DELETE")
+                                 (append query identity) query))))))
+      (hermes--promise-then
+       (hermes-dashboard-transport-api-request-async
+        "GET" (concat path "/mutation-snapshot") :client client
+        :query (and profile `((profile . ,profile))) :current-p guard)
+       (lambda (snapshot)
+         (funcall send (hermes-sessions--mutation-identity snapshot path)))
+       (lambda (reason)
+         (if (and (stringp reason)
+                  (or (string-match-p "(HTTP 404): Not Found\\'" reason)
+                      (string-suffix-p
+                       (concat "(HTTP 404): No such API endpoint: "
+                               path "/mutation-snapshot") reason)))
+             (funcall send nil)
+           (hermes--promise-rejected reason)))))))
+
+(defun hermes-sessions--mutation-identity (snapshot path)
+  "Validate SNAPSHOT for PATH and return a new mutation identity."
+  (let ((revision (hermes-transport--get snapshot 'runtime_revision))
+        (generation (hermes-transport--get snapshot 'runtime_generation)))
+    (unless (and (equal (hermes-transport--get snapshot 'exists) t)
+                 (equal path (concat "/api/sessions/"
+                                     (url-hexify-string
+                                      (or (hermes-transport--get snapshot 'session_id)
+                                          ""))))
+                 (integerp revision) (>= revision 0)
+                 (integerp generation) (>= generation 0))
+      (error "Session mutation snapshot unavailable; refresh before trying again"))
+    `((request_id . ,(md5 (format "%s:%s:%s:%s" (emacs-pid) (current-time)
+                                   (random) path)))
+      (expected_revision . ,revision) (expected_generation . ,generation))))
 
 
 

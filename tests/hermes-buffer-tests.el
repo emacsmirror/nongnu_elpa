@@ -360,6 +360,10 @@ NO-FILE leaves it as an ordinary buffer rather than a visited file."
               (cl-letf (((symbol-function 'read-string)
                          (lambda (&rest _) "Renamed")))
                 (call-interactively #'hermes-sessions-rename)))
+            (should (equal (caar rest) "GET"))
+            (hermes--promise-resolve
+             (nth 3 (car rest)) '((session_id . "s1") (exists . t)
+                                 (runtime_revision . 0) (runtime_generation . 0)))
             (should (equal (caar rest) "PATCH"))
             (hermes--promise-resolve (nth 3 (car rest)) '((ok . t)))
             (should (equal snapshot (hermes-buffer-test--view-snapshot collision)))
@@ -368,6 +372,10 @@ NO-FILE leaves it as an ordinary buffer rather than a visited file."
             (with-current-buffer browser
               (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
                 (call-interactively #'hermes-sessions-delete)))
+            (should (equal (caar rest) "GET"))
+            (hermes--promise-resolve
+             (nth 3 (car rest)) '((session_id . "s1") (exists . t)
+                                 (runtime_revision . 1) (runtime_generation . 0)))
             (should (equal (caar rest) "DELETE"))
             (hermes--promise-resolve (nth 3 (car rest)) '((ok . t)))
             (should-not (buffer-live-p detail))
