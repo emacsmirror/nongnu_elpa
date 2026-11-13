@@ -3806,7 +3806,9 @@ pagination."
               (if (eq :json-false .merged)
                   "\n%s wants to merge from %s into %s"
                 "\n%s merged from %s into %s")
-              (propertize .user.username
+              (propertize (if (eq t .merged)
+                              .merged_by.login
+                            .user.username)
                           'face 'fj-name-face)
               ;; FIXME: make links work! data doesn't have branch URLs
               ;; and gitnex doesn't linkify them
