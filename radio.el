@@ -161,7 +161,7 @@ effect."
   (with-current-buffer (get-buffer-create radio-mode--buffer-name)
     (radio-mode)
     (tabulated-list-print)
-    (switch-to-buffer (current-buffer))))
+    (pop-to-buffer (current-buffer))))
 
 (defvar radio-line-mode--string nil
   "The string (optionally) displayed in the mode line.")
