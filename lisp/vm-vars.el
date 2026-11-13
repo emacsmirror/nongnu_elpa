@@ -2642,6 +2642,15 @@ attach, any relative pathnames will be relative to this directory."
 (defvar vm-mime-save-all-attachments-history nil
   "Directory history to where the attachments should go.")
 
+(defvar vm-mime-all-attachments-last-directory nil
+  "The directory `vm-attach-files-in-directory' last attached from.
+It is the first default that command offers, so a second attach starts
+where the first one did.  This is not the user option
+`vm-mime-all-attachments-directory': that one is read and never written,
+since setting an option from a command leaves Customize reporting it as
+changed outside Customize, and a save there would write the last directory
+attached from into the custom file (emacs-vm/vm#943).")
+
 
 
 (defcustom vm-include-mime-attachments nil

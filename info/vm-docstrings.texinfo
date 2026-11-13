@@ -3997,6 +3997,11 @@ which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
 match.
+
+The prompt starts in the directory of the last attach, then
+@code{vm-mime-all-attachments-directory}, then
+@code{vm-mime-attachment-save-directory}.  Those two options are read and never
+set: the last directory is kept in @code{vm-mime-all-attachments-last-directory}.
 @end deffn
 
 @end macro
