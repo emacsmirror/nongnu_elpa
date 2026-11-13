@@ -1805,8 +1805,14 @@ written as it stands rather than handed to
 (defvar native-sound-only-on-console)
 
 (defun vm-mime-text/html-handler ()
+  "Return the renderer for text/html parts, or nil if there is none.
+The option of the same name says which one.  Its value `auto-select' means
+to look for one, which is done once and kept in
+`vm-mime-text/html-handler-found' rather than written back to the option
+(emacs-vm/vm#945)."
   (if (eq vm-mime-text/html-handler 'auto-select)
-      (setq vm-mime-text/html-handler
+      (or vm-mime-text/html-handler-found
+          (setq vm-mime-text/html-handler-found
             (cond ((and (locate-library "w3m") (executable-find "w3m"))
                    ;; emacs-w3m drives the w3m program; the library alone
                    ;; cannot render anything, and choosing it then means
@@ -1822,7 +1828,7 @@ written as it stands rather than handed to
                   ;; get no HTML display at all.  It wants a libxml2-enabled
                   ;; Emacs, which is the usual build but not guaranteed.
                   ((and (fboundp 'libxml-available-p) (libxml-available-p))
-                   'shr)))
+                   'shr))))
     vm-mime-text/html-handler))
 
 (defun vm-mime-can-display-internal (layout &optional deep)
@@ -2124,14 +2130,14 @@ should be auto-displayed according to the settings of
 		       (lambda (i) (vm-mime-types-match i type)))))))
 
 (defun vm-mime-internally-displayable (layout)
-  (let ((type (car (vm-mm-layout-type layout))))
+  (let* ((type (car (vm-mm-layout-type layout)))
+	 (match (lambda (i) (vm-mime-types-match i type))))
     (if (or (eq vm-mime-internal-content-types t)
-	    (vm-find (cons "multipart" vm-mime-internal-content-types)
-		     (lambda (i)
-		       (vm-mime-types-match i type))))
-	(not (vm-find vm-mime-internal-content-type-exceptions
-		      (lambda (i)
-			(vm-mime-types-match i type))))
+	    (vm-find (cons "multipart" vm-mime-internal-content-types) match)
+	    ;; what a loaded module registered, such as vm-epg.el's
+	    ;; application/pgp-keys
+	    (vm-find vm-mime-registered-internal-content-types match))
+	(not (vm-find vm-mime-internal-content-type-exceptions match))
       nil)))
 
 (defun vm-mime-find-external-viewer (type)
@@ -2579,71 +2585,67 @@ here rather than left to the reader's shr settings, which are for the web."
 
 (defun vm-mime-display-internal-text/html (layout)
   "Dispatch handling of html to the actual html handler."
-  ;; If the user has set the vm-mime-text/html-handler _variable_ to
-  ;; 'auto-select, and it is left set that way in this function, we will get a
-  ;; failure because there is no function called
-  ;; "vm-mime-display-internal-auto-select-text/html". But, the
-  ;; vm-mime-text/html-handler _function_ sets the corresponding _variable_
-  ;; based upon a heuristic about available packages, so call it for its
-  ;; side-effect now.  -- Brent Goodrick, 2008-12-08
-  (vm-mime-text/html-handler)
-  (if vm-mime-text/html-handler
-      (condition-case error-data
-	  (let ((buffer-read-only nil)
-		(start (point))
-		(charset (or (vm-mime-get-parameter layout "charset")
-			     "us-ascii"))
-		end) ;; buffer-size
-	    (vm-emit-mime-decoding-message
-	     "Inlining text/html by %s..." vm-mime-text/html-handler)
-	    (vm-mime-insert-mime-body layout)
-	    (unless (bolp) (insert "\n"))
-	    (setq end (point-marker))
-	    (vm-mime-transfer-decode-region layout start end)
-	    (vm-mime-charset-decode-region charset start end)
-	    ;; Nothing blocks a remote image here.  A loop stood here that
-	    ;; searched for `vm-mime-text/html-blocker' and then tested
-	    ;; (or t ...), so it always took the branch holding a TODO and
-	    ;; the `blocked:' it meant to insert was unreachable
-	    ;; (emacs-vm/vm#845).  What does the blocking is
-	    ;; `vm-w3m-safe-url-regexp', which vm-w3m.el binds emacs-w3m's
-	    ;; own `w3m-safe-url-regexp' to while it renders; the w3m and
-	    ;; lynx handlers convert outside Emacs and fetch nothing.
-	    ;; A renderer that replaces the region deletes all of the
-	    ;; text first, which makes end == start.  The fix is to move
-	    ;; the end marker forward with a placeholder character so
-	    ;; that end stays ahead of the insertion point and is moved
-	    ;; forward when the new text is inserted.  We'll delete the
-	    ;; placeholder afterward.
-	    (goto-char end)
-	    (insert-before-markers "z")
-	    ;; the view port (scrollbar) is sometimes messed up, try to avoid it
-	    (unwind-protect
-		(save-window-excursion
-		  ;; dispatch to actual handler
-		  (funcall (intern 
-			    (format "vm-mime-display-internal-%s-text/html"
-				    vm-mime-text/html-handler))
-			   start end layout))
-	      ;; do clean up
+  ;; The function and not the option: the option may be `auto-select', which
+  ;; names no handler, and what it resolves to is what the names below are
+  ;; built from.  There is no vm-mime-display-internal-auto-select-text/html.
+  (let ((handler (vm-mime-text/html-handler)))
+    (if handler
+	(condition-case error-data
+	    (let ((buffer-read-only nil)
+		  (start (point))
+		  (charset (or (vm-mime-get-parameter layout "charset")
+			       "us-ascii"))
+		  end) ;; buffer-size
+	      (vm-emit-mime-decoding-message
+	       "Inlining text/html by %s..." handler)
+	      (vm-mime-insert-mime-body layout)
+	      (unless (bolp) (insert "\n"))
+	      (setq end (point-marker))
+	      (vm-mime-transfer-decode-region layout start end)
+	      (vm-mime-charset-decode-region charset start end)
+	      ;; Nothing blocks a remote image here.  A loop stood here that
+	      ;; searched for `vm-mime-text/html-blocker' and then tested
+	      ;; (or t ...), so it always took the branch holding a TODO and
+	      ;; the `blocked:' it meant to insert was unreachable
+	      ;; (emacs-vm/vm#845).  What does the blocking is
+	      ;; `vm-w3m-safe-url-regexp', which vm-w3m.el binds emacs-w3m's
+	      ;; own `w3m-safe-url-regexp' to while it renders; the w3m and
+	      ;; lynx handlers convert outside Emacs and fetch nothing.
+	      ;; A renderer that replaces the region deletes all of the
+	      ;; text first, which makes end == start.  The fix is to move
+	      ;; the end marker forward with a placeholder character so
+	      ;; that end stays ahead of the insertion point and is moved
+	      ;; forward when the new text is inserted.  We'll delete the
+	      ;; placeholder afterward.
 	      (goto-char end)
-	      (delete-char -1))
-	    (vm-emit-mime-decoding-message
-	     "Inlining text/html by %s... done." vm-mime-text/html-handler)
-	    t)
-	(error (vm-set-mm-layout-display-error
-		layout
-		(format "Inline text/html by %s display failed: %s"
-			vm-mime-text/html-handler
-			(error-message-string error-data)))
-	       (vm-warn 0 2 "%s: %s" 
-			(buffer-name vm-mail-buffer)
-			(vm-mm-layout-display-error layout))
-	       nil))
-    ;; no handler
-    (vm-warn 0 2 "%s: No handler available for internal display of text/html"
-	     (buffer-name vm-mail-buffer))
-    nil))
+	      (insert-before-markers "z")
+	      ;; the view port (scrollbar) is sometimes messed up, try to avoid it
+	      (unwind-protect
+		  (save-window-excursion
+		    ;; dispatch to actual handler
+		    (funcall (intern 
+			      (format "vm-mime-display-internal-%s-text/html"
+				      handler))
+			     start end layout))
+		;; do clean up
+		(goto-char end)
+		(delete-char -1))
+	      (vm-emit-mime-decoding-message
+	       "Inlining text/html by %s... done." handler)
+	      t)
+	  (error (vm-set-mm-layout-display-error
+		  layout
+		  (format "Inline text/html by %s display failed: %s"
+			  handler
+			  (error-message-string error-data)))
+		 (vm-warn 0 2 "%s: %s" 
+			  (buffer-name vm-mail-buffer)
+			  (vm-mm-layout-display-error layout))
+		 nil))
+      ;; no handler
+      (vm-warn 0 2 "%s: No handler available for internal display of text/html"
+	       (buffer-name vm-mail-buffer))
+      nil)))
   
 
 ;;; RFC 3676 -- format=flowed
@@ -4316,6 +4318,8 @@ image when possible."
 	  (vm-register-folder-garbage-files (list tempfile)))
 	;; display a thumbnail over the fake extent
 	(let ((vm-mime-internal-content-types '("image"))
+	      ;; only an image here, so not what a module registered either
+	      (vm-mime-registered-internal-content-types nil)
 	      (vm-mime-internal-content-type-exceptions nil)
 	      (vm-mime-auto-displayed-content-types '("image"))
 	      (vm-mime-auto-displayed-content-type-exceptions nil)
@@ -7843,7 +7847,9 @@ everything else, as printf does.")
     (list last-match-end sexp)))
 
 (defun vm-mime-find-format-for-layout (layout)
-  (let ((p vm-mime-button-format-alist)
+  (let ((p (append vm-mime-button-format-alist
+		   ;; what a loaded module registered, read after the option
+		   vm-mime-registered-button-formats))
 	(type (car (vm-mm-layout-type layout))))
     (catch 'done
       (cond ((vm-mime-types-match "error/error" type)

@@ -1766,7 +1766,7 @@ May throw exceptions."
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq vm-kept-imap-buffers nil)
-  (setq vm-imap-keep-trace-buffer 20))
+  (setq vm-imap-bug-report-trace-count 20))
 
 ;;;###autoload
 (defun vm-imap-submit-bug-report ()
@@ -1780,7 +1780,7 @@ while it is happening; nothing is closed to collect it."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-  (if (or vm-imap-keep-trace-buffer
+  (if (or (vm-imap-keep-trace-buffer)
 	  (y-or-n-p "Did you run vm-imap-start-bug-report earlier? "))
       (vm-inform 5 "Thank you. Preparing the bug report... ")
     (vm-inform 1 (concat "Consider running vm-imap-start-bug-report "

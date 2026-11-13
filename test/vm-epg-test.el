@@ -1460,6 +1460,42 @@ that no longer works (#782)."
         (should (member recipient ids))
         (should (member author ids))))))
 
+;;; The PGP types are registered, not customized (emacs-vm/vm#945)
+
+(ert-deftest vm-epg-test-the-pgp-types-are-registered-not-customized ()
+  "REGRESSION: loading vm-epg.el does not change two user options.
+It called `add-to-list\=' on `vm-mime-internal-content-types\=' and
+`vm-mime-button-format-alist\=', so both read as changed outside Customize as
+soon as the module was loaded, and a reader who set either option after
+loading it dropped the entry.  The registries are read after the options and
+are not part of what a reader customizes."
+  (should (member "application/pgp-keys"
+                  vm-mime-registered-internal-content-types))
+  (should (equal (cdr (assoc "application/pgp-keys"
+                             vm-mime-registered-button-formats))
+                 "Snarf %d"))
+  (should (equal (cdr (assoc "multipart/encrypted"
+                             vm-mime-registered-button-formats))
+                 "Decrypt PGP/MIME message"))
+  ;; the options are as they were declared
+  (should-not (assoc "application/pgp-keys" vm-mime-button-format-alist))
+  (should-not (and (listp vm-mime-internal-content-types)
+                   (member "application/pgp-keys"
+                           vm-mime-internal-content-types)))
+  ;; and a reader who lists some other types still gets keys displayed
+  (let ((vm-mime-internal-content-types '("text"))
+        (vm-mime-internal-content-type-exceptions nil))
+    (should (vm-mime-internally-displayable
+             (vm-make-layout 'type '("application/pgp-keys"))))
+    (should-not (vm-mime-internally-displayable
+                 (vm-make-layout 'type '("application/zip")))))
+  ;; what is registered is bound away where a caller narrows the option
+  (let ((vm-mime-internal-content-types '("text"))
+        (vm-mime-registered-internal-content-types nil)
+        (vm-mime-internal-content-type-exceptions nil))
+    (should-not (vm-mime-internally-displayable
+                 (vm-make-layout 'type '("application/pgp-keys"))))))
+
 (provide 'vm-epg-test)
 
 ;;; vm-epg-test.el ends here

@@ -357,6 +357,21 @@ AddToFunc SelectWindow
 (make-variable-buffer-local 'vm-biff-message-pointer)
 
 
+(defun vm-biff-folder-list ()
+  "Return the folders to scan for new messages.
+The option of the same name where it is set, and the inboxes of
+`vm-spool-files' where it is not.  The option is read and never set:
+setting a user option from a command leaves Customize reporting it as
+changed outside Customize, and a save there writes into the custom file a
+value the reader never chose (emacs-vm/vm#945)."
+  (or vm-biff-folder-list
+      (let ((spool-files (vm-spool-files)))
+        (if (stringp (car spool-files))
+            (list (expand-file-name vm-primary-inbox vm-folder-directory))
+          (mapcar (lambda (f)
+                    (expand-file-name (car f) vm-folder-directory))
+                  spool-files)))))
+
 ;;;###autoload
 (defun vm-biff-popup (&optional force)
   "Scan the current VM folder for new messages and popup a summary frame."
@@ -364,18 +379,6 @@ AddToFunc SelectWindow
 
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-
-    (when (not vm-biff-folder-list)
-      (setq vm-biff-folder-list
-            (if (stringp (car vm-spool-files))
-                (list (expand-file-name
-                       vm-primary-inbox
-                       vm-folder-directory))
-              (mapcar (lambda (f)
-                        (expand-file-name
-                         (car f)
-                         vm-folder-directory))
-                      vm-spool-files))))
 
     (let* ((mp vm-message-pointer)
            (folder (buffer-name))
@@ -387,7 +390,7 @@ AddToFunc SelectWindow
                  (concat " *new messages in VM folder: " folder "*")))
            selector msg new-messages wf)
       
-      (let ((fl vm-biff-folder-list))
+      (let ((fl (vm-biff-folder-list)))
         (while fl
           (if (stringp (car fl))
               (if (string-match (car fl) (or (buffer-file-name)

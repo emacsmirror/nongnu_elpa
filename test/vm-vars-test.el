@@ -138,6 +138,67 @@ Answers with every offender at once, not the first."
     (should (equal nil
                    (mapcan #'vm-vars-test--attributes-emacs-lacks faces)))))
 
+;;; Options read, and what VM works out kept apart from them (emacs-vm/vm#945)
+
+(ert-deftest vm-vars-test-the-spool-files-come-from-the-environment ()
+  "REGRESSION: `vm-spool-files\=' reads MAILPATH and MAIL without writing
+the option of that name.  It used to store what it found there, so Customize
+reported the option as changed outside Customize and a save wrote the
+environment into the reader\='s custom file."
+  (let ((vm-spool-files nil)
+        (vm-spool-files-from-environment nil)
+        (process-environment (append '("MAILPATH=/nonexistent/spool/mailpath"
+                                       "MAIL=/nonexistent/spool/mail")
+                                     process-environment)))
+    (should (equal (vm-spool-files) '("/nonexistent/spool/mailpath")))
+    (should-not vm-spool-files)
+    (should (equal vm-spool-files-from-environment
+                   '("/nonexistent/spool/mailpath"))))
+  ;; MAIL where MAILPATH says nothing
+  (let ((vm-spool-files nil)
+        (vm-spool-files-from-environment nil)
+        (process-environment (append '("MAILPATH=" "MAIL=/nonexistent/spool/mail")
+                                     process-environment)))
+    (should (equal (vm-spool-files) '("/nonexistent/spool/mail")))
+    (should-not vm-spool-files))
+  ;; and the option wins wherever it is set
+  (let ((vm-spool-files '("/home/reader/INBOX"))
+        (vm-spool-files-from-environment nil)
+        (process-environment (append '("MAILPATH=/nonexistent/spool/mailpath")
+                                     process-environment)))
+    (should (equal (vm-spool-files) '("/home/reader/INBOX")))))
+
+(ert-deftest vm-vars-test-a-grep-that-signalled-is-not-run-again ()
+  "REGRESSION: a grep that signals sets `vm-grep-program-unusable\=' and not
+the option, which used to be set to nil: the reader\='s own program name was
+gone for the rest of the session and Customize reported it changed."
+  (let ((vm-grep-program "grep")
+        (vm-grep-program-unusable nil))
+    (should (equal (vm-grep-program) "grep"))
+    (setq vm-grep-program-unusable t)
+    (should-not (vm-grep-program))
+    (should (equal vm-grep-program "grep")))
+  (let ((vm-grep-program nil)
+        (vm-grep-program-unusable nil))
+    (should-not (vm-grep-program))))
+
+(ert-deftest vm-vars-test-a-bug-report-asks-for-trace-buffers-of-its-own ()
+  "REGRESSION: how many trace buffers a bug report keeps is read before the
+option, and the start commands no longer set the option to 20 and leave it
+there."
+  (let ((vm-imap-keep-trace-buffer 1)
+        (vm-imap-bug-report-trace-count nil))
+    (should (equal (vm-imap-keep-trace-buffer) 1))
+    (setq vm-imap-bug-report-trace-count 20)
+    (should (equal (vm-imap-keep-trace-buffer) 20))
+    (should (equal vm-imap-keep-trace-buffer 1)))
+  (let ((vm-pop-keep-trace-buffer nil)
+        (vm-pop-bug-report-trace-count nil))
+    (should-not (vm-pop-keep-trace-buffer))
+    (setq vm-pop-bug-report-trace-count 20)
+    (should (equal (vm-pop-keep-trace-buffer) 20))
+    (should-not vm-pop-keep-trace-buffer)))
+
 (provide 'vm-vars-test)
 
 ;;; vm-vars-test.el ends here
