@@ -6306,7 +6306,7 @@ Used for hitting RET on a given link."
         ((or  'commit 'commit-ref)
          (if current-prefix-arg
              ;; jump to commit log starting at commit at point
-             (fj-repo-commit-log nil nil nil (fj--property 'item))
+             (fj-repo-commit-log nil repo owner (fj--property 'item))
            (fj-view-commit-diff item (fedi--property 'shr-url))))
         ('issue-ref
          (fj-issue-ref-follow item))
