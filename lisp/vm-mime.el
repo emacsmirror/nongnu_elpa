@@ -4686,6 +4686,26 @@ are also included."
   (vm-update-summary-and-mode-line))
 
 
+(defun vm-mime-attachment-save-default (&optional directory)
+  "Return the directory an attachment save command starts its prompt in.
+DIRECTORY, where the command was given one or has already asked for one,
+comes first, then `vm-mime-all-attachments-directory', then
+`vm-mime-attachment-save-directory', then the directory of the folder.
+
+Both options are allowed to be nil, the customize type of the first saying
+that nil means to use the second, and `file-name-as-directory' of nil is an
+error, so the last element is what keeps a command from signalling instead
+of asking where to save.  The options are read in this order and never set
+(emacs-vm/vm#943).
+
+`vm-save-attachments' read the two options the other way round until
+emacs-vm/vm#944, so the same two settings sent it somewhere else than they
+sent `vm-save-all-attachments'."
+  (or directory
+      vm-mime-all-attachments-directory
+      vm-mime-attachment-save-directory
+      default-directory))
+
 ;;;###autoload
 (defun vm-save-all-attachments (&optional count directory)
   "Save all attachments in the next COUNT messages or marked
@@ -4704,12 +4724,8 @@ created."
    (list current-prefix-arg
          (vm-read-file-name
           "Attachment directory: "
-          (or vm-mime-all-attachments-directory
-              vm-mime-attachment-save-directory
-              default-directory)
-          (or vm-mime-all-attachments-directory
-              vm-mime-attachment-save-directory
-              default-directory)
+          (vm-mime-attachment-save-default)
+          (vm-mime-attachment-save-default)
           nil nil
           'vm-mime-save-all-attachments-history)))
 
@@ -4733,9 +4749,7 @@ created."
          (setq file
 	       (if file
 		   (expand-file-name (file-name-nondirectory file) directory)
-		 (let* ((dir (or directory
-				 vm-mime-all-attachments-directory
-				 vm-mime-attachment-save-directory))
+		 (let* ((dir (vm-mime-attachment-save-default directory))
 			;; Content-Disposition gave no filename, but the
 			;; part may still name itself in its Content-Type.
 			(name (vm-mime-get-parameter layout "name"))
@@ -4843,21 +4857,11 @@ confirmed before creating a new directory."
 			(format "Save (default %s): " file-name)
 		      (format "Save %s: " type))
 		    (file-name-as-directory		; directory
-		     (or directory		      
-			 vm-mime-attachment-save-directory
-			 vm-mime-all-attachments-directory
-			 ;; both are allowed to be nil (the customize type
-			 ;; of the first includes it) and `file-name-as-directory'
-			 ;; of nil is an error, so the command signalled instead
-			 ;; of asking where to save
-			 default-directory))
+		     (vm-mime-attachment-save-default directory))
 		    (and file-name			; default-filename
 			 (concat
-			  (file-name-as-directory 	      
-			   (or directory		      
-			       vm-mime-attachment-save-directory
-			       vm-mime-all-attachments-directory
-			       default-directory))
+			  (file-name-as-directory
+			   (vm-mime-attachment-save-default directory))
 			  (or file-name "")))
 		    nil nil			      ; mustmatch initial
 		    'vm-mime-save-all-attachments-history

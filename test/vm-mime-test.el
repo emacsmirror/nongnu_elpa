@@ -3644,6 +3644,39 @@ disposition, so it is not an attachment to save."
                       (expand-file-name "second.bin" target))
                      "The second attachment.\n")))))
 
+(ert-deftest vm-mime-test-the-save-default-reads-the-options-in-order ()
+  "A directory already chosen comes first, then
+`vm-mime-all-attachments-directory', then `vm-mime-attachment-save-directory',
+then the directory of the folder."
+  (let ((vm-mime-all-attachments-directory nil)
+        (vm-mime-attachment-save-directory nil)
+        (default-directory "/folder/"))
+    (should (equal (vm-mime-attachment-save-default) "/folder/"))
+    (setq vm-mime-attachment-save-directory "/save/")
+    (should (equal (vm-mime-attachment-save-default) "/save/"))
+    (setq vm-mime-all-attachments-directory "/all/")
+    (should (equal (vm-mime-attachment-save-default) "/all/"))
+    (should (equal (vm-mime-attachment-save-default "/given/") "/given/"))))
+
+(ert-deftest vm-mime-test-saving-attachments-prefers-the-all-attachments-directory ()
+  "REGRESSION: `vm-save-attachments' starts where `vm-save-all-attachments'
+starts.  It read `vm-mime-attachment-save-directory' before
+`vm-mime-all-attachments-directory', the other two commands read them the
+other way round, so the same two settings sent them to different directories
+(emacs-vm/vm#944)."
+  (vm-mime-test--with-two-attachments (target)
+    (let ((vm-mime-all-attachments-directory "/all/")
+          (vm-mime-attachment-save-directory "/save/")
+          (dirs nil))
+      (cl-letf (((symbol-function 'vm-read-file-name)
+                 (lambda (_prompt dir default &rest _)
+                   (push dir dirs)
+                   (expand-file-name (file-name-nondirectory (or default ""))
+                                     target)))
+                ((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+        (vm-save-attachments 1))
+      (should (equal (car (last dirs)) "/all/")))))
+
 (ert-deftest vm-mime-test-saving-attachments-does-not-overwrite-unbidden ()
   "An existing file is not overwritten when the answer is no, and what was
 in it is still there afterwards.
