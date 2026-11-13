@@ -6521,14 +6521,14 @@ If PREFIX arg, prompt for branch to show commits of."
          (setq fj-current-repo repo)
          (setq fj-buffer-spec `(:repo ,repo :owner ,owner :item ,item)))))))
 
-(defun fj-get-repo-commits (repo owner &optional branch page limit)
+(defun fj-get-repo-commits (repo owner &optional sha page limit)
   ;; TODO: &optional sha path page limit not)
   ;; stat (diffs), verification, files, (optional, disable for speed)
   "Get commits of REPO by OWNER.
-Optionally specify BRANCH to show commits from.
+Optionally specify SHA, a commit or branch, to show commits from.
 PAGE and LIMIT as always."
   (let ((endpoint (format "repos/%s/%s/commits" owner repo))
-        (params (append `(("sha" . ,branch))
+        (params (append `(("sha" . ,sha))
                         (fedi-opt-params page limit))))
     (fj-get endpoint params)))
 
