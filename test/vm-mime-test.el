@@ -6203,6 +6203,30 @@ newline was written into the headers as one of them."
                        encoded)))))
       (ignore-errors (delete-file file)))))
 
+(ert-deftest vm-mime-test-the-html-handler-is-looked-for-once ()
+  "REGRESSION: resolving `auto-select\=' does not write the option.
+`vm-mime-text/html-handler\=' the function stored what it found in the option
+of the same name, so Customize reported the option as changed outside
+Customize and a save wrote one machine\='s renderer into the custom file
+(emacs-vm/vm#945)."
+  (let ((vm-mime-text/html-handler 'auto-select)
+        (vm-mime-text/html-handler-found nil))
+    (let ((found (vm-mime-text/html-handler)))
+      (should (eq vm-mime-text/html-handler 'auto-select))
+      (should (eq vm-mime-text/html-handler-found found))
+      (when found
+        ;; and the second call answers from what was found, without looking
+        (cl-letf (((symbol-function 'executable-find)
+                   (lambda (&rest _) (error "looked again")))
+                  ((symbol-function 'locate-library)
+                   (lambda (&rest _) (error "looked again"))))
+          (should (eq (vm-mime-text/html-handler) found))))))
+  ;; an option naming a renderer is what is used
+  (let ((vm-mime-text/html-handler 'lynx)
+        (vm-mime-text/html-handler-found nil))
+    (should (eq (vm-mime-text/html-handler) 'lynx))
+    (should-not vm-mime-text/html-handler-found)))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

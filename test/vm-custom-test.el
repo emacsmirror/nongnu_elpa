@@ -222,6 +222,35 @@ checks what is actually committed."
                                               "\\_>")
                                       text)))))))
 
+(ert-deftest vm-custom-test-nothing-writes-a-user-option-behind-the-reader ()
+  "REGRESSION: no VM code sets a user option as a side effect of its work.
+
+A `setq\=' of a `defcustom\=' leaves Customize reporting the option as changed
+outside Customize, and a save there writes into the reader\='s custom file a
+value they never chose; it also throws away the value they did choose.  Ten
+places did it: a command that remembered its last answer in the option, a
+grep failure that set `vm-grep-program\=' to nil, two bug report commands that
+turned tracing up and never turned it down, three options used as a cache
+for something worked out at run time, and vm-epg.el extending two options as
+it loaded (emacs-vm/vm#943, emacs-vm/vm#945).
+
+The checker reads the sources, because these writes are where a test is
+not: in a command nothing calls, on the path a server failure takes, at load
+time.  What a command exists to set is listed in
+`vm-custom-check-allowed-option-writes\=', and an option that
+`make-variable-buffer-local\=' covers is not looked at, a `setq\=' of one of
+those reaching the buffer and not the default value."
+  (let* ((result (vm-custom-test--run-checker))
+         (output (cdr result))
+         (writes nil))
+    (dolist (line (split-string output "\n" t))
+      (when (string-prefix-p "OPTIONWRITE " line)
+        (push (substring line (length "OPTIONWRITE ")) writes)))
+    ;; the same premise as the tests above: a scan of nothing finds nothing
+    (should (string-match "scanned \\([0-9]+\\) VM lisp files" output))
+    (should (> (string-to-number (match-string 1 output)) 40))
+    (should (equal nil (nreverse writes)))))
+
 (provide 'vm-custom-test)
 
 ;;; vm-custom-test.el ends here

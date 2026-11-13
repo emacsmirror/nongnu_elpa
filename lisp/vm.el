@@ -1350,7 +1350,9 @@ current message is selected as the recipient of the new composition."
     (setq varlist (sort varlist
                         (lambda (v1 v2)
                           (string-lessp (format "%s" v1) (format "%s" v2)))))
-    (when (and (eq vm-mime-text/html-handler 'emacs-w3m)
+    ;; the function and not the option: the option may be `auto-select', and
+    ;; what it resolved to is what rendered the HTML in this Emacs
+    (when (and (eq (vm-mime-text/html-handler) 'emacs-w3m)
 	       (boundp 'emacs-w3m-version))
       (nconc varlist (list 'emacs-w3m-version 'w3m-version 
 			   'w3m-goto-article-function)))
@@ -1381,17 +1383,20 @@ current message is selected as the recipient of the new composition."
 	     vm-imap-auto-expunge-alist
 	     ))
 	  ;; delete any passwords stored in maildrop strings
+	  ;; `vm-spool-files' the function: the option is allowed to be nil
+	  ;; and the spool files then come from MAILPATH or MAIL, which is
+	  ;; what VM read and what the report is about
 	  (vm-bug-spool-files
 	   (condition-case nil
-	       (if (listp (car vm-spool-files))
+	       (if (listp (car (vm-spool-files)))
 		   (vm-mapcar 
 		    (lambda (elem-xyz)
 		      (vm-mapcar (function vm-maildrop-sans-personal-info)
 				 elem-xyz))
-		    vm-spool-files)
+		    (vm-spool-files))
 		 (vm-mapcar (function vm-maildrop-sans-personal-info)
-			    vm-spool-files))
-	     (error (vm-increment errors) vm-spool-files)))
+			    (vm-spool-files)))
+	     (error (vm-increment errors) (vm-spool-files))))
 	  (vm-bug-primary-inbox
 	   (condition-case nil
 	       (vm-maildrop-sans-personal-info

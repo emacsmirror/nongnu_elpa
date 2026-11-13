@@ -483,16 +483,34 @@ has been specified."
 ;; allows us to use environmental variables without setting
 ;; vm-spool-files at load time and thereby making it hard to dump an
 ;; Emacs containing a preloaded VM.
+(defvar vm-spool-files-from-environment nil
+  "The spool files MAILPATH or MAIL named, once they have been read.
+`vm-spool-files' is read and never set: setting a user option from code
+leaves Customize reporting it as changed outside Customize, and a save
+there writes into the custom file a value the reader never chose
+(emacs-vm/vm#945).")
+
+(defun vm-spool-files-from-mailpath ()
+  "Return the spool files MAILPATH names, or nil."
+  (let ((mailpath (getenv "MAILPATH")))
+    (and mailpath
+	 (vm-delete-directory-names
+	  (vm-parse mailpath
+		    "\\([^:%?]+\\)\\([%?][^:]*\\)?\\(:\\|$\\)")))))
+
+(defun vm-spool-files-from-mail ()
+  "Return the spool file MAIL names, or nil."
+  (let ((mail (getenv "MAIL")))
+    (and mail (vm-delete-directory-names (list mail)))))
+
 (defun vm-spool-files ()
+  "Return the spool files: the option where it is set, the environment else.
+MAILPATH is read first and MAIL second, and what either names is kept in
+`vm-spool-files-from-environment'."
   (or vm-spool-files
-      (and (setq vm-spool-files (getenv "MAILPATH"))
-	   (setq vm-spool-files
-		 (vm-delete-directory-names
-		  (vm-parse vm-spool-files
-			    "\\([^:%?]+\\)\\([%?][^:]*\\)?\\(:\\|$\\)"))))
-      (and (setq vm-spool-files (getenv "MAIL"))
-	   (setq vm-spool-files (vm-delete-directory-names
-				 (list vm-spool-files))))))
+      vm-spool-files-from-environment
+      (setq vm-spool-files-from-environment (vm-spool-files-from-mailpath))
+      (setq vm-spool-files-from-environment (vm-spool-files-from-mail))))
 
 (defcustom vm-spool-file-suffixes nil
   "*List of suffixes to be used to create possible spool file names
@@ -1610,6 +1628,21 @@ that type are assumed to be included."
   :type '(choice (const nil)
                  (repeat string)))
 
+(defvar vm-mime-registered-internal-content-types nil
+  "MIME types a loaded VM module displays internally, whatever the option says.
+Read after `vm-mime-internal-content-types' and never written to it:
+`add-to-list' on the option left Customize reporting it as changed outside
+Customize as soon as the module was loaded, and a reader who set the option
+after loading that module dropped the entry (emacs-vm/vm#945).
+
+A caller that narrows what is displayed internally binds this to nil along
+with the option.")
+
+(defvar vm-mime-registered-button-formats nil
+  "Button formats a loaded VM module declares, as `vm-mime-button-format-alist'.
+Read after that option, and bound to nil wherever it is bound, for the same
+reasons as `vm-mime-registered-internal-content-types'.")
+
 (defcustom vm-mime-internal-content-types t
   "*List of MIME content types that should be displayed internally
 if Emacs is capable of doing so.  A value of t means that VM
@@ -1972,6 +2005,10 @@ attached in \"multipart/signed\" parts."
   :group 'vm-mime
   :type '(choice (const :tag "Do not verify" nil)
 		 (const :tag "Verify" t)))
+
+(defvar vm-mime-text/html-handler-found nil
+  "The renderer `vm-mime-text/html-handler' found, once it has looked.
+The option of that name is read and never set (emacs-vm/vm#945).")
 
 (defcustom vm-mime-text/html-handler 'auto-select
   "*The library used for displaying HTML messages.  The possible
@@ -5554,6 +5591,19 @@ This is used to retrieve URLs."
   :type '(choice (const :tag "None" nil)
 		 file))
 
+(defvar vm-grep-program-unusable nil
+  "Non-nil once running `vm-grep-program' signalled.
+What it was asked to do is done another way from then on.  The option is
+read and never set: setting it to nil instead threw away the reader's own
+setting and left Customize reporting the option as changed outside
+Customize (emacs-vm/vm#945).")
+
+(defun vm-grep-program ()
+  "Return the grep program to count messages in a folder with, or nil.
+Nil where the option `vm-grep-program' is nil, and nil once running it
+signalled."
+  (and (not vm-grep-program-unusable) vm-grep-program))
+
 (defcustom vm-grep-program "grep"
   "*Name of program to use to run grep.
 This is used to count message separators in folders.
@@ -5590,6 +5640,12 @@ only with a configuration file."
   :group 'vm-helpers
   :type '(choice (const :tag "None" nil)
 		 (repeat string)))
+
+(defvar vm-stunnel-configuration-file-probed 'unknown
+  "Non-nil if asking stunnel said it is configured with a file.
+Set where `vm-stunnel-wants-configuration-file' is `unknown' and the
+program has been asked, and `unknown' until then.  The answer is kept here
+and not written back to the option (emacs-vm/vm#945).")
 
 (defcustom vm-stunnel-wants-configuration-file t
   "Non-nil if stunnel version is controlled by a configuration file.
@@ -6875,6 +6931,26 @@ UIDVALIDITY for each message to be expunged.")
 (defvar vm-kept-imap-buffers nil
   "* Variable that holds the old trace buffers of IMAP sessions for
   debugging purposes.")
+;; How many trace buffers a bug report asks for, where one was started.
+;; `vm-pop-start-bug-report' and `vm-imap-start-bug-report' set these rather
+;; than the options below: setting a user option from a command leaves
+;; Customize reporting it as changed outside Customize, and nothing here
+;; ever put it back (emacs-vm/vm#945).
+(defvar vm-pop-bug-report-trace-count nil
+  "How many POP trace buffers to keep, where a bug report asked for them.
+Read before the option `vm-pop-keep-trace-buffer'.")
+(defvar vm-imap-bug-report-trace-count nil
+  "How many IMAP trace buffers to keep, where a bug report asked for them.
+Read before the option `vm-imap-keep-trace-buffer'.")
+
+(defun vm-pop-keep-trace-buffer ()
+  "Return how many POP session trace buffers to keep, or nil to keep none."
+  (or vm-pop-bug-report-trace-count vm-pop-keep-trace-buffer))
+
+(defun vm-imap-keep-trace-buffer ()
+  "Return how many IMAP session trace buffers to keep, or nil to keep none."
+  (or vm-imap-bug-report-trace-count vm-imap-keep-trace-buffer))
+
 ;; Flag to make POP/IMAP code remember old trace buffers
 (defcustom vm-pop-keep-trace-buffer 1
   "* The number of POP session trace buffers that should be

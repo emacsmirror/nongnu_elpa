@@ -40,10 +40,11 @@
 ;; last wins and the other's customizations have no effect.  Remove any
 ;; `(require 'vm-pgg)' from your configuration.
 ;;
-;; If you set `vm-mime-auto-displayed-content-types' and/or
-;; `vm-mime-internal-content-types' make sure that they contain
-;; "application/pgp-keys" or set them before loading vm-epg.
-;; Otherwise public keys are not detected automatically.
+;; If you set `vm-mime-auto-displayed-content-types' make sure that it
+;; contains "application/pgp-keys", or public keys are not detected
+;; automatically.  `vm-mime-internal-content-types' needs nothing: vm-epg
+;; registers that type separately from the option, so the order the two are
+;; set in no longer matters.
 ;;
 ;; To customize vm-epg use: M-x customize-group RET vm-epg RET
 ;;
@@ -1443,17 +1444,17 @@ carry the `vm-epg-' prefix."
 ;; button formats are in place while the rest of this file is byte-compiled;
 ;; the effect on the compiling Emacs is harmless and is discarded with it.
 ;;
-;; `vm-mime-internal-content-types' is only extended when it is a list: the
-;; value t means "display every type internally", which already covers
-;; application/pgp-keys and must not be turned into a list.  Note that a
-;; user who sets this variable *after* loading vm-epg discards this entry;
-;; see the commentary at the top of this file.
+;; The registries and not the options `vm-mime-internal-content-types' and
+;; `vm-mime-button-format-alist': they are read after the options and are
+;; not part of what a reader customizes, so setting either option after
+;; loading this file no longer drops these entries, and Customize does not
+;; report the options as changed outside it (emacs-vm/vm#945).
 (eval-and-compile
-  (if (listp vm-mime-internal-content-types)
-      (add-to-list 'vm-mime-internal-content-types "application/pgp-keys"))
-  (add-to-list 'vm-mime-button-format-alist
+  (add-to-list 'vm-mime-registered-internal-content-types
+               "application/pgp-keys")
+  (add-to-list 'vm-mime-registered-button-formats
                '("application/pgp-keys" . "Snarf %d"))
-  (add-to-list 'vm-mime-button-format-alist
+  (add-to-list 'vm-mime-registered-button-formats
                '("multipart/encrypted" . "Decrypt PGP/MIME message")))
 
 (defun vm-epg-format-import-result (result)

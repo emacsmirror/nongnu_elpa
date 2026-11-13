@@ -238,7 +238,7 @@ decides between an existing cache and the name a new one gets."
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq vm-kept-pop-buffers nil)
-  (setq vm-pop-keep-trace-buffer 20))
+  (setq vm-pop-bug-report-trace-count 20))
 
 ;;;###autoload
 (defun vm-pop-submit-bug-report ()
@@ -252,7 +252,7 @@ while it is happening; nothing is closed to collect it."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-  (if (or vm-pop-keep-trace-buffer
+  (if (or (vm-pop-keep-trace-buffer)
 	  (y-or-n-p "Did you run vm-pop-start-bug-report earlier? "))
       (vm-inform 5 "Thank you. Preparing the bug report... ")
     (vm-inform 1 "Consider running vm-pop-start-bug-report before the problem occurrence"))

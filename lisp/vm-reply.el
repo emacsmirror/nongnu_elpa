@@ -565,8 +565,9 @@ prepended to every line that is left."
 	    (vm-mime-button-mouse-face (if vm-include-mime-attachments
 					   vm-mime-button-mouse-face
 					 nil))
-	    ;; use different labels
+	    ;; use different labels, and not the ones a module registered
 	    (vm-mime-button-format-alist vm-mime-yanked-button-format-alist)
+	    (vm-mime-registered-button-formats nil)
 	    )
 	(vm-decode-mime-layout layout))
 

@@ -957,6 +957,9 @@ Output, if any, is displayed.  The message is not altered."
 			 '("text" "multipart"))
 			(vm-mime-internal-content-types
 			 '("text" "multipart"))
+			;; text and multipart only, so not what a module
+			;; registered either
+			(vm-mime-registered-internal-content-types nil)
 			(vm-mime-external-content-types-alist nil))
 		    (vm-decode-mime-layout (vm-mm-layout m)))
 		  (let ((pop-up-windows (and pop-up-windows

@@ -233,12 +233,24 @@ multibyte string too, so the two agree."
 	 (list "-R" vm-stunnel-random-data-file))
 	(t nil)))
 
+(defun vm-stunnel-wants-configuration-file ()
+  "Return non-nil if stunnel is configured with a file and not with arguments.
+The option of the same name says so.  Its value `unknown' means to ask the
+program, which is done once and kept in
+`vm-stunnel-configuration-file-probed' rather than written back to the
+option (emacs-vm/vm#945)."
+  (cond ((not (eq vm-stunnel-wants-configuration-file 'unknown))
+	 vm-stunnel-wants-configuration-file)
+	((not (eq vm-stunnel-configuration-file-probed 'unknown))
+	 vm-stunnel-configuration-file-probed)
+	(t
+	 (setq vm-stunnel-configuration-file-probed
+	       (not (eq (call-process vm-stunnel-program nil nil nil "-h")
+			0))))))
+
 ;;;###autoload
 (defun vm-stunnel-configuration-args (host port)
-  (if (eq vm-stunnel-wants-configuration-file 'unknown)
-      (setq vm-stunnel-wants-configuration-file
-	    (not (eq (call-process vm-stunnel-program nil nil nil "-h") 0))))
-  (if (not vm-stunnel-wants-configuration-file)
+  (if (not (vm-stunnel-wants-configuration-file))
       (nconc (vm-stunnel-random-data-args)
 	     (list "-W" "-c" "-r"
 		   (format "%s:%s" host port)))
