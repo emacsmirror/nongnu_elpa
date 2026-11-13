@@ -1,6 +1,6 @@
 #+title: emacs-hermes Changelog
 
-* Version 0.9.0 (unreleased)
+* Version 0.9.1 (unreleased)
 
 Incompatible changes:
 
@@ -21,6 +21,9 @@ Incompatible changes:
 
 New features and fixes:
 
+- Session browser delete, archive/unarchive, rename and pin/unpin send the
+  mutation identity and revision required by current Hermes backends,
+  fixing =409 client_upgrade_required= errors.
 - =/new= in an ordinary chat keeps that chat's profile and backend
   instead of opening under the dashboard default profile.
 - The chat header's work count follows the Hermes TUI: =🤖 N= counts
