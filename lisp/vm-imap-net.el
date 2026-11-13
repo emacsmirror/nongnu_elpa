@@ -757,7 +757,7 @@ read, which is what keeps a mailbox of any size out of memory."
 (defvar vm-ssh-remote-command)
 (defvar vm-imap-session-preauth-hook)
 
-(defvar vm-imap-keep-trace-buffer)
+(declare-function vm-imap-keep-trace-buffer "vm-vars" ())
 (defvar vm-kept-imap-buffers)
 (declare-function vm-keep-some-buffers "vm-misc"
 		  (buffer ring-variable number-to-keep &optional rename-prefix))
@@ -767,15 +767,14 @@ read, which is what keeps a mailbox of any size out of memory."
 
 Kept as a trace when `vm-imap-keep-trace-buffer' says to: \"did VM send that
 delete?\" is answered by the traffic and by nothing else."
-  (when (buffer-live-p buffer)
-    ;; nothing to keep when nothing was said: a connection that was never made
-    ;; leaves an empty buffer, and keeping those is how a session that failed
-    ;; early leaves one behind for every attempt
-    (if (or (null vm-imap-keep-trace-buffer)
-	    (zerop (buffer-size buffer)))
-	(kill-buffer buffer)
-      (vm-keep-some-buffers buffer 'vm-kept-imap-buffers
-			    vm-imap-keep-trace-buffer "saved "))))
+  (let ((keep (vm-imap-keep-trace-buffer)))
+    (when (buffer-live-p buffer)
+      ;; nothing to keep when nothing was said: a connection that was never
+      ;; made leaves an empty buffer, and keeping those is how a session that
+      ;; failed early leaves one behind for every attempt
+      (if (or (null keep) (zerop (buffer-size buffer)))
+	  (kill-buffer buffer)
+	(vm-keep-some-buffers buffer 'vm-kept-imap-buffers keep "saved ")))))
 
 (defun vm-imap-net-session-buffer (name)
   "A process buffer for a session called NAME, ready to be read from."

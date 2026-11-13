@@ -38,6 +38,8 @@
                (vm-mutable-frame-configuration nil)
                (vm-imap-keep-trace-buffer nil)
                (vm-pop-keep-trace-buffer nil)
+               (vm-imap-bug-report-trace-count nil)
+               (vm-pop-bug-report-trace-count nil)
                (vm-kept-imap-buffers nil)
                (vm-kept-pop-buffers nil))
            (write-region vm-bug-report-test--folder nil folder nil 'quiet)
@@ -59,16 +61,20 @@ throw away whatever traces were already kept.
 Keeping traces is off by default -- a session's trace buffer is killed when
 the session ends -- so without this the report has nothing to carry."
   (vm-bug-report-test--in-a-folder
-    (should-not vm-imap-keep-trace-buffer)
+    (should-not (vm-imap-keep-trace-buffer))
     (setq vm-kept-imap-buffers (list (current-buffer)))
     (vm-imap-start-bug-report)
-    (should (equal vm-imap-keep-trace-buffer 20))
+    (should (equal (vm-imap-keep-trace-buffer) 20))
     (should-not vm-kept-imap-buffers)
-    (should-not vm-pop-keep-trace-buffer)
+    (should-not (vm-pop-keep-trace-buffer))
     (setq vm-kept-pop-buffers (list (current-buffer)))
     (vm-pop-start-bug-report)
-    (should (equal vm-pop-keep-trace-buffer 20))
-    (should-not vm-kept-pop-buffers)))
+    (should (equal (vm-pop-keep-trace-buffer) 20))
+    (should-not vm-kept-pop-buffers)
+    ;; and the reader's own setting of either option is as it was: the count
+    ;; a report asks for is kept apart from it (emacs-vm/vm#945)
+    (should-not vm-imap-keep-trace-buffer)
+    (should-not vm-pop-keep-trace-buffer)))
 
 (ert-deftest vm-bug-report-test-submitting-asks-when-nothing-was-armed ()
   "The submit command asks whether the start command was run, and only when

@@ -361,7 +361,7 @@ generator rather than dropping it."
 (declare-function vm-setup-stunnel-random-data-if-needed "vm-crypto" ())
 (declare-function vm-stunnel-configuration-args "vm-crypto" (host port))
 
-(defvar vm-pop-keep-trace-buffer)
+(declare-function vm-pop-keep-trace-buffer "vm-vars" ())
 (defvar vm-kept-pop-buffers)
 (declare-function vm-keep-some-buffers "vm-misc"
 		  (buffer ring-variable number-to-keep &optional rename-prefix))
@@ -370,15 +370,14 @@ generator rather than dropping it."
   "Finish with BUFFER, a session's process buffer.
 Kept as a trace when `vm-pop-keep-trace-buffer' says to; see
 `vm-imap-net-done-with-buffer'."
-  (when (buffer-live-p buffer)
-    ;; nothing to keep when nothing was said: a connection that was never made
-    ;; leaves an empty buffer, and keeping those is how a session that failed
-    ;; early leaves one behind for every attempt
-    (if (or (null vm-pop-keep-trace-buffer)
-	    (zerop (buffer-size buffer)))
-	(kill-buffer buffer)
-      (vm-keep-some-buffers buffer 'vm-kept-pop-buffers
-			    vm-pop-keep-trace-buffer "saved "))))
+  (let ((keep (vm-pop-keep-trace-buffer)))
+    (when (buffer-live-p buffer)
+      ;; nothing to keep when nothing was said: a connection that was never
+      ;; made leaves an empty buffer, and keeping those is how a session that
+      ;; failed early leaves one behind for every attempt
+      (if (or (null keep) (zerop (buffer-size buffer)))
+	  (kill-buffer buffer)
+	(vm-keep-some-buffers buffer 'vm-kept-pop-buffers keep "saved ")))))
 
 (defun vm-pop-net-connect (name host port buffer &optional tls)
   "A connection to HOST at PORT, made without waiting for it to come up.

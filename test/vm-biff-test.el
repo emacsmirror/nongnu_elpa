@@ -288,6 +288,32 @@ once -- loading the file again -- so it is worth pinning."
     (should (= 1 (seq-count (lambda (f) (eq f 'vm-biff-popup))
                             vm-arrived-messages-hook)))))
 
+;;; The folders to scan (emacs-vm/vm#945)
+
+(ert-deftest vm-biff-test-the-folder-list-is-worked-out-not-stored ()
+  "REGRESSION: `vm-biff-popup\=' no longer fills in `vm-biff-folder-list\='.
+It computed a default into the option when it was nil, so Customize reported
+the option as changed outside Customize and a save wrote the computed list
+into the reader\='s custom file."
+  (let ((vm-biff-folder-list nil)
+        (vm-folder-directory "/mail/")
+        (vm-primary-inbox "INBOX")
+        (vm-spool-files '("/var/mail/me" "~/INBOX" "~/INBOX.CRASH"))
+        (vm-spool-files-from-environment nil))
+    (should (equal (vm-biff-folder-list)
+                   (list (expand-file-name "INBOX" "/mail/"))))
+    (should-not vm-biff-folder-list))
+  ;; a spool files list of lists names its own inboxes
+  (let ((vm-biff-folder-list nil)
+        (vm-folder-directory "/mail/")
+        (vm-spool-files '(("mail-in" "/var/mail/me" "~/INBOX.CRASH")))
+        (vm-spool-files-from-environment nil))
+    (should (equal (vm-biff-folder-list)
+                   (list (expand-file-name "mail-in" "/mail/")))))
+  ;; and the option is what is scanned wherever it is set
+  (let ((vm-biff-folder-list '("~/Mail/vm")))
+    (should (equal (vm-biff-folder-list) '("~/Mail/vm")))))
+
 (provide 'vm-biff-test)
 
 ;;; vm-biff-test.el ends here

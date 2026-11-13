@@ -5269,9 +5269,10 @@ implementation than the expected one damages mail -- so this asks instead."
 
 (defun vm-count-messages-in-file (file &optional quietly)
   (let ((type (vm-get-folder-type file nil nil t))
+	(grep (vm-grep-program))
 	(work-buffer nil)
 	count)
-    (if (or (memq type '(unknown nil)) (null vm-grep-program))
+    (if (or (memq type '(unknown nil)) (null grep))
 	nil
       (unwind-protect
 	  (let (regexp)
@@ -5293,13 +5294,15 @@ implementation than the expected one damages mail -- so this asks instead."
 		  (progn
 		    (unless quietly 
 		      (vm-inform 7 "Counting messages in %s..." file))
-		    (call-process vm-grep-program nil t nil "-c" regexp
+		    (call-process grep nil t nil "-c" regexp
 				  (expand-file-name file))
 		    (unless quietly 
 		      (vm-inform 7 "Counting messages in %s... done" file)))
 		(error (vm-warn 1 2 "Attempt to run %s on %s signaled: %s"
-				vm-grep-program file data)
-		       (setq vm-grep-program nil)))
+				grep file data)
+		       ;; counted another way from here on, and the reader's
+		       ;; own setting of the option is left as it is
+		       (setq vm-grep-program-unusable t)))
 	      (setq count (string-to-number (buffer-string)))
 	      (cond ((memq type '(From_ BellFrom_ mboxcl2))
 		     t )

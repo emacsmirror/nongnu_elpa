@@ -141,6 +141,32 @@ It is the inner digest of the HMAC, so it has to be the raw 16."
                  (encode-coding-string "caf\N{U+00E9}" 'utf-8)))
   (should-not (multibyte-string-p (vm-string-as-octets "caf\N{U+00E9}"))))
 
+;;; Asking stunnel what it is (emacs-vm/vm#945)
+
+(ert-deftest vm-crypto-test-asking-stunnel-leaves-the-option-alone ()
+  "REGRESSION: the answer is kept in `vm-stunnel-configuration-file-probed\='.
+`vm-stunnel-wants-configuration-file\=' is documented to take the value
+`unknown\=', meaning ask the program, and the answer used to be written back
+to the option, so Customize reported it as changed outside Customize."
+  (let ((vm-stunnel-wants-configuration-file 'unknown)
+        (vm-stunnel-configuration-file-probed 'unknown)
+        (vm-stunnel-program "stunnel")
+        (calls 0))
+    (cl-letf (((symbol-function 'call-process)
+               (lambda (&rest _) (setq calls (1+ calls)) 1)))
+      (should (eq (vm-stunnel-wants-configuration-file) t))
+      ;; and the program is asked once, not once per session
+      (should (eq (vm-stunnel-wants-configuration-file) t))
+      (should (= calls 1)))
+    (should (eq vm-stunnel-wants-configuration-file 'unknown))
+    (should (eq vm-stunnel-configuration-file-probed t)))
+  ;; an option that says so is not second-guessed
+  (let ((vm-stunnel-wants-configuration-file nil)
+        (vm-stunnel-configuration-file-probed 'unknown))
+    (cl-letf (((symbol-function 'call-process)
+               (lambda (&rest _) (error "asked anyway"))))
+      (should-not (vm-stunnel-wants-configuration-file)))))
+
 (provide 'vm-crypto-test)
 
 ;;; vm-crypto-test.el ends here

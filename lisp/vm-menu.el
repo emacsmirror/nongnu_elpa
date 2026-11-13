@@ -1310,10 +1310,11 @@ newest entries are in the highest-numbered one."
   "Makes a menu with the mail folders of the directory `vm-folder-directory'."
   (interactive)
   (vm-inform 5 "Building folders menu...")
-  (let ((folder-list (vm-menu-hm-tree-make-file-list vm-folder-directory))
-	(inbox-list (if (listp (car vm-spool-files))
-			(mapcar 'car vm-spool-files)
-		      (list vm-primary-inbox))))
+  (let* ((folder-list (vm-menu-hm-tree-make-file-list vm-folder-directory))
+	 (spool-files (vm-spool-files))
+	 (inbox-list (if (listp (car spool-files))
+			 (mapcar 'car spool-files)
+		       (list vm-primary-inbox))))
     (setq vm-menu-folders-menu
 	  (cons "Manipulate Folders"
 		(list (cons "Visit Inboxes  "

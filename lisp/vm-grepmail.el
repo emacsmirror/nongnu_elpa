@@ -74,6 +74,14 @@
   :group 'vm-grepmail
   :type '(repeat (string)))
 
+(defvar vm-grepmail-last-arguments nil
+  "The arguments `vm-grepmail' was last run with, as a list of strings.
+They are the prompt's default next time.  The option
+`vm-grepmail-arguments' is read and never set: setting a user option from
+a command leaves Customize reporting it as changed outside Customize, and
+a save there writes into the custom file a value the reader never chose
+(emacs-vm/vm#945).")
+
 (defvar vm-grepmail-arguments-history
   nil
   "*History of previously used grepmail parameters.")
@@ -95,7 +103,10 @@ FOLDERS should be a list of files/directories to search in."
   (interactive (list
                 (split-string
                  (read-string "grepmail arguments: "
-                              (mapconcat 'identity vm-grepmail-arguments " ")
+                              (mapconcat 'identity
+                                         (or vm-grepmail-last-arguments
+                                             vm-grepmail-arguments)
+                                         " ")
                               'vm-grepmail-arguments-history))
                 (let ((default (or vm-folder-directory
                                    "~/Mail"))
@@ -122,7 +133,7 @@ FOLDERS should be a list of files/directories to search in."
                       (setq folders (list fd)))
                   folders)))
 
-  (setq vm-grepmail-arguments arguments)
+  (setq vm-grepmail-last-arguments arguments)
   (setq vm-grepmail-folders-history
         (append folders vm-grepmail-folders-history))
   
