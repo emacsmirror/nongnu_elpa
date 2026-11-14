@@ -4445,15 +4445,18 @@ commit-msg/commit-hash. Used to copy commit hashes using
             ;; not merbeable, else we have to y-or-n-p only, but also only
             ;; allow merge-type to be manually-merged
             (mergeable (not (eq :json-false (alist-get 'mergeable data))))
+            (draft (alist-get 'draft data))
             (merge-type (completing-read "Merge type: " fj-merge-types))
             (merge-commit (when (equal merge-type "manually-merged")
                             (read-string "Merge commit: "))))
-       (if (not mergeable)
-           (user-error "PR not mergeable")
+       ;; (if (not mergeable)
+       ;;     (user-error "PR not mergeable")
+       (if draft
+           (user-error "Work in progress PRs cannot be merged")
          (when (y-or-n-p
                 (format "Merge PR #%s into %s/%s%s?" number owner repo branch-str))
            (let ((resp (fj-pull-merge-post repo owner number
-                                           merge-type merge-commit)))
+                                         merge-type merge-commit)))
              (fedi-http--triage resp
                                 (lambda (_)
                                   (fj-view-reload)
