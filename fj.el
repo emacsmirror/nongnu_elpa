@@ -343,11 +343,10 @@ code (2FA)."
                    ("scopes" . ("all"))))
          (endpoint (format "users/%s/tokens" fj-user))
          (password (read-passwd (format "%s password: " fj-host)))
-         (otp (and fj-create-token-use-otp
-                   (read-passwd "OTP code: ")))
-         (headers (and otp
-                       (not (string-blank-p otp))
-                       `(("X-Forgejo-OTP" . ,otp))))
+         (otp (when fj-create-token-use-otp
+                (read-passwd "OTP code: ")))
+         (headers (when (and otp (not (string-blank-p otp)))
+                    `(("X-Forgejo-OTP" . ,otp))))
          (url (fj-api endpoint))
          (resp (fedi-http--basic-auth-request
                 #'fedi-http--post url fj-user password params headers :json)))
