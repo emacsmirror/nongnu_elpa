@@ -704,6 +704,15 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
 
 ;;; MACROS
 
+(defmacro fj-with-repo (&rest body)
+  "Execute body if we have repo and owner vals in `fj-buffer-spec'."
+  (declare (debug t))
+  `(fj-destructure-buf-spec (repo owner)
+     (if (or (not repo)
+             (not owner))
+         (user-error "Buffer vars missing"))
+     ,@body))
+
 (defmacro fj-with-issue (&rest body)
   "Execute BODY if we are in an issue view or if issue at point."
   (declare (debug t))
