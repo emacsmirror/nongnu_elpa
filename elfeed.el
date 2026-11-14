@@ -5,7 +5,7 @@
 ;; Author: Christopher Wellons <wellons@nullprogram.com>
 ;; Maintainer: Karthik Chikmagalur <karthik.chikmagalur@gmail.com>, Ihor Radchenko <yantar92@posteo.net>, Daniel Mendler <mail@daniel-mendler.de>
 ;; URL: https://github.com/emacs-elfeed/elfeed
-;; Version: 4.2.1
+;; Version: 4.2.2
 ;; Package-Requires: ((emacs "29.1") (compat "31"))
 ;; Keywords: network, comm, hypermedia
 
@@ -50,7 +50,7 @@
   :group 'web
   :group 'comm)
 
-(defconst elfeed-version "4.2.1"
+(defconst elfeed-version "4.2.2"
   "The Elfeed version, used for example by `elfeed-user-agent'.")
 
 (defcustom elfeed-entry-point 'elfeed-search

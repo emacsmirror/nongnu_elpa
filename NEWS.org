@@ -1,6 +1,10 @@
 #+title: Elfeed News
 #+language: en
 
+* Version 4.2.2 (2026-11-14)
+
+- elfeed-show--fetch: Send user agent (Fix #668).
+
 * Version 4.2.1 (2026-09-26)
 
 - Bugfixes.
