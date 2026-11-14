@@ -4357,13 +4357,6 @@ comment."
          (fj-delete endpoint)
          (fj-view-reload))))))
 
-(defun fj-item-view-goto-item-by-number (index)
-  "Read an item number INDEX and jump to it, from timline."
-  (interactive "sItem number (no #): ")
-  (fj-with-item-view
-   (fj-destructure-buf-spec (owner repo)
-     (fj-item-view repo owner index))))
-
 ;;; PR VIEWS
 
 (defun fj-view-commit-diff (&optional sha url)
@@ -5641,12 +5634,6 @@ comment."
   (interactive)
   (fj-item-mode-dispatch #'fj-issue-label-remove-all
                        #'fj-issues-tl-labels-remove-all))
-
-(defun fj-item-goto-by-number ()
-  "Jump to item by its number, from the item at point or being viewed."
-  (interactive)
-  (fj-item-mode-dispatch #'fj-item-view-goto-item-by-number
-                       #'fj-tl-goto-item-by-number))
 
 ;;; COMPOSING
 
