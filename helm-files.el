@@ -940,7 +940,8 @@ present in this list."
   :type '(repeat string))
 
 (defcustom helm-ff-nohighlight-matches nil
-  "Highlight matches in `helm-find-files' when nil."
+  "Don't highlight matches in `helm-find-files' when non nil.
+This bind :nohighlight to this value in `helm-source-ffiles'."
   :type 'boolean
   :initialize 'custom-initialize-changed
   :set (lambda (var val)
