@@ -5563,9 +5563,11 @@ Works in repo listings, issue listings, and item views."
   "Read an item INDEX and jump to it in the current repo."
   (interactive)
   (let ((index (read-string "Item number (no #): ")))
+    ;; FIXME: ideally, we we didn't find repo/owner vars, we would try to
+    ;; read them. Or, we would split the string as owner/repo#item, then
+    ;; handle jumping anywhere.
     (fj-with-repo
-     (fj-destructure-buf-spec (owner repo)
-       (fj-item-view repo owner index)))))
+     (fj-item-view repo owner index))))
 
 ;;; GENERIC ITEM ACTION COMMANDS
 
