@@ -3306,6 +3306,9 @@ Optionally start from POINT."
       (fedi-propertize-items fedi-post-handle-regex 'handle
                              fj-link-keymap 1 2 nil nil
                              '(fj-tab-stop t))
+      (fedi-propertize-items fj-repo-tag-regex 'repo-tag
+                             fj-link-keymap 1 1 nil nil
+                             '(fj-tab-stop t))
       (fedi-propertize-items fedi-post-tag-regex 'tag
                              fj-link-keymap 1 2 nil nil
                              '(fj-tab-stop t))
@@ -3314,9 +3317,6 @@ Optionally start from POINT."
                              '(fj-tab-stop t))
       (fedi-propertize-items fj-team-handle-regex 'team
                              fj-link-keymap 1 2 nil nil
-                             '(fj-tab-stop t))
-      (fedi-propertize-items fj-repo-tag-regex 'repo-tag
-                             fj-link-keymap 1 1 nil nil
                              '(fj-tab-stop t))
       ;; NB: this is required for shr tab stops
       ;; - why doesn't shr always add shr-tab-stop prop?
