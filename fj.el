@@ -5560,14 +5560,19 @@ Works in repo listings, issue listings, and item views."
      (fj-issue-label-remove-all repo owner number))))
 
 (defun fj-goto-item-by-number ()
-  "Read an item INDEX and jump to it in the current repo."
+  "Read an item number and jump to it in the current repo.
+If number is preceded by \"owner/repo\", jump to the number in that
+repo."
   (interactive)
   (let ((index (read-string "Item number (no #): ")))
-    ;; FIXME: ideally, we we didn't find repo/owner vars, we would try to
-    ;; read them. Or, we would split the string as owner/repo#item, then
-    ;; handle jumping anywhere.
-    (fj-with-repo
-     (fj-item-view repo owner index))))
+    (if (= 0
+           (string-to-number index))
+        (cl-destructuring-bind (owner repo number)
+            (split-string index "[/#!]")
+          (fj-item-view repo owner number))
+      ;; else use buf spec vars:
+      (fj-with-repo
+       (fj-item-view repo owner index)))))
 
 ;;; GENERIC ITEM ACTION COMMANDS
 
