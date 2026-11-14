@@ -2961,7 +2961,10 @@ If viewing pulls, search pulls, else search issues."
 
 (defun fj-list-search-issues (query &optional state)
   "Search current repo issues for QUERY.
-STATE as for `fj-list-issues-do'."
+STATE as for `fj-list-issues-do'.
+Supports Forgejo search syntax such as \"is:closed author:martianh\",
+-\"not this phrase\" (preceding minus), or \"sort:comments:desc\".
+For details see <https://forgejo.org/docs/latest/user/search/issue-search>."
   (interactive "sSearch issues in repo: ")
   (fj-with-item-tl
    (let ((owner (fj--get-buffer-spec :owner)))
@@ -2969,7 +2972,10 @@ STATE as for `fj-list-issues-do'."
 
 (defun fj-list-search-pulls (query &optional state)
   "Search current repo PRs for QUERY.
-STATE as for `fj-list-issues-do'."
+STATE as for `fj-list-issues-do'.
+Supports Forgejo search syntax such as \"is:closed author:martianh\",
+-\"not this phrase\" (preceding minus), or \"sort:comments:desc\".
+For details see <https://forgejo.org/docs/latest/user/search/issue-search>."
   (interactive "sSearch pulls in repo: ")
   (fj-with-item-tl
    (let ((owner (fj--get-buffer-spec :owner)))
