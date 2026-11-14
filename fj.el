@@ -5653,6 +5653,14 @@ comment."
 
 ;;; COMPOSING
 
+(defun fj-get-repo-permissions (repo owner user)
+  "Check permissions for USER in REPO by OWNER."
+  ;; https://codeberg.org/api/swagger#/repository/repoGetRepoPermissions
+  ;; GET /repos/{owner}/{repo}/collaborators/{collaborator}/permission
+  (let ((endpoint (format "repos/%s/%s/collaborators/%s/permission"
+                          owner repo user)))
+    (fj-get endpoint)))
+
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
 (defun fj-match-next-issue (limit)
