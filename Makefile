@@ -32,6 +32,9 @@ changes:
 changes-unreleased:
 	echo "$(CLIFF_U)\n\n$(CAT)" > changelog.md && pandoc -i changelog.md -o changelog.org
 
+changes-unrelease-echo:
+	echo "$(CLIFF_U)\n\n$(CAT)"
+
 ## ################################################################
 
 tests:
