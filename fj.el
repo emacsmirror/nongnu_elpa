@@ -4459,7 +4459,7 @@ commit-msg/commit-hash. Used to copy commit hashes using
             ;; not merbeable, else we have to y-or-n-p only, but also only
             ;; allow merge-type to be manually-merged
             (mergeable (not (eq :json-false (alist-get 'mergeable data))))
-            (draft (alist-get 'draft data))
+            (draft (eq t (alist-get 'draft data)))
             (merge-type (completing-read "Merge type: " fj-merge-types))
             (merge-commit (when (equal merge-type "manually-merged")
                             (read-string "Merge commit: "))))
