@@ -5801,7 +5801,7 @@ return a list of strings, assignee names."
   "Set VAR to nil if it is non-nil.
 Update status fields."
   (if (not (symbol-value var))
-      (user-error "No milestone to remove")
+      (user-error "No data to remove: %s" var)
     (set var nil)
     (fedi-post--update-status-fields)))
 
