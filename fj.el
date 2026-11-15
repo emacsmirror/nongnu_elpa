@@ -5654,12 +5654,25 @@ comment."
 ;;; COMPOSING
 
 (defun fj-get-repo-permissions (repo owner user)
-  "Check permissions for USER in REPO by OWNER."
+  "Return permissions data for USER in REPO by OWNER.
+Data includes a user object, a \"permission\" and \"role_name\" field."
   ;; https://codeberg.org/api/swagger#/repository/repoGetRepoPermissions
   ;; GET /repos/{owner}/{repo}/collaborators/{collaborator}/permission
   (let ((endpoint (format "repos/%s/%s/collaborators/%s/permission"
                           owner repo user)))
     (fj-get endpoint)))
+
+(defvar fj-repo-perms '("read" "write" "owner" "admin"))
+
+(defun fj-repo-permissions ()
+  "Return permissions for `fj-user' in current repo."
+  (fj-destructure-buf-spec (repo owner)
+    (let* ((repowner (unless (and repo owner)
+                       (fj-repo-+-owner-from-git)))
+           (repo (or repo (nth 1 repowner)))
+           (owner (or owner (nth 0 repowner)))
+           (perms (fj-get-repo-permissions repo owner fj-user)))
+      (alist-get 'permission perms))))
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
@@ -5843,6 +5856,17 @@ Inject INIT-TEXT into the buffer, for editing.
 QUOTE-TEXT is text to be quoted."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
+  ;; FIXME: this works, but it actually changes the keymap, so once
+  ;; changed we can't revert it when user has required permissions
+  (when (string= "read" (fj-repo-permissions))
+    (keymap-unset fj-compose-mode-map "C-c C-l" :remove)
+    (keymap-unset fj-compose-mode-map "C-c C-S-l" :remove)
+    (keymap-unset fj-compose-mode-map "C-c C-e" :remove)
+    (keymap-unset fj-compose-mode-map "C-c C-S-e" :remove)
+    (keymap-unset fj-compose-mode-map "C-c C-m" :remove)
+    (keymap-unset fj-compose-mode-map "C-c RET" :remove)
+    (keymap-unset fj-compose-mode-map "C-c C-S-M" :remove)
+    (keymap-unset fj-compose-mode-map "C-c S-RET" :remove))
   (fedi-post--compose-buffer
    edit
    #'markdown-mode
@@ -5864,22 +5888,25 @@ QUOTE-TEXT is text to be quoted."
       (prop     . compose-title)
       (item-var . fj-compose-issue-title)
       (face     . fj-post-title-face))
-     ((name     . "labels")
-      (prop     . compose-labels)
-      (item-var . fj-compose-issue-labels)
-      (face     . fj-post-title-face))
-     ((name     . "milestone")
-      (prop     . compose-milestone)
-      (item-var . fj-compose-milestone)
-      (face     . fj-post-title-face))
+     ,@(unless (string= "read" (fj-repo-permissions))
+         `(((name     . "labels")
+            (prop     . compose-labels)
+            (item-var . fj-compose-issue-labels)
+            (face     . fj-post-title-face))))
+     ,@(unless (string= "read" (fj-repo-permissions))
+         `(((name     . "milestone")
+            (prop     . compose-milestone)
+            (item-var . fj-compose-milestone)
+            (face     . fj-post-title-face))))
      ((name     . "upload")
       (prop     . compose-upload)
       (item-var . fj-compose-upload)
       (face     . fj-post-title-face))
-     ((name     . "assignees")
-      (prop     . compose-assignees)
-      (item-var . fj-compose-assignees)
-      (face     . fj-post-title-face)))
+     ,@(unless (string= "read" (fj-repo-permissions))
+         `(((name     . "assignees")
+            (prop     . compose-assignees)
+            (item-var . fj-compose-assignees)
+            (face     . fj-post-title-face)))))
    init-text quote-text
    "fj-" fj-compose-autocomplete)
   (setq fj-compose-item-type
