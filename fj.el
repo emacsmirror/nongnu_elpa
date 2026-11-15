@@ -5733,6 +5733,27 @@ LIMIT is for `re-search-forward''s bound argument."
   :global nil
   (fj-add-font-lock-keywords))
 
+(defvar-keymap fj-compose-read-only-mode-map
+  :doc "Keymap for `fj-compose-mode'."
+  :parent fj-compose-comment-mode-map
+  ;; "C-c C-l"   #'fj-compose-read-labels
+  ;; "C-c C-m"   #'fj-compose-read-milestone
+  ;; "C-c C-S-M" #'fj-compose-remove-milestone
+  ;; "C-c C-S-L" #'fj-compose-remove-labels
+  ;; "C-c C-e"   #'fj-compose-read-assignees
+  ;; "C-c C-S-E" #'fj-compose-remove-assignees
+  "C-c C-t"   #'fj-compose-read-title
+  "C-c C-r"   #'fj-compose-read-repo
+  "C-c C-o"   #'fj-compose-read-owner
+  "C-c C-u"   #'fj-compose-read-upload
+  "C-c C-S-U" #'fj-compose-remove-upload)
+
+(define-minor-mode fj-compose-read-only-mode
+  "Minor mode for composing issues read only mode."
+  :keymap fj-compose-read-only-mode-map
+  :global nil
+  (fj-add-font-lock-keywords))
+
 (defun fj-compose-read-repo ()
   "Read a repo for composing a issue or comment."
   (interactive)
@@ -5858,20 +5879,16 @@ QUOTE-TEXT is text to be quoted."
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
   ;; FIXME: this works, but it actually changes the keymap, so once
   ;; changed we can't revert it when user has required permissions
-  (when (string= "read" (fj-repo-permissions))
-    (keymap-unset fj-compose-mode-map "C-c C-l" :remove)
-    (keymap-unset fj-compose-mode-map "C-c C-S-l" :remove)
-    (keymap-unset fj-compose-mode-map "C-c C-e" :remove)
-    (keymap-unset fj-compose-mode-map "C-c C-S-e" :remove)
-    (keymap-unset fj-compose-mode-map "C-c C-m" :remove)
-    (keymap-unset fj-compose-mode-map "C-c RET" :remove)
-    (keymap-unset fj-compose-mode-map "C-c C-S-M" :remove)
-    (keymap-unset fj-compose-mode-map "C-c S-RET" :remove))
   (fedi-post--compose-buffer
    edit
    #'markdown-mode
-   (or mode #'fj-compose-mode)
-   (when mode "fj-compose")
+   (or mode
+       (if (string= "read" (fj-repo-permissions))
+           #'fj-compose-read-only-mode
+         #'fj-compose-mode))
+   (when (or mode
+             (string= "read" (fj-repo-permissions)))
+     "fj-compose")
    (or type 'issue)
    (list #'fj-compose-mentions-capf)
    ;; #'fj-compose-issues-capf
