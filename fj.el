@@ -2017,7 +2017,8 @@ COMMENT is a number.
 OWNER is the repo owner."
   (let* ((endpoint (format "repos/%s/%s/issues/comments/%s"
                            owner repo comment)))
-    (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs)))
+    (fj-authorized-request "GET"
+      (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs)))))
 
 (defun fj-comment-success-upload-maybe (resp repo owner)
   "In comment success function with RESP, maybe upload file.
@@ -2184,8 +2185,9 @@ STATUS is the HTTP response, FILENAME the uploaded file."
   "Return reactions data for issue with ID in REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
                           owner repo id)))
-    (apply #'fedi-http--get-json-async
-           (fj-api endpoint) nil cb cbargs)))
+    (fj-authorized-request "GET"
+      (apply #'fedi-http--get-json-async
+             (fj-api endpoint) nil cb cbargs))))
 
 (defun fj-get-comment-reactions (repo owner id)
   "Return reactions data for comment with ID in REPO by OWNER."
@@ -2198,8 +2200,9 @@ STATUS is the HTTP response, FILENAME the uploaded file."
   "Return reactions data for comment with ID in REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
                           owner repo id)))
-    (apply #'fedi-http--get-json-async
-           (fj-api endpoint) nil cb cbargs)))
+    (fj-authorized-request "GET"
+      (apply #'fedi-http--get-json-async
+             (fj-api endpoint) nil cb cbargs))))
 
 (defun fj-render-issue-reactions (reactions)
   "Render REACTIONS for issue.
@@ -5376,7 +5379,8 @@ FILE is a string, including type suffix, and is case-sensitive."
 FILE is a string, including type suffix, and is case-sensitive."
   (let* ((endpoint (format "repos/%s/%s/raw/%s" owner repo file))
          (params (fedi-opt-params ref)))
-    (apply #'fedi-http--get-async (fj-api endpoint) params cb cbargs)))
+    (fj-authorized-request "GET"
+      (apply #'fedi-http--get-async (fj-api endpoint) params cb cbargs))))
 
 (defun fj-get-repo-file-range (repo owner file beg &optional end ref)
   "Return FILE from REPO by OWNER.
