@@ -2018,7 +2018,7 @@ OWNER is the repo owner."
   (let* ((endpoint (format "repos/%s/%s/issues/comments/%s"
                            owner repo comment)))
     (fj-authorized-request "GET"
-      (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs)))))
+      (apply #'fedi-http--get-json-async (fj-api endpoint) nil cb cbargs))))
 
 (defun fj-comment-success-upload-maybe (resp repo owner)
   "In comment success function with RESP, maybe upload file.
