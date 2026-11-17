@@ -47,10 +47,10 @@ make relint-lint         # Regular expression linting
 Note: `make elint-lint` is broken (max-lisp-eval-depth), `make elisp-lint` has many false positives.
 
 **`byte-compile-lint` cannot see a call across files.** It compiles the whole
-directory in one Emacs, so compiling `vm-imap.el` teaches that session the
-functions `vm-reply.el` goes on to call and the warning never appears. A user's
-Emacs native-compiles one file at a time and prints them, which is how seven
-went unnoticed until a maintainer pasted them in. `make cross-file-lint`
+directory in one Emacs, so compiling `vm-imap.el` defines in that session the
+functions `vm-reply.el` goes on to call, and the warning never appears. A
+user's Emacs native-compiles one file at a time and prints them, which is how
+seven went unnoticed until a maintainer pasted them in. `make cross-file-lint`
 compiles each file alone and fails on them; the fix is a `declare-function`
 beside the others at the top of the file, with the arglist the definition has.
 
@@ -80,8 +80,8 @@ with no network.
 It probes first, because an exit status does not say whether VM is broken or
 the machine is short of a server: what is unconfigured skips, what is
 configured but unreachable fails. `test/vm-test-probe.el` logs in to every
-configured server, and the runner prints what answered, where mail would be
-sent, which optional packages are installed and whether gpg is there.
+configured server, and the runner prints which servers replied, where mail
+would be sent, which optional packages are installed and whether gpg is there.
 
 Then it runs each pass in its own Emacs, and by default runs every one this
 machine can:
@@ -91,7 +91,7 @@ machine can:
 | suite | everything, with whatever this machine has |
 | mock | IMAP and POP again with the live servers skipped, where a live config exists |
 | no-optional | the test files that name BBDB, emacs-w3m or vcard, run without them, where they are installed |
-| send | real mail, sent and read back, where `vm-send-test-config` says where to |
+| send | real mail, sent and read back, where `vm-send-test-config` names the destination |
 
 Every pass runs whichever fails, and the summary at the end names each one.
 `--one FILE`, `--imap`, `--pop`, `--send`, `--mock`, `--no-optional`,
@@ -139,9 +139,9 @@ two passes at once would write the same one. `make clean` removes `scratch`
 whole.
 
 **Two coverage reports, and they answer different questions.** `--coverage`
-advises every `vm-` function and says which were called, so a function of
+advises every `vm-` function and reports which were called, so a function of
 forty lines entered once counts as covered. `--forms-coverage` instruments
-every form with `testcover` and says what ran inside: per definition, how
+every form with `testcover` and reports what ran inside: per definition, how
 many forms were never evaluated, how many always returned the same value, and
 how many varied. A never-evaluated `cond` arm is a branch no test took, which
 is as close to branch coverage as Emacs gets; nothing in Emacs does path
@@ -152,13 +152,13 @@ that never returned nil being one no test varied.
 per definition; `test/line-coverage-results.txt` is per line, naming the
 source lines that hold a form which never ran; `test/line-coverage.info` is
 the same in lcov, for `genhtml` and the coverage viewers. A line is counted
-only where it carries an instrumented form, so a comment is not reported as
+only where it contains an instrumented form, so a comment is not reported as
 uncovered. Currently 32273 lines with forms, 9167 never reached.
 
-The line numbers come from edebug's own data: `(get SYMBOL 'edebug)` holds a
-marker at the definition and a vector of per-form offsets from it, which is
+The line numbers come from edebug's own data: `(get SYMBOL 'edebug)` contains
+a marker at the definition and a vector of per-form offsets from it, which is
 how `testcover-mark` places the splotches it shows interactively. So they are
-exact. lcov counts executions and this knows only whether a form ran, so a
+exact. lcov counts executions and this records only whether a form ran, so a
 line is written as run once or not at all.
 
 **undercover.el was evaluated and not adopted** (2026-09-04). It works on VM
@@ -199,7 +199,7 @@ nothing about the two largest files in the tree.
   vary` inside `vm-postpone.el`. It calls a child Emacs now, the same way the
   loaddefs tests do.
 
-`VM_TEST_LIVE=0` (also `no`, `off`, `mock`) refuses the live servers and
+`VM_TEST_LIVE=0` (also `no`, `off`, `mock`) skips the live servers and
 `VM_TEST_OPTIONAL=0` the optional packages, for a pass run by hand. The mock
 servers always run: on a configured machine a live run covers the same ground,
 so a mock that has stopped agreeing with the client would otherwise fail
@@ -210,13 +210,13 @@ checks its invariants after each one. It runs a small search as part of the
 suite; `VM_FUZZ_SEEDS` and `VM_FUZZ_OPS` make it search harder, and a failure
 reports the sequence that caused it.
 
-**A round trip through VM proves less than it looks.** VM's readers forgive
-what VM's writers do, so a folder that reads back correctly in VM can still be
-one nothing else can read. `test/vm-interop-test.el` writes folders with VM
-and counts the messages with Python's `mailbox` module, which owes nothing to
-VM; `test/vm-interop-count.py` is the reader. It skips where python3 is
-missing. That is how #801 was found, and it is the way to settle any claim
-about what another program makes of a VM folder.
+**A round trip through VM proves less than it looks.** VM's readers accept
+what VM's writers produce, so a folder that reads back correctly in VM can
+still be one nothing else can read. `test/vm-interop-test.el` writes folders
+with VM and counts the messages with Python's `mailbox` module, which owes
+nothing to VM; `test/vm-interop-count.py` is the reader. It skips where
+python3 is missing. That is how #801 was found, and it is the way to settle
+any claim about what another program makes of a VM folder.
 
 Every bug fix ships a regression test in the matching `test/vm-*-test.el`, in
 the same commit. **Verify the test actually fails without the fix**: stash the
@@ -225,9 +225,9 @@ is nothing to fail: say so in the commit rather than implying a verification
 that cannot exist, and pin the invariant that made it unreachable instead.
 
 Live IMAP and POP tests read `test/vm-live-config.el`, which is gitignored
-because it holds account passwords; copy `test/vm-live-config.el.template` and
-fill it in. Every live test skips when nothing is configured, so `make test`
-works without it.
+because it contains account passwords; copy `test/vm-live-config.el.template`
+and fill it in. Every live test skips when nothing is configured, so
+`make test` works without it.
 
 Each test runs with the global value of every VM variable saved and restored,
 and buffers it created killed; see `vm-test-isolate-global-state` in
@@ -255,13 +255,14 @@ Gotchas found the hard way:
   `vm-select-folder-buffer-and-validate` have all cost time this way. Stub
   something further out, or assert on the effect rather than the call. The same
   applies to macros, `vm-interactive-p` above being one.
-- **`vm-assert` does nothing by default.** `vm-assertion-checking-off` defaults
-  to t, so an assertion in the code under test is not a check you can rely on in
-  the field. It also binds `debug-on-error`, so a test that wants assertions on
-  needs `inhibit-debugger` for batch. `./test-runner --assert` runs the whole suite
-  with them on and is expected to pass: an assertion that fires there is either
-  a broken invariant or a test setting up a state no real caller is in, which is
-  what four IMAP tests were doing until they were given a `process` buffer type.
+- **`vm-assert` does nothing by default.** `vm-assertion-checking-off`
+  defaults to t, so an assertion in the code under test is not a check you can
+  rely on in the field. It also binds `debug-on-error`, so a test that runs
+  with assertions on needs `inhibit-debugger` for batch. `./test-runner --assert`
+  runs the whole suite with them on and is expected to pass: an assertion that
+  fires there is either a broken invariant or a test setting up a state no
+  real caller is in, which is what four IMAP tests were doing until they were
+  given a `process` buffer type.
 - **Anything that runs gpg needs a GNUPGHOME of its own.** Without one a test
   writes into the keyring of whoever is running it, and signs with their real
   key. `vm-epg-test--with-a-test-keyring` makes a temporary home, generates an
@@ -270,10 +271,11 @@ Gotchas found the hard way:
   key in the maintainer's real keyring.
 - **A mutation that makes a test skip reads as a surviving mutation.** ert
   counts a skip among its expected results, so a harness watching only for
-  FAILED reports the test as blind when it never ran. Count skips too.
+  FAILED records the mutation as surviving when the test never ran. Count
+  skips too.
 - **A batch test that opens an IMAP session needs the password seeded, or
   it blocks on stdin.** VM records a maildrop in `vm-imap-retrieved-messages`
-  with the password stripped, so the session asks for one:
+  with the password stripped, so the session prompts for one:
   `IMAP password for ...: Error reading from stdin`, and because Emacs is
   blocked reading stdin rather than waiting on a process, **no timer fires**
   and it reads as a hang with nothing to show for it. Seed `vm-imap-passwords`
@@ -314,8 +316,8 @@ to `develop` in the same one-branch-per-issue steps as anything else.
   blocking implementation has been deleted, 137 functions and about 4000
   lines of `vm-imap.el` and `vm-pop.el` along with the 60-odd tests that were
   the only thing still reaching them, and nothing fell back to it. The driver
-  declines only for a maildrop whose password VM has not been told, and asks
-  for one first where there is a reader to ask; where it does not start,
+  declines only for a maildrop whose password VM does not have, and prompts
+  for one first where there is a reader to prompt; where it does not start,
   nothing else is tried and the reader is told.
 - `dev/docs/design/async-imap.org` has the reasoning, the table of what was
   converted, and the two places that still wait on purpose.
@@ -341,7 +343,7 @@ to `develop` in the same one-branch-per-issue steps as anything else.
 - **Wait for `detailed_merge_status` to reach `mergeable` before merging.** For a
   short while after an MR is created GitLab reports `preparing`, and a merge
   request made then fails with a response that is not even JSON. Poll the MR
-  until it says `mergeable`, then merge.
+  until it reports `mergeable`, then merge.
 - **Decisions and design questions belong in the issue, not only in a file.**
   `dev/docs/design/` is the right place for the long form, but those files live
   on `develop`, which runs a long way ahead of `main`, so they are invisible
@@ -376,8 +378,8 @@ URL and title rather than a run of bare numbers:
 - https://gitlab.com/emacs-vm/vm/-/work_items/270 — IMAP server reliability in storing labels (flags)
 ```
 
-A bare number says nothing about what the issue is, so a list of them cannot be
-read without opening every one.
+A bare number does not identify the issue, so a list of them cannot be read
+without opening every one.
 
 ### Issue labels
 
@@ -386,7 +388,7 @@ read without opening every one.
   answered issue from an untouched one.
 - `Pending` — the work is done and sitting on `develop`, ready to reach
   `main`. That is all it means. How the issue closes is a separate question,
-  answered by `Close by hand`.
+  recorded by `Close by hand`.
 
   The set is derivable from the `Closes #NNN` / `Re #NNN` trailers of one
   range:
@@ -406,9 +408,9 @@ read without opening every one.
 
   Do not put it on a closed issue, nothing is pending there. Do not put it on
   an issue whose fix is only partly done, or whose remaining step is outside
-  the repo: #487 wants a page on nongnu.org edited, which no merge to `main`
-  will do, so it carries `Human` instead. Anything that is not simply waiting
-  for `main` needs its own label, not this one.
+  the repo: #487 requires a page on nongnu.org to be edited, which no merge to
+  `main` will do, so it is labelled `Human` instead. Anything that is not
+  simply waiting for `main` needs its own label, not this one.
 - `Decision Needed` — waiting on a maintainer decision rather than on effort:
   the analysis is on the issue and the next step is a choice. Assign the issue
   to the maintainer as well, so it shows up as theirs and not merely unowned.
@@ -436,7 +438,7 @@ read without opening every one.
   there is no trailer here at all. Someone has to close it when the branch
   reaches `main`.
 
-  **Additive, never an alternative.** Every `Close by hand` issue carries
+  **Additive, never an alternative.** Every `Close by hand` issue is labelled
   `Pending` too, and a filter on `Pending` is expected to return it. Derivable
   from the same two ranges as `Pending`: an issue whose trailers there are all
   `Re`, or which has none.
@@ -512,18 +514,17 @@ code comments, commit messages, issue and merge request text, and replies.
     leaves the inner delimiters behind; grep for `=/=` afterwards.
   - Cells lose two characters each, so the tables need realigning after.
 
-  Use org's own parser, `org-element-parse-buffer`, which knows all of this
-  and knows that `=ssl = yes=` is one verbatim and that a run may wrap
-  across two lines.
+  Use org's own parser, `org-element-parse-buffer`, which handles all of this
+  and reads `=ssl = yes=` as one verbatim and a run that wraps across two
+  lines.
 
 ## NEWS
 
-The NEWS files record new functionality and user-visible changes of
-behaviour: new commands, renamed or removed variables, changed defaults.
-**Bug fixes do not go in NEWS** unless they change what VM does that a user
-could depend on, such as what goes on the wire or what a command answers to
-a key; a repair of something that never worked belongs in the issue tracker
-and nowhere else.
+The NEWS files record new functionality and user-visible changes of behaviour:
+new commands, renamed or removed variables, changed defaults. **Bug fixes do
+not go in NEWS** unless they change what VM does that a user could depend on,
+such as what goes on the wire or which command a key runs; a repair of
+something that never worked belongs in the issue tracker and nowhere else.
 
 **Write new entries at the front of the highest-numbered file**, which is
 `NEWS-3.md`. The history is split the way Emacs splits `ChangeLog`: numbered
@@ -539,8 +540,8 @@ find out what a release does to them, not to study it. The 9.0.0 section was
 answering "what breaks for me" meant reading all of it.
 
 - **An entry is a bold lead sentence and at most one short paragraph.** The
-  lead says what changed, in the present tense, as a claim: "A message saved
-  into an IMAP mailbox keeps its labels". The paragraph says what it used to
+  lead states what changed, in the present tense, as a claim: "A message saved
+  into an IMAP mailbox keeps its labels". The paragraph states what it used to
   do and what to set, and stops. The reasoning belongs in the commit message
   and on the issue.
 - **Every entry names its issue**, `(emacs-vm/vm#828)`, which is where the
@@ -586,12 +587,12 @@ function is not in the appendix and needs nothing.
 
 ### Autoloads
 
-`lisp/vm-autoloads.el` is what a user's init file loads, so it decides what
+`lisp/vm-autoloads.el` is what a user's init file loads, so it determines what
 works before VM itself is loaded.
 
-- **Every command the manual documents carries `;;;###autoload`.** `M-x` has
-  to find what the manual tells the reader to type. Twenty-two did not, among
-  them `vm-compact-folder` and `vm-toggle-thread`, while 455 others did.
+- **Every command the manual documents has a `;;;###autoload` cookie.** `M-x`
+  has to find the commands the manual names. Twenty-two did not, among them
+  `vm-compact-folder` and `vm-toggle-thread`, while 455 others did.
   `vm-reference-test-documented-commands-are-autoloaded` checks it. A function
   the manual names only as a value for an option is not a command and is
   exempt; so are the Personality Crisis conditions and actions, which are
@@ -609,7 +610,7 @@ works before VM itself is loaded.
   ```
 
   A bare `;;;###autoload` copies the whole `defalias` into
-  `lisp/vm-autoloads.el`, so that is where `symbol-file` says the alias is
+  `lisp/vm-autoloads.el`, so that is where `symbol-file` reports the alias is
   defined, and the manual's appendix is built by asking `symbol-file` and
   skipping the generated files, so the command silently drops out of the
   manual. Four did. `vm-reference-test-no-command-is-attributed-to-a-generated-file`
