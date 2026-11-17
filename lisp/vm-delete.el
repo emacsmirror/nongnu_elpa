@@ -468,11 +468,11 @@ When invoked on marked messages (via `vm-next-command-uses-marks'),
 only messages both marked and deleted are expunged, other messages are
 ignored.
 
-NOT-ON-THE-SERVER says these messages are being expunged because the server no
-longer has them, so their deletion is not queued for it.  A synchronise passes
-it for the messages it found gone; without it the queue collected UIDs that no
-longer exist there, which is a no-op at best and a NO from some servers
-(emacs-vm/vm#757)."
+NOT-ON-THE-SERVER means these messages are being expunged because the
+server no longer has them, so their deletion is not queued for it.  A
+synchronise passes it for the messages it found gone; without it the queue
+collected UIDs that no longer exist there, which is a no-op at best and a
+NO from some servers (emacs-vm/vm#757)."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-folder-read-only)

@@ -194,7 +194,7 @@ value of COUNT is greater than 1, then the values of the variables
 vm-skip-deleted-messages and vm-skip-read-messages are ignored.
 
 When invoked on marked messages (via `vm-next-command-uses-marks')
-this command \"sees\" marked messages as it moves."
+this command moves among the marked messages."
   ;; second arg RETRY non-nil means retry a failed move, giving
   ;; not nil-or-t values of the vm-skip variables a chance to
   ;; work.

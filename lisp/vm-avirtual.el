@@ -903,7 +903,7 @@ Non-nil value should be an alist of the form
           ...)
 
 where VIRTUAL-FOLDER-NAME names a virtual folder in
-`vm-virtual-folder-alist', whose selector says which messages the rule
+`vm-virtual-folder-alist', whose selector determines which messages the rule
 applies to, and ACTIONS is a property list of what to do with them:
 
   :label STRING       attach the labels named in STRING, which is a
