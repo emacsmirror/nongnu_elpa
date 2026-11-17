@@ -4022,8 +4022,8 @@ available.
 
 @vindex vm-mime-shr-inhibit-images
 @code{shr} fetches no image while VM renders.  A remote image in a message
-is fetched from the sender's server, which then learns that the message was
-opened and when; @code{vm-mime-shr-inhibit-images} is bound while rendering
+is fetched from the sender's server, which then has a record that the message
+was opened and when; @code{vm-mime-shr-inhibit-images} is bound while rendering
 so that this does not depend on the @code{shr} settings chosen for the web.
 
 @code{vm-mime-text/html-handler} names which of them is used.
@@ -4031,12 +4031,13 @@ so that this does not depend on the @code{shr} settings chosen for the web.
 order above: @code{emacs-w3m} needs both the library and the @command{w3m}
 program, so a library without the program falls through to the next, and
 @code{shr} is last because it is the one that is always there.
-@code{nil} asks VM not to display @acronym{HTML} content internally at all.
+@code{nil} selects no renderer, so VM displays no @acronym{HTML} content
+internally at all.
 
 @cindex no handler for @acronym{HTML}
-With @code{nil}, or with none of the three installed, VM reports @samp{No
-handler available for internal display of text/html} and shows the part as
-a button rather than as text.  @xref{External display}, for handing the
+With @code{nil}, or where @code{auto-select} finds no renderer, VM reports
+@samp{No handler available for internal display of text/html} and shows the
+part as a button rather than as text.  @xref{External display}, for handing the
 type to a program of your own.
 
 @cindex format=flowed
