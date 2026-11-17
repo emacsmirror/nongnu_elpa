@@ -5897,53 +5897,54 @@ QUOTE-TEXT is text to be quoted."
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
   ;; FIXME: this works, but it actually changes the keymap, so once
   ;; changed we can't revert it when user has required permissions
-  (fedi-post--compose-buffer
-   edit
-   #'markdown-mode
-   (or mode
-       (if (string= "read" (fj-repo-permissions))
-           #'fj-compose-read-only-mode
-         #'fj-compose-mode))
-   (when (or mode
-             (string= "read" (fj-repo-permissions)))
-     "fj-compose")
-   (or type 'issue)
-   (list #'fj-compose-mentions-capf)
-   ;; #'fj-compose-issues-capf
-   ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-   `(((name     . "repo")
-      (prop     . compose-repo)
-      (item-var . fj-compose-repo)
-      (face     . link))
-     ((name     . "owner")
-      (prop     . compose-repo-owner)
-      (item-var . fj-compose-repo-owner)
-      (face     . link))
-     ((name     . ,(if (eq type 'comment) "issue" "title"))
-      (prop     . compose-title)
-      (item-var . fj-compose-issue-title)
-      (face     . fj-post-title-face))
-     ,@(unless (string= "read" (fj-repo-permissions))
-         `(((name     . "labels")
-            (prop     . compose-labels)
-            (item-var . fj-compose-issue-labels)
-            (face     . fj-post-title-face))))
-     ,@(unless (string= "read" (fj-repo-permissions))
-         `(((name     . "milestone")
-            (prop     . compose-milestone)
-            (item-var . fj-compose-milestone)
-            (face     . fj-post-title-face))))
-     ((name     . "upload")
-      (prop     . compose-upload)
-      (item-var . fj-compose-upload)
-      (face     . fj-post-title-face))
-     ,@(unless (string= "read" (fj-repo-permissions))
-         `(((name     . "assignees")
-            (prop     . compose-assignees)
-            (item-var . fj-compose-assignees)
-            (face     . fj-post-title-face)))))
-   init-text quote-text
-   "fj-" fj-compose-autocomplete)
+  (let ((user-read-perms? (string= "read" (fj-repo-permissions))))
+    (fedi-post--compose-buffer
+     edit
+     #'markdown-mode
+     (or mode
+         (if user-read-perms?
+             #'fj-compose-read-only-mode
+           #'fj-compose-mode))
+     (when (or mode
+               user-read-perms?)
+       "fj-compose")
+     (or type 'issue)
+     (list #'fj-compose-mentions-capf)
+     ;; #'fj-compose-issues-capf
+     ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
+     `(((name     . "repo")
+        (prop     . compose-repo)
+        (item-var . fj-compose-repo)
+        (face     . link))
+       ((name     . "owner")
+        (prop     . compose-repo-owner)
+        (item-var . fj-compose-repo-owner)
+        (face     . link))
+       ((name     . ,(if (eq type 'comment) "issue" "title"))
+        (prop     . compose-title)
+        (item-var . fj-compose-issue-title)
+        (face     . fj-post-title-face))
+       ,@(unless user-read-perms?
+           `(((name     . "labels")
+              (prop     . compose-labels)
+              (item-var . fj-compose-issue-labels)
+              (face     . fj-post-title-face))))
+       ,@(unless user-read-perms?
+           `(((name     . "milestone")
+              (prop     . compose-milestone)
+              (item-var . fj-compose-milestone)
+              (face     . fj-post-title-face))))
+       ((name     . "upload")
+        (prop     . compose-upload)
+        (item-var . fj-compose-upload)
+        (face     . fj-post-title-face))
+       ,@(unless user-read-perms?
+           `(((name     . "assignees")
+              (prop     . compose-assignees)
+              (item-var . fj-compose-assignees)
+              (face     . fj-post-title-face)))))
+     init-text quote-text
+     "fj-" fj-compose-autocomplete))
   (setq fj-compose-item-type
         (if edit
             (if (eq type 'comment)
