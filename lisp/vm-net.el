@@ -30,7 +30,7 @@
 ;;
 ;;   `vm-net-session'      what a session is: its process, the generator
 ;;                         running it, what that generator last asked for, and
-;;                         where its answer goes.
+;;                         where its reply goes.
 ;;   `vm-net-start'        install the filter and set the generator going.
 ;;   `vm-net-poll'         ask the generator to carry on if what it wanted has
 ;;                         arrived.  The filter calls this; so does the
@@ -171,7 +171,7 @@ a generator waiting for input that cannot arrive."
 
 (defun vm-net--close-when-settled (process _event)
   "Delete PROCESS once its connection has been made or refused.
-What `vm-net-close-process' leaves behind.  By then Emacs has taken the answer
+What `vm-net-close-process' leaves behind.  By then Emacs has taken the reply
 to the name lookup, so there is nothing left for it to cancel and wait for."
   (unless (eq (process-status process) 'connect)
     (delete-process process)))
@@ -189,7 +189,7 @@ see Emacs stop and never start again.  The window is the microseconds between
 the two calls, so it takes a loaded machine to hit, and it needs glibc:
 macOS has no `getaddrinfo_a' and compiles the whole thing out.
 
-A lookup Emacs has taken the answer to leaves nothing to cancel, and the
+A lookup Emacs has taken the reply to leaves nothing to cancel, and the
 status leaves `connect' only when it has.  So a connecting process is handed
 to its sentinel and deleted when it settles rather than now.  Nothing reads
 it meanwhile: the filter is taken off, and so is the session, which is what
@@ -246,7 +246,7 @@ filter must not have: a fetch says how far it has got once per bunch."
 (define-error 'vm-net-timeout "Network server timed out")
 
 (defun vm-net-error-p (value)
-  "Whether VALUE is an error object rather than an answer a session gave.
+  "Whether VALUE is an error object rather than a reply a session gave.
 
 A session hands its caller either what its generator returned or the error
 that stopped it, and this is how the caller tells them apart: an error object
@@ -256,7 +256,7 @@ Every condition the driver puts in `vm-net-session-error' has to be defined
 for that to work.  `vm-net-timeout' was not, so a timed-out fetch was taken
 for a list of messages, and the callback that would have reported it died in
 the attempt: a POP fetch whose server went quiet left its caller waiting for
-an answer that had already come and been thrown away."
+a reply that had already come and been thrown away."
   (and (consp value) (symbolp (car value))
        (get (car value) 'error-conditions)
        t))
@@ -264,7 +264,7 @@ an answer that had already come and been thrown away."
 (defun vm-net-start (session iterator)
   "Set ITERATOR going as SESSION's work, and let its process feed it.
 
-Returns SESSION.  Nothing waits: the answer arrives at the `finished'
+Returns SESSION.  Nothing waits: the reply arrives at the `finished'
 function, which is called with the session whether it returned or signalled.
 
 A session with no process yet is one whose connection is still being made --
@@ -352,7 +352,7 @@ Called by the filter for every chunk, and by the watchdog.  Refuses while the
 generator is running: the watchdog fires from a timer, a timer can fire inside
 whatever the generator is doing, and `iter-next' on a generator that is
 already running is an error.  A dead buffer is refused for the same kind of
-reason -- there is nothing there to read the answer out of."
+reason -- there is nothing there to read the reply out of."
   (when (and (vm-net-session-live-p session)
 	     (not (vm-net-session-resuming session))
 	     (buffer-live-p (vm-net-session-buffer session)))
@@ -388,7 +388,7 @@ the parsing done in one.")
   "Ask for SESSION to be resumed once Emacs has had its turn.
 A timer of no delay, so it runs after the current command and after
 redisplay.  Losing it costs a quarter of a second and not the session: the
-watchdog polls every live session, which is what finds a session whose answer
+watchdog polls every live session, which is what finds a session whose reply
 arrived while its generator was running."
   (run-at-time 0 nil
 	       (lambda ()
@@ -404,7 +404,7 @@ stack that started the session having gone.
 Carries on for as long as what the generator asks for is already there.  The
 filter polls with the request the generator had when the chunk arrived, so
 anything that turned up while the generator was running is unasked about, and
-a session whose whole answer arrived in that window waited for a chunk that
+a session whose whole reply arrived in that window waited for a chunk that
 was never coming: three responses complete in the buffer and a POP fetch
 stopped dead, until something else happened to poll it."
   (when (vm-net-session-resuming session)
@@ -436,7 +436,7 @@ stopped dead, until something else happened to poll it."
 			       (buffer-live-p buffer)
 			       (with-current-buffer buffer
 				 (and (funcall request) t))))
-	      ;; Emacs gets a turn.  The answer to the next read is often
+	      ;; Emacs gets a turn.  The reply to the next read is often
 	      ;; already in the buffer -- a server that sends six thousand
 	      ;; responses to one FETCH fills it faster than they are parsed --
 	      ;; and this loop would then run to the end of them without
@@ -491,10 +491,10 @@ A timer whose function signalled is left marked as having been triggered and
 is never rescheduled, and Emacs leaves it in `timer-list' all the same: it
 sits there for ever, firing nothing.  One of those would satisfy a check for
 \"is there a watchdog?\" while no watchdog was running, and every session after
-it would wait on an answer nobody was going to look for -- which is a folder
+it would wait on a reply nobody was going to look for -- which is a folder
 hung for good.  A session was seen waiting 8.8 seconds on a three-second
 timeout with its timer in `timer-list' unrun (emacs-vm/vm#717), and a POP
-session in a long test run waited out its whole read with the answer sitting in
+session in a long test run waited out its whole read with the reply sitting in
 its buffer.
 
 The dead ones are taken out as they are found, so the next arm makes a live
@@ -528,8 +528,8 @@ have timed out."
   "Poll every live session, and fail the ones whose read has run out of time.
 
 Polled here as well as from the filter because a session that is not polled
-waits for ever: the filter is the only other thing that asks, and an answer it
-does not ask about after is an answer nobody looks at.  A quarter of a second
+waits for ever: the filter is the only other thing that asks, and a reply it
+does not ask about after is a reply nobody looks at.  A quarter of a second
 of lateness is the cost of that safety net; a hung folder was the cost of not
 having it."
   (let ((now (float-time))
@@ -608,7 +608,7 @@ putting a folder's flags back -- would silently not happen."
       ;; forms read the session from buffer-local variables and write to
       ;; `(get-buffer-process (current-buffer))', so closed from wherever the
       ;; driver happened to be they acted on another session: a LOGOUT went
-      ;; down a second connection, whose server answered BYE and closed it,
+      ;; down a second connection, whose server replied BYE and closed it,
       ;; and the folder that owned it reported the server as having
       ;; disconnected in the middle of a command (emacs-vm/vm#939).
       (condition-case err
@@ -684,9 +684,9 @@ every time made reading it quadratic: a 2 MB message arriving in TCP-sized
 chunks spent seconds in `re-search-forward' and a 20 MB one minutes, which
 is what a hung Emacs looks like from the outside.
 
-Answering yes is remembered, so a request that has been satisfied stays
+A yes is recorded, so a request that has been satisfied stays
 satisfied however often it is asked: what it reports is that the response is
-complete, and searching only the new text would otherwise make that answer
+complete, and searching only the new text would otherwise make that result
 depend on when it was asked."
   (let ((from (or start (point)))
 	(searched nil)
@@ -723,7 +723,7 @@ every one of those attempts waits."
   "The connection each port is being probed with, by port.
 A probe outlives the poll that started it: a connection made with :nowait is
 not open when `make-network-process' returns, and the next poll is where the
-answer is.")
+reply is.")
 
 (defun vm-net-listening-p (port)
   "Whether something is listening on PORT here.
@@ -732,7 +732,7 @@ Asked without waiting.  A connection is started on the first ask and its
 status read on the next: a blocking connect is fast to a port on this machine
 but it is still a wait, and this runs from a timer while somebody is typing.
 
-The probe is closed as soon as it has answered, so nothing is left connected
+The probe is closed as soon as it has replied, so nothing is left connected
 to the tunnel."
   (let ((probe (gethash port vm-net--probes)))
     (cond
@@ -794,7 +794,7 @@ second to see whether it is ready yet."
     tunnel))
 
 (defun vm-net--watch-for-tunnel (session port seconds ready tunnel)
-  "Wait for PORT to answer, and call READY with TUNNEL or nil.
+  "Wait for PORT to reply, and call READY with TUNNEL or nil.
 The timer goes when the session does: a session abandoned while its tunnel was
 still coming up left this polling, and each poll opens a probe connection."
   (let ((timer nil))
@@ -823,7 +823,7 @@ still coming up left this polling, and each poll opens a probe connection."
 ;;; A connection that is a program's standard input and output
 
 (defun vm-net-pipe (session name buffer program arguments)
-  "Run PROGRAM with ARGUMENTS as SESSION's connection, and answer with it.
+  "Run PROGRAM with ARGUMENTS as SESSION's connection, and return it.
 
 What stunnel is used through: given no port to listen on, stunnel relays its
 standard input and output, so the program is the connection.  There is
