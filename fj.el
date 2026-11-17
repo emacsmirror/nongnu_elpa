@@ -3287,6 +3287,16 @@ Else make a POST request to the server."
     (put-text-property start (point) 'button t)
     (insert " ")))
 
+(defun fj-shr-tag-img (dom &optional url)
+  "Like `shr-tag-img' but expand relative URLs using `fj-host'."
+  ;; This locally patches `shr-expand-url' (used by `shr-tag-img' to
+  ;; build URLs) to convert relative URLs into absolute, canonical
+  ;; ones using `fj-host'.
+  (cl-letf* (((symbol-function 'shr-expand-url)
+              (lambda (url &optional base)
+                (url-expand-file-name url fj-host))))
+    (shr-tag-img dom url)))
+
 (defun fj-render-item-bodies (&optional point)
   "Render all item bodies in the buffer.
 Uses property fj-item-body to find them.
@@ -3308,7 +3318,8 @@ Optionally start from POINT."
                  (append shr-external-rendering-functions
                          '((input . fj-tag-input)
                            (blockquote . fj-shr-tag-blockquote)
-                           (code . fj-shr-tag-code))))
+                           (code . fj-shr-tag-code)
+                           (img . fj-shr-tag-img))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
