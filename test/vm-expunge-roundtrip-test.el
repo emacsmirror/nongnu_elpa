@@ -395,7 +395,7 @@ not."
                                 (setq n (1+ n)))
                               n))))
                  (bodies (vm-expunge-roundtrip-test--read written)))
-            ;; Whatever the file holds, VM reads one message and keeps it all.
+            ;; Whatever the file contains, VM reads one message and keeps it all.
             (should (equal 1 (length bodies)))
             (should (string-match-p "before" (car bodies)))
             (should (string-match-p "after" (car bodies)))

@@ -62,7 +62,7 @@ developer's home directory and Emacs left a backup beside it.")
 ;; Add VM lisp directory to load path
 (add-to-list 'load-path vm-test-lisp-dir)
 
-;;; What this run wants: live servers, optional packages
+;;; What this run requires: live servers, optional packages
 
 (defconst vm-test-live-environment-variable "VM_TEST_LIVE"
   "Environment variable saying whether the live tests may use the network.
@@ -130,7 +130,7 @@ Unless VM_TEST_OPTIONAL says not to: see `vm-test-optional-wanted-p'."
 ;; An IMAP cache file goes in the tree, not in $HOME.  Set rather than
 ;; let-bound: what writes it is VM, deep inside a folder visit, and no test is
 ;; on the stack to bind anything.  `vm-folder-directory' is deliberately left
-;; alone -- it decides where a user's folders are, and tests that care about it
+;; alone -- it determines where a user's folders are, and tests that care about it
 ;; set it themselves.
 (make-directory vm-test-scratch-dir t)
 (setq vm-imap-folder-cache-directory vm-test-scratch-dir)
@@ -142,7 +142,7 @@ Unless VM_TEST_OPTIONAL says not to: see `vm-test-optional-wanted-p'."
 ;; put back.  `vm-menu-install-visited-folders-menu' splices the visited folders
 ;; into `vm-menu-folder-menu' with `setcdr' and rebuilds
 ;; `vm-menu-fsfemacs-folder-menu' from the result, so after a test the shared
-;; menu holds the name of whatever folder the test invented in /tmp, and 89 tests
+;; menu contains the name of whatever folder the test invented in /tmp, and 89 tests
 ;; reported it (issue #559).  Nothing accumulates -- the next visit replaces the
 ;; spliced tail -- but the state is left behind all the same.
 ;;
@@ -191,7 +191,7 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 ;;
 ;; `vm-start-itimers-if-needed' does nothing at all when none of the three
 ;; intervals is a number, so this is the switch rather than cancelling them
-;; afterwards.  A test that wants the timers binds these back.
+;; afterwards.  A test that requires the timers binds these back.
 ;; `vm-auto-get-new-mail' is left alone: its default is t, which is not a
 ;; number, so it starts no timer -- and nil would stop a folder visit fetching
 ;; mail at all, which the live IMAP tests are about.
@@ -494,7 +494,7 @@ The buffer has IMAP-related variables initialized.
   `(vm-test-with-mock-process ,responses
      (let ((imap-buffer (generate-new-buffer " *mock-imap*"))
            ;; The IMAP functions assert that they are in a process buffer, and
-           ;; every real caller says so with `vm-buffer-type:enter'.  Without
+           ;; every real caller states so with `vm-buffer-type:enter'.  Without
            ;; this the tests exercise them in a state no session is ever in,
            ;; and pass only because `vm-assertion-checking-off' defaults to t.
            (vm-buffer-types '(process)))
@@ -844,7 +844,7 @@ down the whole run rather than the one test."
       (when (buffer-live-p buffer)
         (let ((process (get-buffer-process buffer)))
           (when process
-            ;; Killing a buffer whose process is still live asks for
+            ;; Killing a buffer whose process is still live prompts for
             ;; confirmation, and a question in batch reads stdin.
             (set-process-query-on-exit-flag process nil)
             (ignore-errors (delete-process process)))))

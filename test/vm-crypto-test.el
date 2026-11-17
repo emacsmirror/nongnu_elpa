@@ -10,8 +10,8 @@
 ;; IMAP CRAM-MD5 exchange sends, so a mistake in it is not visible in the
 ;; answer, only in the server rejecting a password that is correct -- which is
 ;; how emacs-vm/vm#772 stayed unnoticed.  The vectors below are RFC 2202's,
-;; and they are the whole point of this file: an HMAC that agrees with them
-;; agrees with every server.
+;; and they are the whole point of this file: an HMAC that matches them
+;; matches every server.
 
 ;;; Code:
 
@@ -121,7 +121,7 @@ It is the inner digest of the HMAC, so it has to be the raw 16."
   (let ((raw (vm-md5-raw-string "abc")))
     (should (equal (length raw) 16))
     (should-not (multibyte-string-p raw))
-    ;; the same bytes the hex says
+    ;; the same bytes the hex gives
     (should (equal (mapconcat (lambda (b) (format "%02x" b)) raw "")
                    "900150983cd24fb0d6963f7d28e17f72"))))
 
@@ -160,7 +160,7 @@ to the option, so Customize reported it as changed outside Customize."
       (should (= calls 1)))
     (should (eq vm-stunnel-wants-configuration-file 'unknown))
     (should (eq vm-stunnel-configuration-file-probed t)))
-  ;; an option that says so is not second-guessed
+  ;; an option that sets it is not second-guessed
   (let ((vm-stunnel-wants-configuration-file nil)
         (vm-stunnel-configuration-file-probed 'unknown))
     (cl-letf (((symbol-function 'call-process)

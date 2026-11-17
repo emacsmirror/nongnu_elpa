@@ -513,7 +513,7 @@ message's own soft data, not in the cached data it shares with the real one."
              (rm (vm-real-message-of vm)))
         (should (vm-virtual-message-p vm))
         ;; The shared-cache condition that used to send this down the wrong
-        ;; branch still holds -- the fix is not to change the sharing.
+        ;; branch still applies -- the fix is not to change the sharing.
         (should (vm-virtual-messages-of vm))
         (should (eq (vm-cached-data-of vm) (vm-cached-data-of rm)))
         (should-not (eq (vm-softdata-of vm) (vm-softdata-of rm)))
@@ -615,7 +615,7 @@ to arrive there at once."
 ;; after asking if any of them has changes to lose.
 ;;
 ;; The prompt is skipped when `noninteractive', there being nobody to answer it,
-;; so a test that wants to reach it has to bind that to nil.
+;; so a test that has to reach it has to bind that to nil.
 
 (defvar vm-virtual-test--prompt nil
   "Prompt of the last question `vm-virtual-test--answering' saw.
@@ -1284,7 +1284,7 @@ you pull a whole conversation into a folder."
     (should (vm-vs-thread reply '(author "alice")))
     (should (vm-vs-thread root '(author "bob")))
     (should-not (vm-vs-thread reply '(author "nobody")))
-    ;; the plain selector still speaks only for the message it is given
+    ;; the plain selector still applies only to the message it is given
     (should-not (vm-vs-author reply "alice"))))
 
 (ert-deftest vm-virtual-test-thread-all-selector-holds-for-every-message ()

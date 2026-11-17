@@ -6,7 +6,7 @@
 
 ;;; Commentary:
 
-;; Arming the IMAP and POP trace keeping, and what the report holds.
+;; Arming the IMAP and POP trace keeping, and what the report contains.
 
 ;;; Code:
 
@@ -72,7 +72,7 @@ the session ends -- so without this the report has nothing to carry."
     (should (equal (vm-pop-keep-trace-buffer) 20))
     (should-not vm-kept-pop-buffers)
     ;; and the reader's own setting of either option is as it was: the count
-    ;; a report asks for is kept apart from it (emacs-vm/vm#945)
+    ;; a report requests is kept apart from it (emacs-vm/vm#945)
     (should-not vm-imap-keep-trace-buffer)
     (should-not vm-pop-keep-trace-buffer)))
 
@@ -144,7 +144,7 @@ the conversation that went wrong."
           (with-current-buffer trace (set-buffer-modified-p nil))
           (kill-buffer trace))))))
 
-;;; The configuration the report holds (emacs-vm/vm#644)
+;;; The configuration the report contains (emacs-vm/vm#644)
 
 (defun vm-bug-report-test--submit-and-read ()
   "Return the text of the report `vm-submit-bug-report' composes.

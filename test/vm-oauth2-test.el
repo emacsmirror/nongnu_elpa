@@ -172,7 +172,7 @@ is what a reader chasing a stale code saw: a cheerful message and no mail."
               ((symbol-function 'vm-inform)
                (lambda (_level format &rest args)
                  (push (apply #'format format args) informed)))
-              ;; what oauth2.el hands back when the provider says no
+              ;; what oauth2.el hands back when the provider rejects it
               ((symbol-function 'oauth2-token-p) (lambda (_) t))
               ((symbol-function 'oauth2-token-access-token) #'ignore)
               ((symbol-function 'oauth2-token-access-response)
@@ -329,7 +329,7 @@ command that started the session can ask, and this is where it does."
       (should (vm-oauth2-offer-authorization "jane@gmail.com"
                                              "imap.gmail.com"))
       ;; the question names the account, the provider is not asked for where
-      ;; the host says it
+      ;; the host sets it
       (should (string-match-p "jane@gmail.com" asked))
       (should (equal authorized '("jane@gmail.com" "google"))))))
 

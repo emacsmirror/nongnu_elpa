@@ -251,7 +251,7 @@ up."
         (should (= (vm-run-command "/bin/echo" "hello" "world") 0))
         (with-current-buffer " */bin/echo*"
           (should (equal (buffer-string) "hello world\n")))
-        ;; and a program that fails says so in its exit status
+        ;; and a program that fails reports so in its exit status
         (should (/= (vm-run-command "/bin/sh" "-c" "exit 3") 0)))
     (let ((buffer (get-buffer " */bin/echo*")))
       (when buffer (kill-buffer buffer)))

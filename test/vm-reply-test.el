@@ -378,7 +378,7 @@ the next to trip over."
           (vm-composition-buffer-count vm-composition-buffer-count)
           (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
           (vm-compositions-exist vm-compositions-exist)
-          ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+          ;; `vm-warn' records its last warning so as not to repeat it, and a
           ;; composition here warns about the signature file it cannot read.
           (vm-current-warning vm-current-warning)
           (before (buffer-list)))
@@ -421,7 +421,7 @@ which covers the copy of this validation in the pcrisis advice."
     (with-temp-buffer
       (setq major-mode 'vm-mode)
       (setq vm-message-list nil)
-      ;; What `m' asks for now: no minimum, so an empty folder is fine.
+      ;; What `m' requires now: no minimum, so an empty folder is fine.
       (should-not (condition-case err
                       (progn (vm-select-folder-buffer-and-validate 0) nil)
                     (error err)))
@@ -1407,7 +1407,7 @@ never came true."
             (insert-file-contents named)
             (should (string-match-p "^Content-Length: 13$" (buffer-string))))
           (should (eq (vm-get-folder-type named) 'mboxcl2))
-          ;; a name that asks for nothing still follows vm-default-folder-type
+          ;; a name that selects nothing still follows vm-default-folder-type
           (with-temp-buffer
             (insert-file-contents plain)
             (should-not (string-match-p "Content-Length:" (buffer-string)))))
@@ -2583,7 +2583,7 @@ it, and Emacs cannot tell one of those from a transport that does not."
   (should (string-match-p "Bcc" vm-reply-test--asked))
   (should (string-match-p "sendmail-send-it" vm-reply-test--asked))
   ;; The question itself names where the answer is written down, not only the
-  ;; error that follows a no: a reader who says yes at the prompt and wants to
+  ;; error that follows a no: a reader who answers yes at the prompt and wants to
   ;; fix it afterwards has nothing else to go on.
   (should (string-match-p "Sending Options" vm-reply-test--asked))
   (should (string-match-p "VM manual" vm-reply-test--asked)))

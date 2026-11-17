@@ -453,7 +453,7 @@ asked from the summary as often as not."
 ;; `vm-pipe-message-to-command' and `vm-save-message-sans-headers' had no
 ;; test.  Both hand the message to something outside VM -- a shell command,
 ;; a file -- so what they hand over is the thing to check, and the prefix
-;; argument that chooses how much of the message goes is the interesting part.
+;; argument that selects how much of the message goes is the interesting part.
 
 (defconst vm-save-test--pipe-folder
   (concat "From alice@example.com Sat Aug  8 16:00:00 2026\n"

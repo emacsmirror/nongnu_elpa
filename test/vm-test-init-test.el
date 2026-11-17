@@ -192,7 +192,7 @@ this Emacs loaded it long ago.  VALUE nil leaves the variable unset."
                     "-L" vm-test-lisp-dir "-L" vm-test-dir
                     "-l" init
                     "--eval" "(princ vm-test-scratch-dir)")
-      ;; The last line: loading VM says things of its own on the way past,
+      ;; The last line: loading VM reports things of its own on the way past,
       ;; "Loading vm-version-conf..." among them.
       (car (last (split-string (buffer-string) "\n" t "[ \t\r]+"))))))
 

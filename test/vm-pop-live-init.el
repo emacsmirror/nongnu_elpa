@@ -167,7 +167,7 @@ message into a maildrop, and comes back over POP."
 	(process-send-string process (concat string "\r\n"))
       (error
        (unless (process-live-p process)
-	 ;; STRING is not named: a PASS holds the password.
+	 ;; STRING is not named: a PASS contains the password.
 	 (vm-test-connection-lost "POP" "sending a command" err))
        (signal (car err) (cdr err))))))
 

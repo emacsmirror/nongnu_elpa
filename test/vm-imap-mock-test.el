@@ -12,10 +12,10 @@
 ;; vm-imap-live-test.el skips -- which is every machine without a
 ;; test/vm-live-config.el, and was every machine in CI.
 ;;
-;; They are not a substitute for the live tests: a mock agrees with whatever
+;; They are not a substitute for the live tests: a mock matches whatever
 ;; the person who wrote it believed about IMAP.  They are what keeps the
 ;; client's own logic -- literals, octet counts, UIDs across an expunge, what
-;; it does when the server says NO -- from rotting between live runs.
+;; it does when the server replies NO -- from rotting between live runs.
 
 ;;; Code:
 
@@ -49,7 +49,7 @@ would otherwise land in the user's home."
        (unwind-protect
            (progn (vm-visit-imap-folder (vm-imap-mock-spec ,(car spec)))
                   ;; visiting starts the fetch and returns without waiting for
-                  ;; it, so what waits for the mail is whoever wants the mail
+                  ;; it, so what waits for the mail is whoever needs the mail
                   (vm-imap-net-wait nil 10)
                   ,@body)
          (dolist (buffer (buffer-list))
@@ -569,7 +569,7 @@ says so rather than reporting success."
   (vm-imap-mock-with (mock :messages (list vm-imap-mock-test--alice))
     (let* ((vm-imap-server-timeout 10)
            ;; wait for the warning this is about, not for any warning: VM
-           ;; says "running from source" first in a tree whose lisp/ is not
+           ;; reports "running from source" first in a tree whose lisp/ is not
            ;; byte-compiled, and the wait ended on that
            (said (vm-imap-mock-test--warnings
                    (vm-create-imap-folder
@@ -934,7 +934,7 @@ each one a wait on a server VM cannot do anything else during."
         (should (cl-some (lambda (c)
                            (string-match-p "FETCH 1:25 (UID RFC822\\.SIZE FLAGS)" c))
                          commands))
-        ;; and nothing asks for a size on its own
+        ;; and nothing requests a size on its own
         (should-not (cl-some (lambda (c) (string-match-p "(RFC822\\.SIZE)" c))
                              commands))
         ;; three bunches, three fetches
@@ -942,7 +942,7 @@ each one a wait on a server VM cannot do anything else during."
                                     commands)
                        3))))))
 
-;;; a cache says its type in its name (issue #736)
+;;; a cache states its type in its name (issue #736)
 
 (ert-deftest vm-imap-mock-test-a-new-cache-is-named-and-written-as-mboxcl2 ()
   "A cache VM creates says its type in its name, and is written in that type.
@@ -962,7 +962,7 @@ strictly."
       ;; two lengths in a row, each landing on the next message
       (should (vm-folder-looks-like-mboxcl2-p)))))
 
-;;; what a background fetch says while it runs (issue #473)
+;;; what a background fetch reports while it runs (issue #473)
 
 (defmacro vm-imap-mock-test--shown (&rest body)
   "Run BODY and answer with the messages VM showed, oldest first.

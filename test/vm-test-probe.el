@@ -6,7 +6,7 @@
 
 ;;; Commentary:
 
-;; Answers, before any test runs, the question a non-zero exit status cannot:
+;; Reports, before any test runs, the question a non-zero exit status cannot:
 ;; is the machine short of a server, or is VM broken?  A missing
 ;; test/vm-live-config.el makes the live tests skip, and a configured server
 ;; that cannot be reached makes them fail -- on purpose, since a suite that

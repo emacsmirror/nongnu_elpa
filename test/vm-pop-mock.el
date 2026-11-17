@@ -6,16 +6,16 @@
 
 ;;; Commentary:
 
-;; Issue #554 asks for a POP mock layer alongside the live IMAP rig.  Nothing
+;; Issue #554 requests a POP mock layer alongside the live IMAP rig.  Nothing
 ;; in vm-pop.el has ever been exercised end to end: the unit tests reach the
 ;; spec parsing and the file naming, and stop where the protocol starts.
 ;;
 ;; POP3 is small enough to serve honestly rather than stub, so this is a real
 ;; server on a local port -- greeting, USER/PASS or APOP, STAT, LIST, UIDL,
-;; RETR, TOP, DELE, RSET, NOOP, QUIT -- and VM talks to it through its ordinary
+;; RETR, TOP, DELE, RSET, NOOP, QUIT -- and VM reaches it through its ordinary
 ;; code path, `vm-pop-make-session' and everything below it.  A stub of
 ;; `vm-pop-send-command' would prove far less: the interesting behaviour is in
-;; how VM reads multi-line responses, counts octets and decides a message
+;; how VM reads multi-line responses, counts octets and determines a message
 ;; arrived intact.
 ;;
 ;; It also misbehaves on request, which is the point.  Several of the things
@@ -27,7 +27,7 @@
 ;;   :refuse         regexp; answer a matching command with -ERR
 ;;   :drop-on        regexp; close the connection when a command matches
 ;;   :silent-on      regexp; read a matching command and answer nothing, which
-;;                   is the server that accepts and then says nothing -- the
+;;                   is the server that accepts and then sends nothing -- the
 ;;                   case a client with no read timeout waits out for ever
 ;;   :truncate-retr  cut a RETR response off mid-message and close, which is
 ;;                   what a real interrupted download looks like
@@ -392,7 +392,7 @@ AUTH defaults to \"pass\"; \"apop\" is the other one worth testing."
 SPEC is (MOCK-VAR &rest ARGS), where ARGS go to `vm-pop-mock-start'."
   (declare (indent 1) (debug t))
   `(let ((,(car spec) (vm-pop-mock-start ,@(cdr spec)))
-         ;; A session remembers its password and keeps its buffer for reuse.
+         ;; A session records its password and keeps its buffer for reuse.
          ;; Bound, so the mock's credentials and buffer do not outlive the test
          ;; that invented them.
          (vm-pop-passwords vm-pop-passwords)
@@ -402,7 +402,7 @@ SPEC is (MOCK-VAR &rest ARGS), where ARGS go to `vm-pop-mock-start'."
          ;; trace is unreachable anyway.  A session that errors sets this back
          ;; buffer-locally, so a failure still has its trace while it matters.
          (vm-pop-keep-trace-buffer nil)
-         ;; `vm-warn' remembers its last warning so as not to repeat it, and
+         ;; `vm-warn' records its last warning so as not to repeat it, and
          ;; these tests produce warnings on purpose.
          (vm-current-warning vm-current-warning))
      (unwind-protect (progn ,@body)

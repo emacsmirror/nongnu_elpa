@@ -187,7 +187,7 @@ the summary."
     (with-current-buffer folder
       (setq vm-folder-read-only nil vm-block-new-mail t))
     (should-not (vm-menu-can-get-new-mail-p))
-    ;; a virtual folder has none of its own, and says yes anyway: the
+    ;; a virtual folder has none of its own, and reports yes anyway: the
     ;; command gets mail for the folders it is made of
     (with-current-buffer folder (setq major-mode 'vm-virtual-mode))
     (should (vm-menu-can-get-new-mail-p))))

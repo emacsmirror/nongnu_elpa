@@ -486,7 +486,7 @@ fill means anything for."
       (should (equal (vm-summary-sprintf "%5l" message) "    2"))
       ;; a `-' beats the `0'
       (should (equal (vm-summary-sprintf "%-05l" message) "2    "))
-      ;; and a word is padded with spaces whatever the width says
+      ;; and a word is padded with spaces whatever the width is
       (should (equal (vm-summary-sprintf "%010w" message) "    Monday"))
       (should (equal (vm-summary-sprintf "%010F" message) "  John Doe")))))
 
@@ -980,7 +980,7 @@ thread operation is being made."
       (vm-collapse-thread nil root)
       (setq vm-message-pointer vm-message-list)
       (should (equal '(2 . nil) (vm-summary-test--operable 2 'ask)))
-      ;; C-u on its own is 4, and the folder holds 3 from point
+      ;; C-u on its own is 4, and the folder has 3 from point
       (should (equal '(3 . nil) (vm-summary-test--operable 4 'ask))))))
 
 (ert-deftest vm-summary-test-folding-needs-both-options ()

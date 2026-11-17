@@ -441,7 +441,7 @@ not speak."
   ;; no password and nobody to ask: the work does not start, quietly
   (should-error (vm-pop-net-open "pop:example.com:110:pass:user:*" "x")
                 :type 'vm-pop-net-no-password)
-  ;; but a maildrop that is not POP at all is an error the reader sees:
+  ;; but a maildrop that is not POP at all is an error the reader is shown:
   ;; there is no other path to hand it to
   (let* ((text-quoting-style 'grave)
          (message (cadr (should-error
@@ -468,7 +468,7 @@ SPEC is (MOCK-VAR &rest ARGS) as for `vm-pop-mock-start'."
             (vm-last-visit-folder vm-last-visit-folder)
             (vm-global-block-new-mail nil)
             ;; visiting must not fetch the mail first: what is being tested
-            ;; is the check that says whether there is any
+            ;; is the check that reports whether there is any
             (vm-auto-get-new-mail nil)
             ;; generous: this fixture runs late in a suite of a couple of
             ;; thousand tests, and a check that times out is read as "no mail"
@@ -528,7 +528,7 @@ folder file, so the next save sends them again."
 ;; The mock replies in milliseconds; these timeouts exist to stop a hang, not to
 ;; measure anything, so they cost nothing by being generous.  The wait is longer
 ;; again than the session's own timeout, so a session that does hang is reported
-;; by the assertion that says what was not done rather than by a bare deadline.
+;; by the assertion that reports what was not done rather than by a bare deadline.
 
 (ert-deftest vm-pop-net-test-a-quit-that-fails-keeps-the-deletions ()
   "A server that will not commit the deletions leaves them to be asked again.
@@ -703,7 +703,7 @@ that fails half way leaves the rest to be offered again."
     (let ((folder (generate-new-buffer " *vm-pop-net-test-folder*"))
           (spec (vm-popdrop-sans-password (vm-pop-mock-spec mock)))
           (vm-pop-server-timeout 60)
-          ;; what the folder holds is the maildrop without its password, as
+          ;; what the folder records is the maildrop without its password, as
           ;; `vm-pop-retrieved-messages' does; the password is the one VM
           ;; learned when it fetched
           (vm-pop-passwords (list (list (vm-popdrop-sans-password

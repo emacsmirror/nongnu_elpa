@@ -8,7 +8,7 @@
 
 ;; VM's IMAP client had no test that spoke IMAP.  vm-imap-test.el reaches the
 ;; spec parsing, the response parser and the file naming and stops where the
-;; protocol starts; vm-imap-live-test.el drives the whole thing, but wants a
+;; protocol starts; vm-imap-live-test.el drives the whole thing, but requires a
 ;; server in test/vm-live-config.el and skips without one -- so on a stock
 ;; checkout nothing between VM's IMAP client and the wire ran at all.
 ;;
@@ -16,7 +16,7 @@
 ;; server on a local port, spoken to through VM's ordinary code path, rather
 ;; than a stub of `vm-imap-send-command'.  What is interesting about an IMAP
 ;; client is in how it reads literals, counts octets, tracks UIDs across an
-;; expunge and decides a message arrived intact, and a stub proves none of it.
+;; expunge and determines a message arrived intact, and a stub proves none of it.
 ;;
 ;; It serves enough of IMAP4rev1 for VM: CAPABILITY, LOGIN, LIST, SELECT and
 ;; EXAMINE, STATUS, FETCH and UID FETCH (RFC822, RFC822.HEADER, RFC822.SIZE,
@@ -280,7 +280,7 @@ the caller drops."
 				    (vm-imap-mock--fetch-item mock message item))
 				  (vm-imap-mock--fetch-items spec))))
 	 (items (if (vm-imap-mock-extra-fetch-items mock)
-		    ;; unasked for, and allowed: RFC 3501 7.4.2 says a server
+		    ;; unasked for, and allowed: RFC 3501 7.4.2 states that a server
 		    ;; may send items the client did not ask about, and a
 		    ;; CONDSTORE server sends MODSEQ with everything
 		    (append items (list "MODSEQ (23)"
@@ -861,14 +861,14 @@ MAILBOX defaults to INBOX, AUTH to login."
 SPEC is (MOCK-VAR &rest ARGS), where ARGS go to `vm-imap-mock-start'."
   (declare (indent 1) (debug t))
   `(let ((,(car spec) (vm-imap-mock-start ,@(cdr spec)))
-         ;; A session remembers its password and keeps its buffer for reuse.
+         ;; A session records its password and keeps its buffer for reuse.
          ;; Bound, so the mock's credentials and buffer do not outlive the test
          ;; that invented them.
          (vm-imap-passwords vm-imap-passwords)
          (vm-kept-imap-buffers vm-kept-imap-buffers)
          (vm-imap-keep-trace-buffer nil)
          (vm-imap-ok-to-ask nil)
-         ;; `vm-warn' remembers its last warning so as not to repeat it, and
+         ;; `vm-warn' records its last warning so as not to repeat it, and
          ;; these tests produce warnings on purpose.
          (vm-current-warning vm-current-warning))
      (unwind-protect (progn ,@body)

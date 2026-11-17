@@ -188,7 +188,7 @@ manual's own chapters follow."
     (should (memq 'vm-imap-max-message-size (nth 2 imap)))   ; group vm-imap
     (should (memq 'vm-imap-list-folders (nth 1 imap)))       ; file vm-imap.el
     (should-not (memq 'vm-imap-max-message-size (nth 1 imap)))
-    ;; no section holds anything like all of the options
+    ;; no section covers anything like all of the options
     (dolist (section sections)
       (should (< (length (nth 2 section)) 100)))))
 
@@ -200,7 +200,7 @@ manual's own chapters follow."
     (dolist (symbol collected)
       (should-not (vm-reference-obsolete-p symbol)))))
 
-;;; The invariant makeinfo cares about
+;;; The invariant makeinfo enforces
 
 (ert-deftest vm-reference-test-every-converted-docstring-is-balanced ()
   "Converting every docstring VM has leaves balanced braces and @example.
@@ -259,7 +259,7 @@ missing turn out to be commands."
                     (goto-char (point-min))
                     (while (re-search-forward "^@findex +\\([^ \t\n]+\\)" nil t)
                       (push (intern (match-string 1)) indexed))
-                    ;; and anything the manual tells the reader to type.  An
+                    ;; and anything the manual instructs the reader to type.  An
                     ;; @findex is how a command is indexed, not how it is
                     ;; documented: `vm-imap-synchronize' was named as the
                     ;; thing to run after working offline, in prose, with no
@@ -557,7 +557,7 @@ yet, where the other three carry the suffix the tree is built with."
                             (cons (car cell)
                                   (vm-reference-test--release-number (cdr cell))))
                           found)))
-    ;; Each of them says something at all: a pattern that stopped matching is
+    ;; Each of them matches something at all: a pattern that stopped matching is
     ;; a file whose format moved, and four nils would otherwise agree.
     (should (equal nil (mapcar #'car (seq-filter (lambda (cell) (null (cdr cell)))
                                                  numbers))))
@@ -812,7 +812,7 @@ own heading, not among the ones to type."
 ;;; Every attribute a reader can set is described in the manual
 
 (defconst vm-reference-test--attributes-not-in-the-table
-  '(;; not an attribute: the manual says it is what negates both new and unread
+  '(;; not an attribute: the manual states it is what negates both new and unread
     "read"
     ;; alias names, for BABYL and for IMAP, documented as aliases where the
     ;; selectors are: recent is new, unseen is unread, answered is replied

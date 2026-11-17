@@ -603,7 +603,7 @@ subject of the message it names read the same."
             (write-region (point-min) (point-max) inbox nil 'quiet))
           (vm-visit-folder inbox)
           (setq vm-message-pointer vm-message-list)
-          ;; the prefix argument is what asks for a preamble
+          ;; the prefix argument is what selects a preamble
           (vm-send-digest t)
           (save-excursion
             (goto-char (point-min))

@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; A `:type' is documentation that Customize acts on, and it can be wrong in a
-;; way nothing notices: byte compilation does not check it, and until now
+;; way nothing detects: byte compilation does not check it, and until now
 ;; neither did anything else in the tree.  A type that rejects the variable's own
 ;; default is the sharp case.  `vm-page-continuation-glyph' was declared
 ;; `boolean' with a string default, so customizing it stored t and VM put that
@@ -190,7 +190,7 @@ it does not, and a test saying so would keep the name alive by accident."
 ;; -- puts one developer's machine into the tree, makes the file differ for
 ;; everyone else who builds it, and fails `check-reference' for all but the
 ;; last.  It also published @diekhans' home directory and full name.
-;; `vm-reference-insert-default' says the value is worked out at load time
+;; `vm-reference-insert-default' states that the value is worked out at load time
 ;; instead.  Issue #600.
 
 (defconst vm-custom-test--generated-texinfo

@@ -126,7 +126,7 @@ itself being gitignored."
     (should definition)
     ;; `error' rather than a bare return is the whole point of it.
     (should (seq-contains-p (flatten-tree definition) 'error))
-    ;; stderr is kept, which is where `security' says the item is missing.
+    ;; stderr is kept, which is where `security' reports the item is missing.
     (should (seq-contains-p (flatten-tree definition) 'call-process))))
 
 (provide 'vm-probe-test)
