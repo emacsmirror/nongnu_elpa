@@ -47,11 +47,11 @@ docstring:
 
 : make -C info check-reference
 
-fails if the committed copy no longer matches the code, and says to git add
+fails if the committed copy no longer matches the code, and states to git add
 the regenerated file.  Run it before a release.
 
 * the NonGNU ELPA package
-** .elpaignore decides what the tarball carries
+** .elpaignore determines what the tarball contains
 
 elpa-admin reads .elpaignore from the top of the tree and hands it to tar as
 -X, so what reaches a user is decided here rather than in the recipe on
@@ -78,7 +78,7 @@ directory fails it until someone decides.
 
 ** the manual ships built, not as source
 
-info/ is excluded, and the tarball carries vm.info and dir at the root
+info/ is excluded, and the tarball contains vm.info and dir at the root
 instead.  elpa-admin builds them from info/vm.texinfo before it makes the
 tarball, so excluding the sources costs nothing.
 
@@ -99,13 +99,13 @@ cd test && make test ARGS="--one vm-imap-test.el"
 
 It asks what is there before running anything: which configured servers
 answer, whether mail can be sent, which optional packages are installed.
-That is what tells a failure from a machine short of a server.  Then it
+That is what distinguishes a failure from a machine short of a server.  Then it
 runs each pass in its own Emacs, every one this machine can:
 
 | suite       | everything, with whatever this machine has                                               |
 | mock        | IMAP and POP again with the live servers skipped, where a config exists                  |
 | no-optional | the tests that name bbdb, emacs-w3m or vcard, run without them, where they are installed |
-| send        | real mail, sent and read back, where the config says where to                            |
+| send        | real mail, sent and read back, where the config sets where to                            |
 
 Every pass runs whichever fails; the summary at the end names each one.
 
@@ -133,7 +133,7 @@ stamp written anyway would say the packages are here when they are not, and
 their tests would skip from then on with nothing to show for it.  make
 test-no-opt is the way past it: everything, fetching nothing, those tests
 skipping.  make optional-packages is the fetch by name, and removing the
-stamp asks for it again.
+stamp requires it again.
 
 The optional packages are what the bbdb, w3m and vcard tests need; without them
 those tests skip.  Fetching them takes the network, so make clean leaves them
@@ -162,8 +162,8 @@ the thing to get wrong: the servers in vm-imap-test-servers are usually test
 accounts on a local dovecot, and such an account receives nothing that is sent
 to your address.  Point :verify-server at one of those and every test sends
 its mail, waits :wait seconds and fails, which is what happened the first
-time this was run against a real configuration.  The failure says so now, and
-reports how many messages the mailbox holds, an empty one being the giveaway.
+time this was run against a real configuration.  The failure reports so now, and
+reports how many messages the mailbox contains, an empty one being the giveaway.
 
 Mail that arrives in a mirror (mbsync, offlineimap) arrives when the mirror
 next runs, so :wait has to cover that or the message is there and the test has
@@ -181,7 +181,7 @@ them out.
 Two rules the harness enforces, because real mail cannot be recalled:
 
 - Mail goes only to the :to in the config, which should be your own address.
-- Every message carries an X-VM-Send-Test header naming the Emacs process, and
+- Every message has an X-VM-Send-Test header naming the Emacs process, and
   each test deletes and expunges its own again, pass or fail.
 
 No password belongs in the config: how the machine sends mail is its own
@@ -281,7 +281,7 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
 
 Enable it in $DOVECOT_ETC/conf.d/10-ssl.conf, which dovecot.conf picks up
 through its !include conf.d/*.conf.  On this MacPorts install that file
-holds exactly one line, ssl = no, which is what leaves 993 listening but
+contains exactly one line, ssl = no, which is what leaves 993 listening but
 unable to handshake.  Replace it with:
 
 #+begin_example
@@ -295,7 +295,7 @@ $DOVECOT_ETC will not work here, and < means "read the file" rather than
 "use this string as the value".  ssl_min_protocol already defaults to
 TLSv1.2, which is fine.
 
-Reload, then check dovecot agrees:
+Reload, then check dovecot matches:
 
 #+begin_src sh
 doveconf ssl ssl_cert ssl_key
@@ -311,7 +311,7 @@ Copy the checked-in template and edit it:
 cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
 
-test/vm-live-config.el is gitignored because it holds passwords, so keep it
+test/vm-live-config.el is gitignored because it contains passwords, so keep it
 that way.  The template describes both protocols and every key; read it there.
 
 What it cannot tell you is what to put in :trustfile here: the self-signed
@@ -374,7 +374,7 @@ doveconf -n protocols
 #+end_src
 
 Then add the POP servers.  They live in the same test/vm-live-config.el,
-whose template carries the vm-pop-test-servers form; fill in your own
+whose template has the vm-pop-test-servers form; fill in your own
 passwords.
 
 The live POP tests also need the IMAP server called plain for the same
@@ -383,7 +383,7 @@ created over POP.  The message is put into INBOX over IMAP and read back
 over POP.
 
 That means these tests use your test account's real INBOX rather than a
-throwaway mailbox.  Each fixture carries an X-VMTest-Id header, the tests
+throwaway mailbox.  Each fixture has an X-VMTest-Id header, the tests
 look for their own message rather than assuming the maildrop is empty, and the
 fixture is deleted and expunged over IMAP afterwards even when the test fails.
 Nothing else in the mailbox is touched.

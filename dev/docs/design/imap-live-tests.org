@@ -67,7 +67,7 @@ is the only place their absence can show.
 * Configuration
 
 One gitignored elisp file, test/vm-live-config.el,
-copied from test/vm-live-config.el.template, which is checked in and carries
+copied from test/vm-live-config.el.template, which is checked in and hases
 the documentation:
 
 #+begin_src sh
@@ -103,7 +103,7 @@ INBOX.
 
 Fixtures must not be built with VM's own IMAP code. If setup goes through
 vm-imap-* then a VM bug corrupts the fixture and masks itself, exactly the
-failure mode #286 complains about, where VM acts on data it got wrong. Use a
+failure mode #286 reports, where VM acts on data it got wrong. Use a
 small independent client in the harness: open-network-stream plus
 CREATE/APPEND/STORE/DELETE, about 40 lines.
 
@@ -155,14 +155,14 @@ convincingly:
   honestly: greeting, USER/PASS or APOP, STAT, LIST, UIDL,
   RETR, TOP, DELE, RSET, NOOP, QUIT, with dot-stuffing, and
   misbehaves on request: :no-uidl, :refuse, :drop-on,
-  :truncate-retr, :lie-about-size, :slow-greeting.  VM talks to it
+  :truncate-retr, :lie-about-size, :slow-greeting.  VM reaches it
   through vm-pop-net-command and everything below, so the code under test
   is the real client, not a stub of vm-pop-net-send.
 - test/vm-pop-live-init.el :: the live tier, against the same dovecot with
   pop3 added to protocols.  Skips unless vm-pop-test-servers is set.
 
 Config, in the same gitignored test/vm-live-config.el; the template has the
-vm-pop-test-servers form ready to fill in, and says what each key takes.
+vm-pop-test-servers form ready to fill in, and states what each key takes.
 
 Run with ./test-runner --pop (mock plus live), or the default run, which includes both
 and skips the live half when no POP server is configured.
@@ -177,7 +177,7 @@ configuration.
 
 That makes INBOX shared state rather than a throwaway mailbox, so:
 
-- every fixture message carries an X-VMTest-Id header naming the run, and
+- every fixture message has an X-VMTest-Id header naming the run, and
   the tests find their own message rather than assuming they are alone;
 - the fixture is removed over IMAP in an unwind-protect, whether or not the
   test got as far as retrieving it;

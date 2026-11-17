@@ -21,7 +21,7 @@ question here twice.
 There is one way in, and no fallback anywhere.  Every command a folder can
 run reaches its server through the driver; where the driver does not start,
 nothing else is tried and the reader is told.  The driver declines only for a
-maildrop VM has no password for, and it asks for one first where a reader is
+maildrop VM has no password for, and it prompts for one first where a reader is
 there to be asked, so a second implementation would only put the same question
 twice.
 
@@ -56,15 +56,15 @@ parse is not a generator" below for what that cost and what replaced it.
 
 *** The driver and the session
 
-- A process filter, not accept-process-output, is what notices that data
+- A process filter, not accept-process-output, is what detects that data
   arrived.  It resumes the session whose request the buffer now satisfies.
 - Both parsers read from the process buffer, so the filter has only to say
   that more arrived.  It never hands the parser a string.
 - One command is outstanding per connection, so there is no correlation
   problem to solve.
-- vm-net-poll is where the two protocols meet.  A waiting session holds a
+- vm-net-poll is where the two protocols meet.  A waiting session has a
   request, which is a function run in the process buffer, and the session is
-  resumed when it answers yes.  IMAP asks whether the response it is parsing
+  resumed when that function returns non-nil.  IMAP asks whether the response it is parsing
   is all there, POP asks its regexp search, and nothing else differs between
   them at this layer.
 - vm-net--resume hands Emacs back every vm-net--slice, a twentieth of a
@@ -112,14 +112,14 @@ Both are the caller's own doing rather than a gap in the conversion.
 
 ** One session per folder
 
-A folder writes what a session tells it to, so two sessions writing one folder
+A folder writes what a session gives it, so two sessions writing one folder
 would interleave their messages, flags and expunges in one buffer and one
 cache file.
 
 - Every start goes through vm-imap-net-take-session, which is what
   vm-imap-net-busy-p reads.
 - Work asked for while a session runs is queued on the folder
-  (vm-imap-net-when-free) and run when that one ends.  It answers later,
+  (vm-imap-net-when-free) and run when that one ends.  It returns later,
   which is not a refusal: the work happens on the one connection this folder
   has.
 - Queued work reads the folder again when it runs rather than using what was
@@ -154,10 +154,10 @@ mock server, a fresh fetch of a thousand messages:
 : byte-compiled   0.8s wall, worst pause 0.19s
 : from source     173s wall, worst pause 58s
 
-Uncompiled it behaves the way the blocking implementation used to, so VM says
+Uncompiled it behaves the way the blocking implementation used to, so VM reports
 so once a session (vm-imap-net-check-compiled).
 
-*** The UIDs the folder already holds
+*** The UIDs the folder already has
 
 A fetch asks vm-imap-net-uid-held-p for every message that arrives, so that
 a message the folder gained while its own fetch was in flight is not written
@@ -175,8 +175,8 @@ Two things keep the answer live, which a per-bunch snapshot did not:
   follow.  Every site that rewrites the list or takes a message out of it
   increments it, and the table is then filled again from nothing.
 - A fetch appends messages and gives them their UIDs afterwards, so the table
-  can meet a message that has none yet.  It tells the table each UID as it
-  sets it (vm-imap-net-note-held-message), and a folder that leaves forgets
+  can meet a message that has none yet.  It records each UID in the table as it
+  sets it (vm-imap-net-note-held-message), and a folder that leaves loses
   the table (vm-imap-net-forget-held-uids).
 
 Allocation is not what this saves: hash table storage is not Lisp vectors in
@@ -212,7 +212,7 @@ fetch of 6500 messages, and 190,000 token reads become plain calls.
 
 The parse must be idempotent for that to work, and it is.  A token is
 (KIND START END) into the process buffer, and the buffer keeps what has
-arrived.  A literal asks for the position its octets end at rather than for
+arrived.  A literal requires the position its octets end at rather than
 the buffer to grow, so a body arriving in a thousand chunks is one wait and
 one re-parse.
 
@@ -227,7 +227,7 @@ Measured on a 6500-message mailbox of 1.9KB messages, one run each:
 | vector words             | 323.1M                     | 4.3M               |
 | a response line          | 3,775 conses, 23,279 words | 42 conses, 0 words |
 
-The worst stutter a reader sees is 22ms, which is not a stutter.  What is left
+The worst stutter a reader meets is 22ms, which is not a stutter.  What is left
 of the fetch is the mail itself.
 
 *** Measuring it again
@@ -280,7 +280,7 @@ against; a dozen messages have no pauses at all.
 - What does an interrupted POP session do about pending DELEs?  Under
   generators this is decided by whether the driver closes the iterator, not by
   the garbage collector.  Whether an abandoned continuation reaches QUIT
-  decides between losing deletes and losing mail.  This wants a test against
+  determines whether deletes or mail are lost.  This requires a test against
   test/vm-pop-mock.el rather than an argument; the mock's silent-on fault
   aimed at RETR or DELE is one way to provoke it, and has not been tried.
 - Should the assertions be on for the asynchronous path?  vm-assert is inert
