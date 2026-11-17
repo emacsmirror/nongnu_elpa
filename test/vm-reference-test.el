@@ -1269,3 +1269,56 @@ first written under."
       (when (version< (car named) minimum)
         (push (cdr named) older)))
     (should (equal nil (nreverse older)))))
+
+;;; INSTALL.md names the HTML handlers the option accepts
+
+(defconst vm-reference-test--install
+  (expand-file-name "../INSTALL.md" vm-test-dir)
+  "The installation instructions, which name the HTML renderers.")
+
+(defun vm-reference-test--install-html-bullet ()
+  "The text of the HTML rendering bullet of INSTALL.md, without its code block.
+Signals an error when the bullet is not found: a renamed bullet would
+otherwise leave the test comparing two empty lists and passing."
+  (with-temp-buffer
+    (insert-file-contents vm-reference-test--install)
+    (goto-char (point-min))
+    (unless (re-search-forward "^\\* \\*\\*HTML rendering\\.\\*\\*" nil t)
+      (error "INSTALL.md has no HTML rendering bullet: rename it here too"))
+    (let* ((start (match-beginning 0))
+           (end (or (and (re-search-forward "^\\* \\*\\*" nil t)
+                         (match-beginning 0))
+                    (point-max)))
+           (text (buffer-substring-no-properties start end)))
+      (replace-regexp-in-string "```[^\0]*?```" "" text))))
+
+(defun vm-reference-test--install-html-values ()
+  "The symbols written in backquotes in the HTML rendering bullet of INSTALL.md.
+The option's own name is left out; everything else there is a value for it."
+  (let ((values nil)
+        (text (vm-reference-test--install-html-bullet))
+        (start 0))
+    (while (string-match "`\\([^`]+\\)`" text start)
+      (setq start (match-end 0))
+      (unless (equal (match-string 1 text) "vm-mime-text/html-handler")
+        (cl-pushnew (intern (match-string 1 text)) values)))
+    (sort values #'string<)))
+
+(defun vm-reference-test--html-handler-values ()
+  "The values `vm-mime-text/html-handler' accepts, from its customize type."
+  (sort (mapcar (lambda (choice) (car (last choice)))
+                (cdr (get 'vm-mime-text/html-handler 'custom-type)))
+        #'string<))
+
+(ert-deftest vm-reference-test-install-names-the-html-handlers ()
+  "REGRESSION: INSTALL.md names every HTML renderer, and none that was removed.
+
+It listed emacs-w3m, Emacs/W3, w3m and lynx.  Emacs/W3 was removed in 9.0.0
+(emacs-vm/vm#707) and `shr' added, so the renderer that needs nothing
+installed was missing, and one of the four listed could not be set
+(emacs-vm/vm#946).
+
+The bullet's backquoted symbols, less the option's own name, are read as the
+values it lists."
+  (should (equal (vm-reference-test--html-handler-values)
+                 (vm-reference-test--install-html-values))))

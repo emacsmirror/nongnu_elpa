@@ -131,12 +131,16 @@ VM works without these, but reads mail better with them.
   (bbdb-initialize 'vm)
   ```
 
-* **HTML rendering.**  VM can use emacs-w3m or Emacs/W3 inside Emacs, or the
-  `lynx` and `w3m` programs as converters to plain text.  It picks the best
-  of what it finds, or you can say:
+* **HTML rendering.**  Nothing needs installing: `shr`, Emacs's own
+  renderer, requires only an Emacs built with libxml2.  VM can also use
+  emacs-w3m inside Emacs, or the `w3m` and `lynx` programs as converters to
+  plain text.  `vm-mime-text/html-handler` names which one is used:
 
   ```elisp
   (setq vm-mime-text/html-handler 'emacs-w3m)
   ```
 
-  The other values are `emacs-w3`, `w3m` and `lynx`.
+  The values are `emacs-w3m`, `w3m`, `lynx`, `shr`, `auto-select` and `nil`.
+  `auto-select`, the default, takes the first of the four this machine has,
+  in that order, so a machine with none of the others uses `shr`.  `nil`
+  means no internal display of HTML at all.
