@@ -199,7 +199,7 @@ the reporter hit; it costs 25 seconds against 4."
       ;; Still intact afterwards.  Asserting on OUT-OF-ORDER also keeps it
       ;; live across the collections rather than dead before the first one.
       ;;
-      ;; Each answer is reduced to t or nil before `should' sees it, and no
+      ;; Each answer is reduced to t or nil before `should' reads it, and no
       ;; message or link reaches one.  ert keeps the evaluated arguments of
       ;; every `should' in the test's result for as long as the process runs,
       ;; and a reverse link is a cons of the message list, so recording one

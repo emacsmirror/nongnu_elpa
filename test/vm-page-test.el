@@ -205,7 +205,7 @@ headers are exposed, and that is what the command reads."
       (should (string-match-p "page three text"
                               (buffer-substring (point-min) (point-max)))))))
 
-;;; What a preview shows, what the end-of-message blurb says, and what the
+;;; What a preview shows, what the end-of-message blurb shows, and what the
 ;;; URL help gives.  These three had a test each asserting the function was
 ;;; bound, which is true of any file that loads.
 
@@ -623,7 +623,7 @@ more rather than moving somewhere unhelpful."
         ;; there is no third
         (should (equal (cadr (should-error (vm-next-button 1)))
                        "No more buttons"))
-        ;; and point stayed where it was, as the docstring promises
+        ;; and point stayed where it was, as the docstring states
         (should (equal (point) second))))))
 
 (ert-deftest vm-page-test-previous-button-goes-back ()
@@ -786,7 +786,7 @@ the whole presentation with it."
                          "whatever")))))
     (should (= 1 (length warnings)))
     (should (string-match-p "X-Face not shown" (car warnings)))
-    ;; and it says what to do about it
+    ;; and it states what to do about it
     (should (string-match-p "vm-display-xfaces" (car warnings)))))
 
 (ert-deftest vm-page-test-a-non-executable-xface-converter-warns-too ()

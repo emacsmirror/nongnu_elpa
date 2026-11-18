@@ -130,7 +130,7 @@ test does not leave Emacs asking about it."
             ;; Never asked: a prompt in batch hangs the run.
             (vm-confirm-mailto-links nil)
             ;; And never in a frame of its own: `vm-multiple-frames-possible-p'
-            ;; says no in batch now, but the tests should not turn on what the
+            ;; declines in batch now, but the tests should not turn on what the
             ;; person running them has set either way.
             (vm-frame-per-composition nil)
             (vm-mutable-frame-configuration nil)

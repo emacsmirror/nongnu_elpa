@@ -689,10 +689,10 @@ is what an unsorted folder shows and what sorting by it restores."
 breaks a tie.  Sorting by a key every message shares leaves the second key
 to do the work."
   (vm-sort-test--with-folder
-    ;; every message has a different subject, so subject alone decides
+    ;; every message has a different subject, so subject alone determines the order
     (vm-sort-messages "subject author")
     (should (equal (vm-sort-test--subjects) '("apples" "bananas" "cherries")))
-    ;; every message is to the same address, so recipients decides nothing
+    ;; every message is to the same address, so recipients determines nothing
     ;; and author breaks every tie
     (vm-sort-messages "recipients author")
     (should (equal (vm-sort-test--authors)
@@ -718,7 +718,7 @@ here; the folder must be left holding what it held."
 ;;; Moving a message physically (emacs-vm/vm#649)
 ;;
 ;; `vm-physically-move-message' rewrites the folder text and re-aims six
-;; markers per message by hand; its own comment says corruption can be
+;; markers per message by hand; its own comment states corruption can be
 ;; massive if that work happens in the wrong order.  These drive it through
 ;; the two commands that always take that path.
 
@@ -1004,7 +1004,7 @@ which is what makes a run of them worth filing at once."
                          ((string-match-p "bob" (vm-su-from m)) "bee")
                          (t "cee"))))
                 ;; this key also heads each run in the summary with the
-                ;; folder its messages would go to, which wants a summary
+                ;; folder its messages would go to, which requires a summary
                 ;; buffer; that it is asked for is what matters here
                 ((symbol-function 'vm-sort-insert-auto-folder-names)
                  (lambda (&rest _) (setq headed t))))
@@ -1080,7 +1080,7 @@ thread that has just been answered comes to the top."
   "Keys are given as one string and tried in turn: the second decides only
 what the first leaves equal."
   (vm-sort-test--sorting
-    ;; the first key leaves every pair equal, so the second decides
+    ;; the first key leaves every pair equal, so the second determines the order
     (cl-letf (((symbol-function 'vm-sort-compare-recipients)
                (lambda (&rest _) '=)))
       (vm-sort-messages "recipients date"))

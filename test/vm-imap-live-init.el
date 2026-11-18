@@ -19,7 +19,7 @@
 ;; longer.  Bind `vm-imap-live-enabled' to nil to suppress that without
 ;; removing the config.
 ;;
-;; Everything here talks to the server with its own minimal IMAP client
+;; Everything here reaches the server with its own minimal IMAP client
 ;; rather than with vm-imap.el.  That is deliberate: if fixtures were built
 ;; with the code under test, a bug in it could corrupt the fixture and hide
 ;; itself -- which is the very complaint in issue #286, that VM acts on data
@@ -358,7 +358,7 @@ signals, so a failed test does not leave state behind for the next one."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
-            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; `vm-warn' records its last warning so as not to repeat it, and a
             ;; refused flag warns on purpose.
             (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
@@ -421,7 +421,7 @@ default and would let a wedged session hang forever."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
-            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; `vm-warn' records its last warning so as not to repeat it, and a
             ;; refused flag warns on purpose.
             (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and

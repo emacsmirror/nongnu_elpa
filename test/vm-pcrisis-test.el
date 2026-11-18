@@ -1527,7 +1527,7 @@ most people would have got anyway.  Nothing reported it before."
     (let ((problems (vm-pcrisis-configuration-problems)))
       (should (equal 1 (length problems)))
       (should (vm-pcrisis-test--problem-about problems "\"default\""))
-      ;; and it says what to do about it
+      ;; and it states what to do about it
       (should (vm-pcrisis-test--problem-about problems "never runs"))
       (should (vm-pcrisis-test--problem-about problems "vm-pcrisis-none-true-yet")))))
 

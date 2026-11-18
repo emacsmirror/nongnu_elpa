@@ -12,7 +12,7 @@
 ;;
 ;; Two invariants earn their keep, both of them drawn from bugs already found:
 ;;
-;; - Each message's text is where the message says it is.  `vm-expunge-message'
+;; - Each message's text is where the message records it is.  `vm-expunge-message'
 ;;   takes the cons to splice from a reverse link while `vm-expunge-folder'
 ;;   deletes the text separately, so a wrong link makes the list and the buffer
 ;;   disagree without either looking wrong on its own (#453, #570).

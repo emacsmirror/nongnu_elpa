@@ -15,7 +15,7 @@
 ;; The point is the protocol behaviour and, more, the failure behaviour: a
 ;; download cut off half way, a server that has no UIDL, a DELE that comes back
 ;; -ERR.  None of that could be reached before, and mail integrity is exactly
-;; what it decides.
+;; what it determines.
 
 ;;; Code:
 
@@ -168,9 +168,9 @@ small response arrives in one piece (emacs-vm/vm#626)."
 			 ;; Wait for DONE, a predicate on what has arrived.
 			 ;; The deadline is a watchdog, not a measurement: the
 			 ;; test asserts nothing about how long a local socket
-			 ;; takes, and gives up early the moment the
+			 ;; takes, and stops early the moment the
 			 ;; connection dies, since nothing more is coming
-			 ;; then.  A failure says what the server thought it
+			 ;; then.  A failure reports what the server recorded it
 			 ;; was doing -- what it received, and any error it
 			 ;; hit answering, which used to be lost to the
 			 ;; messages buffer.
@@ -294,7 +294,7 @@ SPEC is (MOCK-VAR &rest ARGS), ARGS going to `vm-pop-mock-start'.  The name in
            (cl-letf (((symbol-function 'vm-display) #'ignore))
              (vm-visit-pop-folder "mockdrop")
              ;; visiting starts the fetch and returns without waiting for it,
-             ;; so what waits for the mail is whoever wants the mail
+             ;; so what waits for the mail is whoever needs the mail
              (vm-pop-net-wait nil 10)
              ,@body)
          (dolist (buffer (buffer-list))
@@ -359,7 +359,7 @@ answer arrives rather than before the question is asked."
       (should (vm-check-for-spooled-mail nil t))
       (should (< (- (float-time) started) 0.5)))
     (should (vm-pop-net-wait nil 20))
-    ;; nothing new: the folder holds what the maildrop holds
+    ;; nothing new: the folder contains what the maildrop contains
     (should-not vm-spooled-mail-waiting)))
 
 (defmacro vm-pop-mock-test--with-a-local-expunge (mock &rest body)

@@ -1046,8 +1046,8 @@ values offered as if you could give both."
                   ;; lexical-binding cookie and needs none, and it names
                   ;; variables and functions of packages that are not
                   ;; installed on the machine running this, each behind a
-                  ;; `(require ... nil t)\\=' that decides at run time.  A
-                  ;; compiler that cannot see them says so about every one.
+                  ;; `(require ... nil t)\\=' that is resolved at run time.  A
+                  ;; compiler that cannot see them warns about every one.
                   ;;
                   ;; What is left, and what this is for, is a form that would
                   ;; fail when it ran whatever is installed: the wrong number
@@ -1321,7 +1321,7 @@ name that is not obsolete rather than one that is."
     w3m-browse-url
     dired-file-name-at-point dired-filename-at-point
     ;; not defined in a batch Emacs, which is the point of asking: it is
-    ;; how `vm-toolbar-support-possible-p' tells a windowed Emacs from one
+    ;; how `vm-toolbar-support-possible-p' distinguishes a windowed Emacs from one
     ;; with no toolbar at all
     tool-bar-mode
     ;; arrived after VM's floor of Emacs 28.1

@@ -270,7 +270,7 @@ be silently ignored and the real code would `aref' a bogus value."
          (top    (vm-epg-test--make-layout
                   "multipart/encrypted" (list header msg)))
          (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*"))
-         ;; a message of VM's own making, whose buffer holds the cipher: the
+         ;; a message of VM's own making, whose buffer contains the cipher: the
          ;; slot numbers are not written down here, a hand-built vector
          ;; having had to be renumbered with them (emacs-vm/vm#861)
          (msg-obj (vm-make-message))
@@ -1068,7 +1068,7 @@ rather than armor in the body: that is what multipart/signed means."
         (should (string-match-p "multipart/signed" composed))
         ;; the part itself must be typed as the signature.  Matching the
         ;; string anywhere would be answered by the protocol= parameter of
-        ;; the enclosing multipart, which says nothing about the part.
+        ;; the enclosing multipart, which states nothing about the part.
         (should (string-match-p "^Content-Type: application/pgp-signature$"
                                 composed))
         (should (string-match-p "BEGIN PGP SIGNATURE" composed))
@@ -1157,7 +1157,7 @@ answer with."
             (let ((composed (buffer-string)))
               (should (string-match-p "^Content-Type: application/pgp-keys"
                                       composed))
-              ;; named for the author, which is what the recipient sees,
+              ;; named for the author, which is what the recipient is shown,
               ;; in the part's name parameter and in its disposition alike.
               ;; The name pattern needs the leading delimiter: without it,
               ;; "filename=" stands in for "name=" and the parameter goes

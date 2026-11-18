@@ -8,7 +8,7 @@
 
 ;; Every folder type VM will create, crossed with the message bodies that
 ;; stress a separator: file two messages, read the folder back, and check it
-;; still holds two with the boundary in the right place.
+;; still contains two with the boundary in the right place.
 ;;
 ;; The primitives have had tests one at a time for a long while -- what a
 ;; leading separator is, what `vm-skip-past-trailing-message-separator' moves

@@ -16,7 +16,7 @@
 ;; trusting a STORE that the server did not accept.  None of those can be
 ;; reached by asking a working server nicely.
 ;;
-;; The relay speaks no IMAP.  It forwards bytes and applies rules to the
+;; The relay implements no IMAP.  It forwards bytes and applies rules to the
 ;; stream, which keeps it small and keeps it honest: it cannot accidentally
 ;; paper over a protocol mistake VM makes, because it does not know what
 ;; correct looks like.
@@ -31,7 +31,7 @@
 ;;                          instead of passing it upstream
 ;;   :bad REGEXP            the same, with BAD
 ;;
-;; Everything the relay sees is recorded, so a test can assert on what VM
+;; Everything the relay reads is recorded, so a test can assert on what VM
 ;; actually sent rather than on what it was supposed to send.
 
 ;;; Code:

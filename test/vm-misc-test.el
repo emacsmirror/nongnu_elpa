@@ -1035,7 +1035,7 @@ first -- which would be another account's password."
     (should (null (vm-auth-source-password '(nil) 143 "user")))))
 
 
-;;; how much VM says (issue #508)
+;;; how much VM reports (issue #508)
 
 (defun vm-misc-test--messages-at (verbosity thunk)
   "Return the messages THUNK emits with `vm-verbosity' set to VERBOSITY."

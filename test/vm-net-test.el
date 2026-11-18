@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; The driver that runs a network session without waiting for it: a generator
-;; that yields when it wants input, a process filter that feeds it.
+;; that yields when it requires input, a process filter that feeds it.
 ;;
 ;; The sessions here run against a real process -- a small server on a local
 ;; port -- so the filter is the one that runs and the timing is real.  What the
@@ -401,7 +401,7 @@ load of a build it is.  So nothing here counts asks."
           (should-not (gethash port vm-net--probes))))
       (accept-process-output nil 0.05))
     (should answered)
-    ;; whatever is still outstanding when the caller gives up goes too
+    ;; whatever is still outstanding when the caller stops waiting goes too
     (should-not (vm-net-listening-p port))
     (let ((probe (gethash port vm-net--probes)))
       (vm-net-forget-probe port)

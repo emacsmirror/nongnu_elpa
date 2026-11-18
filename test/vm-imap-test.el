@@ -616,7 +616,7 @@ unusable for a server folder.  The name resolved here is exactly the one
   (let* ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
          (vm-imap-account-alist (list (list vm-imap-test--spec "myaccount")))
          (cache (vm-imap-make-filename-for-spec vm-imap-test--spec)))
-    ;; the name a user sees for this folder ...
+    ;; the name a user is shown for this folder ...
     (should (equal "myaccount:INBOX"
                    (vm-imap-folder-for-spec vm-imap-test--spec)))
     ;; ... resolves to the file the folder is really cached in
@@ -720,7 +720,7 @@ Body
 "
     (setq vm-folder-access-method 'imap)
     ;; `vm-select-folder-buffer-and-validate' is a defsubst, so it is inlined
-    ;; into the compiled command and cannot be stubbed; it asks for the mode
+    ;; into the compiled command and cannot be stubbed; it requires the mode
     (setq major-mode 'vm-mode)
     (let ((asked nil))
       (cl-letf (((symbol-function 'vm-imap-net-synchronize)
@@ -943,7 +943,7 @@ entries in front of it (emacs-vm/vm#936)."
     (should (equal (vm-imap-prune-retrieval-entries
                     vm-imap-test--inbox-upper entries (lambda (_tuple) nil))
                    nil)))
-  ;; what the mailbox still holds stays, whichever case it was recorded in
+  ;; what the mailbox still contains stays, whichever case it was recorded in
   (let ((entries (vm-imap-test--retrieved-entries
                   vm-imap-test--inbox-lower "101" "102")))
     (should (equal (length (vm-imap-prune-retrieval-entries
@@ -999,7 +999,7 @@ what it says when there is nothing to do."
   (should (string-match-p
            "Nothing has been retrieved"
            (vm-imap-test--prune-report vm-imap-test--inbox-upper nil '("101"))))
-  ;; what it says when it did prune is unchanged
+  ;; what it reports when it did prune is unchanged
   (should (equal (vm-imap-test--prune-report
                   vm-imap-test--inbox-upper
                   (vm-imap-test--retrieved-entries

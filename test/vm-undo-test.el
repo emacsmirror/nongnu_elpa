@@ -553,7 +553,7 @@ verbatim reported the one label as unused and missing at once."
 
 ;;; Undo across an expunge
 
-;; An undo record holds the message it would change, so expunging a message
+;; An undo record names the message it would change, so expunging a message
 ;; leaves records that would set flags on something no longer in the folder.
 ;; `vm-clear-expunge-invalidated-undos' drops them, recognising an expunged
 ;; message by its deleted flag being `expunged' rather than t.  It had no test
@@ -780,7 +780,7 @@ would make one undo command do nothing.  Squeezing them is what stops that."
       (vm-squeeze-consecutive-undo-boundaries)
       (should (equal vm-undo-record-list '((a) nil (b)))))))
 
-;;; What an undo says it is undoing
+;;; What an undo reports it is undoing
 
 (ert-deftest vm-undo-test-describe-names-the-flag-and-its-two-states ()
   "Undoing a flag change says which flag, and which way the undo goes.

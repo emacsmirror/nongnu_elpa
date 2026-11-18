@@ -164,7 +164,7 @@ off-by-one here is a message with a line missing or one glued to the next."
           (should (string-match-p "^line 1$" text))
           (should (string-match-p "^line 500$" text))
           ;; every octet the server said it would send, and no more: the
-          ;; count in the {n} is what says where the literal ends
+          ;; count in the {n} is what gives where the literal ends
           (should (equal (length text) (length long))))))))
 
 (iter-defun vm-imap-net-test--fetch (user password mailbox spec)
@@ -332,8 +332,8 @@ has to know which message it is looking at (issue #185)."
 ;;
 ;; The wait is twice the timeout here.  A session that finishes still finishes
 ;; in milliseconds; one that hangs is now reported by the assertion after the
-;; wait, which says what was not deleted, rather than by the wait itself, which
-;; says only that ten seconds passed.
+;; wait, which reports what was not deleted, rather than by the wait itself, which
+;; reports only that ten seconds passed.
 
 ;; A timeout here must outlast a garbage collection.  The suite's heap makes a
 ;; collection expensive -- 26 of them in one run, 34 seconds between them, and
@@ -345,7 +345,7 @@ has to know which message it is looking at (issue #185)."
 ;; The mock replies in milliseconds; these timeouts exist to stop a hang, not to
 ;; measure anything, so they cost nothing by being generous.  The wait is longer
 ;; again than the session's own timeout, so a session that does hang is reported
-;; by the assertion that says what was not done rather than by a bare deadline.
+;; by the assertion that reports what was not done rather than by a bare deadline.
 
 (ert-deftest vm-imap-net-test-headers-only-fetches-headers ()
   "A message too large to want whole is fetched as its headers, and what
@@ -384,7 +384,7 @@ than against a buffer a test invented."
        (unwind-protect
            (progn (vm-visit-imap-folder (vm-imap-mock-spec ,(car spec)))
                   ;; visiting starts the fetch and returns without waiting for
-                  ;; it, so what waits for the mail is whoever wants the mail
+                  ;; it, so what waits for the mail is whoever needs the mail
                   (vm-imap-net-wait nil 20)
                   ,@body)
          (dolist (buffer (buffer-list))
@@ -604,7 +604,7 @@ fetch's business."
     (should (vm-imap-mock-received-p mock "STORE 1 \\+FLAGS"))
     (should (member "\\seen" (mapcar #'downcase
                                      (vm-imap-mock-flags mock "INBOX" 1))))
-    ;; and nothing asked what the mailbox holds
+    ;; and nothing asked what the mailbox contains
     (should-not (vm-imap-mock-received-p mock "FETCH 1:2"))))
 
 (ert-deftest vm-imap-net-test-saving-expunges-on-the-server ()
@@ -800,7 +800,7 @@ modification flag has been lost, which nothing else would ever send."
     (should (equal (length vm-message-list) 2))
     (let ((message (car vm-message-list)))
       (vm-set-unread-flag message nil)
-      ;; read here, and nothing says so: a plain synchronisation would pass
+      ;; read here, and nothing records it: a plain synchronisation would pass
       ;; over this message
       (vm-set-attribute-modflag-of message nil))
     (vm-imap-mock-forget-commands mock)
@@ -1034,7 +1034,7 @@ counted with it."
     (should (string-match-p "fetching" vm-ml-session))
     (should-not (string-match-p "IMAP" vm-ml-session))
     (should (eq (get-text-property 1 'face vm-ml-session) 'vm-net-session-face))
-    ;; the summary says the same, without being the folder
+    ;; the summary shows the same, without being the folder
     (when (and vm-summary-buffer (buffer-live-p vm-summary-buffer))
       (with-current-buffer vm-summary-buffer
         (should (equal vm-ml-session
@@ -1202,7 +1202,7 @@ filter\" and leaves the reader to guess whose it was."
            (warned nil)
            (before (buffer-list)))
       (unwind-protect
-          ;; every warning, not only the last: VM says other things while a
+          ;; every warning, not only the last: VM reports other things while a
           ;; session runs, and which of them comes last is not the point
           (cl-letf (((symbol-function 'vm-warn)
                      (lambda (_level _seconds &rest args)
@@ -1448,7 +1448,7 @@ PERMANENTFLAGS, which is a server saying it keeps keywords of its own."
         (should (member "\\Seen" flags))
         ;; never \Deleted: a copy is not saved in order to be deleted
         (should-not (member "\\Deleted" flags))
-        ;; and the label, which the mailbox says it keeps
+        ;; and the label, which the mailbox reports it keeps
         (should (member "urgent" flags))))))
 
 (iter-defun vm-imap-net-test--permanent-flags (user password mailbox)
@@ -1510,7 +1510,7 @@ The mock without `\\*' in its PERMANENTFLAGS is what Gmail advertises."
                     (accept-process-output nil 0.05)))))
         ;; the copy went, which is the thing a refused APPEND would have cost
         (should (equal answer 1))
-        ;; and it says what did not go with it
+        ;; and it reports what did not go with it
         (should (seq-find (lambda (line)
                             (and (string-match-p "urgent" line)
                                  (string-match-p "PERMANENTFLAGS" line)))
@@ -1590,7 +1590,7 @@ that used to stick: a fetch clears the flag on its own."
 ;;; What only happens because nothing waits
 ;;
 ;; A session runs between whatever else Emacs is doing, so the things that go
-;; wrong are the things that cannot go wrong when a command holds the floor:
+;; wrong are the things that cannot go wrong while a command is running:
 ;; a second command started while the first is still running, the folder
 ;; going away underneath, a message list that changed since the plan was
 ;; made, an answer arriving in pieces.
@@ -2218,7 +2218,7 @@ one piece, so a save can only ever see whole messages the list names."
                     (while (and (not saved) (< (float-time) deadline))
                       (accept-process-output nil 0.05)))))
               (should saved)
-              ;; the file holds only what the folder had taken in
+              ;; the file contains only what the folder had taken in
               (should (equal (with-temp-buffer
                                (insert-file-contents file)
                                (count-matches "^From " (point-min) (point-max)))
@@ -2259,7 +2259,7 @@ one piece, so a save can only ever see whole messages the list names."
       (should (seq-find (lambda (buffer)
                           (string-match-p "\\`saved " (buffer-name buffer)))
                         vm-kept-imap-buffers))
-      ;; and it holds what went out and what the server said back
+      ;; and it contains what went out and what the server replied
       (should (seq-find
                (lambda (buffer)
                  (and (buffer-live-p buffer)
@@ -2891,7 +2891,7 @@ log in with, so VM asks for a password rather than sending it."
       (should (vm-imap-net-checkable-p spec)))))
 
 
-;;; The log says what VM did
+;;; The log records what VM did
 
 (ert-deftest vm-imap-net-test-not-starting-says-so ()
   "Work that does not start is announced as such, rather than as started.
@@ -2983,7 +2983,7 @@ put, which is what a log of three attempts showed, each one saying
            (spec (format "imap:127.0.0.1:%d:INBOX:login:vmtest:*" port))
            (vm-imap-passwords nil)
            (auth-sources nil)
-           (vm-imap-ok-to-ask nil)   ; its default, and what a command sees
+           (vm-imap-ok-to-ask nil)   ; its default, and what a command reads
            (asked 0))
       (cl-letf (((symbol-function 'read-passwd)
                  (lambda (&rest _) (setq asked (1+ asked)) "secret")))
@@ -3203,7 +3203,7 @@ The fetch is not abandoned over it -- the other messages are new mail."
       (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
       (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
       (should (equal (vm-imap-net-test--get-mail mock) 2))
-      ;; the folder forgets it has the first, as a folder whose plan was made
+      ;; the folder loses the record that it has the first, as a folder whose plan was made
       ;; before something else took the message in would have it
       (let ((uid (vm-imap-uid-of (car vm-message-list))))
         (cl-letf (((symbol-function 'vm-imap-get-synchronization-data)
@@ -3257,7 +3257,7 @@ plan's own check having been made before any of this was asked for."
                  (lambda (_level _seconds &rest args)
                    (push (apply #'format args) said))))
         ;; the answer counts what was asked for, which is the offset the
-        ;; bunches are taken at; what arrived is what the folder holds
+        ;; bunches are taken at; what arrived is what the folder contains
         (should (equal (vm-imap-net-test--get-mail mock) 2)))
       (should (equal (length vm-message-list) 1))
       (should (equal (vm-imap-uid-of (car vm-message-list)) "2"))
@@ -3315,7 +3315,7 @@ stranger; a UID the mailbox no longer has matches nothing."
     (should (equal flags '((2 "\\seen") (3))))))
 
 
-;;; Fetching what the folder was given once and no longer holds (#751)
+;;; Fetching what the folder was given once and no longer contains (#751)
 
 (ert-deftest vm-imap-net-test-a-full-fetch-brings-back-what-the-record-names ()
   "A message the record names and the folder has not got is fetched again
@@ -3330,7 +3330,7 @@ the message some other way -- a partial restore.  Two prefix arguments to
     (should (equal (vm-imap-net-test--get-mail mock) 1))
     (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--bob)
     ;; the folder is told it fetched the second message once already, which
-    ;; is what its own `X-VM-IMAP-Retrieved' header says after a cache that
+    ;; is what its own `X-VM-IMAP-Retrieved' header records after a cache that
     ;; had it was restored from a backup that had not
     (setq vm-imap-retrieved-messages
           (list (list "2" (vm-folder-imap-uid-validity)
@@ -3359,7 +3359,7 @@ that ignored it would leave the command doing nothing at all."
         (vm-get-spooled-mail nil t))
       (should (equal (nreverse asked) '(nil t))))))
 
-;;; The table of UIDs the folder already holds
+;;; The table of UIDs the folder already contains
 
 (defun vm-imap-net-test--message-holding (uid validity)
   "A message with UID under VALIDITY, as one read from a folder does."
@@ -3739,7 +3739,7 @@ It signalled `vm-imap-net-no-password' for any auth but login."
         (vm-net-close-process process)
         (when (buffer-live-p (vm-net-session-buffer (nth 0 opened)))
           (kill-buffer (vm-net-session-buffer (nth 0 opened)))))))
-  ;; an auth VM does not know is an error the reader sees, naming what to
+  ;; an auth VM does not know is an error the reader is shown, naming what to
   ;; write instead.  There is no other path for it to be handed to.
   (vm-imap-mock-with (mock)
     (let* ((text-quoting-style 'grave)
@@ -4080,7 +4080,7 @@ with a shorter list is worth knowing."
     (let ((session (vm-imap-net-test--run
                     mock (vm-imap-net-test--select-only "INBOX"))))
       (should (eq (vm-net-session-state session) 'done))
-      ;; SELECT still returns what the mailbox holds
+      ;; SELECT still returns what the mailbox contains
       (should (equal (nth 0 (vm-net-session-value session)) 1)))))
 
 ;;; A body a folder type would otherwise read as a separator
@@ -4241,7 +4241,7 @@ change."
       ;; the reason is given
       (should (seq-find (lambda (line) (string-match-p "no password" line))
                         warned))
-      ;; and no load is claimed: what it says about loading, if anything, is
+      ;; and no load is claimed: what it reports about loading, if anything, is
       ;; that none happened.  Taking the messages off the list either way used
       ;; to report "1 message body loaded" with nothing loaded.
       (let ((about-loading (seq-find (lambda (line)
@@ -4263,7 +4263,7 @@ having happened, and is what was reported (emacs-vm/vm#825)."
   (vm-imap-net-test--visiting (mock)
     (vm-imap-mock-add-message mock "INBOX" vm-imap-net-test--alice)
     (should (eq (vm-imap-net-get-spooled-mail nil) 'started))
-    ;; nothing has arrived yet: that is what `started' says
+    ;; nothing has arrived yet: that is what `started' records
     (should (equal (length vm-message-list) 0))
     (should (vm-imap-net-wait nil 90))
     (should (equal (length vm-message-list) 1))))
@@ -4311,7 +4311,7 @@ external.  Which messages those are is still the mailbox's own limit."
           '(("imap:mail.example.invalid:143:*:login:alice:*" "work")))
          (archive "imap:mail.example.invalid:143:Archive/2024:login:alice:*")
          (inbox "imap:mail.example.invalid:143:INBOX:login:alice:*")
-         ;; (SEQUENCE-NUMBER UID SIZE), which is what message data holds
+         ;; (SEQUENCE-NUMBER UID SIZE), which is what message data contains
          (data '((1 "11" "100") (2 "22" "100000")))
          (wanted '((1 . "11") (2 . "22")))
          (vm-imap-max-message-size '(("work:Archive/.*" . 50000)
@@ -4412,7 +4412,7 @@ LOGIN and nothing else."
      mock (vm-imap-net-test--login-xoauth2 "vmtest" "ya29.secret-token"))
     (with-current-buffer vm-imap-net-test--buffer
       (let ((transcript (buffer-string)))
-        ;; the mechanism stays, so a report says which one was tried
+        ;; the mechanism stays, so a report names which one was tried
         (should (string-match-p "AUTHENTICATE XOAUTH2" transcript))
         (should (string-match-p "initial response omitted" transcript))
         (should-not (string-match-p "ya29.secret-token" transcript))
