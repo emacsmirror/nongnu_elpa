@@ -49,6 +49,9 @@
 
  ;; (async-await		:url "https://github.com/chuntaro/emacs-async-await")
 
+ (au-themes             :url "https://github.com/szymonwilczek/au-themes"
+  :readme ignore)
+
  (auto-dim-other-buffers :url "https://github.com/mina86/auto-dim-other-buffers.el"
   :readme "README.md"
   :ignored-files ("LICENSE" "screenshot.gif"))
