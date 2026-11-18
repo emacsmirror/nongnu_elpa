@@ -246,6 +246,10 @@ If you have markdown or pandoc installed, consider enabling this for
 performance."
   :type '(boolean))
 
+(defcustom fj-render-images t
+  "Whether to render linked images in PR and issue timelines."
+  :type '(boolean))
+
 ;;; FACES
 
 (defface fj-comment-face
@@ -3314,12 +3318,16 @@ Optionally start from POINT."
                                   tab-width ;; review comments
                                 2)))
                 (shr-discard-aria-hidden t) ; for pandoc md image output
+                (shr-inhibit-images (not fj-render-images))
                 (shr-external-rendering-functions
-                 (append shr-external-rendering-functions
-                         '((input . fj-tag-input)
-                           (blockquote . fj-shr-tag-blockquote)
-                           (code . fj-shr-tag-code)
-                           (img . fj-shr-tag-img))))
+                 (append
+                  (if fj-render-images
+                      ;; ensure rendering of img is not overriden externally.
+                      (assq-delete-all 'img shr-external-rendering-functions)
+                    shr-external-rendering-functions)
+                  '((input . fj-tag-input)
+                    (blockquote . fj-shr-tag-blockquote)
+                    (code . fj-shr-tag-code))))
                 ;; FIXME: (1- (point)) is needed to catch review comment
                 ;; props, but it breaks Web UI quote lines (the quote and
                 ;; the response to it run on together):
@@ -3342,8 +3350,8 @@ Optionally start from POINT."
         (while (setq match (text-property-search-forward 'fj-review-diff))
           (setq-local font-lock-defaults diff-font-lock-defaults)
           (font-lock-fontify-region (prop-match-beginning match)
-                                    (prop-match-end match)
-                                    t)
+                            (prop-match-end match)
+                            t)
           (goto-char (prop-match-end match))))
       ;; propertize handles, tags, URLs, and commits
       (fedi-propertize-items fedi-post-handle-regex 'handle
