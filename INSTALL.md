@@ -80,9 +80,9 @@ common cause of odd behaviour after an upgrade, and it does not happen with a
 package install, which replaces the lot.
 
 Run it from the tree you installed *from*, if you still have it: `uninstall`
-removes the files that build knows about, so the old tree is what knows the
+removes the files that build recorded, so the old tree is what has the
 old file names.  If the old tree is gone, delete the installed lisp directory
-by hand -- `--with-lispdir` says where, `${prefix}/share/emacs/site-lisp/vm`
+by hand -- `--with-lispdir` sets where, `${prefix}/share/emacs/site-lisp/vm`
 by default -- and then install.
 
 Then either use VM from where you built it, or install it.
@@ -123,7 +123,7 @@ teaches the rest.
 VM works without these, but reads mail better with them.
 
 * **BBDB**, an address book that runs inside Emacs and can record the
-  addresses it sees in your mail.  Compile VM with BBDB in the lisp path,
+  addresses it finds in your mail.  Compile VM with BBDB in the lisp path,
   then:
 
   ```elisp

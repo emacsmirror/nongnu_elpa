@@ -63,7 +63,7 @@ VM's IMAP client issues only two body fetches:
 | BODY.PEEK[HEADER] | headers only    |
 | BODY.PEEK[]       | the whole thing |
 
-It never asks for BODYSTRUCTURE, so it cannot know a message's MIME structure
+It never requests BODYSTRUCTURE, so it cannot know a message's MIME structure
 without downloading it.  Lazy parts need the layout built from the server's
 description instead of by parsing bytes.
 
@@ -105,7 +105,7 @@ this part present", rather than spread across the type handlers.
   what came from the server, and sidestep the rewrite-in-place problem entirely.
   They cost a buffer per displayed part.
 - Eviction.  vm-external-fetched-message-limit counts messages; the
-  equivalent for parts wants to count bytes, since one PDF is not one line of
+  equivalent for parts has to count bytes, since one PDF is not one line of
   text.
 - Saving.  Fetched parts must not be written to disk, as fetched bodies are not
   today.  With work buffers this is automatic.

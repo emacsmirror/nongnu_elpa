@@ -75,11 +75,11 @@ Anything found gets an issue of its own before the release goes out.
       lisp/vm.el, the NEWS-3.md heading, the manual's release list
 - [ ] make -C info check-reference, then commit
 
-Never with sed.  lisp/ holds dozens of occurrences of the current version
+Never with sed.  lisp/ contains dozens of occurrences of the current version
 inside obsolescence markers, which say which release deprecated a name and
 must not move.  53 once named 8.3.3 or 8.4.0, neither ever released.
 
-Every compiled file carries the version it was built against, so a bump
+Every compiled file records the version it was built against, so a bump
 invalidates all of them.  A release build runs make distclean anyway.
 
 Start NEWS-4.md when NEWS-3.md grows unwieldy.  Older NEWS files are never
@@ -112,9 +112,9 @@ renamed.
       (add-to-list 'package-archives
                    '("nongnu-devel" . "https://elpa.nongnu.org/nongnu-devel/"))
       #+end_src
-- [ ] once vm.el carries a release number, it reaches
+- [ ] once vm.el has a release number, it reaches
       https://elpa.nongnu.org/nongnu/vm.html
-- [ ] emacs-vm/vm#833: check the ELPA tarball carries the reference appendix
+- [ ] emacs-vm/vm#833: check the ELPA tarball contains the reference appendix
 
 * Packagers
 
