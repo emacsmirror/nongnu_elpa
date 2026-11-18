@@ -108,8 +108,8 @@ and a message that was shown and not recorded is one nobody can go back to.
 ;;;###autoload
 (defun vm-show-log ()
   "Show the log of what VM has been doing, and when.
-It holds everything VM has said this session, timed, and whatever more
-`vm-log-level' asks for."
+It contains everything VM has reported this session, timed, and whatever more
+`vm-log-level' requests."
   (interactive)
   (let ((buffer (get-buffer vm-log-buffer-name)))
     (if (and buffer (> (buffer-size buffer) 0))

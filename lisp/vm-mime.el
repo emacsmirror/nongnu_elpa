@@ -7153,7 +7153,7 @@ whitespace in it stays over the limit, there being nowhere to break it."
 (defun vm-mime-encode-composition (&optional attachments-only)
  "MIME encode the current mail composition buffer.
 
-This function chooses the MIME character set(s) to use, and transforms the
+This function selects the MIME character set(s) to use, and transforms the
 message content from the Emacs-internal encoding to the corresponding
 octets in that MIME character set.
 

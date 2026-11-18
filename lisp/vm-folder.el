@@ -142,12 +142,12 @@
 
 ;;;###autoload
 (defun vm-folder-cache-file (&optional buffer)
-  "Say which file holds the local cache of this POP or IMAP folder.
+  "Return the file containing the local cache of this POP or IMAP folder.
 
-Answers nil for a folder that is a file in the first place.  BUFFER is the
+Returns nil for a folder that is a file in the first place.  BUFFER is the
 folder to ask about, the current one by default -- and a summary or
 presentation buffer counts as its folder, since that is where the reader
-is when the question occurs to them.  In a virtual folder the answer is
+is when the question occurs to them.  In a virtual folder the result is
 about the folder the message being looked at really lives in.
 
 A cache file is named after the MD5 of the maildrop, so it can be neither
@@ -4227,10 +4227,10 @@ If the customization variable `vm-expunge-before-quit' is set to
 Giving a prefix argument overrides the variable and no expunge is
 done.
 
-When called internally, the optional argument NO-EXPUNGE says
-that the deleted messages should not be expunged (irrespective of
-the value of `vm-expunge-before-quit'.  NO-CHANGE says that
-changes should be discarded."
+When called internally, the optional argument NO-EXPUNGE means
+the deleted messages are not expunged (irrespective of
+the value of `vm-expunge-before-quit'.  NO-CHANGE means the
+changes are discarded."
   (interactive "P")
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (if (not (memq major-mode '(vm-mode vm-virtual-mode)))
@@ -4594,7 +4594,7 @@ are stored against the new name for the folders summary, so it does not
 have to open the folder to know them.  And the summary and presentation
 buffers are renamed to follow the folder.
 
-Refuses on a virtual folder, which has no file of its own."
+Signals an error on a virtual folder, which has no file of its own."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-virtual-folder)
@@ -6542,8 +6542,8 @@ when saving a buffer."
 Every cache VM creates has `vm-cache-folder-type-suffix' in its name and is
 written in that type.  One without it was written by a VM that did not name its
 caches, and is read as From_, so it keeps the weakness mboxcl2 exists to
-remove: a message whose body holds a line beginning \"From \" can split it in
-two.
+remove: a message whose body contains a line beginning \"From \" can split it
+in two.
 
 The directories are the ones a cache name is built in:
 `vm-imap-folder-cache-directory', `vm-pop-folder-cache-directory',
@@ -6648,7 +6648,7 @@ its list in a buffer too."
 A cache VM creates now is named for its type and written as mboxcl2, where the
 end of a message is a byte count rather than a line that has to be recognised.
 A cache from before that has no such name and is read as From_, so a message
-whose body holds a line beginning \"From \" can still split it in two.  This
+whose body contains a line beginning \"From \" can still split it in two.  This
 converts each of those and renames it, which is `vm-change-folder-type-of-file'
 once per cache: the previous contents are kept in a backup file, and a cache
 that is already mboxcl2 in all but its name is only renamed.
@@ -6959,7 +6959,8 @@ what the format is for, takes the wrong bytes.
 A POP or IMAP cache whose name states no type is reported too, and
 `vm-convert-caches-to-mboxcl2' named as what converts it.  Nothing in such a
 cache is wrong, so this is the one place a reader is told: it is read as From_,
-where a message whose body holds a line beginning \"From \" can split in two.
+where a message whose body contains a line beginning \"From \" can split in
+two.
 
 Nothing is written.  `vm-change-folder-type' is the repair: converting a
 folder to the type it already is recomputes every length."
@@ -7045,9 +7046,9 @@ is not visiting.  That is how to repair a folder VM will not read -- see
 
 With two prefix arguments, or with OUTPUT given, the converted folder is
 written to a file of your naming and the one converted is left as it was.
-OUTPUT wants FILE: to convert the folder you are in into a new file, save it
-and convert that.  A name that cannot hold TYPE is refused rather than
-written, here and on disk both -- a folder called out.mbox cannot hold
+OUTPUT requires FILE: to convert the folder you are in into a new file, save
+it and convert that.  A name that cannot name TYPE is rejected rather than
+written, here and on disk both -- a folder called out.mbox cannot be
 mboxcl2 (emacs-vm/vm#763).
 
 The folder's current type is offered as well as the others: converting a
@@ -7058,8 +7059,8 @@ opens without complaint and the reader quietly falls back on searching for the
 next separator.
 
 Without FILE the folder in the current buffer is converted, and a buffer whose
-visit failed partway is refused: it holds only the messages read before the
-error, and the on-disk conversion is what such a folder wants."
+visit failed partway is rejected: it contains only the messages read before
+the error, and the on-disk conversion is what such a folder requires."
   (interactive
    (let ((this-command this-command)
 	 (last-command last-command)

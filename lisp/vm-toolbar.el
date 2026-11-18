@@ -232,7 +232,7 @@ will run 'vm-decode-mime-message'."])
 
 ;;;###autoload
 (defun vm-toolbar-helper-command ()
-  "Run whatever command `vm-toolbar-helper-command\' currently holds.
+  "Run whatever command `vm-toolbar-helper-command\' currently contains.
 The toolbar\'s helper button changes with the context: what it does is
 decided by reassigning this variable before the button is drawn, rather
 than by having a button per command."
@@ -292,7 +292,7 @@ all give nil."
 
 ;;;###autoload
 (defun vm-toolbar-autofile-message ()
-  "Save this message to the folder `vm-auto-folder-alist\' chooses for it.
+  "Save this message to the folder `vm-auto-folder-alist\' selects for it.
 The toolbar\'s autofile button.  Signals if no entry in that list matches
 the message, rather than prompting for a folder."
   (interactive)

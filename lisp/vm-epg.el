@@ -1135,7 +1135,7 @@ failure inserts the error text instead, faced with `vm-epg-error'.
 If the plaintext is itself an inline signed message, verify it as well with
 `vm-epg-cleartext-verify'.
 
-Refuses to run on a read-only folder even though only the presentation copy
+Signals an error on a read-only folder even though only the presentation copy
 is written, unlike `vm-epg-cleartext-verify', which does not check."
   (interactive)
   (when (vm-interactive-p)

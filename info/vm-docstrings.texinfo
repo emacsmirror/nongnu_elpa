@@ -20,11 +20,11 @@ When invoked on marked messages (via @code{vm-next-command-uses-marks}),
 only messages both marked and deleted are expunged, other messages are
 ignored.
 
-NOT-ON-THE-SERVER says these messages are being expunged because the server no
-longer has them, so their deletion is not queued for it.  A synchronise passes
-it for the messages it found gone; without it the queue collected UIDs that no
-longer exist there, which is a no-op at best and a NO from some servers
-(emacs-vm/vm#757).
+NOT-ON-THE-SERVER means these messages are being expunged because the
+server no longer has them, so their deletion is not queued for it.  A
+synchronise passes it for the messages it found gone; without it the queue
+collected UIDs that no longer exist there, which is a no-op at best and a
+NO from some servers (emacs-vm/vm#757).
 @end deffn
 
 @end macro
@@ -112,11 +112,11 @@ When invoked on marked messages (via @code{vm-next-command-uses-marks}),
 only messages both marked and deleted are expunged, other messages are
 ignored.
 
-NOT-ON-THE-SERVER says these messages are being expunged because the server no
-longer has them, so their deletion is not queued for it.  A synchronise passes
-it for the messages it found gone; without it the queue collected UIDs that no
-longer exist there, which is a no-op at best and a NO from some servers
-(emacs-vm/vm#757).
+NOT-ON-THE-SERVER means these messages are being expunged because the
+server no longer has them, so their deletion is not queued for it.  A
+synchronise passes it for the messages it found gone; without it the queue
+collected UIDs that no longer exist there, which is a no-op at best and a
+NO from some servers (emacs-vm/vm#757).
 @end deffn
 
 @end macro
@@ -198,7 +198,7 @@ Burst the current message (a digest) into its individual messages.
 The digest’s messages are assimilated into the folder as new mail
 would be.
 
-Optional argument DIGEST-TYPE is a string that tells VM what kind
+Optional argument DIGEST-TYPE is a string naming what kind
 of digest the current message is.  If it is not given the value
 defaults to the value of vm-digest-burst-type.  When called
 interactively DIGEST-TYPE will be read from the minibuffer.
@@ -221,7 +221,7 @@ invoked on the buffer.  There is no file associated with this
 buffer.  You can use @code{vm-write-file} to save the buffer, or
 @code{vm-save-message} to save individual messages to a real folder.
 
-Optional argument DIGEST-TYPE is a string that tells VM what kind
+Optional argument DIGEST-TYPE is a string naming what kind
 of digest the current message is.  If it is not given the value
 defaults to the value of vm-digest-burst-type.  When called
 interactively DIGEST-TYPE will be read from the minibuffer.
@@ -368,8 +368,8 @@ Default value: @code{"mime"}
 @macro vmdocvmmimedigestdiscardheaderregexp
 @defopt vm-mime-digest-discard-header-regexp
 @vindex vm-mime-digest-discard-header-regexp
-Non-nil value should be a regular expression that tells
-which headers should not appear in MIME digests created
+Non-nil value should be a regular expression matching the
+headers that do not appear in MIME digests created
 by VM.  This variable along with @code{vm-mime-digest-headers}
 determines which headers are kept and which are discarded.
 
@@ -422,8 +422,8 @@ Default value:
 @macro vmdocvmrfc1153digestdiscardheaderregexp
 @defopt vm-rfc1153-digest-discard-header-regexp
 @vindex vm-rfc1153-digest-discard-header-regexp
-Non-nil value should be a regular expression that tells
-what headers should not appear in RFC 1153 digests created by VM.  This
+Non-nil value should be a regular expression matching the
+headers that do not appear in RFC 1153 digests created by VM.  This
 variable along with @code{vm-rfc1153-digest-headers} determines which headers
 are kept and which headers are discarded.
 
@@ -478,8 +478,8 @@ Default value:
 @macro vmdocvmrfc934digestdiscardheaderregexp
 @defopt vm-rfc934-digest-discard-header-regexp
 @vindex vm-rfc934-digest-discard-header-regexp
-Non-nil value should be a regular expression that tells
-what headers should not appear in RFC 934 digests created by VM.  This
+Non-nil value should be a regular expression matching the
+headers that do not appear in RFC 934 digests created by VM.  This
 variable along with @code{vm-rfc934-digest-headers} determines which headers
 are kept and which are discarded.
 
@@ -828,7 +828,7 @@ failure inserts the error text instead, faced with @code{vm-epg-error}.
 If the plaintext is itself an inline signed message, verify it as well with
 @code{vm-epg-cleartext-verify}.
 
-Refuses to run on a read-only folder even though only the presentation copy
+Signals an error on a read-only folder even though only the presentation copy
 is written, unlike @code{vm-epg-cleartext-verify}, which does not check.
 @end deffn
 
@@ -1134,7 +1134,7 @@ of:
 
 - t, or the list (imap), for every IMAP folder.
 
-- An alist, which a cons for its first element says it is, naming the
+- An alist, recognized by a cons for its first element, naming the
   contexts mailbox by mailbox:
 
     (("work:Archive/.*" imap))
@@ -1357,9 +1357,9 @@ is not visiting.  That is how to repair a folder VM will not read -- see
 
 With two prefix arguments, or with OUTPUT given, the converted folder is
 written to a file of your naming and the one converted is left as it was.
-OUTPUT wants FILE: to convert the folder you are in into a new file, save it
-and convert that.  A name that cannot hold TYPE is refused rather than
-written, here and on disk both -- a folder called out.mbox cannot hold
+OUTPUT requires FILE: to convert the folder you are in into a new file, save
+it and convert that.  A name that cannot name TYPE is rejected rather than
+written, here and on disk both -- a folder called out.mbox cannot be
 mboxcl2 (emacs-vm/vm#763).
 
 The folder’s current type is offered as well as the others: converting a
@@ -1370,8 +1370,8 @@ opens without complaint and the reader quietly falls back on searching for the
 next separator.
 
 Without FILE the folder in the current buffer is converted, and a buffer whose
-visit failed partway is refused: it holds only the messages read before the
-error, and the on-disk conversion is what such a folder wants.
+visit failed partway is rejected: it contains only the messages read before
+the error, and the on-disk conversion is what such a folder requires.
 @end deffn
 
 @end macro
@@ -1407,7 +1407,8 @@ what the format is for, takes the wrong bytes.
 A POP or IMAP cache whose name states no type is reported too, and
 @code{vm-convert-caches-to-mboxcl2} named as what converts it.  Nothing in such a
 cache is wrong, so this is the one place a reader is told: it is read as From_,
-where a message whose body holds a line beginning "From " can split in two.
+where a message whose body contains a line beginning "From " can split in
+two.
 
 Nothing is written.  @code{vm-change-folder-type} is the repair: converting a
 folder to the type it already is recomputes every length.
@@ -1422,7 +1423,7 @@ Convert every POP and IMAP cache whose name does not state its type.
 A cache VM creates now is named for its type and written as mboxcl2, where the
 end of a message is a byte count rather than a line that has to be recognised.
 A cache from before that has no such name and is read as From_, so a message
-whose body holds a line beginning "From " can still split it in two.  This
+whose body contains a line beginning "From " can still split it in two.  This
 converts each of those and renames it, which is @code{vm-change-folder-type-of-file}
 once per cache: the previous contents are kept in a backup file, and a cache
 that is already mboxcl2 in all but its name is only renamed.
@@ -1456,12 +1457,12 @@ Show the line @code{vm-totals-blurb} returns, and return it.
 @macro vmdocvmfoldercachefile
 @deffn Command vm-folder-cache-file &optional buffer
 @findex vm-folder-cache-file
-Say which file holds the local cache of this POP or IMAP folder.
+Return the file containing the local cache of this POP or IMAP folder.
 
-Answers nil for a folder that is a file in the first place.  BUFFER is the
+Returns nil for a folder that is a file in the first place.  BUFFER is the
 folder to ask about, the current one by default -- and a summary or
 presentation buffer counts as its folder, since that is where the reader
-is when the question occurs to them.  In a virtual folder the answer is
+is when the question occurs to them.  In a virtual folder the result is
 about the folder the message being looked at really lives in.
 
 A cache file is named after the MD5 of the maildrop, so it can be neither
@@ -1588,10 +1589,10 @@ If the customization variable @code{vm-expunge-before-quit} is set to
 Giving a prefix argument overrides the variable and no expunge is
 done.
 
-When called internally, the optional argument NO-EXPUNGE says
-that the deleted messages should not be expunged (irrespective of
-the value of @code{vm-expunge-before-quit}.  NO-CHANGE says that
-changes should be discarded.
+When called internally, the optional argument NO-EXPUNGE means
+the deleted messages are not expunged (irrespective of
+the value of @code{vm-expunge-before-quit}.  NO-CHANGE means the
+changes are discarded.
 @end deffn
 
 @end macro
@@ -1819,7 +1820,7 @@ are stored against the new name for the folders summary, so it does not
 have to open the folder to know them.  And the summary and presentation
 buffers are renamed to follow the folder.
 
-Refuses on a virtual folder, which has no file of its own.
+Signals an error on a virtual folder, which has no file of its own.
 @end deffn
 
 @end macro
@@ -1932,7 +1933,7 @@ Default value: @code{".crash"}
 @macro vmdocvmdefaultFromfoldertype
 @defopt vm-default-From_-folder-type
 @vindex vm-default-From_-folder-type
-Value must be a symbol that tells VM which From-style folder type
+Value must be a symbol naming which From-style folder type
 is used by your local mail delivery system.  Valid values are
 
 @example
@@ -1972,9 +1973,10 @@ Default folder type for empty folders.
 If VM has to add messages that have no specific folder type to an
 empty folder, the folder will become this default type.
 
-It decides a folder VM creates, and nothing else: an existing folder is read
-as what its name says, per @code{vm-folder-type-by-extension-alist}, or, where the
-name says nothing, as what VM can work out from its contents.  So changing
+It determines a folder VM creates, and nothing else: an existing folder is
+read as the type its name states, per @code{vm-folder-type-by-extension-alist},
+or, where the name states nothing, as what VM can work out from its
+contents.  So changing
 this cannot change how a folder you already have is read.
 
 Set to mboxcl2 it decides the name as well: a folder VM creates is created as
@@ -2029,7 +2031,7 @@ to use for new folders.  Text files under UNIXish and Windows
 systems use different characters to indicate the end of a line.
 UNIXish systems use a single linefeed character, Windows uses a
 carriage return followed by a line feed.  The value of this
-variable tells VM which to use.
+variable selects which to use.
 
 @code{nil} means use the line ending convention of the local system;
 CRLF if you’re on a Windows system, LF for UNIXish systems.
@@ -2116,7 +2118,7 @@ Default value: @code{t}
 @macro vmdocvmfoldertypebyextensionalist
 @defopt vm-folder-type-by-extension-alist
 @vindex vm-folder-type-by-extension-alist
-Alist of (EXTENSION . TYPE): the folder type a folder’s name asks for.
+Alist of (EXTENSION . TYPE): the folder type a folder’s name selects.
 EXTENSION is matched literally against the file name’s extension, without
 the dot, and TYPE is one of the types @code{vm-default-folder-type} accepts.
 
@@ -2136,7 +2138,7 @@ What a folder’s own contents say is never overridden where they settle the
 question: a name ending .mboxcl2 does not make VM read a BABYL file as one.
 
 .mbox is From_, which is what the rest of the world means by an mbox file.
-From_ is also the type a folder has when its name says nothing about it, so it
+From_ is also the type a folder has when its name states nothing about it, so
 is the one type an extension names without being the name that type is written
 under: a folder called sent.mbox keeps that name when converted to From_, and
 one called INBOX is not renamed INBOX.mbox by the same conversion.  See
@@ -2561,11 +2563,11 @@ SPOOLNAME can also be an IMAP maildrop.
     are "preauth", "login", "cram-md5" and "xoauth2".
     "preauth" causes VM to skip the authentication stage of the
     protocol with the assumption that the session was authenticated
-    in some external way.  "login", tells VM to use the IMAP LOGIN
+    in some external way.  "login" selects the IMAP LOGIN
     command for authentication, which sends your username and
     password in cleartext to the server.  "cram-md5" is a
-    challenge response system that convinces the server of your
-    identity without transmitting your password in the clear.
+    challenge response system that proves your identity to the
+    server without transmitting your password in the clear.
     Not all servers support "cram-md5"; if you’re not sure, ask
     your mail administrator or just try it.
 
@@ -2754,8 +2756,8 @@ Default value: @code{"forwarded message from %F"}
 @macro vmdocvmresendbounceddiscardheaderregexp
 @defopt vm-resend-bounced-discard-header-regexp
 @vindex vm-resend-bounced-discard-header-regexp
-Non-nil value should be a regular expression that tells
-what headers should not appear in a resent bounced message.  This
+Non-nil value should be a regular expression matching the
+headers that do not appear in a resent bounced message.  This
 variable along with @code{vm-resend-bounced-headers} determines which headers
 are kept and which headers are discarded.
 
@@ -2809,8 +2811,8 @@ Default value:
 @macro vmdocvmresenddiscardheaderregexp
 @defopt vm-resend-discard-header-regexp
 @vindex vm-resend-discard-header-regexp
-Non-nil value should be a regular expression that tells
-what headers should not appear in a resent message.  This
+Non-nil value should be a regular expression matching the
+headers that do not appear in a resent message.  This
 variable along with @code{vm-resend-headers} determines which
 headers are kept and which headers are discarded.
 
@@ -2859,8 +2861,8 @@ the message.
 @macro vmdocvmunforwardedheaderregexp
 @defopt vm-unforwarded-header-regexp
 @vindex vm-unforwarded-header-regexp
-Non-nil value should be a regular expression that tells what
-headers should not be forwarded by @code{vm-forward-message} and
+Non-nil value should be a regular expression matching the
+headers that are not forwarded by @code{vm-forward-message} and
 @code{vm-send-digest}.  This variable along with @code{vm-forwarded-headers}
 determines which headers are forwarded. 
 
@@ -2883,8 +2885,8 @@ Default value: @code{"none-to-be-dropped"}
 @macro vmdocvmunforwardedheaderregexpplain
 @defopt vm-unforwarded-header-regexp-plain
 @vindex vm-unforwarded-header-regexp-plain
-Non-nil value should be a regular expression that tells what
-headers should not be forwarded by @code{vm-forward-message-plain}.  This
+Non-nil value should be a regular expression matching the
+headers that are not forwarded by @code{vm-forward-message-plain}.  This
 variable along with @code{vm-forwarded-headers-plain} determines which headers
 are forwarded.
 
@@ -2966,7 +2968,7 @@ spool file signals an error saying so, rather than making do with another
 movemail found along @code{exec-path}.
 
 It has to be that one, and not simply the first @code{movemail} on the path.
-Emacs’s copies the spool byte for byte, which is all VM wants of it; other
+Emacs’s copies the spool byte for byte, which is all VM requires of it; other
 implementations move mail by *parsing and rewriting* it, and what comes out
 is not what the mail server put in.  GNU Mailutils’ movemail, which is
 @code{/usr/bin/movemail} on Debian and Ubuntu when the mailutils package is
@@ -3004,9 +3006,9 @@ The most of one session trace a bug report includes, in characters.
 A session that fetched the UID and flags of every message in a large mailbox
 leaves most of a megabyte in its trace, and a bug report of that size cannot
 be sent.  Beyond this, the middle of the trace is left out and the report
-states how much: the start holds what the server is and what was asked of it,
-the end where it went wrong, and the thousands of identical FETCH lines
-between them hold nothing new.
+states how much: the start contains what the server is and what was asked of
+it, the end where it went wrong, and the thousands of identical FETCH lines
+between them contain nothing new.
 
 Nil includes every trace whole.
 
@@ -3113,10 +3115,9 @@ found, the OpenSSL library will refuse to work and stunnel will
 not be able to establish an SSL connection.
 
 Setting @code{vm-stunnel-random-data-method} to the symbol @code{generate}
-tells VM to generate the random data.
+makes VM generate the random data.
 
-A nil value tells VM to do nothing and let stunnel find the data
-if it can.
+A nil value leaves the data for stunnel to find, if it can.
 
 Default value: @code{generate}
 @end defopt
@@ -3464,7 +3465,7 @@ and (point-max).
 @macro vmdocvmspooledmailwaitinghook
 @defopt vm-spooled-mail-waiting-hook
 @vindex vm-spooled-mail-waiting-hook
-List of functions called when VM first notices mail is spooled
+List of functions called when VM first finds mail spooled
 for a folder.  The folder buffer will be current when the hooks are
 run.
 @end defopt
@@ -3686,16 +3687,16 @@ Changes made to the buffer are uploaded to the server first before
 downloading the server data.
 Deleted messages are not expunged.
 
-Prefix argument FULL says to write every message’s attributes to the server,
+Prefix argument FULL writes every message’s attributes to the server,
 rather than only those of the messages whose attributes changed in this
-session, and to fetch a message the cache no longer holds rather than leaving
-it alone.  This is useful for saving offline work on the cache folder, whose
-expunges are sent whether FULL is given or not: VM records them as the reader
-makes them.
+session, and fetches a message the cache no longer contains rather than
+leaving it alone.  This is useful for saving offline work on the cache
+folder, whose expunges are sent whether FULL is given or not: VM records
+them as the reader makes them.
 
-FULL used to delete on the server every message the mailbox had and the cache
-did not.  A damaged cache says the same thing as a reader who expunged, so
-that destroyed mail nobody asked it to (emacs-vm/vm#752).
+FULL used to delete on the server every message the mailbox had and the
+cache did not.  A damaged cache is indistinguishable from a reader who
+expunged, so that destroyed mail nobody asked it to (emacs-vm/vm#752).
 @end deffn
 
 @end macro
@@ -3720,8 +3721,8 @@ Prune the X-VM-IMAP-Retrieved header of the current folder by
 examining which messages are still present in SOURCE.  SOURCE
 should be a maildrop folder on an IMAP server.         USR, 2011-04-06
 
-Nothing waits: the mailbox is asked for the UID of every message it holds and
-the header is pruned when the answer comes.  That is the same round trip a
+Nothing waits: the mailbox is asked for the UID of every message it contains
+and the header is pruned when the reply comes.  That is the same round trip a
 synchronisation makes, and it used to be just as frozen.
 @end deffn
 
@@ -3807,7 +3808,7 @@ Default value: @code{1}
 The largest IMAP message VM retrieves.
 
 Nil, the default, means no limit.  A number is a size in bytes, for every
-mailbox.  An alist, which a cons for its first element says it is, gives one
+mailbox.  An alist, recognized by a cons for its first element, gives one
 mailbox by mailbox:
 
    (("work:Archive/.*" . 50000) (t . 1000000))
@@ -4370,7 +4371,7 @@ Replace all mime buttons in the current buffer by attachment buttons.
 @findex vm-mime-encode-composition
 MIME encode the current mail composition buffer.
 
-This function chooses the MIME character set(s) to use, and transforms the
+This function selects the MIME character set(s) to use, and transforms the
 message content from the Emacs-internal encoding to the corresponding
 octets in that MIME character set.
 
@@ -5109,16 +5110,15 @@ Directory to where the attachments should go or come from.
 @macro vmdocvmmimealternativeshowmethod
 @defopt vm-mime-alternative-show-method
 @vindex vm-mime-alternative-show-method
-Value tells how to choose which alternative to display when
-it displays a message with "multipart/alternative" content.
+Value selects which alternative to display when VM displays
+a message with "multipart/alternative" content.
 Possible values are @code{best}, @code{best-internal}, @code{all}, or a
 favorite-methods list as described below.
 
   A MIME message of type multipart/alternative has multiple
 message parts containing the same information, but each part may
 be formatted differently.  VM will typically display only one of
-the parts.  This variable tells VM how to choose which part to
-display.
+the parts.  This variable selects which part to display.
 
   (There is a separate variable @code{vm-mime-alternative-yank-method}
 for deciding the multipart/alternative to be used in replies.)
@@ -5155,8 +5155,8 @@ Default value: @code{best-internal}
 @macro vmdocvmmimealternativeyankmethod
 @defopt vm-mime-alternative-yank-method
 @vindex vm-mime-alternative-yank-method
-Value tells how to choose which alternative to yank, i.e.,
-include, in replies, when it yanks a message with
+Value selects which alternative to yank, i.e.,
+include, in replies, when VM yanks a message with
 "multipart/alternative" content.  (It is similar to
 @code{vm-mime-alternative-show-method} used for displaying messages.)
 Possible values are @code{best}, @code{best-internal}, @code{all}, or a
@@ -5586,7 +5586,8 @@ Alist of MIME charsets and programs that can convert between them.
 Consulted for a charset Emacs has no coding system for, such as
 "windows-874", "x-mac-roman" or "unknown-8bit": text declaring one of
 those is guessed at rather than decoded, and a command named here converts it
-first.  A charset Emacs can decode is left alone, whatever this says.
+first.  A charset Emacs can decode is left alone, whatever this alist
+contains.
 
 The alist format is
 
@@ -5618,7 +5619,7 @@ The first matching list element will be used.
 @macro vmdocvmmimecompletehtmlforexternalviewer
 @defopt vm-mime-complete-html-for-external-viewer
 @vindex vm-mime-complete-html-for-external-viewer
-Whether to complete an HTML part before an external viewer sees it.
+Whether to complete an HTML part before an external viewer reads it.
 Plenty of mail has text/html that is a fragment rather than a document:
 it opens with a @code{<span>} or a @code{<div>} and has no @code{<html>} and no @code{<head>}.
 Nothing in such a file states what character set its bytes are in (the
@@ -5772,7 +5773,7 @@ A regexp matching the headers whose words should be MIME-encoded.
 A header holding a character outside US-ASCII cannot be sent as it stands;
 the words holding those characters are encoded as RFC 2047 words instead.
 By default Subject, Organization, From, To, CC, BCC and their Resent- forms
-are encoded.  @code{vm-mime-encode-headers-type} says with which encoding.
+are encoded.  @code{vm-mime-encode-headers-type} names which encoding.
 
 Default value:
 @example
@@ -6103,14 +6104,14 @@ Default value: @code{998}
 @macro vmdocvmmimemultipartrelatedshowmethod
 @defopt vm-mime-multipart/related-show-method
 @vindex vm-mime-multipart/related-show-method
-Value tells how to handle "multipart/related" attachments in
-email messages.  The possible values are @code{mixed} and @code{related}.
+Value determines how "multipart/related" attachments in
+email messages are handled.  The possible values are @code{mixed} and @code{related}.
 
-The value of @code{mixed} asks VM to treat "multipart/related"
+With @code{mixed}, VM treats "multipart/related"
 attachments the same way as "multipart/mixed" attachments, i.e., all
 of them will be displayed either as buttons or as content.
 
-The value of @code{related} asks VM to use them as related parts which means
+With @code{related}, VM uses them as related parts, which means
 that they will be embedded in rendered "text/html" parts.
 
 Some mail messages arrive with wrong placement of the
@@ -6858,7 +6859,7 @@ With prefix ARG, select the ARG’th next message.
 @findex vm-message-history-mode
 Move backward and forward through the messages selected in each folder.
 
-Like a web browser’s history: selecting a message forgets the ones selected
+Like a web browser’s history: selecting a message discards the ones selected
 after it, except where @code{vm-goto-message-last-seen} or one of this file’s own
 commands did the selecting.
 
@@ -7055,7 +7056,7 @@ value of COUNT is greater than 1, then the values of the variables
 vm-skip-deleted-messages and vm-skip-read-messages are ignored.
 
 When invoked on marked messages (via @code{vm-next-command-uses-marks})
-this command "sees" marked messages as it moves.
+this command moves among the marked messages.
 @end deffn
 
 @end macro
@@ -7548,8 +7549,8 @@ B and E are the beginning and end of the marked region or the current line.
 @deffn Command vm-show-log
 @findex vm-show-log
 Show the log of what VM has been doing, and when.
-It holds everything VM has said this session, timed, and whatever more
-@code{vm-log-level} asks for.
+It contains everything VM has reported this session, timed, and whatever more
+@code{vm-log-level} requests.
 @end deffn
 
 @end macro
@@ -7616,7 +7617,7 @@ This command runs the normal hook @code{view-mode-hook}.
 @macro vmdocvmdofccbeforemimeencode
 @deffn Command vm-do-fcc-before-mime-encode
 @findex vm-do-fcc-before-mime-encode
-The name says it all.
+Write the folder copy (Fcc) before the composition is MIME encoded.
 Sometimes you may want to save a message unencoded, specifically not to waste
 storage for attachments which are stored on disk anyway.
 
@@ -7708,7 +7709,7 @@ Default value: @code{"~/.vm"}
 @defopt vm-log-level
 @vindex vm-log-level
 Level up to which VM records what it is doing, beyond what it shows.
-Everything VM says is recorded in the buffer *VM Log* whatever this is set
+Everything VM reports is recorded in the buffer *VM Log* whatever this is set
 to; a nil value means nothing more than that.  @code{M-x vm-show-log} shows the
 buffer.
 
@@ -9298,7 +9299,7 @@ A nil value means ignore page-delimiters.
 @macro vmdocvminvisibleheaderregexp
 @defopt vm-invisible-header-regexp
 @vindex vm-invisible-header-regexp
-Non-nil value should be a regular expression that tells what headers
+Non-nil value should be a regular expression matching the headers
 VM should NOT normally display when presenting a message.  All other
 headers will be displayed.  The variable @code{vm-visible-headers} specifies
 the presentation order of headers; headers not matched by
@@ -9850,17 +9851,17 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 @findex vm-mail-check-bcc-removal
 Ask before sending if this composition’s Bcc could reach the other recipients.
 
-A Bcc header is a promise: the addresses in it are told nothing to the people
+A Bcc header is confidential: the addresses in it are not shown to the people
 who receive the message.  With @code{send-mail-function} set to
 @code{sendmail-send-it}, VM and Emacs keep the header in the message they hand
-to @code{sendmail-program} and trust that program to take it out, because with
--t those addresses are also how it learns whom to deliver to.  When it does
+to @code{sendmail-program} for that program to take out, because with
+-t those addresses are also where it reads whom to deliver to.  When it does
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
 
-Asks rather than rejecting, because a working sendmail, postfix or exim does
-remove it, and those are a great many of the people sending mail this way.
-Declining says what to change and where it is written down.
+Prompts rather than rejecting, because a working sendmail, postfix or exim
+does remove it, and those are a great many of the people sending mail this
+way.  Declining reports what to change and where it is written down.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -9911,7 +9912,7 @@ Non-nil means do not send a message whose Bcc could reach the recipients.
 
 VM signals an error when a composition has a Bcc header and @code{send-mail-function}
 is not one of @code{vm-senders-that-remove-bcc}.  Such a function hands the
-header to a program outside Emacs and trusts it to remove it, so the privacy
+header to a program outside Emacs to remove, so the privacy
 of the Bcc rests on that program being right.  Where it is not, everyone on
 the message learns who was blind copied (emacs-vm/vm#815).
 
@@ -10090,7 +10091,7 @@ converter uses a width of its own: emacs-w3m the width of the window the
 message happened to be displayed in, lynx 72 columns.  So a reply quoted
 lines of one length today and another tomorrow.
 
-A number asks for lines of that width, whatever window the message was read
+A number sets lines of that width, whatever window the message was read
 in; 80, the default, is conventional.  @code{window-width} is the old behaviour,
 the width of the window at the time.
 
@@ -10176,8 +10177,8 @@ Default value: @code{"%F writes:\\n"}
 @macro vmdocvmincludedtextdiscardheaderregexp
 @defopt vm-included-text-discard-header-regexp
 @vindex vm-included-text-discard-header-regexp
-Non-nil value should be a regular expression that tells what
-headers should not be retained in a message included in a reply.
+Non-nil value should be a regular expression matching the
+headers that are not retained in a message included in a reply.
 This variable along with @code{vm-included-text-headers} determines
 which headers are retained.
 
@@ -10918,7 +10919,7 @@ from a source buffer is killed with it; turning it off removes that advice.
 either way.
 
 The bindings and the compose hook are yours to add, as the commentary at the
-top of this file says: this mode does not take them over.
+top of this file states: this mode does not take them over.
 
 Loading this file switched the advice on until 2026 (emacs-vm/vm#788).
 Customize loads it whenever it is asked about a VM option, so loading no
@@ -11756,7 +11757,7 @@ Default value: @code{t}
 @macro vmdocvmstartupwithsummary
 @defopt vm-startup-with-summary
 @vindex vm-startup-with-summary
-Value tells VM whether to generate a summary when a folder is visited.
+Value determines whether a summary is generated when a folder is visited.
 Nil means don’t automatically generate a summary.
 
 A value of t means always generate a summary.
@@ -12193,7 +12194,7 @@ Default value: @code{t}
 @macro vmdocvmtoolbarautofilemessage
 @deffn Command vm-toolbar-autofile-message
 @findex vm-toolbar-autofile-message
-Save this message to the folder @code{vm-auto-folder-alist} chooses for it.
+Save this message to the folder @code{vm-auto-folder-alist} selects for it.
 The toolbar’s autofile button.  Signals if no entry in that list matches
 the message, rather than prompting for a folder.
 @end deffn
@@ -12352,7 +12353,7 @@ files.
 @macro vmdocvmtoolbarhelpercommand
 @deffn Command vm-toolbar-helper-command
 @findex vm-toolbar-helper-command
-Run whatever command @code{vm-toolbar-helper-command} currently holds.
+Run whatever command @code{vm-toolbar-helper-command} currently contains.
 The toolbar’s helper button changes with the context: what it does is
 decided by reassigning this variable before the button is drawn, rather
 than by having a button per command.
@@ -12370,7 +12371,7 @@ value of COUNT is greater than 1, then the values of the variables
 vm-skip-deleted-messages and vm-skip-read-messages are ignored.
 
 When invoked on marked messages (via @code{vm-next-command-uses-marks})
-this command "sees" marked messages as it moves.
+this command moves among the marked messages.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -12428,10 +12429,10 @@ If the customization variable @code{vm-expunge-before-quit} is set to
 Giving a prefix argument overrides the variable and no expunge is
 done.
 
-When called internally, the optional argument NO-EXPUNGE says
-that the deleted messages should not be expunged (irrespective of
-the value of @code{vm-expunge-before-quit}.  NO-CHANGE says that
-changes should be discarded.
+When called internally, the optional argument NO-EXPUNGE means
+the deleted messages are not expunged (irrespective of
+the value of @code{vm-expunge-before-quit}.  NO-CHANGE means the
+changes are discarded.
 
 @emph{Not autoloaded}: VM has to be loaded before @kbd{M-x} offers this one.
 @end deffn
@@ -12465,7 +12466,7 @@ changes, messages additions or deletions will be allowed in the
 visited folder.
 
 The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little initial
+means the folder is visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail.
 
@@ -12846,7 +12847,7 @@ in messages when you click on them.
 @macro vmdocvmurlsearchlimit
 @defopt vm-url-search-limit
 @vindex vm-url-search-limit
-Non-nil numeric value tells VM how hard to search for URLs.
+Non-nil numeric value limits how far VM searches for URLs.
 The number specifies the maximum message size in characters that
 VM will search for URLs.  For message larger than this value, VM
 will search from the beginning of the message to a point
@@ -13199,7 +13200,7 @@ changes, messages additions or deletions will be allowed in the
 visited folder.
 
 The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little initial
+means the folder is visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail.
 @end deffn
@@ -13315,7 +13316,7 @@ that the folder should be considered read only.  No attribute
 changes, messages additions or deletions will be allowed in the
 visited folder.
 
-This function differs from @code{vm-visit-folder} in that it remembers that
+This function differs from @code{vm-visit-folder} in that it records that
 the folder is a foreign folder maintained by Thunderbird.  Saving
 of messages is performed preferentially to other Thunderbird folders.
 @end deffn
@@ -13683,7 +13684,7 @@ Non-nil value should be an alist of the form
 
 @end example
 where VIRTUAL-FOLDER-NAME names a virtual folder in
-@code{vm-virtual-folder-alist}, whose selector says which messages the rule
+@code{vm-virtual-folder-alist}, whose selector determines which messages the rule
 applies to, and ACTIONS is a property list of what to do with them:
 
 @example
@@ -14046,9 +14047,9 @@ sublist will apply to them all.  If FOLDER is a directory, VM will
 assume this to mean that all the folders in that directory should be
 searched.
 
-The SELECTOR is a Lisp symbol that tells VM how to decide whether
-a message from one of the specified FOLDERs should be included in
-the virtual folder.  Some SELECTORs require an argument ARG;
+The SELECTOR is a Lisp symbol that determines whether a message
+from one of the specified FOLDERs is included in the virtual
+folder.  Some SELECTORs require an argument ARG;
 unless otherwise noted ARG may be omitted.
 
 See the VM manual section "Virtual Selectors" for the complete list
@@ -14184,8 +14185,8 @@ Show the window configuration commands and their keys in the echo area.
 @defopt vm-frame-parameter-alist
 @vindex vm-frame-parameter-alist
 Non-nil value is an alist of types and lists of frame parameters.
-This list tells VM what frame parameters to associate with each
-new frame it creates of a specific type.
+This list names the frame parameters to associate with each
+new frame VM creates of a specific type.
 
 The alist should be of this form
 
@@ -14381,7 +14382,7 @@ Default value: @code{t}
 @vindex vm-search-other-frames
 Non-nil means VM should search frames other than the selected frame
 when looking for a window that is already displaying a buffer that
-VM wants to display or undisplay.
+VM is to display or undisplay.
 
 Default value: @code{t}
 @end defopt
@@ -14403,11 +14404,11 @@ Nil means don’t move the mouse cursor.
 @macro vmdocvmwindowconfigurationfile
 @defopt vm-window-configuration-file
 @vindex vm-window-configuration-file
-Non-nil value should be a string that tells VM where to load
-and save your window configuration settings.  Your window
+Non-nil value should be a string naming the file VM loads
+and saves your window configuration settings in.  Your window
 configuration settings are loaded automatically the first time
-you run VM in an Emacs session, and tells VM how to set up
-windows depending on what you are doing inside VM.
+you run VM in an Emacs session, and determine how windows are
+set up depending on what you are doing inside VM.
 
 The commands @code{vm-save-window-configuration} (normally bound to @code{WS}) and
 @code{vm-delete-window-configuration} (bound to @code{WD}) let you update this

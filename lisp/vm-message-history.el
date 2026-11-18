@@ -249,7 +249,7 @@ With prefix ARG, select the ARG'th next message."
 ;;;###autoload
 (define-minor-mode vm-message-history-mode
   "Move backward and forward through the messages selected in each folder.
-Like a web browser's history: selecting a message forgets the ones selected
+Like a web browser's history: selecting a message discards the ones selected
 after it, except where `vm-goto-message-last-seen' or one of this file's own
 commands did the selecting.
 

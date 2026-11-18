@@ -609,7 +609,7 @@ M should be a message struct for a real message."
 The digest's messages are assimilated into the folder as new mail
 would be.
 
-Optional argument DIGEST-TYPE is a string that tells VM what kind
+Optional argument DIGEST-TYPE is a string naming what kind
 of digest the current message is.  If it is not given the value
 defaults to the value of vm-digest-burst-type.  When called
 interactively DIGEST-TYPE will be read from the minibuffer.
@@ -719,7 +719,7 @@ invoked on the buffer.  There is no file associated with this
 buffer.  You can use `vm-write-file' to save the buffer, or
 `vm-save-message' to save individual messages to a real folder.
 
-Optional argument DIGEST-TYPE is a string that tells VM what kind
+Optional argument DIGEST-TYPE is a string naming what kind
 of digest the current message is.  If it is not given the value
 defaults to the value of vm-digest-burst-type.  When called
 interactively DIGEST-TYPE will be read from the minibuffer.
