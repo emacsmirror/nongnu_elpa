@@ -32,7 +32,7 @@ each of these counts as getting it wrong:
 - follow-up replies late in a session, after the first reply did it right
 
 The rule does not expire and brevity does not excuse it. A reply naming ten
-tickets carries ten URLs, or it names fewer tickets.
+tickets includes ten URLs, or it names fewer tickets.
 
 ## What goes in a ticket, and how much
 
@@ -47,7 +47,7 @@ length buries the finding.
 - A retraction is a line, not a section.
 - Reasoning at length belongs in the commit message.
 
-A comment written by Claude says so on its first line, as the top-level
+A comment written by Claude states this on its first line, as the top-level
 `CLAUDE.md` requires.
 
 ## Live work tracking
@@ -62,8 +62,8 @@ Do not rewrite the description of that issue. That text is the maintainer's.
 
 ## Which issues to pick up
 
-`Robot` marks an issue as one for Claude to take. It says nothing about
-priority or about how the issue should be resolved. Leave the label alone
+`Robot` marks an issue as one for Claude to take. It gives no indication of
+priority or of how the issue should be resolved. Leave the label alone
 when closing, unless told otherwise.
 
 ## Before saying a change works
@@ -110,6 +110,6 @@ coming from the older package looks.
 
 ## Reporting
 
-Say what the task changed. The working tree holds the maintainer's own
+Say what the task changed. The working tree contains the maintainer's own
 scratch files; leave them out of status summaries entirely, while still
 keeping them out of commits.
