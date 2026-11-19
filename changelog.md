@@ -1,3 +1,93 @@
+## [0.54] - 2026-11-19
+
+### 🚀 Features
+
+- Add request reviewer (no team reviewers yet). #119.
+- Add fj-remove-request-reviewers. #119
+- Add remove review request timeline item.
+- Add fj-url-lookup. FIX #356
+- Add item titles to completion candidates in `fj-switch-to-buffer` (#361)
+- Re-factor commit-ref tl + add copy commit hash cmd. #363.
+- Add `fj-pull-commit-log`: view PR commits, copy hashes. #363
+- Copy commit hashes from diff view, completing-read if multi. #363
+- PR UI: display when PR is marked as draft / editable.
+- Add command to copy PR's commit SHA
+- Add type `'pull` for local PR links
+- Add utilities for repository items (issues & PRs)
+- Use issue/pull not item in item buffer names.
+- Support alternate git remotes in `fj-fetch-pull-as-branch` (#377)
+- Support jumping to commit log from commit at point
+- PR make head branch a hyperlink.
+- Fj-with-repo macro.
+- Repo-scoped fj-goto-item-by-number
+- Goto-item: support full owner/repo#item jump.
+- Add fj-get-repo-permissions. #364
+- Support OTP for basic auth in `fj-create-token`
+- Add `fj-create-token-use-otp` defcustom
+- WIP disable compose commands for read-only users. #364
+- Add fj-compose-read-only-mode. #364
+- Add `fj-render-images` defcustom
+- Copy SHA of commit. #371
+
+### 🐛 Bug Fixes
+
+- Fix up seemingly totally stoned assignees code. #245
+- Fix remove reaction, add fj-reactions prop. FIX #357
+- Remove extra endpoint prefixing slash.
+- Rename fj-request-reviewers, fix resp str.
+- Comment reply-str, fix for quoting item not comment.
+- Tag repo regex: have have something preceding #. FIX #362
+- View diff fj-browse-view.
+- Fj-copy-commit-hash: work on commit-ref + commit items. #363
+- Propertize commits: add noitem arg, preserve commit hash prop. #363.
+- PR UI - move draft/editable to State line.
+- Bump fedi.el to 0.6
+- Render-item-bodies: only :noitem arg if no item prop at point.
+- Check for ! in item ref, ensure we load as PR. FIX #368
+- Get-pull-commits: no with-pull-scope. #371
+- Diff view funs, item not sha for buff spec. #371
+- Rem unused lexical
+- Pull-ref timeline item, keep its type, add link type.
+- Adjust pull only regex.
+- Commit-ref: decode entities after get link desc.
+- Check type of repository item in `fj-item-view`
+- :list -> :issue. #375
+- Rename second `type` as `item-type`. #375
+- Use alist-get, rename pred fun, remove newlines. #375
+- Fix PR/issue item tests. #375
+- Fj-copy-commit-sha: if single commit diff, copy sha directly. #363
+- Call repo-commit-log with repo / owner args.
+- Get-repo-commits: rename branch arg to sha, per the server.
+- Repo-commit-log: use sha not branch arg, as per server.
+- PR: show merged_by not author if merged. FIX #372
+- Don't override item types 'tag and 'pull with 'repo-tag
+- Remove redundant funs.
+- Goto item: remove destructure, add fixme.
+- Merge PR - don't block if not mergeable, but block if draft. #365
+- Compose remove variable setting - fix error string.
+- Otp - prefer when clauses. #383
+- PR merge draft check must be eq t.
+- Make authorized async HTTP requests
+- Rem extra bracket from de5d5ba. #389.
+- Evaluate user repo permissions only once
+- Expand relative URLs with `fj-host` when rendering images
+
+### 📚 Documentation
+
+- Readme cmd index
+- Adjust pull regex docstring.
+- Forgejo search syntax dostrings. #379
+- Mention `fj-create-token-use-otp` in `fj-create-token`
+
+### 🧪 Testing
+
+- Add ert for completion table of `fj-switch-to-buffer`
+- Add `fj-test-pull-reqs` and `fj-test-pull-reqs-as-issues`
+- Add ERTs for `fj--item-is-pr-disguised-p'
+- Add ERTs for `fj--identify-item-format'
+- Skip `fj-test-switch-to-buffer-completion-table` in batch mode
+- Rename `fj-test-switch-to-buffer-completion-table`
+
 ## [0.53] - 2026-11-05
 
 ### ⚙️ Miscellaneous Tasks
