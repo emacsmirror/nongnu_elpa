@@ -1970,6 +1970,55 @@ truncated."
       (should (string-match "\\`<[0-9.]+@[A-Za-z0-9.-]+>\\'" id)))))
 
 
+;;; vm-make-tempfile-name tests
+
+(defmacro vm-misc-test--with-temp-file-directory (&rest body)
+  "Run BODY with `vm-temp-file-directory' set to a new empty directory."
+  (declare (indent 0) (debug t))
+  `(let* ((vm-temp-file-directory
+           (file-name-as-directory (make-temp-file "vm-tempfile-test" t)))
+          (vm-tempfile-counter 0))
+     (unwind-protect
+         (progn ,@body)
+       (delete-directory vm-temp-file-directory t))))
+
+(ert-deftest vm-misc-test-make-tempfile-name-appends-the-suffix ()
+  "A proposed filename with no extension gets the suffix (issue #948).
+Gmail names an inline image \"ii_mu2rld2c0\", and a viewer selected by
+extension is handed a file typed by its contents instead of by its media
+type."
+  (vm-misc-test--with-temp-file-directory
+    (should (equal (file-name-nondirectory
+                    (vm-make-tempfile-name ".png" "ii_mu2rld2c0"))
+                   "ii_mu2rld2c0.png"))))
+
+(ert-deftest vm-misc-test-make-tempfile-name-does-not-double-the-suffix ()
+  "A proposed filename that already ends with the suffix is left alone.
+The comparison ignores case, so \"IMG.PNG\" does not become \"IMG.PNG.png\"."
+  (vm-misc-test--with-temp-file-directory
+    (should (equal (file-name-nondirectory
+                    (vm-make-tempfile-name ".png" "cat.png"))
+                   "cat.png"))
+    (should (equal (file-name-nondirectory
+                    (vm-make-tempfile-name ".png" "IMG.PNG"))
+                   "IMG.PNG"))))
+
+(ert-deftest vm-misc-test-make-tempfile-name-keeps-the-suffix-after-a-collision ()
+  "The counter goes before the name, so the suffix still ends it."
+  (vm-misc-test--with-temp-file-directory
+    (write-region "" nil (expand-file-name "ii_mu2rld2c0.png"
+                                           vm-temp-file-directory))
+    (should (equal (file-name-nondirectory
+                    (vm-make-tempfile-name ".png" "ii_mu2rld2c0"))
+                   "0-ii_mu2rld2c0.png"))))
+
+(ert-deftest vm-misc-test-make-tempfile-name-without-a-proposed-filename ()
+  "With no name proposed the generated name ends with the suffix."
+  (vm-misc-test--with-temp-file-directory
+    (should (string-suffix-p ".png" (vm-make-tempfile-name ".png")))
+    (should-not (string-match-p "\\." (file-name-nondirectory
+                                       (vm-make-tempfile-name))))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here
