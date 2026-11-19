@@ -1806,7 +1806,7 @@ written as it stands rather than handed to
 
 (defun vm-mime-text/html-handler ()
   "Return the renderer for text/html parts, or nil if there is none.
-The option of the same name says which one.  Its value `auto-select' means
+The option of the same name selects it.  Its value `auto-select' means
 to look for one, which is done once and kept in
 `vm-mime-text/html-handler-found' rather than written back to the option
 (emacs-vm/vm#945)."
@@ -7153,7 +7153,7 @@ whitespace in it stays over the limit, there being nowhere to break it."
 (defun vm-mime-encode-composition (&optional attachments-only)
  "MIME encode the current mail composition buffer.
 
-This function chooses the MIME character set(s) to use, and transforms the
+This function selects the MIME character set(s) to use, and transforms the
 message content from the Emacs-internal encoding to the corresponding
 octets in that MIME character set.
 

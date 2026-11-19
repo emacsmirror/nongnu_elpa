@@ -248,7 +248,7 @@ use."
         (vm-suggest-checking-configuration-maybe)
         (should (= 1 (length said)))
         (should (string-match-p "vm-check-configuration" (car said)))
-        ;; and it says how to stop it
+        ;; and it states how to stop it
         (should (string-match-p "vm-suggest-checking-configuration"
                                 (car said)))))))
 

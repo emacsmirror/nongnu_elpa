@@ -878,7 +878,7 @@ by VM rather than avoided by it."
                 ;; The display shows it as text ...
                 (should (string-match-p "Subject: Grüße aus München"
                                         (buffer-string)))))
-            ;; ... while the folder buffer still holds the bytes.
+            ;; ... while the folder buffer still contains the bytes.
             (save-restriction
               (widen)
               (should (string-match-p (regexp-quote raw-subject)
@@ -1103,7 +1103,7 @@ conditionally the folder would start losing the wrong message.  Issue #453."
           (should (vm-test-reverse-links-consistent-p))
           (vm-write-index-file index)
           ;; Install a list from the index alone, which is what a visit does
-          ;; when it trusts the index instead of parsing.
+          ;; when it uses the index instead of parsing.
           (setq vm-message-list nil)
           (should (vm-read-index-file index))
           (should (= 4 (length vm-message-list)))
@@ -1211,7 +1211,7 @@ memory.  It is now offered as the default, so RET is enough."
                          (setq prompt-seen prompt)
                          default)))
               (should (equal folder (vm-recover-folder-file-name)))
-              ;; and the prompt says what RET will do
+              ;; and the prompt states what RET will do
               (should (string-match-p "plain-folder" prompt-seen)))))
       (dolist (buffer (buffer-list))
         (unless (memq buffer before)
@@ -1884,7 +1884,7 @@ The command is an IMAP one; nothing else has a UID to put in it."
 ;; An mbox whose writer left out the blank line between two messages used to be
 ;; read as one message with the second one's headers as its body.  A
 ;; `From '-looking line inside a header block cannot be a header -- RFC 5322
-;; wants a field name and a colon before the first space -- so it is a
+;; requires a field name and a colon before the first space -- so it is a
 ;; separator, and reading it as one loses nothing that could have been valid.
 ;;
 ;; The cases that must NOT change are the point of most of these: a `From '
@@ -2088,7 +2088,7 @@ to nil while setting the buffer up."
 ;; The two formats VM reads differ in one respect that matters: where a
 ;; message ends.  In a From_ folder it is the next line beginning `From ',
 ;; so a body containing such a line has to have been quoted when written.  In
-;; an mboxcl2 folder the byte count says where the message
+;; an mboxcl2 folder the byte count gives where the message
 ;; ends, so a body may contain that line untouched and reading is unaffected.
 ;;
 ;; That is the property, and it had no test.  See the Folder types section of
@@ -2236,8 +2236,8 @@ its own four control characters rather than a `From ' line."
 
 ;; It was `From_-with-Content-Length', after the mechanism rather than the
 ;; format.  The old name has to keep working: it is what a user's
-;; `vm-default-folder-type' says, and -- the one that could go wrong
-;; quietly -- it is what an index file written before the rename holds, since
+;; `vm-default-folder-type' names, and -- the one that could go wrong
+;; quietly -- it is what an index file written before the rename contains, since
 ;; `vm-write-index-file-contents' stores the folder type.
 
 (ert-deftest vm-folder-test-old-type-name-is-accepted ()
@@ -2388,7 +2388,7 @@ Mozilla headers into a folder at all."
           (should (vm-thunderbird-folder-p folder)))
       (delete-directory dir t))))
 
-;;; The folder type a name asks for (emacs-vm/vm#610)
+;;; The folder type a name selects (emacs-vm/vm#610)
 
 (defmacro vm-folder-test-with-directory (var &rest body)
   "Run BODY with VAR bound to a fresh directory, removed afterwards."
@@ -2480,7 +2480,7 @@ split wherever a body line begins \"From \", which is what
       (let ((vm-default-folder-type 'mboxcl2))
         (should (equal (vm-new-folder-file-name new)
                        (concat new ".mboxcl2")))
-        ;; a name that already says a type is left alone, either way
+        ;; a name that already states a type is left alone, either way
         (should (equal (vm-new-folder-file-name named) named))
         (should (equal (vm-new-folder-file-name as-mbox) as-mbox))
         ;; and so is a file that exists, which has a type of its own
@@ -2754,7 +2754,7 @@ conversion collects its faults to avoid."
                 (vm-folder-directory nil)
                 (process-environment (cons (concat "HOME=" open) process-environment))
                 (report nil))
-            ;; the search says what it could not read rather than signalling
+            ;; the search reports what it could not read rather than signalling
             (should (equal (length (cdr (vm-cache-folders-in-the-older-format))) 1))
             (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
                       ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
@@ -2815,7 +2815,7 @@ look like (#767), and converting From_ to mboxcl2 rewrites the headers."
            (file (expand-file-name "sent" dir))
            (vm-trust-content-length t))
       (write-region text nil file nil 'quiet)
-      ;; read as mboxcl2 by its contents, under a name that says nothing
+      ;; read as mboxcl2 by its contents, under a name that states nothing
       (should (eq (vm-get-folder-type file) 'mboxcl2))
       (vm-change-folder-type-of-file file 'mboxcl2)
       (should-not (file-exists-p file))
@@ -3006,7 +3006,7 @@ something other than what it says it is and says nothing at all."
           (let* ((vm-mboxcl2-strict t)
                  (message (cadr (should-error (vm-visit-folder file)))))
             (should (string-match-p "has no Content-Length" message))
-            ;; the message says which one, and how to repair it -- naming the
+            ;; the message reports which one, and how to repair it -- naming the
             ;; command, not the variable: turning strictness off by hand is
             ;; easy to forget to turn back on (emacs-vm/vm#613)
             (should (string-match-p "line [0-9]+" message))
@@ -3120,7 +3120,7 @@ backups in a directory of their own gets this one there too."
     (with-temp-buffer
       (insert-file-contents (vm-folder-backup-name file))
       (should (equal (buffer-string) vm-folder-test--seven-and-two-short))))
-  ;; and it lands where backup-directory-alist says
+  ;; and it lands where backup-directory-alist points
   (vm-folder-test-with-file (file "broken.mboxcl2"
                                   vm-folder-test--seven-and-two-short)
     (let* ((elsewhere (file-name-as-directory
@@ -3176,7 +3176,7 @@ buffer has been killed\"."
       ;; and the folder is still there to go back to
       (should (vm-get-file-buffer file))
       ;; quitting it is the way through, and then the conversion writes the
-      ;; folder under the name mboxcl2 asks for (emacs-vm/vm#743)
+      ;; folder under the name mboxcl2 selects (emacs-vm/vm#743)
       (with-current-buffer (vm-get-file-buffer file) (vm-quit-no-change))
       (vm-change-folder-type-of-file file 'mboxcl2)
       (with-temp-buffer
@@ -3233,7 +3233,7 @@ it to the contents."
   (vm-folder-test-with-file (file "sent.mbox"
                                   vm-folder-test--mboxcl2-without-one)
     (should (eq (vm-get-folder-type file) vm-default-From_-folder-type)))
-  ;; and with the option empty, a name says nothing at all
+  ;; and with the option empty, a name states nothing at all
   (vm-folder-test-with-file (file "sent.mboxcl2"
                                   vm-folder-test--mboxcl2-without-one)
     (let ((vm-folder-type-by-extension-alist nil))
@@ -3433,7 +3433,7 @@ program reading the folder would see it."
                       (concat file ".mboxcl2"))))
         (should (car lengths))
         ;; ACTUAL is measured in a unibyte buffer, so agreeing with it is
-        ;; what says the declared length is octets: a character count would
+        ;; what states the declared length is octets: a character count would
         ;; be four short, one for each two-octet character in the body.
         (should (equal (car lengths) (cdr lengths)))))))
 
@@ -3701,9 +3701,9 @@ and not much else, which is what it is worth."
                  "No VM folder buffer\\|must be invoked from a VM buffer"
                  (cadr (should-error (funcall command)))))))))
 
-;;; What the help command says (emacs-vm/vm#632)
+;;; What the help command shows (emacs-vm/vm#632)
 ;;
-;; `vm-help' is a dispatcher: what it says depends on what the folder is doing.
+;; `vm-help' is a dispatcher: what it shows depends on what the folder is doing.
 ;; No test called it, so none of its branches was checked.
 
 (ert-deftest vm-folder-test-help-says-what-the-state-calls-for ()
@@ -4770,7 +4770,7 @@ was given and the alias the docstring promises was rejected."
                               (cadr (should-error
                                      (vm-change-folder-type 'mbox file))))))))
 
-;;; a cache file says its type in its name (issue #736)
+;;; a cache file states its type in its name (issue #736)
 
 (defmacro vm-folder-test--in-a-cache-directory (&rest body)
   "Run BODY with DIR an empty directory both cache directories point at.
@@ -4842,7 +4842,7 @@ of its own, so a name it does not match is a cache with the warning lost."
       (write-region "From alice@example.com Sat Aug  8 14:24:13 2026\n" nil base)
       (should (equal (vm-imap-make-filename-for-spec spec) base)))))
 
-;;; the guess is deprecated and says so (issue #736)
+;;; the guess is deprecated and reports so (issue #736)
 
 (defmacro vm-folder-test--warnings (&rest body)
   "Run BODY with `vm-warn' captured, and answer with the warnings it gave."
@@ -4874,7 +4874,7 @@ a folder read as something it does not say it is is why."
         (should (= 1 (length said)))
         (should (string-match-p "name such a folder .mboxcl2" (car said)))
         (should (string-match-p "guessed" (car said))))
-      ;; the same folder again says nothing
+      ;; the same folder again reports nothing
       (should-not (vm-folder-test--warnings (vm-get-folder-type file))))))
 
 (ert-deftest vm-folder-test-a-named-type-is-not-guessed-and-says-nothing ()
@@ -4916,14 +4916,14 @@ agent, and the only thing that made `vm-trust-content-length' default on."
   (let ((vm-default-folder-type 'From_))
     (should-not (eval (car (get 'vm-trust-content-length 'standard-value))))))
 
-;;; the extension says what a folder is (issue #741)
+;;; the extension states what a folder is (issue #741)
 
 (ert-deftest vm-folder-test-the-extension-says-the-type ()
   "The extension decides, matched literally, wherever the folder sits."
   (let ((vm-folder-type-by-extension-alist '(("mboxcl2" . mboxcl2))))
     (should (eq 'mboxcl2 (vm-folder-type-for-name "/home/me/mail/sent.mboxcl2")))
     (should (eq 'mboxcl2 (vm-folder-type-for-name "sent.mboxcl2")))
-    ;; no extension, so the name says nothing: an inbox has to be renamed or
+    ;; no extension, so the name states nothing: an inbox has to be renamed or
     ;; left to vm-default-folder-type
     (should-not (vm-folder-type-for-name "/home/me/mail/current/INBOX"))
     (should-not (vm-folder-type-for-name "/home/me/mail/imap-cache-0123abcd"))
@@ -5132,7 +5132,7 @@ that is the reader\\='s call, not VM\\='s."
       (should-not (vm-folder-test--warnings
                     (should (eq 'From_ (vm-get-folder-type file))))))))
 
-;;; an extension that names no folder type says so (issue #741)
+;;; an extension that names no folder type reports so (issue #741)
 
 (ert-deftest vm-folder-test-a-bad-type-in-an-extension-rule-is-caught ()
   "An extension cannot be mistyped -- it is matched literally -- but the type
@@ -5793,7 +5793,7 @@ line is usable in one and not the other (emacs-vm/vm#898)."
       (should (equal (vm-usable-From_-separator dated type) dated))
       (should-not (vm-usable-From_-separator zoned type))
       (should-not (vm-usable-From_-separator bare type)))
-    ;; mboxcl2 asks for nothing after the address, so all three serve
+    ;; mboxcl2 requires nothing after the address, so all three serve
     (dolist (line (list dated zoned bare))
       (should (equal (vm-usable-From_-separator line 'mboxcl2) line)))
     ;; and nothing is usable without a line, or for a type with no From_ line
@@ -5807,7 +5807,7 @@ does not exist yet has nowhere else to have said it."
   (let ((vm-default-folder-type 'mboxcl2))
     (should (eq (vm-folder-type-for-name "/mail/sent.mbox") 'From_))
     (should (eq (vm-folder-type-to-write "/mail/sent.mbox") 'From_))
-    ;; and the default still decides a name that says nothing
+    ;; and the default still determines a name that states nothing
     (should (eq (vm-folder-type-to-write "/mail/INBOX") 'mboxcl2))))
 
 (ert-deftest vm-folder-test-From_-is-never-imposed-on-a-name ()
@@ -5839,7 +5839,7 @@ to From_, rather than losing the extension it was given."
   (should (equal (vm-folder-name-for-type "/mail/sent.mbox" 'mboxcl2)
                  "/mail/sent.mboxcl2")))
 
-;;; Fetching a message the folder was once given and no longer holds (#751)
+;;; Fetching a message the folder was once given and no longer contains (#751)
 ;;
 ;; `vm-imap-get-synchronization-data' fetches such a message only when it is
 ;; asked for `full', and until now nothing asked: every caller passed t or
@@ -6139,13 +6139,13 @@ rather than hidden by all of them agreeing."
       (delete-directory dir t))))
 
 
-;;; What the manual promises about a message making the trip more than once
+;;; What the manual states about a message making the trip more than once
 
 ;; The mbox section of the manual states this, having been asked to say what
 ;; the quoting costs rather than change it (emacs-vm/vm#789).
 ;;
 ;; vm-folder-test-only-a-from-line-ending-in-a-digit-is-quoted above already
-;; holds the narrow rule and the already-quoted line, through a real
+;; contains the narrow rule and the already-quoted line, through a real
 ;; conversion.  What nothing held is the promise that follows from them: that
 ;; the cost is one `>' per line for good, and not one per trip.
 
@@ -6250,7 +6250,7 @@ have run together."
         (vm-check-default-folder-type))
       (should (equal 1 (length warnings)))
       (should (string-match-p "BellFrom_" (car warnings)))
-      ;; solution-directed: it says what to set instead
+      ;; solution-directed: it states what to set instead
       (should (string-match-p "From_\\|mboxcl2" (car warnings)))
       (setq warnings nil)
       (dolist (type '(From_ mboxcl2 mmdf babyl))
@@ -6261,7 +6261,7 @@ have run together."
 
 ;;; BSD Mail(1) Status: headers (`vm-berkeley-mail-compatibility')
 
-;; The option had no test of any kind, and it decides what VM writes into a
+;; The option had no test of any kind, and it determines what VM writes into a
 ;; folder: with it on, a From_ folder gets a `Status:' header per message and
 ;; any Status already there is removed first.  What is written has to be what
 ;; is read back, or an attribute is lost every time a folder is saved.
@@ -6584,7 +6584,7 @@ it."
                    (mapcar (lambda (m) (vm-su-subject m)) vm-message-list)))))
 
 
-;;; What VM says when mail arrives (emacs-vm/vm#796)
+;;; What VM reports when mail arrives (emacs-vm/vm#796)
 
 (ert-deftest vm-folder-test-the-arrival-line-names-the-folder-once ()
   "REGRESSION: the arrival announcement does not say the folder twice.
@@ -6606,7 +6606,7 @@ it."
                       (setq n (1+ n) start (match-end 0)))
                     n)))
       (should (equal 1 times))
-      ;; and it still says both things: what arrived, and what the folder holds
+      ;; and it still reports both things: what arrived, and what the folder contains
       (should (string-match-p "1 new message\\." line))
       (should (string-match-p "3 messages, 3 new, 0 unread, 0 deleted" line)))))
 
@@ -6894,7 +6894,7 @@ and mboxcl2 gets its `Content-Length'."
     (should (string-suffix-p "\n" text))
     ;; and the result really is a folder of that type.  Named .mboxcl2,
     ;; which is how VM is told the type now: reading it out of the lengths
-    ;; wants `vm-trust-content-length', which is deprecated.
+    ;; requires `vm-trust-content-length', which is deprecated.
     (vm-test-with-temp-dir
       (let ((folder (expand-file-name "cache.mboxcl2" temp-dir)))
         (with-temp-file folder (insert text))

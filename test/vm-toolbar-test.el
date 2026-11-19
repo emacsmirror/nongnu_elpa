@@ -73,14 +73,14 @@ beyond the wiring above."
       ;; the folder is not read-only and has no autosave newer than itself
       (should-not (vm-toolbar-can-recover-p))
       ;; each predicate returns rather than signalling, which is all their
-      ;; `condition-case' promises
+      ;; `condition-case' guarantees
       (should (memq (and (vm-toolbar-can-decode-mime-p) t) '(nil t)))
       (should (memq (and (vm-toolbar-mail-waiting-p) t) '(nil t))))))
 
 ;;; The button commands are defined where the manual can find them
 
 ;; Each toolbar button runs a named command that the user may replace, and
-;; each button's own help says to do it with `fset'.  Those names were made
+;; each button's own help states to do it with `fset'.  Those names were made
 ;; with `fset' too, which writes the function cell and nothing else -- so
 ;; `load-history' never learned them, `symbol-file' returned nil, and the
 ;; reference appendix, which files a command by the file defining it, left all

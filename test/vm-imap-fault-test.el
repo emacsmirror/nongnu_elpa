@@ -8,7 +8,7 @@
 
 ;; The other IMAP tests ask whether an operation does what it should.  These
 ;; ask what is left of the folder when it does not: the server rejects a command, calls
-;; the command bad, hangs up mid-message, returns a FETCH backwards, lies about
+;; the command bad, hangs up mid-message, returns a FETCH backwards, misreports
 ;; a size.  A folder that ends up inconsistent after that is corrupted, and a
 ;; corrupted folder is what the asynchronous work has to be trusted not to
 ;; leave behind.
@@ -17,7 +17,7 @@
 ;; runs one operation, and then checks the folder rather than the operation:
 ;;
 ;;   - every message has a UID, and no two have the same one
-;;   - every message belongs to the mailbox this folder holds
+;;   - every message belongs to the mailbox this folder caches
 ;;   - the message list matches what is in the buffer
 ;;   - nothing is left running and nothing is left queued
 ;;

@@ -1332,7 +1332,7 @@ is taken out for the copy and put back afterwards."
 	  (set-marker header-end nil))))))
 
 (defun vm-do-fcc-before-mime-encode ()
-  "The name says it all.
+  "Write the folder copy (Fcc) before the composition is MIME encoded.
 Sometimes you may want to save a message unencoded, specifically not to waste
 storage for attachments which are stored on disk anyway."
   (interactive)
@@ -2899,17 +2899,17 @@ headers."
 (defun vm-mail-check-bcc-removal ()
   "Ask before sending if this composition's Bcc could reach the other recipients.
 
-A Bcc header is a promise: the addresses in it are told nothing to the people
+A Bcc header is confidential: the addresses in it are not shown to the people
 who receive the message.  With `send-mail-function' set to
 `sendmail-send-it', VM and Emacs keep the header in the message they hand
-to `sendmail-program' and trust that program to take it out, because with
--t those addresses are also how it learns whom to deliver to.  When it does
+to `sendmail-program' for that program to take out, because with
+-t those addresses are also where it reads whom to deliver to.  When it does
 not take it out, everyone on the message reads who was blind copied, and
 nothing has failed anywhere that anyone can see (emacs-vm/vm#815).
 
-Asks rather than rejecting, because a working sendmail, postfix or exim does
-remove it, and those are a great many of the people sending mail this way.
-Declining says what to change and where it is written down."
+Prompts rather than rejecting, because a working sendmail, postfix or exim
+does remove it, and those are a great many of the people sending mail this
+way.  Declining reports what to change and where it is written down."
   (interactive)
   (when (and (vm-mail-mode-get-header-contents "\\(Resent-\\)?BCC:")
              (not (memq send-mail-function vm-senders-that-remove-bcc))

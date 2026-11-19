@@ -19,14 +19,14 @@
 ;; is not restored, so a leak here can still be a leak that matters.
 ;;
 ;; The interesting output is the variable names, not the test names: one
-;; variable appearing under many tests says where the state lives.
+;; variable appearing under many tests shows where the state lives.
 
 ;; What the isolation covers and what it cannot
 ;;
 ;; Restoring a variable puts back the reference it held, not what that
 ;; reference points at.  A test that mutates a shared object leaks it whether
-;; the isolation is on or off, and nothing above notices, since the variable
-;; still holds the same object.
+;; the isolation is on or off, and nothing above detects it, since the variable
+;; still contains the same object.
 ;;
 ;; That is what the fingerprints below are for.  They cover the classes where
 ;; it has actually happened or would matter: keymaps, since define-key changes

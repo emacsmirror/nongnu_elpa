@@ -926,7 +926,7 @@ Body 2
       (should (= 1 (vm-test-message-count)))
       (should (> vm-message-list-generation generation)))))
 
-;;; What an expunge tells the server (emacs-vm/vm#757)
+;;; What an expunge sends the server (emacs-vm/vm#757)
 
 (defconst vm-delete-test--two-messages
   "From sender@example.com Mon Jan  1 00:00:00 2024
@@ -951,7 +951,7 @@ Its messages carry UIDs 1 upwards, as messages read out of a cache do."
   (declare (indent 0) (debug t))
   `(vm-test-with-folder vm-delete-test--two-messages
      ;; `vm-select-folder-buffer-and-validate' is a defsubst, so the compiled
-     ;; command has it inlined and it cannot be stubbed; it asks for the mode
+     ;; command has it inlined and it cannot be stubbed; it requires the mode
      (setq major-mode 'vm-mode)
      (setq vm-folder-access-method 'imap
            vm-folder-access-data (make-vector vm-folder-imap-access-data-length
@@ -1032,7 +1032,7 @@ every save."
     (should (equal (car (car vm-imap-retrieved-messages)) "1"))
     (should (equal (cadr (car vm-imap-retrieved-messages)) "100"))))
 
-;;; What an expunge tells a POP maildrop (emacs-vm/vm#758)
+;;; What an expunge sends a POP maildrop (emacs-vm/vm#758)
 
 (defmacro vm-delete-test--in-a-pop-folder (&rest body)
   "Run BODY in a folder whose access method is `pop', its messages given UIDLs.
@@ -1041,7 +1041,7 @@ recorded has to name the maildrop without it."
   (declare (indent 0) (debug t))
   `(vm-test-with-folder vm-delete-test--two-messages
      ;; `vm-select-folder-buffer-and-validate' is a defsubst, so the compiled
-     ;; command has it inlined and it cannot be stubbed; it asks for the mode
+     ;; command has it inlined and it cannot be stubbed; it requires the mode
      (setq major-mode 'vm-mode)
      (setq vm-folder-access-method 'pop
            vm-folder-access-data (make-vector vm-folder-pop-access-data-length

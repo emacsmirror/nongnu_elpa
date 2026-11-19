@@ -243,7 +243,7 @@ value is the message, so they are read by name here like any other slot."
 ;; The links live in `vm-reverse-link-table', not in the message vector, so that
 ;; the collector does not recurse once per message down the whole folder.  What
 ;; these pin is that moving them out kept the semantics and did not introduce a
-;; leak: `vm-expunge-message' decides which cons to splice from the link, so a
+;; leak: `vm-expunge-message' selects which cons to splice from the link, so a
 ;; message with the wrong link loses a different message than the one asked for.
 
 (ert-deftest vm-message-test-reverse-link-of-a-fresh-message-is-nil ()
@@ -305,7 +305,7 @@ message would recurse through the folder.  Issue #453."
 ;; back into something that can be written into the folder as X-VM-v5-Data.
 ;; It copies fifty slots one at a time, and had fifteen surviving mutations:
 ;; deleting any one of those copies loses a field silently, and the folder
-;; then holds a summary line with a hole in it.
+;; then contains a summary line with a hole in it.
 
 (defconst vm-message-test--decoded-slots
   '(7 8 11 13 14 17 28 37 38 39 40)
@@ -344,7 +344,7 @@ field only shows as a summary line that has stopped saying something."
     (dotimes (i vm-cached-data-vector-length)
       (should (aref after i))
       ;; the encoded slots are base64, so the marker is read back rather
-      ;; than looked for: a round trip says the slot survived and says what
+      ;; than looked for: a round trip shows the slot survived and shows what
       ;; was in it
       (let* ((held (aref after i))
              (text (if (listp held) (car held) held)))
@@ -386,7 +386,7 @@ for the summary, and the encoded copy is only for writing out."
          (after (vm-mime-encode-words-in-cache-vector before)))
     (should-not (eq after before))
     (dolist (slot vm-message-test--decoded-slots)
-      ;; the original still holds the decoded text
+      ;; the original still contains the decoded text
       (should (string-match-p "é" (aref before slot))))))
 
 (provide 'vm-message-test)

@@ -363,7 +363,7 @@ the one #38 is about."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
-            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; `vm-warn' records its last warning so as not to repeat it, and a
             ;; refused flag warns on purpose.
             (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
@@ -413,7 +413,7 @@ IMAP system flag, a VM label is an IMAP keyword."
             (vm-imap-net-wait nil 30)
             (let ((m (car vm-message-list)))
               (should m)
-              ;; Change attributes the way a user would, and check VM agrees
+              ;; Change attributes the way a user would, and check VM matches
               ;; they are pending before the save.
               (vm-set-new-flag m nil)
               (vm-set-unread-flag m nil)
@@ -462,7 +462,7 @@ session -- which is the situation #335 describes."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
-            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; `vm-warn' records its last warning so as not to repeat it, and a
             ;; refused flag warns on purpose.
             (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
@@ -510,7 +510,7 @@ server and reads the mailbox back with the harness\' own client."
            (spec (vm-imap-live-spec server account mailbox))
            (subject (format "vmtest fcc %d" (emacs-pid)))
            (vm-imap-server-timeout vm-imap-live-timeout)
-           ;; A session asks for a password when it has none cached.
+           ;; A session prompts for a password when it has none cached.
            (vm-imap-passwords (list (list spec (cdr account)))))
       (with-temp-buffer
         (insert "From: " (car account) "@example.com\n"
@@ -632,7 +632,7 @@ behind #335 and #286."
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
                 ((symbol-function 'vm-warn)
                  (lambda (_l _secs &rest args) (push (apply #'format args) warned))))
-        ;; the fetch is not where the command was typed, so what says the
+        ;; the fetch is not where the command was typed, so what reports the
         ;; connection went is a warning from the session that lost it
         (vm-get-new-mail)
         (vm-imap-net-wait nil 30))
@@ -868,7 +868,7 @@ writes the attachment."
                                         'vm-mime-send-body-to-file)
                                        :type 'error)))
                 (should (string-match-p "not loaded" (error-message-string err)))))
-            ;; Load it, as the message says, and the attachment comes out whole.
+            ;; Load it, as the message states, and the attachment comes out whole.
             (set-buffer folder)
             (vm-load-message)
             (vm-imap-net-wait nil 30)
@@ -1005,7 +1005,7 @@ flags, which would break normal synchronisation instead."
 ;;
 ;; These drive `vm-delete-duplicate-messages' in a real IMAP folder rather
 ;; than a constructed one.  It needs the full folder context that only
-;; visiting gives -- vm-delete-test.el says as much, and tests the hash
+;; visiting gives -- vm-delete-test.el states as much, and tests the hash
 ;; logic in isolation instead, which cannot catch a bug in the command.
 
 (defconst vm-imap-live-test--duplicate
@@ -1038,7 +1038,7 @@ the stale one is left for the invalid-UID path to deal with."
   (vm-imap-live-with-relayed-folder (relay mailbox "plain")
     (ignore relay)
     ;; The macro already put one unrelated message in the mailbox; add two
-    ;; copies sharing a message id, then resync so VM sees all three.
+    ;; copies sharing a message id, then resync so VM reads all three.
     ;; `conn' comes from the macro and is already logged in.
     (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
     (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
@@ -1454,7 +1454,7 @@ Checked by catching the skip rather than being skipped by it."
   ;; it lexical, and the defvar in the required file then rejects it
   (require 'vm-send-live-init)
   ;; the skips here are provoked on purpose, so their reasons are not printed:
-  ;; `vm-test-skip-unless' says why it is skipping, and a run on a configured
+  ;; `vm-test-skip-unless' reports why it is skipping, and a run on a configured
   ;; machine would otherwise carry two lines announcing there is no
   ;; configuration
   (cl-letf (((symbol-function 'message) #'ignore))
@@ -1714,7 +1714,7 @@ on."
 ;;; Gmail, whose IMAP is not like the others (emacs-vm/vm#601, #604)
 ;;; ------------------------------------------------------------------
 
-;; Gmail is a server nothing else imitates, and emacs-vm/vm#607 asks for it to
+;; Gmail is a server nothing else imitates, and emacs-vm/vm#607 requests it to
 ;; be tried by hand.  What can be characterised is characterised here, so what
 ;; a person looks for is what these do not reach.
 ;;

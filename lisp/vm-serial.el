@@ -954,7 +954,7 @@ from a source buffer is killed with it; turning it off removes that advice.
 either way.
 
 The bindings and the compose hook are yours to add, as the commentary at the
-top of this file says: this mode does not take them over.
+top of this file states: this mode does not take them over.
 
 Loading this file switched the advice on until 2026 (emacs-vm/vm#788).
 Customize loads it whenever it is asked about a VM option, so loading no

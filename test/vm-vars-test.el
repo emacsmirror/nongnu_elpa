@@ -154,7 +154,7 @@ environment into the reader\='s custom file."
     (should-not vm-spool-files)
     (should (equal vm-spool-files-from-environment
                    '("/nonexistent/spool/mailpath"))))
-  ;; MAIL where MAILPATH says nothing
+  ;; MAIL where MAILPATH is empty
   (let ((vm-spool-files nil)
         (vm-spool-files-from-environment nil)
         (process-environment (append '("MAILPATH=" "MAIL=/nonexistent/spool/mail")

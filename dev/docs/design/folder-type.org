@@ -12,16 +12,16 @@ no signature exists to test.  mmdf and babyl do have signatures and are never
 in doubt (vm-folder.el); From_ against BellFrom_ has no
 test either and is answered by vm-default-From_-folder-type.
 
-VM answers the mboxcl2 question by sniffing: read the first message, and if
-it carries a length, call the folder mboxcl2.  The sniff is gated by
+VM settles the mboxcl2 question by sniffing: read the first message, and if
+it has a length, call the folder mboxcl2.  The sniff is gated by
 vm-trust-content-length (vm-vars.el), whose default is
 (eq vm-default-folder-type 'mboxcl2).
 
 That derivation is the wart.  Setting vm-default-folder-type to mboxcl2
-says what new folders should be written as, and it forces the sniff on for
+sets what new folders are written as, and it forces the sniff on for
 every folder read, because otherwise a folder VM itself wrote as mboxcl2
 reads back as From_ and the next save writes it as neither.  The docstring
-says so: if you set the default type you must set the trust variable.
+states so: if you set the default type you must set the trust variable.
 
 Two consequences:
 
@@ -33,7 +33,7 @@ Two consequences:
 
 ** Where a type comes from today
 
-| source                       | decides                   | where                                |
+| source                       | determines                | where                                |
 |------------------------------+---------------------------+--------------------------------------|
 | signature                    | mmdf, babyl               | vm-folder.el                         |
 | name rule                    | From_, BellFrom_, mboxcl2 | vm-folder.el, vm-vars.el             |
@@ -65,11 +65,11 @@ wrong:
   6394 of its 6459 messages had no length.  A VM that had stamped that into
   the file would go on refusing the folder after the detection was fixed.
 - A folder another mailer appends to can have the claim invalidated behind
-  VM's back, and the folder then says mboxcl2 and is not.
+  VM's back, and the folder is then named mboxcl2 and is not.
 
 The claim is only true by construction where VM created the file and wrote
 every message in it.  That is a cache and nothing else, and for a cache the
-name says the same thing with no header to find, nothing to read past, and the
+name states the same thing with no header to find, nothing to read past, and the
 type visible in ls.
 
 So VM names a cache after the type it writes it in,
@@ -140,12 +140,12 @@ Transition, one release: where the structure test would have said mboxcl2 and
 the name said nothing, read the folder as mboxcl2 and warn once, naming the
 folder and the name rule that would settle it.
 
-*** 4. vm-default-folder-type decides new folders only, and is From_ everywhere
+*** 4. vm-default-folder-type determines new folders only, and is From_ everywhere
 
 Decided: the platform table goes.  It gives mboxcl2 on Solaris, AIX and
 usg-unix-v (vm-vars.el), a guess about what the local delivery agent
 writes, and now the only thing that makes the trust default non-nil.  The
-variable never decides an existing folder's type, so changing its default
+variable never determines an existing folder's type, so changing its default
 cannot change how an existing folder reads.
 
 ** Mismatches

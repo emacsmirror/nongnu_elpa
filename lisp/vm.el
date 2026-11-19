@@ -551,7 +551,7 @@ changes, messages additions or deletions will be allowed in the
 visited folder.
 
 The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little initial
+means the folder is visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail."
   (interactive
@@ -680,7 +680,7 @@ that the folder should be considered read only.  No attribute
 changes, messages additions or deletions will be allowed in the
 visited folder.
 
-This function differs from `vm-visit-folder' in that it remembers that
+This function differs from `vm-visit-folder' in that it records that
 the folder is a foreign folder maintained by Thunderbird.  Saving
 of messages is performed preferentially to other Thunderbird folders."
   (interactive

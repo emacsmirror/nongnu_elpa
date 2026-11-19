@@ -509,8 +509,8 @@ again rather than forgetting what was never deleted."
 examining which messages are still present in SOURCE.  SOURCE
 should be a maildrop folder on an IMAP server.         USR, 2011-04-06
 
-Nothing waits: the mailbox is asked for the UID of every message it holds and
-the header is pruned when the answer comes.  That is the same round trip a
+Nothing waits: the mailbox is asked for the UID of every message it contains
+and the header is pruned when the reply comes.  That is the same round trip a
 synchronisation makes, and it used to be just as frozen."
   (interactive
    (let ((this-command this-command)
@@ -1285,16 +1285,16 @@ Changes made to the buffer are uploaded to the server first before
 downloading the server data.
 Deleted messages are not expunged.
 
-Prefix argument FULL says to write every message's attributes to the server,
+Prefix argument FULL writes every message's attributes to the server,
 rather than only those of the messages whose attributes changed in this
-session, and to fetch a message the cache no longer holds rather than leaving
-it alone.  This is useful for saving offline work on the cache folder, whose
-expunges are sent whether FULL is given or not: VM records them as the reader
-makes them.
+session, and fetches a message the cache no longer contains rather than
+leaving it alone.  This is useful for saving offline work on the cache
+folder, whose expunges are sent whether FULL is given or not: VM records
+them as the reader makes them.
 
-FULL used to delete on the server every message the mailbox had and the cache
-did not.  A damaged cache says the same thing as a reader who expunged, so
-that destroyed mail nobody asked it to (emacs-vm/vm#752)."
+FULL used to delete on the server every message the mailbox had and the
+cache did not.  A damaged cache is indistinguishable from a reader who
+expunged, so that destroyed mail nobody asked it to (emacs-vm/vm#752)."
   (interactive "P")
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   ;;--------------------------

@@ -108,8 +108,8 @@ and a message that was shown and not recorded is one nobody can go back to.
 ;;;###autoload
 (defun vm-show-log ()
   "Show the log of what VM has been doing, and when.
-It holds everything VM has said this session, timed, and whatever more
-`vm-log-level' asks for."
+It contains everything VM has reported this session, timed, and whatever more
+`vm-log-level' requests."
   (interactive)
   (let ((buffer (get-buffer vm-log-buffer-name)))
     (if (and buffer (> (buffer-size buffer) 0))
@@ -1207,8 +1207,23 @@ by mistake does not quietly become a directory."
     file ))
 
 (defun vm-make-tempfile-name (&optional filename-suffix proposed-filename)
+  "Return a name for a temporary file in `vm-temp-file-directory'.
+
+PROPOSED-FILENAME, if given, is used as the name, with a counter
+prefixed to it where that name is taken.  Otherwise the name is
+generated.
+
+FILENAME-SUFFIX, if given, ends the name.  It is appended to
+PROPOSED-FILENAME when that name does not already end with it, since a
+viewer selected by extension gets the wrong file otherwise: a part named
+\"ii_mu2rld2c0\" with no extension is typed by its contents, not by its
+media type (issue #948)."
   (if (stringp proposed-filename)
       (setq proposed-filename (file-name-nondirectory proposed-filename)))
+  (if (and (stringp proposed-filename)
+	   (stringp filename-suffix)
+	   (not (string-suffix-p filename-suffix proposed-filename t)))
+      (setq proposed-filename (concat proposed-filename filename-suffix)))
   (let (filename)
     (cond ((and (stringp proposed-filename)
 		(not (file-exists-p

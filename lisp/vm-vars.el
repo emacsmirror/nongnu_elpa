@@ -283,7 +283,7 @@ of:
 
 - t, or the list (imap), for every IMAP folder.
 
-- An alist, which a cons for its first element says it is, naming the
+- An alist, recognized by a cons for its first element, naming the
   contexts mailbox by mailbox:
 
     ((\"work:Archive/.*\" imap))
@@ -426,11 +426,11 @@ SPOOLNAME can also be an IMAP maildrop.
     are \"preauth\", \"login\", \"cram-md5\" and \"xoauth2\".
     \"preauth\" causes VM to skip the authentication stage of the
     protocol with the assumption that the session was authenticated
-    in some external way.  \"login\", tells VM to use the IMAP LOGIN
+    in some external way.  \"login\" selects the IMAP LOGIN
     command for authentication, which sends your username and
     password in cleartext to the server.  \"cram-md5\" is a
-    challenge response system that convinces the server of your
-    identity without transmitting your password in the clear.
+    challenge response system that proves your identity to the
+    server without transmitting your password in the clear.
     Not all servers support \"cram-md5\"; if you're not sure, ask
     your mail administrator or just try it.
 
@@ -654,7 +654,7 @@ timing out.  It can be set to nil to never time out."
   "*The largest IMAP message VM retrieves.
 
 Nil, the default, means no limit.  A number is a size in bytes, for every
-mailbox.  An alist, which a cons for its first element says it is, gives one
+mailbox.  An alist, recognized by a cons for its first element, gives one
 mailbox by mailbox:
 
    ((\"work:Archive/.*\" . 50000) (t . 1000000))
@@ -864,9 +864,10 @@ VM maintains this variable, you should not set it.")
 If VM has to add messages that have no specific folder type to an
 empty folder, the folder will become this default type.
 
-It decides a folder VM creates, and nothing else: an existing folder is read
-as what its name says, per `vm-folder-type-by-extension-alist', or, where the
-name says nothing, as what VM can work out from its contents.  So changing
+It determines a folder VM creates, and nothing else: an existing folder is
+read as the type its name states, per `vm-folder-type-by-extension-alist',
+or, where the name states nothing, as what VM can work out from its
+contents.  So changing
 this cannot change how a folder you already have is read.
 
 Set to mboxcl2 it decides the name as well: a folder VM creates is created as
@@ -912,7 +913,7 @@ must set `vm-trust-content-length' non-nil."
                  (const babyl)))
 
 (defcustom vm-default-From_-folder-type 'From_
-  "*Value must be a symbol that tells VM which From-style folder type
+  "*Value must be a symbol naming which From-style folder type
 is used by your local mail delivery system.  Valid values are
 
     From_
@@ -937,7 +938,7 @@ to use for new folders.  Text files under UNIXish and Windows
 systems use different characters to indicate the end of a line.
 UNIXish systems use a single linefeed character, Windows uses a
 carriage return followed by a line feed.  The value of this
-variable tells VM which to use.
+variable selects which to use.
 
 `nil' means use the line ending convention of the local system;
 CRLF if you're on a Windows system, LF for UNIXish systems.
@@ -1023,7 +1024,7 @@ not need it."
 (defcustom vm-folder-type-by-extension-alist
   '(("mboxcl2" . mboxcl2)
     ("mbox" . From_))
-  "*Alist of (EXTENSION . TYPE): the folder type a folder's name asks for.
+  "*Alist of (EXTENSION . TYPE): the folder type a folder's name selects.
 EXTENSION is matched literally against the file name's extension, without
 the dot, and TYPE is one of the types `vm-default-folder-type' accepts.
 
@@ -1041,7 +1042,7 @@ What a folder's own contents say is never overridden where they settle the
 question: a name ending .mboxcl2 does not make VM read a BABYL file as one.
 
 .mbox is From_, which is what the rest of the world means by an mbox file.
-From_ is also the type a folder has when its name says nothing about it, so it
+From_ is also the type a folder has when its name states nothing about it, so
 is the one type an extension names without being the name that type is written
 under: a folder called sent.mbox keeps that name when converted to From_, and
 one called INBOX is not renamed INBOX.mbox by the same conversion.  See
@@ -1115,7 +1116,7 @@ matching `vm-visible-headers' are displayed last."
   :type '(repeat regexp))
 
 (defcustom vm-invisible-header-regexp nil
-  "*Non-nil value should be a regular expression that tells what headers
+  "*Non-nil value should be a regular expression matching the headers
 VM should NOT normally display when presenting a message.  All other
 headers will be displayed.  The variable `vm-visible-headers' specifies
 the presentation order of headers; headers not matched by
@@ -1329,7 +1330,7 @@ converter uses a width of its own: emacs-w3m the width of the window the
 message happened to be displayed in, lynx 72 columns.  So a reply quoted
 lines of one length today and another tomorrow.
 
-A number asks for lines of that width, whatever window the message was read
+A number sets lines of that width, whatever window the message was read
 in; 80, the default, is conventional.  `window-width' is the old behaviour,
 the width of the window at the time.
 
@@ -1386,13 +1387,13 @@ the presentation buffer."
 		       (symbol :tag "Minor mode"))))
 ;; smime related stuff
 (defvar vm-smime-sign-message nil
-  "Tells VM to sign the message upon sending, should not be set
-directly rather use the function `vm-smime-sign-message' or
+  "Non-nil when the message is to be signed upon sending, should not be
+set directly rather use the function `vm-smime-sign-message' or
 `vm-smime-sign-encrypt-message'")
 
 (defvar vm-smime-encrypt-message nil
-  "Tells VM to encrypt the message upon sending, should not be
-set directly rather use the function `vm-smime-encrypt-message'
+  "Non-nil when the message is to be encrypted upon sending, should not
+be set directly rather use the function `vm-smime-encrypt-message'
 or `vm-smime-sign-encrypt-message'")
 
 (defcustom vm-smime-get-recipient-certificate-method 'ask
@@ -1682,7 +1683,7 @@ that type are assumed to be included."
                  (repeat string)))
 
 (defcustom vm-mime-complete-html-for-external-viewer t
-  "*Whether to complete an HTML part before an external viewer sees it.
+  "*Whether to complete an HTML part before an external viewer reads it.
 Plenty of mail has text/html that is a fragment rather than a document:
 it opens with a `<span>' or a `<div>' and has no `<html>' and no `<head>'.
 Nothing in such a file states what character set its bytes are in (the
@@ -1860,7 +1861,8 @@ The first matching list element will be used."
 Consulted for a charset Emacs has no coding system for, such as
 \"windows-874\", \"x-mac-roman\" or \"unknown-8bit\": text declaring one of
 those is guessed at rather than decoded, and a command named here converts it
-first.  A charset Emacs can decode is left alone, whatever this says.
+first.  A charset Emacs can decode is left alone, whatever this alist
+contains.
 
 The alist format is
 
@@ -1890,16 +1892,15 @@ The first matching list element will be used."
                  (repeat (list string string string))))
 
 (defcustom vm-mime-alternative-show-method 'best-internal
-  "Value tells how to choose which alternative to display when
-it displays a message with \"multipart/alternative\" content.
+  "Value selects which alternative to display when VM displays
+a message with \"multipart/alternative\" content.
 Possible values are `best', `best-internal', `all', or a
 favorite-methods list as described below.
 
   A MIME message of type multipart/alternative has multiple
 message parts containing the same information, but each part may
 be formatted differently.  VM will typically display only one of
-the parts.  This variable tells VM how to choose which part to
-display.
+the parts.  This variable selects which part to display.
 
   (There is a separate variable `vm-mime-alternative-yank-method'
 for deciding the multipart/alternative to be used in replies.)
@@ -1936,8 +1937,8 @@ chosen."
                  (cons (const favorite-internal) (repeat string))))
 
 (defcustom vm-mime-alternative-yank-method nil
-  "*Value tells how to choose which alternative to yank, i.e.,
-include, in replies, when it yanks a message with
+  "*Value selects which alternative to yank, i.e.,
+include, in replies, when VM yanks a message with
 \"multipart/alternative\" content.  (It is similar to
 `vm-mime-alternative-show-method' used for displaying messages.)
 Possible values are `best', `best-internal', `all', or a
@@ -1976,14 +1977,14 @@ chosen."
                  (cons (const favorite-internal) (repeat string))))
 
 (defcustom vm-mime-multipart/related-show-method 'related
-  "*Value tells how to handle \"multipart/related\" attachments in
-email messages.  The possible values are `mixed' and `related'.
+  "*Value determines how \"multipart/related\" attachments in
+email messages are handled.  The possible values are `mixed' and `related'.
 
-The value of `mixed' asks VM to treat \"multipart/related\"
+With `mixed', VM treats \"multipart/related\"
 attachments the same way as \"multipart/mixed\" attachments, i.e., all
 of them will be displayed either as buttons or as content.
 
-The value of `related' asks VM to use them as related parts which means
+With `related', VM uses them as related parts, which means
 that they will be embedded in rendered \"text/html\" parts.
 
 Some mail messages arrive with wrong placement of the
@@ -2585,7 +2586,7 @@ with the first type that matches will be used."
 A header holding a character outside US-ASCII cannot be sent as it stands;
 the words holding those characters are encoded as RFC 2047 words instead.
 By default Subject, Organization, From, To, CC, BCC and their Resent- forms
-are encoded.  `vm-mime-encode-headers-type' says with which encoding."
+are encoded.  `vm-mime-encode-headers-type' names which encoding."
   :group 'vm-mime
   :type '(regexp))
 
@@ -2822,11 +2823,11 @@ file as you update your window configuration settings, so
 anything else you put into this file will go away.")
 
 (defcustom vm-window-configuration-file "~/.vm.windows"
-  "*Non-nil value should be a string that tells VM where to load
-and save your window configuration settings.  Your window
+  "*Non-nil value should be a string naming the file VM loads
+and saves your window configuration settings in.  Your window
 configuration settings are loaded automatically the first time
-you run VM in an Emacs session, and tells VM how to set up
-windows depending on what you are doing inside VM.
+you run VM in an Emacs session, and determine how windows are
+set up depending on what you are doing inside VM.
 
 The commands `vm-save-window-configuration' (normally bound to `WS') and
 `vm-delete-window-configuration' (bound to `WD') let you update this
@@ -3041,9 +3042,9 @@ sublist will apply to them all.  If FOLDER is a directory, VM will
 assume this to mean that all the folders in that directory should be
 searched.
 
-The SELECTOR is a Lisp symbol that tells VM how to decide whether
-a message from one of the specified FOLDERs should be included in
-the virtual folder.  Some SELECTORs require an argument ARG;
+The SELECTOR is a Lisp symbol that determines whether a message
+from one of the specified FOLDERs is included in the virtual
+folder.  Some SELECTORs require an argument ARG;
 unless otherwise noted ARG may be omitted.
 
 See the VM manual section \"Virtual Selectors\" for the complete list
@@ -3359,8 +3360,8 @@ section of the included text."
                  (repeat regexp)))
 
 (defcustom vm-included-text-discard-header-regexp nil
-  "*Non-nil value should be a regular expression that tells what
-headers should not be retained in a message included in a reply.
+  "*Non-nil value should be a regular expression matching the
+headers that are not retained in a message included in a reply.
 This variable along with `vm-included-text-headers' determines
 which headers are retained.
 
@@ -3412,8 +3413,8 @@ of the forwarded message."
   :type '(repeat regexp))
 
 (defcustom vm-unforwarded-header-regexp "none-to-be-dropped"
-  "*Non-nil value should be a regular expression that tells what
-headers should not be forwarded by `vm-forward-message' and
+  "*Non-nil value should be a regular expression matching the
+headers that are not forwarded by `vm-forward-message' and
 `vm-send-digest'.  This variable along with `vm-forwarded-headers'
 determines which headers are forwarded. 
 
@@ -3457,8 +3458,8 @@ of the forwarded message."
   :type '(repeat regexp))
 
 (defcustom vm-unforwarded-header-regexp-plain nil
-  "*Non-nil value should be a regular expression that tells what
-headers should not be forwarded by `vm-forward-message-plain'.  This
+  "*Non-nil value should be a regular expression matching the
+headers that are not forwarded by `vm-forward-message-plain'.  This
 variable along with `vm-forwarded-headers-plain' determines which headers
 are forwarded.
 
@@ -3628,8 +3629,8 @@ of the digestified messages."
   :type '(repeat regexp))
 
 (defcustom vm-rfc934-digest-discard-header-regexp nil
-  "*Non-nil value should be a regular expression that tells
-what headers should not appear in RFC 934 digests created by VM.  This
+  "*Non-nil value should be a regular expression matching the
+headers that do not appear in RFC 934 digests created by VM.  This
 variable along with `vm-rfc934-digest-headers' determines which headers
 are kept and which are discarded.
 
@@ -3678,8 +3679,8 @@ the digestified messages."
   :type '(repeat regexp))
 
 (defcustom vm-rfc1153-digest-discard-header-regexp "\\(X400-\\)?Received:"
-  "*Non-nil value should be a regular expression that tells
-what headers should not appear in RFC 1153 digests created by VM.  This
+  "*Non-nil value should be a regular expression matching the
+headers that do not appear in RFC 1153 digests created by VM.  This
 variable along with `vm-rfc1153-digest-headers' determines which headers
 are kept and which headers are discarded.
 
@@ -3730,8 +3731,8 @@ of the digestified messages."
   :type '(repeat regexp))
 
 (defcustom vm-mime-digest-discard-header-regexp nil
-  "*Non-nil value should be a regular expression that tells
-which headers should not appear in MIME digests created
+  "*Non-nil value should be a regular expression matching the
+headers that do not appear in MIME digests created
 by VM.  This variable along with `vm-mime-digest-headers'
 determines which headers are kept and which are discarded.
 
@@ -3781,8 +3782,8 @@ the message."
   :type '(repeat regexp))
 
 (defcustom vm-resend-bounced-discard-header-regexp nil
-  "*Non-nil value should be a regular expression that tells
-what headers should not appear in a resent bounced message.  This
+  "*Non-nil value should be a regular expression matching the
+headers that do not appear in a resent bounced message.  This
 variable along with `vm-resend-bounced-headers' determines which headers
 are kept and which headers are discarded.
 
@@ -3824,8 +3825,8 @@ the message."
   :type '(repeat regexp))
 
 (defcustom vm-resend-discard-header-regexp "\\(\\(X400-\\)?Received:\\|Resent-\\)"
-  "*Non-nil value should be a regular expression that tells
-what headers should not appear in a resent message.  This
+  "*Non-nil value should be a regular expression matching the
+headers that do not appear in a resent message.  This
 variable along with `vm-resend-headers' determines which
 headers are kept and which headers are discarded.
 
@@ -4126,7 +4127,7 @@ progress.  Nothing above 1 is a warning."
 
 (defcustom vm-log-level nil
   "*Level up to which VM records what it is doing, beyond what it shows.
-Everything VM says is recorded in the buffer *VM Log* whatever this is set
+Everything VM reports is recorded in the buffer *VM Log* whatever this is set
 to; a nil value means nothing more than that.  `\\[vm-show-log]' shows the
 buffer.
 
@@ -4393,8 +4394,8 @@ ttys but VM will not use these to display completion information."
 
 (defcustom vm-frame-parameter-alist nil
   "*Non-nil value is an alist of types and lists of frame parameters.
-This list tells VM what frame parameters to associate with each
-new frame it creates of a specific type.
+This list names the frame parameters to associate with each
+new frame VM creates of a specific type.
 
 The alist should be of this form
 
@@ -4431,7 +4432,7 @@ the function `make-frame'."
 (defcustom vm-search-other-frames t
   "*Non-nil means VM should search frames other than the selected frame
 when looking for a window that is already displaying a buffer that
-VM wants to display or undisplay."
+VM is to display or undisplay."
   :group 'vm-frames
   :type 'boolean)
 
@@ -4678,7 +4679,7 @@ Nil means don't highlight URLs."
   :type 'symbol)
 
 (defcustom vm-url-search-limit 12000
-  "*Non-nil numeric value tells VM how hard to search for URLs.
+  "*Non-nil numeric value limits how far VM searches for URLs.
 The number specifies the maximum message size in characters that
 VM will search for URLs.  For message larger than this value, VM
 will search from the beginning of the message to a point
@@ -4696,7 +4697,7 @@ what decodes the header into an image."
   :type 'boolean)
 
 (defcustom vm-startup-with-summary t
-  "*Value tells VM whether to generate a summary when a folder is visited.
+  "*Value determines whether a summary is generated when a folder is visited.
 Nil means don't automatically generate a summary.
 
 A value of t means always generate a summary.
@@ -4974,7 +4975,7 @@ bracketed by (point-min) and (point-max)."
   :type 'hook)
 
 (defcustom vm-spooled-mail-waiting-hook nil
-  "*List of functions called when VM first notices mail is spooled
+  "*List of functions called when VM first finds mail spooled
 for a folder.  The folder buffer will be current when the hooks are
 run."
   :group 'vm-hooks 
@@ -5549,7 +5550,7 @@ spool file signals an error saying so, rather than making do with another
 movemail found along `exec-path'.
 
 It has to be that one, and not simply the first `movemail' on the path.
-Emacs's copies the spool byte for byte, which is all VM wants of it; other
+Emacs's copies the spool byte for byte, which is all VM requires of it; other
 implementations move mail by *parsing and rewriting* it, and what comes out
 is not what the mail server put in.  GNU Mailutils' movemail, which is
 `/usr/bin/movemail' on Debian and Ubuntu when the mailutils package is
@@ -5687,10 +5688,9 @@ found, the OpenSSL library will refuse to work and stunnel will
 not be able to establish an SSL connection.
 
 Setting `vm-stunnel-random-data-method' to the symbol `generate'
-tells VM to generate the random data.
+makes VM generate the random data.
 
-A nil value tells VM to do nothing and let stunnel find the data
-if it can."
+A nil value leaves the data for stunnel to find, if it can."
   :group 'vm-helpers
   :type '(choice (const :tag "Leave it to stunnel" nil)
 		 (const generate)))
@@ -6972,9 +6972,9 @@ Read before the option `vm-imap-keep-trace-buffer'.")
 A session that fetched the UID and flags of every message in a large mailbox
 leaves most of a megabyte in its trace, and a bug report of that size cannot
 be sent.  Beyond this, the middle of the trace is left out and the report
-states how much: the start holds what the server is and what was asked of it,
-the end where it went wrong, and the thousands of identical FETCH lines
-between them hold nothing new.
+states how much: the start contains what the server is and what was asked of
+it, the end where it went wrong, and the thousands of identical FETCH lines
+between them contain nothing new.
 
 Nil includes every trace whole."
   :group 'vm-helpers
@@ -7374,7 +7374,7 @@ remove it.  A real sendmail does.  Whether the program behind
 
 VM signals an error when a composition has a Bcc header and `send-mail-function'
 is not one of `vm-senders-that-remove-bcc'.  Such a function hands the
-header to a program outside Emacs and trusts it to remove it, so the privacy
+header to a program outside Emacs to remove, so the privacy
 of the Bcc rests on that program being right.  Where it is not, everyone on
 the message learns who was blind copied (emacs-vm/vm#815).
 

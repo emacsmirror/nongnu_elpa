@@ -78,8 +78,8 @@ buffer.")
   (goto-char (point-min)))
 
 (iter-defun vm-pop-net-read-line ()
-  "Read one line of response, and answer with it, terminator and all.
-Yields until there is a complete line: a partial one is not an answer, and
+  "Read one line of response, and return it, terminator and all.
+Yields until there is a complete line: a partial one is not a response, and
 reading it as one is how a client gets out of step with a server."
   ;; a position and not the marker itself: `set-marker' below moves the
   ;; marker, and the text wanted is the text before it moved
@@ -96,7 +96,7 @@ reading it as one is how a client gets out of step with a server."
       (buffer-substring-no-properties start end))))
 
 (iter-defun vm-pop-net-read-response ()
-  "Read one response line and answer with it, signalling on -ERR.
+  "Read one response line and return it, signalling on -ERR.
 A signal says what the server said, which is what a user is shown when a
 session fails; nil would leave the caller to work out what happened."
   (let ((line (iter-yield-from (vm-pop-net-read-line))))
@@ -108,7 +108,7 @@ session fails; nil would leave the caller to work out what happened."
 				   (string-trim line))))))))
 
 (iter-defun vm-pop-net-read-multiline ()
-  "Read a multi-line response and answer with its lines, the dot removed.
+  "Read a multi-line response and return its lines, the dot removed.
 The first line has been read already; this is the body after it."
   (let ((start (marker-position vm-pop-net-read-point)))
     (while (not (save-excursion
@@ -137,16 +137,16 @@ The first line has been read already; this is the body after it."
 		(split-string body "\r\n"))))))
 
 (defun vm-pop-net-send (command)
-  "Send COMMAND to this session's server, and note where its answer starts."
+  "Send COMMAND to this session's server, and note where its response starts."
   (let ((process (get-buffer-process (current-buffer))))
     (goto-char (point-max))
     (set-marker vm-pop-net-read-point (point))
     (process-send-string process (concat command "\r\n"))))
 
 (defun vm-pop-net-goodbye (session)
-  "Say QUIT on SESSION's connection, without waiting to be answered.
-What the unwinding of a session says, where there was no chance to read the
-answer.  `vm-pop-net-quit' is the other way round: said in the body, and read.
+  "Send QUIT on SESSION's connection, without waiting for a reply.
+What the unwinding of a session sends, where there was no chance to read the
+reply.  `vm-pop-net-quit' is the other way round: sent in the body, and read.
 
 SESSION, rather than whatever connection the current buffer happens to hold.
 A generator that is dropped without being closed is closed by the finalizer
@@ -162,12 +162,12 @@ folder's and leaves it reading a closed connection (emacs-vm/vm#939)."
 	(process-send-string process "QUIT\r\n")))))
 
 (iter-defun vm-pop-net-command (command)
-  "Send COMMAND and answer with its one-line response."
+  "Send COMMAND and return its one-line response."
   (vm-pop-net-send command)
   (iter-yield-from (vm-pop-net-read-response)))
 
 (iter-defun vm-pop-net-command-multiline (command)
-  "Send COMMAND and answer with the lines of its multi-line response."
+  "Send COMMAND and return the lines of its multi-line response."
   (vm-pop-net-send command)
   (iter-yield-from (vm-pop-net-read-response))
   (iter-yield-from (vm-pop-net-read-multiline)))
@@ -175,7 +175,7 @@ folder's and leaves it reading a closed connection (emacs-vm/vm#939)."
 ;;; The session
 
 (iter-defun vm-pop-net-greeting ()
-  "Read the greeting, and answer with it.  A server that says -ERR here has
+  "Read the greeting, and return it.  A server that replies -ERR here has
 refused the connection, which the read reports as an error."
   (vm-pop-net-init)
   (iter-yield-from (vm-pop-net-read-response)))
@@ -263,14 +263,14 @@ wire in clear, which is the thing APOP was asked for to avoid."
   t)
 
 (iter-defun vm-pop-net-stat ()
-  "Answer with (COUNT . OCTETS), what STAT says the maildrop holds."
+  "Return (COUNT . OCTETS), what STAT reports the maildrop contains."
   (let* ((line (iter-yield-from (vm-pop-net-command "STAT")))
 	 (fields (split-string line "[ \r\n]+" t)))
     (cons (string-to-number (or (nth 1 fields) "0"))
 	  (string-to-number (or (nth 2 fields) "0")))))
 
 (iter-defun vm-pop-net-uidl ()
-  "Answer with the UIDs of the maildrop, as (NUMBER . UID) in server order.
+  "Return the UIDs of the maildrop, as (NUMBER . UID) in server order.
 
 Returns `unsupported' where the server has no UIDL: a maildrop VM cannot
 identify messages in is one it must not delete from, and that is the
@@ -294,7 +294,7 @@ is every check of a maildrop whose mail is deleted as it is fetched."
     (vm-pop-net-error 'unsupported)))
 
 (iter-defun vm-pop-net-retrieve (n)
-  "Answer with message N as it arrived, headers and body."
+  "Return message N as it arrived, headers and body."
   (let ((lines (iter-yield-from
 		(vm-pop-net-command-multiline (format "RETR %d" n)))))
     (concat (string-join lines "\n") "\n")))
@@ -305,7 +305,7 @@ is every check of a maildrop whose mail is deleted as it is fetched."
   t)
 
 (defvar vm-pop-net-said-goodbye nil
-  "Whether this session has said QUIT and heard the answer.
+  "Whether this session has sent QUIT and read the reply.
 
 Bound per session by the generators that delete, so the `unwind-protect' that
 covers an abandoned session does not say it twice.")
@@ -314,9 +314,9 @@ covers an abandoned session does not say it twice.")
   "Say QUIT and read what the server says to it.
 
 QUIT is what makes a POP server act on the session's deletions, and RFC 1939
-3.5 lets it answer -ERR -- \"some deleted messages not removed\" -- when it
+3.5 lets it reply -ERR -- \"some deleted messages not removed\" -- when it
 could not.  Written blind, as the unwinding does for a session that was
-abandoned, that answer is never seen and VM records deletions the maildrop
+abandoned, that reply is never read and VM records deletions the maildrop
 still has.  Read here, an -ERR signals, and what the folder owes the server
 stays on its list."
   (iter-yield-from (vm-pop-net-command "QUIT"))
@@ -325,7 +325,7 @@ stays on its list."
 
 (iter-defun vm-pop-net-session (session user password)
   "A whole session: greet, log in, ask what is there, and say goodbye.
-Answers (COUNT . OCTETS) from STAT.  The QUIT is in an `unwind-protect', so
+Returns (COUNT . OCTETS) from STAT.  The QUIT is in an `unwind-protect', so
 it is said whether the session ran to the end or was abandoned -- a POP
 server that is not told QUIT rolls back the deletions of the session, and
 under generators that form runs only because `vm-net-abandon\\=' closes the
@@ -429,14 +429,14 @@ non-empty string counts: see `vm-imap-net-known-password'."
 	 password)))
 
 (defun vm-pop-net-open (source name &optional may-ask)
-  "Open a connection for the POP maildrop SOURCE and answer with a session.
+  "Open a connection for the POP maildrop SOURCE and return a session.
 
 MAY-ASK says the caller is a command and the reader is there to be asked for
 a password.  A timer passes nil: a question from a timer arrives while
 somebody is typing something else.
 
 NAME goes in messages.  The session has a buffer of its own and is ready for
-`vm-net-start'; the answer is (SESSION USER PASSWORD).
+`vm-net-start'; the result is (SESSION USER PASSWORD).
 
 Plain, TLS, over ssh, and through stunnel where the user has one and would
 rather use it than Emacs's own TLS.  An ssh session has no process yet when
@@ -560,11 +560,11 @@ output.  A maildrop whose password VM has not been told signals
 ;;; Checking for mail, which is the first thing a command wanted
 
 (iter-defun vm-pop-net-unretrieved (session user password source retrieved)
-  "Answer with how many messages of the maildrop have not been retrieved.
+  "Return how many messages of the maildrop have not been retrieved.
 RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
 its password, which is how an entry there names the maildrop it came from.
 
-Answers nil when the server has no UIDL: without UIDs VM cannot tell what it
+Returns nil when the server has no UIDL: without UIDs VM cannot tell what it
 has already seen, and saying \"no mail\" would be a guess."
   (unwind-protect
       (progn
@@ -673,7 +673,7 @@ stays on the server, so raising the limit is all it takes."
 RETRIEVED is `vm-pop-retrieved-messages' and SOURCE the maildrop without
 its password, which is how an entry there names where it came from.
 
-Answers a list of (UID . TEXT), oldest first: the caller puts them in the
+Returns a list of (UID . TEXT), oldest first: the caller puts them in the
 folder, which is folder work and does not belong in a process filter.
 
 Nothing is deleted here, whatever the maildrop's auto-expunge setting says.
@@ -732,7 +732,7 @@ cannot go back to the server for a body later."
 	      (vm-pop-net-goodbye session)))
 
 (iter-defun vm-pop-net-sizes ()
-  "Answer with the sizes of the maildrop, as (NUMBER . OCTETS).
+  "Return the sizes of the maildrop, as (NUMBER . OCTETS).
 LIST rather than a RETR that turns out to be enormous: the size decides
 whether a message is fetched at all."
   (condition-case _err
@@ -923,7 +923,7 @@ again."
 			(get (car result) 'error-conditions))
 		   (vm-net-warn 0 "%s: deleting on the server failed: %s" name
 			    (error-message-string result))
-		 ;; the answer is a plist and not a list of UIDs: counting it
+		 ;; the result is a plist and not a list of UIDs: counting it
 		 ;; said four messages deleted whatever had been, that being
 		 ;; the length of (:deleted ... :gone ...) (emacs-vm/vm#922)
 		 (let ((deleted (plist-get result :deleted))
@@ -995,8 +995,8 @@ connection that would write the same folder.")
 (make-variable-buffer-local 'vm-pop-net-waiting)
 
 (defun vm-pop-net-when-free (name function)
-  "Run FUNCTION now, or when this folder's session ends.  Answers non-nil.
-NAME says what it is, for the log.  Answers `later' when it was queued: the
+  "Run FUNCTION now, or when this folder's session ends.  Returns non-nil.
+NAME names it, for the log.  Returns `later' when it was queued: the
 work has not happened yet, and it happens on the one session this folder has
 rather than as the second writer this is avoiding."
   (cond
@@ -1195,10 +1195,10 @@ fetched again."
       (length new))))
 
 (defun vm-pop-net-get-folder-mail ()
-  "Start fetching this POP folder's new mail, and answer with whether it did.
+  "Start fetching this POP folder's new mail, and return whether it did.
 Nil means nothing was started: VM has no password for the maildrop yet, or a
 session is already running on the folder.  `started' means the fetch is under
-way and has not happened yet; see `vm-imap-net-get-spooled-mail', whose answer
+way and has not happened yet; see `vm-imap-net-get-spooled-mail', whose result
 this matches."
   (let* ((folder (current-buffer))
 	 (source (vm-folder-pop-maildrop-spec))
@@ -1240,10 +1240,10 @@ this matches."
 (iter-defun vm-pop-net-expunge-session (session user password uidls)
   "Log in and delete the messages whose UIDs are UIDLS.
 
-Answers (:deleted UIDLS :gone UIDLS): the ones this session deleted, and the
+Returns (:deleted UIDLS :gone UIDLS): the ones this session deleted, and the
 ones the maildrop does not list at all.  Both are settled and the caller can
 forget them.  A UID the maildrop no longer has is a deletion that has already
-happened, by an earlier session whose answer was lost or by another client,
+happened, by an earlier session whose reply was lost or by another client,
 and asking for it again is a session per save for ever: a request for a
 message that had gone was still on the list after two goes at it.
 
@@ -1262,14 +1262,14 @@ does whether this runs to the end or is abandoned."
 	      ;; without UIDL there is no telling which message is which, and
 	      ;; deleting the wrong one is worse than deleting none.  An empty
 	      ;; maildrop is not that: everything owed is gone already, which
-	      ;; is what the `:gone' answer below is for (emacs-vm/vm#888)
+	      ;; is what the `:gone' result below is for (emacs-vm/vm#888)
 	      (signal 'vm-pop-net-error
 		      (list "server has no UIDL; nothing deleted")))
 	    (dolist (pair numbers)
 	      (when (member (cdr pair) uidls)
 		(iter-yield-from (vm-pop-net-delete (car pair)))
 		(push (cdr pair) deleted)))
-	    ;; and QUIT here rather than on the way out, so that the answer to
+	    ;; and QUIT here rather than on the way out, so that the reply to
 	    ;; it is read: that is where a server says it could not remove them
 	    (iter-yield-from (vm-pop-net-quit))
 	    (list :deleted (nreverse deleted)
@@ -1281,7 +1281,7 @@ does whether this runs to the end or is abandoned."
 (defun vm-pop-net-send-changes ()
   "Start deleting on the server what this POP folder has expunged locally.
 
-Answers with whether it did: nil means nothing was started, VM having no
+Returns whether it did: nil means nothing was started, VM having no
 password for the maildrop yet; `later' that a session is already running and
 these deletions go up next time -- they are in
 `vm-pop-messages-to-expunge', which is written into the folder file, so
@@ -1330,7 +1330,7 @@ next fetch's business."
 			    ;; changes minutes later, with nothing in it to
 			    ;; see, is what emacs-vm/vm#942 reported.  A
 			    ;; request sent again for a message the server no
-			    ;; longer has is answered as already gone.
+			    ;; longer has is reported as already gone.
 			    (setq vm-pop-messages-to-expunge
 				  (seq-remove (lambda (uidl)
 						(member uidl settled))
@@ -1355,7 +1355,7 @@ next fetch's business."
 
 (defun vm-pop-net-expunge-maildrop (source uidls callback)
   "Delete the messages with UIDLS from the maildrop SOURCE, without waiting.
-CALLBACK is called with the UIDLs deleted, or with the error.  Answers
+CALLBACK is called with the UIDLs deleted, or with the error.  Returns
 whether it started."
   (condition-case nil
       (let* ((opened (vm-pop-net-open source "POP maildrop expunge" 'may-ask))
@@ -1377,7 +1377,7 @@ whether it started."
 (defun vm-pop-net-expunge-retrieved ()
   "Delete on their servers the messages this folder has retrieved by POP.
 
-Answers whether it started; nil means nothing was started, VM having no
+Returns whether it started; nil means nothing was started, VM having no
 password for the first maildrop yet, and none after it is answered for
 either.  One maildrop at a time: a POP server serves one session anyway, and
 they all write the same folder.
@@ -1447,8 +1447,8 @@ them, so an expunge that fails half way leaves the rest to be tried again."
 (declare-function vm-pop-find-name-for-spec "vm-pop" (spec))
 
 (defun vm-pop-net-folder-check-mail ()
-  "Start asking whether this POP folder has new mail, and answer with whether
-it did.  The answer itself arrives later, in `vm-spooled-mail-waiting',
+  "Start asking whether this POP folder has new mail, and return whether
+it did.  The result itself arrives later, in `vm-spooled-mail-waiting',
 which is what the mode line reads.
 
 Nil means nothing was started: VM has no password for the maildrop yet, or a

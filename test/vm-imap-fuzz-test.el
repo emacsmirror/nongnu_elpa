@@ -17,7 +17,7 @@
 ;; After every operation the folder has to say something true about itself:
 ;;
 ;;   - every message has a UID, and no two have the same one.  A UID names one
-;;     message for as long as the UIDVALIDITY holds, so two of them is one
+;;     message for as long as the UIDVALIDITY is unchanged, so two of them is one
 ;;     message held twice: two summary lines and one message on the server.
 ;;   - every message belongs to the mailbox this folder is looking at.
 ;;   - the message list matches the messages in the buffer.  A wrong splice
@@ -157,7 +157,7 @@ pending is left alone, and so is one the server no longer has."
 (defconst vm-imap-fuzz-test--reader-weights
   ;; Weighted rather than uniform: what the sequences have to reach often is
   ;; marking a message read and then saving, since that is where the folder
-  ;; tells the server something and can tell it about the wrong message.
+  ;; sends the server something and can name the wrong message.
   '((mark-read . 4) (save . 4) (get-new-mail . 2) (synchronize . 2)
     (delete . 2) (expunge . 2) (undelete . 1))
   "How often each reader operation is drawn, by weight.")
@@ -193,7 +193,7 @@ that broke something can be run again."
       (list 'undelete (vm-imap-uid-of m)))
      ((eq choice 'expunge) (vm-expunge-folder :quiet t) (list 'expunge))
      ((eq choice 'mark-read)
-      ;; read, and not a toggle: the invariant is about what VM says it has
+      ;; read, and not a toggle: the invariant is about what VM records it has
       ;; read, and a toggle would spend half its turns taking \Seen off
       (vm-set-unread-flag m nil)
       (vm-set-new-flag m nil)

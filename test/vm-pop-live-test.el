@@ -35,7 +35,7 @@ state rather than a throwaway mailbox."
 	  (,(nth 1 spec) (vm-pop-live-server "pop"))
 	  (,(nth 2 spec) (car (plist-get ,(nth 1 spec) :accounts)))
 	  (,(car spec) (vm-pop-live-fixture-id))
-	  ;; A session remembers its password and keeps its buffer for reuse.
+	  ;; A session records its password and keeps its buffer for reuse.
 	  ;; Bound, so neither outlives the test that opened it.
 	  (vm-pop-passwords vm-pop-passwords)
 	  (vm-kept-pop-buffers vm-kept-pop-buffers)
@@ -44,7 +44,7 @@ state rather than a throwaway mailbox."
 	  ;; trace is unreachable anyway.  A session that errors sets this back
 	  ;; buffer-locally, so a failure still has its trace while it matters.
 	  (vm-pop-keep-trace-buffer nil)
-	  ;; `vm-warn' remembers its last warning so as not to repeat it, and
+	  ;; `vm-warn' records its last warning so as not to repeat it, and
 	  ;; these tests produce warnings on purpose.
 	  (vm-current-warning vm-current-warning)
 	  (vm-folder-history vm-folder-history)
@@ -159,7 +159,7 @@ below would be testing an empty maildrop."
 	     (found nil))
 	(should (> count 0))
 	(should (= count (length uidls)))
-	;; Find our own message rather than assuming the maildrop holds only
+	;; Find our own message rather than assuming the maildrop contains only
 	;; it: this is a real INBOX.
 	(dolist (n (number-sequence 1 count))
 	  (let ((lines (vm-pop-live-multiline conn "TOP %d 0" n)))

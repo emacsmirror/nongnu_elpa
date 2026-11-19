@@ -1954,7 +1954,7 @@ and the name survives to what actually gets sent."
   (let ((dir (file-name-as-directory (make-temp-file "vm-rfc2231" t))))
     (unwind-protect
         (vm-mime-test-with-attachment-tag (concat dir "räksmörgås.txt")
-          ;; What the tag holds, and how it spells it.
+          ;; What the tag contains, and how it is written.
           (should (equal "räksmörgås.txt" (vm-mime-attachment-name-at-point)))
           (let ((params (get-text-property (car (vm-mime-attachment-tag-bounds))
                                           'vm-mime-parameters)))
@@ -2380,7 +2380,7 @@ flag (emacs-vm/vm#885)."
          (layout (vm-mime-test--image-layout file)))
     (unwind-protect
         (progn
-          ;; untouched, it is displayed as what the part says it is
+          ;; untouched, it is displayed as the type the part declares
           (should (equal (plist-get (cdr (vm-mime-test--displayed-image-spec
                                           layout))
                                     :type)
@@ -2599,7 +2599,7 @@ the usual 022.  The image parts of a message are as private as its text."
             (let ((written (vm-mime-externalize-cid-references html html-file)))
               (should written)
               (dolist (f written)
-                ;; only the owner, whatever the umask says
+                ;; only the owner, whatever the umask is
                 (should (= (vm-octal 600)
                            (logand (file-modes f) (vm-octal 777))))))))
       (vm-mime-test--kill-new-buffers before)
@@ -3192,7 +3192,7 @@ it stands makes the body binary, the parts inside holding their own
 encodings (emacs-vm/vm#895)."
   (with-temp-buffer
     (insert "a short line\n" (make-string 1200 ?x) "\n")
-    ;; what the ordinary chooser says, which is why this exists
+    ;; what the ordinary chooser selects, which is why this exists
     (should (equal (vm-determine-proper-content-transfer-encoding
                     (point-min) (point-max))
                    vm-mime-long-lines-encoding))
@@ -3826,7 +3826,7 @@ when a region was meant."
 ;;; The rest of the reader commands (emacs-vm/vm#632)
 ;;
 ;; Three commands on the MIME button at point that no test called: printing
-;; it, showing it as text whatever it says it is, and handing it to an
+;; it, showing it as text whatever type it declares, and handing it to an
 ;; external viewer.  Each is a thin wrapper on a worker, so what is worth
 ;; checking is that the wrapper reaches its worker with the object at point.
 
@@ -4503,7 +4503,7 @@ in, which is how a reader tells nesting from a list of siblings."
       (should (string-match-p "\\`  (\"text/plain\")\\'" (nth 3 lines)))
       (should (string-match-p "\\`  (\"text/html\")\\'" (nth 4 lines)))
       ;; and the attachment is back out beside the alternative, with what
-      ;; the disposition says about it
+      ;; the disposition states about it
       (should (string-match-p "\\` (\"image/png\")" (nth 5 lines)))
       (should (string-match-p "filename=picture.png" (nth 5 lines))))))
 
@@ -4515,7 +4515,7 @@ maintainer reading a bug report wants: the same parts, all of the fields."
     (let ((listing (vm-mime-test--part-listing t)))
       (should (string-match-p "multipart/mixed" listing))
       (should (string-match-p "text/html" listing))
-      ;; a layout holds the positions of the part in the folder, which the
+      ;; a layout contains the positions of the part in the folder, which the
       ;; short form does not print
       (should (string-match-p "#<marker" listing)))))
 
@@ -5038,7 +5038,7 @@ would be quoted-printable and nobody would know."
 
 ;;; The charset VM names for outgoing text (`vm-coding-system-priorities')
 
-;; The option had no test of any kind, and it decides the charset label on
+;; The option had no test of any kind, and it determines the charset label on
 ;; every message VM sends.  A label naming a charset that cannot hold the
 ;; text is mail the recipient decodes into something else, which is the
 ;; quietest kind of corruption: nothing fails, the words are simply wrong.
@@ -5147,7 +5147,7 @@ list applies to any text at all."
 
 ;;; Splitting a composition into message/partial fragments
 
-;; `vm-mime-fragment-composition' is what `vm-mime-max-message-size' asks for,
+;; `vm-mime-fragment-composition' is what `vm-mime-max-message-size' requires,
 ;; and it had no test of any kind: the form coverage report put it among the
 ;; definitions with the most forms never evaluated.  A message split wrongly
 ;; is mail nothing can put back together.
@@ -5279,7 +5279,7 @@ holding it."
           (should (string-match-p "Content-Type: message/partial" headers))
           (should (string-match-p "Content-Transfer-Encoding: 7bit" headers))
           (should (string-match-p "MIME-Version: 1.0" headers))
-          ;; the subject rides along, so a reader sees what it is
+          ;; the subject rides along, so a reader is shown what it is
           (should (string-match-p "Subject: a big one" headers)))))))
 
 (ert-deftest vm-fragment-test-folding-the-content-type-is-optional ()
@@ -5444,7 +5444,7 @@ Assembling what is there would hand the reader a message with a hole in it
 and no sign of one."
   (let ((texts (vm-partial-test--fragment-texts 60 2500)))
     (should (> (length texts) 1))
-    ;; the first part alone, which still says how many there should be
+    ;; the first part alone, which still states how many there should be
     (vm-partial-test--with-a-folder-of (list (car texts))
       (should-error (funcall assemble)))))
 
@@ -5530,7 +5530,7 @@ number, so none of them moves."
         (vm-mime-compiled-format-alist nil))
     (should (equal (vm-mime-sprintf "%20.4t" layout) "                HTML"))
     (should (equal (vm-mime-sprintf "%-20.4t" layout) "HTML                "))
-    ;; a word is not zero filled, whatever the width says
+    ;; a word is not zero filled, whatever the width is
     (should (equal (vm-mime-sprintf "%010t" layout) "      HTML"))
     (should (equal (vm-mime-sprintf "%-010t" layout) "HTML      "))
     ;; and the numbers still are
@@ -6215,7 +6215,7 @@ Customize and a save wrote one machine\='s renderer into the custom file
       (should (eq vm-mime-text/html-handler 'auto-select))
       (should (eq vm-mime-text/html-handler-found found))
       (when found
-        ;; and the second call answers from what was found, without looking
+        ;; and the second call returns what was found, without looking
         (cl-letf (((symbol-function 'executable-find)
                    (lambda (&rest _) (error "looked again")))
                   ((symbol-function 'locate-library)

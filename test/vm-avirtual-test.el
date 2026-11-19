@@ -630,7 +630,7 @@ the typo."
           (text-quoting-style 'grave))
       (let ((err (should-error (vm-virtual-filter-messages 5) :type 'error)))
         (should (string-match-p "No virtual folder \"noe\"" (cadr err)))
-        ;; solution-directed: says where to define it and what is defined
+        ;; solution-directed: states where to define it and what is defined
         (should (string-match-p "vm-virtual-folder-alist" (cadr err)))
         (should (string-match-p "\"one\", \"three\"" (cadr err)))))))
 
@@ -720,8 +720,8 @@ rules name, and leaves the messages no rule matches where they are."
                                         (buffer-string))))
         (should (string-match-p "Subject: badgers" archived))
         (should-not (string-match-p "Subject: otters" archived)))
-      ;; the folder still holds both: archiving copies unless
-      ;; vm-delete-after-archiving says otherwise
+      ;; the folder still contains both: archiving copies unless
+      ;; vm-delete-after-archiving is set
       (should (equal (length vm-message-list) 2)))))
 
 (ert-deftest vm-avirtual-test-auto-archive-with-no-rules-does-nothing ()
@@ -1058,7 +1058,7 @@ the count and the current message."
     (with-current-buffer folder
       (let ((second (nth 1 vm-message-list)))
         ;; label the second while the pointer is on the first, so the
-        ;; message list given to the command is what decides
+        ;; message list given to the command is what determines
         (setq vm-message-pointer (cdr vm-message-list))
         (vm-add-message-labels "wanted" 1)
         (setq vm-message-pointer vm-message-list)
@@ -1180,7 +1180,7 @@ looked at."
               (let ((said (buffer-string)))
                 (should (string-match-p "badger-mail" said))
                 (should (string-match-p "is true" said))))
-            ;; and the message that does not match says so
+            ;; and the message that does not match reports so
             (setq vm-message-pointer (cdr vm-message-list))
             (vm-virtual-check-selector-interactive "badger-mail")
             (with-current-buffer "*VM virtual-folder-check*"

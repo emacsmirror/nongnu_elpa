@@ -426,7 +426,7 @@ There is no presentation buffer, so the body copied is the raw one."
       ;; Satisfy vm-select-folder-buffer-and-validate rather than
       ;; stubbing it: it is a defsubst, so once vm-postpone.el is
       ;; byte-compiled its body is inlined into the caller and
-      ;; replacing its function cell does nothing.  All it wants is a
+      ;; replacing its function cell does nothing.  All it requires is a
       ;; buffer that looks like a folder.
       (setq major-mode 'vm-mode)
       (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
@@ -761,7 +761,7 @@ first version of the fix got the wrong way round, so it wrote nothing."
               (insert "To: someone@example.com\nSubject: a draft\n"
                       mail-header-separator "\nUnfinished.\n")
               (vm-postpone-message folder t)))
-          ;; the folder buffer now holds two messages, each with a length
+          ;; the folder buffer now contains two messages, each with a length
           (with-current-buffer (vm-get-file-buffer folder)
             ;; a folder buffer is narrowed to the message on show
             (should (= 2 (save-restriction
@@ -1022,7 +1022,7 @@ address is always the answer, which is what the ordinary summary shows."
                   "\\`\\'")
                  "me@example.com")))
 
-;;; What `vm-continue-what-message' decides to do
+;;; What `vm-continue-what-message' does
 
 (defconst vm-postpone-test--draft
   (concat "From me@example.com Mon Jan  1 00:00:00 2024\n"
