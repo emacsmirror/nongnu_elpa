@@ -44,17 +44,17 @@
   :type 'boolean)
 
 (defcustom helm-bookmark-default-filtered-sources
-  (append '(helm-source-bookmark-org
-            helm-source-bookmark-files&dirs
-            helm-source-bookmark-helm-find-files
-            helm-source-bookmark-info
-            helm-source-bookmark-gnus
-            helm-source-bookmark-mu4e
-            helm-source-bookmark-man
-            helm-source-bookmark-images
-            helm-source-bookmark-w3m)
-          (list 'helm-source-bookmark-uncategorized
-                'helm-source-bookmark-set))
+  '(helm-source-bookmark-helm-find-files
+    helm-source-bookmark-files&dirs
+    helm-source-bookmark-org
+    helm-source-bookmark-info
+    helm-source-bookmark-gnus
+    helm-source-bookmark-mu4e
+    helm-source-bookmark-man
+    helm-source-bookmark-images
+    helm-source-bookmark-w3m
+    helm-source-bookmark-uncategorized
+    helm-source-bookmark-set)
   "List of sources to use in `helm-filtered-bookmarks'."
   :type '(repeat (choice symbol)))
 
