@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VM (View Mail) is an Emacs mail reader supporting GNU Emacs 28.1+. It handles POP/IMAP servers, MIME, UNIX mailbox format, and BABYL format. Features include virtual folders for searching and multi-folder management.
+VM (View Mail) is an Emacs mail reader supporting GNU Emacs 28.1+. It supports POP/IMAP servers, MIME, UNIX mailbox format, and BABYL format. Features include virtual folders for searching and multi-folder management.
 
 ## Build Commands
 
@@ -32,7 +32,7 @@ make distclean          # Full cleanup including Makefile
 make byte-compile-lint && make native-compile-lint
 ```
 
-Native compilation reports things the byte compiler does not, and a commit
+Native compilation reports warnings the byte compiler does not, and a commit
 that passes one and not the other is a commit that breaks a user's build the
 first time their Emacs compiles the file.
 
@@ -46,7 +46,7 @@ make relint-lint         # Regular expression linting
 
 Note: `make elint-lint` is broken (max-lisp-eval-depth), `make elisp-lint` has many false positives.
 
-**`byte-compile-lint` cannot see a call across files.** It compiles the whole
+**`byte-compile-lint` cannot detect a call across files.** It compiles the whole
 directory in one Emacs, so compiling `vm-imap.el` defines in that session the
 functions `vm-reply.el` goes on to call, and the warning never appears. A
 user's Emacs native-compiles one file at a time and prints them, which is how
@@ -64,7 +64,7 @@ cd test && ./test-runner --help                 # the rest of the options
 cd test && make test                            # the same, ARGS=... to pass options
 ```
 
-**`test/test-runner` is the only thing that runs tests.** The Makefile has no
+**Only `test/test-runner` runs the tests.** The Makefile has no
 Emacs of its own: `make test` forwards to the runner, and `ARGS` goes through
 (`make test ARGS="--one vm-imap-test.el"`). Add a pass to the runner, not a
 target to the Makefile.
@@ -77,7 +77,7 @@ the packages are here and their tests would skip from then on with nothing to
 show for it. `make test-no-opt` runs everything without fetching, for a machine
 with no network.
 
-It probes first, because an exit status does not say whether VM is broken or
+It probes first, because an exit status does not state whether VM is broken or
 the machine is short of a server: what is unconfigured skips, what is
 configured but unreachable fails. `test/vm-test-probe.el` logs in to every
 configured server, and the runner prints which servers replied, where mail
@@ -104,18 +104,19 @@ spent waiting for mail to be delivered, so it is started first and waited for
 last. Nothing it touches is shared: it reaches one server, the one
 `:verify-server` names, that no other pass uses, and the live IMAP tests work
 in throwaway mailboxes called `vmtest<pid>-<n>` that are never INBOX. Its
-output is held and printed when it is waited for, since two passes writing to
-the terminal at once interleave.
+output is retained and printed when it is waited for, since two passes
+writing to the terminal at once interleave.
 
 **Its messages all go out before any of them is awaited.** Each test used to
 send its own and then wait for it, so four tests cost four deliveries; they
 cost one between them now. `vm-send-live-messages` is a table of tag against
 the function that sends that message, and the first test to ask
-`vm-send-live-sent` for one sends them all. Two things follow. The record is
-in `vm-test-isolation-exceptions`, or the per-test isolation would wind it
-back and every test would dispatch again. And the sweep that takes the mail
-out of the mailbox runs once, on `kill-emacs-hook`, rather than after each
-test, which with everything already sent would take the other messages too.
+`vm-send-live-sent` for one sends them all. Two consequences follow. The
+record is in `vm-test-isolation-exceptions`, or the per-test isolation would
+wind it back and every test would dispatch again. And the sweep that takes the
+mail out of the mailbox runs once, on `kill-emacs-hook`, rather than after
+each test, which with everything already sent would take the other messages
+too.
 
 **The suite is split over several Emacsen**, four by default, `VM_TEST_JOBS`
 otherwise, and 1 runs it whole in one, which is what you want when a failure
@@ -138,7 +139,7 @@ maildrop and nothing else, so one maildrop is one file whoever visits it and
 two passes at once would write the same one. `make clean` removes `scratch`
 whole.
 
-**Two coverage reports, and they answer different questions.** `--coverage`
+**Two coverage reports, and each measures something different.** `--coverage`
 advises every `vm-` function and reports which were called, so a function of
 forty lines entered once counts as covered. `--forms-coverage` instruments
 every form with `testcover` and reports what ran inside: per definition, how
@@ -150,7 +151,7 @@ that never returned nil being one no test varied.
 
 `--forms-coverage` writes three files. `test/forms-coverage-results.txt` is
 per definition; `test/line-coverage-results.txt` is per line, naming the
-source lines that hold a form which never ran; `test/line-coverage.info` is
+source lines that contain a form which never ran; `test/line-coverage.info` is
 the same in lcov, for `genhtml` and the coverage viewers. A line is counted
 only where it contains an instrumented form, so a comment is not reported as
 uncovered. Currently 32273 lines with forms, 9167 never reached.
@@ -185,11 +186,12 @@ Worth an hour if the numbers are ever used for anything that matters.
 
 `--forms-coverage` depends on edebug being able to read every file, and two
 arglists stopped it doing so (#795): `&key` in a plain `defun`, which Emacs
-Lisp does not understand, and an `&optional` with no arguments after it. Both
-failed **quietly**, the run finishing with plausible numbers while saying
+Lisp does not support, and an `&optional` with no arguments after it. Both
+failed **quietly**, the run finishing with plausible numbers while reporting
 nothing about the two largest files in the tree.
 `vm-integration-test-every-file-can-be-instrumented` and
-`vm-integration-test-only-cl-defun-takes-keyword-arguments` hold that shut.
+`vm-integration-test-only-cl-defun-takes-keyword-arguments` prevent a
+recurrence.
 
 - **A test that instruments the tree needs a subprocess Emacs.**
   `testcover-start` leaves its instrumentation in place, and instrumented code
@@ -281,7 +283,7 @@ Gotchas found the hard way:
   and it reads as a hang with nothing to show for it. Seed `vm-imap-passwords`
   under `vm-imapdrop-sans-password-and-mailbox` of the spec, which is the key
   `vm-imap-net-known-password` looks up. `SIGUSR2` with
-  `(setq debug-on-event 'sigusr2)` is what got the answer out.
+  `(setq debug-on-event 'sigusr2)` is what showed the cause.
 
 ## Contributing workflow
 
@@ -315,7 +317,7 @@ to `develop` in the same one-branch-per-issue steps as anything else.
   driver and no dual mode, so every path to a server is asynchronous. The
   blocking implementation has been deleted, 137 functions and about 4000
   lines of `vm-imap.el` and `vm-pop.el` along with the 60-odd tests that were
-  the only thing still reaching them, and nothing fell back to it. The driver
+  their only remaining callers, and nothing fell back to it. The driver
   declines only for a maildrop whose password VM does not have, and prompts
   for one first where there is a reader to prompt; where it does not start,
   nothing else is tried and the reader is told.
@@ -401,16 +403,16 @@ without opening every one.
   and deriving it from `main..develop` alone missed nine async issues. That
   branch is merged and gone, so one range is now the whole of it.
 
-  **A `Re #NNN` trailer is no bar to `Pending`.** A fix often lands under
-  another issue's number, and three pending issues have no trailer of their own
-  at all. What a trailer cannot tell you is whether the work is finished, so
-  read the issue before labelling.
+  **A `Re #NNN` trailer is no bar to `Pending`.** A fix is often committed
+  under another issue's number, and three pending issues have no trailer of
+  their own at all. What a trailer cannot tell you is whether the work is
+  finished, so read the issue before labelling.
 
   Do not put it on a closed issue, nothing is pending there. Do not put it on
   an issue whose fix is only partly done, or whose remaining step is outside
   the repo: #487 requires a page on nongnu.org to be edited, which no merge to
   `main` will do, so it is labelled `Human` instead. Anything that is not
-  simply waiting for `main` needs its own label, not this one.
+  waiting for `main` alone needs its own label, not this one.
 - `Decision Needed` — waiting on a maintainer decision rather than on effort:
   the analysis is on the issue and the next step is a choice. Assign the issue
   to the maintainer as well, so it shows up as theirs and not merely unowned.
@@ -434,9 +436,9 @@ without opening every one.
   taken, to defer. An issue can be both: deferred, and now wanting a second
   look.
 - `Close by hand` — `Pending`, and the merge will not close it: the trailer is
-  `Re #NNN`, or names another issue, or the fix landed under another number and
-  there is no trailer here at all. Someone has to close it when the branch
-  reaches `main`.
+  `Re #NNN`, or names another issue, or the fix was committed under another
+  number and there is no trailer here at all. Someone has to close it when
+  the branch reaches `main`.
 
   **Additive, never an alternative.** Every `Close by hand` issue is labelled
   `Pending` too, and a filter on `Pending` is expected to return it. Derivable
@@ -447,7 +449,7 @@ without opening every one.
 ### Attributing comments written by Claude
 
 The API token belongs to Mark, so anything posted with it appears under his
-name. A comment Claude wrote must say so, as its first line:
+name. A comment Claude wrote must state this, as its first line:
 
 ```
 > 🤖 Written by [Claude Code](https://claude.com/claude-code), not by @diekhans, and posted from his account.
@@ -459,7 +461,7 @@ came from a tool run rather than from the maintainer's own testing. The same
 goes for anything else posted through the API under his account: issue
 descriptions, MR descriptions.
 
-Commits carry the equivalent through their `Co-Authored-By:` trailer.
+Commits include the equivalent in their `Co-Authored-By:` trailer.
 
 ## Writing
 
@@ -487,7 +489,7 @@ code comments, commit messages, issue and merge request text, and replies.
     emits `" -- accepted"`, so the manual's example has to match it
 - **No static version numbers in the manual, except when the sentence is
   about history.** "As of version 8.2.0, the only context ..." dates what VM
-  simply does now, and has to be edited again at every release; say what it
+  does now, and has to be edited again at every release; say what it
   does. "Prior to version 8.2.0 it was possible to ..." is history and
   stays, as does the Selected Releases appendix and the minimum Emacs
   version, which is a requirement rather than a date. For a change made in
@@ -503,7 +505,7 @@ code comments, commit messages, issue and merge request text, and replies.
   marked up to be noticed is in the wrong place in the sentence. Org tables,
   links, headings and `: example` blocks are fine, as are src blocks.
 
-  Stripping it from an existing file is not a regexp job, and three things
+  Stripping it from an existing file is not a regexp job, and three problems
   make it worse than it looks:
 
   - A table rule row, `|----+----|`, reads as strike-through, and the
@@ -514,7 +516,7 @@ code comments, commit messages, issue and merge request text, and replies.
     leaves the inner delimiters behind; grep for `=/=` afterwards.
   - Cells lose two characters each, so the tables need realigning after.
 
-  Use org's own parser, `org-element-parse-buffer`, which handles all of this
+  Use org's own parser, `org-element-parse-buffer`, which covers all of this
   and reads `=ssl = yes=` as one verbatim and a run that wraps across two
   lines.
 
@@ -550,9 +552,9 @@ answering "what breaks for me" meant reading all of it.
   looking for: IMAP and POP, Sending mail, Folders and folder types, Removed,
   and so on. One heading per topic that has more than a couple of entries.
 - **"Upgrading from <the last release>" comes first**, and is one line per
-  thing that stops working, with no detail: the `require` that now fails, the
+  change that stops working, with no detail: the `require` that now fails, the
   option that is gone, the mode that has to be switched on. The entries below
-  carry the rest. This is the only part of NEWS some readers will read.
+  contain the rest. This is the only part of NEWS some readers will read.
 - **Nothing in NEWS needs the reader to read it in full.** A code block
   longer than a few lines, a second example, a paragraph of history: these
   belong in the issue, which NEWS has already named.
@@ -579,11 +581,11 @@ docstring means regenerating them and committing the result:
 make -C info vm-reference.texinfo vm-docstrings.texinfo
 ```
 
-`make -C info check-reference` compares the committed copy with what the docstrings say
-now and fails when they differ. A plain `make` rewrites them in the working
-tree, so forgetting this leaves the next person a dirty tree they did not
-cause. Only commands and user options appear there: a docstring on a plain
-function is not in the appendix and needs nothing.
+`make -C info check-reference` compares the committed copy with what the
+docstrings state now and fails when they differ. A plain `make` rewrites them
+in the working tree, so forgetting this leaves the next person a dirty tree
+they did not cause. Only commands and user options appear there: a docstring
+on a plain function is not in the appendix and needs nothing.
 
 ### Autoloads
 
@@ -617,7 +619,7 @@ works before VM itself is loaded.
   checks it. Seven of VM's autoloaded commands are aliases.
 - Tests of loaddefs behaviour need a subprocess Emacs: the suite's own Emacs
   has all of VM loaded, so it cannot tell an autoloaded command from a loaded
-  one, and could never see a loaddefs file that fails to load on its own.
+  one, and could never detect a loaddefs file that fails to load on its own.
 
 ### Design Documentation
 

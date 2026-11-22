@@ -55,7 +55,7 @@ A comment written by Claude states this on its first line, as the top-level
 The ticket cleanup is tracked in a single comment on
 https://gitlab.com/emacs-vm/vm/-/work_items/551 — AI ticket mass cleanup,
 edited in place and never re-posted. It is a checkbox list by work state.
-The per-issue labels say the same thing: `Pending`, `Analyzed`,
+The per-issue labels record the same state: `Pending`, `Analyzed`,
 `irreproducible`, `Close by hand`.
 
 Do not rewrite the description of that issue. That text is the maintainer's.
@@ -98,13 +98,13 @@ assessment, not migration steps.
 - Verify every symbol named still exists. A rewrite once carried over two
   function names from a rejected option's sketch; neither had ever existed.
 
-When work lands, rewrite its design document from plan to description.
+When the work is merged, rewrite its design document from plan to description.
 
 ## The manual
 
 Do not explain `vm-epg` by contrast with `vm-pgg`. vm-pgg was removed in
 9.0.0, so the comparison sends the reader after a package that is not there.
-State what vm-epg does on its own terms. The upgrade contrast lives in
+State what vm-epg does on its own terms. The upgrade contrast belongs in
 `NEWS-3.md`, which is dated rather than evergreen and is where someone
 coming from the older package looks.
 

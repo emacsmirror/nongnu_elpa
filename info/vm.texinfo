@@ -1947,7 +1947,7 @@ the commands that VM sent to the server and the responses it has received.
 Typical problems are protocol mismatches between VM and the mail server, or
 malfunctions in other components such as the @code{stunnel} program.
 
-How many of them are kept is one variable per protocol:
+One variable per protocol sets how many trace buffers are retained:
 
 @vmdocvmpopkeeptracebuffer
 
