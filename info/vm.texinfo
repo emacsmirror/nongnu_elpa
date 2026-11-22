@@ -2499,6 +2499,49 @@ imap-ssl:imap.gmail.com:993:inbox:xoauth2:jane@@gmail.com:*
 @end example
 @end enumerate
 
+@unnumberedsubsubsec Sending with the same token
+
+@cindex SMTP, and OAuth2
+@cindex smtpmail, and XOAUTH2
+@vindex smtpmail-auth-supported
+The token authorized here sends mail as well as reads it.  VM does not send
+mail, @code{smtpmail} does (@pxref{Sending setup}), and @code{smtpmail}
+implements @samp{XOAUTH2} itself.  It does not try the mechanism by default:
+@code{smtpmail-auth-supported} lists what it tries and @samp{xoauth2} is not
+in it.  @file{auth-source-xoauth2-plugin}, which step 2 installs, adds it to
+that list and supplies the access token where an entry requests one, so a
+Google account needs nothing further.
+
+@vindex vm-oauth2-providers
+@findex vm-oauth2-authorize
+Microsoft issues one scope per protocol, and sending has its own,
+@samp{SMTP.Send}.  @code{vm-oauth2-providers} requests it.  A token
+authorized by an earlier VM does not include it, the submission server
+rejects such a token, and that looks like a bad password and is not one.
+Authorize again with @kbd{M-x vm-oauth2-authorize} and the consent page
+names sending too.
+
+@code{smtpmail} looks the submission server up, not the @acronym{IMAP}
+server, so the account needs a second @file{~/.authinfo} entry with the same
+registration fields:
+
+@example
+machine smtp.gmail.com login jane@@gmail.com port 587 auth xoauth2
+  auth-url https://accounts.google.com/o/oauth2/auth
+  token-url https://oauth2.googleapis.com/token
+  scope https://mail.google.com/
+  client-id YOUR-ID.apps.googleusercontent.com
+  client-secret YOUR-SECRET
+@end example
+
+@vindex smtpmail-smtp-user
+@noindent
+The @samp{login} is the address the token was authorized for, and
+@code{smtpmail-smtp-user} has to name that same address: it is what
+@code{smtpmail} searches @code{auth-source} under, and what it sends as the
+user in the @samp{XOAUTH2} response.  The per-identity hook in
+@ref{Sending setup} sets that variable already.
+
 @unnumberedsubsubsec Where it goes wrong
 
 @table @asis
@@ -3329,6 +3372,11 @@ VM does not send mail; Emacs does, through @code{smtpmail.el}.
 removes a @code{Bcc} header itself instead of trusting a program outside
 Emacs to do it.  VM asks before sending a message with a @code{Bcc} through
 one that does not.  @xref{Sending Options}.
+
+@cindex OAuth2, for sending
+A server that requires an OAuth2 token rather than a password is set up with
+the account that reads the mail, and sends with the same token.
+@xref{OAuth2}.
 
 @subheading A server for each of your addresses
 
