@@ -2571,6 +2571,18 @@ and from the @code{auth-source} entry when the plugin looks.  Two
 @acronym{URL}s that are both the provider's own are enough to make each look
 for a token the other did not write.
 
+@item Sending fails and the error does not name authentication.
+@cindex XOAUTH2, rejected token
+A submission server that rejects the token replies to @samp{AUTH XOAUTH2}
+with a 334 challenge rather than with an error, and @code{smtpmail} in Emacs
+28 and 29 treats any response below 400 as success.  It then sends
+@samp{MAIL FROM} with the authentication exchange unfinished, and the
+reported error describes that later step instead.  Emacs 30.1 and later
+translate the challenge into @samp{535 5.7.8 Authentication credentials
+invalid} and try the remaining mechanisms.  On the earlier two, read any
+@samp{XOAUTH2} send failure as a rejected token first, and authorize again
+with @kbd{M-x vm-oauth2-authorize}.
+
 @item The authorization ends with @samp{Encrypt failed}.
 @cindex plstore
 @file{oauth2} keeps the token in a plstore, and a plstore with no recipient
