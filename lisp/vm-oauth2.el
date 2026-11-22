@@ -94,14 +94,17 @@
     ("microsoft"
      :auth-url "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
      :token-url "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-     :scope "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/POP.AccessAsUser.All"))
+     :scope "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/POP.AccessAsUser.All https://outlook.office.com/SMTP.Send"))
   "Where VM asks for an access token, by provider name.
 
 Each entry is (NAME :auth-url URL :token-url URL :scope SCOPE).  The two
 built in are the endpoints Google and Microsoft publish, with the scope that
-covers reading mail and nothing else: Google has one for all of IMAP, POP
-and SMTP, Microsoft one per protocol.  No credentials are here, those being
-the reader's own: see `vm-oauth2-client-id'.
+covers reading and sending mail and nothing else: Google has one scope for
+IMAP, POP and SMTP together, Microsoft one per protocol, so the Microsoft
+entry names all three.  Sending is Emacs's own `smtpmail', which reads the
+same token; a token authorized without the sending scope is rejected by the
+submission server.  No credentials are here, those being the reader's own:
+see `vm-oauth2-client-id'.
 
 A provider not listed is added here.  The names are what
 `vm-oauth2-authorize' completes on."

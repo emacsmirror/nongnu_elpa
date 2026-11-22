@@ -42,6 +42,17 @@ through 7.19.  This is the newest file, so new entries go at the front of it.
     Scope both options or neither: nothing is external until it is over the
     limit as well.
 
+### Sending mail
+
+  * **A Microsoft OAuth2 token now covers sending as well as reading**
+    (emacs-vm/vm#950).  `vm-oauth2-providers` requests the `SMTP.Send`
+    scope, which Microsoft issues separately from the IMAP and POP ones.  A
+    token authorized by an earlier VM does not include it, so run `M-x
+    vm-oauth2-authorize` again before sending through `smtp.office365.com`.
+    Google's single scope already covered all three.  Emacs's `smtpmail`
+    implements XOAUTH2 itself and `auth-source-xoauth2-plugin` enables it;
+    the manual's OAuth2 section states what else an account needs.
+
 ## VM 9.0.0 released 2026-10-18
 
 Three changes a reader meets whatever they do: IMAP and POP no longer block

@@ -346,6 +346,7 @@ new command in any other file has to carry a cookie."
 (defconst vm-reference-test--foreign-symbols
   '(;; other packages, which VM does not require and a batch run has not loaded
     smtpmail-smtp-service smtpmail-stream-type
+    smtpmail-auth-supported smtpmail-smtp-user
     w3m-force-redisplay w3m-goto-article-function w3m-pop-up-frames
     browse-url-browser-function)
   "Symbols the manual indexes that are deliberately not VM's own.")
