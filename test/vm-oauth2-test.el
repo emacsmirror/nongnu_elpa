@@ -345,6 +345,15 @@ answer for a machine that has no package to authorize with."
                                                    "imap.gmail.com"))
         (should-not asked)))))
 
+(ert-deftest vm-oauth2-test-the-microsoft-scope-covers-sending ()
+  "REGRESSION: the Microsoft entry asks for the scope that sends mail.
+Microsoft issues one scope per protocol, so a token authorized for IMAP and
+POP alone is rejected by the submission server, which reads as a bad
+password and is not one.  Google needs no counterpart: one scope covers
+IMAP, POP and SMTP there.  Issue #950."
+  (let ((microsoft (vm-oauth2-provider "microsoft")))
+    (should (string-match-p "SMTP.Send" (plist-get microsoft :scope)))))
+
 (provide 'vm-oauth2-test)
 
 ;;; vm-oauth2-test.el ends here
