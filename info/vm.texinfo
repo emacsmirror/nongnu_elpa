@@ -1938,8 +1938,8 @@ Since a number of components have to be brought together to establish
 connections to mail servers, it is not uncommon for problems to arise.
 
 @cindex stunnel
-To find out what could be going wrong, you can look at the Emacs buffer that
-store a trace of the session with mail server.  Such buffers have names
+To find out what could be going wrong, you can look at the Emacs buffers that
+store a trace of the session with the mail server.  Such buffers have names
 beginning with ``trace of @acronym{POP} session'' or ``trace of
 @acronym{IMAP} session''.  There could be multiple buffers of this kind for
 different servers and multiple sessions.  In the trace buffer, you will find
