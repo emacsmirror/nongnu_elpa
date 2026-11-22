@@ -34,10 +34,12 @@
 
 (defvar evilmi-template-extract-keyword-howtos
   '(("^[ \t]*<\\?php +\\([a-z]+\\).*$" 1)
-    ("^[ \t]*\\([@a-z]+\\).*$" 1)))
+    ("^[ \t]*\\([@a-z]+\\).*$" 1)
+    ("^[ \t]*\\(</?>+\\).*$" 1)))
 
 (defvar evilmi-template-match-tags
   '(("if" ("elseif" "else") "endif" "MONOGAMY")
+    ("<>" () "</>" "MONOGAMY")
     ("foreach" () "endforeach" "MONOGAMY")
     ("for" () "endfor" "MONOGAMY")
     ("while" () "endwhile" "MONOGAMY")
