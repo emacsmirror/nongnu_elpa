@@ -1021,6 +1021,41 @@ MPV playback position.  In other buffers, this just adds newlines.  If
                 (delete-horizontal-space))
             (forward-char 1)))))))
 
+(defun subed-fill-and-align-subtitles (&optional beg end)
+  "Wrap the current subtitle at `subed-subtitle-fill-length'.
+In `subed-mode' buffers, this calls `subed-split-subtitle' ignoring the
+MPV playback position.  In other buffers, this just adds newlines.  If
+`subed-subtitle-fill-length' is nil, use `fill-column'. Use
+`subed-align-region' on each chunk to try to correct the timestamps."
+  (interactive (if (region-active-p)
+                   (list (region-beginning)
+                         (region-end))
+                 (list (point-min) (point-max))))
+  (setq beg (or beg (point-min)))
+  (setq end (or end (point-max)))
+  (let ((fill-to (or subed-subtitle-fill-length fill-column)))
+    (if (derived-mode-p 'subed-mode)
+        (let ((subed-mpv-playback-position nil))
+          (save-restriction
+            (narrow-to-region beg end)
+            (subed-for-each-subtitle beg end nil
+		          (subed-jump-to-subtitle-text)
+              (move-to-column fill-to)
+              (let ((linebeg (line-beginning-position))
+                    (changed nil))
+                (save-restriction
+                  (narrow-to-region (subed-subtitle-start-pos) (subed-subtitle-end-pos))
+                  (while (and (< (point) (point-max))
+                              (< linebeg (point-max))
+                              (not (looking-at " *$")))
+                    (fill-move-to-break-point linebeg)
+                    (setq changed t)
+		                (subed-split-subtitle)
+                    (move-to-column fill-to))
+                  (when changed
+                    (subed-align-region (subed-media-file) (point-min) (point-max))))))))
+      (subed-fill-subtitles))))
+
 ;;; Hooks for point motion and subtitle motion
 
 (defvar-local subed--current-point -1)
