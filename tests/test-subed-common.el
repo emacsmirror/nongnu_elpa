@@ -4280,4 +4280,15 @@ Baz.
                    "3\n00:00:03,000 --> 00:00:03,999\nC\n\n")
            (goto-char (point-min))
            (subed-jump-to-next-long-subtitle)
-           (expect (point) :to-equal (point-max))))))))
+           (expect (point) :to-equal (point-max)))))))
+  (describe "Deleting duplicate lines"
+    (it "works on lists."
+      (expect (subed-delete-duplicate-lines
+               nil nil
+               '((nil 0 999 "This is a test.")
+                 (nil 999 1999 "This is a test.\nThis is another line.")
+                 (nil 1999 2999 "This is another line.\nThis is a test.")))
+              :to-equal
+              '((nil 0 999 "This is a test.")
+                 (nil 999 1999 "This is another line.")
+                 (nil 1999 2999 "This is a test."))))))
