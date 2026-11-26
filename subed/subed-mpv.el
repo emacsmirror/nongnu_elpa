@@ -89,6 +89,7 @@
 (defvar-local subed-mpv--client-command-queue nil
   "Commands to call when connection to `subed-mpv--socket' is established.")
 
+(defvar-local subed-mpv-audio-delay 0 "Milliseconds to shift audio by.  Positive: shifts audio playback later.")
 
 ;;; Server (mpv process that provides an IPC socket)
 
@@ -288,7 +289,12 @@ See \"List of events\" in mpv(1)."
        (when (string= (alist-get 'name json-data) "time-pos")
          (let ((pos-msecs (* 1000 (or (alist-get 'data json-data) 0))))
            (setq subed-mpv-playback-position (round pos-msecs))
-           (run-hook-with-args 'subed-mpv-playback-position-hook subed-mpv-playback-position))))
+           (run-hook-with-args 'subed-mpv-playback-position-hook subed-mpv-playback-position)))
+       (when (string= (alist-get 'name json-data) "speed")
+         (setq subed-mpv-playback-speed (or (alist-get 'data json-data) 1)))
+       (when (string= (alist-get 'name json-data) "audio-delay")
+         (let ((msecs (* 1000 (or (alist-get 'data json-data) 0))))
+           (setq subed-mpv-audio-delay (round msecs)))))
       ("file-loaded"
        (setq subed-mpv-is-playing t)
        ;; TODO: Remove this code.  It seems unnecessary now.  Not sure why, but
@@ -326,12 +332,37 @@ See \"List of events\" in mpv(1)."
   (interactive)
   (if subed-mpv-is-playing (subed-mpv-pause) (subed-mpv-unpause)))
 
-(defun subed-mpv-playback-speed (factor)
+;;;###autoload
+(defun subed-mpv-set-playback-speed (factor)
   "Play slower (FACTOR < 1) or faster (FACTOR > 1)."
   (interactive "NFactor: ")
   (unless (eq subed-mpv-playback-speed factor)
     (when (subed-mpv--client-send `(set_property speed ,factor))
       (setq subed-mpv-playback-speed factor))))
+(defalias 'subed-mpv-playback-speed #'subed-mpv-set-playback-speed)
+
+(defvar subed-mpv-speed-step 0.5 "Step to increase or decrease speed.")
+
+;;;###autoload
+(defun subed-mpv-increase-playback-speed ()
+  "Increase speed."
+  (interactive)
+  (when (subed-mpv--client-send `(add speed ,subed-mpv-speed-step))
+    (setq subed-mpv-playback-speed (+ subed-mpv-playback-speed subed-mpv-speed-step))))
+
+;;;###autoload
+(defun subed-mpv-decrease-playback-speed ()
+  "Decrease speed."
+  (interactive)
+  (when (subed-mpv--client-send `(add speed ,(- subed-mpv-speed-step)))
+    (setq subed-mpv-playback-speed (- subed-mpv-playback-speed subed-mpv-speed-step))))
+
+;;;###autoload
+(defun subed-mpv-reset-playback-speed ()
+  "Reset speed."
+  (interactive)
+  (when (subed-mpv--client-send `(set_property speed 1))
+    (setq subed-mpv-playback-speed 1)))
 
 (defun subed-mpv-seek (msec)
   "Move playback position MSEC milliseconds relative to current position."
@@ -539,6 +570,8 @@ Files should match `subed-video-extensions' or `subed-audio-extensions'."
           (subed-mpv-add-subtitles (buffer-file-name))
         (add-hook 'after-save-hook #'subed-mpv--add-subtitle-after-first-save :append :local))
       (subed-mpv--client-send `(observe_property 1 time-pos))
+      (subed-mpv--client-send `(observe_property 1 speed))
+      (subed-mpv--client-send `(observe_property 1 audio-delay))
       (subed-mpv-playback-speed subed-playback-speed-while-not-typing)))
 
 (define-obsolete-function-alias 'subed-mpv-play-video-from-url 'subed-mpv-play-from-url "1.20")
@@ -650,6 +683,37 @@ If MSECS is not specified, use `subed-mpv-skim-msecs'."
 			(recenter)))
   (subed-jump-to-previous-speaker)
 	(subed-mpv-pause))
+
+(defvar subed-mpv-audio-delay-step 100 "Number of milliseconds to increase or decrease audio delay.
+Increase: shifts audio playback later")
+
+;;;###autoload
+(defun subed-mpv-increase-audio-delay ()
+  "Increase audio delay and shift audio playback later."
+  (interactive)
+  (when (subed-mpv--client-send `(add audio-delay ,(/ subed-mpv-audio-delay-step 1000.0)))
+    (setq subed-mpv-audio-delay (+ subed-mpv-audio-delay subed-mpv-audio-delay-step))))
+
+;;;###autoload
+(defun subed-mpv-decrease-audio-delay ()
+  "Decrease audio delay and shift audio playback earlier."
+  (interactive)
+  (when (subed-mpv--client-send `(add audio-delay ,(/ subed-mpv-audio-delay-step -1000.0)))
+    (setq subed-mpv-audio-delay (- subed-mpv-audio-delay subed-mpv-audio-delay-step))))
+
+;;;###autoload
+(defun subed-mpv-reset-audio-delay ()
+  "Reset audio delay to 0."
+  (interactive)
+  (when (subed-mpv--client-send `(set_property audio-delay 0))
+    (setq subed-mpv-audio-delay 0)))
+
+;;;###autoload
+(defun subed-mpv-set-audio-delay (n)
+  "Set audio delay to N msecs."
+  (interactive "NAudio delay in ms (greater - play audio later): ")
+  (when (subed-mpv--client-send `(set_property audio-delay ,(/ n 1000.0)))
+    (setq subed-mpv-audio-delay n)))
 
 (provide 'subed-mpv)
 ;;; subed-mpv.el ends here

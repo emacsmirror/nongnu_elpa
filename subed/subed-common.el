@@ -3067,6 +3067,9 @@ Take into account `subed-subtitle-spacing' and
 (defvar subed-retime-subtitles-map
   (define-keymap
     "SPC" #'subed-retime-set-stop-and-move-forward
+    "}" #'subed-mpv-increase-playback-speed
+    "{" #'subed-mpv-decrease-playback-speed
+    "0" #'subed-mpv-reset-playback-speed
     "<left>" #'subed-mpv-jump-to-current-subtitle
     "j" #'subed-mpv-jump-to-current-subtitle
     "<right>" #'subed-retime-play-next

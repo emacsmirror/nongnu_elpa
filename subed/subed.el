@@ -131,6 +131,8 @@
     (define-key subed-mode-map (kbd "C-c C-v") #'subed-mpv-play-from-file)
     (define-key subed-mode-map (kbd "C-c C-u") #'subed-mpv-play-from-url)
     (define-key subed-mode-map (kbd "C-c C-f") #'subed-mpv-control)
+    (define-key subed-mode-map (kbd "C-M-+") #'subed-mpv-increase-audio-delay)
+    (define-key subed-mode-map (kbd "C-M--") #'subed-mpv-decrease-audio-delay)
     (define-key subed-mode-map (kbd "C-c C-p") #'subed-toggle-pause-while-typing)
     (define-key subed-mode-map (kbd "C-c C-l") #'subed-toggle-loop-over-current-subtitle)
     (define-key subed-mode-map (kbd "C-c C-r") #'subed-toggle-replay-adjusted-subtitle)
