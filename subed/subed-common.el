@@ -751,6 +751,8 @@ SUBTITLES should be a list with entries of the form (id start stop text
   "List of functions to call with the subtitles in order to transform them.
 Each function should return the transformed list of subtitles.")
 
+(defvar subed-other-speaker-changes-regexp "^&gt;&gt;" "Regexp matching speaker changes.")
+
 (defun subed-subtitle-list-include-timestamps-for-chapters-and-speaker-changes (list)
   "Include time markers for each chapter or speaker change.
 Might be useful for `subed-subtitle-list-text-transform-functions'."
@@ -765,8 +767,10 @@ Might be useful for `subed-subtitle-list-text-transform-functions'."
                          (elt cue 4)))
          ;; check the next speaker, and if it's different, then add a timestamp.
          (setq current-speaker (subed-speaker cue))
-         (when (and current-speaker
-                    (not (equal last-speaker current-speaker)))
+         (when (or (and current-speaker
+                        (not (equal last-speaker current-speaker)))
+                   (and subed-other-speaker-changes-regexp
+                        (string-match subed-other-speaker-changes-regexp (elt cue 3))))
            (setf (elt cue 3)
                  (format "%s %s"
                          (subed-msecs-to-timestamp (elt cue 1))

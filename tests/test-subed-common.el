@@ -3640,7 +3640,22 @@ This is another.
               '((nil 0 99 "Hello")
                 (nil 100 199 "world" "Comment"))
               #'upcase)))
-        (expect val :to-equal "Hello\n\nCOMMENT\n\nworld\n"))))
+        (expect val :to-equal "Hello\n\nCOMMENT\n\nworld\n")))
+    (it "includes timestamps for speaker changes if configured."
+      (with-temp-srt-buffer
+       (let* ((subed-subtitle-list-text-transform-functions
+               '(subed-subtitle-list-include-timestamps-for-chapters-and-speaker-changes))
+              (subed-other-speaker-changes-regexp "^&gt;&gt;")
+              (val
+               (subed-subtitle-list-text
+                '((nil 0 99 "This is")
+                  (nil 100 199 "from the first speaker")
+                  (nil 1000 1599 "&gt;&gt; This is said by another speaker")))
+               ))
+         (expect val :to-equal "This is
+from the first speaker
+00:00:01,000 &gt;&gt; This is said by another speaker
+")))))
   (describe "Copying region text"
     (it "works on the whole buffer"
       (with-temp-srt-buffer
