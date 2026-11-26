@@ -2140,6 +2140,13 @@ If QUIET is non-nil, do not display a message in the minibuffer."
       (subed-disable-sync-point-to-player)
     (subed-enable-sync-point-to-player)))
 
+;;;###autoload
+(defun subed-jump-to-subtitle-from-player ()
+  "Jump to the subtitle that contains the current player position.
+See `subed-enable-sync-point-to-player' if you want to do this automatically."
+  (interactive)
+  (subed-jump-to-subtitle-text-at-msecs subed-mpv-playback-position 'after))
+
 (defun subed--sync-point-to-player (msecs)
   "Move point to subtitle at MSECS."
   (when (and (not (use-region-p)) ;; Don't sync with active-mark in transient-mark-mode
