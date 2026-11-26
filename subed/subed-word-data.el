@@ -397,15 +397,26 @@ This only works for VTTs."
             (save-excursion
               (insert (format "<%s>" (subed-msecs-to-timestamp (get-text-property (point) 'subed-word-data-start)))))))))))
 
-(defun subed-word-data-remove-word-timestamps (&optional beg end)
-  "Remove all word timestamps."
+(defvar subed-word-data-timestamp-regexp "<[0-9]+:[0-9]+:[0-9]+\\.[0-9]+>\\|</?c.*?>")
+(defun subed-word-data-remove-word-timestamps (&optional beg end list)
+  "Remove all word timestamps.
+If LIST is specified, act on them instead. Modifies the list."
   (interactive (if (region-active-p)
                    (list (region-beginning)
                          (region-end))
                  (list (point-min) (point-max))))
-  (goto-char (or end (point-max)))
-  (while (re-search-backward "<[0-9]+:[0-9]+:[0-9]+\\.[0-9]+>\\|</?c.*?>" beg t)
-    (replace-match "")))
+  (let ((regexp "<[0-9]+:[0-9]+:[0-9]+\\.[0-9]+>\\|</?c.*?>"))
+    (if list
+        (mapc
+         (lambda (o)
+           (when (elt o 3)
+             (setf
+              (elt o 3)
+              (replace-regexp-in-string subed-word-data-timestamp-regexp "" (elt o 3)))))
+         list)
+      (goto-char (or end (point-max)))
+      (while (re-search-backward regexp beg t)
+        (replace-match "")))))
 
 (defun subed-word-data-refresh-region (beg end)
   "Refresh text properties in region."

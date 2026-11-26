@@ -71,8 +71,12 @@ words))
                       "We're lucky if we can get an exact match. More stuff goes here."
                       " "))))
         (expect (car result) :to-be-less-than 0.001)
-        (expect (string-join (cdr result) " ") :to-equal "We're lucky if we can get an exact match.")))
-
-    )
-
-  )
+        (expect (string-join (cdr result) " ") :to-equal "We're lucky if we can get an exact match."))))
+  (describe "Removing word timestamps"
+    (it "removes YouTube word timestamps in a list."
+      (expect
+       (subed-word-data-remove-word-timestamps
+        nil nil
+        '((nil 0 5000 "<00:00:01.000>Test <00:00:01.000>words")))
+       :to-equal
+       '((nil 0 5000 "Test words"))))))
