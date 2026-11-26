@@ -35,6 +35,24 @@
   (should (cl-loop for f in (directory-files ".")
                    never (string-match-p "\\.elc\\'" f))))
 
+(cl-defun my-test-cl-defun-for-arg-error ((a b))
+  (list a b))
+
+(ert-deftest cl-defun-destr-signals-arg-error ()
+  (should (equal 'expected-error1
+                 (condition-case err
+                     (my-test-cl-defun-for-arg-error '(1 2 3))
+                   (wrong-number-of-arguments 'expected-error1))))
+
+  (should (equal 'expected-error2
+                 (condition-case err
+                     (my-test-cl-defun-for-arg-error '(1 2 3))
+                   (t 'expected-error2))))
+
+  (should-error (my-test-cl-defun-for-arg-error '(1 2 3))
+                :type 'wrong-number-of-arguments))
+
+;;; Custom definer for tests.
 (cl-defmacro loopy-deftest
     ( name
       &key
@@ -132,7 +150,8 @@ prefix the items in LOOPY or ITER-BARE."
            result))
        ;; Want to evaluate quoted form lexically.
        (quote-wrap (sexp) (if macroexpand
-                              `(macroexpand (quote ,sexp))
+                              `(macroexpand (quote ,sexp)
+                                            macroexpand-all-environment)
                             `(eval (quote ,sexp) t)))
        ;; What output should be.
        (output-wrap (x) (cond (should-provided `(should ,x))
@@ -6545,6 +6564,18 @@ Not multiple of 3: 7"
   :iter-keyword (list while collect)
   :iter-bare nil)
 
+(loopy-deftest while-multiple-conditions
+  :doc "`while' should now error if given multiple conditions.
+It should be consistent with `always' and `never'."
+  :error wrong-number-of-arguments
+  ;; :macroexpand t
+  :body ((list i '(1 2 3 4 5 6))
+         (while (< i 3) (< i 999))
+         (collect i))
+  :loopy t
+  :iter-keyword (list while collect)
+  :iter-bare nil)
+
 (loopy-deftest while-alias
   :doc "Make sure aliases don't show up in `while' instead of the symbol `while'."
   :result 1
@@ -6560,6 +6591,18 @@ Not multiple of 3: 7"
   :result '(1 2 3)
   :body ((list i '(1 2 3 4 5 6))
          (until (> i 3))
+         (collect i))
+  :loopy t
+  :iter-keyword (list until collect)
+  :iter-bare nil)
+
+(loopy-deftest until-multiple-conditions
+  :doc "`until' should now error if given multiple conditions.
+It should be consistent with `always' and `never'."
+  ;; :macroexpand t
+  :error wrong-number-of-arguments
+  :body ((list i '(1 2 3 4 5 6))
+         (until (> i 3) (> i -999))
          (collect i))
   :loopy t
   :iter-keyword (list until collect)

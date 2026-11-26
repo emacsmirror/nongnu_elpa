@@ -3147,53 +3147,61 @@ returned."
                                (loopy--skip-used ,tag-name)))
       (loopy--main-body (throw (quote ,tag-name) t)))))
 
-;;;;;; While Until
-(cl-defun loopy--parse-while-command ((_name condition &rest conditions))
+;;;;;; While
+
+;; TODO: In the Codeberg testing environment "codeberg-medium-lazy", using
+;; `(_name condition)' as the sole argument in `cl-defun' did not trigger the
+;; expected `wrong-number-of-arguments' error in the test
+;; `until-multiple-conditions', even though the error triggers during
+;; macroexpansion on Emacs 30.2 and 31.1 in the local environment.  We are using
+;; `&rest' as a work around.
+(cl-defun loopy--parse-while-command ((&whole whole _name condition &rest obsolete_signal_error))
   "Parse the `while' command as (while CONDITION).
 
 Stop the loop when CONDITION is nil.
 
-CONDITION is a required condition.  CONDITIONS is the remaining optional
-conditions."
+\(fn (while CONDITION))"
   (declare (side-effect-free t)
            (important-return-value t)
            ;; TODO: `ftype' for `cl-defun'
            ;; (ftype (function (cons) cons))
            )
-  (when conditions
-    (warn "`loopy': `while' will only support one argument in the future.
-To keep the old behavior, wrap multiple conditions with `and'."))
-  (let ((tag-name (loopy--produce-non-returning-exit-tag-name loopy--loop-name))
-        (condition (if (zerop (length conditions))
-                       condition
-                     `(and ,condition ,@conditions))))
+  ;; TODO: Relying on `cl-defun' did not trigger
+  (when obsolete_signal_error
+    (signal 'wrong-number-of-arguments (list (length whole))))
+  (let ((tag-name (loopy--produce-non-returning-exit-tag-name loopy--loop-name)))
     `((loopy--non-returning-exit-used ,tag-name)
       (loopy--main-body (if ,condition
                             nil
                           (throw (quote ,tag-name) t))))))
 
-(cl-defun loopy--parse-until-command ((_name condition &rest conditions))
+;;;;;; While
+
+;; TODO: In the Codeberg testing environment "codeberg-medium-lazy", using
+;; `(_name condition)' as the sole argument in `cl-defun' did not trigger the
+;; expected `wrong-number-of-arguments' error in the test
+;; `until-multiple-conditions', even though the error triggers during
+;; macroexpansion on Emacs 30.2 and 31.1 in the local environment.  We are using
+;; `&rest' as a work around.
+(cl-defun loopy--parse-until-command ((&whole whole _name condition &rest obsolete_signal_error))
   "Parse the `until' command as (until CONDITION).
 
 Stop the loop when CONDITION is non-nil.
 
-CONDITION is a required condition.  CONDITIONS is the remaining optional
-conditions."
+\(fn (until CONDITION))"
   (declare (side-effect-free t)
            (important-return-value t)
            ;; TODO: `ftype' for `cl-defun'
            ;; (ftype (function (cons) cons))
            )
-  (when conditions
-    (warn "`loopy': `until' will only support one argument in the future.
-To keep the old behavior, wrap multiple conditions with `and'."))
-  (let ((tag-name (loopy--produce-non-returning-exit-tag-name loopy--loop-name))
-        (condition (if (zerop (length conditions))
-                       condition
-                     `(and ,condition ,@conditions))))
+  (when obsolete_signal_error
+    (signal 'wrong-number-of-arguments (list (length whole))))
+  (let ((tag-name (loopy--produce-non-returning-exit-tag-name loopy--loop-name)))
     `((loopy--non-returning-exit-used ,tag-name)
       (loopy--main-body (if ,condition
                             (throw (quote ,tag-name) t))))))
+
+;;;;;; While Until
 
 (make-obsolete 'loopy--parse-while-until-commands
                "use `loopy--parse-while-command' or `loopy--parse-until-command'"

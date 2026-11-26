@@ -6,6 +6,8 @@ For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
 
 ## Unreleased
 
+### Breaking Changes
+
 - Remove deprecated variables `loopy-command-parsers` and `loopy-aliases`
   ([#288]).  Both have been replaced by the new variable `loopy-parsers`.
 
@@ -17,9 +19,15 @@ For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
   heading for version 0.15.0 below for a wrapper macro to perform the same
   function.
 
+- The commands `while` and `until` now only take a single condition instead of
+  one or more conditions ([#314], [#289]).  To achieve the old effect of passing
+  multiple conditions, wrap the conditions with `and`.  Passing more than one
+  condition has been warned against since version 0.16.0 (2025-06).
+
 [#288]: https://codeberg.org/okamsn/loopy/pulls/288
 [#289]: https://codeberg.org/okamsn/loopy/pulls/289
 [#298]: https://codeberg.org/okamsn/loopy/pulls/298
+[#314]: https://codeberg.org/okamsn/loopy/pulls/314
 
 ## 0.16.1
 
