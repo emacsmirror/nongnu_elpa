@@ -35,6 +35,7 @@
 (declare-function subed-tsv-mode "subed-tsv" ())
 (declare-function subed-guess-format "subed" (&optional filename))
 (declare-function org-end-of-meta-data "org")
+(declare-function subed-align-region "subed-align")
 (declare-function prop-match-value "text-property-search")
 
 ;;; Generic functions and variables
