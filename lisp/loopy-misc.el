@@ -375,23 +375,7 @@ keywords and variables are separate."
 
 
 ;;;; Quoted Symbols and Functions
-(defun loopy--get-function-symbol (function-form)
-  "Return the actual symbol described by FUNCTION-FORM.
 
-When a quoted argument is passed to a macro, it can appear
-as `(quote my-var)' or `(function my-func)' inside the body.  For
-expansion, we generally only want the actual symbol."
-  (declare (side-effect-free nil)
-           (important-return-value t)
-           (ftype (function ((or symbol cons)) symbol)))
-  (pcase function-form
-    ((or (pred symbolp) `(lambda ,_))           function-form)
-    ;; This could be something like "(function (lambda () ...))".
-    (`(,(or 'function 'quote 'cl-function) ,fn) fn)
-    (_ (signal 'loopy-bad-function-form (list function-form)))))
-
-(defalias 'loopy--normalize-symbol #'loopy--get-quoted-symbol
-  "Make QUOTED-FORM normally quoted instead of maybe doubly quoted.")
 (defun loopy--get-quoted-symbol (quoted-form)
   "Return the actual symbol of QUOTED-FORM.
 
@@ -405,7 +389,7 @@ For functions, use `loopy--get-function-symbol'."
   (pcase quoted-form
     ((pred symbolp) quoted-form)
     (`(quote ,form) form)
-    (_              (signal 'loopy-bad-quoted-form (list quoted-form)))))
+    (_ (signal 'loopy-bad-quoted-form (list quoted-form)))))
 
 (defun loopy--quoted-form-p (form-or-symbol)
   "Whether FORM-OR-SYMBOL is quoted via `quote' or `function'.

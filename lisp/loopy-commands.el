@@ -2473,17 +2473,51 @@ This function is called by `loopy--expand-optimized-accum'."
                 (loopy--implicit-return ,var))))
 
 ;;;;;;; Find
+
+(defun loopy--get-find-test-form (test-arg value)
+  "Get the form that will be checked by the `find' command.
+
+TEST-ARG is what was given to the marco, which may be a
+sharp-quoted function.  VALUE is the value or variable
+given to the macro.  When TEST-ARG is a sharp-quoted
+function, the returned form will apply TEST-ARG to VALUE.
+NOTE: This will be removed in the future.
+
+Otherwise, the returned form is TEST-ARG."
+  ;; TODO: The Org documenation says we only support a "sharp-quoted symbol".
+  ;;       What we have here is less restrictive, but also cannot
+  ;;       cover all cases, as there might be unknown macros
+  ;;       that could expand to a sharp quoted symbol.
+  ;;
+  ;;       For example, to support `cl-labels', we have to find the sharp-quoted
+  ;;       symbol before expansion, but to support `pcase-lambda', we have to
+  ;;       find it after expansion.
+  (cl-labels ((pcase-fn (form)
+                (pcase form
+                  ((or `(,(or 'quote 'function 'cl-function) ,_)
+                       `(lambda . ,_)
+                       (and (pred (not symbolp))
+                            (pred functionp)))
+                   (warn "`loopy': `find': Applying TEST to VAR using `funcall'.
+This will be removed in the future.  Use an explicit expression instead.")
+                   `(funcall ,form ,value)))))
+    (or (pcase-fn test-arg)
+        (pcase-fn (macroexpand-all test-arg macroexpand-all-environment))
+        test-arg)))
+
 (loopy--defaccumulation find
   "Parse a command of the form `(find VAR VAL TEST &key ON-FAILURE)'.
+
+If TEST is a sharp-quoted function, then the test applied that function
+to VAL, becoming `(TEST VAL)'.  NOTE: This special case will be removed
+in the future.
 
 ON-FAILURE is evaluated at the beginning of the loop, even though
 it is only meaningful at the end."
   :num-args 3
   :keywords (on-failure)
   :explicit (let* ((test-arg (cl-third args))
-                   (test-form (if (loopy--quoted-form-p test-arg)
-                                  `(,(loopy--get-function-symbol test-arg) ,val)
-                                test-arg))
+                   (test-form (loopy--get-find-test-form test-arg val))
                    (on-failure-given (plist-member opts :on-failure))
                    (on-failure (plist-get opts :on-failure))
                    (tag-name (loopy--produce-non-returning-exit-tag-name
@@ -2507,9 +2541,7 @@ it is only meaningful at the end."
                                             (setq ,var ,val)
                                             (throw (quote ,tag-name) t))))))))
   :implicit (let* ((test-arg (cl-second args))
-                   (test-form (if (loopy--quoted-form-p test-arg)
-                                  `(,(loopy--get-function-symbol test-arg) ,val)
-                                test-arg))
+                   (test-form (loopy--get-find-test-form test-arg val))
                    (on-failure-given (plist-member opts :on-failure))
                    (on-failure (plist-get opts :on-failure))
                    (found (gensym "found"))

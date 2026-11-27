@@ -24,6 +24,27 @@ For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
   multiple conditions, wrap the conditions with `and`.  Passing more than one
   condition has been warned against since version 0.16.0 (2025-06).
 
+- The `find` command now warns when applying detected sharp-quoted functions.
+  This feature is unreliable and can't cover all the possible ways to express a
+  literal function, such as detecting macros that might expand into literal
+  functions, literal closures, or quoted symbols.  For example, to support
+  `cl-labels`, we need to find the sharp-quoted symbol before it is
+  expanded into a variable usage, but to support `pcase-lambda`, we need
+  to find the sharp-quoted `lambda` form after `pcase-lambda` expands.
+  There is already a way to unambiguously achieve the correct result (explicitly
+  giving a form), so instead this unreliable feature will be removed.
+
+  ``` emacs-lisp-mode-map
+  ;; => 2
+  (loopy (list i '(1 2 3))
+         (find i #'cl-evenp))
+
+  ;; => 1, because test case (the value that is the function)
+  ;; does not evaluate to nil
+  (loopy (list i '(1 2 3))
+         (find i (pcase-lambda (x) (cl-evenp))))
+  ```
+
 [#288]: https://codeberg.org/okamsn/loopy/pulls/288
 [#289]: https://codeberg.org/okamsn/loopy/pulls/289
 [#298]: https://codeberg.org/okamsn/loopy/pulls/298

@@ -3683,17 +3683,6 @@ Sequence accumulation commands are used to join lists (such as =union= and
          (find i (> i 12) :on-failure 27))
   #+end_src
 
-  Like in Common Lisp's Iterate package, if =TEST= is a sharp-quoted symbol,
-  such as ~#'cl-evenp~, then the test expression is treated as applying that
-  function to the value of =EXPR=.
-
-  #+begin_src emacs-lisp
-    ;; => 2
-    (loopy (list i '(1 2 3 4 5 6))
-           ;; (find i (cl-evenp i))
-           (find i #'cl-evenp))
-  #+end_src
-
   To be consistent with other commands, =ON-FAILURE= is evaluated at the
   start of the loop, even though that is not necessarily where it is used.
 

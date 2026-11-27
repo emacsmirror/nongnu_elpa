@@ -7002,6 +7002,126 @@ It should be consistent with `always' and `never'."
   :iter-bare ((list . listing)
               (find . finding)))
 
+(loopy-deftest find-expr-is-sharp-quoted-function
+  :doc "Test that `find' applies sharp quoted functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i #'cl-evenp)
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i #'cl-evenp))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-plain-quoted-function
+  :doc "Test that `find' applies plain quoted functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i 'cl-evenp)
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i 'cl-evenp))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-function-quoted-function
+  :doc "Test that `find' applies `function' quoted functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i (function cl-evenp))
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i (function cl-evenp)))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-quote-quoted-function
+  :doc "Test that `find' applies `quote' functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i (quote cl-evenp))
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i (quote cl-evenp)))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-cl-function-quoted-function
+  :doc "Test that `find' applies `cl-function' functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i (cl-function cl-evenp))
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i (cl-function cl-evenp)))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-sharp-quoted-lambda-function
+  :doc "Test that `find' applies `cl-function' functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i #'(lambda (x) (cl-evenp x)))
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i #'(lambda (x) (cl-evenp x))))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-bare-lambda-function
+  :doc "Test that `find' applies `cl-function' functions correctly."
+  :result 2
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i (lambda (x) (cl-evenp x)))
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i (lambda (x) (cl-evenp x))))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
+(loopy-deftest find-expr-is-symbol-will-error
+  :doc "Test that `find' does not treat an evaluated symbol as a function."
+  :error void-variable
+  :multi-body t
+  :body [((list i '(1 2 3))
+          (find whether-found i blah)
+          (finally-return whether-found))
+
+         ((list i '(1 2 3))
+          (find i blah))]
+  :loopy t
+  :iter-keyword (list find)
+  :iter-bare ((list . listing)
+              (find . finding)))
+
 ;;; Custom Commands
 
 (loopy-deftest custom-command-sum

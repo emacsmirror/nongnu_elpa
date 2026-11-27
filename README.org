@@ -44,6 +44,11 @@ please let me know.
    - The =while= and =until= commands now only take a single condition to be
      consistent with =never= and =always=.  To get the old of effect of passing
      multiple conditions, wrap the multiple conditions in ~and~.
+   - ~find~ now warns when treating sharp-quoted functions specially.  This
+     feature will be removed in the future in favor of passing an evaluated
+     expression (which is unambiguous). In the interim, it now treats some
+     literal function values differently during compilation, including macros
+     that expand into sharp-quoted forms.
  - Version 0.16.1:
    - No breaking changes
  - Version 0.16.0:
