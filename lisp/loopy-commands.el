@@ -193,13 +193,8 @@ handled by `loopy-iter'."
   (let* ((value-selector (gensym "set-value-selector-"))
          (arg-length (length vals)))
     (cl-case arg-length
-      ;; If no values, repeatedly set to `nil'.
-      ;; TODO: Turn this warning into an error.
-      (0 (warn "`loopy': `%s' will require at least 1 value in the future: `%s'"
-               name
-               cmd)
-         (loopy--destructure-instrs-for-other-command
-          var nil))
+      (0 (signal 'loopy-wrong-number-of-command-arguments
+                 (list cmd)))
       ;; If one value, repeatedly set to that value.
       (1 (loopy--destructure-instrs-for-other-command
           var (cl-first vals)))

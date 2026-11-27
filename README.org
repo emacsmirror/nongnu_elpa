@@ -49,6 +49,8 @@ please let me know.
      expression (which is unambiguous). In the interim, it now treats some
      literal function values differently during compilation, including macros
      that expand into sharp-quoted forms.
+   - ~set~ now signals an error if no value is given.  Previously, it set the
+     variable to ~nil~.
  - Version 0.16.1:
    - No breaking changes
  - Version 0.16.0:

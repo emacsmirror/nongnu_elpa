@@ -1268,6 +1268,18 @@ The `leave' command uses a non-returning exit."
   :iter-bare ((set . setting)
               (return . returning)))
 
+(loopy-deftest set-no-value-error
+  :doc "`set' should signal an error when no values are given.
+Previously, it would set the variable to `nil'."
+  :error loopy-wrong-number-of-command-arguments
+  :macroexpand t
+  :body ((set i)
+         (return t))
+  :loopy t
+  :iter-keyword (set return)
+  :iter-bare ((set . setting)
+              (return . returning)))
+
 ;;;;; command-do
 (loopy-deftest command-do
   :result '((2 4 6) (2 4 6))

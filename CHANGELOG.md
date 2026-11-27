@@ -45,10 +45,16 @@ For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
          (find i (pcase-lambda (x) (cl-evenp))))
   ```
 
+- The command `set` now signals an error if it is not given an expression to set
+  the variable to ([#303], [#315]). This has triggered a warning since 2025-02
+  in PR [#229].
+
 [#288]: https://codeberg.org/okamsn/loopy/pulls/288
 [#289]: https://codeberg.org/okamsn/loopy/pulls/289
 [#298]: https://codeberg.org/okamsn/loopy/pulls/298
+[#303]: https://codeberg.org/okamsn/loopy/issues/303
 [#314]: https://codeberg.org/okamsn/loopy/pulls/314
+[#315]: https://codeberg.org/okamsn/loopy/pulls/315
 
 ## 0.16.1
 
